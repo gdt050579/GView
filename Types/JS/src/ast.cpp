@@ -175,6 +175,43 @@ namespace Type
                 }
             }
 
+            std::u16string VarDeclList::GenSourceCode()
+            {
+                std::u16string result;
+
+                switch (type) {
+                case TokenType::DataType_Let: {
+                    result += u"let ";
+                    break;
+                }
+                case TokenType::DataType_Var: {
+                    result += u"var ";
+                    break;
+                }
+                case TokenType::Keyword_Const: {
+                    result += u"const ";
+                    break;
+                }
+                }
+
+                bool first = true;
+
+                for (auto decl : decls) {
+                    if (first) {
+                        first = false;
+                    }
+                    else {
+                        result += u", ";
+                    }
+
+                    result += decl->GenSourceCode();
+                }
+
+                result += u';';
+
+                return result;
+            }
+
             Action VarDeclList::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitVarDeclList(this, (Decl*&) replacement);
@@ -227,6 +264,20 @@ namespace Type
                 if (init) {
                     init->AdjustSourceOffset(offset);
                 }
+            }
+
+            std::u16string VarDecl::GenSourceCode()
+            {
+                std::u16string result;
+
+                result += name;
+
+                if (init != nullptr) {
+                    result += u" = ";
+                    result += init->GenSourceCode();
+                }
+
+                return result;
             }
 
             Action VarDecl::Accept(Visitor& visitor, Node*& replacement)
@@ -298,6 +349,19 @@ namespace Type
             void Block::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitBlock(this);
+            }
+
+            std::u16string Block::GenSourceCode() {
+                std::u16string result;
+                result += u"{";
+
+                for (auto decl : decls) {
+                    result += decl->GenSourceCode();
+                }
+
+                result += u"}";
+
+                return result;
             }
 
             StmtType Block::GetStmtType()
@@ -531,6 +595,19 @@ namespace Type
                 if (expr) {
                     expr->AdjustSourceOffset(offset);
                 }
+            }
+
+            std::u16string ExprStmt::GenSourceCode()
+            {
+                std::u16string result;
+
+                if (expr != nullptr) {
+                    result += expr->GenSourceCode();
+                }
+
+                result += u';';
+
+                return result;
             }
 
             Action ExprStmt::Accept(Visitor& visitor, Node*& replacement)
@@ -954,6 +1031,30 @@ namespace Type
                 }
             }
 
+            std::u16string Call::GenSourceCode()
+            {
+                std::u16string result;
+
+                result += callee->GenSourceCode();
+                result += u'(';
+
+                bool first = true;
+
+                for (auto arg : args) {
+                    if (first) {
+                        first = false;
+                    } else {
+                        result += u", ";
+                    }
+
+                    result += arg->GenSourceCode();
+                }
+
+                result += u')';
+
+                return result;
+            }
+
             Action Call::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitCall(this, (Expr*&) replacement);
@@ -1173,6 +1274,24 @@ namespace Type
 
                 obj->AdjustSourceOffset(offset);
                 member->AdjustSourceOffset(offset);
+            }
+
+            std::u16string MemberAccess::GenSourceCode()
+            {
+                std::u16string result;
+                
+                result += obj->GenSourceCode();
+
+                if (member->GetExprType() == ExprType::Identifier) {
+                    result += u'.';
+                    result += member->GenSourceCode();
+                } else {
+                    result += u'[';
+                    result += member->GenSourceCode();
+                    result += u']';
+                }
+
+                return result;
             }
 
             Action MemberAccess::Accept(Visitor& visitor, Node*& replacement)

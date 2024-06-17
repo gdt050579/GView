@@ -351,6 +351,8 @@ namespace Type
                 virtual void AdjustSourceStart(int32 offset) override;
                 virtual void AdjustSourceOffset(int32 offset);
 
+                virtual std::u16string GenSourceCode() override;
+
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
 
@@ -373,6 +375,8 @@ namespace Type
 
                 virtual void AdjustSourceStart(int32 offset) override;
                 virtual void AdjustSourceOffset(int32 offset);
+
+                virtual std::u16string GenSourceCode() override;
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -408,6 +412,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual std::u16string GenSourceCode() override;
 
                 virtual StmtType GetStmtType() override;
 
@@ -491,6 +497,8 @@ namespace Type
 
                 virtual void AdjustSourceStart(int32 offset) override;
                 virtual void AdjustSourceOffset(int32 offset);
+
+                virtual std::u16string GenSourceCode() override;
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -633,6 +641,8 @@ namespace Type
                 virtual void AdjustSourceStart(int32 offset) override;
                 virtual void AdjustSourceOffset(int32 offset);
 
+                virtual std::u16string GenSourceCode() override;
+
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
 
@@ -714,6 +724,8 @@ namespace Type
 
                 virtual void AdjustSourceStart(int32 offset) override;
                 virtual void AdjustSourceOffset(int32 offset);
+
+                virtual std::u16string GenSourceCode() override;
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;

@@ -1,5 +1,6 @@
 #include "js.hpp"
 #include "ast.hpp"
+#include "Transformers/DynamicPropagator.hpp"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -22,28 +23,6 @@ bool InlineFunctions::CanBeAppliedOn(const GView::View::LexicalViewer::PluginDat
 {
     return true;
 }
-
-class DynamicPropagator : public AST::Plugin
-{
-    std::unordered_map<std::u16string_view, AST::Expr*> map;
-
-  public:
-    AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement)
-    {
-        if (map.find(node->name) != map.end()) {
-            replacement = map[node->name]->Clone();
-
-            return AST::Action::Replace;
-        }
-
-        return AST::Action::None;
-    }
-
-    void AddVar(std::u16string_view name, AST::Expr* expr)
-    {
-        map[name] = expr;
-    }
-};
 
 class FunctionInliner : public AST::Plugin
 {
@@ -82,7 +61,7 @@ class FunctionInliner : public AST::Plugin
             if (fun) {
                 auto expr = fun->returnValue->Clone();
 
-                DynamicPropagator propagator;
+                Transformers::DynamicPropagator propagator;
 
                 if (fun->params.size() != node->args.size()) {
                     return AST::Action::None;

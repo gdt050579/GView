@@ -1,1 +1,1 @@
-target_sources(JS PRIVATE ConstPropagator.cpp)
+target_sources(JS PRIVATE DynamicPropagator.cpp)
