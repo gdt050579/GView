@@ -89,6 +89,32 @@ class DeadCodeRemover : public AST::Plugin
                         return AST::Action::Remove;
                     }
                 }
+            } else if (cond->GetConstType() == AST::ConstType::Bool) {
+                if (((AST::Bool*) cond)->value) {
+                    // if (true)
+
+                    auto stmtTrue = node->stmtTrue;
+
+                    // Prevent the parent from deleting stmtTrue since it will replace it
+                    node->stmtTrue = nullptr;
+
+                    replacement = stmtTrue;
+                    return AST::Action::Replace_Revisit;
+                } else {
+                    // if (false)
+
+                    if (node->stmtFalse) {
+                        auto stmtFalse = node->stmtFalse;
+
+                        // Prevent the parent from deleting stmtFalse since it will replace it
+                        node->stmtFalse = nullptr;
+
+                        replacement = stmtFalse;
+                        return AST::Action::Replace_Revisit;
+                    } else {
+                        return AST::Action::Remove;
+                    }
+                }
             }
         }
 

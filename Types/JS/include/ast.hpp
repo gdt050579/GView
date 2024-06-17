@@ -41,6 +41,7 @@ namespace Type
             class Constant;
             class Number;
             class String;
+            class Bool;
 
             enum class Action { None, Skip, Update, Replace, Replace_Revisit, Remove, _UpdateChild };
 
@@ -67,6 +68,7 @@ namespace Type
                 virtual void VisitMemberAccess(const MemberAccess* node);
                 virtual void VisitNumber(const Number* node);
                 virtual void VisitString(const AST::String* node);
+                virtual void VisitBool(const Bool* node);
             };
 
             class Visitor
@@ -92,6 +94,7 @@ namespace Type
                 virtual Action VisitMemberAccess(MemberAccess* node, Expr*& replacement);
                 virtual Action VisitNumber(Number* node, Expr*& replacement);
                 virtual Action VisitString(AST::String* node, Expr*& replacement);
+                virtual Action VisitBool(Bool* node, Expr*& replacement);
             };
 
             class Plugin
@@ -117,6 +120,7 @@ namespace Type
                 virtual Action OnEnterMemberAccess(MemberAccess* node, Expr*& replacement);
                 virtual Action OnEnterNumber(Number* node, Expr*& replacement);
                 virtual Action OnEnterString(AST::String* node, Expr*& replacement);
+                virtual Action OnEnterBool(Bool* node, Expr*& replacement);
 
                 virtual Action OnExitFunDecl(FunDecl* node, Decl*& replacement);
                 virtual Action OnExitVarDeclList(VarDeclList* node, Decl*& replacement);
@@ -138,6 +142,7 @@ namespace Type
                 virtual Action OnExitMemberAccess(MemberAccess* node, Expr*& replacement);
                 virtual Action OnExitNumber(Number* node, Expr*& replacement);
                 virtual Action OnExitString(AST::String* node, Expr*& replacement);
+                virtual Action OnExitBool(Bool* node, Expr*& replacement);
             };
 
             class PluginVisitor : public Visitor
@@ -169,6 +174,7 @@ namespace Type
                 virtual Action VisitMemberAccess(MemberAccess* node, Expr*& replacement) override;
                 virtual Action VisitNumber(Number* node, Expr*& replacement) override;
                 virtual Action VisitString(AST::String* node, Expr*& replacement) override;
+                virtual Action VisitBool(Bool* node, Expr*& replacement) override;
 
                 private:
                   void UpdateNode(Node* parent, FunDecl* child);
@@ -210,6 +216,7 @@ namespace Type
                 virtual void VisitMemberAccess(const MemberAccess* node) override;
                 virtual void VisitNumber(const Number* node) override;
                 virtual void VisitString(const AST::String* node) override;
+                virtual void VisitBool(const Bool* node) override;
             };
 
             class Parser
@@ -280,7 +287,7 @@ namespace Type
             enum class DeclType { Stmt, Function, Var };
             enum class StmtType { Block, If, For, While, Return, Expr };
             enum class ExprType { Unop, Binop, Ternary, Call, Constant, Identifier, Lambda, CommaList, Grouping, MemberAccess };
-            enum class ConstType { Number, String };
+            enum class ConstType { Number, String, Bool };
 
             class Node
             {
@@ -780,6 +787,26 @@ namespace Type
                 virtual ConstType GetConstType() override;
 
                 virtual String* Clone() override;
+            };
+
+            class Bool : public Constant
+            {
+              public:
+                bool value;
+
+                Bool(bool value);
+
+                virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
+
+                virtual Action Accept(Visitor& visitor, Node*& replacement) override;
+                virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual std::u16string GenSourceCode() override;
+
+                virtual ConstType GetConstType() override;
+
+                virtual Bool* Clone() override;
             };
         } // namespace AST
     }     // namespace JS

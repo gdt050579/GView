@@ -1368,6 +1368,58 @@ namespace Type
                 return clone;
             }
 
+            Bool::Bool(bool value) : value(value)
+            {
+            }
+
+            void Bool::AdjustSourceStart(int32 offset)
+            {
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
+            }
+
+            void Bool::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+            }
+
+            Action Bool::Accept(Visitor& visitor, Node*& replacement)
+            {
+                return visitor.VisitBool(this, (Expr*&) replacement);
+            }
+
+            void Bool::AcceptConst(ConstVisitor& visitor)
+            {
+                visitor.VisitBool(this);
+            }
+
+            std::u16string Bool::GenSourceCode()
+            {
+                std::u16string str;
+                auto n = value;
+
+                do {
+                    str += '0' + (n % 10);
+                    n /= 10;
+                } while (n != 0);
+
+                std::reverse(str.begin(), str.end());
+
+                return str;
+            }
+
+            ConstType Bool::GetConstType()
+            {
+                return ConstType::Bool;
+            }
+
+            Bool* Bool::Clone()
+            {
+                auto clone = new Bool(value);
+
+                return clone;
+            }
+
             AST::String::String(u16string_view value) : value(value)
             {
             }
@@ -1475,6 +1527,9 @@ namespace Type
             void ConstVisitor::VisitString(const AST::String* node)
             {
             }
+            void ConstVisitor::VisitBool(const Bool* node)
+            {
+            }
 
             Action Visitor::VisitFunDecl(FunDecl* node, Decl*& replacement)
             {
@@ -1553,6 +1608,10 @@ namespace Type
                 return Action::None;
             }
             Action Visitor::VisitString(AST::String* node, Expr*& replacement)
+            {
+                return Action::None;
+            }
+            Action Visitor::VisitBool(Bool* node, Expr*& replacement)
             {
                 return Action::None;
             }
@@ -1637,6 +1696,10 @@ namespace Type
             {
                 return Action::None;
             }
+            Action Plugin::OnEnterBool(Bool* node, Expr*& replacement)
+            {
+                return Action::None;
+            }
 
             Action Plugin::OnExitFunDecl(FunDecl* node, Decl*& replacement)
             {
@@ -1715,6 +1778,10 @@ namespace Type
                 return Action::None;
             }
             Action Plugin::OnExitString(AST::String* node, Expr*& replacement)
+            {
+                return Action::None;
+            }
+            Action Plugin::OnExitBool(Bool* node, Expr*& replacement)
             {
                 return Action::None;
             }
@@ -3674,6 +3741,19 @@ namespace Type
                 action = plugin->OnExitString(node, replacement);
                 return action;
             }
+            Action PluginVisitor::VisitBool(Bool* node, Expr*& replacement)
+            {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterBool(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                action = plugin->OnExitBool(node, replacement);
+                return action;
+            }
 
             DumpVisitor::DumpVisitor(const char* file)
             {
@@ -3959,6 +4039,14 @@ namespace Type
                 DUMP("String");
 
                 file << ", \"value\": \"" << ToString(node->value).GetText();
+
+                file << "\"}";
+            }
+            void DumpVisitor::VisitBool(const Bool* node)
+            {
+                DUMP("Bool");
+
+                file << ", \"value\": \"" << (node->value ? "true" : "false");
 
                 file << "\"}";
             }
@@ -4844,6 +4932,15 @@ namespace Type
                     ADVANCE();
 
                     auto node = new String(u16string_view(str.data() + 1, str.size() - 2));
+                    node->SetSource(sourceStart, GetPrevious());
+
+                    return node;
+                }
+                case TokenType::Constant_True:
+                case TokenType::Constant_False: {
+                    ADVANCE();
+
+                    auto node = new Bool(type == TokenType::Constant_True);
                     node->SetSource(sourceStart, GetPrevious());
 
                     return node;
