@@ -325,8 +325,54 @@ class LoopUnroller : public AST::Plugin
     }
 };
 
+class UnrollLoopWindow : public AppCUI::Controls::Window
+{
+    const int BUTTON_ID_EXECUTE = 1;
+
+    Reference<NumericSelector> limit;
+  public:
+    UnrollLoopWindow() : Window("Unroll Loop", "d:c,w:30,h:8", WindowFlags::ProcessReturn)
+    {
+        Factory::Button::Create(this, "Execute", "x:10,y:4,w:11", BUTTON_ID_EXECUTE);
+
+        limit = Factory::NumericSelector::Create(this, 1, 50, 10, "x:5,y:2,w:19,h:5");
+        Factory::Label::Create(this, "Max Iterations", "x:5,y:1,w:20,h:5");
+    }
+
+    bool OnEvent(Reference<Control>, Event eventType, int controlID) override
+    {
+        if (eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+
+        if (eventType == Event::ButtonClicked) {
+            if (controlID == BUTTON_ID_EXECUTE) {
+                Exit(Dialogs::Result::Ok);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    uint32 GetLimit()
+    {
+        return limit->GetValue();
+    }
+};
+
 GView::View::LexicalViewer::PluginAfterActionRequest UnrollLoop::Execute(GView::View::LexicalViewer::PluginData& data)
 {
+    UnrollLoopWindow dlg;
+    auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());
+
+    if (result != Dialogs::Result::Ok) {
+        return PluginAfterActionRequest::None;
+    }
+
+    auto limit = dlg.GetLimit();
+
     AST::Instance i;
     i.Create(data.tokens);
 
@@ -343,7 +389,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest UnrollLoop::Execute(GView::
         return PluginAfterActionRequest::None;
     }
 
-    LoopUnroller unroller(start.value(), 15);
+    LoopUnroller unroller(start.value(), limit);
     AST::PluginVisitor visitor(&unroller, &data.editor);
 
     // TODO: instance should also handle the action for the script block

@@ -24,6 +24,7 @@ bool Emulate::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data)
 
 class Emulator : public AST::ConstVisitor
 {
+  public:
     struct Value {
         enum class Type { Undefined, Number, String } type;
 
@@ -35,11 +36,19 @@ class Emulator : public AST::ConstVisitor
         }
     };
 
+    private:
+
     std::vector<std::unordered_map<std::u16string_view, Value>> vars;
 
     Value lastResult;
 
+    uint32 limit;
+
   public:
+    Emulator(uint32 limit) : limit(limit)
+    {
+    }
+
     void VisitVarDeclList(const AST::VarDeclList* node)
     {
         for (auto decl : node->decls) {
@@ -84,6 +93,8 @@ class Emulator : public AST::ConstVisitor
     }
     void VisitWhileStmt(const AST::WhileStmt* node)
     {
+        uint32 it = 0;
+
         do {
             node->cond->AcceptConst(*this);
 
@@ -94,13 +105,17 @@ class Emulator : public AST::ConstVisitor
             } else {
                 break;
             }
-        } while (1);
+
+            ++it;
+        } while (it < limit);
     }
     void VisitForStmt(const AST::ForStmt* node)
     {
         if (node->decl) {
             node->decl->AcceptConst(*this);
         }
+
+        uint32 it = 0;
 
         do {
             if (node->cond) {
@@ -118,7 +133,9 @@ class Emulator : public AST::ConstVisitor
             if (node->inc) {
                 node->inc->AcceptConst(*this);
             }
-        } while (1);
+
+            ++it;
+        } while (it < limit);
     }
     void VisitReturnStmt(const AST::ReturnStmt* node)
     {
@@ -717,8 +734,74 @@ class Emulator : public AST::ConstVisitor
     }
 };
 
+class EmulateWindow : public AppCUI::Controls::Window
+{
+    const int BUTTON_ID_EXECUTE = 1;
+
+    Reference<NumericSelector> limit;
+    Reference<TextField> target;
+
+  public:
+    EmulateWindow() : Window("Emulate", "d:c,w:30,h:11", WindowFlags::ProcessReturn)
+    {
+        Factory::Button::Create(this, "Execute", "x:10,y:7,w:11", BUTTON_ID_EXECUTE);
+
+        limit = Factory::NumericSelector::Create(this, 1, 50, 10, "x:5,y:2,w:19,h:5");
+        Factory::Label::Create(this, "Max Iterations", "x:5,y:1,w:20,h:5");
+
+        target = Factory::TextField::Create(this, "", "x:5,y:5,w:19,h:1");
+        Factory::Label::Create(this, "Target Variable", "x:5,y:4,w:20,h:5");
+    }
+
+    bool OnEvent(Reference<Control>, Event eventType, int controlID) override
+    {
+        switch (eventType) {
+        case Event::WindowClose: {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        case Event::ButtonClicked: {
+            if (controlID == BUTTON_ID_EXECUTE) {
+                Exit(Dialogs::Result::Ok);
+                return true;
+            }
+            break;
+        }
+        case Event::WindowAccept: {
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        }
+
+        return false;
+    }
+
+    uint32 GetLimit()
+    {
+        return limit->GetValue();
+    }
+
+    std::u16string GetTarget()
+    {
+        std::u16string result;
+        target->GetText().ToString(result);
+
+        return result;
+    }
+};
+
 GView::View::LexicalViewer::PluginAfterActionRequest Emulate::Execute(GView::View::LexicalViewer::PluginData& data)
 {
+    EmulateWindow dlg;
+    auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());
+
+    if (result != Dialogs::Result::Ok) {
+        return PluginAfterActionRequest::None;
+    }
+
+    auto limit = dlg.GetLimit();
+    auto target = dlg.GetTarget();
+
     AST::Instance i;
     i.Create(data.tokens);
 
@@ -729,12 +812,46 @@ GView::View::LexicalViewer::PluginAfterActionRequest Emulate::Execute(GView::Vie
 
     // return PluginAfterActionRequest::None;
 
-    Emulator emulator;
+    Emulator emulator(limit);
 
     // TODO: instance should also handle the action for the script block
     i.script->AcceptConst(emulator);
 
-    auto val = emulator.GetVarValue(u"decoded");
+    auto val = emulator.GetVarValue(target);
+
+    std::u16string title = u"Value of ";
+    title += target;
+
+    std::u16string value;
+
+    switch (val.type) {
+    case Emulator::Value::Type::Undefined: {
+        value = u"undefined";
+        break;
+    }
+    case Emulator::Value::Type::String: {
+        value = std::get<std::u16string>(val.value);
+        break;
+    }
+    case Emulator::Value::Type::Number: {
+        auto n = std::get<int32>(val.value);
+
+        AppCUI::Utils::UnicodeStringBuilder builder;
+        AppCUI::Utils::NumericFormatter fmt;
+
+        builder.Add(fmt.ToDec(n));
+
+        builder.ToString(value);
+
+        break;
+    }
+    default: {
+        value = u"?";
+        break;
+    }
+    }
+
+    AppCUI::Dialogs::MessageBox::ShowNotification(title, value);
 
     {
         AST::DumpVisitor dump("_ast_after.json");
