@@ -22,8 +22,9 @@ AST::Action DummyCodeRemover::OnExitBlock(AST::Block* node, AST::Block*& replace
             } else {
                 // Function decl
                 dummy.push_back(var.second.node);
-                dummy.insert(dummy.end(), var.second.assignments.begin(), var.second.assignments.end());
             }
+
+            dummy.insert(dummy.end(), var.second.assignments.begin(), var.second.assignments.end());
         }
     }
 
@@ -66,8 +67,21 @@ AST::Action DummyCodeRemover::OnEnterIdentifier(AST::Identifier* node, AST::Expr
         return AST::Action::None;
     }
 
-    var->used = true;
-    var->assignments.clear();
+    if (inAssignment) {
+        inAssignment = false;
+    } else {
+        var->used = true;
+        var->assignments.clear();
+    }
+
+    return AST::Action::None;
+}
+
+AST::Action DummyCodeRemover::OnEnterBinop(AST::Binop* node, AST::Expr*& replacement)
+{
+    if (node->type >= TokenType::Operator_Assignment && node->type < TokenType::Operator_LogicNullishAssignment) {
+        inAssignment = true;
+    }
 
     return AST::Action::None;
 }
@@ -82,18 +96,20 @@ AST::Action DummyCodeRemover::OnExitBinop(AST::Binop* node, AST::Expr*& replacem
         return AST::Action::None;
     }
 
+    exprStmtHasSideEffects = true;
+
     auto var = GetVarValue(((AST::Identifier*) node->left)->name);
 
     if (var == nullptr) {
         return AST::Action::None;
     }
 
-    if (!var->assignments.empty()) {
+    if (!var->assignments.empty() && node->type == TokenType::Operator_Assignment) {
         dummy.insert(dummy.end(), var->assignments.begin(), var->assignments.end());
         var->assignments.clear();
     }
 
-    var->assignments.emplace_back(node->left);
+    var->assignments.emplace_back(node);
     return AST::Action::None;
 }
 

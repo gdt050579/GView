@@ -25,6 +25,7 @@ class ConstPropagator : public AST::Plugin
   private:
 
     bool inAssignment = false;
+    bool inFor        = false;
 
     std::vector<std::unordered_map<std::u16string_view, VarInfo>> vars;
     std::unordered_set<std::u16string_view> dirty;
@@ -36,6 +37,7 @@ class ConstPropagator : public AST::Plugin
     AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement);
     AST::Action OnEnterIfStmt(AST::IfStmt* node, AST::Stmt*& replacement);
     AST::Action OnExitIfStmt(AST::IfStmt* node, AST::Stmt*& replacement);
+    AST::Action OnEnterForStmt(AST::ForStmt* node, AST::Stmt*& replacement);
     AST::Action OnEnterBlock(AST::Block* node, AST::Block*& replacement);
     AST::Action OnExitBlock(AST::Block* node, AST::Block*& replacement);
     AST::Action OnEnterBinop(AST::Binop* node, AST::Expr*& replacement);

@@ -109,9 +109,9 @@ GView::View::LexicalViewer::PluginAfterActionRequest Simplify::Execute(GView::Vi
         }
     } while (dirty);
 
-    // At the end, rename and hoist
+    // At the end, hoist
 
-    {
+    /*{
         i.script->AdjustSourceOffset(0);
 
         Transformer::ContextAwareRenamer renamer;
@@ -124,7 +124,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest Simplify::Execute(GView::Vi
         visitor = AST::PluginVisitor(&lateRenamer, &data.editor);
 
         i.script->Accept(visitor, _rep);
-    }
+    }*/
 
     {
         i.script->AdjustSourceOffset(0);
@@ -149,7 +149,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest Simplify::Execute(GView::Vi
 
             // Already defined in global scope
             if (dest > fun->sourceStart) {
-                continue;
+                //continue;
             }
 
             // The destination can overlap with the source

@@ -20,7 +20,8 @@ class FunctionHoister : public AST::Plugin
         FunInfo() = default;
     };
 
-    std::unordered_map<AST::FunDecl*, FunInfo> funs;
+    // Order matters when hoisting
+    std::map<AST::FunDecl*, FunInfo> funs;
 
     AST::Action OnEnterFunDecl(AST::FunDecl* node, AST::Decl*& replacement);
     AST::Action OnEnterVarDecl(AST::VarDecl* node, AST::Decl*& replacement);

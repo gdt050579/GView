@@ -21,7 +21,13 @@ namespace GView::Type::JS::Transformer
         return (node->cond->GetExprType() == AST::ExprType::Constant);
     }
 
-    AST::Action DeadCodeRemover::OnEnterVarDeclList(AST::VarDeclList* node, AST::Decl*& replacemente)
+    AST::Action DeadCodeRemover::OnExitFunDecl(AST::FunDecl* node, AST::Decl*& replacement)
+    {
+        dead = false;
+        return AST::Action::None;
+    }
+
+    AST::Action DeadCodeRemover::OnEnterVarDeclList(AST::VarDeclList* node, AST::Decl*& replacement)
     {
         return CheckDead();
     }

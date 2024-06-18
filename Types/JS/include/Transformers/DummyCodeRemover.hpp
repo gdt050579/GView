@@ -16,6 +16,7 @@ class DummyCodeRemover : public AST::Plugin
     std::vector<std::unordered_map<std::u16string_view, VarInfo>> vars;
 
     bool exprStmtHasSideEffects = false;
+    bool inAssignment             = false;
     AST::VarDeclList* varDeclList = nullptr;
 
   public:
@@ -28,6 +29,7 @@ class DummyCodeRemover : public AST::Plugin
     AST::Action OnExitBlock(AST::Block* node, AST::Block*& replacement);
     AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement);
     AST::Action OnExitBinop(AST::Binop* node, AST::Expr*& replacement);
+    AST::Action OnEnterBinop(AST::Binop* node, AST::Expr*& replacement);
     AST::Action OnEnterExprStmt(AST::ExprStmt* node, AST::Stmt*& replacement);
     AST::Action OnExitExprStmt(AST::ExprStmt* node, AST::Stmt*& replacement);
     AST::Action OnEnterCall(AST::Call* node, AST::Expr*& replacement);

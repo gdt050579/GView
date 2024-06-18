@@ -28,6 +28,11 @@ ConstPropagator::VarInfo::~VarInfo()
 
 AST::Action ConstPropagator::OnEnterVarDecl(AST::VarDecl* node, AST::Decl*& replacement)
 {
+    if (inFor) {
+        inFor = false;
+        return AST::Action::None;
+    }
+
     if (node->init && node->init->GetExprType() == AST::ExprType::Constant) {
         auto& entry = vars[vars.size() - 1][node->name];
 
@@ -92,6 +97,12 @@ AST::Action ConstPropagator::OnExitIfStmt(AST::IfStmt* node, AST::Stmt*& replace
     return AST::Action::None;
 }
 
+AST::Action ConstPropagator::OnEnterForStmt(AST::ForStmt* node, AST::Stmt*& replacement)
+{
+    inFor = true;
+    return AST::Action::None;
+}
+
 AST::Action ConstPropagator::OnEnterBlock(AST::Block* node, AST::Block*& replacement)
 {
     vars.emplace_back();
@@ -114,8 +125,11 @@ AST::Action ConstPropagator::OnEnterBinop(AST::Binop* node, AST::Expr*& replacem
     return AST::Action::None;
 }
 
-AST::Action ConstPropagator::OnExitBinop(AST::Binop* node, AST::Expr*& replacement)
-{
+AST::Action ConstPropagator::OnExitBinop(AST::Binop* node, AST::Expr*& replacement) {
+    if (node->type < TokenType::Operator_Assignment || node->type >= TokenType::Operator_LogicNullishAssignment) {
+        return AST::Action::None;
+    }
+
     if (node->left->GetExprType() == AST::ExprType::Identifier) {
         auto leftName = ((AST::Identifier*) node->left)->name;
         auto scope    = GetVarScope(leftName);
@@ -128,6 +142,10 @@ AST::Action ConstPropagator::OnExitBinop(AST::Binop* node, AST::Expr*& replaceme
         auto right = (AST::Constant*) node->right;
 
         auto val = GetVarValue(leftName);
+
+        if (val == nullptr) {
+            return AST::Action::None;
+        }
 
         if (node->type == TokenType::Operator_Assignment) {
             switch (right->GetConstType()) {
@@ -234,8 +252,6 @@ AST::Action ConstPropagator::OnExitBinop(AST::Binop* node, AST::Expr*& replaceme
                 }
             }
             }
-        } else {
-            return AST::Action::None;
         }
 
         if (uncertainIf != nullptr) {

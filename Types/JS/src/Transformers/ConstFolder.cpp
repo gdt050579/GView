@@ -16,11 +16,13 @@ AST::Expr* EvalWindow(AST::Expr* member)
 {
     switch (member->GetExprType()) {
     case AST::ExprType::Identifier: {
-        return new AST::Identifier(((AST::Identifier*) member)->name);
+        //return new AST::Identifier(((AST::Identifier*) member)->name);
+        return nullptr;
     }
     case AST::ExprType::Constant: {
         if (((AST::Constant*) member)->GetConstType() == AST::ConstType::String) {
-            return new AST::Identifier(((AST::String*) member)->value);
+            auto val = ((AST::String*) member)->value;
+            return new AST::Identifier(val);
         }
         break;
     }

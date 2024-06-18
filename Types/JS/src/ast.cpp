@@ -1167,6 +1167,16 @@ namespace Type
                 expr->AdjustSourceOffset(offset);
             }
 
+            std::u16string Grouping::GenSourceCode()
+            {
+                std::u16string result;
+                result += u'(';
+                result += expr->GenSourceCode();
+                result += u')';
+
+                return result;
+            }
+
             Action Grouping::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitGrouping(this, (Expr*&) replacement);
@@ -2035,6 +2045,7 @@ namespace Type
                         continue;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, (*it)->sourceSize - size);
                         break;
                     }
@@ -2074,6 +2085,7 @@ namespace Type
                         break;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, node->block->sourceSize - size);
                         break;
                     }
@@ -2153,6 +2165,7 @@ namespace Type
                         continue;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, (*it)->sourceSize - size);
                         break;
                     }
@@ -2220,6 +2233,7 @@ namespace Type
                         break;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, node->init->sourceSize - size);
                         break;
                     }
@@ -2423,6 +2437,7 @@ namespace Type
                         break;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, node->stmtTrue->sourceSize - size);
 
                         if (node->stmtFalse) {
@@ -2465,6 +2480,7 @@ namespace Type
                         break;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, node->stmtFalse->sourceSize - size);
                         break;
                     }
@@ -2576,6 +2592,7 @@ namespace Type
                 case Action::_UpdateChild: {
                     AdjustSize(node, node->stmt->sourceSize - size);
 
+                    dirty = true;
                     break;
                 }
                 default: {
@@ -2694,6 +2711,7 @@ namespace Type
                     case Action::_UpdateChild: {
                         AdjustSize(node, node->cond->sourceSize - size);
 
+                        dirty = true;
                         break;
                     }
                     default: {
@@ -2741,6 +2759,7 @@ namespace Type
                     case Action::_UpdateChild: {
                         AdjustSize(node, node->inc->sourceSize - size);
 
+                        dirty = true;
                         break;
                     }
                     default: {
@@ -2782,6 +2801,7 @@ namespace Type
                         break;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, node->stmt->sourceSize - size);
                         break;
                     }
@@ -2849,6 +2869,7 @@ namespace Type
                         break;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, node->expr->sourceSize - size);
                         break;
                     }
@@ -2907,17 +2928,19 @@ namespace Type
                     break;
                 }
                 case Action::Remove: {
-                    RemoveNode(node, node->expr);
+                    return AST::Action::Remove;
+                    //RemoveNode(node, node->expr);
 
-                    node->expr = nullptr;
+                    //node->expr = nullptr;
 
-                    // Update the parent start offset
-                    node->AdjustSourceStart(tokenOffset);
+                    //// Update the parent start offset
+                    //node->AdjustSourceStart(tokenOffset);
 
-                    dirty = true;
-                    break;
+                    //dirty = true;
+                    //break;
                 }
                 case Action::_UpdateChild: {
+                    dirty = true;
                     AdjustSize(node, node->expr->sourceSize - size);
                     break;
                 }
@@ -2994,6 +3017,7 @@ namespace Type
                     return Action::Remove;
                 }
                 case Action::_UpdateChild: {
+                    dirty = true;
                     AdjustSize(node, node->expr->sourceSize - size);
                     break;
                 }
@@ -3161,6 +3185,7 @@ namespace Type
                     return Action::Remove;
                 }
                 case Action::_UpdateChild: {
+                    dirty = true;
                     AdjustSize(node, node->cond->sourceSize - size);
                     break;
                 }
@@ -3206,6 +3231,7 @@ namespace Type
                     return Action::Remove;
                 }
                 case Action::_UpdateChild: {
+                    dirty = true;
                     AdjustSize(node, node->exprTrue->sourceSize - size);
                     break;
                 }
@@ -3247,6 +3273,7 @@ namespace Type
                     return Action::Remove;
                 }
                 case Action::_UpdateChild: {
+                    dirty = true;
                     AdjustSize(node, node->exprFalse->sourceSize - size);
                     break;
                 }
@@ -3427,6 +3454,7 @@ namespace Type
                         continue;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, (*it)->sourceSize - size);
                         break;
                     }
@@ -3466,6 +3494,7 @@ namespace Type
                     break;
                 }
                 case Action::_UpdateChild: {
+                    dirty = true;
                     AdjustSize(node, node->body->sourceSize - size);
                     break;
                 }
@@ -3530,6 +3559,7 @@ namespace Type
                     return Action::Remove;
                 }
                 case Action::_UpdateChild: {
+                    dirty = true;
                     AdjustSize(node, node->expr->sourceSize - size);
                     break;
                 }
@@ -3603,6 +3633,7 @@ namespace Type
                         break;
                     }
                     case Action::_UpdateChild: {
+                        dirty = true;
                         AdjustSize(node, (*it)->sourceSize - size);
                         break;
                     }

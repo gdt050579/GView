@@ -100,7 +100,7 @@ class LoopUnroller : public AST::Plugin
 
     AST::Action OnEnterForStmt(AST::ForStmt* node, AST::Stmt*& replacement)
     {
-        if (node->sourceOffset != offset) {
+        if (node->sourceStart != offset) {
             return AST::Action::None;
         }
 
