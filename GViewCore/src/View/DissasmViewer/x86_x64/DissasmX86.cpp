@@ -1026,6 +1026,11 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     Cursor.hasMovedView  = true;
 }
 
+void Instance::EditDissasmCodeZoneCommand()
+{
+    AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet !");
+}
+
 void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation)
 {
     if (operation == CollapsibleZoneOperation::Add && !selection.HasSelection(0)) {

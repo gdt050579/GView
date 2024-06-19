@@ -609,6 +609,8 @@ namespace View
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
+            void EditDissasmCodeZoneCommand();
+
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
             virtual ~Instance() override;
