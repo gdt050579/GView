@@ -12,6 +12,7 @@ constexpr uint32 COMMAND_DISSAM_GOTO_ENTRYPOINT = 105;
 constexpr uint32 COMMAND_ADD_OR_EDIT_COMMENT    = 106;
 constexpr uint32 COMMAND_REMOVE_COMMENT         = 107;
 constexpr uint32 COMMAND_AVAILABLE_KEYS         = 108;
+constexpr uint32 COMMAND_SHOW_ONLY_DISSASM      = 109;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -27,23 +28,38 @@ constexpr int32 RIGHT_CLICK_CLEAR_SELECTION              = 7;
 constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE        = 8;
 constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE          = 9;
 
-static struct {
+struct RightClickCommand {
     int commandID;
     std::string_view text;
     // Input::Key shortcutKey = Input::Key::None;
     AppCUI::Controls::ItemHandle handle = AppCUI::Controls::InvalidItemHandle;
-} RIGHT_CLICK_MENU_COMMANDS[] = {
+};
+
+inline RightClickCommand RIGHT_CLICK_MENU_COMMANDS[] = {
     /*{ RIGHT_CLICK_MENU_CMD_NEW_STRUCTURE, "New structure" },
     { RIGHT_CLICK_MENU_CMD_EDIT_STRUCTURE, "Edit structure" },
     { RIGHT_CLICK_MENU_CMD_DELETE_STRUCTURE, "Delete structure" },*/
-    { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
-    { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
-    { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
-    { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" },
-    { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
-    { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
     { RIGHT_CLICK_CLEAR_SELECTION, "Clear selections" },
 };
+
+struct RightClickSubMenus {
+    const char* name;
+    std::vector<RightClickCommand> commands;
+    AppCUI::Controls::ItemHandle handle;
+};
+
+inline RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = { { "CollapsibleZone",
+                                                             {
+                                                                   { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
+                                                                   { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
+                                                                   { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
+                                                                   { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" },
+                                                             } },
+                                                           { "Comment",
+                                                             {
+                                                                   { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
+                                                                   { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
+                                                             } } };
 
 namespace GView
 {
@@ -53,31 +69,45 @@ namespace View
     {
         using namespace AppCUI;
 
+        struct DissasmColors {
+            Graphics::ColorPair Normal;
+            Graphics::ColorPair Highlight;
+            Graphics::ColorPair HighlightCursorLine;
+            Graphics::ColorPair Inactive;
+            Graphics::ColorPair Cursor;
+            Graphics::ColorPair Line;
+            Graphics::ColorPair Selection;
+            Graphics::ColorPair OutsideZone;
+            Graphics::ColorPair StructureColor;
+            Graphics::ColorPair DataTypeColor;
+            Graphics::ColorPair AsmOffsetColor;                // 0x something
+            Graphics::ColorPair AsmIrrelevantInstructionColor; // int3
+            Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
+            Graphics::ColorPair AsmStackRegisterColor;         // ebp, edi, esi
+            Graphics::ColorPair AsmCompareInstructionColor;    // test, cmp
+            Graphics::ColorPair AsmFunctionColor;              // ret call
+            Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
+            Graphics::ColorPair AsmJumpInstruction;            // jmp
+            Graphics::ColorPair AsmComment;                    // comments added by user
+            Graphics::ColorPair AsmDefaultColor;               // rest of things
+            Graphics::ColorPair AsmTitleColor;
+            Graphics::ColorPair AsmTitleColumnColor;
+
+            Graphics::ColorPair CursorNormal, CursorLine, CursorHighlighted;
+        };
+
+        struct ColorManager {
+            DissasmColors Colors;
+            DissasmColors SavedColors;
+
+            void InitFromConfigColors(DissasmColors& configColors);
+            void OnLostFocus();
+            void SetAllColorsInactive();
+            void OnGainedFocus();
+        };
+
         struct Config {
-            struct {
-                Graphics::ColorPair Normal;
-                Graphics::ColorPair Highlight;
-                Graphics::ColorPair HighlightCursorLine;
-                Graphics::ColorPair Inactive;
-                Graphics::ColorPair Cursor;
-                Graphics::ColorPair Line;
-                Graphics::ColorPair Selection;
-                Graphics::ColorPair OutsideZone;
-                Graphics::ColorPair StructureColor;
-                Graphics::ColorPair DataTypeColor;
-                Graphics::ColorPair AsmOffsetColor;                // 0xsomthing
-                Graphics::ColorPair AsmIrrelevantInstructionColor; // int3
-                Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
-                Graphics::ColorPair AsmStackRegisterColor;         // ebp, edi, esi
-                Graphics::ColorPair AsmCompareInstructionColor;    // test, cmp
-                Graphics::ColorPair AsmFunctionColor;              // ret call
-                Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
-                Graphics::ColorPair AsmJumpInstruction;            // jmp
-                Graphics::ColorPair AsmComment;                    // comments added by user
-                Graphics::ColorPair AsmDefaultColor;               // rest of things
-                Graphics::ColorPair AsmTitleColor;
-                Graphics::ColorPair AsmTitleColumnColor;
-            } Colors;
+            DissasmColors ConfigColors;
 
             struct DissasmCommand {
                 Input::Key Key;
@@ -86,11 +116,15 @@ namespace View
                 uint32 CommandId;
             };
 
-            // Command Bar keys
-            inline static DissasmCommand AddNewTypeCommand            = { Input::Key::F6, "AddNewType", "Add new data type", COMMAND_ADD_NEW_TYPE };
-            inline static DissasmCommand ShowOrHideFileContentCommand = {
-                Input::Key::F9, "ShowOrHideFileContent", "Show or hide file content", COMMAND_ADD_SHOW_FILE_CONTENT
+            // TODO: reenable when the functionality is implemented
+            //  Command Bar keys
+            // inline static DissasmCommand AddNewTypeCommand            = { Input::Key::F6, "AddNewType", "Add new data type", COMMAND_ADD_NEW_TYPE };
+            inline static DissasmCommand ShowOnlyDissasmCommand = {
+                Input::Key::F7, "ShowOnlyDissasm", "Show only the dissasm code", COMMAND_SHOW_ONLY_DISSASM
             };
+            // inline static DissasmCommand ShowOrHideFileContentCommand = {
+            //     Input::Key::F9, "ShowOrHideFileContent", "Show or hide file content", COMMAND_ADD_SHOW_FILE_CONTENT
+            // };
             inline static DissasmCommand AsmExportFileContentCommand = {
                 Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
             };
@@ -103,9 +137,13 @@ namespace View
             };
             inline static DissasmCommand ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 7> CommandBarCommands = {
-                AddNewTypeCommand,  ShowOrHideFileContentCommand, AsmExportFileContentCommand, JumpBackCommand,
-                JumpForwardCommand, GotoEntrypointCommand,        ShowKeysWindowCommand
+            inline static std::array<std::reference_wrapper<DissasmCommand>, 6> CommandBarCommands = {
+                /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
+                AsmExportFileContentCommand,
+                JumpBackCommand,
+                JumpForwardCommand,
+                GotoEntrypointCommand,
+                ShowKeysWindowCommand
             };
 
             // Other keys
@@ -117,13 +155,20 @@ namespace View
                                                                                                     RemoveCommentCommand,
                                                                                                     RenameLabelCommand };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 9> AllKeyboardCommands = {
-                AddNewTypeCommand,     ShowOrHideFileContentCommand, AsmExportFileContentCommand, JumpBackCommand,      JumpForwardCommand,
-                GotoEntrypointCommand, AddOrEditCommentCommand,      RemoveCommentCommand,        ShowKeysWindowCommand
+            inline static std::array<std::reference_wrapper<DissasmCommand>, 8> AllKeyboardCommands = {
+                /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
+                /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
+                JumpBackCommand,
+                JumpForwardCommand,
+                GotoEntrypointCommand,
+                AddOrEditCommentCommand,
+                RemoveCommentCommand,
+                ShowKeysWindowCommand
             };
             bool Loaded;
 
             bool ShowFileContent;
+            bool ShowOnlyDissasm;
             bool EnableDeepScanDissasmOnStart;
             static void Update(AppCUI::Utils::IniSection sect);
             void Initialize();

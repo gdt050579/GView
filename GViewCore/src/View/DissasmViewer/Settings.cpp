@@ -13,11 +13,15 @@ Settings::Settings()
 
 void Settings::SetDefaultDisassemblyLanguage(DisassemblyLanguage lang)
 {
+    if (lang == DisassemblyLanguage::Default || lang == DisassemblyLanguage::Count)
+        lang = DisassemblyLanguage::x86;
     INTERNAL_SETTINGS->defaultLanguage = lang;
 }
 
 void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang)
 {
+    if (lang == DisassemblyLanguage::Default || lang == DisassemblyLanguage::Count)
+        lang = INTERNAL_SETTINGS->defaultLanguage;
     INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang };
 }
 
@@ -47,8 +51,7 @@ void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, Varia
 void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
 {
     auto res = INTERNAL_SETTINGS->userDesignedTypes.find(type);
-    if (res == INTERNAL_SETTINGS->userDesignedTypes.end())
-    {
+    if (res == INTERNAL_SETTINGS->userDesignedTypes.end()) {
         // err;
         return;
     }

@@ -69,7 +69,7 @@ namespace View
             uint32 GetExpandedSize() const;
         };
 
-        enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone, JavaBytecodeZone };
+        enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone };
 
         struct ParseZone {
             uint32 startLineIndex;
@@ -100,13 +100,6 @@ namespace View
 
         struct CollapsibleAndTextZone : public ParseZone {
             CollapsibleAndTextData data;
-        };
-
-        // JClass code
-        struct JavaBytecodeZone : public ParseZone {
-            DisassemblyZone zoneDetails;
-            bool isInit;
-            std::vector<std::string> bytecodeLines;
         };
 
         struct AsmOffsetLine {
@@ -153,6 +146,7 @@ namespace View
             uint8 flags;
             uint8 lineArrowToDraw;
             const void* mapping;
+            const DissasmCodeInternalType* parent;
 
             bool shouldAddButton;
             bool isZoneCollapsed;
@@ -177,6 +171,7 @@ namespace View
                 mapping         = other.mapping;
                 memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                parent          = other.parent;
                 shouldAddButton = other.shouldAddButton;
                 isZoneCollapsed = false;
             }
@@ -192,6 +187,7 @@ namespace View
                 mapping         = other.mapping;
                 memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                parent          = other.parent;
                 shouldAddButton = other.shouldAddButton;
                 isZoneCollapsed = false;
             }
@@ -282,8 +278,9 @@ namespace View
                 index = 0;
             }
 
-            DissasmAsmPreCacheData() : index(0), maxLineSize(0)
+            DissasmAsmPreCacheData(size_t initial_size = 128) : index(0), maxLineSize(0)
             {
+                cachedAsmLines.reserve(initial_size);
             }
             ~DissasmAsmPreCacheData()
             {
@@ -380,6 +377,7 @@ namespace View
             BufferView lastData;
             uint32 lastReachedLine = -1u;
 
+            //fields only for dissasmx86/x64
             const uint8* asmData;
             uint64 asmSize, asmAddress;
 
@@ -415,7 +413,7 @@ namespace View
             bool TryRenameLine(uint32 line);
 
             bool GetComment(uint32 line, std::string& comment);
-            bool AddOrUpdateComment(uint32 line, const std::string& comment,bool showErr = true);
+            bool AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr = true);
             bool RemoveComment(uint32 line, bool showErr = true);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
@@ -458,7 +456,7 @@ namespace View
         };
 
         struct AsmData {
-            std::map<uint32, ColorPair> instructionToColor;
+            std::map<uint32, std::reference_wrapper<ColorPair>> instructionToColor;
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
             std::deque<DissasmCodeZone*> zonesToClear;
         };
@@ -564,11 +562,8 @@ namespace View
                 bool hasMovedView;
             } Cursor;
 
-            struct {
-                ColorPair Normal, Line, Highlighted;
-            } CursorColors;
-
             LayoutDissasm Layout;
+            ColorManager ColorMan;
 
             struct {
                 // uint8 buffer[256];
@@ -617,9 +612,9 @@ namespace View
             bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
-            bool DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone);
             bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
+            bool DrawDissasmJavaByteCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
             void RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet = false);
@@ -694,6 +689,9 @@ namespace View
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
+
+            void OnFocus() override;
+            void OnLoseFocus() override;
 
             friend DissasmTestInstance;
         }; // Instance

@@ -487,6 +487,7 @@ namespace App
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
+        std::filesystem::path lastOpenedFolderLocation;
         struct
         {
             AppCUI::Input::Key changeViews;
@@ -501,6 +502,7 @@ namespace App
         void OpenFile();
         void OpenFolder();
         void ShowErrors();
+        void ShowTutorial();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,

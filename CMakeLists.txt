@@ -65,13 +65,20 @@ if(NOT DEFINED GVIEW_BINARIES_OUT_DIR)
     set(GVIEW_BINARIES_OUT_DIR "${CMAKE_SOURCE_DIR}/bin/${CMAKE_BUILD_TYPE}")
 endif()
 
-string(TOUPPER ${CMAKE_BUILD_TYPE} UPPER_BUILD_TYPE)
 if (NOT MSVC)
 	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${GVIEW_BINARIES_OUT_DIR})
 	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${GVIEW_BINARIES_OUT_DIR})
 endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${GVIEW_BINARIES_OUT_DIR})
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${UPPER_BUILD_TYPE} "${GVIEW_BINARIES_OUT_DIR}")
+
+foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+    if (NOT MSVC)
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${GVIEW_BINARIES_OUT_DIR})
+        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${GVIEW_BINARIES_OUT_DIR})
+    endif()
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${GVIEW_BINARIES_OUT_DIR} )
+endforeach()
 
 if (MSVC)
     add_definitions(-DBUILD_FOR_WINDOWS)
@@ -155,13 +162,14 @@ endif()
 
 if (APPLE)
     if (CMAKE_GENERATOR STREQUAL "Xcode")
-        set_target_properties(${PROJECT_NAME} PROPERTIES
-            ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
-            LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
-            RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
-            ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
-            LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
-            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
+        foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+            string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+            set_target_properties(${PROJECT_NAME} PROPERTIES
+                ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+                LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+                RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            )
+        endforeach()
     endif()
 endif()
 
@@ -189,17 +197,18 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/ZIP)
     add_subdirectory(Types/SQLite)
     add_subdirectory(Types/JCLASS)
-
+    add_subdirectory(Types/EML)
 
     # Generic plugins supported by GView
     add_subdirectory(GenericPlugins/CharacterTable)
     add_subdirectory(GenericPlugins/Hashes)
     add_subdirectory(GenericPlugins/SyncCompare)
     add_subdirectory(GenericPlugins/DropperStrings)
-
+    add_subdirectory(GenericPlugins/Unpackers)
+                                                                    
     if (APPLE)
-        set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
+            set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
     elseif (UNIX)
-	    set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "$ORIGIN")
+        set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "$ORIGIN")
     endif()
 endif()
