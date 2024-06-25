@@ -22,6 +22,7 @@ class DummyCodeRemover : public AST::Plugin
   public:
     std::vector<AST::Node*> dummy;
 
+    AST::Action OnEnterForStmt(AST::ForStmt* node, AST::Stmt*& replacement);
     AST::Action OnEnterVarDeclList(AST::VarDeclList* node, AST::Decl*& replacement);
     AST::Action OnEnterVarDecl(AST::VarDecl* node, AST::Decl*& replacement);
     AST::Action OnEnterFunDecl(AST::FunDecl* node, AST::Decl*& replacement);

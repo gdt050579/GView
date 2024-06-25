@@ -134,9 +134,15 @@ AST::Action ConstPropagator::OnExitBinop(AST::Binop* node, AST::Expr*& replaceme
         auto leftName = ((AST::Identifier*) node->left)->name;
         auto scope    = GetVarScope(leftName);
 
+        if (scope == nullptr) {
+            return AST::Action::None;
+        }
+
         if (node->right->GetExprType() != AST::ExprType::Constant) {
             (*scope)[leftName].dirty = true;
             return AST::Action::None;
+        } else {
+            (*scope)[leftName].dirty = false;
         }
 
         auto right = (AST::Constant*) node->right;

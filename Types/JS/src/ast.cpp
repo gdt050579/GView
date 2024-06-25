@@ -765,6 +765,21 @@ namespace Type
                 expr->AdjustSourceOffset(offset);
             }
 
+            std::u16string Unop::GenSourceCode()
+            {
+                std::u16string result;
+
+                switch (type) {
+                case TokenType::Operator_LogicalNOT: {
+                    result += u'!';
+                    break;
+                }
+                }
+
+                result += expr->GenSourceCode();
+                return result;
+            }
+
             Action Unop::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitUnop(this, (Expr*&) replacement);
@@ -2907,46 +2922,48 @@ namespace Type
 
                 auto dirty = false;
 
-                auto size = node->expr->sourceSize;
+                if (node->expr) {
+                    auto size = node->expr->sourceSize;
 
-                Node* rep;
-                action = node->expr->Accept(*this, rep);
+                    Node* rep;
+                    action = node->expr->Accept(*this, rep);
 
-                switch (action) {
-                case Action::Update: {
-                    UpdateNode(node, node->expr);
+                    switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->expr);
 
-                    dirty = true;
-                    break;
-                }
-                case Action::Replace:
-                case Action::Replace_Revisit: {
-                    ReplaceNode(node, node->expr, size, rep);
-                    node->expr = (Expr*) rep;
+                        dirty = true;
+                        break;
+                    }
+                    case Action::Replace:
+                    case Action::Replace_Revisit: {
+                        ReplaceNode(node, node->expr, size, rep);
+                        node->expr = (Expr*) rep;
 
-                    dirty = true;
-                    break;
-                }
-                case Action::Remove: {
-                    return AST::Action::Remove;
-                    //RemoveNode(node, node->expr);
+                        dirty = true;
+                        break;
+                    }
+                    case Action::Remove: {
+                        return AST::Action::Remove;
+                        // RemoveNode(node, node->expr);
 
-                    //node->expr = nullptr;
+                        // node->expr = nullptr;
 
-                    //// Update the parent start offset
-                    //node->AdjustSourceStart(tokenOffset);
+                        //// Update the parent start offset
+                        // node->AdjustSourceStart(tokenOffset);
 
-                    //dirty = true;
-                    //break;
-                }
-                case Action::_UpdateChild: {
-                    dirty = true;
-                    AdjustSize(node, node->expr->sourceSize - size);
-                    break;
-                }
-                default: {
-                    break;
-                }
+                        // dirty = true;
+                        // break;
+                    }
+                    case Action::_UpdateChild: {
+                        dirty = true;
+                        AdjustSize(node, node->expr->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
                 }
 
                 action = plugin->OnExitExprStmt(node, replacement);

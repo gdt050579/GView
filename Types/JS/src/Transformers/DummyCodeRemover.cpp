@@ -32,6 +32,19 @@ AST::Action DummyCodeRemover::OnExitBlock(AST::Block* node, AST::Block*& replace
     return AST::Action::None;
 }
 
+AST::Action DummyCodeRemover::OnEnterForStmt(AST::ForStmt* node, AST::Stmt*& replacement)
+{
+    if (node->stmt->GetStmtType() == AST::StmtType::Block) {
+        auto block = (AST::Block*) node->stmt;
+
+        if (block->decls.empty()) {
+            return AST::Action::Remove;
+        }
+    }
+
+    return AST::Action::None;
+}
+
 AST::Action DummyCodeRemover::OnEnterVarDeclList(AST::VarDeclList* node, AST::Decl*& replacement)
 {
     varDeclList = node;

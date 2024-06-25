@@ -41,6 +41,7 @@ extern "C"
         settings.AddPlugin(&js->plugins.hoistFunctions);
         settings.AddPlugin(&js->plugins.removeComments);
         settings.AddPlugin(&js->plugins.markAlwaysTrue);
+        settings.AddPlugin(&js->plugins.markAlwaysFalse);
         settings.AddPlugin(&js->plugins.unrollLoop);
         settings.AddPlugin(&js->plugins.dumpAST);
         settings.AddPlugin(&js->plugins.addStrings);

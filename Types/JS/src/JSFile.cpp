@@ -444,7 +444,7 @@ namespace CharType
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Space,     Operator,       String,
-                               Preprocess, Invalid,  Operator,   Operator,   String,    ExpressionOpen, ExpressionClose,
+                               Preprocess, Word,     Operator,   Operator,   String,    ExpressionOpen, ExpressionClose,
                                Operator,   Operator, Comma,      Operator,   Operator,  Operator,       Number,
                                Number,     Number,   Number,     Number,     Number,    Number,         Number,
                                Number,     Number,   Operator,   Semicolumn, Operator,  Operator,       Operator,
