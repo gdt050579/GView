@@ -47,7 +47,7 @@ Color Plugin::ShannonEntropyValueToColor(int32 value)
 
 Color Plugin::ShannonEntropyDataTypeValueToColor(double value, double epsilon)
 {
-    if (value >= 8.0 - epsilon && value < 8.0 - epsilon) {
+    if (value >= 8.0 - epsilon && value < 8.0 ) {
         return Color::Green;
     }
 
@@ -72,16 +72,7 @@ Color Plugin::ShannonEntropyDataTypeValueToColorName(std::string_view name)
 
 double Plugin::ComputeEpsilon(size_t sample_size)
 {
-    if (sample_size < (1024ULL * 1024)) {
-        return 0.001;
-    }
-    if (sample_size < (1024ULL * 1024 * 64)) {
-        return 0.0001;
-    }
-    if (sample_size < (1024ULL * 1024 * 512)) {
-        return 0.00001;
-    }
-    return 0.000001;
+    return 2.0 - (std::log2(sample_size) - 2.0) / 10;
 }
 
 Color Plugin::EmbeddedObjectValueToColor(std::string_view name)
@@ -152,7 +143,7 @@ bool Plugin::DrawShannonEntropy(bool dataType)
 
     auto& cache              = object->GetData();
     const auto size          = cache.GetSize();
-    const auto epsilon       = ComputeEpsilon(size);
+    const auto epsilon       = ComputeEpsilon(this->blockSize);
     const uint32 blocksCount = static_cast<uint32>(size / this->blockSize + 1);
 
     uint32 x         = 0;
