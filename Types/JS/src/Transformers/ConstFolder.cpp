@@ -1,4 +1,5 @@
 #include "Transformers/ConstFolder.hpp"
+#include <cmath>
 
 namespace GView::Type::JS::Transformer
 {

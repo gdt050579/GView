@@ -1,4 +1,5 @@
 #include "Transformers/ConstPropagator.hpp"
+#include <cmath>
 
 namespace GView::Type::JS::Transformer
 {
