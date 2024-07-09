@@ -448,6 +448,7 @@ namespace View
             void LowerCase(TextEditor& editor, uint32 start, uint32 end);
             void RemoveUnnecesaryWhiteSpaces(TextEditor& editor, uint32 start, uint32 end);
             void UnescapedCharacters(TextEditor& editor, uint32 start, uint32 end);
+            void EscapeNonAsciiCharacters(TextEditor& editor, uint32 start, uint32 end);
         }
         class StringOpDialog : public Window
         {

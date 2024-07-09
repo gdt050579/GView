@@ -1,6 +1,6 @@
 #include "js.hpp"
 #include "ast.hpp"
-#include "Transformers/ConstPropagator.hpp"
+#include "Transformers/FunctionInliner.hpp"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -11,20 +11,20 @@ namespace GView::Type::JS::Plugins
 {
 using namespace GView::View::LexicalViewer;
 
-std::string_view ConstPropagation::GetName()
+std::string_view InlineFunctions::GetName()
 {
-    return "Constant Propagation";
+    return "Inline Functions";
 }
-std::string_view ConstPropagation::GetDescription()
+std::string_view InlineFunctions::GetDescription()
 {
-    return "Propagate constants.";
+    return "Inline functions.";
 }
-bool ConstPropagation::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data)
+bool InlineFunctions::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data)
 {
     return true;
 }
 
-GView::View::LexicalViewer::PluginAfterActionRequest ConstPropagation::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest InlineFunctions::Execute(GView::View::LexicalViewer::PluginData& data)
 {
     AST::Instance i;
     i.Create(data.tokens);
@@ -34,11 +34,11 @@ GView::View::LexicalViewer::PluginAfterActionRequest ConstPropagation::Execute(G
         i.script->AcceptConst(dump);
     }
 
-    Transformer::ConstPropagator propagator;
+    Transformer::FunctionInliner inliner;
 
     // return PluginAfterActionRequest::None;
 
-    AST::PluginVisitor visitor(&propagator, &data.editor);
+    AST::PluginVisitor visitor(&inliner, &data.editor);
 
     AST::Node* _rep;
     i.script->Accept(visitor, _rep);

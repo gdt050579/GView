@@ -444,7 +444,7 @@ namespace CharType
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Space,     Operator,       String,
-                               Preprocess, Invalid,  Operator,   Operator,   String,    ExpressionOpen, ExpressionClose,
+                               Preprocess, Word,     Operator,   Operator,   String,    ExpressionOpen, ExpressionClose,
                                Operator,   Operator, Comma,      Operator,   Operator,  Operator,       Number,
                                Number,     Number,   Number,     Number,     Number,    Number,         Number,
                                Number,     Number,   Operator,   Semicolumn, Operator,  Operator,       Operator,
@@ -564,13 +564,13 @@ int32 JSFile::ParseRegEx(const GView::View::LexicalViewer::TextParser& text, Tok
     while (pos < text.Len())
     {
         pos++;
-        auto ch = text[pos];
+        auto ch        = text[pos];
         auto previewCh = text[pos - 1];
         if (ch == '/' && previewCh != '\\')
         {
             return pos + 1;
-		}   
-	}
+        }
+    }
     return -1;
 }
 uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -590,8 +590,14 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
             break;
         case TokenType::Operator_Assignment:
         case TokenType::Operator_PlusAssignment:
+        case TokenType::Operator_MinusAssignment:
+        case TokenType::Operator_DivisionAssignment:
+        case TokenType::Operator_MupliplyAssignment:
+        case TokenType::Operator_ModuloAssignment:
+        {
             align = TokenAlignament::SameColumn | TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
             break;
+        }
         case TokenType::Operator_Minus:
             next2 = text.ParseSpace(pos + 1);
             if (CharType::GetCharType(text[next2]) == CharType::Number)
@@ -616,9 +622,10 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
             if (next2 != -1)
             {
                 align = align | TokenAlignament::WrapToNextLine;
-                tokenList.Add(TokenType::RegEx, pos, next2, TokenColor::String, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
-				return next2;
-			}
+                tokenList.Add(
+                      TokenType::RegEx, pos, next2, TokenColor::String, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
+                return next2;
+            }
             break;
         }
             /*
