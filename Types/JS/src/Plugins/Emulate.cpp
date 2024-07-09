@@ -3,6 +3,7 @@
 
 #include <stack>
 #include <variant>
+#include <cmath>
 
 namespace GView::Type::JS::Plugins
 {
