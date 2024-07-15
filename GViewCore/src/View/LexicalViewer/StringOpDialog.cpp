@@ -20,7 +20,8 @@ struct
              { "&UpperCase", StringOperationsPlugins::UpperCase },
              { "&LowerCase", StringOperationsPlugins::LowerCase },
              { "Remove extra &white spaces", StringOperationsPlugins::RemoveUnnecesaryWhiteSpaces },
-             { "Un&escape characters", StringOperationsPlugins::UnescapedCharacters } };
+             { "Un&escape characters", StringOperationsPlugins::UnescapedCharacters },
+             { "Esc&ape non-ASCII Characters", StringOperationsPlugins::EscapeNonAsciiCharacters } };
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
     : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn | WindowFlags::Menu), tok(_tok), parser(_parser),
