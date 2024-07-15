@@ -44,10 +44,10 @@ class Instance
 
     inline static struct Context {
         std::vector<std::unique_ptr<IDrop>> objectDroppers;
-        std::unique_ptr<IDrop> textDropper{ nullptr };
-        bool initialized{ false };
+        std::unique_ptr<IDrop> textDropper;
+        bool initialized;
 
-        bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE]{};
+        bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE];
 
         GView::Utils::ZonesList zones;
         std::vector<Finding> findings;
@@ -55,7 +55,14 @@ class Instance
 
         std::set<std::filesystem::path> objectPaths;
 
-        bool stringsCharSetMatrix[STRINGS_CHARSET_MATRIX_SIZE]{};
+        bool stringsCharSetMatrix[STRINGS_CHARSET_MATRIX_SIZE];
+
+        Context() {
+          textDropper = nullptr;
+          initialized = false;
+          memset(binaryCharSetMatrix, 0, BINARY_CHARSET_MATRIX_SIZE);
+          memset(stringsCharSetMatrix, 0, STRINGS_CHARSET_MATRIX_SIZE);
+        }
     } context;
 
     uint64 objectId{ 0 };

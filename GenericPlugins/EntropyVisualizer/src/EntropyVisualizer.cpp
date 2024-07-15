@@ -15,7 +15,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["command.EntropyVisualizer"] = Input::Key::Ctrl | Input::Key::F10;
+    sect["command.EntropyVisualizer"] = Input::Key::F12;
 }
 }
 
@@ -70,7 +70,7 @@ Color Plugin::ShannonEntropyDataTypeValueToColorName(std::string_view name)
     return Color::Black;
 }
 
-double Plugin::ComputeEpsilon(size_t sample_size)
+double Plugin::ComputeEpsilon(uint64 sample_size)
 {
     return 2.0 - (std::log2(sample_size) - 2.0) / 10;
 }
