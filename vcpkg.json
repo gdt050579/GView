@@ -4,7 +4,8 @@
   "dependencies": [
     {
       "name": "ncurses",
-      "platform": "linux | osx"
+      "platform": "linux | osx",
+      "features": ["wide-characters"]
     },
     {
       "name": "libiconv",
@@ -63,5 +64,8 @@
       "name": "re2",
       "platform": "windows | linux | osx"
     }
-  ]
+  ],
+  "vcpkg-configuration": {
+    "overlay-ports": [ "./AppCUI/vcpkg-ports/ncurses"]
+  }
 }
