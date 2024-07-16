@@ -1,5 +1,7 @@
 #include "Internal.hpp"
 
+#include <math.h>
+
 namespace GView::Entropy
 {
 double ShannonEntropy(const BufferView& buffer)
@@ -19,7 +21,7 @@ double ShannonEntropy(const BufferView& buffer)
             continue;
         }
         double probability = static_cast<double>(value) / buffer.GetLength();
-        entropy -= probability * std::log2(probability);
+        entropy -= probability * log2(probability);
     }
 
     return entropy; // max log2(n) = 8
