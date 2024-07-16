@@ -75,6 +75,7 @@ double Plugin::ComputeEpsilon(uint64 sample_size)
     return 2.0 - (std::log2(sample_size) - 2.0) / 10;
 }
 
+// TODO: configurable colors using color picker
 Color Plugin::EmbeddedObjectValueToColor(std::string_view name)
 {
     if (name == "Archive") {
