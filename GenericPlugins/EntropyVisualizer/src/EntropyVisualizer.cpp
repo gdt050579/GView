@@ -1,5 +1,7 @@
 #include "EntropyVisualizer.hpp"
 
+#include <math.h>
+
 namespace GView::GenericPlugins::EntropyVisualizer
 {
 extern "C" {
@@ -72,7 +74,7 @@ Color Plugin::ShannonEntropyDataTypeValueToColorName(std::string_view name)
 
 double Plugin::ComputeEpsilon(uint64 sample_size)
 {
-    return 2.0 - (std::log2(sample_size) - 2.0) / 10;
+    return 2.0 - (log2(sample_size) - 2.0) / 10;
 }
 
 // TODO: configurable colors using color picker
