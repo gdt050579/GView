@@ -15,4 +15,5 @@ target_sources(Dropper PRIVATE
 	HtmlObjects/PHP.cpp
 	HtmlObjects/Script.cpp
 	HtmlObjects/XML.cpp
-	Multimedia/PNG.cpp)
+	Multimedia/PNG.cpp
+	Multimedia/JPG.cpp)

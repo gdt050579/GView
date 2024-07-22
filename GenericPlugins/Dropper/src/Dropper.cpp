@@ -54,6 +54,7 @@ bool Instance::Init(Reference<GView::Object> object)
         // binary
         context.objectDroppers.emplace_back(std::make_unique<MZPE>());
         context.objectDroppers.emplace_back(std::make_unique<PNG>());
+        context.objectDroppers.emplace_back(std::make_unique<JPG>());
 
         // html objects
         context.objectDroppers.emplace_back(std::make_unique<IFrame>());
