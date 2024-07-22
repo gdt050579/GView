@@ -56,7 +56,7 @@ bool JPG::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Find
             break;
         } 
         else if ((marker & 0xFF00) == 0xFF00) {
-            auto segment_length = Endian::BigToNative(*reinterpret_cast<const uint16*>(buffer.GetData() + sizeof(uint16)));
+            const auto segment_length = Endian::BigToNative(*reinterpret_cast<const uint16*>(buffer.GetData() + sizeof(uint16)));
             pos += segment_length;
         } else {
             break;
