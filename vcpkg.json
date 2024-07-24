@@ -63,7 +63,11 @@
     {
       "name": "re2",
       "platform": "windows | linux | osx"
-    }
+    },
+	{
+			"name": "libjpeg-turbo",
+			"platform": "windows | linux | osx"
+	}
   ],
   "vcpkg-configuration": {
     "overlay-ports": [ "./AppCUI/vcpkg-ports/ncurses"]
