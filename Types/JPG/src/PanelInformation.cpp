@@ -23,7 +23,9 @@ void Panels::Information::UpdateGeneralInformation()
     // size
     general->AddItem({ "Size", tempStr.Format("%s bytes", n.ToString(jpg->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     // Size
-    general->AddItem({ "Size", tempStr.Format("%u x %u", jpg->sof0MarkerSegment.width, jpg->sof0MarkerSegment.height) });
+    const auto width  = Endian::BigToNative(jpg->sof0MarkerSegment.width);
+    const auto height = Endian::BigToNative(jpg->sof0MarkerSegment.height);
+    general->AddItem({ "Size", tempStr.Format("%u x %u", width, height) });
 
     // extra info 
     /* general->AddItem({ "Density Units", tempStr.Format("%u", jpg->app0MarkerSegment.densityUnits) });

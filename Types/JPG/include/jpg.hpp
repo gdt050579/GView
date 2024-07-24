@@ -32,11 +32,8 @@ namespace Type
         };
 
         struct SOF0MarkerSegment {
-            uint16 length;
-            uint8 precision;
             uint16 height;
             uint16 width;
-            uint8 numberOfComponents;
         };
 
 #pragma pack(pop) // Back to default packing
