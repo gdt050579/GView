@@ -20,6 +20,7 @@ namespace Type
         constexpr uint8 JPG_START_MAKER_BYTE = 0xFF;
         constexpr uint8 JPG_SOS_BYTE = 0xDA;
         constexpr uint8 JPG_EOI_BYTE = 0xD9;
+        constexpr uint8 MARKER_SIZE = 2;
 
 
 		struct Header {

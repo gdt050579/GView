@@ -50,7 +50,7 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
         settings.AddZone(offset, sizeof(JPG::App0MarkerSegment), ColorPair{ Color::Olive, Color::DarkBlue }, "APP0 Segment");
         offset += sizeof(JPG::App0MarkerSegment);
 
-        while (offset < dataSize - 2) {
+        while (offset < dataSize - JPG::MARKER_SIZE) {
             uint8 marker_prefix;
             uint8 marker_type;
 
@@ -64,18 +64,18 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
             }
 
             if (marker_type == JPG::JPG_EOI_BYTE) {
-                settings.AddZone(offset, 2, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
+                settings.AddZone(offset, JPG::MARKER_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
                 break;
             }
 
             uint16 length;
-            if (!data.Copy<uint16>(offset + 2, length)) {
+            if (!data.Copy<uint16>(offset + JPG::MARKER_SIZE, length)) {
                 offset++;
                 continue;
             }
 
             length = Endian::BigToNative(length);
-            uint16 segmentLength = length + 2;
+            uint16 segmentLength = length + JPG::MARKER_SIZE;
 
             if (offset + segmentLength > data.GetSize()) {
                 offset++;
@@ -89,24 +89,24 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
             segmentCount++;
 
             if (marker_type == JPG::JPG_SOS_BYTE) {
-                if (offset + segmentLength < dataSize - 2) {
-                    settings.AddZone(offset, dataSize - 2 - offset, ColorPair{ Color::Red, Color::DarkBlue }, "Compressed Data");
-                    offset = dataSize - 2;
+                if (offset + segmentLength < dataSize - JPG::MARKER_SIZE) {
+                    settings.AddZone(offset, dataSize - JPG::MARKER_SIZE - offset, ColorPair{ Color::Red, Color::DarkBlue }, "Compressed Data");
+                    offset = dataSize - JPG::MARKER_SIZE;
                 }
                 break;
             }
         }
 
-        if (offset < dataSize - 2) {
-            settings.AddZone(offset, dataSize - 2 - offset, ColorPair{ Color::Red, Color::DarkBlue }, "Compressed Data");
-            offset = dataSize - 2;
+        if (offset < dataSize - JPG::MARKER_SIZE) {
+            settings.AddZone(offset, dataSize - JPG::MARKER_SIZE - offset, ColorPair{ Color::Red, Color::DarkBlue }, "Compressed Data");
+            offset = dataSize - JPG::MARKER_SIZE;
         }
 
         if (offset < dataSize) {
             uint8 byte1, byte2;
             if (data.Copy<uint8>(offset, byte1) && data.Copy<uint8>(offset + 1, byte2)) {
                 if ((byte2 << 8 | byte1) == JPG::JPG_EOI_MARKER) {
-                    settings.AddZone(offset, 2, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
+                    settings.AddZone(offset, JPG::MARKER_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
                 }
             }
         }
