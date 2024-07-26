@@ -112,4 +112,19 @@ void UnescapedCharacters(TextEditor& editor, uint32 start, uint32 end)
         }
     }
 }
+
+void EscapeNonAsciiCharacters(TextEditor& editor, uint32 start, uint32 end)
+{
+    AppCUI::Utils::NumericFormatter fmt;
+
+    for (auto i = 0u; i < editor.Len(); i++) {
+        if ((int) editor[i] <= 127)
+            continue;
+
+        auto code = fmt.ToHex(editor[i]);
+
+        editor.Replace(i, 1, u"\\u");
+        editor.Insert(i + 2, code);
+    }
+}
 } // namespace GView::View::LexicalViewer::StringOperationsPlugins

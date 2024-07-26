@@ -198,14 +198,15 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/SQLite)
     add_subdirectory(Types/JCLASS)
     add_subdirectory(Types/EML)
-    add_subdirectory(Types/DOC)
+	add_subdirectory(Types/JPG)
 
     # Generic plugins supported by GView
     add_subdirectory(GenericPlugins/CharacterTable)
     add_subdirectory(GenericPlugins/Hashes)
     add_subdirectory(GenericPlugins/SyncCompare)
-    add_subdirectory(GenericPlugins/DropperStrings)
-    add_subdirectory(GenericPlugins/Unpackers)
+    add_subdirectory(GenericPlugins/EntropyVisualizer)
+    add_subdirectory(GenericPlugins/Dropper)
+    add_subdirectory(GenericPlugins/Unpacker)
                                                                     
     if (APPLE)
             set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")

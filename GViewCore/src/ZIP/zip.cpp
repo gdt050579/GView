@@ -59,13 +59,12 @@ struct _Entry
 
     uint16_t zip64{};              /* zip64 extension mode */
     uint16_t aes_version{};        /* winzip aes extension if not 0 */
-    uint8_t aes_encryption_mode{}; /* winzip aes encryption mode */
     uint16_t pk_verify{};          /* pkware encryption verifier */
 
     EntryType type{};
 };
 
-void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
+void ConvertZipFileInfoToEntry(const mz_zip_entry* zipFile, _Entry& entry)
 {
     entry.version_madeby     = zipFile->version_madeby;
     entry.version_needed     = zipFile->version_needed;
@@ -100,7 +99,6 @@ void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
 
     entry.zip64               = zipFile->zip64;
     entry.aes_version         = zipFile->aes_version;
-    entry.aes_encryption_mode = zipFile->aes_encryption_mode;
     entry.pk_verify           = zipFile->pk_verify;
 
     entry.type = EntryType::Unknown;
@@ -312,8 +310,7 @@ bool Info::Decompress(Buffer& output, uint32 index, const std::string& password)
     auto& entry = info->entries.at(index);
     CHECK(entry.type == EntryType::File, false, "");
 
-    mz_zip_reader_create_ptr reader{ nullptr };
-    mz_zip_reader_create(&reader.value);
+    mz_zip_reader_create_ptr reader{ mz_zip_reader_create() };
     mz_zip_reader_set_password(reader.value, password.c_str());
     mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
 
@@ -337,8 +334,7 @@ bool Info::Decompress(const BufferView& input, Buffer& output, uint32 index, con
     auto& entry = info->entries.at(index);
     CHECK(entry.type == EntryType::File, false, "");
 
-    mz_zip_reader_create_ptr reader{ nullptr };
-    mz_zip_reader_create(&reader.value);
+    mz_zip_reader_create_ptr reader{ mz_zip_reader_create() };
     mz_zip_reader_set_password(reader.value, password.c_str());
     mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
 
@@ -365,7 +361,7 @@ bool GetInfo(std::u16string_view path, Info& info)
     CHECK(internalInfo, false, "");
 
     internalInfo->reader.Reset();
-    mz_zip_reader_create(&internalInfo->reader.value);
+    internalInfo->reader.value = mz_zip_reader_create();
 
     std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
     std::u16string p(path);
@@ -377,11 +373,13 @@ bool GetInfo(std::u16string_view path, Info& info)
 
     do
     {
-        mz_zip_file* zipFile{ nullptr };
+        mz_zip_entry* zipFile{ nullptr };
         CHECKBK(mz_zip_reader_entry_get_info(internalInfo->reader.value, &zipFile) == MZ_OK, "");
         mz_zip_reader_set_pattern(internalInfo->reader.value, nullptr, 1); // do we need a pattern?
 
-        auto& entry = internalInfo->entries.emplace_back();
+        size_t entryIndex = internalInfo->entries.size();
+        auto& entry       = internalInfo->entries.emplace_back();
+        
         ConvertZipFileInfoToEntry(zipFile, entry);
 
         std::u8string_view filename = entry.filename;
@@ -397,6 +395,7 @@ bool GetInfo(std::u16string_view path, Info& info)
             CHECKBK(pos != std::string::npos, "");
 
             // add the parent as well if not already present
+            auto& entry         = internalInfo->entries[entryIndex];
             auto parentFilename = entry.filename.substr(0, pos + 1);
 
             auto it = std::find_if(
@@ -425,7 +424,7 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
     CHECK(internalInfo, false, "");
 
     internalInfo->reader.Reset();
-    mz_zip_reader_create(&internalInfo->reader.value);
+    internalInfo->reader.value = mz_zip_reader_create();
 
     // mz_zip_reader_set_password(reader, password.c_str()); // do we want to try a password?
     // mz_zip_reader_set_encoding(reader.get(), 0);
