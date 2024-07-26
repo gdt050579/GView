@@ -14,6 +14,9 @@ namespace Type
 		constexpr uint16 JPG_EOI_MARKER  = 0xD9FF; 
         constexpr uint16 JPG_APP0_MARKER = 0xE0FF;
         constexpr uint16 JPG_SOF0_MARKER = 0xC0FF;
+        constexpr uint16 JPG_SOF1_MARKER = 0xC1FF;
+        constexpr uint16 JPG_SOF2_MARKER = 0xC2FF;
+        constexpr uint16 JPG_SOF3_MARKER = 0xC3FF;
 
 		struct Header {
             uint16 soi;  // Start of Image marker
@@ -32,11 +35,8 @@ namespace Type
         };
 
         struct SOF0MarkerSegment {
-            uint16 length;
-            uint8 precision;
             uint16 height;
             uint16 width;
-            uint8 numberOfComponents;
         };
 
 #pragma pack(pop) // Back to default packing

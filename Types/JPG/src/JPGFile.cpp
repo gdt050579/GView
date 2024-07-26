@@ -14,31 +14,26 @@ bool JPGFile::Update()
 
     auto& data = this->obj->GetData();
 
-    if (!data.Copy<Header>(0, header))
-        return false;
-    if (!data.Copy<App0MarkerSegment>(sizeof(Header), app0MarkerSegment))
-        return false;
+    CHECK(data.Copy<Header>(0, header), false, "");
+    CHECK(data.Copy<App0MarkerSegment>(sizeof(Header), app0MarkerSegment), false, "");
 
     uint64 offset = sizeof(Header) + sizeof(App0MarkerSegment);
+    bool found    = false;
     while (offset < data.GetSize())
     {
         uint16 marker;
-        if (!data.Copy<uint16>(offset, marker))
-            return false;
-        if (marker == JPG_SOF0_MARKER)
+        CHECK(data.Copy<uint16>(offset, marker), false, "");
+        // get the width and height 
+        if (marker == JPG::JPG_SOF0_MARKER || marker == JPG::JPG_SOF1_MARKER || 
+            marker == JPG::JPG_SOF2_MARKER || marker == JPG::JPG_SOF3_MARKER)
         {
-            if (!data.Copy<SOF0MarkerSegment>(offset + 2, sof0MarkerSegment))
-                return false;
+            CHECK(data.Copy<SOF0MarkerSegment>(offset + 5, sof0MarkerSegment), false, "");
+            found = true;
             break;
         }
-        offset += 2;
-        uint16 segmentLength;
-        if (!data.Copy<uint16>(offset, segmentLength))
-            return false;
-        offset += segmentLength;
+        offset += 1;
     }
-
-    return true;
+    return found;
 }
 
 bool JPGFile::LoadImageToObject(Image& img, uint32 index)
@@ -50,7 +45,7 @@ bool JPGFile::LoadImageToObject(Image& img, uint32 index)
         CHECK(buf.IsValid(), false, "Fail to copy Entire file");
         bf = (BufferView) buf;
     }
-    CHECK(img.Create(buf), false, "");
+    CHECK(img.Create(bf), false, "");
 
     return true;
 }
