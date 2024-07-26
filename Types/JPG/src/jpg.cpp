@@ -34,8 +34,80 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
     {
         BufferViewer::Settings settings;
 
-        settings.AddZone(0, sizeof(JPG::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
-        settings.AddZone(sizeof(JPG::Header), sizeof(JPG::App0MarkerSegment), ColorPair{ Color::Olive, Color::DarkBlue }, "APP0 Marker Segment");
+        const std::vector<ColorPair> colors = { ColorPair{ Color::Teal, Color::DarkBlue }, ColorPair{ Color::Yellow, Color::DarkBlue } };
+
+        auto& data            = jpg->obj->GetData();
+        const uint64 dataSize = data.GetSize();
+        uint64 offset         = 0;
+        uint32 colorIndex     = 0;
+        uint32 segmentCount   = 1;
+
+        settings.AddZone(0, sizeof(JPG::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "SOI Segment");
+        offset += sizeof(JPG::Header);
+
+        settings.AddZone(offset, sizeof(JPG::App0MarkerSegment), ColorPair{ Color::Olive, Color::DarkBlue }, "APP0 Segment");
+        offset += sizeof(JPG::App0MarkerSegment);
+
+        while (offset < dataSize - 2) {
+            uint8 marker_prefix;
+            uint8 marker_type;
+
+            if (!data.Copy<uint8>(offset, marker_prefix) || marker_prefix != 0xFF) {
+                break;
+            }
+
+            if (!data.Copy<uint8>(offset + 1, marker_type) || marker_type == 0x00 || marker_type == 0xFF) {
+                offset++;
+                continue;
+            }
+
+            if (marker_type == 0xD9) {
+                settings.AddZone(offset, 2, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
+                break;
+            }
+
+            uint16 length;
+            if (!data.Copy<uint16>(offset + 2, length)) {
+                offset++;
+                continue;
+            }
+
+            length = Endian::BigToNative(length);
+            uint16 segmentLength = length + 2;
+
+            if (offset + segmentLength > data.GetSize()) {
+                offset++;
+                continue;
+            }
+
+            std::string label = "Marker " + std::to_string(segmentCount);
+            settings.AddZone(offset, segmentLength, colors[colorIndex], label.c_str());
+            offset += segmentLength;
+            colorIndex = (colorIndex + 1) % colors.size();
+            segmentCount++;
+
+            if (marker_type == 0xDA) {
+                if (offset + segmentLength < dataSize - 2) {
+                    settings.AddZone(offset, dataSize - 2 - offset, ColorPair{ Color::Red, Color::DarkBlue }, "Compressed Data");
+                    offset = dataSize - 2;
+                }
+                break;
+            }
+        }
+
+        if (offset < dataSize - 2) {
+            settings.AddZone(offset, dataSize - 2 - offset, ColorPair{ Color::Red, Color::DarkBlue }, "Compressed Data");
+            offset = dataSize - 2;
+        }
+
+        if (offset < dataSize) {
+            uint8 byte1, byte2;
+            if (data.Copy<uint8>(offset, byte1) && data.Copy<uint8>(offset + 1, byte2)) {
+                if ((byte2 << 8 | byte1) == 0xD9FF) {
+                    settings.AddZone(offset, 2, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
+                }
+            }
+        }
 
         jpg->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
