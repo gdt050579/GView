@@ -46,19 +46,16 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
 
     const auto& headers = eml->GetHeaders();
     for (const auto& [name, value] : headers) {
-        if (name == u"Cc") // TODO: to be removed when issues https://github.com/gdt050579/GView/issues/301 is fixed
-            continue;
-
         std::string nameStr = toUTF8(name);
         settings.AddProperty(nameStr, value);
     }
 
     settings.SetIcon(EML_ICON);
     settings.SetColumns({
-          "n:&Identifier,a:l,w:30",
-          "n:&Content-Type,a:c,w:40",
-          "n:&Size,a:c,w:15",
-          "n:&OffsetInFile,a:c,w:15",
+          "n:&Index,a:r,w:50",
+          "n:&Content-Type,a:r,w:50",
+          "n:&Size,a:r,w:20",
+          "n:&Offset,a:r,w:20",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<EML::EMLFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());

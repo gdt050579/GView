@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.337.0"
+#define GVIEW_VERSION "0.343.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -150,6 +150,47 @@ namespace Utils
     struct CORE_EXPORT SelectionZoneInterface {
         virtual uint32 GetSelectionZonesCount() const                                    = 0;
         virtual GView::TypeInterface::SelectionZone GetSelectionZone(uint32 index) const = 0;
+    };
+
+    // Structure to represent an interval
+    struct CORE_EXPORT Zone {
+        struct Interval {
+            uint64 low{ INVALID_OFFSET }, high{ INVALID_OFFSET };
+        } interval{};
+
+        AppCUI::Graphics::ColorPair color{ NoColorPair };
+        AppCUI::Utils::FixSizeString<25> name{};
+
+        Zone(uint64 low, uint64 high) : interval{ low, high }
+        {
+        }
+        Zone(uint64 low, uint64 high, ColorPair cp, std::string_view name) : interval{ low, high }, color(cp), name(name)
+        {
+        }
+        Zone() : interval{ INVALID_OFFSET, INVALID_OFFSET }, color(NoColorPair), name(){};
+    };
+
+    class CORE_EXPORT ZonesList
+    {
+        void* context{ nullptr };
+
+      public:
+        ZonesList();
+        ~ZonesList();
+
+        bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        bool Add(const Zone& zone);
+        std::optional<Zone> OffsetToZone(uint64 offset) const;
+        bool SetCache(const Zone::Interval& interval);
+        void Clear();
+        uint32 GetCount() const;
+        std::optional<Zone> GetZone(uint32 index) const;
+    };
+
+    struct CORE_EXPORT ObjectHighlightingZonesInterface {
+        virtual uint32 GetObjectsZonesCount() const                    = 0;
+        virtual std::optional<Zone> GetObjectsZone(uint32 index) const = 0;
+        virtual bool SetZones(const ZonesList& zones)                  = 0;
     };
 } // namespace Utils
 
@@ -715,6 +756,26 @@ namespace SQLite3
     };
 } // namespace SQLite3
 
+namespace Regex
+{
+    struct CORE_EXPORT Matcher {
+      private:
+        void* context{ nullptr };
+
+      public:
+        bool Init(std::string_view expression, bool isUnicode, bool isCaseSensitive);
+        Matcher() = default;
+        ~Matcher();
+
+        bool Match(BufferView buffer, uint64& start, uint64& end);
+    };
+} // namespace Regex
+
+namespace Entropy
+{
+    CORE_EXPORT double ShannonEntropy(const BufferView& buffer);
+} // namespace Entropy
+
 /*
  * Object can be:
  *   - a file
@@ -783,6 +844,8 @@ namespace View
     constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
     constexpr int32 VIEW_COMMAND_ACTIVATE_CODE_EXECUTION{ 0xBF14 };
     constexpr int32 VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION{ 0xBF15 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_OBJECT_HIGHLIGHTING{ 0xBF16 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING{ 0xBF17 };
 
     struct ViewData {
         uint64 viewStartOffset{ GView::Utils::INVALID_OFFSET };
@@ -829,25 +892,12 @@ namespace View
 
         virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
 
-        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>)
-        {
-            return false;
-        }
-
-        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>)
-        {
-            return false;
-        }
-
-        virtual bool GetViewData(ViewData&, uint64)
-        {
-            return false;
-        }
-
-        virtual bool AdvanceStartView(int64)
-        {
-            return false;
-        }
+        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>);
+        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>);
+        virtual bool GetViewData(ViewData&, uint64);
+        virtual bool AdvanceStartView(int64);
+        virtual bool SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones);
+        virtual GView::Utils::ZonesList& GetObjectsHighlightingZonesList();
 
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
@@ -890,6 +940,7 @@ namespace View
             Settings();
             ~Settings();
             void AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name);
+            void SetZonesListForObjectHighlighting(const GView::Utils::ZonesList& zones);
             void AddBookmark(uint8 bookmarkID, uint64 fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
@@ -1017,15 +1068,15 @@ namespace View
                     return u16string_view{ text + start, (size_t) (end - start) };
                 return u16string_view();
             }
-            uint32 ParseUntillEndOfLine(uint32 index) const;
-            uint32 ParseUntillStartOfNextLine(uint32 index) const;
+            uint32 ParseUntilEndOfLine(uint32 index) const;
+            uint32 ParseUntilStartOfNextLine(uint32 index) const;
             uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseBackwards(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
             uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
             uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
             uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
-            uint32 ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint32 ParseUntilText(uint32 index, string_view textToFind, bool ignoreCase) const;
             uint32 ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const;
             uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase) const;
             uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
@@ -1442,6 +1493,7 @@ namespace Unpack
     namespace Base64
     {
         CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMessage);
         CORE_EXPORT bool Decode(BufferView view, Buffer& output);
     } // namespace Base64
     namespace QuotedPrintable

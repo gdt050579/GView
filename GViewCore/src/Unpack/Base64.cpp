@@ -44,15 +44,16 @@ void Encode(BufferView view, Buffer& output)
     output.AddMultipleTimes(string_view("=", 1), (3 - sequenceIndex) % 3);
 }
 
-bool Decode(BufferView view, Buffer& output)
+bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMessage)
 {
     uint32 sequence      = 0;
     uint32 sequenceIndex = 0;
     char lastEncoded     = 0;
     uint8 paddingCount   = 0;
+    hasWarning           = false;
+    output.Reserve((view.GetLength() / 4) * 3);
 
-    for (uint32 i = 0; i < view.GetLength(); ++i)
-    {
+    for (uint32 i = 0; i < view.GetLength(); ++i) {
         char encoded = view[i];
         CHECK(encoded < sizeof(BASE64_DECODE_TABLE) / sizeof(*BASE64_DECODE_TABLE), false, "");
 
@@ -61,7 +62,8 @@ bool Decode(BufferView view, Buffer& output)
         }
 
         if (lastEncoded == '=' && sequenceIndex == 0) {
-            AppCUI::Dialogs::MessageBox::ShowError("Warning!", "Ignoring extra bytes after the end of buffer");
+            hasWarning = true;
+            warningMessage = "Ignoring extra bytes after the end of buffer";
             break;
         }
 
@@ -81,6 +83,7 @@ bool Decode(BufferView view, Buffer& output)
 
         if (sequenceIndex % 4 == 0) {
             char* buffer = (char*) &sequence;
+
             output.Add(string_view(buffer + 3, 1));
             output.Add(string_view(buffer + 2, 1));
             output.Add(string_view(buffer + 1, 1));
@@ -98,4 +101,13 @@ bool Decode(BufferView view, Buffer& output)
 
     return true;
 }
+
+bool Decode(BufferView view, Buffer& output)
+{
+    bool tempHasWarning;
+    String tempWarningMessage;
+
+    return Decode(view, output, tempHasWarning, tempWarningMessage);
 }
+
+} // namespace GView::Unpack::Base64

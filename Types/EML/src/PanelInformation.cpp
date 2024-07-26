@@ -5,7 +5,7 @@ using namespace AppCUI::Controls;
 
 Panels::Information::Information(Reference<GView::Type::EML::EMLFile> _eml) : TabPage("&Information")
 {
-    eml    = _eml;
+    eml     = _eml;
     general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
     headers = Factory::ListView::Create(this, "x:0,y:10,w:100%,h:20", { "n:Field,w:12", "n:Value,w:10000" }, ListViewFlags::None);
 
@@ -25,8 +25,7 @@ void Panels::Information::UpdateGeneralInformation()
     }
 
     headers->AddItem("Headers");
-    for (const auto& itr : eml->headerFields)
-    {
+    for (const auto& itr : eml->headerFields) {
         headers->AddItem({ itr.first, itr.second });
     }
 }
@@ -36,8 +35,8 @@ void Panels::Information::UpdateIssues()
 }
 void Panels::Information::RecomputePanelsPositions()
 {
-    int w    = this->GetWidth();
-    int h    = this->GetHeight();
+    int w = this->GetWidth();
+    int h = this->GetHeight();
 
     if (!general.IsValid())
         return;

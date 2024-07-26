@@ -102,7 +102,7 @@ TextParser::TextParser(u16string_view _text)
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-uint32 TextParser::ParseUntillEndOfLine(uint32 index) const
+uint32 TextParser::ParseUntilEndOfLine(uint32 index) const
 {
     if (index >= size)
         return size;
@@ -114,7 +114,7 @@ uint32 TextParser::ParseUntillEndOfLine(uint32 index) const
     }
     return index;
 }
-uint32 TextParser::ParseUntillStartOfNextLine(uint32 index) const
+uint32 TextParser::ParseUntilStartOfNextLine(uint32 index) const
 {
     if (index >= size)
         return size;
@@ -225,7 +225,7 @@ uint32 TextParser::ParseSpace(uint32 index, SpaceType type) const
     }
     return index;
 }
-uint32 TextParser::ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const
+uint32 TextParser::ParseUntilText(uint32 index, string_view textToFind, bool ignoreCase) const
 {
     if (index >= size)
         return size;
@@ -281,7 +281,7 @@ uint32 TextParser::ParseUntillText(uint32 index, string_view textToFind, bool ig
 }
 uint32 TextParser::ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const
 {
-    auto pos = ParseUntillText(index, textToFind, ignoreCase);
+    auto pos = ParseUntilText(index, textToFind, ignoreCase);
     if (pos >= size)
         return size;
     return pos + (uint32) textToFind.size();
