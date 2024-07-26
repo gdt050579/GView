@@ -1,6 +1,7 @@
 #include "doc.hpp"
 
 #include <fstream> // TODO: remove
+#include <math.h>
 
 namespace GView::Type::DOC
 {
