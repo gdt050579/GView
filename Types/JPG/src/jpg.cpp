@@ -13,15 +13,17 @@ extern "C"
 {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
-    if (buf.GetLength() < sizeof(JPG::Header) + sizeof(JPG::App0MarkerSegment))
+    if (buf.GetLength() < sizeof(JPG::Header) + sizeof(JPG::App0MarkerSegment)) {
         return false;
+    }
     auto header = buf.GetObject<JPG::Header>();
-    if (header->soi != JPG::JPG_SOI_MARKER || header->app0 != JPG::JPG_APP0_MARKER)
+    if (header->soi != JPG::JPG_SOI_MARKER || header->app0 != JPG::JPG_APP0_MARKER) {
         return false;
+    }
     auto app0MarkerSegment = buf.GetObject<JPG::App0MarkerSegment>(sizeof(JPG::Header));
-    if (memcmp(app0MarkerSegment->identifier, "JFIF", 5) != 0)
+    if (memcmp(app0MarkerSegment->identifier, "JFIF", 5) != 0) {
         return false;
-    // all good
+    }
     return true;
 }
 
@@ -52,16 +54,16 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
             uint8 marker_prefix;
             uint8 marker_type;
 
-            if (!data.Copy<uint8>(offset, marker_prefix) || marker_prefix != 0xFF) {
+            if (!data.Copy<uint8>(offset, marker_prefix) || marker_prefix != JPG::JPG_START_MAKER_BYTE) {
                 break;
             }
 
-            if (!data.Copy<uint8>(offset + 1, marker_type) || marker_type == 0x00 || marker_type == 0xFF) {
+            if (!data.Copy<uint8>(offset + 1, marker_type) || marker_type == 0x00 || marker_type == JPG::JPG_START_MAKER_BYTE) {
                 offset++;
                 continue;
             }
 
-            if (marker_type == 0xD9) {
+            if (marker_type == JPG::JPG_EOI_BYTE) {
                 settings.AddZone(offset, 2, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
                 break;
             }
@@ -86,7 +88,7 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
             colorIndex = (colorIndex + 1) % colors.size();
             segmentCount++;
 
-            if (marker_type == 0xDA) {
+            if (marker_type == JPG::JPG_SOS_BYTE) {
                 if (offset + segmentLength < dataSize - 2) {
                     settings.AddZone(offset, dataSize - 2 - offset, ColorPair{ Color::Red, Color::DarkBlue }, "Compressed Data");
                     offset = dataSize - 2;
@@ -103,7 +105,7 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
         if (offset < dataSize) {
             uint8 byte1, byte2;
             if (data.Copy<uint8>(offset, byte1) && data.Copy<uint8>(offset + 1, byte2)) {
-                if ((byte2 << 8 | byte1) == 0xD9FF) {
+                if ((byte2 << 8 | byte1) == JPG::JPG_EOI_MARKER) {
                     settings.AddZone(offset, 2, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOI Segment");
                 }
             }

@@ -17,6 +17,10 @@ namespace Type
         constexpr uint16 JPG_SOF1_MARKER = 0xC1FF;
         constexpr uint16 JPG_SOF2_MARKER = 0xC2FF;
         constexpr uint16 JPG_SOF3_MARKER = 0xC3FF;
+        constexpr uint8 JPG_START_MAKER_BYTE = 0xFF;
+        constexpr uint8 JPG_SOS_BYTE = 0xDA;
+        constexpr uint8 JPG_EOI_BYTE = 0xD9;
+
 
 		struct Header {
             uint16 soi;  // Start of Image marker
