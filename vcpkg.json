@@ -4,8 +4,7 @@
   "dependencies": [
     {
       "name": "ncurses",
-      "platform": "linux | osx",
-      "features": ["wide-characters"]
+      "platform": "linux | osx"
     },
     {
       "name": "libiconv",
