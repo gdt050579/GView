@@ -11,10 +11,8 @@ using namespace GView::View::LexicalViewer;
 #define FATSECT 0xfffffffd
 #define DIFSECT 0xfffffffc
 
-
 DOCFile::DOCFile()
 {
-
 }
 
 bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)

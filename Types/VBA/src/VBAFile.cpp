@@ -112,16 +112,16 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
         }
 
         if (c == '\r' || c == '\n') {
-            end = syntax.text.ParseUntillStartOfNextLine(start);
+            end = syntax.text.ParseUntilStartOfNextLine(start);
             presetAlignament = TokenAlignament::StartsOnNewLine;
             start = end;
             continue;
         }
 
         if (c == '\'') {
-            end = syntax.text.ParseUntillEndOfLine(start);
+            end = syntax.text.ParseUntilEndOfLine(start);
             syntax.tokens.Add(1, start, end, TokenColor::Comment, presetAlignament | TokenAlignament::NewLineAfter);
-            start = syntax.text.ParseUntillStartOfNextLine(end);
+            start = syntax.text.ParseUntilStartOfNextLine(end);
             continue;
         }
         break;

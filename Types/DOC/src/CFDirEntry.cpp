@@ -1,9 +1,7 @@
 #include "doc.hpp"
 
-
-using namespace GView::Type::DOC;
-
-
+namespace GView::Type::DOC
+{
 CFDirEntry::CFDirEntry()
 {
 }
@@ -31,7 +29,6 @@ void CFDirEntry::AppendChildren(uint32 childId)
     children[childIndex] = child;
 };
 
-
 bool CFDirEntry::Load(BufferView _directoryData, uint32 _entryId)
 {
     CHECK(!initialized, false, "already initialized");
@@ -47,7 +44,6 @@ bool CFDirEntry::Load(BufferView _directoryData, uint32 _entryId)
 
     return true;
 }
-
 
 void CFDirEntry::BuildStorageTree()
 {
@@ -80,4 +76,4 @@ bool CFDirEntry::FindChildByName(std::u16string_view entryName, CFDirEntry& entr
     }
     return false;
 }
-
+} // namespace GView::Type::DOC
