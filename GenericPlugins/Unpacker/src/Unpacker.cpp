@@ -221,7 +221,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> curre
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["command.Unpacker"] = Input::Key::Alt | Input::Key::F10;
+    sect["Command.Unpacker"] = Input::Key::Alt | Input::Key::F10;
 }
 }
 } // namespace GView::GenericPlugins::Unpackers

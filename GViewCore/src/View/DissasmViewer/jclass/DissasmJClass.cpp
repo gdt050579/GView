@@ -1,5 +1,6 @@
 #include "class_parser.hpp"
 #include "DissasmViewer.hpp"
+#include "DissasmCodeZone.hpp"
 
 using namespace GView::View::DissasmViewer;
 using namespace GView::View::DissasmViewer::JClass;

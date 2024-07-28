@@ -41,7 +41,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["command.Dropper"] = Input::Key::F10;
+    sect["Command.Dropper"] = Input::Key::F10;
 }
 }
 

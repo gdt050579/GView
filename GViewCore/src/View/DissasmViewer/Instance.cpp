@@ -1,6 +1,7 @@
 #include <array>
 
 #include "DissasmViewer.hpp"
+#include "DissasmCodeZone.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -89,16 +90,18 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
 
     this->codePage = CodePageID::DOS_437;
 
-    for (auto& submenu : RIGHT_CLICK_SUB_MENUS_COMMANDS) {
-        submenu.handle = rightClickMenu.AddSubMenu(submenu.name);
-        auto subMenu   = rightClickMenu.GetSubMenu(submenu.handle);
-        for (auto& command : submenu.commands) {
-            command.handle = subMenu->AddCommandItem(command.text, command.commandID);
+    for (const auto& submenu : RIGHT_CLICK_SUB_MENUS_COMMANDS) {
+        assert(submenu.name);
+        const auto handle = rightClickMenu.AddSubMenu(submenu.name);
+        auto subMenu      = rightClickMenu.GetSubMenu(handle);
+        for (const auto& command : submenu.commands) {
+            assert(!command.text.empty());
+            subMenu->AddCommandItem(command.text, command.commandID);
         }
     }
 
     for (auto& menu_command : RIGHT_CLICK_MENU_COMMANDS) {
-        menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
+        rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
     }
     // rightClickOffset = 0;
 

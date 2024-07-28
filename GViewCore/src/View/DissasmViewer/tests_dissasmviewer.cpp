@@ -1,6 +1,7 @@
 #include <catch.hpp>
-#include "DissasmViewer.hpp"
+#include "DissasmCodeZone.hpp"
 #include "x86_x64/DissasmX86.hpp"
+#include "DissasmFunctionUtils.hpp"
 #include <array>
 
 using namespace GView::View::DissasmViewer;

@@ -295,6 +295,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case RIGHT_CLICK_ADD_COMMENT:
             AddComment();
             return true;
+        case RIGHT_CLICK_CODE_ZONE_EDIT:
+            EditDissasmCodeZoneCommand();
+            return true;
         case RIGHT_CLICK_REMOVE_COMMENT:
             RemoveComment();
             return true;

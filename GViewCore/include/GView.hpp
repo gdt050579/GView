@@ -34,7 +34,7 @@ struct CORE_EXPORT TypeInterface {
 
     virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
-    virtual ~TypeInterface(){};
+    virtual ~TypeInterface(){}
 
     struct SelectionZone {
         uint64 start, end;

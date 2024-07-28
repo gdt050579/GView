@@ -17,7 +17,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["command.EntropyVisualizer"] = Input::Key::F12;
+    sect["Command.EntropyVisualizer"] = Input::Key::F12;
 }
 }
 

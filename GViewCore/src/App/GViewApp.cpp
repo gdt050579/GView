@@ -73,7 +73,7 @@ bool GView::App::ResetConfiguration()
     GView::View::TextViewer::Config::Update(ini["View.Text"]);
     GView::View::ImageViewer::Config::Update(ini["View.Image"]);
     GView::View::GridViewer::Config::Update(ini["View.Grid"]);
-    GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
+    GView::View::DissasmViewer::Config::Update(ini["View.Dissasm"]);
     GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
 
     // parse types and add specs
