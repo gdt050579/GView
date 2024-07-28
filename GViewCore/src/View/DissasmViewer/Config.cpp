@@ -55,13 +55,15 @@ void ColorManager::OnGainedFocus()
 
 void Config::Update(AppCUI::Utils::IniSection sect)
 {
+    LocalString<128> buffer;
     for (const auto& cmd : AllKeyboardCommands) {
-        sect.UpdateValue(cmd.get().Caption, cmd.get().Key, true);
+        buffer.SetFormat("Key.%s", cmd.get().Caption);
+        sect.UpdateValue(buffer.GetText(), cmd.get().Key, true);
     }
 
-    sect.UpdateValue("ShowFileContent", true, true);
-    sect.UpdateValue("ShowOnlyDissasm", false, true);
-    sect.UpdateValue("DeepScanDissasmOnStart", false, true);
+    sect.UpdateValue("Config.ShowFileContent", true, true);
+    sect.UpdateValue("Config.ShowOnlyDissasm", false, true);
+    sect.UpdateValue("Config.DeepScanDissasmOnStart", false, true);
 }
 void Config::Initialize()
 {
@@ -95,15 +97,15 @@ void Config::Initialize()
     bool foundSettings = false;
     auto ini           = AppCUI::Application::GetAppSettings();
     if (ini) {
-        auto sect = ini->GetSection("DissasmView");
+        auto sect = ini->GetSection("View.Dissasm");
         if (sect.Exists()) {
             for (auto& cmd : AllKeyboardCommands) {
                 cmd.get().Key = sect.GetValue(cmd.get().Caption).ToKey(cmd.get().Key);
             }
 
-            this->ShowFileContent              = sect.GetValue("ShowFileContent").ToBool(true);
-            this->ShowOnlyDissasm              = sect.GetValue("ShowOnlyDissasm").ToBool(false);
-            this->EnableDeepScanDissasmOnStart = sect.GetValue("DeepScanDissasmOnStart").ToBool(false);
+            this->ShowFileContent              = sect.GetValue("Config.ShowFileContent").ToBool(true);
+            this->ShowOnlyDissasm              = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
+            this->EnableDeepScanDissasmOnStart = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
             foundSettings                      = true;
         }
     }
