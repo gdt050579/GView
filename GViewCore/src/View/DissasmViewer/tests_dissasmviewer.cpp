@@ -306,7 +306,8 @@ class DissasmTestInstance
     DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize)
     {
         instance = nullptr;
-        assert(init(binaryData, binaryDataSize));
+        const bool initResult = init(binaryData, binaryDataSize);
+        assert(init_result);
     }
 
     bool init(const unsigned char* binaryData, size_t binaryDataSize)
@@ -345,7 +346,8 @@ class DissasmTestInstance
         initData.visibleRows                  = 53;
         initData.obj                          = obj;
 
-        assert(zone->InitZone(initData));
+        const bool initZoneResult = zone->InitZone(initData);
+        assert(initZoneResult);
     }
 
     bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
