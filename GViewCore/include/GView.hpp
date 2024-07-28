@@ -28,27 +28,12 @@ using namespace AppCUI;
 
 namespace GView
 {
-struct CORE_EXPORT KeyboardControl {
-    Input::Key Key;
-    const char* Caption;
-    const char* Explanation;
-    uint32 CommandId;
-};
-struct CORE_EXPORT KeyboardControlsInterface
-{
-    virtual bool RegisterKey(KeyboardControl* key) = 0;
-    virtual ~KeyboardControlsInterface()      = default;
-};
 class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface {
     Object* obj{ nullptr };
 
     virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
-    virtual bool UpdateKeys(KeyboardControlsInterface* interface)
-    {
-        return true;
-    }
     virtual ~TypeInterface(){}
 
     struct SelectionZone {
