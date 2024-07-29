@@ -676,6 +676,14 @@ namespace Type
         static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
         static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
 
+        static constexpr uint32 PE_COMMAND_DIGITAL_SIGNATURE = 0;
+        static constexpr uint32 PE_COMMAND_AREA_HIGHLIGHTER = 1;
+
+        static KeyboardControl PE_COMMANDS[] = {
+            { Input::Key::Alt | Input::Key::F8, "DigitalSignature", "Validate digital signature", PE_COMMAND_DIGITAL_SIGNATURE },
+            { Input::Key::Alt | Input::Key::F9, "AreaHighlighter", "Highlight portions of code base on an input file", PE_COMMAND_AREA_HIGHLIGHTER },
+        };
+
         class PEFile : public TypeInterface,
                        public GView::View::BufferViewer::OffsetTranslateInterface,
                        public GView::View::BufferViewer::PositionToColorInterface
@@ -868,6 +876,8 @@ namespace Type
 
                 return selectionZoneInterface->GetSelectionZone(index);
             }
+
+            bool UpdateKeys(KeyboardControlsInterface* interface) override;
         };
 
         namespace Panels
