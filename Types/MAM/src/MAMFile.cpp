@@ -21,6 +21,13 @@ void MAMFile::RunCommand(std::string_view commandName)
     }
 }
 
+bool MAMFile::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (auto& entry : MAM_COMMANDS)
+        interface->RegisterKey(&entry);
+    return true;
+}
+
 bool MAMFile::Decompress()
 {
     Buffer uncompressed;

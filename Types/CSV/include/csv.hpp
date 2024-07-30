@@ -38,6 +38,10 @@ namespace Type
             void RunCommand(std::string_view) override
             {
             }
+            bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
             bool Update(Reference<GView::Object> obj);
             bool HasPanel(Panels::IDs id);
             void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);

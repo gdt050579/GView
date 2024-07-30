@@ -45,10 +45,8 @@ struct CORE_EXPORT TypeInterface {
 
     virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
-    virtual bool UpdateKeys(KeyboardControlsInterface* interface)//TODO: =0;
-    {
-        return true;
-    }
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) = 0;
+
     virtual ~TypeInterface(){}
 
     struct SelectionZone {

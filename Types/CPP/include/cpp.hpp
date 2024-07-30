@@ -88,6 +88,10 @@ namespace Type
             void RunCommand(std::string_view) override
             {
             }
+            virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
 
             virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) override;
             virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;

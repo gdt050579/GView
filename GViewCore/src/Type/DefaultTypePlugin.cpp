@@ -13,6 +13,11 @@ class DefaultType : public TypeInterface
     void RunCommand(std::string_view) override
     {
     }
+    bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
+
     ~DefaultType()
     {
     }

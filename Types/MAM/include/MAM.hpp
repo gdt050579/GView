@@ -49,6 +49,7 @@ class MAMFile : public TypeInterface
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
 };
 
 namespace Panels

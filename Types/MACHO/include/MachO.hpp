@@ -237,8 +237,9 @@ class MachOFile : public TypeInterface,
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
 
-  private:
+private:
     bool ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const;
 
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;

@@ -88,6 +88,10 @@ namespace Type
 
             // View::ContainerViewer::OpenItemInterface
             virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+            virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
 
         };
 
