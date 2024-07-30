@@ -47,6 +47,7 @@ void GView::App::FileWindow::ShowKeyConfiguratorWindow()
     pluginTypeInstance->UpdateKeys(&impl);
 
     GetCurrentView()->UpdateKeys(&impl);
+    UpdateKeys(&impl);
 
     KeyConfigDisplayWindow window(impl.keys);
     window.Show();

@@ -659,6 +659,8 @@ namespace App
         void ShowCopyDialog();
         void ShowKeyConfiguratorWindow();
 
+        bool UpdateKeys(KeyboardControlsInterface* interface);
+
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
 

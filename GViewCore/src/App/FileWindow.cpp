@@ -19,7 +19,14 @@ constexpr int CMD_GOTO                   = 30012346;
 constexpr int CMD_FIND                   = 30012347;
 constexpr int CMD_CHOSE_NEW_TYPE         = 30012348;
 constexpr int CMD_SHOW_KEY_CONFIGURATOR  = 30012349;
+constexpr int CMD_COPY_DIALOG            = 30012350;
 constexpr int CMD_FOR_TYPE_PLUGIN_START  = 50000000;
+
+
+static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO = { Key::Ctrl | Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
+static GView::KeyboardControl FILE_WINDOW_COMMAND_FIND = { Key::Ctrl | Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
+static GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Key::Ctrl | Key::C, "CopyDialog", "Open the Copy dialog", CMD_COPY_DIALOG };
+static GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Key::Ctrl | Key::Insert, "CopyDialog", "Open the Copy dialog", CMD_COPY_DIALOG };
 
 class CursorInformation : public UserControl
 {
@@ -204,14 +211,14 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     // finally --> check some hardcoded commands
     switch (keyCode)
     {
-    case Key::Ctrl | Key::G:
+    case Key::Ctrl | Key::G://case FILE_WINDOW_COMMAND_GOTO.Key:
         ShowGoToDialog();
         return true;
-    case Key::Ctrl | Key::F:
+    case Key::Ctrl | Key::F://case FILE_WINDOW_COMMAND_FIND.Key:
         ShowFindDialog();
         return true;
-    case Key::Ctrl | Key::C:
-    case Key::Ctrl | Key::Insert:
+    case Key::Ctrl | Key::C://case FILE_WINDOW_COMMAND_COPY.Key:
+    case Key::Ctrl | Key::Insert://case FILE_WINDOW_COMMAND_INSERT.Key:
         ShowCopyDialog();
         return true;
     }
@@ -301,4 +308,13 @@ void FileWindow::Start()
 {
     this->view->SetCurrentTabPageByIndex(0);
     this->view->SetFocus();
+}
+
+bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
+{
+    impl->RegisterKey(&FILE_WINDOW_COMMAND_GOTO);
+    impl->RegisterKey(&FILE_WINDOW_COMMAND_FIND);
+    impl->RegisterKey(&FILE_WINDOW_COMMAND_COPY);
+    impl->RegisterKey(&FILE_WINDOW_COMMAND_INSERT);
+    return true;
 }
