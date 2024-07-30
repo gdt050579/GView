@@ -652,7 +652,7 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
 }
 uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& list, BlocksList& blocks, uint32 pos)
 {
-    auto eol   = text.ParseUntillEndOfLine(pos);
+    auto eol   = text.ParseUntilEndOfLine(pos);
     auto start = pos;
     pos        = text.ParseSpace(pos + 1, SpaceType::SpaceAndTabs);
     if ((CharType::GetCharType(text[pos])) != CharType::Word)
@@ -742,7 +742,7 @@ void CPPFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
             idx = text.ParseSpace(idx, SpaceType::All);
             break;
         case CharType::SingleLineComment:
-            next = text.ParseUntillEndOfLine(idx);
+            next = text.ParseUntilEndOfLine(idx);
             tokenList.Add(
                   TokenType::Comment,
                   idx,
