@@ -436,6 +436,7 @@ namespace App
 
         constexpr int CHECK_FOR_UPDATES = 110000;
         constexpr int ABOUT             = 110001;
+        constexpr int AVAILABLE_KEYS    = 110002;
 
         constexpr int OPEN_FILE         = 120000;
         constexpr int OPEN_FOLDER       = 120001;
@@ -464,6 +465,7 @@ namespace App
             AppCUI::Input::Key goTo;
             AppCUI::Input::Key find;
             AppCUI::Input::Key choseNewType;
+            AppCUI::Input::Key showKeyConfigurator;
         } Keys;
 
         bool BuildMainMenus();
@@ -555,6 +557,10 @@ namespace App
         constexpr inline AppCUI::Input::Key GetChoseNewTypeKey() const
         {
             return this->Keys.choseNewType;
+        }
+        constexpr inline AppCUI::Input::Key GetKeyConfiguratorKey() const
+        {
+            return this->Keys.showKeyConfigurator;
         }
 
         // property interface
@@ -651,6 +657,7 @@ namespace App
         void ShowGoToDialog();
         void ShowFindDialog();
         void ShowCopyDialog();
+        void ShowKeyConfiguratorWindow();
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
@@ -684,6 +691,22 @@ namespace App
       public:
         ErrorDialog(const GView::Utils::ErrorList& errList);
         bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
+    };
+
+    struct KeyboardControlsImplementation : public KeyboardControlsInterface
+    {
+        struct OwnedKeyboardControl {
+            Input::Key Key;
+            std::string Caption;
+            std::string Explanation;
+            uint32 CommandId;
+
+            OwnedKeyboardControl(KeyboardControl* key) : Key(key->Key), Caption(key->Caption), Explanation(key->Explanation), CommandId(key->CommandId){}
+        };
+
+        std::vector<OwnedKeyboardControl> keys;
+
+        virtual bool RegisterKey(KeyboardControl* key) override;
     };
 } // namespace App
 } // namespace GView
