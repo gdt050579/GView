@@ -532,6 +532,12 @@ namespace Panels
 
 namespace Commands
 {
+    static constexpr uint32 MACHO_COMMAND_DIGITAL_SIGNATURE = 0;
+
+    static KeyboardControl MACHO_COMMANDS[] = {
+        { Input::Key::Alt | Input::Key::F8, "DigitalSignature", "Show digital signature", MACHO_COMMAND_DIGITAL_SIGNATURE },
+    };
+
     class CodeSignMagic : public AppCUI::Controls::Window
     {
       private:

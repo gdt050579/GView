@@ -4,6 +4,12 @@
 
 namespace GView::Type::MAM
 {
+static constexpr uint32 MAM_COMMAND_DECOMPRESS = 0;
+
+static KeyboardControl MAM_COMMANDS[] = {
+    { Input::Key::Shift | Input::Key::F10, "Decompress", "Decompress file", MAM_COMMAND_DECOMPRESS },
+};
+
 class MAMFile : public TypeInterface
 {
   public:
