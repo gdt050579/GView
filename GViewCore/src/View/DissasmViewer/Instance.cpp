@@ -161,6 +161,14 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
     }
 }
 
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (auto& key : Config::AllKeyboardCommands) {
+        interface->RegisterKey(&key.get());
+    }
+    return true;
+}
+
 int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;

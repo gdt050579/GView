@@ -886,6 +886,10 @@ namespace View
         virtual bool ShowGoToDialog()                   = 0;
         virtual bool ShowFindDialog()                   = 0;
         virtual bool ShowCopyDialog()                   = 0;
+        virtual bool UpdateKeys(KeyboardControlsInterface* interface)
+        {
+            return true;
+        }
 
         inline std::string_view GetName() const
         {
