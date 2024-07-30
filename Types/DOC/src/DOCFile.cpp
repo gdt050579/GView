@@ -1,6 +1,4 @@
 #include "doc.hpp"
-
-#include <fstream> // TODO: remove
 #include <math.h>
 
 namespace GView::Type::DOC
@@ -572,7 +570,7 @@ bool DOCFile::ParseVBAProject()
         }
 
         // get the sector data
-        size_t byteOffset = sectorSize * (sect + 1);
+        size_t byteOffset = sectorSize * (sect + 1ULL);
         BufferView sector(vbaProjectBuffer.GetData() + byteOffset, sectorSize);
         FAT.Add(sector);
     }
@@ -648,7 +646,7 @@ bool DOCFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
 
     // TODO: add the creation time and modified time of the module stream
 
-    item.SetText(2, String().Format("%u", decompressed.GetLength()));
+    item.SetText(2, String().Format("%llu", decompressed.GetLength()));
 
     item.SetText(3, moduleRecord.docString);
 
