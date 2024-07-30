@@ -472,6 +472,7 @@ namespace App
         void OpenFolder();
         void ShowErrors();
         void ShowTutorial();
+        void ShowAboutWindow();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,

@@ -44,6 +44,8 @@ constexpr GViewMenuCommand menuHelpList[] = {
     { "&About", MenuCommands::ABOUT, Key::None },
 };
 
+constexpr ItemHandle menuHelpListDisabledCommandsList[] = { 0 };
+
 bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
 {
     while (count > 0) {
@@ -125,6 +127,9 @@ bool Instance::BuildMainMenus()
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
     CHECK(AddMenuCommands(mnuHelp, menuHelpList, ARRAY_LEN(menuHelpList)), false, "");
+    for (auto itemHandle : menuHelpListDisabledCommandsList) {
+        CHECK(mnuHelp->SetEnable(itemHandle, false), false, "Fail to disable menu item");
+    }
     return true;
 }
 
@@ -551,6 +556,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::OPEN_FOLDER:
             OpenFolder();
+            return true;
+        case MenuCommands::ABOUT:
+            ShowAboutWindow();
             return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
