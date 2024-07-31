@@ -132,6 +132,33 @@ class FindDialog : public Window, public Handlers::OnCheckInterface
     }
 };
 
+namespace Commands
+{
+    constexpr int BUFFERVIEW_CMD_CHANGECOL         = 0xBF00;
+    constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
+    constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
+    constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
+    constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
+    constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
+    constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
+    constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
+    constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
+    constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
+
+    //TODO: fully integrate these commands
+    static KeyboardControl ChangeColumnsCount = { Input::Key::F6, "ChangeColumnsCount", "Change the columns number", BUFFERVIEW_CMD_CHANGECOL };
+    static KeyboardControl ChangeValueFormatOrCP = { Input::Key::F2, "ChangeValueFormatOrCP", "Change value formats: change base", BUFFERVIEW_CMD_CHANGEBASE };
+    static KeyboardControl ChangeAddressMode     = { Input::Key::F3, "ChangeAddressMode", "Change the columns number", BUFFERVIEW_CMD_CHANGEADDRESSMODE };
+    static KeyboardControl GoToEntryPoint        = { Input::Key::F7, "GoToEntryPoint", "Go to the zone entrypoint", BUFFERVIEW_CMD_GOTOEP };
+    static KeyboardControl ChangeSelectionType   = { Input::Key::F9, "ChangeSelectionType", "Change the columns number", BUFFERVIEW_CMD_CHANGESELECTION };
+    static KeyboardControl ShowHideStrings       = {
+        Input::Key::Alt | Input::Key::F3, "ShowHideStrings", "Enable or disable string highlighting", BUFFERVIEW_CMD_HIDESTRINGS
+    };
+    static KeyboardControl FindNext      = { Input::Key::Ctrl | Input::Key::F7, "FindNext", "Find the next sequence", BUFFERVIEW_CMD_FINDNEXT };
+    static KeyboardControl FindPrevious  = { Input::Key::Ctrl | Input::Key::Shift | Input::Key::F7, "FindPrevious", "Find previous sequence", BUFFERVIEW_CMD_FINDPREVIOUS };
+    static KeyboardControl DissasmDialogCmd = { Input::Key::Ctrl | Input::Key::D, "DissasmDialog", "Open dissasm dialog", BUFFERVIEW_CMD_DISSASM_DIALOG };
+}
+
 class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface, public GView::Utils::ObjectHighlightingZonesInterface
 {
     struct DrawLineInfo {
@@ -301,6 +328,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
     virtual void OnFocus() override;
     virtual void OnLoseFocus() override;
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
 
     virtual bool GoTo(uint64 offset) override;
     virtual bool Select(uint64 offset, uint64 size) override;
