@@ -445,6 +445,28 @@ namespace App
 
     }; // namespace MenuCommands
 
+    namespace InstanceCommands
+    {
+        constexpr int CMD_NEXT_VIEW             = 30012345;
+        constexpr int CMD_GOTO                  = 30012346;
+        constexpr int CMD_FIND                  = 30012347;
+        constexpr int CMD_CHOSE_NEW_TYPE        = 30012348;
+        constexpr int CMD_SHOW_KEY_CONFIGURATOR = 30012349;
+        constexpr int CMD_COPY_DIALOG           = 30012350;
+        constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
+
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
+        static GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_FIND   = { Input::Key::Ctrl | Input::Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
+        static GView::KeyboardControl INSTANCE_COMMAND_FIND      = { Input::Key::Alt | Input::Key::F7, "FindDialog", "Open the Find dialog", CMD_FIND };
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Input::Key::Ctrl | Input::Key::C, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Input::Key::Ctrl | Input::Key::Insert, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
+        static GView::KeyboardControl INSTANCE_CHANGE_VIEW      = { Input::Key::F4, "ChangeView", "Change the current viewer", CMD_NEXT_VIEW };
+        static GView::KeyboardControl INSTANCE_SWITCH_TO        = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Set focus on viewer", CMD_SWITCH_TO_VIEW };
+        static GView::KeyboardControl INSTANCE_NEW_TYPE         = { Input::Key::Alt | Input::Key::F1, "ChoseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
+        static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
+    }
+
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
                      public AppCUI::Controls::Handlers::OnStartInterface
@@ -458,15 +480,6 @@ namespace App
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
         std::filesystem::path lastOpenedFolderLocation;
-        struct
-        {
-            AppCUI::Input::Key changeViews;
-            AppCUI::Input::Key switchToView;
-            AppCUI::Input::Key goTo;
-            AppCUI::Input::Key find;
-            AppCUI::Input::Key choseNewType;
-            AppCUI::Input::Key showKeyConfigurator;
-        } Keys;
 
         bool BuildMainMenus();
         bool LoadSettings();
@@ -537,30 +550,6 @@ namespace App
         constexpr inline uint32 GetDefaultCacheSize() const
         {
             return this->defaultCacheSize;
-        }
-        constexpr inline AppCUI::Input::Key GetChangeViewesKey() const
-        {
-            return this->Keys.changeViews;
-        }
-        constexpr inline AppCUI::Input::Key GetSwitchToViewKey() const
-        {
-            return this->Keys.switchToView;
-        }
-        constexpr inline AppCUI::Input::Key GetGoToKey() const
-        {
-            return this->Keys.goTo;
-        }
-        constexpr inline AppCUI::Input::Key GetFindKey() const
-        {
-            return this->Keys.find;
-        }
-        constexpr inline AppCUI::Input::Key GetChoseNewTypeKey() const
-        {
-            return this->Keys.choseNewType;
-        }
-        constexpr inline AppCUI::Input::Key GetKeyConfiguratorKey() const
-        {
-            return this->Keys.showKeyConfigurator;
         }
 
         // property interface

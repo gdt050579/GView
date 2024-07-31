@@ -8,25 +8,14 @@
 #include "LexicalViewer.hpp"
 
 using namespace GView::App;
+using namespace GView::App::InstanceCommands;
 using namespace GView::View;
 using namespace AppCUI::Input;
 
 // constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
-constexpr int CMD_NEXT_VIEW              = 30012345;
-constexpr int CMD_GOTO                   = 30012346;
-constexpr int CMD_FIND                   = 30012347;
-constexpr int CMD_CHOSE_NEW_TYPE         = 30012348;
-constexpr int CMD_SHOW_KEY_CONFIGURATOR  = 30012349;
-constexpr int CMD_COPY_DIALOG            = 30012350;
 constexpr int CMD_FOR_TYPE_PLUGIN_START  = 50000000;
-
-
-static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO = { Key::Ctrl | Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
-static GView::KeyboardControl FILE_WINDOW_COMMAND_FIND = { Key::Ctrl | Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
-static GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Key::Ctrl | Key::C, "CopyDialog", "Open the Copy dialog", CMD_COPY_DIALOG };
-static GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Key::Ctrl | Key::Insert, "CopyDialog", "Open the Copy dialog", CMD_COPY_DIALOG };
 
 class CursorInformation : public UserControl
 {
@@ -202,23 +191,24 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == gviewApp->GetSwitchToViewKey())
+    if (keyCode == INSTANCE_SWITCH_TO.Key)
     {
         if (!view->HasFocus())
             view->SetFocus();
         return true;
     }
-    // finally --> check some hardcoded commands
-    switch (keyCode)
+
+    //TODO: maybe optimize this more
+    if (keyCode == FILE_WINDOW_COMMAND_GOTO.Key) 
     {
-    case Key::Ctrl | Key::G://case FILE_WINDOW_COMMAND_GOTO.Key:
         ShowGoToDialog();
         return true;
-    case Key::Ctrl | Key::F://case FILE_WINDOW_COMMAND_FIND.Key:
+    }
+    if (keyCode == FILE_WINDOW_COMMAND_FIND.Key) {
         ShowFindDialog();
         return true;
-    case Key::Ctrl | Key::C://case FILE_WINDOW_COMMAND_COPY.Key:
-    case Key::Ctrl | Key::Insert://case FILE_WINDOW_COMMAND_INSERT.Key:
+    }
+    if (keyCode == FILE_WINDOW_COMMAND_COPY.Key || keyCode == FILE_WINDOW_COMMAND_INSERT.Key) {
         ShowCopyDialog();
         return true;
     }
@@ -285,11 +275,11 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
-    commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
-    commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
-    commandBar.SetCommand(this->gviewApp->GetChoseNewTypeKey(), "SelectType", CMD_CHOSE_NEW_TYPE);
-    commandBar.SetCommand(this->gviewApp->GetKeyConfiguratorKey(), "ShowKeys", CMD_SHOW_KEY_CONFIGURATOR);
+    commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, "GoTo", CMD_GOTO);
+    commandBar.SetCommand(INSTANCE_COMMAND_FIND.Key, "Find", CMD_FIND);
+    commandBar.SetCommand(INSTANCE_NEW_TYPE.Key, "SelectType", CMD_CHOSE_NEW_TYPE);
+    commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "ShowKeys", CMD_SHOW_KEY_CONFIGURATOR);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {
@@ -313,8 +303,14 @@ void FileWindow::Start()
 bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
 {
     impl->RegisterKey(&FILE_WINDOW_COMMAND_GOTO);
+    impl->RegisterKey(&INSTANCE_COMMAND_GOTO);
     impl->RegisterKey(&FILE_WINDOW_COMMAND_FIND);
+    impl->RegisterKey(&INSTANCE_COMMAND_FIND);
     impl->RegisterKey(&FILE_WINDOW_COMMAND_COPY);
     impl->RegisterKey(&FILE_WINDOW_COMMAND_INSERT);
+    impl->RegisterKey(&INSTANCE_CHANGE_VIEW);
+    impl->RegisterKey(&INSTANCE_SWITCH_TO);
+    impl->RegisterKey(&INSTANCE_NEW_TYPE);
+    impl->RegisterKey(&INSTANCE_KEY_CONFIGURATOR);
     return true;
 }
