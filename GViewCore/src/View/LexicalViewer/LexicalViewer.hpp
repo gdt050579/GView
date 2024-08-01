@@ -31,7 +31,7 @@ namespace View
             static KeyboardControl ChangeSelectionTypeCmd = { Key::F9, "FoldAll", "Fold all lines", CMD_ID_FOLD_ALL };
             static KeyboardControl FoldAllCmd   = { Key::F8, "ChangeSelectionType", "Change the selection type", CMD_ID_CHANGE_SELECTION};
             static KeyboardControl ExpandAllCmd           = { Key::Ctrl | Key::F9, "ExpandAll", "Expand all lines", CMD_ID_EXPAND_ALL };
-            static KeyboardControl DeleteCmd              = { Key::Delete, "Delete", "Delete the token", CMD_ID_DELETE };
+            static KeyboardControl DeleteCmd              = { Key::Delete, "Delete", "Open the delete dialog", CMD_ID_DELETE };
 
             static std::array LexicalViewerCommands = { &ShowPluginsCmd, &SaveAsCmd,    &ShowMetaDataCmd, &ChangeSelectionTypeCmd,
                                                         &FoldAllCmd,     &ExpandAllCmd, &DeleteCmd
