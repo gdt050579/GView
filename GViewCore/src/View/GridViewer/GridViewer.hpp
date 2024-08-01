@@ -1,13 +1,43 @@
 #pragma once
 
 #include "Internal.hpp"
-
+#include <array>
 namespace GView
 {
 namespace View
 {
     namespace GridViewer
     {
+        namespace Commands
+        {
+            using namespace AppCUI::Input;
+            constexpr uint32 COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW = 0x1000;
+            constexpr uint32 COMMAND_ID_TOGGLE_HORIZONTAL_LINES     = 0x1001;
+            constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
+            constexpr uint32 COMMAND_ID_VIEW_CELL_CONTENT           = 0x1003;
+            constexpr uint32 COMMAND_ID_EXPORT_CELL_CONTENT         = 0x1004;
+            constexpr uint32 COMMAND_ID_EXPORT_COLUMN_CONTENT       = 0x1005;
+
+            static KeyboardControl ReplaceHeader = { Key::Space, "ReplaceHeader", "Replace header with first row", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW };
+
+            static KeyboardControl ToggleHorizontalLines = {
+                Key::H, "ToggleHorizontalLines", "Toggle horizontal lines on/off", COMMAND_ID_TOGGLE_HORIZONTAL_LINES
+            };
+            static KeyboardControl ToggleVerticalLines = { Key::V, "ToggleVerticalLines", "Toggle vertical lines on/off", COMMAND_ID_TOGGLE_VERTICAL_LINES };
+            static KeyboardControl ViewCellContent     = {
+                Key::Enter, "ViewCellContent", "View the content in the current selected cell", COMMAND_ID_VIEW_CELL_CONTENT
+            };
+            static KeyboardControl ExportCellContent = {
+                Key::Ctrl | Key::S, "ExportCellContent", "Export the content of the current cell", COMMAND_ID_EXPORT_CELL_CONTENT
+            };
+            static KeyboardControl ExportColumnContent = {
+                Key::Ctrl | Key::Alt | Key::S, "ExportColumnContent", "Export the content of the current column", COMMAND_ID_EXPORT_COLUMN_CONTENT
+            };
+
+            static std::array AllGridCommands = { &ReplaceHeader, &ToggleHorizontalLines, &ToggleVerticalLines, &ViewCellContent, &ExportCellContent, &ExportColumnContent };
+        }
+
+
         struct SettingsData
         {
             String name;
@@ -75,15 +105,6 @@ namespace View
         {
             struct
             {
-                AppCUI::Input::Key replaceHeaderWith1stRow;
-                AppCUI::Input::Key toggleHorizontalLines;
-                AppCUI::Input::Key toggleVerticalLines;
-                AppCUI::Input::Key viewCellContent;
-                AppCUI::Input::Key exportCellContent;
-                AppCUI::Input::Key exportColumnContent;
-            } keys;
-            struct
-            {
                 struct
                 {
                     ColorPair name{ Color::Yellow, Color::Transparent };
@@ -129,6 +150,7 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+            bool UpdateKeys(KeyboardControlsInterface* interface) override;
 
           private:
             void PopulateGrid();
