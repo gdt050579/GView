@@ -5,9 +5,9 @@ using namespace AppCUI::Input;
 
 void Config::Update(IniSection sect)
 {
-    sect.UpdateValue("Key.Plugins", Key::F1, true);
-    sect.UpdateValue("Key.SaveAs", Key::F2, true);
-    sect.UpdateValue("Key.ShowMetaData", Key::F3, true);
+    sect.UpdateValue("Key.Plugins", Key::F2, true);
+    sect.UpdateValue("Key.SaveAs", Key::F3, true);
+    sect.UpdateValue("Key.ShowMetaData", Key::F7, true);
     sect.UpdateValue("Key.ChangeSelectionType", Key::F9, true);
     sect.UpdateValue("Key.FoldAll", Key::F8, true);
     sect.UpdateValue("Key.ExpandAll", Key::Ctrl | Key::F8, true);
@@ -18,17 +18,17 @@ void Config::Initialize()
     if (ini)
     {
         auto sect                      = ini->GetSection("View.Lexical");
-        this->Keys.showPlugins         = sect.GetValue("Key.Plugins").ToKey(Key::F1);
-        this->Keys.saveAs              = sect.GetValue("Key.SaveAs").ToKey(Key::F2);
-        this->Keys.showMetaData        = sect.GetValue("Key.ShowMetaData").ToKey(Key::F3);
+        this->Keys.showPlugins         = sect.GetValue("Key.Plugins").ToKey(Key::F2);
+        this->Keys.saveAs              = sect.GetValue("Key.SaveAs").ToKey(Key::F3);
+        this->Keys.showMetaData        = sect.GetValue("Key.ShowMetaData").ToKey(Key::F7);
         this->Keys.changeSelectionType = sect.GetValue("Key.ChangeSelectionType").ToKey(Key::F9);
         this->Keys.foldAll             = sect.GetValue("Key.FoldAll").ToKey(Key::F8);
         this->Keys.expandAll           = sect.GetValue("Key.ExpandAll").ToKey(Key::Ctrl | Key::F8);
     }
     else
     {
-        this->Keys.showPlugins         = Key::F1;
-        this->Keys.saveAs              = Key::F2;
+        this->Keys.showPlugins         = Key::F2;
+        this->Keys.saveAs              = Key::F3;
         this->Keys.showPlugins         = Key::F3;
         this->Keys.changeSelectionType = Key::F9;
         this->Keys.foldAll             = Key::F8;
