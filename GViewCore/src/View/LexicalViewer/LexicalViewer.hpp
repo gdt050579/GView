@@ -1,6 +1,9 @@
 #pragma once
 
 #include "Internal.hpp"
+#include <array>
+
+#include "ImageViewer.hpp"
 
 namespace GView
 {
@@ -10,6 +13,30 @@ namespace View
     {
         using namespace AppCUI;
         using namespace GView::Utils;
+
+        namespace Commands
+        {
+            using namespace AppCUI::Input;
+            constexpr int32 CMD_ID_SHOW_METADATA    = 0xBF00;
+            constexpr int32 CMD_ID_SAVE_AS          = 0xBF01;
+            constexpr int32 CMD_ID_DELETE           = 0xBF02;
+            constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
+            constexpr int32 CMD_ID_FOLD_ALL         = 0xBF04;
+            constexpr int32 CMD_ID_EXPAND_ALL       = 0xBF05;
+            constexpr int32 CMD_ID_SHOW_PLUGINS     = 0xBF06;
+
+            static KeyboardControl ShowPluginsCmd         = { Key::F2, "Plugins", "Zoom in the picture", CMD_ID_SHOW_PLUGINS };
+            static KeyboardControl SaveAsCmd              = { Key::F3, "SaveAs", "Zoom out the picture", CMD_ID_SAVE_AS };
+            static KeyboardControl ShowMetaDataCmd        = { Key::F7, "ShowMetaData", "Show or hide metadata", CMD_ID_SHOW_METADATA };
+            static KeyboardControl ChangeSelectionTypeCmd = { Key::F9, "FoldAll", "Fold all lines", CMD_ID_FOLD_ALL };
+            static KeyboardControl FoldAllCmd   = { Key::F8, "ChangeSelectionType", "Change the selection type", CMD_ID_CHANGE_SELECTION};
+            static KeyboardControl ExpandAllCmd           = { Key::Ctrl | Key::F9, "ExpandAll", "Expand all lines", CMD_ID_EXPAND_ALL };
+            static KeyboardControl DeleteCmd              = { Key::Delete, "Delete", "Delete the token", CMD_ID_DELETE };
+
+            static std::array LexicalViewerCommands = { &ShowPluginsCmd, &SaveAsCmd,    &ShowMetaDataCmd, &ChangeSelectionTypeCmd,
+                                                        &FoldAllCmd,     &ExpandAllCmd, &DeleteCmd
+            };
+        }
 
         enum class FoldStatus : uint32
         {
@@ -218,15 +245,6 @@ namespace View
 
         struct Config
         {
-            struct
-            {
-                AppCUI::Input::Key saveAs;
-                AppCUI::Input::Key showPlugins;
-                AppCUI::Input::Key showMetaData;
-                AppCUI::Input::Key changeSelectionType;
-                AppCUI::Input::Key foldAll;
-                AppCUI::Input::Key expandAll;
-            } Keys;
             bool Loaded;
 
             static void Update(IniSection sect);
@@ -402,6 +420,7 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+            bool UpdateKeys(KeyboardControlsInterface* interface) override;
         };
         enum class ApplyMethod
         {
