@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.345.0"
+#define GVIEW_VERSION "0.347.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -1068,15 +1068,15 @@ namespace View
                     return u16string_view{ text + start, (size_t) (end - start) };
                 return u16string_view();
             }
-            uint32 ParseUntillEndOfLine(uint32 index) const;
-            uint32 ParseUntillStartOfNextLine(uint32 index) const;
+            uint32 ParseUntilEndOfLine(uint32 index) const;
+            uint32 ParseUntilStartOfNextLine(uint32 index) const;
             uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseBackwards(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
             uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
             uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
             uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
-            uint32 ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint32 ParseUntilText(uint32 index, string_view textToFind, bool ignoreCase) const;
             uint32 ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const;
             uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase) const;
             uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
@@ -1493,6 +1493,7 @@ namespace Unpack
     namespace Base64
     {
         CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMessage);
         CORE_EXPORT bool Decode(BufferView view, Buffer& output);
     } // namespace Base64
     namespace QuotedPrintable

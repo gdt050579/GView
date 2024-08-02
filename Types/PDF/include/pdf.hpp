@@ -10,7 +10,35 @@ namespace Type
     {
 #pragma pack(push, 2)
 
+        namespace WSC // white space characters
+        {
+            constexpr uint8 HORIZONAL_TAB = 0x09;
+            constexpr uint8 LINE_FEED = 0x0A;
+            constexpr uint8 FORM_FEED = 0x0C;
+            constexpr uint8 CARRIAGE_RETURN = 0x0D;
+            constexpr uint8 SPACE = 0x20;
+        }
+
+        namespace DC
+        {
+            constexpr uint8 LEFT_PARETHESIS = 0x28; // (
+            constexpr uint8 RIGHT_PARETHESIS = 0x29; // )
+            constexpr uint8 LESS_THAN = 0x3C; // <
+            constexpr uint8 GREATER_THAN = 0x3E; // >
+            constexpr uint8 LEFT_SQUARE_BRACKET = 0x5B; // [
+            constexpr uint8 RIGHT_SQUARE_BRACKET = 0x5D; // ]
+            constexpr uint8 LEFT_CURLY_BRACKET   = 0x7B; // {
+            constexpr uint8 RIGHT_CURLY_BRACKET   = 0x7D; // }
+            constexpr uint8 SOLIUDS = 0x2F; // / 
+            constexpr uint8 PERCENT = 0x25;// %
+        }
+
         constexpr uint8_t PDF_MAGIC[] = "%PDF-";
+        constexpr uint8_t PDF_EOF[]   = "%%EOF";
+        constexpr uint8_t PDF_EOF_SIZE  = 5;
+        constexpr uint8_t PDF_XREF[]  = "xref";
+        constexpr uint8_t PDF_TRAILER[] = "trailer";
+        constexpr uint8_t PDF_TRAILER_SIZE   = 7;
 
         struct Header {
             char identifier[5]; // %PDF-
@@ -25,7 +53,7 @@ namespace Type
         {
           public:
             Header header{};
-
+            bool version_under_5;
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
           public:
