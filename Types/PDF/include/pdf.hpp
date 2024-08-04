@@ -39,6 +39,8 @@ namespace Type
         constexpr uint8_t PDF_XREF[]  = "xref";
         constexpr uint8_t PDF_TRAILER[] = "trailer";
         constexpr uint8_t PDF_TRAILER_SIZE   = 7;
+        constexpr uint8_t PDF_PREV[]       = "/Prev";
+        constexpr uint8_t PDF_PREV_SIZE      = 5;
 
         struct Header {
             char identifier[5]; // %PDF-
