@@ -25,6 +25,7 @@ namespace Type
             constexpr uint8 RIGHT_PARETHESIS = 0x29; // )
             constexpr uint8 LESS_THAN = 0x3C; // <
             constexpr uint8 GREATER_THAN = 0x3E; // >
+            constexpr uint16 END_TAG              = 0x3E3E; // >>
             constexpr uint8 LEFT_SQUARE_BRACKET = 0x5B; // [
             constexpr uint8 RIGHT_SQUARE_BRACKET = 0x5D; // ]
             constexpr uint8 LEFT_CURLY_BRACKET   = 0x7B; // {
@@ -33,14 +34,36 @@ namespace Type
             constexpr uint8 PERCENT = 0x25;// %
         }
 
+        namespace FILTER
+        {
+            constexpr uint8_t ASCIIHEX[] = "/ASCIIHexDecode";
+            constexpr uint8_t ASCII85[] = "/ASCII85Decode";
+            constexpr uint8_t LZW[] = "/LZWDecode";
+            constexpr uint8_t FLATE[] = "/FlateDecode";
+            constexpr uint8_t RUNLENGTH[] = "/RunLengthDecode";
+            constexpr uint8_t CCITTFAX[] = "/CCITTFaxDecode";
+            constexpr uint8_t JBIG2[] = "/JBIG2Decode";
+            constexpr uint8_t DCT[] = "/DCTDecode";
+            constexpr uint8_t JPX[] = "/JPXDecode";
+            constexpr uint8_t CRYPT[] = "/Crypt";
+        }
+
         constexpr uint8_t PDF_MAGIC[] = "%PDF-";
         constexpr uint8_t PDF_EOF[]   = "%%EOF";
         constexpr uint8_t PDF_EOF_SIZE  = 5;
         constexpr uint8_t PDF_XREF[]  = "xref";
         constexpr uint8_t PDF_TRAILER[] = "trailer";
         constexpr uint8_t PDF_TRAILER_SIZE   = 7;
+        constexpr uint8_t PDF_STREAM[]           = "stream";
+        constexpr uint8_t PDF_STREAM_SIZE    = 6;
+        constexpr uint8_t PDF_ENDSTREAM[]           = "endstream";
+        constexpr uint8_t PDF_ENDSTREAM_SIZE = 9;
         constexpr uint8_t PDF_PREV[]       = "/Prev";
         constexpr uint8_t PDF_PREV_SIZE      = 5;
+        constexpr uint8_t PDF_STREAM_LENGTH[]    = "/Length";
+        constexpr uint8_t PDF_STREAM_LENGTH_SIZE = 7;
+        constexpr uint8_t PDF_FILTER[]           = "/Filter";
+        constexpr uint8_t PDF_FILTER_SIZE = 7;
 
         struct Header {
             char identifier[5]; // %PDF-

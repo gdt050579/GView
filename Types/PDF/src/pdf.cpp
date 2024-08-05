@@ -32,6 +32,35 @@ extern "C"
         return new PDF::PDFFile;
     }
 
+    bool CheckType(GView::Utils::DataCache& data, uint64& offset, const uint64& size_type, const uint8_t PDF_ARRAY[])
+    {
+        uint8_t buffer;
+        bool match = true;
+        for (size_t i = 0; i < size_type; ++i) {
+            if (!data.Copy(offset + i, buffer) || buffer != PDF_ARRAY[i]) {
+                match = false;
+                break;
+            }
+        }
+        return match;
+    }
+
+    uint64 GetTypeValue(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize)
+    {
+        std::string lengthValStr;
+        uint8_t buffer;
+        uint64 value = 0;
+        while (offset < dataSize && data.Copy(offset, buffer) && buffer >= '0' && buffer <= '9') {
+            lengthValStr.push_back(buffer);
+            offset++;
+        }
+
+        if (!lengthValStr.empty()) {
+            value = std::stoull(lengthValStr);
+        }
+        return value;
+    }
+
     void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::DataCache& data, std::vector<uint64_t> &objectOffsets)
     {
         // Read each 20-byte entry
@@ -110,14 +139,7 @@ extern "C"
         uint8_t buffer;
         bool foundTrailer = false;
         for (; offset < dataSize - PDF::PDF_TRAILER_SIZE; ++offset) {
-            bool match = true;
-            for (size_t i = 0; i < PDF::PDF_TRAILER_SIZE; ++i) {
-                if (!data.Copy(offset + i, buffer) || buffer != PDF::PDF_TRAILER[i]) {
-                    match = false;
-                    break;
-                }
-            }
-
+            const bool match = CheckType(data, offset, PDF::PDF_TRAILER_SIZE, PDF::PDF_TRAILER);
             if (match) {
                 trailerOffset = offset;
                 foundTrailer  = true;
@@ -234,18 +256,11 @@ extern "C"
                 bool found_prev = false;
                 if (foundTrailer) {
                     for (offset = trailerOffset; offset < eofOffset - PDF::PDF_PREV_SIZE; ++offset) {
-                        bool match = true;
-                        for (size_t i = 0; i < PDF::PDF_PREV_SIZE; ++i) {
-                            if (!data.Copy(offset + i, buffer) || buffer != PDF::PDF_PREV[i]) {
-                                match = false;
-                                break;
-                            }
-                        }
-
+                        const bool match = CheckType(data, offset, PDF::PDF_PREV_SIZE, PDF::PDF_PREV);
                         if (match) {
                             offset += PDF::PDF_PREV_SIZE;
 
-                            while (offset < eofOffset && (data.Copy(offset, buffer) && (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED ||
+                            while (offset < dataSize && (data.Copy(offset, buffer) && (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED ||
                                                                                         buffer == PDF::WSC::CARRIAGE_RETURN))) {
                                 offset++;
                             }
@@ -284,7 +299,65 @@ extern "C"
                 settings.AddZone(objOffset, length, colors[i % colors.size()], "Obj " + std::to_string(i + 1));
             }
         } else {    // PDF 1.5-1.7
-            
+
+            bool next_CR_stream = true;
+            while (next_CR_stream) {
+
+                offset = crossRefOffset;
+                uint8_t tag;
+                bool end_tag = false;
+                bool typeFound[] = { false, false, false };
+                uint64 lengthVal = 0;
+                std::vector<uint8_t> streamData;
+                bool filterType = 0; // FLATE ONLY
+
+                while (!end_tag) {
+                    if (CheckType(data, offset, PDF::PDF_STREAM_SIZE, PDF::PDF_STREAM)) {
+                        end_tag = true;
+                        offset += PDF::PDF_STREAM_SIZE;
+                        break;
+                    }
+
+                    if (data.Copy(offset, tag) && tag == PDF::DC::SOLIUDS) {                                                 // the first byte of tag is "/"
+                        if (!typeFound[0] && CheckType(data, offset, PDF::PDF_STREAM_LENGTH_SIZE, PDF::PDF_STREAM_LENGTH)) { // /Length
+                            offset += PDF::PDF_STREAM_LENGTH_SIZE + 1;
+                            lengthVal    = GetTypeValue(data, offset, dataSize);
+                            typeFound[0] = true;
+                        } 
+                        if (!typeFound[1] && CheckType(data, offset, PDF::PDF_FILTER_SIZE, PDF::PDF_FILTER)) { // /Filter
+                            offset += PDF::PDF_FILTER_SIZE + 1;
+                            typeFound[1] = true;
+                        } 
+                        if (!typeFound[2] && CheckType(data, offset, PDF::PDF_PREV_SIZE, PDF::PDF_PREV)) { // /Prev
+                            offset += PDF::PDF_PREV_SIZE + 1;
+                            prevOffset   = GetTypeValue(data, offset, dataSize);
+                            typeFound[2] = true;
+                        }
+                    }
+                    offset++;
+                }
+                if (end_tag) {
+                    if (typeFound[0]) { // copy the stream data
+                        offset += 1;
+                        streamData.resize(lengthVal);
+                        for (uint64 i = 0; i < lengthVal; ++i) {
+                            if (!data.Copy(offset + i, streamData[i])) {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (typeFound[1]) { // decode data
+
+                    }
+
+                    if (typeFound[2]) { // offset of the previous cross reference stream
+                        crossRefOffset = prevOffset;
+                    } else {
+                        next_CR_stream = false;
+                    }
+                }
+            }
         }
 
         pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
