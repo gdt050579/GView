@@ -803,6 +803,13 @@ std::string_view PEFile::DirectoryIDToName(uint32_t dirID)
     return std::string_view{};
 }
 
+bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (auto& entry: PE_COMMANDS)
+        interface->RegisterKey(&entry);
+    return true;
+}
+
 bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
 {
     DIBInfoHeader dibHeader{};

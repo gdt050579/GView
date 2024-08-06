@@ -111,6 +111,10 @@ class PrefetchFile : public TypeInterface
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 };
 
 namespace Panels

@@ -75,6 +75,10 @@ namespace Type
             void RunCommand(std::string_view) override
             {
             }
+            virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
 
             bool LoadImageToObject(Image& img, uint32 index) override;
 

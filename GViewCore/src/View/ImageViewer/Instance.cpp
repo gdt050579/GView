@@ -1,14 +1,10 @@
 #include "ImageViewer.hpp"
 
 using namespace GView::View::ImageViewer;
+using namespace GView::View::ImageViewer::Commands;
 using namespace AppCUI::Input;
 
 Config Instance::config;
-
-constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
-constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
-constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
-constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl("Image View")
 {
@@ -73,12 +69,13 @@ void Instance::LoadImage()
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
-    commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
+    commandBar.SetCommand(ZoomIn.Key, ZoomIn.Caption, ZoomIn.CommandId);
+    commandBar.SetCommand(ZoomOut.Key, ZoomOut.Caption, ZoomOut.CommandId);
     if (this->settings->imgList.size() > 1)
     {
-        commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
-        commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
+        //prev/next image
+        commandBar.SetCommand(NextImage.Key, NextImage.Caption, NextImage.CommandId);
+        commandBar.SetCommand(PrevImage.Key, PrevImage.Caption, PrevImage.CommandId);
     }
     return false;
 }
@@ -235,10 +232,10 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = Size{ img.GetWidth(), img.GetHeight() };
         return true;
     case PropertyID::ZoomIn:
-        value = config.Keys.ZoomIn;
+        value = ZoomIn.Key;
         return true;
     case PropertyID::ZoomOut:
-        value = config.Keys.ZoomOut;
+        value = ZoomOut.Key;
         return true;
     }
     return false;
@@ -261,10 +258,10 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         LoadImage();
         return true;
     case PropertyID::ZoomIn:
-        config.Keys.ZoomIn = std::get<Key>(value);
+        ZoomIn.Key = std::get<Key>(value);
         return true;
     case PropertyID::ZoomOut:
-        config.Keys.ZoomOut = std::get<Key>(value);
+        ZoomOut.Key = std::get<Key>(value);
         return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
@@ -295,5 +292,13 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ZoomOut), "Shortcuts", "Key for ZoomOut", PropertyType::Key },
 
     };
+}
+
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (const auto& cmd : ImageViewCommands) {
+        interface->RegisterKey(cmd);
+    }
+    return true;
 }
 #undef BT

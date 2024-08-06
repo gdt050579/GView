@@ -255,6 +255,11 @@ extern "C"
         sect["Priority"]                 = 1;
         sect["Description"]              = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
         sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
-        sect["Command.DigitalSignature"] = AppCUI::Input::Key::Alt | AppCUI::Input::Key::F8;
+
+        LocalString<128> buffer;
+        for (const auto& command : MachO::Commands::MACHO_COMMANDS) {
+            buffer.SetFormat("Command.%s", command.Caption);
+            sect[buffer.GetText()] = command.Key;
+        }
     }
 }

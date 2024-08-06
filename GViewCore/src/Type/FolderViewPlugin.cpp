@@ -44,6 +44,10 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
     void RunCommand(std::string_view) override
     {
     }
+    bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;

@@ -231,6 +231,10 @@ class DOCFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     bool ParseUncompressedDirStream(BufferView bv);
     bool ParseModuleStream(BufferView bv, const MODULE_Record& moduleRecord, Buffer& text);
     bool FindModulesPath(const CFDirEntry& entry, UnicodeStringBuilder& path);
+    bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 };
 
 namespace Panels

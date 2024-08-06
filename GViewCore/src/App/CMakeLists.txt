@@ -7,4 +7,5 @@ target_sources(GViewCore PRIVATE
     SelectTypeDialog.cpp 
     TutorialWindow.cpp
     AboutWindow.cpp
+    KeyConfiguratorWindow.cpp
 )
