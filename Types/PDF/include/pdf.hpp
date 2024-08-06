@@ -36,34 +36,53 @@ namespace Type
 
         namespace FILTER
         {
-            constexpr uint8_t ASCIIHEX[] = "/ASCIIHexDecode";
-            constexpr uint8_t ASCII85[] = "/ASCII85Decode";
-            constexpr uint8_t LZW[] = "/LZWDecode";
-            constexpr uint8_t FLATE[] = "/FlateDecode";
-            constexpr uint8_t RUNLENGTH[] = "/RunLengthDecode";
-            constexpr uint8_t CCITTFAX[] = "/CCITTFaxDecode";
-            constexpr uint8_t JBIG2[] = "/JBIG2Decode";
-            constexpr uint8_t DCT[] = "/DCTDecode";
-            constexpr uint8_t JPX[] = "/JPXDecode";
-            constexpr uint8_t CRYPT[] = "/Crypt";
+            constexpr const char ASCIIHEX[] = "/ASCIIHexDecode";
+            constexpr const char ASCII85[]  = "/ASCII85Decode";
+            constexpr const char LZW[]      = "/LZWDecode";
+            constexpr const char FLATE[]    = "/FlateDecode";
+            constexpr const char RUNLENGTH[] = "/RunLengthDecode";
+            constexpr const char CCITTFAX[]  = "/CCITTFaxDecode";
+            constexpr const char JBIG2[]     = "/JBIG2Decode";
+            constexpr const char DCT[]       = "/DCTDecode";
+            constexpr const char JPX[]       = "/JPXDecode";
+            constexpr const char CRYPT[]     = "/Crypt";
         }
 
-        constexpr uint8_t PDF_MAGIC[] = "%PDF-";
-        constexpr uint8_t PDF_EOF[]   = "%%EOF";
-        constexpr uint8_t PDF_EOF_SIZE  = 5;
-        constexpr uint8_t PDF_XREF[]  = "xref";
-        constexpr uint8_t PDF_TRAILER[] = "trailer";
-        constexpr uint8_t PDF_TRAILER_SIZE   = 7;
-        constexpr uint8_t PDF_STREAM[]           = "stream";
-        constexpr uint8_t PDF_STREAM_SIZE    = 6;
-        constexpr uint8_t PDF_ENDSTREAM[]           = "endstream";
-        constexpr uint8_t PDF_ENDSTREAM_SIZE = 9;
-        constexpr uint8_t PDF_PREV[]       = "/Prev";
-        constexpr uint8_t PDF_PREV_SIZE      = 5;
-        constexpr uint8_t PDF_STREAM_LENGTH[]    = "/Length";
-        constexpr uint8_t PDF_STREAM_LENGTH_SIZE = 7;
-        constexpr uint8_t PDF_FILTER[]           = "/Filter";
-        constexpr uint8_t PDF_FILTER_SIZE = 7;
+        namespace KEY
+        {
+            constexpr uint8_t PDF_MAGIC[] = "%PDF-";
+
+            constexpr uint8_t PDF_PREV[]             = "/Prev";
+            constexpr uint8_t PDF_PREV_SIZE          = 5;
+            constexpr uint8_t PDF_STREAM_LENGTH[]    = "/Length";
+            constexpr uint8_t PDF_STREAM_LENGTH_SIZE = 7;
+            constexpr uint8_t PDF_FILTER[]           = "/Filter";
+            constexpr uint8_t PDF_FILTER_SIZE        = 7;
+            constexpr uint8_t PDF_DECODEPARMS[]           = "/DecodeParms";
+            constexpr uint8_t PDF_DECODEPARMS_SIZE   = 12;
+            constexpr uint8_t PDF_W[]           = "/W";
+            constexpr uint8_t PDF_W_SIZE        = 2;
+
+            constexpr uint8_t PDF_XREF[] = "xref";
+            constexpr uint8_t PDF_TRAILER[] = "trailer";
+            constexpr uint8_t PDF_TRAILER_SIZE = 7;
+
+            constexpr uint8_t PDF_STREAM[]       = "stream";
+            constexpr uint8_t PDF_STREAM_SIZE    = 6;
+            constexpr uint8_t PDF_ENDSTREAM[]    = "endstream";
+            constexpr uint8_t PDF_ENDSTREAM_SIZE = 9;
+
+            constexpr uint8_t PDF_ENDOBJ[]    = "endobj";
+            constexpr uint8_t PDF_ENDOBJ_SIZE = 6;
+
+
+            constexpr uint8_t PDF_STARTXREF[]    = "startxref";
+            constexpr uint8_t PDF_STARTXREF_SIZE = 9;
+
+            constexpr uint8_t PDF_EOF[] = "%%EOF";
+            constexpr uint8_t PDF_EOF_SIZE = 5;
+
+        }
 
         struct Header {
             char identifier[5]; // %PDF-

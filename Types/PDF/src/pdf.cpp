@@ -17,7 +17,7 @@ extern "C"
             return false;
         }
         auto header = buf.GetObject<PDF::Header>();
-        if (std::memcmp(header->identifier, PDF::PDF_MAGIC, 5) != 0) {
+        if (std::memcmp(header->identifier, PDF::KEY::PDF_MAGIC, 5) != 0) {
             return false;
         }
         if (header->version_1 != '1' || header->point != '.' || (header->version_N < '0' || header->version_N > '7'))
@@ -59,6 +59,32 @@ extern "C"
             value = std::stoull(lengthValStr);
         }
         return value;
+    }
+
+    void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize, std::vector<std::string> &filters)
+    {
+        uint8_t buffer;
+        std::string filterValue;
+        filterValue += "/";
+        if (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE) { // /Filter /
+            offset++;
+        }
+        offset++; // skip "/"
+        while (offset < dataSize) {
+            if (!data.Copy(offset, buffer)) {
+                break;
+            }
+            if (buffer == PDF::DC::SOLIUDS || buffer == PDF::DC::GREATER_THAN || buffer == PDF::WSC::LINE_FEED) {
+                break;
+            } else {
+                filterValue += static_cast<char>(buffer);
+                offset++;
+            }
+        }
+
+        if (filterValue.length() > 1) {
+            filters.push_back(filterValue);
+        }
     }
 
     void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::DataCache& data, std::vector<uint64_t> &objectOffsets)
@@ -136,10 +162,9 @@ extern "C"
     bool GetTrailerOffset(uint64& offset, const uint64& dataSize, GView::Utils::DataCache& data, uint64& trailerOffset)
     {
         // trailer segment
-        uint8_t buffer;
         bool foundTrailer = false;
-        for (; offset < dataSize - PDF::PDF_TRAILER_SIZE; ++offset) {
-            const bool match = CheckType(data, offset, PDF::PDF_TRAILER_SIZE, PDF::PDF_TRAILER);
+        for (; offset < dataSize - PDF::KEY::PDF_TRAILER_SIZE; ++offset) {
+            const bool match = CheckType(data, offset, PDF::KEY::PDF_TRAILER_SIZE, PDF::KEY::PDF_TRAILER);
             if (match) {
                 trailerOffset = offset;
                 foundTrailer  = true;
@@ -169,7 +194,7 @@ extern "C"
         settings.AddZone(0, sizeof(PDF::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
 
         // EOF segment
-        while (offset >= (PDF::PDF_EOF_SIZE + sizeof(PDF::Header)) && !foundEOF) {
+        while (offset >= (PDF::KEY::PDF_EOF_SIZE + sizeof(PDF::Header)) && !foundEOF) {
             offset--;
 
             if (!data.Copy(offset, buffer)) {
@@ -181,17 +206,17 @@ extern "C"
             }
 
             // check for %%EOF
-            if (buffer == PDF::PDF_EOF[PDF::PDF_EOF_SIZE - 1]) {
+            if (buffer == PDF::KEY::PDF_EOF[PDF::KEY::PDF_EOF_SIZE - 1]) {
                 bool match = true;
-                for (size_t i = 0; i < PDF::PDF_EOF_SIZE; ++i) {
-                    if (!data.Copy(offset - PDF::PDF_EOF_SIZE + 1 + i, buffer) || buffer != PDF::PDF_EOF[i]) {
+                for (size_t i = 0; i < PDF::KEY::PDF_EOF_SIZE; ++i) {
+                    if (!data.Copy(offset - PDF::KEY::PDF_EOF_SIZE + 1 + i, buffer) || buffer != PDF::KEY::PDF_EOF[i]) {
                         match = false;
                     }
                 }
 
                 if (match) {
                     foundEOF = true;
-                    offset -= PDF::PDF_EOF_SIZE - 1;
+                    offset -= PDF::KEY::PDF_EOF_SIZE - 1;
                     eofOffset = offset;
                     settings.AddZone(eofOffset, dataSize - eofOffset, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
                 }
@@ -255,26 +280,17 @@ extern "C"
                 // Find /Prev in the trailer segment
                 bool found_prev = false;
                 if (foundTrailer) {
-                    for (offset = trailerOffset; offset < eofOffset - PDF::PDF_PREV_SIZE; ++offset) {
-                        const bool match = CheckType(data, offset, PDF::PDF_PREV_SIZE, PDF::PDF_PREV);
+                    for (offset = trailerOffset; offset < eofOffset - PDF::KEY::PDF_PREV_SIZE; ++offset) {
+                        const bool match = CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV);
                         if (match) {
-                            offset += PDF::PDF_PREV_SIZE;
+                            offset += PDF::KEY::PDF_PREV_SIZE;
 
                             while (offset < dataSize && (data.Copy(offset, buffer) && (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED ||
                                                                                         buffer == PDF::WSC::CARRIAGE_RETURN))) {
                                 offset++;
                             }
 
-                            // Read the /Prev offset number
-                            std::string prevOffsetStr;
-                            while (offset < eofOffset && data.Copy(offset, buffer) && buffer >= '0' && buffer <= '9') {
-                                prevOffsetStr.push_back(buffer);
-                                offset++;
-                            }
-
-                            if (!prevOffsetStr.empty()) {
-                                prevOffset = std::stoull(prevOffsetStr);
-                            }
+                            prevOffset = GetTypeValue(data, offset, dataSize);
                             found_prev = true;
                             break;
                         }
@@ -286,7 +302,7 @@ extern "C"
 
                 if (foundTrailer) {
                     settings.AddZone(crossRefOffset, trailerOffset - crossRefOffset, ColorPair{ Color::Green, Color::DarkBlue }, "Cross-Reference Table");
-                    settings.AddZone(trailerOffset, eofOffset - trailerOffset + PDF::PDF_EOF_SIZE, ColorPair{ Color::Red, Color::DarkBlue }, "Trailer");
+                    settings.AddZone(trailerOffset, eofOffset - trailerOffset + PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Red, Color::DarkBlue }, "Trailer");
                 }
                 crossRefOffset = prevOffset;
             }
@@ -306,32 +322,68 @@ extern "C"
                 offset = crossRefOffset;
                 uint8_t tag;
                 bool end_tag = false;
-                bool typeFound[] = { false, false, false };
+                // 0 = /Length, 1 = /Filter, 2 = /Prev, 3 = /DecodeParms, 4 = /W
+                bool typeFound[] = { false, false, false, false, false }; 
                 uint64 lengthVal = 0;
                 std::vector<uint8_t> streamData;
+                std::vector<std::string> filters;
                 bool filterType = 0; // FLATE ONLY
 
+                struct WValues{ // W[x y z]
+                    uint8 x;
+                    uint8 y;
+                    uint8 z;
+                };
+
+                WValues wValues = { 0, 0, 0 };
+
                 while (!end_tag) {
-                    if (CheckType(data, offset, PDF::PDF_STREAM_SIZE, PDF::PDF_STREAM)) {
+                    if (CheckType(data, offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
                         end_tag = true;
-                        offset += PDF::PDF_STREAM_SIZE;
+                        offset += PDF::KEY::PDF_STREAM_SIZE;
                         break;
                     }
 
                     if (data.Copy(offset, tag) && tag == PDF::DC::SOLIUDS) {                                                 // the first byte of tag is "/"
-                        if (!typeFound[0] && CheckType(data, offset, PDF::PDF_STREAM_LENGTH_SIZE, PDF::PDF_STREAM_LENGTH)) { // /Length
-                            offset += PDF::PDF_STREAM_LENGTH_SIZE + 1;
+                        if (!typeFound[0] && CheckType(data, offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length
+                            offset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
                             lengthVal    = GetTypeValue(data, offset, dataSize);
                             typeFound[0] = true;
                         } 
-                        if (!typeFound[1] && CheckType(data, offset, PDF::PDF_FILTER_SIZE, PDF::PDF_FILTER)) { // /Filter
-                            offset += PDF::PDF_FILTER_SIZE + 1;
+                        if (!typeFound[1] && CheckType(data, offset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) { // /Filter
+                            offset += PDF::KEY::PDF_FILTER_SIZE;
+                            GetFilters(data, offset, dataSize, filters);
                             typeFound[1] = true;
                         } 
-                        if (!typeFound[2] && CheckType(data, offset, PDF::PDF_PREV_SIZE, PDF::PDF_PREV)) { // /Prev
-                            offset += PDF::PDF_PREV_SIZE + 1;
+                        if (!typeFound[2] && CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) { // /Prev
+                            offset += PDF::KEY::PDF_PREV_SIZE + 1;
                             prevOffset   = GetTypeValue(data, offset, dataSize);
                             typeFound[2] = true;
+                        }
+                        if (!typeFound[3] && CheckType(data, offset, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) { // /DecodeParms
+                            offset += PDF::KEY::PDF_DECODEPARMS_SIZE + 1;
+                            typeFound[3] = true;
+                        }
+                        if (!typeFound[4] && CheckType(data, offset, PDF::KEY::PDF_W_SIZE, PDF::KEY::PDF_W)) { // /W
+                            offset += PDF::KEY::PDF_W_SIZE;
+                            if (data.Copy(offset, buffer) && buffer != PDF::DC::LEFT_SQUARE_BRACKET) {
+                                offset++;
+                            }
+                            offset++; // skip "["
+
+                            if (!data.Copy(offset, wValues.x)) {
+                                break;
+                            }
+                            offset += 2;
+                            if (!data.Copy(offset, wValues.y)) {
+                                break;
+                            }
+                            offset += 2;
+                            if (!data.Copy(offset, wValues.z)) {
+                                break;
+                            }
+                            offset++;
+                            typeFound[4] = true;
                         }
                     }
                     offset++;
@@ -345,10 +397,24 @@ extern "C"
                                 break;
                             }
                         }
+                        offset += lengthVal + PDF::KEY::PDF_ENDSTREAM_SIZE + PDF::KEY::PDF_ENDOBJ_SIZE + PDF::KEY::PDF_STARTXREF_SIZE;
+                        bool found_eof = false;
+                        while (!found_eof && offset < dataSize) {
+                            found_eof = CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF);
+                            if (found_eof) {
+                                offset += PDF::KEY::PDF_EOF_SIZE;
+                                settings.AddZone(crossRefOffset, offset - crossRefOffset, ColorPair{ Color::Green, Color::DarkBlue }, "Cross-Reference Stream");
+                                break;
+                            } else {
+                                offset++;
+                            }
+                        }
                     }
 
                     if (typeFound[1]) { // decode data
-
+                        if (filters[0] == PDF::FILTER::FLATE) {
+                            
+                        }
                     }
 
                     if (typeFound[2]) { // offset of the previous cross reference stream
