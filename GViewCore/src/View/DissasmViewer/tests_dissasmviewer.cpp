@@ -307,7 +307,7 @@ class DissasmTestInstance
     {
         instance = nullptr;
         const bool initResult = init(binaryData, binaryDataSize);
-        assert(init_result);
+        assert(initResult);
     }
 
     bool init(const unsigned char* binaryData, size_t binaryDataSize)
