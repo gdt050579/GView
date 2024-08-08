@@ -60,6 +60,12 @@ namespace Type
             constexpr uint8_t PDF_FILTER_SIZE        = 7;
             constexpr uint8_t PDF_DECODEPARMS[]           = "/DecodeParms";
             constexpr uint8_t PDF_DECODEPARMS_SIZE   = 12;
+
+            constexpr uint8_t PDF_COLUMNS[]    = "/Columns";
+            constexpr uint8_t PDF_COLUMNS_SIZE    = 8;
+            constexpr uint8_t PDF_PREDICTOR[]    = "/Predictor";
+            constexpr uint8_t PDF_PREDICTOR_SIZE   = 10;
+
             constexpr uint8_t PDF_W[]           = "/W";
             constexpr uint8_t PDF_W_SIZE        = 2;
 
@@ -74,7 +80,6 @@ namespace Type
 
             constexpr uint8_t PDF_ENDOBJ[]    = "endobj";
             constexpr uint8_t PDF_ENDOBJ_SIZE = 6;
-
 
             constexpr uint8_t PDF_STARTXREF[]    = "startxref";
             constexpr uint8_t PDF_STARTXREF_SIZE = 9;

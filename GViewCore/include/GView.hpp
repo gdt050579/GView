@@ -595,6 +595,7 @@ namespace Golang
 namespace ZLIB
 {
     CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
+    CORE_EXPORT bool DecompressStream(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
 namespace ZIP
