@@ -1,6 +1,5 @@
 #include "../include/GView.hpp"
 #include <zlib.h>
-#include <iostream>
 
 namespace GView::ZLIB
 {
@@ -19,17 +18,51 @@ bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 ou
 
     return true;
 }
-bool DecompressStream(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize)
+bool DecompressStream(const Buffer& input, uint64 inputSize, Buffer& output, uint64& outputSize)
 {
-    CHECK(input.IsValid(), false, "");
-    CHECK(inputSize > 0, false, "");
-    CHECK(outputSize > inputSize, false, "");
+    if (!input.IsValid() || inputSize == 0) {
+        return false;
+    }
 
-    output.Resize(outputSize);
-    int32 ret = uncompress(output.GetData(), (uLongf*) &outputSize, input.GetData(), static_cast<uLong>(inputSize));
+    uint64 bufferSize = inputSize * 2;
+    output.Resize(bufferSize);
 
-    CHECK(ret == Z_OK, false, "ZLIB error: %d!", ret);
+    z_stream strm;
+    strm.zalloc    = Z_NULL;
+    strm.zfree     = Z_NULL;
+    strm.opaque    = Z_NULL;
+    strm.avail_in  = static_cast<uInt>(inputSize);
+    strm.next_in   = const_cast<Bytef*>(input.GetData());
+    strm.avail_out = static_cast<uInt>(bufferSize);
+    strm.next_out  = reinterpret_cast<Bytef*>(output.GetData());
+
+    int ret = inflateInit(&strm);
+    if (ret != Z_OK) {
+        return false;
+    }
+
+    ret = Z_BUF_ERROR;
+    while (ret == Z_BUF_ERROR || ret == Z_MEM_ERROR || ret == Z_DATA_ERROR) {
+        if (ret == Z_BUF_ERROR) {
+            bufferSize *= 2;
+            output.Resize(bufferSize);
+            strm.avail_out = static_cast<uInt>(bufferSize);
+            strm.next_out  = reinterpret_cast<Bytef*>(output.GetData());
+        } else if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR) {
+            inflateEnd(&strm);
+            return false;
+        }
+        ret = inflate(&strm, Z_NO_FLUSH);
+    }
+
+    inflateEnd(&strm);
+    if (ret != Z_OK && ret != Z_STREAM_END) {
+        return false;
+    }
+
+    outputSize = bufferSize - strm.avail_out;
     output.Resize(outputSize);
+
     return true;
 }
 } // namespace GView::ZLIB

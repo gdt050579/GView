@@ -36,7 +36,7 @@ extern "C"
     {
         uint8_t buffer;
         bool match = true;
-        for (size_t i = 0; i < size_type; ++i) {
+        for (uint64 i = 0; i < size_type; ++i) {
             if (!data.Copy(offset + i, buffer) || buffer != PDF_ARRAY[i]) {
                 match = false;
                 break;
@@ -101,6 +101,14 @@ extern "C"
         if (filterValue.length() > 1) {
             filters.push_back(filterValue);
         }
+    }
+
+    void GetDecompressDataValue(Buffer& decompressedData, uint64& offset, const uint8& value, uint64& obj)
+    {
+        for (uint8_t i = 0; i < value; ++i) {
+            obj = (obj << 8) | decompressedData[offset + i];
+        }
+        offset += value;
     }
 
     void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::DataCache& data, std::vector<uint64_t> &objectOffsets)
@@ -354,10 +362,12 @@ extern "C"
                 struct DecodeParms {
                     uint8 predictor;
                     uint16 column;
+                    uint8 bitsPerComponent;
+                    uint16 colors;
                 };
 
                 WValues wValues = { 0, 0, 0 };
-                DecodeParms decodeParms = { 1, 1 };
+                DecodeParms decodeParms = { 1, 1, 8, 1};
 
                 while (!end_tag) {
                     if (CheckType(data, offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
@@ -446,31 +456,19 @@ extern "C"
                     if (typeFound[1]) { // decode data
                         if (filters[0] == PDF::FILTER::FLATE) {
                             Buffer decompressedData;
-                            if (GView::ZLIB::DecompressStream(streamData, lengthVal, decompressedData, lengthVal * 3))
+                            uint64 decompressDataSize = lengthVal;
+                            if (GView::ZLIB::DecompressStream(streamData, lengthVal, decompressedData, decompressDataSize))
                             {
-                                offset++;
-                                /*if (typeFound[3]) {
-                                    ApplyPNGFilter(decompressedData, decodeParms.column, decodeParms.predictor);
-                                }*/
-                                size_t offset = 0;
-                                uint64_t decompressDataSize = decompressedData.GetLength();
+                                if (typeFound[3]) {
+                                    //ApplyPNGFilter(decompressedData, decodeParms.column, decodeParms.predictor);
+                                }
+                                offset                            = 0;
                                 while (offset < decompressDataSize) {
                                     uint64_t obj1 = 0, obj2 = 0, obj3 = 0;
 
-                                    for (uint8_t i = 0; i < wValues.x; ++i) {
-                                        obj1 = (obj1 << 8) | decompressedData[offset + i];
-                                    }
-                                    offset += wValues.x;
-
-                                    for (uint8_t i = 0; i < wValues.y; ++i) {
-                                        obj2 = (obj2 << 8) | decompressedData[offset + i];
-                                    }
-                                    offset += wValues.y;
-
-                                    for (uint8_t i = 0; i < wValues.z; ++i) {
-                                        obj3 = (obj3 << 8) | decompressedData[offset + i];
-                                    }
-                                    offset += wValues.z;
+                                    GetDecompressDataValue(decompressedData, offset, wValues.x, obj1);
+                                    GetDecompressDataValue(decompressedData, offset, wValues.y, obj2);
+                                    GetDecompressDataValue(decompressedData, offset, wValues.z, obj3);
 
                                     if (obj1 == 1) {
                                         if (obj2 != crossRefOffset) // don't include CR stream as an object
