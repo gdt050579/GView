@@ -10,6 +10,7 @@ GView framework is a powerful tool for examining files or any data with a define
 
 - [GView](#gview)
 	- [General description](#general-description)
+		- [See GView in action](#see-gview-in-action)
 	- [Smart Viewers](#smart-viewers)
 		- [Buffer Viewer](#buffer-viewer)
 		- [Text Viewer](#text-viewer)
@@ -39,6 +40,14 @@ GView framework is a powerful tool for examining files or any data with a define
 **GView** framework is a powerful tool for examining files or any data with a defined structure, such as buffers or memory zones. Users can leverage the diverse range of available visualization options to effectively analyze and interpret the information.
 
 On the other hand, from the perspective of developers, **GView** offers a flexible platform to create plugins that can parse various data structures. Developers can harness this capability to develop customized views and enhance the analysis capabilities of **GView**. By creating plugins, developers can extend the framework's functionality and tailor it to specific data formats or requirements, enabling more efficient and insightful data analysis.
+
+### See GView in action
+**Scenario 1: Malicious Infection**
+A screencast demonstrates how GView can be used to analyze the contents of a compromised system. By examining the network traffic, a security analysts can uncover the methods used by malicious actors to gain unauthorized access. GView's visualization capabilities enable rapid identification of suspicios hints and help to understand the attack's impact. [Open video](https://youtu.be/Z1nTRKPewCg).
+
+**Scenario 2: Suspicious Email**
+GView is used to analyze and observe the impact of a brach after a victim has been infected to determine its potential threat.
+The cause was a suspicious email received. By analyzing the email headers, attachments, and embedded content, security experts can uncover hidden malicious code or phishing attempts. GView's ability to handle various file types and data structures provides a comprehensive view of the email's components, aiding in threat assessment. [Open video](https://youtu.be/LpsvcgCkII8).
 
 ## Smart Viewers
 
