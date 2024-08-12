@@ -134,7 +134,7 @@ KeyConfigDisplayWindow::KeyConfigDisplayWindow() : Window("Available keys", "d:c
     }
 }
 
-bool KeyConfigDisplayWindow::OnEvent(Utils::Reference<Control> reference, Controls::Event eventType, int ID)
+bool KeyConfigDisplayWindow::OnEvent(AppCUI::Utils::Reference<Control> reference, Controls::Event eventType, int ID)
 {
     switch (eventType) {
     case Event::ButtonClicked:

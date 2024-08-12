@@ -32,6 +32,10 @@ class JTFile : public TypeInterface
     void RunCommand(std::string_view) override
     {
     }
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 
   public:
     Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;

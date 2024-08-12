@@ -33,6 +33,10 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 
   public:
     Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;

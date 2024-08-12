@@ -61,6 +61,11 @@ extern "C"
         sect["Extension"]          = "pf";
         sect["Priority"]           = 1;
         sect["Description"]        = "PF file format (*.pf)";
-        sect["Command.Decompress"] = AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10;
+
+        LocalString<128> buffer;
+        for (const auto& command : MAM::MAM_COMMANDS) {
+            buffer.SetFormat("Command.%s", command.Caption);
+            sect[buffer.GetText()] = command.Key;
+        }
     }
 }

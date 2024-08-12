@@ -24,7 +24,6 @@ constexpr auto KEY_CHANGE_SELECTION_TYPE     = Key::F9;
 constexpr auto KEY_SHOW_HIDE_STRINGS         = Key::Alt | Key::F3;
 constexpr auto KEY_FIND_NEXT                 = Key::Ctrl | Key::F7;
 constexpr auto KEY_FIND_PREVIOUS             = Key::Ctrl | Key::Shift | Key::F7;
-constexpr auto KEY_COPY                      = Key::Ctrl | Key::Insert;
 constexpr auto KEY_DISSASM                   = Key::Ctrl | Key::D;
 
 void Config::Update(IniSection sect)
@@ -37,7 +36,6 @@ void Config::Update(IniSection sect)
     sect.UpdateValue(KEY_NAME_SHOW_HIDE_STRINGS, KEY_SHOW_HIDE_STRINGS, true);
     sect.UpdateValue(KEY_NAME_FIND_NEXT, KEY_FIND_NEXT, true);
     sect.UpdateValue(KEY_NAME_FIND_PREVIOUS, KEY_FIND_PREVIOUS, true);
-    sect.UpdateValue(KEY_NAME_COPY, KEY_COPY, true);
     sect.UpdateValue(KEY_NAME_DISSASM, KEY_DISSASM, true);
 }
 
@@ -58,7 +56,6 @@ void Config::Initialize()
         this->Keys.ShowHideStrings       = sect.GetValue(KEY_NAME_SHOW_HIDE_STRINGS).ToKey(KEY_SHOW_HIDE_STRINGS);
         this->Keys.FindNext              = sect.GetValue(KEY_NAME_FIND_NEXT).ToKey(KEY_FIND_NEXT);
         this->Keys.FindPrevious          = sect.GetValue(KEY_NAME_FIND_PREVIOUS).ToKey(KEY_FIND_PREVIOUS);
-        this->Keys.Copy                  = sect.GetValue(KEY_NAME_COPY).ToKey(KEY_COPY);
         this->Keys.DissasmDialog         = sect.GetValue(KEY_NAME_DISSASM).ToKey(KEY_DISSASM);
     }
     else
@@ -71,7 +68,6 @@ void Config::Initialize()
         this->Keys.ShowHideStrings       = KEY_SHOW_HIDE_STRINGS;
         this->Keys.FindNext              = KEY_FIND_NEXT;
         this->Keys.FindPrevious          = KEY_FIND_PREVIOUS;
-        this->Keys.Copy                  = KEY_COPY;
         this->Keys.DissasmDialog         = KEY_DISSASM;
     }
 

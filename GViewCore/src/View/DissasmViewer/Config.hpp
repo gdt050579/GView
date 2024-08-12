@@ -1,7 +1,8 @@
 #pragma once
 
-#include <AppCUI/include/AppCUI.hpp>
+#include <Internal.hpp>
 #include <array>
+
 using AppCUI::uint32;
 constexpr uint32 COMMAND_ADD_NEW_TYPE           = 100;
 constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT  = 101;
@@ -110,35 +111,28 @@ namespace View
         struct Config {
             DissasmColors ConfigColors;
 
-            struct DissasmCommand {
-                Input::Key Key;
-                const char* Caption;
-                const char* Explanation;
-                uint32 CommandId;
-            };
-
             // TODO: reenable when the functionality is implemented
             //  Command Bar keys
             // inline static DissasmCommand AddNewTypeCommand            = { Input::Key::F6, "AddNewType", "Add new data type", COMMAND_ADD_NEW_TYPE };
-            inline static DissasmCommand ShowOnlyDissasmCommand = {
+            inline static KeyboardControl ShowOnlyDissasmCommand = {
                 Input::Key::F7, "ShowOnlyDissasm", "Show only the dissasm code", COMMAND_SHOW_ONLY_DISSASM
             };
             // inline static DissasmCommand ShowOrHideFileContentCommand = {
             //     Input::Key::F9, "ShowOrHideFileContent", "Show or hide file content", COMMAND_ADD_SHOW_FILE_CONTENT
             // };
-            inline static DissasmCommand AsmExportFileContentCommand = {
+            inline static KeyboardControl AsmExportFileContentCommand = {
                 Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
             };
-            inline static DissasmCommand JumpBackCommand    = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
-            inline static DissasmCommand JumpForwardCommand = {
+            inline static KeyboardControl JumpBackCommand   = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
+            inline static KeyboardControl JumpForwardCommand = {
                 Input::Key::Ctrl | Input::Key::E, "JumpForward", "Jump to a forward location", COMMAND_JUMP_FORWARD
             };
-            inline static DissasmCommand GotoEntrypointCommand = {
+            inline static KeyboardControl GotoEntrypointCommand = {
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
-            inline static DissasmCommand ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
+            inline static KeyboardControl ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 6> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 6> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -148,15 +142,15 @@ namespace View
             };
 
             // Other keys
-            inline static DissasmCommand AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
-            inline static DissasmCommand RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
-            inline static DissasmCommand RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
+            inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
+            inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
+            inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 3> KeyDownCommands = { AddOrEditCommentCommand,
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = { AddOrEditCommentCommand,
                                                                                                     RemoveCommentCommand,
                                                                                                     RenameLabelCommand };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 8> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,

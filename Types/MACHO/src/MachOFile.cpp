@@ -1171,6 +1171,13 @@ void MachOFile::OnOpenItem(std::u16string_view, AppCUI::Controls::TreeViewItem i
     GView::App::OpenBuffer(buffer, data->info.name, fullPath, GView::App::OpenMethod::BestMatch);
 }
 
+bool MachOFile::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (auto& entry : Commands::MACHO_COMMANDS)
+        interface->RegisterKey(&entry);
+    return true;
+}
+
 bool MachOFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
     const auto* p = buf.begin();

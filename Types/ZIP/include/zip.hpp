@@ -51,6 +51,11 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 };
 
 namespace Panels

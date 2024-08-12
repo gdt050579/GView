@@ -4,6 +4,7 @@
 
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
+using namespace Commands;
 
 const char hexCharsList[]              = "0123456789ABCDEF";
 const uint32 characterFormatModeSize[] = { 2 /*Hex*/, 3 /*Oct*/, 4 /*signed 8*/, 3 /*unsigned 8*/ };
@@ -30,16 +31,6 @@ bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false, false, false, false, false, false
 };
 
-constexpr int BUFFERVIEW_CMD_CHANGECOL         = 0xBF00;
-constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
-constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
-constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
-constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
-constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
-constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
-constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
-constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
-constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
 /*
     constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
     constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
@@ -1467,6 +1458,21 @@ void Instance::OnLoseFocus()
 {
     cursor.SetStartView(cursor.GetStartView()); // invalidate delta;
 }
+
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    interface->RegisterKey(&ChangeColumnsCount);
+    interface->RegisterKey(&ChangeValueFormatOrCP);
+    interface->RegisterKey(&ChangeAddressMode);
+    interface->RegisterKey(&GoToEntryPoint);
+    interface->RegisterKey(&ChangeSelectionType);
+    interface->RegisterKey(&ShowHideStrings);
+    interface->RegisterKey(&FindNext);
+    interface->RegisterKey(&FindPrevious);
+    interface->RegisterKey(&DissasmDialogCmd);
+    return true;
+}
+
 bool Instance::GoTo(uint64 offset)
 {
     this->MoveTo(offset, false);

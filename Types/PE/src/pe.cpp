@@ -242,8 +242,13 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     sect["Priority"]                 = 1;
     sect["Description"]              = "Portable executable format for Windows OS binaries";
     sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
-    sect["Command.DigitalSignature"] = Key::Alt | Key::F8;
-    sect["Command.AreaHighlighter"]  = Key::Alt | Key::F9;
+
+    LocalString<128> buffer;
+    for (const auto& command : PE::PE_COMMANDS) {
+
+        buffer.SetFormat("Command.%s", command.Caption);
+        sect[buffer.GetText()] = command.Key;
+    }
 }
 }
 
