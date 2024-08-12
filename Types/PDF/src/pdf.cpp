@@ -17,7 +17,7 @@ extern "C"
             return false;
         }
         auto header = buf.GetObject<PDF::Header>();
-        if (std::memcmp(header->identifier, PDF::KEY::PDF_MAGIC, 5) != 0) {
+        if (memcmp(header->identifier, PDF::KEY::PDF_MAGIC, 5) != 0) {
             return false;
         }
         if (header->version_1 != '1' || header->point != '.' || (header->version_N < '0' || header->version_N > '7'))
@@ -213,9 +213,9 @@ extern "C"
 
         auto getPrevRow = [&](uint64_t offset, uint8_t* buffer) {
             if (offset >= rowLength) {
-                std::memcpy(buffer, data.GetData() + offset - rowLength, rowLength);
+                memcpy(buffer, data.GetData() + offset - rowLength, rowLength);
             } else {
-                std::memset(buffer, 0, rowLength);
+                memset(buffer, 0, rowLength);
             }
         };
 
@@ -425,7 +425,6 @@ extern "C"
                 uint64 lengthVal = 0;
                 Buffer streamData;
                 std::vector<std::string> filters;
-                bool filterType = 0; // FLATE ONLY
 
                 struct WValues{ // W[x y z]
                     uint8 x;
