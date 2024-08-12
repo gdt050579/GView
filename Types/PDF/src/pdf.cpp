@@ -198,6 +198,88 @@ extern "C"
         return foundTrailer;
     }
 
+    void ApplyPNGFilter(Buffer& data, const uint16_t &column, const uint8_t &predictor, const uint8_t &bitsPerComponent)
+    {
+        if (!data.IsValid()) {
+            return;
+        }
+
+        const uint8_t bytesPerComponent = (bitsPerComponent + 7) / 8; // ceil(bitsPerComponent / 8)
+        const uint64_t rowLength        = column * bytesPerComponent + 1;
+        const uint64_t dataLength   = data.GetLength();
+
+        Buffer rowBuffer;
+        rowBuffer.Resize(rowLength);
+
+        auto getPrevRow = [&](uint64_t offset, uint8_t* buffer) {
+            if (offset >= rowLength) {
+                std::memcpy(buffer, data.GetData() + offset - rowLength, rowLength);
+            } else {
+                std::memset(buffer, 0, rowLength);
+            }
+        };
+
+        auto applyFilter = [&](uint64_t offset) {
+            getPrevRow(offset, rowBuffer.GetData());
+            for (uint64_t i = 0; i < rowLength; ++i) {
+                uint8_t newValue  = data.GetData()[offset];
+                uint8_t left           = (offset % bytesPerComponent == 0) ? 0 : data.GetData()[offset - bytesPerComponent];
+                uint8_t above          = rowBuffer[i];
+                uint8_t aboveLeft      = (offset >= rowLength && (offset - bytesPerComponent) >= rowLength) ? rowBuffer[i - bytesPerComponent] : 0;
+                uint8_t paethPredictor = 0, p = 0, pLeft = 0, pAbove = 0, pAboveLeft = 0;
+
+                switch (predictor) {
+                case 11: // PNG Sub Filter
+                    newValue = data.GetData()[offset] + left;
+                    break;
+                case 12: // PNG Up Filter
+                    newValue = data.GetData()[offset] + above;
+                    break;
+                case 13: // PNG Average Filter
+                    newValue = data.GetData()[offset] + ((left + above) / 2);
+                    break;
+                case 14: // PNG Paeth Filter
+                    paethPredictor = left + above - aboveLeft;
+                    p              = data.GetData()[offset] - paethPredictor;
+                    pLeft          = std::abs(p - left);
+                    pAbove         = std::abs(p - above);
+                    pAboveLeft     = std::abs(p - aboveLeft);
+                    newValue = data.GetData()[offset] + (pLeft <= pAbove && pLeft <= pAboveLeft ? left : pAbove <= pAboveLeft ? above : aboveLeft);
+                    break;
+                case 10:    // PNG None Filter
+                case 15:    // PNG Optimum Filter
+                    return; // No filtering needed for None or Optimum
+                default:
+                    // unknown predictor
+                    return;
+                }
+
+                data.GetData()[offset] = newValue;
+                ++offset;
+            }
+        };
+
+        for (uint64_t offset = 0; offset < dataLength;) {
+            applyFilter(offset);
+            offset += rowLength;
+        }
+
+        const uint64_t newSize = dataLength - (dataLength / (rowLength + 1));
+        Buffer filteredData;
+        filteredData.Resize(newSize);
+
+        uint64_t srcOffset = 0;
+        uint64_t dstOffset = 0;
+        while (srcOffset < dataLength) {
+            if (srcOffset % rowLength != 0) { // Skip filter type byte
+                filteredData.GetData()[dstOffset++] = data.GetData()[srcOffset];
+            }
+            ++srcOffset;
+        }
+
+        data = std::move(filteredData);
+    }
+
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF::PDFFile> pdf)
     {
         BufferViewer::Settings settings;
@@ -330,14 +412,6 @@ extern "C"
                 }
                 crossRefOffset = prevOffset;
             }
-
-            std::sort(objectOffsets.begin(), objectOffsets.end());
-
-            for (size_t i = 0; i < objectOffsets.size(); ++i) {
-                uint64_t objOffset = objectOffsets[i];
-                uint64_t length    = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - objOffset : eofOffset - objOffset;
-                settings.AddZone(objOffset, length, colors[i % colors.size()], "Obj " + std::to_string(i + 1));
-            }
         } else {    // PDF 1.5-1.7
 
             bool next_CR_stream = true;
@@ -363,11 +437,10 @@ extern "C"
                     uint8 predictor;
                     uint16 column;
                     uint8 bitsPerComponent;
-                    uint16 colors;
                 };
 
                 WValues wValues = { 0, 0, 0 };
-                DecodeParms decodeParms = { 1, 1, 8, 1};
+                DecodeParms decodeParms = { 1, 1, 8};
 
                 while (!end_tag) {
                     if (CheckType(data, offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
@@ -394,15 +467,31 @@ extern "C"
                         }
                         else if (!typeFound[3] && CheckType(data, offset, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) { // /DecodeParms
                             offset += PDF::KEY::PDF_DECODEPARMS_SIZE + 2;
-                            if (CheckType(data, offset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
-                                offset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
-                                decodeParms.column = GetTypeValue(data, offset, dataSize);
+                            uint16_t tag;
+                            while (offset < dataSize) {
+                                if (!data.Copy(offset, tag)) {
+                                    continue;
+                                }
+                                if (tag == PDF::DC::END_TAG)
+                                {
+                                    offset += 2;
+                                    break;
+                                }
+                                if (CheckType(data, offset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+                                    offset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
+                                    decodeParms.column = GetTypeValue(data, offset, dataSize);
+                                }
+                                else if (CheckType(data, offset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+                                    offset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
+                                    decodeParms.predictor = GetTypeValue(data, offset, dataSize);
+                                }
+                                else if (CheckType(data, offset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+                                    offset += PDF::KEY::PDF_BPC_SIZE + 1;
+                                    decodeParms.bitsPerComponent = GetTypeValue(data, offset, dataSize);
+                                } else {
+                                    offset++;
+                                }
                             }
-                            if (CheckType(data, offset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
-                                offset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
-                                decodeParms.predictor = GetTypeValue(data, offset, dataSize);
-                            }
-                            offset++;
                             typeFound[3] = true;
                         }
                         else if (!typeFound[4] && CheckType(data, offset, PDF::KEY::PDF_W_SIZE, PDF::KEY::PDF_W)) { // /W
@@ -460,7 +549,9 @@ extern "C"
                             if (GView::ZLIB::DecompressStream(streamData, lengthVal, decompressedData, decompressDataSize))
                             {
                                 if (typeFound[3]) {
-                                    //ApplyPNGFilter(decompressedData, decodeParms.column, decodeParms.predictor);
+                                    ApplyPNGFilter(
+                                          decompressedData, decodeParms.column, decodeParms.predictor, decodeParms.bitsPerComponent);
+                                    decompressDataSize = decompressedData.GetLength();
                                 }
                                 offset                            = 0;
                                 while (offset < decompressDataSize) {
@@ -470,9 +561,8 @@ extern "C"
                                     GetDecompressDataValue(decompressedData, offset, wValues.y, obj2);
                                     GetDecompressDataValue(decompressedData, offset, wValues.z, obj3);
 
-                                    if (obj1 == 1) {
-                                        if (obj2 != crossRefOffset) // don't include CR stream as an object
-                                            objectOffsets.push_back(obj2);
+                                    if (obj1 == 1 && obj2 != crossRefOffset) { // don't include CR stream as an object
+                                        objectOffsets.push_back(obj2);
                                     }
 
                                     if (offset > decompressDataSize) {
@@ -490,13 +580,14 @@ extern "C"
                     }
                 }
             }
-            std::sort(objectOffsets.begin(), objectOffsets.end());
+        }
 
-            for (size_t i = 0; i < objectOffsets.size(); ++i) {
-                uint64_t objOffset = objectOffsets[i];
-                uint64_t length    = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - objOffset : eofOffset - objOffset;
-                settings.AddZone(objOffset, length, colors[i % colors.size()], "Obj " + std::to_string(i + 1));
-            }
+        std::sort(objectOffsets.begin(), objectOffsets.end());
+
+        for (size_t i = 0; i < objectOffsets.size(); ++i) {
+            uint64_t objOffset = objectOffsets[i];
+            uint64_t length    = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - objOffset : eofOffset - objOffset;
+            settings.AddZone(objOffset, length, colors[i % colors.size()], "Obj " + std::to_string(i + 1));
         }
 
         pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);

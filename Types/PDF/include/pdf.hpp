@@ -65,6 +65,8 @@ namespace Type
             constexpr uint8_t PDF_COLUMNS_SIZE    = 8;
             constexpr uint8_t PDF_PREDICTOR[]    = "/Predictor";
             constexpr uint8_t PDF_PREDICTOR_SIZE   = 10;
+            constexpr uint8_t PDF_BPC[]       = "/BitsPerComponent";
+            constexpr uint8_t PDF_BPC_SIZE         = 17;
 
             constexpr uint8_t PDF_W[]           = "/W";
             constexpr uint8_t PDF_W_SIZE        = 2;
