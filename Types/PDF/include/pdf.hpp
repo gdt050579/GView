@@ -137,7 +137,10 @@ namespace Type
 
                 return selectionZoneInterface->GetSelectionZone(index);
             }
-
+            bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
         };
         namespace Panels
         {
