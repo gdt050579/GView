@@ -114,7 +114,7 @@ extern "C"
     void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::DataCache& data, std::vector<uint64_t> &objectOffsets)
     {
         // Read each 20-byte entry
-        for (uint16_t i = 0; i < numEntries; ++i) {
+        for (uint64 i = 0; i < numEntries; ++i) {
             char entry[21];
             memset(entry, 0, sizeof(entry));
 
