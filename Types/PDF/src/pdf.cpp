@@ -113,23 +113,48 @@ extern "C"
 
     void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::DataCache& data, std::vector<uint64_t> &objectOffsets)
     {
+        struct Entry {
+            uint8_t objectOffset[10];
+            uint8_t space1;
+            uint8_t generationNumber[5];
+            uint8_t space2;
+            uint8_t flag;
+            uint16_t eofSequence;
+        };
+
+        auto isValidEOFSequence = [](uint16_t eofSequence) -> bool {
+            uint8_t highByte = (eofSequence >> 8) & 0xFF;
+            uint8_t lowByte  = eofSequence & 0xFF;
+
+            return (lowByte == PDF::WSC::SPACE && highByte == PDF::WSC::CARRIAGE_RETURN) || (lowByte == PDF::WSC::SPACE && highByte == PDF::WSC::LINE_FEED) ||
+                   (lowByte == PDF::WSC::CARRIAGE_RETURN && highByte == PDF::WSC::LINE_FEED);
+        };
+
         // Read each 20-byte entry
         for (uint64 i = 0; i < numEntries; ++i) {
-            char entry[21];
-            memset(entry, 0, sizeof(entry));
-
-            for (size_t j = 0; j < PDF::KEY::PDF_XREF_ENTRY; ++j) {
-                if (!data.Copy(offset + j, entry[j])) {
-                    break;
-                }
+            Entry entry;
+            if (!data.Copy<Entry>(offset, entry)) {
+                break;
             }
+            if (isValidEOFSequence(entry.eofSequence)) {
+                if (entry.flag != PDF::KEY::PDF_FREE_ENTRY) { // Skip the free entries
+                    uint64_t result  = 0;
+                    bool leadingZero = true;
 
-            if (entry[17] != PDF::KEY::PDF_FREE_ENTRY) { // skip the free entries
-                std::string entryStr(entry);
-                std::string byteOffsetStr = entryStr.substr(0, 10);
+                    for (size_t j = 0; j < 10; ++j) {
+                        uint8_t asciiValue = entry.objectOffset[j];
 
-                uint64_t byteOffset = std::stoull(byteOffsetStr);
-                objectOffsets.push_back(byteOffset);
+                        uint8_t digit = asciiValue - '0';
+
+                        if (leadingZero && digit == 0) {
+                            continue;
+                        } else {
+                            leadingZero = false;
+                            result      = 10 * result + digit;
+                        }
+                    }
+                    objectOffsets.push_back(result);
+                }
             }
             offset += PDF::KEY::PDF_XREF_ENTRY;
         }
