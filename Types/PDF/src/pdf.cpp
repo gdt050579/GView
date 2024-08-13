@@ -118,20 +118,20 @@ extern "C"
             char entry[21];
             memset(entry, 0, sizeof(entry));
 
-            for (size_t j = 0; j < 20; ++j) {
+            for (size_t j = 0; j < PDF::KEY::PDF_XREF_ENTRY; ++j) {
                 if (!data.Copy(offset + j, entry[j])) {
                     break;
                 }
             }
 
-            if (entry[17] != 'f') { // skip the free entries
+            if (entry[17] != PDF::KEY::PDF_FREE_ENTRY) { // skip the free entries
                 std::string entryStr(entry);
                 std::string byteOffsetStr = entryStr.substr(0, 10);
 
                 uint64_t byteOffset = std::stoull(byteOffsetStr);
                 objectOffsets.push_back(byteOffset);
             }
-            offset += 20;
+            offset += PDF::KEY::PDF_XREF_ENTRY;
         }
     }
 
@@ -229,16 +229,16 @@ extern "C"
                 uint8_t paethPredictor = 0, p = 0, pLeft = 0, pAbove = 0, pAboveLeft = 0;
 
                 switch (predictor) {
-                case 11: // PNG Sub Filter
+                case PDF::PREDICTOR::SUB:
                     newValue = data.GetData()[offset] + left;
                     break;
-                case 12: // PNG Up Filter
+                case PDF::PREDICTOR::UP:
                     newValue = data.GetData()[offset] + above;
                     break;
-                case 13: // PNG Average Filter
+                case PDF::PREDICTOR::AVERAGE:
                     newValue = data.GetData()[offset] + ((left + above) / 2);
                     break;
-                case 14: // PNG Paeth Filter
+                case PDF::PREDICTOR::PAETH:
                     paethPredictor = left + above - aboveLeft;
                     p              = data.GetData()[offset] - paethPredictor;
                     pLeft          = std::abs(p - left);
@@ -246,8 +246,8 @@ extern "C"
                     pAboveLeft     = std::abs(p - aboveLeft);
                     newValue = data.GetData()[offset] + (pLeft <= pAbove && pLeft <= pAboveLeft ? left : pAbove <= pAboveLeft ? above : aboveLeft);
                     break;
-                case 10:    // PNG None Filter
-                case 15:    // PNG Optimum Filter
+                case PDF::PREDICTOR::NONE:
+                case PDF::PREDICTOR::OPTIMUM:
                     return; // No filtering needed for None or Optimum
                 default:
                     // unknown predictor
@@ -420,11 +420,21 @@ extern "C"
                 offset = crossRefOffset;
                 uint8_t tag;
                 bool end_tag = false;
-                // 0 = /Length, 1 = /Filter, 2 = /Prev, 3 = /DecodeParms, 4 = /W
-                bool typeFound[] = { false, false, false, false, false }; 
                 uint64 lengthVal = 0;
                 Buffer streamData;
                 std::vector<std::string> filters;
+
+                struct TypeFlags {
+                    bool hasLength;
+                    bool hasFilter;
+                    bool hasPrev;
+                    bool hasDecodeParms;
+                    bool hasW;
+
+                    TypeFlags() : hasLength(false), hasFilter(false), hasPrev(false), hasDecodeParms(false), hasW(false)
+                    {
+                    }
+                };
 
                 struct WValues{ // W[x y z]
                     uint8 x;
@@ -438,6 +448,7 @@ extern "C"
                     uint8 bitsPerComponent;
                 };
 
+                TypeFlags typeFlags;
                 WValues wValues = { 0, 0, 0 };
                 DecodeParms decodeParms = { 1, 1, 8};
 
@@ -449,22 +460,21 @@ extern "C"
                     }
 
                     if (data.Copy(offset, tag) && tag == PDF::DC::SOLIUDS) {                                                 // the first byte of tag is "/"
-                        if (!typeFound[0] && CheckType(data, offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length
+                        if (!typeFlags.hasLength && CheckType(data, offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length
                             offset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
                             lengthVal    = GetTypeValue(data, offset, dataSize);
-                            typeFound[0] = true;
+                            typeFlags.hasLength = true;
                         } 
-                        else if (!typeFound[1] && CheckType(data, offset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) { // /Filter
+                        else if (!typeFlags.hasFilter && CheckType(data, offset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) { // /Filter
                             offset += PDF::KEY::PDF_FILTER_SIZE;
                             GetFilters(data, offset, dataSize, filters);
-                            typeFound[1] = true;
+                            typeFlags.hasFilter = true;
                         } 
-                        else if (!typeFound[2] && CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) { // /Prev
+                        else if (!typeFlags.hasPrev && CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) { // /Prev
                             offset += PDF::KEY::PDF_PREV_SIZE + 1;
                             prevOffset   = GetTypeValue(data, offset, dataSize);
-                            typeFound[2] = true;
-                        }
-                        else if (!typeFound[3] && CheckType(data, offset, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) { // /DecodeParms
+                            typeFlags.hasPrev = true;
+                        } else if (!typeFlags.hasDecodeParms && CheckType(data, offset, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) { // /DecodeParms
                             offset += PDF::KEY::PDF_DECODEPARMS_SIZE + 2;
                             uint16_t tag;
                             while (offset < dataSize) {
@@ -491,9 +501,8 @@ extern "C"
                                     offset++;
                                 }
                             }
-                            typeFound[3] = true;
-                        }
-                        else if (!typeFound[4] && CheckType(data, offset, PDF::KEY::PDF_W_SIZE, PDF::KEY::PDF_W)) { // /W
+                            typeFlags.hasDecodeParms = true;
+                        } else if (!typeFlags.hasW && CheckType(data, offset, PDF::KEY::PDF_W_SIZE, PDF::KEY::PDF_W)) { // /W
                             offset += PDF::KEY::PDF_W_SIZE;
                             if (data.Copy(offset, buffer) && buffer != PDF::DC::LEFT_SQUARE_BRACKET) {
                                 offset++;
@@ -505,7 +514,7 @@ extern "C"
                             offset++;
                             wValues.z = GetWValue(data, offset);
                             offset++;
-                            typeFound[4] = true;
+                            typeFlags.hasW = true;
                         } 
                         else {
                             offset++;
@@ -515,7 +524,7 @@ extern "C"
                     }
                 }
                 if (end_tag) {
-                    if (typeFound[0]) { // copy the stream data
+                    if (typeFlags.hasLength) { // copy the stream data
                         while (offset < dataSize && (data.Copy(offset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN))) {
                             offset++;
                         }
@@ -541,13 +550,13 @@ extern "C"
                         }
                     }
 
-                    if (typeFound[1]) { // decode data
+                    if (typeFlags.hasFilter) { // decode data
                         if (filters[0] == PDF::FILTER::FLATE) {
                             Buffer decompressedData;
                             uint64 decompressDataSize = lengthVal;
                             if (GView::ZLIB::DecompressStream(streamData, lengthVal, decompressedData, decompressDataSize))
                             {
-                                if (typeFound[3]) {
+                                if (typeFlags.hasDecodeParms) {
                                     ApplyPNGFilter(
                                           decompressedData, decodeParms.column, decodeParms.predictor, decodeParms.bitsPerComponent);
                                     decompressDataSize = decompressedData.GetLength();
@@ -572,7 +581,7 @@ extern "C"
                         }
                     }
 
-                    if (typeFound[2]) { // offset of the previous cross reference stream
+                    if (typeFlags.hasPrev) { // offset of the previous cross reference stream
                         crossRefOffset = prevOffset;
                     } else {
                         next_CR_stream = false;
@@ -614,8 +623,3 @@ extern "C"
         sect["Description"] = "Portable Document Format (*.pdf)";
     }
  }
-
-int main()
-{
-    return 0;
-}

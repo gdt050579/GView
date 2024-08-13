@@ -13,11 +13,22 @@ bool PDFFile::Update()
     auto& data = this->obj->GetData();
     CHECK(data.Copy<Header>(0, header), false, "");
 
-    if (header.version_N < '5') {
-        version_under_5 = true;
-    } else {
-        version_under_5 = false;
-    }
+    version_under_5 = (header.version_N < '5');
 
     return true;
+}
+
+bool PDFFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+{
+    return true;
+}
+
+bool PDFFile::PopulateItem(TreeViewItem item)
+{
+    return true;
+}
+
+void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
+{
+
 }

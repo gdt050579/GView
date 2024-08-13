@@ -1,5 +1,12 @@
 #pragma once
 
+/*https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf
+* https://datatracker.ietf.org/doc/html/rfc2083
+* https://commandlinefanatic.com/cgi-bin/showarticle.cgi?article=art019
+* https://stackoverflow.com/questions/56791861/trying-to-understand-data-in-cross-reference-xref-stream-in-pdf
+*/
+
+
 #include "GView.hpp"
 
 namespace GView
@@ -89,6 +96,19 @@ namespace Type
             constexpr uint8_t PDF_EOF[] = "%%EOF";
             constexpr uint8_t PDF_EOF_SIZE = 5;
 
+            constexpr uint8_t PDF_XREF_ENTRY = 20;
+            constexpr uint8_t PDF_FREE_ENTRY = 'f';
+            constexpr uint8_t ZERO           = 0;
+        }
+
+        namespace PREDICTOR
+        {
+            constexpr uint8_t NONE = 10;
+            constexpr uint8_t SUB = 11;
+            constexpr uint8_t UP = 12;
+            constexpr uint8_t AVERAGE = 13;
+            constexpr uint8_t PAETH = 14;
+            constexpr uint8_t OPTIMUM = 15;
         }
 
         struct Header {
@@ -100,7 +120,7 @@ namespace Type
 
 #pragma pack(pop) // Back to default packing
 
-        class PDFFile : public TypeInterface //, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
+        class PDFFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
         {
           public:
             Header header{};
@@ -122,6 +142,10 @@ namespace Type
             void RunCommand(std::string_view) override
             {
             }
+
+            virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+            virtual bool PopulateItem(TreeViewItem item) override;
+            virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
             uint32 GetSelectionZonesCount() override
             {
