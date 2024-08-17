@@ -5,26 +5,28 @@ using namespace AppCUI::Input;
 
 constexpr auto SECTION_NAME_VIEW_BUFFER = "View.Buffer";
 
-constexpr auto KEY_NAME_CHANGE_COLUMNS_COUNT      = "Key.ChangeColumnsCount";
-constexpr auto KEY_NAME_CHANGE_VALUE_FORMAT_OR_CP = "Key.ChangeValueFormatOrCP";
-constexpr auto KEY_NAME_CHANGE_ADDRESS_MODE       = "Key.ChangeAddressMode";
-constexpr auto KEY_NAME_GO_TO_ENTRY_POINT         = "Key.GoToEntryPoint";
-constexpr auto KEY_NAME_CHANGE_SELECTION_TYPE     = "Key.ChangeSelectionType";
-constexpr auto KEY_NAME_SHOW_HIDE_STRINGS         = "Key.ShowHideStrings";
-constexpr auto KEY_NAME_FIND_NEXT                 = "Key.FindNext";
-constexpr auto KEY_NAME_FIND_PREVIOUS             = "Key.FindPrevious";
-constexpr auto KEY_NAME_COPY                      = "Key.Copy";
-constexpr auto KEY_NAME_DISSASM                   = "Key.DissasmDialog";
+constexpr auto KEY_NAME_CHANGE_COLUMNS_COUNT        = "Key.ChangeColumnsCount";
+constexpr auto KEY_NAME_CHANGE_VALUE_FORMAT_OR_CP   = "Key.ChangeValueFormatOrCP";
+constexpr auto KEY_NAME_CHANGE_ADDRESS_MODE         = "Key.ChangeAddressMode";
+constexpr auto KEY_NAME_GO_TO_ENTRY_POINT           = "Key.GoToEntryPoint";
+constexpr auto KEY_NAME_CHANGE_SELECTION_TYPE       = "Key.ChangeSelectionType";
+constexpr auto KEY_NAME_SHOW_HIDE_STRINGS           = "Key.ShowHideStrings";
+constexpr auto KEY_NAME_FIND_NEXT                   = "Key.FindNext";
+constexpr auto KEY_NAME_FIND_PREVIOUS               = "Key.FindPrevious";
+constexpr auto KEY_NAME_COPY                        = "Key.Copy";
+constexpr auto KEY_NAME_DISSASM                     = "Key.DissasmDialog";
+constexpr auto KEY_NAME_SHOW_COLOR_WHEN_NOT_FOCUSED = "Key.ShowColorNotFocused";
 
-constexpr auto KEY_CHANGE_COLUMNS_COUNT      = Key::F6;
-constexpr auto KEY_CHANGE_VALUE_FORMAT_OR_CP = Key::F2;
-constexpr auto KEY_CHANGE_ADDRESS_MODE       = Key::F3;
-constexpr auto KEY_GO_TO_ENTRY_POINT         = Key::F7;
-constexpr auto KEY_CHANGE_SELECTION_TYPE     = Key::F9;
-constexpr auto KEY_SHOW_HIDE_STRINGS         = Key::Alt | Key::F3;
-constexpr auto KEY_FIND_NEXT                 = Key::Ctrl | Key::F7;
-constexpr auto KEY_FIND_PREVIOUS             = Key::Ctrl | Key::Shift | Key::F7;
-constexpr auto KEY_DISSASM                   = Key::Ctrl | Key::D;
+constexpr auto KEY_CHANGE_COLUMNS_COUNT        = Key::F6;
+constexpr auto KEY_CHANGE_VALUE_FORMAT_OR_CP   = Key::F2;
+constexpr auto KEY_CHANGE_ADDRESS_MODE         = Key::F3;
+constexpr auto KEY_GO_TO_ENTRY_POINT           = Key::F7;
+constexpr auto KEY_CHANGE_SELECTION_TYPE       = Key::F9;
+constexpr auto KEY_SHOW_HIDE_STRINGS           = Key::Alt | Key::F3;
+constexpr auto KEY_FIND_NEXT                   = Key::Ctrl | Key::F7;
+constexpr auto KEY_FIND_PREVIOUS               = Key::Ctrl | Key::Shift | Key::F7;
+constexpr auto KEY_DISSASM                     = Key::Ctrl | Key::D;
+constexpr auto KEY_SHOW_COLOR_WHEN_NOT_FOCUSED = Key::Ctrl | Key::Alt | Key::C;
 
 void Config::Update(IniSection sect)
 {
@@ -37,6 +39,7 @@ void Config::Update(IniSection sect)
     sect.UpdateValue(KEY_NAME_FIND_NEXT, KEY_FIND_NEXT, true);
     sect.UpdateValue(KEY_NAME_FIND_PREVIOUS, KEY_FIND_PREVIOUS, true);
     sect.UpdateValue(KEY_NAME_DISSASM, KEY_DISSASM, true);
+    sect.UpdateValue(KEY_NAME_SHOW_COLOR_WHEN_NOT_FOCUSED, KEY_SHOW_COLOR_WHEN_NOT_FOCUSED, true);
 }
 
 void Config::Initialize()
@@ -57,6 +60,7 @@ void Config::Initialize()
         this->Keys.FindNext              = sect.GetValue(KEY_NAME_FIND_NEXT).ToKey(KEY_FIND_NEXT);
         this->Keys.FindPrevious          = sect.GetValue(KEY_NAME_FIND_PREVIOUS).ToKey(KEY_FIND_PREVIOUS);
         this->Keys.DissasmDialog         = sect.GetValue(KEY_NAME_DISSASM).ToKey(KEY_DISSASM);
+        this->Keys.ShowColorNotFocused   = sect.GetValue(KEY_NAME_SHOW_COLOR_WHEN_NOT_FOCUSED).ToKey(KEY_SHOW_COLOR_WHEN_NOT_FOCUSED);
     }
     else
     {
@@ -69,6 +73,7 @@ void Config::Initialize()
         this->Keys.FindNext              = KEY_FIND_NEXT;
         this->Keys.FindPrevious          = KEY_FIND_PREVIOUS;
         this->Keys.DissasmDialog         = KEY_DISSASM;
+        this->Keys.ShowColorNotFocused   = KEY_SHOW_COLOR_WHEN_NOT_FOCUSED;
     }
 
     this->Loaded = true;

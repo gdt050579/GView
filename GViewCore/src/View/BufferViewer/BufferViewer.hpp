@@ -59,6 +59,7 @@ struct Config {
         AppCUI::Input::Key FindPrevious;
         AppCUI::Input::Key Copy;
         AppCUI::Input::Key DissasmDialog;
+        AppCUI::Input::Key ShowColorNotFocused;
     } Keys;
     bool Loaded;
 
@@ -144,6 +145,17 @@ namespace Commands
     constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
     constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
     constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
+    /*
+    constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_CODE_EXECUTION{ 0xBF14 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION{ 0xBF15 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_OBJECT_HIGHLIGHTING{ 0xBF16 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING{ 0xBF17 };
+    */
+    constexpr int BUFFERVIEW_CMD_SHOW_COLOR        = 0xBF18;
 
     //TODO: fully integrate these commands
     static KeyboardControl ChangeColumnsCount = { Input::Key::F6, "ChangeColumnsCount", "Change the columns number", BUFFERVIEW_CMD_CHANGECOL };
@@ -157,6 +169,7 @@ namespace Commands
     static KeyboardControl FindNext      = { Input::Key::Ctrl | Input::Key::F7, "FindNext", "Find the next sequence", BUFFERVIEW_CMD_FINDNEXT };
     static KeyboardControl FindPrevious  = { Input::Key::Ctrl | Input::Key::Shift | Input::Key::F7, "FindPrevious", "Find previous sequence", BUFFERVIEW_CMD_FINDPREVIOUS };
     static KeyboardControl DissasmDialogCmd = { Input::Key::Ctrl | Input::Key::D, "DissasmDialog", "Open dissasm dialog", BUFFERVIEW_CMD_DISSASM_DIALOG };
+    static KeyboardControl ShowColorNotFocused = { Input::Key::Ctrl | Input::Key::Alt | Input::Key::C, "ShowColor", "Show color when main windows is not in focus", BUFFERVIEW_CMD_SHOW_COLOR };
 }
 
 class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface, public GView::Utils::ObjectHighlightingZonesInterface
@@ -270,6 +283,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     uint32 currentAdrressMode{ 0 };
     String addressModesList;
     BufferColor bufColor;
+    bool showColorNotFocused{ true };
 
     static Config config;
 
