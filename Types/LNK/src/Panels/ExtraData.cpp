@@ -66,7 +66,7 @@ void ExtraData::UpdateGeneralInformation()
 
 void ExtraData::UpdateExtraDataBase(ExtraDataBase* base)
 {
-    const auto& signatureName = LNK::ExtraDataSignaturesNames.at(base->signature).data();
+    const auto& signatureName = LNK::GetExtraDataSignaturesName(base->signature).data();
 
     general->AddItem(signatureName).SetType(ListViewItem::Type::Category);
 
