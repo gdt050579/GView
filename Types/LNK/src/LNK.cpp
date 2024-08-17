@@ -92,7 +92,7 @@ extern "C"
 
         for (const auto& extraData : lnk->extraDataBases)
         {
-            const auto& name = LNK::ExtraDataSignaturesNames.at(extraData->signature);
+            const auto& name = LNK::GetExtraDataSignaturesName(extraData->signature);
             const auto& c    = *(colors.begin() + (count % 2));
             settings.AddZone(offset, extraData->size, c, name.data());
             count++;
