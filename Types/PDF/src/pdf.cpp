@@ -290,6 +290,88 @@ void ApplyPNGFilter(Buffer& data, const uint16_t& column, const uint8_t& predict
     data = std::move(filteredData);
 }
 
+void HighlightObjectTypes(GView::Utils::DataCache& data, BufferViewer::Settings& settings, const uint64_t& offset, const uint64_t& dataSize)
+{
+    uint8_t buffer;
+    uint64_t lengthVal     = 0;
+    bool found_length      = false;
+    uint64_t object_offset = offset;
+    while (object_offset < dataSize && (data.Copy(object_offset, buffer) && (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN))) {
+        object_offset++;
+    }
+    while (object_offset < dataSize) {
+        if (!data.Copy(object_offset, buffer)) {
+            break;
+        }
+        if (CheckType(data, object_offset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
+            break;
+        } else if (
+              CheckType(data, object_offset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
+              CheckType(data, object_offset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_END)) {
+            settings.AddZone(object_offset, PDF::KEY::PDF_DIC_SIZE, ColorPair{ Color::Yellow, Color::DarkBlue }, "Dictionary");
+            object_offset += PDF::KEY::PDF_DIC_SIZE;
+        } else if (buffer == PDF::DC::SOLIUDS) {
+            // get the length for the stream so that we don't have to go through all the bytes
+            if (!found_length && CheckType(data, object_offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length for the stream
+                settings.AddZone(object_offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
+                object_offset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
+                const uint64_t start_segment = object_offset;
+                lengthVal                    = GetTypeValue(data, object_offset, dataSize);
+                settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
+                found_length = true;
+            } else {
+                const uint64_t start_segment = object_offset;
+                object_offset++;
+                bool end_name = false;
+                while (object_offset < dataSize && !end_name) {
+                    if (!data.Copy(object_offset, buffer)) {
+                        break;
+                    }
+                    switch (buffer) {
+                    case PDF::WSC::SPACE:
+                    case PDF::DC::SOLIUDS:
+                    case PDF::DC::RIGHT_SQUARE_BRACKET:
+                    case PDF::DC::LEFT_SQUARE_BRACKET:
+                    case PDF::DC::LESS_THAN:
+                    case PDF::DC::GREATER_THAN:
+                        end_name = true;
+                        break;
+                    default:
+                        object_offset++;
+                    }
+                }
+                settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
+            }
+        } else if (CheckType(data, object_offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
+            if (found_length) {
+                const uint64_t start_segment = object_offset;
+                object_offset += PDF::KEY::PDF_STREAM_SIZE + lengthVal;
+                while (object_offset < dataSize && !CheckType(data, object_offset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                    object_offset++;
+                }
+                object_offset += PDF::KEY::PDF_ENDSTREAM_SIZE;
+                settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Aqua, Color::DarkBlue }, "Stream");
+            } else {
+                break;
+            }
+        } else if (buffer == PDF::DC::LEFT_SQUARE_BRACKET || buffer == PDF::DC::RIGHT_SQUARE_BRACKET) {
+            settings.AddZone(object_offset, 1, ColorPair{ Color::Olive, Color::DarkBlue }, "Array");
+            object_offset++;
+        } else if (buffer == '-' || buffer == '+' || (buffer >= '0' && buffer <= '9')) {
+            const uint64_t start_segment = object_offset;
+            object_offset++;
+            while (object_offset < dataSize && data.Copy(object_offset, buffer) && ((buffer >= '0' && buffer <= '9') || buffer == '.')) {
+                object_offset++;
+            }
+            settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
+        } else if (CheckType(data, object_offset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
+            break;
+        } else {
+            object_offset++;
+        }
+    }
+}
+
 void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF::PDFFile> pdf)
 {
     BufferViewer::Settings settings;
@@ -572,7 +654,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         uint64_t objOffset = objectOffsets[i];
         uint64_t length    = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - objOffset : eofOffset - objOffset;
         settings.AddZone(objOffset, length, colors[i % colors.size()], "Obj " + std::to_string(i + 1));
-        // HighlightObjectTypes(data, settings, objOffset, dataSize);
+        HighlightObjectTypes(data, settings, objOffset, dataSize);
     }
 
     pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
