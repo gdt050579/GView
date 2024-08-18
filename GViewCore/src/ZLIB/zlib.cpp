@@ -20,26 +20,38 @@ bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 ou
 }
 bool DecompressStream(const Buffer& input, uint64 inputSize, Buffer& output, uint64& outputSize)
 {
-    if (!input.IsValid() || inputSize == 0) {
-        return false;
-    }
+    CHECK(input.IsValid(), false, "");
+    CHECK(inputSize > 0, false, "");
 
     uint64 bufferSize = inputSize * 2;
     output.Resize(bufferSize);
 
     z_stream strm;
-    strm.zalloc    = Z_NULL;
-    strm.zfree     = Z_NULL;
-    strm.opaque    = Z_NULL;
+    strm.zalloc = Z_NULL;
+    strm.zfree  = Z_NULL;
+    strm.opaque = Z_NULL;
+
+    struct ZWrapper {
+        z_stream& strm;
+
+        ZWrapper(z_stream& strmRef) : strm(strmRef)
+        {
+        }
+        ~ZWrapper()
+        {
+            inflateEnd(&strm);
+        }
+    };
+
+    ZWrapper zWrapper(strm);
+
     strm.avail_in  = static_cast<uInt>(inputSize);
     strm.next_in   = const_cast<Bytef*>(input.GetData());
     strm.avail_out = static_cast<uInt>(bufferSize);
     strm.next_out  = reinterpret_cast<Bytef*>(output.GetData());
 
     int ret = inflateInit(&strm);
-    if (ret != Z_OK) {
-        return false;
-    }
+    CHECK(ret == Z_OK, false, "");
 
     ret = Z_BUF_ERROR;
     while (ret == Z_BUF_ERROR || ret == Z_MEM_ERROR || ret == Z_DATA_ERROR) {
@@ -48,17 +60,12 @@ bool DecompressStream(const Buffer& input, uint64 inputSize, Buffer& output, uin
             output.Resize(bufferSize);
             strm.avail_out = static_cast<uInt>(bufferSize);
             strm.next_out  = reinterpret_cast<Bytef*>(output.GetData());
-        } else if (ret == Z_MEM_ERROR || ret == Z_DATA_ERROR) {
-            inflateEnd(&strm);
-            return false;
-        }
+        } 
         ret = inflate(&strm, Z_NO_FLUSH);
+        CHECK(ret != Z_MEM_ERROR && ret != Z_DATA_ERROR, false, "");
     }
 
-    inflateEnd(&strm);
-    if (ret != Z_OK && ret != Z_STREAM_END) {
-        return false;
-    }
+    CHECK(ret == Z_OK || ret == Z_STREAM_END, false, "");
 
     outputSize = bufferSize - strm.avail_out;
     output.Resize(outputSize);

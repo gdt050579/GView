@@ -13,7 +13,7 @@ bool PDFFile::Update()
     auto& data = this->obj->GetData();
     CHECK(data.Copy<Header>(0, header), false, "");
 
-    version_under_5 = (header.version_N < '5');
+    versionUnder5 = (header.versionN < '5');
 
     return true;
 }
@@ -30,5 +30,4 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 
 void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
-
 }
