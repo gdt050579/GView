@@ -102,7 +102,7 @@ bool GView::App::ResetConfiguration()
     ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
     ini["GView"]["Key.GoTo"]         = Key::F5;
     ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
-    ini["GView"]["Key.ChoseType"]    = Key::Alt | Key::F1;
+    ini["GView"]["Key.ChooseType"]   = Key::Alt | Key::F1;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());

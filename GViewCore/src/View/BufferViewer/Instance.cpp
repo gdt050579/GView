@@ -395,7 +395,6 @@ bool Instance::ShowCopyDialog()
 
     return true;
 }
-
 bool Instance::ShowDissasmDialog()
 {
     DissasmDialog dlg(this);
@@ -694,7 +693,7 @@ void Instance::WriteHeaders(Renderer& renderer)
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
     params.Align = TextAlignament::Left;
     params.Y     = 0;
-    params.Color = this->HasFocus() ? Cfg.Header.Text.Focused : Cfg.Header.Text.Normal;
+    params.Color = (this->showColorNotFocused || this->HasFocus()) ? Cfg.Header.Text.Focused : Cfg.Header.Text.Normal;
 
     renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', params.Color);
 
@@ -739,7 +738,7 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
     auto c     = Cfg.Text.Inactive;
     auto n     = dli.chNameAndSize;
 
-    if (HasFocus()) {
+    if (this->showColorNotFocused || this->HasFocus()) {
         c = OffsetToColorZone(dli.offset);
     }
 
@@ -817,10 +816,10 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
 }
 void Instance::WriteLineTextToChars(DrawLineInfo& dli)
 {
-    auto cp    = Cfg.Text.Inactive;
-    bool activ = this->HasFocus();
+    auto cp     = Cfg.Text.Inactive;
+    bool active = this->showColorNotFocused || this->HasFocus();
 
-    if (activ) {
+    if (active) {
         const auto startCh  = dli.chText;
         const auto ofsStart = dli.offset;
         while (dli.start < dli.end) {
@@ -857,14 +856,14 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
     auto c     = dli.chNumbers;
     auto cp    = Cfg.Text.Inactive;
-    bool activ = this->HasFocus();
+    bool active = this->showColorNotFocused || this->HasFocus();
     auto ut    = (uint8) 0;
     auto sps   = dli.chText;
     auto start = dli.offset;
     auto end   = start + (dli.end - dli.start);
 
     while (dli.start < dli.end) {
-        if (activ) {
+        if (active) {
             cp = OffsetToColor(dli.offset);
 
             if (selection.Contains(dli.offset)) {
@@ -987,7 +986,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Color = cp;
         c++;
 
-        if (activ) {
+        if (active) {
             if (StringInfo.type == StringType::Unicode) {
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
@@ -1011,7 +1010,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Color = Cfg.Text.Inactive;
         c++;
     }
-    if ((activ) && (this->cursor.GetCurrentPosition() >= start) && (this->cursor.GetCurrentPosition() < end)) {
+    if ((active) && (this->cursor.GetCurrentPosition() >= start) && (this->cursor.GetCurrentPosition() < end)) {
         const auto reprsz = characterFormatModeSize[static_cast<uint32>(this->Layout.charFormatMode)] + 1;
         c                 = dli.chNumbers + (this->cursor.GetCurrentPosition() - start) * reprsz;
         const auto st     = this->chars.GetBuffer();
@@ -1136,6 +1135,12 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     }
 
     commandBar.SetCommand(config.Keys.DissasmDialog, "Dissasm", BUFFERVIEW_CMD_DISSASM_DIALOG);
+
+    if (this->showColorNotFocused) {
+        commandBar.SetCommand(config.Keys.ShowColorNotFocused, "ShowColorWhenNotFocused:ON", BUFFERVIEW_CMD_SHOW_COLOR);
+    } else {
+        commandBar.SetCommand(config.Keys.ShowColorNotFocused, "ShowColorWhenNotFocused:OFF", BUFFERVIEW_CMD_SHOW_COLOR);
+    }
 
     return false;
 }
@@ -1447,6 +1452,11 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING:
         showObjectsHighlighting = false;
         return true;
+
+    case BUFFERVIEW_CMD_SHOW_COLOR:
+        this->showColorNotFocused = !this->showColorNotFocused;
+        UpdateViewSizes();
+        return true;
     }
     return false;
 }
@@ -1470,6 +1480,7 @@ bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
     interface->RegisterKey(&FindNext);
     interface->RegisterKey(&FindPrevious);
     interface->RegisterKey(&DissasmDialogCmd);
+    interface->RegisterKey(&ShowColorNotFocused);
     return true;
 }
 
@@ -1595,7 +1606,6 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
     }
     return x;
 }
-
 int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r)
 {
     if (buffer.GetLength() < 2)
@@ -1922,6 +1932,8 @@ enum class PropertyID : uint32 {
     ChangeSelectionType,
     ShowHideStrings,
     Dissasm,
+    // color behavior
+    ShowColorNotFocused
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -2011,6 +2023,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::Dissasm:
         value = config.Keys.DissasmDialog;
+        return true;
+    case PropertyID::ShowColorNotFocused:
+        value = config.Keys.ShowColorNotFocused;
         return true;
     }
     return false;
@@ -2115,6 +2130,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::AddressType:
         this->currentAdrressMode = (uint32) std::get<uint64>(value);
         return true;
+    case PropertyID::ShowColorNotFocused:
+        this->showColorNotFocused = (bool) std::get<bool>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -2194,6 +2212,9 @@ const vector<Property> Instance::GetPropertiesList()
 
         // dissasm
         { BT(PropertyID::Dissasm), "Shortcuts", "Dissasm", PropertyType::Key },
+
+        // coloring
+        { BT(PropertyID::ShowColorNotFocused), "Coloring", "Show color when main window is not in focus", PropertyType::Boolean },
     };
 }
 #undef BT
