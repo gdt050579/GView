@@ -38,6 +38,7 @@ namespace Type
             constexpr uint8 RIGHT_CURLY_BRACKET  = 0x7D;   // }
             constexpr uint8 SOLIUDS              = 0x2F;   // /
             constexpr uint8 PERCENT              = 0x25;   // %
+            constexpr uint8 REVERSE_SOLIDUS      = 0x5C;   // '\'
         }                                                  // namespace DC
 
         namespace FILTER
@@ -85,6 +86,8 @@ namespace Type
             constexpr uint8_t PDF_TRUE_SIZE  = 4;
             constexpr uint8_t PDF_FALSE[]    = "false";
             constexpr uint8_t PDF_FALSE_SIZE = 5;
+            constexpr uint8_t PDF_NULL[]    = "null";
+            constexpr uint8_t PDF_NULL_SIZE  = 4;
 
             constexpr uint8_t PDF_XREF[]       = "xref";
             constexpr uint8_t PDF_TRAILER[]    = "trailer";
@@ -107,6 +110,7 @@ namespace Type
             constexpr uint8_t PDF_XREF_ENTRY = 20;
             constexpr uint8_t PDF_FREE_ENTRY = 'f';
             constexpr uint8_t ZERO           = 0;
+            constexpr uint8_t PDF_INDIRECTOBJ      = 'R';
         } // namespace KEY
 
         namespace PREDICTOR

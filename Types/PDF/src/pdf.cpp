@@ -329,11 +329,16 @@ void HighlightObjectTypes(GView::Utils::DataCache& data, BufferViewer::Settings&
                     }
                     switch (buffer) {
                     case PDF::WSC::SPACE:
+                    case PDF::WSC::LINE_FEED:
+                    case PDF::WSC::FORM_FEED:
+                    case PDF::WSC::CARRIAGE_RETURN:
                     case PDF::DC::SOLIUDS:
                     case PDF::DC::RIGHT_SQUARE_BRACKET:
                     case PDF::DC::LEFT_SQUARE_BRACKET:
                     case PDF::DC::LESS_THAN:
                     case PDF::DC::GREATER_THAN:
+                    case PDF::DC::LEFT_PARETHESIS:
+                    case PDF::DC::RIGHT_PARETHESIS:
                         end_name = true;
                         break;
                     default:
@@ -342,6 +347,9 @@ void HighlightObjectTypes(GView::Utils::DataCache& data, BufferViewer::Settings&
                 }
                 settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
             }
+        } else if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
+            settings.AddZone(object_offset, 1, ColorPair{ Color::Yellow, Color::Blue }, "Indirect Obj");
+            object_offset++;
         } else if (CheckType(data, object_offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
             if (found_length) {
                 const uint64_t start_segment = object_offset;
@@ -364,6 +372,32 @@ void HighlightObjectTypes(GView::Utils::DataCache& data, BufferViewer::Settings&
                 object_offset++;
             }
             settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
+        } else if (buffer == PDF::DC::LEFT_PARETHESIS) {
+            const uint64_t start_segment = object_offset;
+            object_offset++;
+            while (object_offset < dataSize && data.Copy(object_offset, buffer) && buffer != PDF::DC::RIGHT_PARETHESIS) {
+                if (buffer == PDF::DC::REVERSE_SOLIDUS) {
+                    object_offset++;
+                }
+                object_offset++;
+            }
+            settings.AddZone(start_segment, object_offset - start_segment + 1, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Literal String");
+        } else if (buffer == PDF::DC::LESS_THAN) {
+            const uint64_t start_segment = object_offset;
+            object_offset++;
+            while (object_offset < dataSize && data.Copy(object_offset, buffer) && buffer != PDF::DC::GREATER_THAN) {
+                object_offset++;
+            }
+            settings.AddZone(start_segment, object_offset - start_segment + 1, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Hex String");
+        } else if (CheckType(data, object_offset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
+            settings.AddZone(object_offset, PDF::KEY::PDF_TRUE_SIZE, ColorPair{ Color::DarkRed, Color::DarkBlue }, "Boolean");
+            object_offset += PDF::KEY::PDF_TRUE_SIZE;
+        } else if (CheckType(data, object_offset, PDF::KEY::PDF_FALSE_SIZE, PDF::KEY::PDF_FALSE)) {
+            settings.AddZone(object_offset, PDF::KEY::PDF_FALSE_SIZE, ColorPair{ Color::DarkRed, Color::DarkBlue }, "Boolean");
+            object_offset += PDF::KEY::PDF_FALSE_SIZE;
+        } else if (CheckType(data, object_offset, PDF::KEY::PDF_NULL_SIZE, PDF::KEY::PDF_NULL)) {
+            settings.AddZone(object_offset, PDF::KEY::PDF_NULL_SIZE, ColorPair{ Color::White, Color::Blue }, "Null");
+            object_offset += PDF::KEY::PDF_NULL_SIZE;
         } else if (CheckType(data, object_offset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
             break;
         } else {
@@ -385,8 +419,6 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     uint8_t buffer;
     bool foundEOF = false;
     std::vector<uint64_t> objectOffsets;
-
-    const std::vector<ColorPair> colors = { ColorPair{ Color::Teal, Color::DarkBlue }, ColorPair{ Color::Yellow, Color::DarkBlue } };
 
     // HEADER
     settings.AddZone(0, sizeof(PDF::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
@@ -653,7 +685,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     for (size_t i = 0; i < objectOffsets.size(); ++i) {
         uint64_t objOffset = objectOffsets[i];
         uint64_t length    = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - objOffset : eofOffset - objOffset;
-        settings.AddZone(objOffset, length, colors[i % colors.size()], "Obj " + std::to_string(i + 1));
+        settings.AddZone(objOffset, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(i + 1));
         HighlightObjectTypes(data, settings, objOffset, dataSize);
     }
 
