@@ -1,25 +1,31 @@
 #pragma once
 
 #include "GView.hpp"
-#include <cmath>
 
-namespace GView::GenericPlugins::Unpackers
+namespace GView::GenericPlugins::Unpacker
 {
 using namespace AppCUI::Graphics;
 using namespace GView::View;
 
 class Plugin : public Window, public Handlers::OnButtonPressedInterface
 {
+  private:
+    Reference<GView::Object> object;
+
     Reference<ListView> list;
-    Reference<CheckBox> sync;
+
+    Reference<Button> cancel;
+    Reference<Button> decode;
+
+    std::vector<TypeInterface::SelectionZone> selectedZones;
 
   public:
-    Plugin();
+    Plugin(Reference<GView::Object> object);
+
+    bool SetAreaToDecode(Buffer& b, BufferView& bv, uint64& start, uint64& end);
+    bool DecodeBase64(BufferView input, uint64 start, uint64 end);
+    bool DecodeZLib(BufferView input, uint64 start, uint64 end);
 
     void OnButtonPressed(Reference<Button> button) override;
-    void Update();
-
-    bool Base64Decode(BufferView view, Buffer& output);
-    void Base64Encode(BufferView view, Buffer& output);
 };
-} // namespace GView::GenericPlugins::Unpackers
+} // namespace GView::GenericPlugins::Unpacker
