@@ -22,9 +22,10 @@ namespace GView::GenericPlugins::Unpacker
 using namespace AppCUI::Graphics;
 using namespace GView::View;
 
-Plugin::Plugin(Reference<GView::Object> object) : Window("Unpacker", "d:c,w:80,h:80%", WindowFlags::FixedPosition)
+Plugin::Plugin(Reference<GView::Object> object, Reference<Window> parent) : Window("Unpacker", "d:c,w:80,h:80%", WindowFlags::FixedPosition)
 {
     this->object = object;
+    this->parent = parent;
 
     for (auto i = 0U; i < this->object->GetContentType()->GetSelectionZonesCount(); i++) {
         this->selectedZones.emplace_back(this->object->GetContentType()->GetSelectionZone(i));
@@ -63,6 +64,7 @@ void Plugin::OnButtonPressed(Reference<Button> button)
         } break;
         case ITEM_ZLIB:
             SetAreaToDecode(b, bv, start, end);
+            DecodeZLib(bv, start, end);
             break;
         case ITEM_INVALID:
         default:
@@ -118,38 +120,93 @@ bool Plugin::DecodeBase64(BufferView input, uint64 start, uint64 end)
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(name);
 
-        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this);
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
         return true;
     }
 
-    AppCUI::Dialogs::MessageBox::ShowError("Error!", input);
+    AppCUI::Dialogs::MessageBox::ShowError("Error!", "Failed to decode base64!");
+
     return false;
 }
 
 bool Plugin::DecodeZLib(BufferView input, uint64 start, uint64 end)
 {
-    // TODO:
-    return true;
+    struct Data {
+        Buffer buffer;
+        String name;
+        String path;
+    };
+
+    std::vector<Data> outputs;
+    String message;
+    uint64 sizeConsumed = 0;
+
+    do {
+        Buffer output;
+        if (GView::ZLIB::DecompressStream(input, output, message, sizeConsumed)) {
+            LocalString<128> name;
+            name.Format("Buffer_zlib_%llx_%llx", start, start + sizeConsumed);
+
+            start += sizeConsumed;
+
+            LocalUnicodeStringBuilder<2048> fullPath;
+            fullPath.Add(this->object->GetPath());
+            fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+            fullPath.Add(name);
+
+            std::string path;
+            fullPath.ToString(path);
+
+            Data data{ output, name, String{ path } };
+            outputs.emplace_back(data);
+        } else {
+            LocalString<256> title;
+            title.Format("Error for area %llx -> %llx!", start, end);
+            AppCUI::Dialogs::MessageBox::ShowError(title, message);
+            break;
+        }
+
+        input = { input.GetData() + sizeConsumed, input.GetLength() - sizeConsumed };
+    } while (sizeConsumed < input.GetLength() && sizeConsumed > 0);
+
+    for (const auto& output : outputs) {
+        GView::App::OpenBuffer(output.buffer, output.name, output.path, GView::App::OpenMethod::BestMatch, "", this->parent);
+    }
+
+    return !outputs.empty();
 }
 
 extern "C" {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "Unpacker") {
-        // we should validate that this is called from BufferView only for now
+        // we should validate that this is called from Buffer View only for now
+        // TODO: maybe centralize views' names
+        Reference<Window> parent;
 
-        // auto desktop         = AppCUI::Application::GetDesktop();
-        // const auto windowsNo = desktop->GetChildrenCount();
-        // for (uint32 i = 0; i < windowsNo; i++)
-        // {
-        //     auto window    = desktop->GetChild(i);
-        //     auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+        auto desktop         = AppCUI::Application::GetDesktop();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++) {
+            auto window = desktop->GetChild(i);
+            if (window->HasFocus()) {
+                auto interface             = window.ToObjectRef<GView::View::WindowInterface>();
+                auto currentView           = interface->GetCurrentView();
+                const auto currentViewName = currentView->GetName();
+                if (currentViewName != "Buffer View") {
+                    AppCUI::Dialogs::MessageBox::ShowError("Error!", "Unpacker plugin can only be called from buffer views!");
+                    return false;
+                }
+                parent = window.ToObjectRef<Window>();
+                break;
+            }
+        }
 
-        //    auto currentView           = interface->GetCurrentView();
-        //    const auto currentViewName = currentView->GetName();
-        // }
+        if (!parent.IsValid()) {
+            AppCUI::Dialogs::MessageBox::ShowError("Error!", "Parent window for Unpacker not found!");
+            return false;
+        }
 
-        GView::GenericPlugins::Unpacker::Plugin plugin(object);
+        GView::GenericPlugins::Unpacker::Plugin plugin(object, parent);
         plugin.Show();
 
         return true;

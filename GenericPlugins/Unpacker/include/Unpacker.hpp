@@ -11,6 +11,7 @@ class Plugin : public Window, public Handlers::OnButtonPressedInterface
 {
   private:
     Reference<GView::Object> object;
+    Reference<Window> parent;
 
     Reference<ListView> list;
 
@@ -20,7 +21,7 @@ class Plugin : public Window, public Handlers::OnButtonPressedInterface
     std::vector<TypeInterface::SelectionZone> selectedZones;
 
   public:
-    Plugin(Reference<GView::Object> object);
+    Plugin(Reference<GView::Object> object, Reference<Window> parent);
 
     bool SetAreaToDecode(Buffer& b, BufferView& bv, uint64& start, uint64& end);
     bool DecodeBase64(BufferView input, uint64 start, uint64 end);
