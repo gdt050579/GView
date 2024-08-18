@@ -1818,4 +1818,13 @@ static std::string_view GetNameFromGUID(const MyGUID& guid)
 
     return "Unknown";
 }
+
+static std::string_view GetExtraDataSignaturesName(ExtraDataSignatures type) {
+    if (LNK::ExtraDataSignaturesNames.contains(type)) {
+        return LNK::ExtraDataSignaturesNames.at(type);
+    }
+
+    return "?Signature";
+}
+
 } // namespace GView::Type::LNK
