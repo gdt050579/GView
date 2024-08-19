@@ -290,12 +290,24 @@ void ApplyPNGFilter(Buffer& data, const uint16_t& column, const uint8_t& predict
     data = std::move(filteredData);
 }
 
-void HighlightObjectTypes(GView::Utils::DataCache& data, BufferViewer::Settings& settings, const uint64_t& offset, const uint64_t& dataSize)
+void HighlightObjectTypes(
+      GView::Utils::DataCache& data,
+      Reference<PDF::PDFFile> pdf,
+      BufferViewer::Settings& settings,
+      const uint64_t& offset,
+      const uint64_t& dataSize,
+      const uint64 objNum)
 {
     uint8_t buffer;
     uint64_t lengthVal     = 0;
     bool found_length      = false;
     uint64_t object_offset = offset;
+
+    PDF::PDFObject pdfObject;
+    pdfObject.startBuffer = offset;
+    pdfObject.type        = 1;
+    pdfObject.number      = objNum;
+
     while (object_offset < dataSize && (data.Copy(object_offset, buffer) && (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN))) {
         object_offset++;
     }
@@ -304,6 +316,8 @@ void HighlightObjectTypes(GView::Utils::DataCache& data, BufferViewer::Settings&
             break;
         }
         if (CheckType(data, object_offset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
+            pdfObject.endBuffer = object_offset + PDF::KEY::PDF_ENDOBJ_SIZE;
+            pdf->AddPDFObject(pdf, pdfObject);
             break;
         } else if (
               CheckType(data, object_offset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
@@ -488,6 +502,10 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     if (pdf->versionUnder5) {
         bool next_table = true;
         while (next_table) {
+            PDF::PDFObject pdfObject;
+            pdfObject.startBuffer = crossRefOffset;
+            pdfObject.type        = 2;
+            pdfObject.number      = 0;
             // get the offsets from the Cross-Reference Table
             const uint64 numEntries = GetNumberOfEntries(crossRefOffset, offset, dataSize, data);
             while (offset < dataSize) {
@@ -502,15 +520,21 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
 
             GetObjectsOffsets(numEntries, offset, data, objectOffsets);
 
+            pdfObject.endBuffer = offset;
+            pdf->AddPDFObject(pdf, pdfObject);
+
             uint64 trailerOffset    = 0;
             const bool foundTrailer = GetTrailerOffset(offset, dataSize, data, trailerOffset);
 
+            pdfObject.startBuffer = trailerOffset;
+            pdfObject.type        = 4;
+            pdfObject.number      = 0;
             // Find /Prev in the trailer segment
             bool found_prev = false;
             if (foundTrailer) {
-                for (offset = trailerOffset; offset < eofOffset - PDF::KEY::PDF_PREV_SIZE; ++offset) {
-                    const bool match = CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV);
-                    if (match) {
+                offset = trailerOffset;
+                while (offset < dataSize) {
+                    if (CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) {
                         offset += PDF::KEY::PDF_PREV_SIZE;
 
                         while (offset < dataSize && (data.Copy(offset, buffer) &&
@@ -520,7 +544,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
 
                         prevOffset = GetTypeValue(data, offset, dataSize);
                         found_prev = true;
+                    } else if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
+                        offset += PDF::KEY::PDF_EOF_SIZE;
                         break;
+                    } else {
+                        offset++;
                     }
                 }
                 if (!found_prev) {
@@ -528,9 +556,12 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 }
             }
 
+            pdfObject.endBuffer = offset;
+            pdf->AddPDFObject(pdf, pdfObject);
+
             if (foundTrailer) {
                 settings.AddZone(crossRefOffset, trailerOffset - crossRefOffset, ColorPair{ Color::Green, Color::DarkBlue }, "Cross-Reference Table");
-                settings.AddZone(trailerOffset, eofOffset - trailerOffset + PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Red, Color::DarkBlue }, "Trailer");
+                settings.AddZone(trailerOffset, offset - trailerOffset, ColorPair{ Color::Red, Color::DarkBlue }, "Trailer");
             }
             crossRefOffset = prevOffset;
         }
@@ -548,6 +579,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             PDF::TypeFlags typeFlags;
             PDF::WValues wValues         = { 0, 0, 0 };
             PDF::DecodeParms decodeParms = { 1, 1, 8 };
+
+            PDF::PDFObject pdfObject;
+            pdfObject.startBuffer = crossRefOffset;
+            pdfObject.type        = 3;
+            pdfObject.number      = 0;
 
             while (!end_tag) {
                 if (CheckType(data, offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
@@ -634,6 +670,8 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         found_eof = CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF);
                         if (found_eof) {
                             offset += PDF::KEY::PDF_EOF_SIZE;
+                            pdfObject.endBuffer = offset;
+                            pdf->AddPDFObject(pdf, pdfObject);
                             settings.AddZone(crossRefOffset, offset - crossRefOffset, ColorPair{ Color::Green, Color::DarkBlue }, "Cross-Reference Stream");
                             break;
                         } else {
@@ -686,7 +724,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         uint64_t objOffset = objectOffsets[i];
         uint64_t length    = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - objOffset : eofOffset - objOffset;
         settings.AddZone(objOffset, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(i + 1));
-        HighlightObjectTypes(data, settings, objOffset, dataSize);
+        HighlightObjectTypes(data, pdf, settings, objOffset, dataSize, i + 1);
     }
 
     pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
@@ -701,6 +739,7 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     CreateBufferView(win, pdf);
     // win->CreateViewer<TextViewer::Settings>();
 
+    win->AddPanel(Pointer<TabPage>(new PDF::Panels::Sections(pdf, win)), false);
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Information(pdf)), true);
 
     return true;

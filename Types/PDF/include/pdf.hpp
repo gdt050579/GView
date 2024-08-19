@@ -86,7 +86,7 @@ namespace Type
             constexpr uint8_t PDF_TRUE_SIZE  = 4;
             constexpr uint8_t PDF_FALSE[]    = "false";
             constexpr uint8_t PDF_FALSE_SIZE = 5;
-            constexpr uint8_t PDF_NULL[]    = "null";
+            constexpr uint8_t PDF_NULL[]     = "null";
             constexpr uint8_t PDF_NULL_SIZE  = 4;
 
             constexpr uint8_t PDF_XREF[]       = "xref";
@@ -107,10 +107,10 @@ namespace Type
             constexpr uint8_t PDF_EOF[]    = "%%EOF";
             constexpr uint8_t PDF_EOF_SIZE = 5;
 
-            constexpr uint8_t PDF_XREF_ENTRY = 20;
-            constexpr uint8_t PDF_FREE_ENTRY = 'f';
-            constexpr uint8_t ZERO           = 0;
-            constexpr uint8_t PDF_INDIRECTOBJ      = 'R';
+            constexpr uint8_t PDF_XREF_ENTRY  = 20;
+            constexpr uint8_t PDF_FREE_ENTRY  = 'f';
+            constexpr uint8_t ZERO            = 0;
+            constexpr uint8_t PDF_INDIRECTOBJ = 'R';
         } // namespace KEY
 
         namespace PREDICTOR
@@ -163,6 +163,13 @@ namespace Type
             uint8 bitsPerComponent;
         };
 
+        struct PDFObject {
+            uint64 startBuffer;
+            uint64 endBuffer;
+            uint8 type;
+            uint32 number;
+        };
+
 #pragma pack(pop) // Back to default packing
 
         class PDFFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
@@ -170,6 +177,7 @@ namespace Type
           public:
             Header header{};
             bool versionUnder5;
+            vector<PDFObject> pdfObjects;
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
           public:
@@ -179,6 +187,7 @@ namespace Type
             }
 
             bool Update();
+            void AddPDFObject(Reference<GView::Type::PDF::PDFFile> pdf, const PDF::PDFObject& obj);
 
             std::string_view GetTypeName() override
             {
@@ -213,6 +222,24 @@ namespace Type
         };
         namespace Panels
         {
+            class Sections : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::PDF::PDFFile> pdf;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+                int Base;
+
+                std::string_view GetValue(NumericFormatter& n, uint32 value);
+                void GoToSelectedSection();
+                void SelectCurrentSection();
+
+              public:
+                Sections(Reference<GView::Type::PDF::PDFFile> pdf, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
             class Information : public AppCUI::Controls::TabPage
             {
                 Reference<GView::Type::PDF::PDFFile> pdf;
