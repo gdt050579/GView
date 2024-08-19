@@ -146,7 +146,7 @@ bool Plugin::DecodeBase64(BufferView input, uint64 start, uint64 end)
     bool warning;
     String message;
     Buffer output;
-    if (GView::Unpack::Base64::Decode(input, output, warning, message)) {
+    if (GView::Decoding::Base64::Decode(input, output, warning, message)) {
         if (warning) {
             AppCUI::Dialogs::MessageBox::ShowError("Warning!", message);
         }
@@ -182,7 +182,7 @@ bool Plugin::DecodeZLib(BufferView input, uint64 start, uint64 end)
 
     do {
         Buffer output;
-        if (GView::ZLIB::DecompressStream(input, output, message, sizeConsumed)) {
+        if (GView::Decoding::ZLIB::DecompressStream(input, output, message, sizeConsumed)) {
             LocalString<128> name;
             name.Format("Buffer_zlib_%llx_%llx", start, start + sizeConsumed);
 

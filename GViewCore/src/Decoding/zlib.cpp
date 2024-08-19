@@ -1,7 +1,7 @@
 #include "../include/GView.hpp"
 #include <zlib.h>
 
-namespace GView::ZLIB
+namespace GView::Decoding::ZLIB
 {
 bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize)
 {

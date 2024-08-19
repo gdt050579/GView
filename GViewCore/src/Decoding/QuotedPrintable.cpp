@@ -1,7 +1,7 @@
 #include "Internal.hpp"
 
 //TODO: THIS WAS NOT TESTED!
-void GView::Unpack::QuotedPrintable::Encode(BufferView view, Buffer& output)
+void GView::Decoding::QuotedPrintable::Encode(BufferView view, Buffer& output)
 {
     // Iterate over each character in the input buffer
     for (size_t i = 0; i < view.GetLength(); i++) {
@@ -32,7 +32,7 @@ void GView::Unpack::QuotedPrintable::Encode(BufferView view, Buffer& output)
 }
 
 //TODO: Consider more testing!
-bool GView::Unpack::QuotedPrintable::Decode(BufferView view, Buffer& output)
+bool GView::Decoding::QuotedPrintable::Decode(BufferView view, Buffer& output)
 {
     char temp_buffer[2] = {};
     // Iterate over each character in the input buffer
