@@ -22,7 +22,7 @@ namespace GView::GenericPlugins::Unpacker
 using namespace AppCUI::Graphics;
 using namespace GView::View;
 
-Plugin::Plugin(Reference<GView::Object> object, Reference<Window> parent) : Window("Unpacker", "d:c,w:80,h:80%", WindowFlags::FixedPosition)
+Plugin::Plugin(Reference<GView::Object> object, Reference<Window> parent) : Window("Unpacker", "d:c,w:60,h:80%", WindowFlags::FixedPosition)
 {
     this->object = object;
     this->parent = parent;
@@ -31,15 +31,19 @@ Plugin::Plugin(Reference<GView::Object> object, Reference<Window> parent) : Wind
         this->selectedZones.emplace_back(this->object->GetContentType()->GetSelectionZone(i));
     }
 
-    list = Factory::ListView::Create(this, "x:1,y:0,w:60%,h:80%", { "n:Type,w:20%", "n:Description,w:80%" }, ListViewFlags::AllowMultipleItemsSelection);
-    list->SetFocus();
+    description = Factory::Label::Create(this, "", "x:55%,y:1,w:45%,h:30%");
 
-    list->AddItem({ "Base64", "Decode base64 encoded payloads" }).SetData(ITEM_BASE64);
-    list->AddItem({ "ZLib", "Decode zlib encoded payloads" }).SetData(ITEM_ZLIB);
+    list = Factory::ListView::Create(this, "x:1,y:0,w:50%,h:90%", { "n:Type,w:100%" }, ListViewFlags::AllowMultipleItemsSelection);
+
+    list->AddItem({ "Base64" }).SetData(ITEM_BASE64);
+    list->AddItem({ "ZLib" }).SetData(ITEM_ZLIB);
+
+    list->SetCurrentItem(list->GetItem(0));
+    list->RaiseEvent(Event::ListViewCurrentItemChanged);
+    list->SetFocus();
 
     auto decode                         = Factory::Button::Create(this, "&Decode", "x:25%,y:100%,a:b,w:12", BTN_ID_DECODE);
     decode->Handlers()->OnButtonPressed = this;
-    decode->SetFocus();
 
     Factory::Button::Create(this, "&Cancel", "x:75%,y:100%,a:b,w:12", BTN_ID_CANCEL)->Handlers()->OnButtonPressed = this;
 }
@@ -76,6 +80,41 @@ void Plugin::OnButtonPressed(Reference<Button> button)
     default:
         break;
     }
+}
+
+bool Plugin::OnEvent(Reference<Control> control, Event eventType, int32 ID)
+{
+    if (Window::OnEvent(control, eventType, ID)) {
+        return true;
+    }
+
+    switch (eventType) {
+    case AppCUI::Controls::Event::ListViewCurrentItemChanged: {
+        CHECK(description.IsValid(), false ,"");
+        CHECK(list.IsValid(), false ,"");
+
+        auto item = this->list->GetCurrentItem();
+        auto id   = item.GetData(ITEM_INVALID);
+        CHECK(id != ITEM_INVALID, false, "");
+
+        switch (id) {
+        case ITEM_BASE64:
+            description->SetText("Base64 encoded payloads");
+            break;
+        case ITEM_ZLIB:
+            description->SetText("Zlib encoded payloads");
+            break;
+        default:
+            break;
+        }
+
+        return true;
+    } break;
+    default:
+        break;
+    }
+
+    return false;
 }
 
 bool Plugin::SetAreaToDecode(Buffer& b, BufferView& bv, uint64& start, uint64& end)
@@ -194,7 +233,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
                 const auto currentViewName = currentView->GetName();
                 if (currentViewName != "Buffer View") {
                     AppCUI::Dialogs::MessageBox::ShowError("Error!", "Unpacker plugin can only be called from buffer views!");
-                    return false;
+                    return true; // the command did not fail -> it does not apply
                 }
                 parent = window.ToObjectRef<Window>();
                 break;
