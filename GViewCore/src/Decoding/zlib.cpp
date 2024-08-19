@@ -60,39 +60,7 @@ bool DecompressStream(const BufferView& input, Buffer& output, String& message, 
 
     output.Resize(stream.total_out);
     sizeConsumed = stream.total_in;
-
-    switch (ret) {
-    case Z_OK:
-        message.Format("Z_OK code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_STREAM_END:
-        message.Format("Z_STREAM_END code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_NEED_DICT:
-        message.Format("Z_NEED_DICT code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_ERRNO:
-        message.Format("Z_ERRNO code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_STREAM_ERROR:
-        message.Format("Z_STREAM_ERROR code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_DATA_ERROR:
-        message.Format("Z_DATA_ERROR code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_MEM_ERROR:
-        message.Format("Z_MEM_ERROR code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_BUF_ERROR:
-        message.Format("Z_BUF_ERROR code: %d with msg: %s", ret, stream.msg);
-        break;
-    case Z_VERSION_ERROR:
-        message.Format("Z_VERSION_ERROR code: %d with msg: %s", ret, stream.msg);
-        break;
-    default:
-        message.Format("Unknown return code: %d with msg: %s", ret, stream.msg);
-        break;
-    }
+    message.Format("Return code: %d with msg: %s", ret, stream.msg);
 
     CHECK(ret == Z_OK || ret == Z_STREAM_END, false, "");
 
