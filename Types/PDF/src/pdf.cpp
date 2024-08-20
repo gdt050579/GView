@@ -9,6 +9,23 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
+constexpr string_view PDF_ICON = "................"  // 1
+                                 "................"  // 2
+                                 "rrrrrrrrrrrrr..."  // 3
+                                 "rWWWWWWWWWWWWr.."  // 4
+                                 "rWWWWWWWWWWWWWr."  // 5
+                                 "rWWWWWWWWWWWWWWr"  // 6
+                                 "rW....W..WW...Wr"  // 7
+                                 "rW.WW.W.W.W.WWWr"  // 8
+                                 "rW....W.W.W..WWr"  // 9
+                                 "rW.WWWW.W.W.WWWr"  // 10
+                                 "rW.WWWW..WW.WWWr"  // 11
+                                 "rWWWWWWWWWWWWWWr"  // 12
+                                 "rWWWWWWWWWWWWWWr"  // 13
+                                 "rrrrrrrrrrrrrrrr"  // 14
+                                 "................"  // 15
+                                 "................"; // 16
+
 extern "C" {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
@@ -462,7 +479,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 foundEOF = true;
                 offset -= PDF::KEY::PDF_EOF_SIZE - 1;
                 eofOffset = offset;
-                settings.AddZone(eofOffset, dataSize - eofOffset, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
+                settings.AddZone(eofOffset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
             }
         }
     }
@@ -545,6 +562,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         prevOffset = GetTypeValue(data, offset, dataSize);
                         found_prev = true;
                     } else if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
+                        settings.AddZone(offset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
                         offset += PDF::KEY::PDF_EOF_SIZE;
                         break;
                     } else {
@@ -669,10 +687,15 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     while (!found_eof && offset < dataSize) {
                         found_eof = CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF);
                         if (found_eof) {
+                            settings.AddZone(offset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
                             offset += PDF::KEY::PDF_EOF_SIZE;
                             pdfObject.endBuffer = offset;
                             pdf->AddPDFObject(pdf, pdfObject);
-                            settings.AddZone(crossRefOffset, offset - crossRefOffset, ColorPair{ Color::Green, Color::DarkBlue }, "Cross-Reference Stream");
+                            settings.AddZone(
+                                  crossRefOffset,
+                                  offset - crossRefOffset - PDF::KEY::PDF_EOF_SIZE,
+                                  ColorPair{ Color::Green, Color::DarkBlue },
+                                  "Cross-Reference Stream");
                             break;
                         } else {
                             offset++;
@@ -730,6 +753,27 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
 }
 
+void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::PDF::PDFFile> pdf)
+{
+    ContainerViewer::Settings settings;
+
+    settings.SetPathSeparator((char16) '/');
+    settings.SetIcon(PDF_ICON);
+    settings.SetColumns({
+          "n:&Object,a:l,w:20",
+          "n:&Type,a:r,w:40",
+          "n:&Position,a:r,w:40",
+          "n:&Compressed Size,a:r,w:20",
+          "n:&Uncompressed Size,a:r,w:20",
+          "n:&Filter,a:r,w:40",
+    });
+
+    settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PDF::PDFFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+    settings.SetOpenItemCallback(win->GetObject()->GetContentType<GView::Type::PDF ::PDFFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+    win->CreateViewer(settings);
+}
+
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto pdf = win->GetObject()->GetContentType<PDF::PDFFile>();
@@ -737,6 +781,7 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 
     // viewers
     CreateBufferView(win, pdf);
+    // CreateContainerView(win, pdf);
     // win->CreateViewer<TextViewer::Settings>();
 
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Sections(pdf, win)), false);

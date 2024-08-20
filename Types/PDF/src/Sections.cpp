@@ -13,7 +13,7 @@ Panels::Sections::Sections(Reference<GView::Type::PDF::PDFFile> _pdf, Reference<
     win  = _win;
     Base = 16;
 
-    list = Factory::ListView::Create(this, "d:c", { "n:Name,w:16", "n:ObjectPoz,a:r,w:12", "n:Size,a:r,w:12" }, ListViewFlags::AllowMultipleItemsSelection);
+    list = Factory::ListView::Create(this, "d:c", { "n:Name,w:16", "n:ObjectPos,a:r,w:12", "n:Size,a:r,w:12" }, ListViewFlags::AllowMultipleItemsSelection);
     Update();
 }
 
