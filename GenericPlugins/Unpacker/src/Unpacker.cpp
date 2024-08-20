@@ -13,9 +13,10 @@ using namespace GView;
 constexpr int BTN_ID_DECODE = 1;
 constexpr int BTN_ID_CANCEL = 2;
 
-constexpr uint64 ITEM_INVALID = 0xFFFFFFFF;
-constexpr uint64 ITEM_BASE64  = 1;
-constexpr uint64 ITEM_ZLIB    = 2;
+constexpr uint64 ITEM_INVALID          = 0xFFFFFFFF;
+constexpr uint64 ITEM_BASE64           = 1;
+constexpr uint64 ITEM_QUOTED_PRINTABLE = 2;
+constexpr uint64 ITEM_ZLIB             = 3;
 
 namespace GView::GenericPlugins::Unpacker
 {
@@ -36,6 +37,7 @@ Plugin::Plugin(Reference<GView::Object> object, Reference<Window> parent) : Wind
     list = Factory::ListView::Create(this, "x:1,y:0,w:50%,h:90%", { "n:Type,w:100%" }, ListViewFlags::AllowMultipleItemsSelection);
 
     list->AddItem({ "Base64" }).SetData(ITEM_BASE64);
+    list->AddItem({ "QuotedPrintable" }).SetData(ITEM_QUOTED_PRINTABLE);
     list->AddItem({ "ZLib" }).SetData(ITEM_ZLIB);
 
     list->SetCurrentItem(list->GetItem(0));
@@ -66,6 +68,10 @@ void Plugin::OnButtonPressed(Reference<Button> button)
             SetAreaToDecode(b, bv, start, end);
             DecodeBase64(bv, start, end);
         } break;
+        case ITEM_QUOTED_PRINTABLE:
+            SetAreaToDecode(b, bv, start, end);
+            DecodeQuotedPrintable(bv, start, end);
+            break;
         case ITEM_ZLIB:
             SetAreaToDecode(b, bv, start, end);
             DecodeZLib(bv, start, end);
@@ -90,8 +96,8 @@ bool Plugin::OnEvent(Reference<Control> control, Event eventType, int32 ID)
 
     switch (eventType) {
     case AppCUI::Controls::Event::ListViewCurrentItemChanged: {
-        CHECK(description.IsValid(), false ,"");
-        CHECK(list.IsValid(), false ,"");
+        CHECK(description.IsValid(), false, "");
+        CHECK(list.IsValid(), false, "");
 
         auto item = this->list->GetCurrentItem();
         auto id   = item.GetData(ITEM_INVALID);
@@ -100,6 +106,9 @@ bool Plugin::OnEvent(Reference<Control> control, Event eventType, int32 ID)
         switch (id) {
         case ITEM_BASE64:
             description->SetText("Base64 encoded payloads");
+            break;
+        case ITEM_QUOTED_PRINTABLE:
+            description->SetText("QP encoded payloads");
             break;
         case ITEM_ZLIB:
             description->SetText("Zlib encoded payloads");
@@ -164,6 +173,28 @@ bool Plugin::DecodeBase64(BufferView input, uint64 start, uint64 end)
     }
 
     AppCUI::Dialogs::MessageBox::ShowError("Error!", "Failed to decode base64!");
+
+    return false;
+}
+
+bool Plugin::DecodeQuotedPrintable(BufferView input, uint64 start, uint64 end)
+{
+    String message;
+    Buffer output;
+    if (GView::Decoding::QuotedPrintable::Decode(input, output)) {
+        LocalString<128> name;
+        name.Format("Buffer_qp_%llx_%llx", start, end);
+
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(this->object->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(name);
+
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        return true;
+    }
+
+    AppCUI::Dialogs::MessageBox::ShowError("Error!", input);
 
     return false;
 }

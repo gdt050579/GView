@@ -26,6 +26,7 @@ class Plugin : public Window, public Handlers::OnButtonPressedInterface
 
     bool SetAreaToDecode(Buffer& b, BufferView& bv, uint64& start, uint64& end);
     bool DecodeBase64(BufferView input, uint64 start, uint64 end);
+    bool DecodeQuotedPrintable(BufferView input, uint64 start, uint64 end);
     bool DecodeZLib(BufferView input, uint64 start, uint64 end);
 
     void OnButtonPressed(Reference<Button> button) override;
