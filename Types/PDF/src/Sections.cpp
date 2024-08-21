@@ -42,17 +42,17 @@ void Panels::Sections::Update()
     for (auto& object : pdf->pdfObjects) {
         temp.Clear();
         switch (object.type) {
-        case 1:
+        case PDF::SectionPDFObjectType::Object:
             temp.Add("Object ");
             temp.Add(std::to_string(object.number));
             break;
-        case 2:
+        case PDF::SectionPDFObjectType::CrossRefTable:
             temp.Add("Cross-ref Table");
             break;
-        case 3:
+        case PDF::SectionPDFObjectType::CrossRefStream:
             temp.Add("Cross-ref Stream");
             break;
-        case 4:
+        case PDF::SectionPDFObjectType::Trailer:
             temp.Add("Trailer");
             break;
         }

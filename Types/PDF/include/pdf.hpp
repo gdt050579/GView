@@ -59,6 +59,8 @@ namespace Type
         {
             constexpr uint8_t PDF_MAGIC[] = "%PDF-";
 
+            constexpr uint8_t PDF_ROOT[]             = "/Root";
+            constexpr uint8_t PDF_ROOT_SIZE          = 5;
             constexpr uint8_t PDF_PREV[]             = "/Prev";
             constexpr uint8_t PDF_PREV_SIZE          = 5;
             constexpr uint8_t PDF_STREAM_LENGTH[]    = "/Length";
@@ -163,10 +165,17 @@ namespace Type
             uint8 bitsPerComponent;
         };
 
+        enum class SectionPDFObjectType : uint8 {
+            Object         = 1,
+            CrossRefTable  = 2,
+            CrossRefStream = 3,
+            Trailer        = 4,
+        };
+
         struct PDFObject {
             uint64 startBuffer;
             uint64 endBuffer;
-            uint8 type;
+            SectionPDFObjectType type;
             uint32 number;
         };
 
@@ -197,8 +206,11 @@ namespace Type
             {
             }
 
+            // View::ContainerViewer::EnumerateInterface
             virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
             virtual bool PopulateItem(TreeViewItem item) override;
+
+            // View::ContainerViewer::OpenItemInterface
             virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
             uint32 GetSelectionZonesCount() override

@@ -311,51 +311,45 @@ void HighlightObjectTypes(
       GView::Utils::DataCache& data,
       Reference<PDF::PDFFile> pdf,
       BufferViewer::Settings& settings,
-      const uint64_t& offset,
       const uint64_t& dataSize,
-      const uint64 objNum)
+      PDF::PDFObject& pdfObject)
 {
     uint8_t buffer;
     uint64_t lengthVal     = 0;
-    bool found_length      = false;
-    uint64_t object_offset = offset;
+    bool foundLength      = false;
+    uint64_t objectOffset = pdfObject.startBuffer;
 
-    PDF::PDFObject pdfObject;
-    pdfObject.startBuffer = offset;
-    pdfObject.type        = 1;
-    pdfObject.number      = objNum;
-
-    while (object_offset < dataSize && (data.Copy(object_offset, buffer) && (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN))) {
-        object_offset++;
+    while (objectOffset < dataSize && (data.Copy(objectOffset, buffer) && (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN))) {
+        objectOffset++;
     }
-    while (object_offset < dataSize) {
-        if (!data.Copy(object_offset, buffer)) {
+    while (objectOffset < dataSize) {
+        if (!data.Copy(objectOffset, buffer)) {
             break;
         }
-        if (CheckType(data, object_offset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
-            pdfObject.endBuffer = object_offset + PDF::KEY::PDF_ENDOBJ_SIZE;
+        if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
+            pdfObject.endBuffer = objectOffset + PDF::KEY::PDF_ENDOBJ_SIZE;
             pdf->AddPDFObject(pdf, pdfObject);
             break;
         } else if (
-              CheckType(data, object_offset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
-              CheckType(data, object_offset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_END)) {
-            settings.AddZone(object_offset, PDF::KEY::PDF_DIC_SIZE, ColorPair{ Color::Yellow, Color::DarkBlue }, "Dictionary");
-            object_offset += PDF::KEY::PDF_DIC_SIZE;
+              CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
+              CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_END)) {
+            settings.AddZone(objectOffset, PDF::KEY::PDF_DIC_SIZE, ColorPair{ Color::Yellow, Color::DarkBlue }, "Dictionary");
+            objectOffset += PDF::KEY::PDF_DIC_SIZE;
         } else if (buffer == PDF::DC::SOLIUDS) {
             // get the length for the stream so that we don't have to go through all the bytes
-            if (!found_length && CheckType(data, object_offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length for the stream
-                settings.AddZone(object_offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
-                object_offset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
-                const uint64_t start_segment = object_offset;
-                lengthVal                    = GetTypeValue(data, object_offset, dataSize);
-                settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
-                found_length = true;
+            if (!foundLength && CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length for the stream
+                settings.AddZone(objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
+                objectOffset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
+                const uint64_t start_segment = objectOffset;
+                lengthVal                    = GetTypeValue(data, objectOffset, dataSize);
+                settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
+                foundLength = true;
             } else {
-                const uint64_t start_segment = object_offset;
-                object_offset++;
+                const uint64_t start_segment = objectOffset;
+                objectOffset++;
                 bool end_name = false;
-                while (object_offset < dataSize && !end_name) {
-                    if (!data.Copy(object_offset, buffer)) {
+                while (objectOffset < dataSize && !end_name) {
+                    if (!data.Copy(objectOffset, buffer)) {
                         break;
                     }
                     switch (buffer) {
@@ -373,66 +367,66 @@ void HighlightObjectTypes(
                         end_name = true;
                         break;
                     default:
-                        object_offset++;
+                        objectOffset++;
                     }
                 }
-                settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
+                settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
             }
         } else if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
-            settings.AddZone(object_offset, 1, ColorPair{ Color::Yellow, Color::Blue }, "Indirect Obj");
-            object_offset++;
-        } else if (CheckType(data, object_offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
-            if (found_length) {
-                const uint64_t start_segment = object_offset;
-                object_offset += PDF::KEY::PDF_STREAM_SIZE + lengthVal;
-                while (object_offset < dataSize && !CheckType(data, object_offset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
-                    object_offset++;
+            settings.AddZone(objectOffset, 1, ColorPair{ Color::Yellow, Color::Blue }, "Indirect Obj");
+            objectOffset++;
+        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
+            if (foundLength) {
+                const uint64_t start_segment = objectOffset;
+                objectOffset += PDF::KEY::PDF_STREAM_SIZE + lengthVal;
+                while (objectOffset < dataSize && !CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                    objectOffset++;
                 }
-                object_offset += PDF::KEY::PDF_ENDSTREAM_SIZE;
-                settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Aqua, Color::DarkBlue }, "Stream");
+                objectOffset += PDF::KEY::PDF_ENDSTREAM_SIZE;
+                settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Aqua, Color::DarkBlue }, "Stream");
             } else {
                 break;
             }
         } else if (buffer == PDF::DC::LEFT_SQUARE_BRACKET || buffer == PDF::DC::RIGHT_SQUARE_BRACKET) {
-            settings.AddZone(object_offset, 1, ColorPair{ Color::Olive, Color::DarkBlue }, "Array");
-            object_offset++;
+            settings.AddZone(objectOffset, 1, ColorPair{ Color::Olive, Color::DarkBlue }, "Array");
+            objectOffset++;
         } else if (buffer == '-' || buffer == '+' || (buffer >= '0' && buffer <= '9')) {
-            const uint64_t start_segment = object_offset;
-            object_offset++;
-            while (object_offset < dataSize && data.Copy(object_offset, buffer) && ((buffer >= '0' && buffer <= '9') || buffer == '.')) {
-                object_offset++;
+            const uint64_t start_segment = objectOffset;
+            objectOffset++;
+            while (objectOffset < dataSize && data.Copy(objectOffset, buffer) && ((buffer >= '0' && buffer <= '9') || buffer == '.')) {
+                objectOffset++;
             }
-            settings.AddZone(start_segment, object_offset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
+            settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
         } else if (buffer == PDF::DC::LEFT_PARETHESIS) {
-            const uint64_t start_segment = object_offset;
-            object_offset++;
-            while (object_offset < dataSize && data.Copy(object_offset, buffer) && buffer != PDF::DC::RIGHT_PARETHESIS) {
+            const uint64_t start_segment = objectOffset;
+            objectOffset++;
+            while (objectOffset < dataSize && data.Copy(objectOffset, buffer) && buffer != PDF::DC::RIGHT_PARETHESIS) {
                 if (buffer == PDF::DC::REVERSE_SOLIDUS) {
-                    object_offset++;
+                    objectOffset++;
                 }
-                object_offset++;
+                objectOffset++;
             }
-            settings.AddZone(start_segment, object_offset - start_segment + 1, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Literal String");
+            settings.AddZone(start_segment, objectOffset - start_segment + 1, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Literal String");
         } else if (buffer == PDF::DC::LESS_THAN) {
-            const uint64_t start_segment = object_offset;
-            object_offset++;
-            while (object_offset < dataSize && data.Copy(object_offset, buffer) && buffer != PDF::DC::GREATER_THAN) {
-                object_offset++;
+            const uint64_t start_segment = objectOffset;
+            objectOffset++;
+            while (objectOffset < dataSize && data.Copy(objectOffset, buffer) && buffer != PDF::DC::GREATER_THAN) {
+                objectOffset++;
             }
-            settings.AddZone(start_segment, object_offset - start_segment + 1, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Hex String");
-        } else if (CheckType(data, object_offset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
-            settings.AddZone(object_offset, PDF::KEY::PDF_TRUE_SIZE, ColorPair{ Color::DarkRed, Color::DarkBlue }, "Boolean");
-            object_offset += PDF::KEY::PDF_TRUE_SIZE;
-        } else if (CheckType(data, object_offset, PDF::KEY::PDF_FALSE_SIZE, PDF::KEY::PDF_FALSE)) {
-            settings.AddZone(object_offset, PDF::KEY::PDF_FALSE_SIZE, ColorPair{ Color::DarkRed, Color::DarkBlue }, "Boolean");
-            object_offset += PDF::KEY::PDF_FALSE_SIZE;
-        } else if (CheckType(data, object_offset, PDF::KEY::PDF_NULL_SIZE, PDF::KEY::PDF_NULL)) {
-            settings.AddZone(object_offset, PDF::KEY::PDF_NULL_SIZE, ColorPair{ Color::White, Color::Blue }, "Null");
-            object_offset += PDF::KEY::PDF_NULL_SIZE;
-        } else if (CheckType(data, object_offset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
+            settings.AddZone(start_segment, objectOffset - start_segment + 1, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Hex String");
+        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
+            settings.AddZone(objectOffset, PDF::KEY::PDF_TRUE_SIZE, ColorPair{ Color::DarkRed, Color::DarkBlue }, "Boolean");
+            objectOffset += PDF::KEY::PDF_TRUE_SIZE;
+        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_FALSE_SIZE, PDF::KEY::PDF_FALSE)) {
+            settings.AddZone(objectOffset, PDF::KEY::PDF_FALSE_SIZE, ColorPair{ Color::DarkRed, Color::DarkBlue }, "Boolean");
+            objectOffset += PDF::KEY::PDF_FALSE_SIZE;
+        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_NULL_SIZE, PDF::KEY::PDF_NULL)) {
+            settings.AddZone(objectOffset, PDF::KEY::PDF_NULL_SIZE, ColorPair{ Color::White, Color::Blue }, "Null");
+            objectOffset += PDF::KEY::PDF_NULL_SIZE;
+        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
             break;
         } else {
-            object_offset++;
+            objectOffset++;
         }
     }
 }
@@ -521,7 +515,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         while (next_table) {
             PDF::PDFObject pdfObject;
             pdfObject.startBuffer = crossRefOffset;
-            pdfObject.type        = 2;
+            pdfObject.type        = PDF::SectionPDFObjectType::CrossRefTable;
             pdfObject.number      = 0;
             // get the offsets from the Cross-Reference Table
             const uint64 numEntries = GetNumberOfEntries(crossRefOffset, offset, dataSize, data);
@@ -544,7 +538,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             const bool foundTrailer = GetTrailerOffset(offset, dataSize, data, trailerOffset);
 
             pdfObject.startBuffer = trailerOffset;
-            pdfObject.type        = 4;
+            pdfObject.type        = PDF::SectionPDFObjectType::Trailer;
             pdfObject.number      = 0;
             // Find /Prev in the trailer segment
             bool found_prev = false;
@@ -600,7 +594,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
 
             PDF::PDFObject pdfObject;
             pdfObject.startBuffer = crossRefOffset;
-            pdfObject.type        = 3;
+            pdfObject.type        = PDF::SectionPDFObjectType::CrossRefStream;
             pdfObject.number      = 0;
 
             while (!end_tag) {
@@ -745,9 +739,15 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
 
     for (size_t i = 0; i < objectOffsets.size(); ++i) {
         uint64_t objOffset = objectOffsets[i];
-        uint64_t length    = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - objOffset : eofOffset - objOffset;
-        settings.AddZone(objOffset, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(i + 1));
-        HighlightObjectTypes(data, pdf, settings, objOffset, dataSize, i + 1);
+
+        PDF::PDFObject pdfObject;
+        pdfObject.startBuffer = objOffset;
+        pdfObject.type        = PDF::SectionPDFObjectType::Object;
+        pdfObject.number      = GetTypeValue(data, objOffset, dataSize);
+
+        uint64_t length = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - pdfObject.startBuffer : eofOffset - pdfObject.startBuffer;
+        settings.AddZone(pdfObject.startBuffer, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(pdfObject.number));
+        HighlightObjectTypes(data, pdf, settings, dataSize, pdfObject);
     }
 
     pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
