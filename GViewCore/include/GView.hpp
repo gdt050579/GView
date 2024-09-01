@@ -805,7 +805,7 @@ namespace Regex
 namespace Entropy
 {
     CORE_EXPORT double ShannonEntropy(const BufferView& buffer);
-    CORE_EXPORT double RenyiEntropy(const BufferView& buffer);
+    CORE_EXPORT double RenyiEntropy(const BufferView& buffer, double alpha);
 } // namespace Entropy
 
 /*
