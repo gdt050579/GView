@@ -33,8 +33,7 @@ class Plugin : public Window
     Reference<CanvasViewer> canvasEntropy;
     Reference<CanvasViewer> canvasLegend;
 
-    Reference<NumericSelector> alphaSelectorInteger;
-    Reference<NumericSelector> alphaSelectorFractional;
+    Reference<NumericSelector> alphaSelector;
 
     uint32 blockSize = MINIMUM_BLOCK_SIZE;
 

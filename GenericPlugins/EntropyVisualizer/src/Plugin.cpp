@@ -82,14 +82,20 @@ Color Plugin::EmbeddedObjectValueToColor(std::string_view name)
     }
 }
 
-Plugin::Plugin(Reference<Object> object) : Window("EntropyVisualizer", "d:c,w:95%,h:95%", WindowFlags::FixedPosition)
+Plugin::Plugin(Reference<Object> object) : Window("Entropy Visualizer", "d:c,w:100%,h:98%", WindowFlags::FixedPosition)
 {
     auto desktop = AppCUI::Application::GetDesktop();
     this->parent = desktop->GetFocusedChild();
     this->object = object;
     {
-        Factory::Label::Create(this, "Entropy type", "x:1, y:0,w:12,h:1");
-        this->entropyComboBox = Factory::ComboBox::Create(this, "x:14, y:0,w:25,h:1", "");
+        this->canvasEntropy = Factory::CanvasViewer::Create(this, "d:lb,w:80%,h:100%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
+        auto canvas         = this->canvasEntropy->GetCanvas();
+        canvas->Resize(this->canvasEntropy->GetWidth(), this->canvasEntropy->GetHeight());
+        canvas->SetCursor(0, 0);
+    }
+    {
+        Factory::Label::Create(this, "Entropy type", "x:81%, y:0,w:12,h:1");
+        this->entropyComboBox = Factory::ComboBox::Create(this, "x:81%,y:1,w:19%,h:1", "");
         entropyComboBox->SetHotKey('E');
         entropyComboBox->AddItem(SHANNON_ENTROPY_OPTION_NAME, COMBO_BOX_ITEM_SHANNON_ENTROPY);
         entropyComboBox->AddSeparator();
@@ -99,23 +105,16 @@ Plugin::Plugin(Reference<Object> object) : Window("EntropyVisualizer", "d:c,w:95
         entropyComboBox->SetCurentItemIndex(0);
     }
     {
-        Factory::Label::Create(this, "Block size", "x:40,y:0,w:10,h:1");
-        this->blockSizeSelector = Factory::NumericSelector::Create(this, 1, object->GetData().GetSize(), 32, "x:51,y:0,w:16,h:1");
+        Factory::Label::Create(this, "Block size", "x:81%,y:3,w:19%,h:1");
+        this->blockSizeSelector = Factory::NumericSelector::Create(this, 1, object->GetData().GetSize(), 32, "x:81%,y:4,w:19%,h:1");
         blockSizeSelector->SetHotKey('B');
     }
     {
-        Factory::Label::Create(this, "Alpha (Renyi)", "x:68,y:0,w:14,h:1");
-        this->alphaSelectorInteger    = Factory::NumericSelector::Create(this, -99, 99, 0, "x:83,y:0,w:14,h:1");
-        this->alphaSelectorFractional = Factory::NumericSelector::Create(this, 0, 999, 0, "x:98,y:0,w:14,h:1");
+        Factory::Label::Create(this, "Alpha (Renyi) /10", "x:81%,y:6,w:19%,h:1");
+        this->alphaSelector = Factory::NumericSelector::Create(this, -99, 99, 0, "x:81%,y:7,w:19%,h:1");
     }
     {
-        this->canvasEntropy = Factory::CanvasViewer::Create(this, "d:lb,w:85%,h:99%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
-        auto canvas         = this->canvasEntropy->GetCanvas();
-        canvas->Resize(this->canvasEntropy->GetWidth(), this->canvasEntropy->GetHeight());
-        canvas->SetCursor(0, 0);
-    }
-    {
-        this->canvasLegend = Factory::CanvasViewer::Create(this, "d:tr,w:15%,h:20%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
+        this->canvasLegend = Factory::CanvasViewer::Create(this, "x:81%,y:9,w:19%,h:20%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
         auto canvas        = this->canvasLegend->GetCanvas();
         canvas->Resize(this->canvasLegend->GetWidth(), this->canvasLegend->GetHeight());
     }
@@ -372,7 +371,7 @@ void Plugin::ResizeLegendCanvas()
 {
     CHECKRET(canvasLegend.IsValid(), "");
     CHECKRET(canvasEntropy.IsValid(), "");
-    this->canvasLegend->MoveTo(this->canvasLegend->GetX(), this->canvasEntropy->GetY());
+    // this->canvasLegend->MoveTo(this->canvasLegend->GetX(), this->canvasEntropy->GetY());
 
     uint32 newHeight   = this->canvasLegend->GetHeight();
     const auto entropy = this->entropyComboBox->GetCurrentItemUserData(-1);
