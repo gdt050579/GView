@@ -100,8 +100,13 @@ Plugin::Plugin(Reference<Object> object) : Window("EntropyVisualizer", "d:c,w:95
     }
     {
         Factory::Label::Create(this, "Block size", "x:40,y:0,w:10,h:1");
-        this->blockSizeComboBox = Factory::ComboBox::Create(this, "x:51,y:0,w:12,h:1", "");
-        blockSizeComboBox->SetHotKey('B');
+        this->blockSizeSelector = Factory::NumericSelector::Create(this, 1, object->GetData().GetSize(), 32, "x:51,y:0,w:16,h:1");
+        blockSizeSelector->SetHotKey('B');
+    }
+    {
+        Factory::Label::Create(this, "Alpha (Renyi)", "x:68,y:0,w:14,h:1");
+        this->alphaSelectorInteger    = Factory::NumericSelector::Create(this, -99, 99, 0, "x:83,y:0,w:14,h:1");
+        this->alphaSelectorFractional = Factory::NumericSelector::Create(this, 0, 999, 0, "x:98,y:0,w:14,h:1");
     }
     {
         this->canvasEntropy = Factory::CanvasViewer::Create(this, "d:lb,w:85%,h:99%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
@@ -355,7 +360,7 @@ std::optional<GView::Utils::Zone> Plugin::IsOffsetInZone(const GView::Utils::Zon
     return std::nullopt;
 }
 
-void Plugin::OnAfterResize(int newWidth, int newHeight)
+void Plugin::OnAfterResize(int, int)
 {
     ResizeLegendCanvas();
 
@@ -390,29 +395,34 @@ bool Plugin::OnEvent(Reference<Control> sender, Event eventType, int controlID)
         return true;
     }
 
+    const auto drawSelectedEntropyType = [this]() -> bool {
+        const auto entropy = this->entropyComboBox->GetCurrentItemUserData(-1);
+        if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY) {
+            this->DrawShannonEntropy(false);
+            this->DrawShannonEntropyLegend(false);
+        } else if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY_DATA_TYPE) {
+            this->DrawShannonEntropy(true);
+            this->DrawShannonEntropyLegend(true);
+        } else if (entropy == COMBO_BOX_ITEM_EMBEDDED_OBJECTS) {
+            this->DrawEmbeddedObjects();
+            this->DrawEmbeddedObjectsLegend();
+        }
+        return true;
+    };
+
     switch (eventType) {
     case AppCUI::Controls::Event::ComboBoxSelectedItemChanged:
         /* nothing, it is to costly computing entropy each time / on the fly */
         break;
     case AppCUI::Controls::Event::ComboBoxClosed:
         if (sender == this->entropyComboBox.ToBase<Control>()) {
-            const auto entropy = this->entropyComboBox->GetCurrentItemUserData(-1);
-            if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY) {
-                this->DrawShannonEntropy(false);
-                this->DrawShannonEntropyLegend(false);
-            } else if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY_DATA_TYPE) {
-                this->DrawShannonEntropy(true);
-                this->DrawShannonEntropyLegend(true);
-            } else if (entropy == COMBO_BOX_ITEM_EMBEDDED_OBJECTS) {
-                this->DrawEmbeddedObjects();
-                this->DrawEmbeddedObjectsLegend();
-            }
-            return true;
+            return drawSelectedEntropyType();
         }
-        if (sender == this->blockSizeComboBox.ToBase<Control>()) {
-            this->blockSize = static_cast<uint32>(this->blockSizeComboBox->GetCurrentItemUserData(-1));
-            this->entropyComboBox->RaiseEvent(Event::ComboBoxClosed);
-            return true;
+        break;
+    case AppCUI::Controls::Event::NumericSelectorValueChanged:
+        if (sender == this->blockSizeSelector.ToBase<Control>()) {
+            this->blockSize = this->blockSizeSelector->GetValue();
+            return drawSelectedEntropyType();
         }
         break;
     default:
@@ -436,12 +446,10 @@ bool Plugin::InitializeBlocksForCanvas()
     do {
         uint32 blocksCount = static_cast<uint32>(size / this->blockSize);
         blocksRows         = blocksCount / canvasWidth + 1;
-        blockSizeComboBox->AddItem(std::to_string(this->blockSize), this->blockSize);
         this->blockSize *= 2;
     } while (blocksRows > canvasHeight);
     this->blockSize /= 2;
-
-    blockSizeComboBox->SetCurentItemIndex(blockSizeComboBox->GetItemsCount() - 1);
+    this->blockSizeSelector->SetValue(this->blockSize);
 
     return true;
 }

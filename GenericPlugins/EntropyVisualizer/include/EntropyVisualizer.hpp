@@ -29,9 +29,12 @@ class Plugin : public Window
   private:
     Reference<Object> object;
     Reference<ComboBox> entropyComboBox;
-    Reference<ComboBox> blockSizeComboBox;
+    Reference<NumericSelector> blockSizeSelector;
     Reference<CanvasViewer> canvasEntropy;
     Reference<CanvasViewer> canvasLegend;
+
+    Reference<NumericSelector> alphaSelectorInteger;
+    Reference<NumericSelector> alphaSelectorFractional;
 
     uint32 blockSize = MINIMUM_BLOCK_SIZE;
 
