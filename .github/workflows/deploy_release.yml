@@ -178,17 +178,17 @@ jobs:
         output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
 
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: windows_artifacts
         path: artifacts
 
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: linux_artifacts
         path: artifacts
 
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: apple_artifacts
         path: artifacts
