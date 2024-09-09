@@ -92,6 +92,7 @@ namespace Type
             constexpr uint8_t PDF_NULL_SIZE  = 4;
 
             constexpr uint8_t PDF_XREF[]       = "xref";
+            constexpr uint8_t PDF_XREF_SIZE    = 4;
             constexpr uint8_t PDF_TRAILER[]    = "trailer";
             constexpr uint8_t PDF_TRAILER_SIZE = 7;
 
@@ -100,6 +101,8 @@ namespace Type
             constexpr uint8_t PDF_ENDSTREAM[]    = "endstream";
             constexpr uint8_t PDF_ENDSTREAM_SIZE = 9;
 
+            constexpr uint8_t PDF_OBJ[]    = "obj";
+            constexpr uint8_t PDF_OBJ_SIZE = 3;
             constexpr uint8_t PDF_ENDOBJ[]    = "endobj";
             constexpr uint8_t PDF_ENDOBJ_SIZE = 6;
 
@@ -127,9 +130,9 @@ namespace Type
 
         struct Header {
             char identifier[5]; // %PDF-
-            uint8 version1;     // 1
+            uint8 version;     // 1 or 2
             uint8 point;        // .
-            uint8 versionN;     // N = [0,7]
+            uint8 subVersion;     // for version = 1 -> [0,7], for version = 2 -> 0
         };
 
         struct TableEntry {
@@ -179,13 +182,48 @@ namespace Type
             uint32 number;
         };
 
+        enum class PDFObjectType : uint8 {
+            Unknown = 0,
+            Object  = 1,
+            Boolean = 2,
+            Numeric = 3,
+            Literal_String = 4,
+            Hex_String = 5,
+            Name = 6, 
+            Array = 7, 
+            Dictionary = 8,
+            Null = 9,
+            Indirect = 10,
+            Trailer = 11,
+        };
+
+        struct ObjectKeyVal {
+            Buffer key;
+            PDFObjectType keyType;
+            uint64 offset;
+            Buffer value;
+        };
+
+        struct ObjectNode {
+            PDFObjectType type;
+            uint64 offset;
+            uint64 size;
+            uint32 objectNr = 0;
+            std::vector<ObjectKeyVal> keyValues;
+            std::vector<ObjectNode> children;   
+        };
+
 #pragma pack(pop) // Back to default packing
 
         class PDFFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
         {
           public:
             Header header{};
-            bool versionUnder5;
+            bool hasXrefTable; // Cross-reference table or Cross-reference Stream
+            bool trailer_processed;
+            uint64 index         = 0;
+            ObjectNode objectNodeRoot;
+            std::vector<uint32> curentChildIndexes{};
             vector<PDFObject> pdfObjects;
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 

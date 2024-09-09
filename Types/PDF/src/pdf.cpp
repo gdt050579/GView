@@ -33,7 +33,12 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
 
     auto header = buf.GetObject<PDF::Header>();
     CHECK(memcmp(header->identifier, PDF::KEY::PDF_MAGIC, 5) == 0, false, "");
-    CHECK(header->version1 == '1' && header->point == '.' && header->versionN >= '0' && header->versionN <= '7', false, "");
+    if (header->version == '1') {
+        CHECK(header->point == '.' && header->subVersion >= '0' && header->subVersion <= '7', false, "");
+    }
+    if (header->version == '2') {
+        CHECK(header->point == '.' && header->subVersion == '0', false, "");
+    }
     return true;
 }
 
@@ -319,16 +324,14 @@ void HighlightObjectTypes(
     bool foundLength      = false;
     uint64_t objectOffset = pdfObject.startBuffer;
 
-    while (objectOffset < dataSize && (data.Copy(objectOffset, buffer) && (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN))) {
+    // skip nr 0 obj
+    while (!CheckType(data, objectOffset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ) && objectOffset < dataSize) {
         objectOffset++;
     }
-    while (objectOffset < dataSize) {
+    objectOffset += PDF::KEY::PDF_OBJ_SIZE;
+
+    while (objectOffset < pdfObject.endBuffer) {
         if (!data.Copy(objectOffset, buffer)) {
-            break;
-        }
-        if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
-            pdfObject.endBuffer = objectOffset + PDF::KEY::PDF_ENDOBJ_SIZE;
-            pdf->AddPDFObject(pdf, pdfObject);
             break;
         } else if (
               CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
@@ -444,6 +447,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     uint8_t buffer;
     bool foundEOF = false;
     std::vector<uint64_t> objectOffsets;
+    std::vector<uint64_t> streamOffsets;
 
     // HEADER
     settings.AddZone(0, sizeof(PDF::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
@@ -508,9 +512,12 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             }
         }
     }
+    
+    // cross-reference table or cross-reference stream
+    pdf->hasXrefTable = CheckType(data, crossRefOffset, PDF::KEY::PDF_XREF_SIZE, PDF::KEY::PDF_XREF);
 
-    // PDF 1.0-1.4
-    if (pdf->versionUnder5) {
+    // cross-reference table
+    if (pdf->hasXrefTable) {
         bool next_table = true;
         while (next_table) {
             PDF::PDFObject pdfObject;
@@ -577,7 +584,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             }
             crossRefOffset = prevOffset;
         }
-    } else { // PDF 1.5-1.7
+    } else { // cross-reference stream
 
         bool next_CR_stream = true;
         while (next_CR_stream) {
@@ -714,8 +721,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                                 GetDecompressDataValue(decompressedData, offset, wValues.y, obj2);
                                 GetDecompressDataValue(decompressedData, offset, wValues.z, obj3);
 
-                                if (obj1 == 1 && obj2 != crossRefOffset) { // don't include CR stream as an object
+                                if (obj1 == 1) { // don't include CR stream as an object
                                     objectOffsets.push_back(obj2);
+                                    if (obj2 == crossRefOffset) {
+                                        streamOffsets.push_back(obj2);
+                                    }
                                 }
 
                                 if (offset > decompressDataSize) {
@@ -738,6 +748,13 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     std::sort(objectOffsets.begin(), objectOffsets.end());
 
     for (size_t i = 0; i < objectOffsets.size(); ++i) {
+        if (std::find(streamOffsets.begin(), streamOffsets.end(), objectOffsets[i]) != streamOffsets.end()) {
+            if (i + 1 < objectOffsets.size()) {
+                ++i;
+            } else if (i + 1 == objectOffsets.size()) {
+                continue;
+            }
+        }
         uint64_t objOffset = objectOffsets[i];
 
         PDF::PDFObject pdfObject;
@@ -745,12 +762,109 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         pdfObject.type        = PDF::SectionPDFObjectType::Object;
         pdfObject.number      = GetTypeValue(data, objOffset, dataSize);
 
-        uint64_t length = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] - pdfObject.startBuffer : eofOffset - pdfObject.startBuffer;
+        uint64_t endobjOffset = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] : eofOffset;
+
+        while (!CheckType(data, endobjOffset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ) && endobjOffset > 0) {
+            endobjOffset--;
+        }
+        endobjOffset += PDF::KEY::PDF_ENDOBJ_SIZE;
+        pdfObject.endBuffer   = endobjOffset;
+        const uint64_t length = pdfObject.endBuffer - pdfObject.startBuffer;
+
         settings.AddZone(pdfObject.startBuffer, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(pdfObject.number));
+        pdf->AddPDFObject(pdf, pdfObject);
         HighlightObjectTypes(data, pdf, settings, dataSize, pdfObject);
     }
 
     pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
+}
+
+void ProcessPDFTree()
+{
+    // TODO: process the objects from the PDF recursively 
+}
+
+void ProcessPDF(Reference<PDF::PDFFile> pdf)
+{
+    bool first_trailer = false;
+    auto& data = pdf->obj->GetData();
+    const uint64 dataSize = data.GetSize();
+    bool isKey            = true;
+    Buffer key;
+    Buffer value;
+    for (auto& object : pdf->pdfObjects) {
+        if (object.type == PDF::SectionPDFObjectType::Trailer && !first_trailer) {
+
+            uint64 objectOffset = object.startBuffer;
+            pdf->objectNodeRoot.offset = objectOffset;
+            pdf->objectNodeRoot.type   = PDF::PDFObjectType::Trailer;
+            pdf->objectNodeRoot.size   = object.endBuffer - object.startBuffer;
+            uint8 buffer;
+
+            while (objectOffset < object.endBuffer - PDF::KEY::PDF_STARTXREF_SIZE) {
+                if (!data.Copy(objectOffset, buffer)) {
+                    break;
+                }
+                if (CheckType(data, objectOffset, PDF::KEY::PDF_STARTXREF_SIZE, PDF::KEY::PDF_STARTXREF)) {
+                    break;
+                } else if (
+                      CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
+                      CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_END)) {
+                    objectOffset += PDF::KEY::PDF_DIC_SIZE;
+                    /* } else if (buffer >= '0' && buffer <= '9') {
+                         bool isNumeric = true;
+                         uint64 startNumeric = objectOffset;
+                         while (isNumeric) {
+                             if (!data.Copy(objectOffset, buffer)) {
+                                 break;
+                             }
+                             if ((buffer >= '0' && buffer <= '9') || buffer == PDF::WSC::SPACE) {
+                                 objectOffset++;
+                             } else if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
+                                 Buffer value = data.CopyToBuffer(startNumeric, static_cast<uint32>(objectOffset - startNumeric));
+                                 isNumeric = true;
+                             }
+                         }*/
+                } else if (buffer == PDF::DC::SOLIUDS) {
+                    const uint64_t start_segment = objectOffset;
+                    objectOffset++;
+                    bool end_name = false;
+                    while (objectOffset < object.endBuffer && !end_name) {
+                        if (!data.Copy(objectOffset, buffer)) {
+                            break;
+                        }
+                        switch (buffer) {
+                        case PDF::WSC::SPACE:
+                        case PDF::WSC::LINE_FEED:
+                        case PDF::WSC::FORM_FEED:
+                        case PDF::WSC::CARRIAGE_RETURN:
+                        case PDF::DC::SOLIUDS:
+                        case PDF::DC::RIGHT_SQUARE_BRACKET:
+                        case PDF::DC::LEFT_SQUARE_BRACKET:
+                        case PDF::DC::LESS_THAN:
+                        case PDF::DC::GREATER_THAN:
+                        case PDF::DC::LEFT_PARETHESIS:
+                        case PDF::DC::RIGHT_PARETHESIS:
+                            end_name = true;
+                            break;
+                        default:
+                            objectOffset++;
+                        }
+                    }
+                    PDF::ObjectKeyVal kv;
+                    const uint64 length = objectOffset - start_segment; 
+                    kv.key.Reserve(length);
+                    kv.key = data.CopyToBuffer(start_segment + 1, static_cast<uint32>(length));
+                    kv.keyType = PDF::PDFObjectType::Name;
+                    kv.offset = start_segment;
+                    pdf->objectNodeRoot.keyValues.push_back(kv);
+                } else {
+                    objectOffset++;
+                }
+            }
+            first_trailer = true;
+        }
+    }
 }
 
 void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::PDF::PDFFile> pdf)
@@ -760,16 +874,14 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
     settings.SetPathSeparator((char16) '/');
     settings.SetIcon(PDF_ICON);
     settings.SetColumns({
-          "n:&Object,a:l,w:20",
-          "n:&Type,a:r,w:40",
-          "n:&Position,a:r,w:40",
-          "n:&Compressed Size,a:r,w:20",
-          "n:&Uncompressed Size,a:r,w:20",
-          "n:&Filter,a:r,w:40",
+          "n:&Object,a:l,w:60",
+          "n:&Type,a:r,w:20",
+          "n:&Start position,a:r,w:20",
+          "n:&Size,a:r,w:20",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PDF::PDFFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
-    settings.SetOpenItemCallback(win->GetObject()->GetContentType<GView::Type::PDF ::PDFFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+    settings.SetOpenItemCallback(win->GetObject()->GetContentType<GView::Type::PDF::PDFFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
     win->CreateViewer(settings);
 }
@@ -781,7 +893,8 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 
     // viewers
     CreateBufferView(win, pdf);
-    // CreateContainerView(win, pdf);
+    ProcessPDF(pdf);
+    CreateContainerView(win, pdf);
     // win->CreateViewer<TextViewer::Settings>();
 
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Sections(pdf, win)), false);
