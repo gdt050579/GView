@@ -42,8 +42,8 @@ bool PDFFile::PopulateItem(TreeViewItem item)
             item.SetText(1, "Dictionary");
         }
 
-        item.SetText(2, String().Format("%u", objectNodeRoot.offset));
-        item.SetText(3, String().Format("%u", objectNodeRoot.size));
+        item.SetText(2, String().Format("%llu", objectNodeRoot.offset));
+        item.SetText(3, String().Format("%llu", objectNodeRoot.size));
         item.SetData<ObjectNode>(&objectNodeRoot);
         trailer_processed = false;
         //item.SetExpandable(true);
@@ -56,8 +56,8 @@ bool PDFFile::PopulateItem(TreeViewItem item)
         } else if (obj.keyType == PDFObjectType::Name) {
             item.SetText(1, "Name");
         }
-        item.SetText(2, String().Format("%u", obj.offset));
-        item.SetText(3, String().Format("%u", obj.key.GetLength()));
+        item.SetText(2, String().Format("%llu", obj.offset));
+        item.SetText(3, String().Format("%llu", obj.key.GetLength()));
         index++;
     }
 
