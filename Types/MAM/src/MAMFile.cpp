@@ -48,7 +48,7 @@ bool MAMFile::Decompress()
         pos += toRead;
     }
 
-    CHECK(GView::Compression::LZXPRESS::Huffman::Decompress(compressed, uncompressed), false, "");
+    CHECK(GView::Decoding::LZXPRESS::Huffman::Decompress(compressed, uncompressed), false, "");
 
     LocalUnicodeStringBuilder<2048> fullPath;
     fullPath.Add(obj->GetPath());

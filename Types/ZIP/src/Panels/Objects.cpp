@@ -49,7 +49,7 @@ void Panels::Objects::GoToSelectedSection()
     auto index = list->GetCurrentItem().GetData(-1);
     CHECKRET(index != -1, "");
 
-    GView::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{ 0 };
     CHECKRET(zip->info.GetEntry((uint32) index, entry), "");
 
     const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
@@ -62,7 +62,7 @@ void Panels::Objects::SelectCurrentSection()
     auto index = list->GetCurrentItem().GetData(-1);
     CHECKRET(index != -1, "");
 
-    GView::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{ 0 };
     CHECKRET(zip->info.GetEntry((uint32) index, entry), "");
 
     const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
@@ -80,7 +80,7 @@ void Panels::Objects::Update()
 
     for (auto i = 0U; i < zip->info.GetCount(); i++)
     {
-        GView::ZIP::Entry entry{ 0 };
+        GView::Decoding::ZIP::Entry entry{ 0 };
         CHECKBK(zip->info.GetEntry(i, entry), "");
 
         const auto filename = entry.GetFilename();

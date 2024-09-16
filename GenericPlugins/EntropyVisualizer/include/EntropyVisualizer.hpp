@@ -11,6 +11,7 @@ static const uint32 SHANNON_ENTROPY_DATA_TYPE_MAX_VALUE             = 2;
 static const uint32 SHANNON_ENTROPY_LEGEND_DATA_TYPE_HEIGHT         = 10;
 static const uint32 SHANNON_ENTROPY_LEGEND_HEIGHT                   = 13;
 static const std::string_view SHANNON_ENTROPY_OPTION_NAME           = "Shannon Entropy";
+static const std::string_view RENYI_ENTROPY_OPTION_NAME             = "Renyi Entropy";
 static const std::string_view SHANNON_ENTROPY_DATA_TYPE_OPTION_NAME = "Shannon Entropy Data Type";
 static const uint32 EMBEDDED_OBJECTS_MAX_VALUE                      = 6;
 static const uint32 EMBEDDED_OBJECTS_LEGEND_HEIGHT                  = 12 + 8;
@@ -18,8 +19,15 @@ static const std::string_view EMBEDDED_OBJECTS_OPTION_NAME          = "Embedded 
 static const uint32 MINIMUM_BLOCK_SIZE                              = 4;
 
 static const uint32 COMBO_BOX_ITEM_SHANNON_ENTROPY           = 0;
-static const uint32 COMBO_BOX_ITEM_SHANNON_ENTROPY_DATA_TYPE = 1;
-static const uint32 COMBO_BOX_ITEM_EMBEDDED_OBJECTS          = 2;
+static const uint32 COMBO_BOX_ITEM_RENYI_ENTROPY             = 1;
+static const uint32 COMBO_BOX_ITEM_SHANNON_ENTROPY_DATA_TYPE = 2;
+static const uint32 COMBO_BOX_ITEM_EMBEDDED_OBJECTS          = 3;
+
+enum class EntropyType {
+  Shannon = 0,
+  ShannonDataType = 1,
+  Renyi = 2
+};
 
 class Plugin : public Window
 {
@@ -29,11 +37,14 @@ class Plugin : public Window
   private:
     Reference<Object> object;
     Reference<ComboBox> entropyComboBox;
-    Reference<ComboBox> blockSizeComboBox;
+    Reference<NumericSelector> blockSizeSelector;
     Reference<CanvasViewer> canvasEntropy;
     Reference<CanvasViewer> canvasLegend;
 
-    uint32 blockSize = MINIMUM_BLOCK_SIZE;
+    Reference<NumericSelector> alphaSelector;
+
+    uint32 blockSize  = MINIMUM_BLOCK_SIZE;
+    double renyiAlpha = 0.5;
 
   private:
     void ResizeLegendCanvas();
@@ -47,8 +58,8 @@ class Plugin : public Window
   public:
     Plugin(Reference<Object> object);
 
-    bool DrawShannonEntropy(bool dataType);
-    bool DrawShannonEntropyLegend(bool dataType);
+    bool DrawEntropy(EntropyType type);
+    bool DrawEntropyLegend(EntropyType type);
 
     bool DrawEmbeddedObjects();
     bool DrawEmbeddedObjectsLegend();
