@@ -9,7 +9,7 @@ constexpr int32 BTN_ID_RELOAD = 3;
 constexpr int32 BTN_ID_CANCEL = 4;
 
 SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 index, Reference<SettingsData> _settings, uint64 sz)
-    : Window("Selection Editor", "d:c,w:61,h:10", WindowFlags::None), selection(_selection), zoneIndex(index), settings(_settings),
+    : Window("Selection Editor", "d:c,w:61,h:10", WindowFlags::None), selection(_selection), settings(_settings), zoneIndex(index),
       maxSize(sz)
 {
     LocalString<128> tmp;

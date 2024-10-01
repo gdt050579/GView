@@ -390,12 +390,12 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         return GView::TypeInterface::SelectionZone{ .start = selection.GetSelectionStart(index), .end = selection.GetSelectionEnd(index) };
     }
 
-    virtual uint32 GetObjectsZonesCount() const
+    virtual uint32 GetObjectsZonesCount() const override
     {
         return static_cast<uint32>(this->settings->zListObjects.GetCount());
     }
 
-    virtual std::optional<GView::Utils::Zone> GetObjectsZone(uint32 index) const
+    virtual std::optional<GView::Utils::Zone> GetObjectsZone(uint32 index) const override
     {
         return this->settings->zListObjects.GetZone(index);
     }

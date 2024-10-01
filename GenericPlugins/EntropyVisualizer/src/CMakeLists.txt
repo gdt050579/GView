@@ -1,1 +1,1 @@
-target_sources(EntropyVisualizer PRIVATE EntropyVisualizer.cpp)
+target_sources(EntropyVisualizer PRIVATE Plugin.cpp EntropyVisualizer.cpp)
