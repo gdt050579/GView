@@ -72,6 +72,8 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     // set the name
     this->SetText(obj->GetName());
     this->SetTag(obj->GetContentType()->GetTypeName(), "");
+
+    queryInterface.fileWindow = this;
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -298,6 +300,8 @@ void FileWindow::Start()
 {
     this->view->SetCurrentTabPageByIndex(0);
     this->view->SetFocus();
+
+    queryInterface.Start();
 }
 
 bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)

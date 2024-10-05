@@ -281,6 +281,11 @@ namespace Type
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     } // namespace DefaultTypePlugin
 
+    namespace InterfaceTabs
+    {
+        bool PopulateWindowSmartAssistantsTab(Reference<GView::View::WindowInterface> win);
+    } // namespace InterfaceTabs
+
     namespace FolderViewPlugin
     {
         TypeInterface* CreateInstance(const std::filesystem::path& path);
@@ -392,7 +397,7 @@ namespace Type
       public:
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
-        void Init();
+        void InitDefaultPlugin();
         bool MatchExtension(uint64 extensionHash);
         bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
         bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, const std::string_view& extension = "");
@@ -629,6 +634,25 @@ namespace App
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
 
+    class FileWindow;
+
+    namespace QueryInterfaceImpl
+    {
+        using namespace GView::CommonInterfaces::SmartAssistants;
+        struct GViewQueryInterface : public CommonInterfaces::QueryInterface {
+            Reference<FileWindow> fileWindow;
+            std::vector<Pointer<SmartAssistantRegisterInterface>> smartAssistants;
+            std::vector<std::optional<std::string>> smartAssistantsData;
+            uint32 loadedAssistants = 0;
+            uint32 validAssistants  = 0;
+
+            bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface) override;
+            SmartAssistantPromptInterface* GetSmartAssistantInterface() override;
+
+            void Start();
+        };   
+    }
+
     class FileWindow : public Window, public GView::View::WindowInterface
     {
         Reference<GView::App::Instance> gviewApp;
@@ -641,6 +665,7 @@ namespace App
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
+        QueryInterfaceImpl::GViewQueryInterface queryInterface;
 
         void ShowFilePropertiesDialog();
         void ShowGoToDialog();
@@ -664,6 +689,7 @@ namespace App
         bool CreateViewer(View::TextViewer::Settings& settings) override;
         bool CreateViewer(View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(View::LexicalViewer::Settings& settings) override;
+        CommonInterfaces::QueryInterface* GetQueryInterface() override;
 
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 

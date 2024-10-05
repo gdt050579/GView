@@ -168,7 +168,7 @@ bool Instance::Init()
     }
 
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
-    this->defaultPlugin.Init();
+    this->defaultPlugin.InitDefaultPlugin();
 
     // set up handlers
     auto dsk                 = AppCUI::Application::GetDesktop();
@@ -389,6 +389,7 @@ bool Instance::Add(
     // instantiate window
     while (true) {
         CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
+        CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parentWindow);

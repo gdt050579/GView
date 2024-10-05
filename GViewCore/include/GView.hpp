@@ -208,6 +208,31 @@ namespace Utils
     };
 } // namespace Utils
 
+namespace CommonInterfaces
+{
+    namespace SmartAssistants
+    {
+        struct CORE_EXPORT SmartAssistantPromptInterface
+        {
+            virtual std::string AskSmartAssistant(std::string_view prompt, bool& isSuccess) = 0;
+            virtual ~SmartAssistantPromptInterface()                                              = default;
+        };
+        struct CORE_EXPORT SmartAssistantRegisterInterface : SmartAssistantPromptInterface
+        {
+            virtual std::string_view GetSmartAssistantName() const                                = 0;
+            virtual std::string_view GetSmartAssistantDescription() const                         = 0;
+            virtual void ReceiveConfigToken(std::string_view config_data)                         = 0;
+        };
+    }// namespace SmartAssistants
+
+    struct CORE_EXPORT QueryInterface
+    {
+        virtual bool RegisterSmartAssistantInterface(Pointer<SmartAssistants::SmartAssistantRegisterInterface> smartAssistantInterface) = 0;
+        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                    = 0;
+        virtual ~QueryInterface()                                                                                               = default;
+    };
+} // namespace CommonInterfaces
+
 namespace Hashes
 {
     class CORE_EXPORT Adler32
@@ -1487,6 +1512,7 @@ namespace View
         virtual uint32 GetViewsCount()                                 = 0;
         virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
         virtual bool SetViewByIndex(uint32 index)                      = 0;
+        virtual CommonInterfaces::QueryInterface* GetQueryInterface()  = 0;
 
         template <typename T>
         inline bool CreateViewer(const std::optional<std::string_view> name = {})
