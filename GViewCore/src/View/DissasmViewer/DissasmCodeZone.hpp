@@ -46,7 +46,7 @@ struct DissasmCodeZone : public ParseZone {
     void ReachZoneLine(uint32 line);
 
     bool ResetTypesReferenceList();
-    bool TryRenameLine(uint32 line);
+    bool TryRenameLine(uint32 line, std::string_view *newName = nullptr);
 
     bool GetComment(uint32 line, std::string& comment);
     bool AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr = true);

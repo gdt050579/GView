@@ -556,6 +556,7 @@ namespace View
 
             AsmData asmData;
             JumpsHolder jumps_holder;
+            CommonInterfaces::QueryInterface* queryInterface;
 
             inline void UpdateCurrentZoneIndex(const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
@@ -610,9 +611,11 @@ namespace View
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
             void EditDissasmCodeZoneCommand();
+            void QuerySmartAssistantFunctionName();
+            void QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, uint32 line);
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
             virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;

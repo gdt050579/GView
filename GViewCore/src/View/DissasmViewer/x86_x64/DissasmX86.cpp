@@ -9,6 +9,11 @@
 #include <list>
 #include <algorithm>
 
+constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 20;
+constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 50;
+constexpr uint32 DISSASM_ASSISTANT_MAX_API_CALLS              = 10;
+constexpr uint32 DISSASM_ASSISTANT_MAX_BYTE_TO_SEND           = 640;
+
 #pragma warning(disable : 4996) // The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name
 
 using namespace GView::View::DissasmViewer;
@@ -498,19 +503,24 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         if (mappingPtr) {
             mapping     = mappingPtr;
             op_str_size = (uint32) mappingPtr->name.size();
-            if (mappingPtr->type == MemoryMappingType::FunctionMapping && !alreadyInitComment) {
-                // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
-                GView::Hashes::CRC32 crc32{};
-                uint32 hash    = 0;
-                const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
-                                 crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
-                                 crc32.Final(hash);
-                if (res) {
-                    const auto it = params.asmData->functions.find(hash);
-                    if (it != params.asmData->functions.end()) {
-                        params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.commentsData);
-                        params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::CallFlag);
+            if (mappingPtr->type == MemoryMappingType::FunctionMapping) {
+                if (!alreadyInitComment) {
+                    // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
+                    GView::Hashes::CRC32 crc32{};
+                    uint32 hash    = 0;
+                    const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
+                                     crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
+                                     crc32.Final(hash);
+                    if (res) {
+                        const auto it = params.asmData->functions.find(hash);
+                        if (it != params.asmData->functions.end()) {
+                            params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.commentsData);
+                            params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::CallFlag);
+                        }
                     }
+                } else {
+                    op_str      = strdup(mappingPtr->name.data());
+                    op_str_size = mappingPtr->name.size();
                 }
             }
         } else {
@@ -1159,12 +1169,16 @@ DissasmCodeInternalType* GView::View::DissasmViewer::GetRecursiveCollpasedZoneBy
     return GetRecursiveCollpasedZoneByLineRecursive(parent, line);
 }
 
-bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
+bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line, std::string_view* newName)
 {
     // TODO: improve, add searching function to search inside types for the current annotation
     auto& annotations = dissasmType.annotations;
     auto it           = annotations.find(line);
     if (it != annotations.end()) {
+        if (newName) {
+            it->second.first = newName->data();
+            return true;
+        }
         SingleLineEditWindow dlg(it->second.first, "Edit label");
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
@@ -1612,3 +1626,84 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 }
 
 #pragma endregion
+
+void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, uint32 line)
+{
+    auto assistantInterface = queryInterface->GetSmartAssistantInterface();
+    if (!assistantInterface) {
+        return;
+    }
+
+    assert(line >= 2); // 2 for title and menu
+    line -= 2;
+    const auto& data = codeZone->asmPreCacheData.cachedAsmLines[line];
+    if (memcmp(data.mnemonic, "sub_", 4) != 0) {
+        Dialogs::MessageBox::ShowNotification(
+              "Warning", "This is not a function start! Please select a \"sub\" instruction! If they are not available please enable DeepScanning.");
+        return;
+    }
+
+    uint32 actualLineInDocument = line + codeZone->startLineIndex + 1; // +1 for the function
+    uint32 lineIndex            = 0;
+    uint32 currentDissasmLine   = line + 1; // +1 for the function
+
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    params.dli      = nullptr;
+    params.zone     = codeZone;
+
+    std::vector<std::string> apisInstructions;
+    apisInstructions.reserve(DISSASM_ASSISTANT_MAX_API_CALLS / 2);
+
+    std::vector<std::string> assemblyLines;
+    apisInstructions.reserve(DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT);
+
+    LocalString<64> currentBuffer;
+    while (actualLineInDocument < codeZone->endingLineIndex && lineIndex < DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED) {
+        auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
+        if (currentLine.size > 0) {
+            currentBuffer.SetFormat("%s %s", currentLine.mnemonic, currentLine.op_str);
+            if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT)
+                assemblyLines.emplace_back(currentBuffer.GetText());
+            else if (currentLine.mnemonic[0] == 'c' && memcmp(currentLine.mnemonic, "call", 4) == 0) {
+                if (apisInstructions.size() < DISSASM_ASSISTANT_MAX_API_CALLS)
+                    apisInstructions.emplace_back(currentBuffer.GetText());
+            }
+        }
+        actualLineInDocument++;
+        lineIndex++;
+        currentDissasmLine++;
+    }
+    if (assemblyLines.empty()) {
+        Dialogs::MessageBox::ShowNotification("Warning", "No instructions found!");
+        return;
+    }
+
+    LocalString<DISSASM_ASSISTANT_MAX_BYTE_TO_SEND> bufferToSendToAssistant;
+    bufferToSendToAssistant.SetFormat("I am going to provide a list of x86 and x86 instructions and some OS functions used. Provide me the most appropriate "
+                                      "function name.The list of instructions is: ");
+    for (const auto& asmLine : assemblyLines) {
+        bufferToSendToAssistant.AddFormat("%s; ", asmLine.data());
+    }
+    if (!apisInstructions.empty()) {
+        bufferToSendToAssistant.AddFormat("The list of API calls is: ");
+        for (const auto& apiCall : apisInstructions) {
+            bufferToSendToAssistant.AddFormat("%s; ", apiCall.data());
+        }
+    }
+    bufferToSendToAssistant.AddFormat("Write only the function name, do not write anything else.");
+    auto textData = bufferToSendToAssistant.GetText();
+
+    bool isSuccess = false;
+    auto result    = assistantInterface->AskSmartAssistant(textData, isSuccess);
+    if (!isSuccess) {
+        bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
+        Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());
+        return;
+    }
+    std::string_view sv = result;
+    codeZone->TryRenameLine(line, &sv);
+    codeZone->asmPreCacheData.Clear();
+}

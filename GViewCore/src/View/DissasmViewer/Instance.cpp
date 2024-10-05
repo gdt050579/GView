@@ -55,8 +55,8 @@ const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
       { "GetKeyboardState", { { "lpKeyState", "PBYTE" } } },
 } };
 
-Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
-    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS), queryInterface(queryInterface)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
     // settings
@@ -1497,4 +1497,35 @@ void Instance::OnFocus()
 void Instance::OnLoseFocus()
 {
     ColorMan.OnLostFocus();
+}
+
+void Instance::QuerySmartAssistantFunctionName()
+{
+    const auto linePos = Cursor.ToLinePosition();
+
+    const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
+    if (zonesFound.empty() || zonesFound.size() != 1) {
+        Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on a single zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->isCollapsed) {
+        Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on an expanded zone!");
+        return;
+    }
+    if (zonesFound[0].startingLine <= 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please do not select the title in the collapsible zones!");
+        return;
+    }
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on a dissasm zone!");
+        return;
+    }
+    auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    if (convertedZone->zoneDetails.language != DisassemblyLanguage::x86 && convertedZone->zoneDetails.language != DisassemblyLanguage::x64) {
+        Dialogs::MessageBox::ShowNotification("Error", "Query function name available only for x86 and x64 functions!");
+        return;
+    }
+    QuerySmartAssistantFunctionNameX86X64(convertedZone, zonesFound[0].startingLine);
 }

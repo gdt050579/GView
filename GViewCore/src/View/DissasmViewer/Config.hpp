@@ -21,15 +21,17 @@ constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_STRUCTURE    = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT_STRUCTURE   = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE_STRUCTURE = 2;
 
-constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE   = 3;
-constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE = 4;
-constexpr int32 RIGHT_CLICK_ADD_COMMENT                  = 5;
-constexpr int32 RIGHT_CLICK_REMOVE_COMMENT               = 6;
-constexpr int32 RIGHT_CLICK_CLEAR_SELECTION              = 7;
-constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE        = 8;
-constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE          = 9;
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE            = 3;
+constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE          = 4;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT                           = 5;
+constexpr int32 RIGHT_CLICK_REMOVE_COMMENT                        = 6;
+constexpr int32 RIGHT_CLICK_CLEAR_SELECTION                       = 7;
+constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE                 = 8;
+constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE                   = 9;
+constexpr int32 RIGHT_CLICK_CODE_ZONE_EDIT                        = 10;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION = 11;
 
-constexpr int32 RIGHT_CLICK_CODE_ZONE_EDIT = 10;
+
 
 struct RightClickCommand {
     int commandID;
@@ -53,14 +55,13 @@ struct RightClickSubMenus {
 
 const RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = {
     { "CollapsibleZone",
-      {
-            { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
-            { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
-            { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
-            { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" }
-      } },
+      { { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
+        { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
+        { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
+        { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" } } },
     { "Comment", { { RIGHT_CLICK_ADD_COMMENT, "Add comment" }, { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" } } },
-    { "CodeZone", { { RIGHT_CLICK_CODE_ZONE_EDIT, "Edit zone" } } }
+    { "CodeZone", { { RIGHT_CLICK_CODE_ZONE_EDIT, "Edit zone" } } },
+    { "Assistant", { { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION, "Ask appropriate name function" } } }
 };
 
 namespace GView
@@ -123,7 +124,7 @@ namespace View
             inline static KeyboardControl AsmExportFileContentCommand = {
                 Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
             };
-            inline static KeyboardControl JumpBackCommand   = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
+            inline static KeyboardControl JumpBackCommand    = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
             inline static KeyboardControl JumpForwardCommand = {
                 Input::Key::Ctrl | Input::Key::E, "JumpForward", "Jump to a forward location", COMMAND_JUMP_FORWARD
             };
@@ -147,8 +148,8 @@ namespace View
             inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = { AddOrEditCommentCommand,
-                                                                                                    RemoveCommentCommand,
-                                                                                                    RenameLabelCommand };
+                                                                                                     RemoveCommentCommand,
+                                                                                                     RenameLabelCommand };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 8> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,

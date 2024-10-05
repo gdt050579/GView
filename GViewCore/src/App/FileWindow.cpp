@@ -154,7 +154,7 @@ bool FileWindow::CreateViewer(View::ContainerViewer::Settings& settings)
 }
 bool FileWindow::CreateViewer(GView::View::DissasmViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
 }
 bool FileWindow::CreateViewer(GView::View::LexicalViewer::Settings& settings)
 {

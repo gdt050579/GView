@@ -45,8 +45,9 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
             if (controlID == BUTTON_1_ID) {
                 std::string text = prompt->GetText();
                 if (text.empty()) {
-                    text = "Give me a prime number";
-                    // return true;
+                    //text = "Give me a prime number";
+                    Dialogs::MessageBox::ShowError("Smart Assistant Error", "Empty prompt");
+                    return true;
                 }
 
                 LocalString<32> newLabelLocation;
@@ -118,11 +119,11 @@ class SmartAssistantsTab : public AppCUI::Controls::TabPage
 
 #pragma region SmartAssistantPickPrefferedAssistant
 
-struct PickPreferredSmartAssistant : public Window, public Handlers::OnButtonPressedInterface {
+struct PickPreferredSmartAssistant : public Window {
     uint16 preferredIndex;
     uint32 newY;
     PickPreferredSmartAssistant(const std::vector<Pointer<SmartAssistantRegisterInterface>>& smartAssistants, std::vector<bool>& validSmartAssistants)
-        : Window("Pick preferred Smart Assistant", "d:c,w:60,h:30", WindowFlags::Sizeable), preferredIndex(UINT16_MAX), newY(0)
+        : Window("Pick preferred Smart Assistant", "d:c,w:60,h:30", WindowFlags::Sizeable), preferredIndex(UINT16_MAX), newY(1)
     {
         for (uint32 i = 0; i < smartAssistants.size(); ++i) {
             if (validSmartAssistants[i]) {
@@ -137,20 +138,22 @@ struct PickPreferredSmartAssistant : public Window, public Handlers::OnButtonPre
         newLabelLocation.SetFormat("x:1,y:%d,w:50,h:1", newY);
         Factory::Label::Create(this, name, newLabelLocation);
 
-        newLabelLocation.SetFormat("x:1,y:51,w:7,h:1", newY);
-        Factory::Button::Create(this, "Pick", newLabelLocation, (int32) index);
+        newLabelLocation.SetFormat("x:51,y:%d,w:7,h:1", newY);
+        auto btn = Factory::Button::Create(this, "Pick", newLabelLocation, (int32) index);
         newY+= 2;
     }
 
-    void OnButtonPressed(Reference<Controls::Button> r) override
+    bool OnEvent(Reference<Control>, Event eventType, int ID) override
     {
-        const auto id = r->GetControlID();
-        if (id < 0) {
-            Dialogs::MessageBox::ShowError("Smart Assistants", "Invalid ID button!");
-            return;
+        if (eventType == Event::ButtonClicked) {
+            if (ID < 0) {
+                Dialogs::MessageBox::ShowError("Smart Assistants", "Invalid ID button!");
+                return false;
+            }
+            preferredIndex = static_cast<uint16>(ID);
+            Exit(Dialogs::Result::Ok);
         }
-        preferredIndex = static_cast<uint16>(id);
-        Exit(Dialogs::Result::Ok);
+        return false;
     }
 };
 #pragma endregion
@@ -199,12 +202,15 @@ SmartAssistantPromptInterface* GViewQueryInterface::GetSmartAssistantInterface()
         }
         return smartAssistants[prefferedIndex].get();
     }
-    PickPreferredSmartAssistant pickPreferred(smartAssistants, validSmartAssistants);
-    pickPreferred.Show();
-    this->prefferedIndex = pickPreferred.preferredIndex;
-    if (prefferedIndex == UINT16_MAX) {
-        Dialogs::MessageBox::ShowError("Smart Assistant", "Failed to pick a Smart Assistant!");
-        return nullptr;
+    if (prefferedIndex == UINT16_MAX)
+    {
+        PickPreferredSmartAssistant pickPreferred(smartAssistants, validSmartAssistants);
+        pickPreferred.Show();
+        this->prefferedIndex = pickPreferred.preferredIndex;
+        if (prefferedIndex == UINT16_MAX) {
+            Dialogs::MessageBox::ShowError("Smart Assistant", "Failed to pick a Smart Assistant!");
+            return nullptr;
+        }
     }
     return smartAssistants[prefferedIndex].get();
 }
