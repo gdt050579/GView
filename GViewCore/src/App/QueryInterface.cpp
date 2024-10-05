@@ -173,6 +173,10 @@ namespace GView::App::QueryInterfaceImpl
 std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_view prompt, bool& isSuccess)
 {
     auto result      = smartAssistants[prefferedIndex].get()->AskSmartAssistant(prompt, isSuccess);
+    if (!result.empty()) {
+        if (result[result.size() - 1] == '\n')
+            result.pop_back();
+    }
     const auto ptrUI = static_cast<SmartAssistantEntryTab*>(smartAssistantEntryTabUIPointers[prefferedIndex]);
     ptrUI->AskSmartAssistant(prompt, &result, &isSuccess);
     return result;
