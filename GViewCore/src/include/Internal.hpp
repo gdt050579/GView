@@ -642,9 +642,9 @@ namespace App
         struct GViewQueryInterface : public CommonInterfaces::QueryInterface {
             Reference<FileWindow> fileWindow;
             std::vector<Pointer<SmartAssistantRegisterInterface>> smartAssistants;
-            std::vector<std::optional<std::string>> smartAssistantsData;
-            uint32 loadedAssistants = 0;
+            std::vector<bool> validSmartAssistants;
             uint32 validAssistants  = 0;
+            uint16 prefferedIndex = UINT16_MAX;
 
             bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface) override;
             SmartAssistantPromptInterface* GetSmartAssistantInterface() override;

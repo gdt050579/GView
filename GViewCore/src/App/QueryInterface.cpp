@@ -16,7 +16,7 @@ GView::CommonInterfaces::QueryInterface* FileWindow::GetQueryInterface()
 }
 
 using GView::CommonInterfaces::SmartAssistants::SmartAssistantRegisterInterface;
-
+#pragma region SmartAssistantUI
 class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
 {
     SmartAssistantRegisterInterface* smartAssistant;
@@ -31,7 +31,7 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
   public:
     SmartAssistantEntryTab(std::string_view caption, SmartAssistantRegisterInterface* smartAssistant) : TabPage(caption), smartAssistant(smartAssistant)
     {
-        value       = Factory::Label::Create(this, "Gemini", "x:1,y:1,w:60");
+        value       = Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:60");
         chatHistory = Factory::Panel::Create(this, "ChatHistory", "x:1,y:2,h:20,w:60");
         newY        = 0;
 
@@ -95,7 +95,7 @@ class SmartAssistantsTab : public AppCUI::Controls::TabPage
     uint32 tabsCount;
 
   public:
-    SmartAssistantsTab() : TabPage("Smart &Assistants"),tabsCount(0)
+    SmartAssistantsTab() : TabPage("Smart &Assistants"), tabsCount(0)
     {
         tabs = Factory::Tab::Create(this, "l:1,t:1,r:1,b:1", TabFlags::TopTabs | TabFlags::TransparentBackground);
     }
@@ -114,6 +114,46 @@ class SmartAssistantsTab : public AppCUI::Controls::TabPage
         tabs->SetCurrentTabPageByIndex(0, false);
     }
 };
+#pragma endregion
+
+#pragma region SmartAssistantPickPrefferedAssistant
+
+struct PickPreferredSmartAssistant : public Window, public Handlers::OnButtonPressedInterface {
+    uint16 preferredIndex;
+    uint32 newY;
+    PickPreferredSmartAssistant(const std::vector<Pointer<SmartAssistantRegisterInterface>>& smartAssistants, std::vector<bool>& validSmartAssistants)
+        : Window("Pick preferred Smart Assistant", "d:c,w:60,h:30", WindowFlags::Sizeable), preferredIndex(UINT16_MAX), newY(0)
+    {
+        for (uint32 i = 0; i < smartAssistants.size(); ++i) {
+            if (validSmartAssistants[i]) {
+                AddSmartAssistantOption(smartAssistants[i]->GetSmartAssistantName(), i);
+            }
+        }
+    }
+
+    void AddSmartAssistantOption(std::string_view name, uint32 index)
+    {
+        LocalString<32> newLabelLocation;
+        newLabelLocation.SetFormat("x:1,y:%d,w:50,h:1", newY);
+        Factory::Label::Create(this, name, newLabelLocation);
+
+        newLabelLocation.SetFormat("x:1,y:51,w:7,h:1", newY);
+        Factory::Button::Create(this, "Pick", newLabelLocation, (int32) index);
+        newY+= 2;
+    }
+
+    void OnButtonPressed(Reference<Controls::Button> r) override
+    {
+        const auto id = r->GetControlID();
+        if (id < 0) {
+            Dialogs::MessageBox::ShowError("Smart Assistants", "Invalid ID button!");
+            return;
+        }
+        preferredIndex = static_cast<uint16>(id);
+        Exit(Dialogs::Result::Ok);
+    }
+};
+#pragma endregion
 
 namespace GView::App::QueryInterfaceImpl
 {
@@ -122,10 +162,16 @@ bool GViewQueryInterface::RegisterSmartAssistantInterface(Pointer<SmartAssistant
 {
     const auto newAssistantName = registerInterface->GetSmartAssistantName();
     if (newAssistantName.empty()) {
+        LocalString<128> data;
+        data.SetFormat("Assistant \"%s\" has empty name!");
+        Dialogs::MessageBox::ShowError("Smart Assistant Error", data);
         return false;
     }
     for (const auto& smartAssistant : smartAssistants) {
         if (smartAssistant->GetSmartAssistantName().compare(newAssistantName) == 0) {
+            LocalString<128> data;
+            data.SetFormat("Assistant with name: \"%s\" already exists!");
+            Dialogs::MessageBox::ShowError("Smart Assistant Error", data);
             return false;
         }
     }
@@ -134,7 +180,33 @@ bool GViewQueryInterface::RegisterSmartAssistantInterface(Pointer<SmartAssistant
 }
 SmartAssistantPromptInterface* GViewQueryInterface::GetSmartAssistantInterface()
 {
-    return nullptr;
+    if (validAssistants == 0) {
+        if (!smartAssistants.empty())
+            Dialogs::MessageBox::ShowError(
+                  "Smart Assistant", "Please configure the SmartAssistants in the vertical Panel for SmartAssistants before using them!");
+        else
+            Dialogs::MessageBox::ShowError("Smart Assistant", "No SmartAssistants available!");
+        return nullptr;
+    }
+    if (validAssistants == 1) {
+        if (prefferedIndex == UINT16_MAX) {
+            for (uint32 i = 0; i < validSmartAssistants.size(); ++i) {
+                if (validSmartAssistants[i]) {
+                    prefferedIndex = static_cast<uint16>(i);
+                    break;
+                }
+            }
+        }
+        return smartAssistants[prefferedIndex].get();
+    }
+    PickPreferredSmartAssistant pickPreferred(smartAssistants, validSmartAssistants);
+    pickPreferred.Show();
+    this->prefferedIndex = pickPreferred.preferredIndex;
+    if (prefferedIndex == UINT16_MAX) {
+        Dialogs::MessageBox::ShowError("Smart Assistant", "Failed to pick a Smart Assistant!");
+        return nullptr;
+    }
+    return smartAssistants[prefferedIndex].get();
 }
 
 void GViewQueryInterface::Start()
@@ -154,6 +226,9 @@ void GViewQueryInterface::Start()
     auto ptrSmartAssistantsTab = Pointer<TabPage>(new SmartAssistantsTab());
     const auto convertedPtr    = static_cast<SmartAssistantsTab*>(ptrSmartAssistantsTab.get());
 
+    validSmartAssistants.resize(smartAssistants.size(), false);
+
+    uint32 index = 0;
     for (auto& smartAssistant : smartAssistants) {
         convertedPtr->AddSmartAssistant(smartAssistant.get());
         bool hasConfig = false;
@@ -164,12 +239,15 @@ void GViewQueryInterface::Start()
                 if (dataValue.has_value()) {
                     hasConfig = true;
                     smartAssistant->ReceiveConfigToken(dataValue.value());
+                    ++validAssistants;
+                    validSmartAssistants[index] = true;
                 }
             }
         }
         if (!hasConfig) {
             convertedPtr->MarkLastAssistantNoConfig();
         }
+        ++index;
     }
     fileWindow->AddPanel(std::move(ptrSmartAssistantsTab), true);
 }
