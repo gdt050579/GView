@@ -1629,23 +1629,8 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 
 void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, uint32 line)
 {
-    auto assistantInterface = queryInterface->GetSmartAssistantInterface();
-    if (!assistantInterface) {
-        return;
-    }
-
     assert(line >= 2); // 2 for title and menu
     line -= 2;
-    const auto& data = codeZone->asmPreCacheData.cachedAsmLines[line];
-    if (memcmp(data.mnemonic, "sub_", 4) != 0) {
-        Dialogs::MessageBox::ShowNotification(
-              "Warning", "This is not a function start! Please select a \"sub\" instruction! If they are not available please enable DeepScanning.");
-        return;
-    }
-
-    uint32 actualLineInDocument = line + codeZone->startLineIndex + 1; // +1 for the function
-    uint32 lineIndex            = 0;
-    uint32 currentDissasmLine   = line + 1; // +1 for the function
 
     DissasmInsnExtractLineParams params{};
     params.obj      = obj;
@@ -1653,6 +1638,22 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
     params.asmData  = &asmData;
     params.dli      = nullptr;
     params.zone     = codeZone;
+
+    auto data                 = codeZone->GetCurrentAsmLine(line, obj, &params);
+    if (memcmp(data.mnemonic, "sub_", 4) != 0) {
+        Dialogs::MessageBox::ShowNotification(
+              "Warning", "This is not a function start! Please select a \"sub\" instruction! If they are not available please enable DeepScanning.");
+        return;
+    }
+
+    const auto assistantInterface = queryInterface->GetSmartAssistantInterface();
+    if (!assistantInterface) {
+        return;
+    }
+
+    uint32 actualLineInDocument = line + codeZone->startLineIndex + 1; // +1 for the function
+    uint32 lineIndex            = 0;
+    uint32 currentDissasmLine   = line + 1; // +1 for the function
 
     std::vector<std::string> apisInstructions;
     apisInstructions.reserve(DISSASM_ASSISTANT_MAX_API_CALLS / 2);
