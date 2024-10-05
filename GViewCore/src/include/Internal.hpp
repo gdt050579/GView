@@ -639,12 +639,25 @@ namespace App
     namespace QueryInterfaceImpl
     {
         using namespace GView::CommonInterfaces::SmartAssistants;
-        struct GViewQueryInterface : public CommonInterfaces::QueryInterface {
-            Reference<FileWindow> fileWindow;
+
+        struct SmartAssistantPromptInterfaceProxy : SmartAssistantPromptInterface
+        {
             std::vector<Pointer<SmartAssistantRegisterInterface>> smartAssistants;
             std::vector<bool> validSmartAssistants;
-            uint32 validAssistants  = 0;
-            uint16 prefferedIndex = UINT16_MAX;
+            std::vector<void*> smartAssistantEntryTabUIPointers;
+            uint32 validAssistants = 0;
+            uint16 prefferedIndex  = UINT16_MAX;
+
+            virtual std::string AskSmartAssistant(std::string_view prompt, bool& isSuccess);
+            bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface);
+            SmartAssistantPromptInterface* GetSmartAssistantInterface();
+
+            void Start(Reference<FileWindow> fileWindow);
+        };
+
+        struct GViewQueryInterface : public CommonInterfaces::QueryInterface {
+            Reference<FileWindow> fileWindow;
+            SmartAssistantPromptInterfaceProxy smartAssistantProxy;
 
             bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface) override;
             SmartAssistantPromptInterface* GetSmartAssistantInterface() override;

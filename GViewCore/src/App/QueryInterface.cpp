@@ -43,36 +43,42 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
     {
         if (evnt == Event::ButtonClicked) {
             if (controlID == BUTTON_1_ID) {
-                std::string text = prompt->GetText();
-                if (text.empty()) {
-                    //text = "Give me a prime number";
-                    Dialogs::MessageBox::ShowError("Smart Assistant Error", "Empty prompt");
-                    return true;
-                }
-
-                LocalString<32> newLabelLocation;
-                newLabelLocation.SetFormat("x:1,y:%d,w:4,h:5", newY);
-                Factory::Label::Create(chatHistory, "You: ", newLabelLocation.GetText());
-                newLabelLocation.SetFormat("x:5,y:%d,w:53,h:5", newY);
-                Factory::Button::Create(chatHistory, text, newLabelLocation.GetText());
-                newY += 2;
-
-                bool success = false;
-                auto result  = smartAssistant->AskSmartAssistant(text, success);
-
-                newLabelLocation.SetFormat("x:1,y:%d,w:11,h:1", newY);
-                const char* assistantLabel = success ? "Assistant: " : "Error:";
-                Factory::Label::Create(chatHistory, assistantLabel, newLabelLocation.GetText());
-
-                newLabelLocation.SetFormat("x:11,y:%d,w:47,h:1", newY);
-                Factory::Button::Create(chatHistory, result, newLabelLocation.GetText());
-                newY += 2;
-                prompt->SetText("");
+                const std::string text = prompt->GetText();
+                AskSmartAssistant(text);
                 return true;
             }
             return true;
         }
         return false;
+    }
+
+    void AskSmartAssistant(std::string_view promptText, const std::string* hasAnswer = nullptr, const bool *isSuccess = nullptr)
+    {
+        if (promptText.empty()) {
+            // text = "Give me a prime number";
+            Dialogs::MessageBox::ShowError("Smart Assistant Error", "Empty prompt");
+            return;
+        }
+        LocalString<32> newLabelLocation;
+        newLabelLocation.SetFormat("x:1,y:%d,w:4,h:5", newY);
+        Factory::Label::Create(chatHistory, "You: ", newLabelLocation.GetText());
+        newLabelLocation.SetFormat("x:5,y:%d,w:53,h:5", newY);
+        Factory::Button::Create(chatHistory, promptText, newLabelLocation.GetText());
+        newY += 2;
+
+        bool success = false;
+        if (isSuccess)
+            success = *isSuccess;
+        std::string result = hasAnswer ? *hasAnswer : smartAssistant->AskSmartAssistant(promptText, success);
+
+        newLabelLocation.SetFormat("x:1,y:%d,w:11,h:1", newY);
+        const char* assistantLabel = success ? "Assistant: " : "Error:";
+        Factory::Label::Create(chatHistory, assistantLabel, newLabelLocation.GetText());
+
+        newLabelLocation.SetFormat("x:11,y:%d,w:47,h:1", newY);
+        Factory::Button::Create(chatHistory, result, newLabelLocation.GetText());
+        newY += 2;
+        prompt->SetText("");
     }
 
     void MarkNoConfig()
@@ -101,10 +107,13 @@ class SmartAssistantsTab : public AppCUI::Controls::TabPage
         tabs = Factory::Tab::Create(this, "l:1,t:1,r:1,b:1", TabFlags::TopTabs | TabFlags::TransparentBackground);
     }
 
-    void AddSmartAssistant(SmartAssistantRegisterInterface* registerInterface)
+    void* AddSmartAssistant(SmartAssistantRegisterInterface* registerInterface)
     {
-        tabs->AddControl(Pointer(new SmartAssistantEntryTab(registerInterface->GetSmartAssistantName(), registerInterface)));
+        auto ptr = Pointer(new SmartAssistantEntryTab(registerInterface->GetSmartAssistantName(), registerInterface));
+        void* ptrVoid = ptr.get();
+        tabs->AddControl(std::move(ptr));
         ++tabsCount;
+        return ptrVoid;
     }
 
     void MarkLastAssistantNoConfig()
@@ -139,8 +148,8 @@ struct PickPreferredSmartAssistant : public Window {
         Factory::Label::Create(this, name, newLabelLocation);
 
         newLabelLocation.SetFormat("x:51,y:%d,w:7,h:1", newY);
-        auto btn = Factory::Button::Create(this, "Pick", newLabelLocation, (int32) index);
-        newY+= 2;
+        Factory::Button::Create(this, "Pick", newLabelLocation, (int32) index);
+        newY += 2;
     }
 
     bool OnEvent(Reference<Control>, Event eventType, int ID) override
@@ -161,7 +170,15 @@ struct PickPreferredSmartAssistant : public Window {
 namespace GView::App::QueryInterfaceImpl
 {
 
-bool GViewQueryInterface::RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface)
+std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_view prompt, bool& isSuccess)
+{
+    auto result      = smartAssistants[prefferedIndex].get()->AskSmartAssistant(prompt, isSuccess);
+    const auto ptrUI = static_cast<SmartAssistantEntryTab*>(smartAssistantEntryTabUIPointers[prefferedIndex]);
+    ptrUI->AskSmartAssistant(prompt, &result, &isSuccess);
+    return result;
+}
+
+bool SmartAssistantPromptInterfaceProxy::RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface)
 {
     const auto newAssistantName = registerInterface->GetSmartAssistantName();
     if (newAssistantName.empty()) {
@@ -181,7 +198,7 @@ bool GViewQueryInterface::RegisterSmartAssistantInterface(Pointer<SmartAssistant
     smartAssistants.push_back(std::move(registerInterface));
     return true;
 }
-SmartAssistantPromptInterface* GViewQueryInterface::GetSmartAssistantInterface()
+SmartAssistantPromptInterface* SmartAssistantPromptInterfaceProxy::GetSmartAssistantInterface()
 {
     if (validAssistants == 0) {
         if (!smartAssistants.empty())
@@ -200,10 +217,9 @@ SmartAssistantPromptInterface* GViewQueryInterface::GetSmartAssistantInterface()
                 }
             }
         }
-        return smartAssistants[prefferedIndex].get();
+        return this;
     }
-    if (prefferedIndex == UINT16_MAX)
-    {
+    if (prefferedIndex == UINT16_MAX) {
         PickPreferredSmartAssistant pickPreferred(smartAssistants, validSmartAssistants);
         pickPreferred.Show();
         this->prefferedIndex = pickPreferred.preferredIndex;
@@ -212,10 +228,10 @@ SmartAssistantPromptInterface* GViewQueryInterface::GetSmartAssistantInterface()
             return nullptr;
         }
     }
-    return smartAssistants[prefferedIndex].get();
+    return this;
 }
 
-void GViewQueryInterface::Start()
+void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
 {
     if (smartAssistants.empty()) {
         return;
@@ -233,11 +249,13 @@ void GViewQueryInterface::Start()
     const auto convertedPtr    = static_cast<SmartAssistantsTab*>(ptrSmartAssistantsTab.get());
 
     validSmartAssistants.resize(smartAssistants.size(), false);
+    smartAssistantEntryTabUIPointers.resize(smartAssistants.size(), nullptr);
 
     uint32 index = 0;
     for (auto& smartAssistant : smartAssistants) {
-        convertedPtr->AddSmartAssistant(smartAssistant.get());
-        bool hasConfig = false;
+        const auto ptrUI                        = convertedPtr->AddSmartAssistant(smartAssistant.get());
+        smartAssistantEntryTabUIPointers[index] = ptrUI;
+        bool hasConfig                          = false;
         if (hasSmartAssistantConfigDat) {
             auto currentData = SmartAssistants[smartAssistant->GetSmartAssistantName()];
             if (currentData.HasValue()) {
@@ -256,6 +274,21 @@ void GViewQueryInterface::Start()
         ++index;
     }
     fileWindow->AddPanel(std::move(ptrSmartAssistantsTab), true);
+}
+
+bool GViewQueryInterface::RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface)
+{
+    return smartAssistantProxy.RegisterSmartAssistantInterface(std::move(registerInterface));
+}
+
+SmartAssistantPromptInterface* GViewQueryInterface::GetSmartAssistantInterface()
+{
+    return smartAssistantProxy.GetSmartAssistantInterface();
+}
+
+void GViewQueryInterface::Start()
+{
+    smartAssistantProxy.Start(fileWindow);
 }
 
 } // namespace GView::App::QueryInterfaceImpl
