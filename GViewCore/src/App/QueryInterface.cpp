@@ -7,6 +7,8 @@ using namespace GView::App::InstanceCommands;
 using namespace GView::View;
 using namespace AppCUI::Input;
 
+constexpr ColorPair PROMPT_YOU_AND_ASSISTANT_COLOR = ColorPair{ Color::Aqua, Color::Black };
+
 #define SMART_ASSISTANTS_CONFIGURATION_NAME "SmartAssistants"
 #define BUTTON_1_ID                         1
 
@@ -20,23 +22,23 @@ using GView::CommonInterfaces::SmartAssistants::SmartAssistantRegisterInterface;
 class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
 {
     SmartAssistantRegisterInterface* smartAssistant;
-    Reference<AppCUI::Controls::Label> value;
-    Reference<AppCUI::Controls::Panel> chatHistory;
+    Reference<AppCUI::Controls::TextArea> chatHistory;
     Reference<AppCUI::Controls::TextField> prompt;
     Reference<AppCUI::Controls::Button> sendButton;
-    uint32 newY;
 
     LocalString<128> gemini;
 
   public:
     SmartAssistantEntryTab(std::string_view caption, SmartAssistantRegisterInterface* smartAssistant) : TabPage(caption), smartAssistant(smartAssistant)
     {
-        value       = Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:60");
-        chatHistory = Factory::Panel::Create(this, "ChatHistory", "x:1,y:2,h:20,w:60");
-        newY        = 0;
+        Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:50");
+        chatHistory =
+              Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:12", TextAreaFlags::Readonly | TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
 
-        prompt     = Factory::TextField::Create(this, "", "x:1,y:23,h:4,w:53");
-        sendButton = Factory::Button::Create(this, "Send", "x:54,y:25,h:4,w:6", BUTTON_1_ID);
+        Factory::Label::Create(this, "Prompt", "l:1,r:1,b:9,h:1");
+
+        prompt     = Factory::TextField::Create(this, "", "l:1,r:1,b:4,h:5");
+        sendButton = Factory::Button::Create(this, "Send", "l:45%,b:1,h:4,w:10", BUTTON_1_ID);
     }
 
     bool OnEvent(Reference<Control>, Event evnt, int controlID) override
@@ -44,7 +46,7 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         if (evnt == Event::ButtonClicked) {
             if (controlID == BUTTON_1_ID) {
                 const std::string text = prompt->GetText();
-                AskSmartAssistant(text);
+                AskSmartAssistant(text, text);
                 return true;
             }
             return true;
@@ -52,32 +54,28 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         return false;
     }
 
-    void AskSmartAssistant(std::string_view promptText, const std::string* hasAnswer = nullptr, const bool *isSuccess = nullptr)
+    void AskSmartAssistant(std::string_view promptText, std::string_view displayPrompt, const std::string* hasAnswer = nullptr, const bool* isSuccess = nullptr)
     {
         if (promptText.empty()) {
             // text = "Give me a prime number";
             Dialogs::MessageBox::ShowError("Smart Assistant Error", "Empty prompt");
             return;
         }
-        LocalString<32> newLabelLocation;
-        newLabelLocation.SetFormat("x:1,y:%d,w:4,h:5", newY);
-        Factory::Label::Create(chatHistory, "You: ", newLabelLocation.GetText());
-        newLabelLocation.SetFormat("x:5,y:%d,w:53,h:5", newY);
-        Factory::Button::Create(chatHistory, promptText, newLabelLocation.GetText());
-        newY += 2;
+        auto currentText = chatHistory->GetText();
+        currentText.Add("You: ", PROMPT_YOU_AND_ASSISTANT_COLOR);
+        currentText.Add(promptText);
+        currentText.Add("\n");
 
         bool success = false;
         if (isSuccess)
             success = *isSuccess;
-        std::string result = hasAnswer ? *hasAnswer : smartAssistant->AskSmartAssistant(promptText, success);
+        std::string result = hasAnswer ? *hasAnswer : smartAssistant->AskSmartAssistant(promptText, promptText, success);
 
-        newLabelLocation.SetFormat("x:1,y:%d,w:11,h:1", newY);
         const char* assistantLabel = success ? "Assistant: " : "Error:";
-        Factory::Label::Create(chatHistory, assistantLabel, newLabelLocation.GetText());
-
-        newLabelLocation.SetFormat("x:11,y:%d,w:47,h:1", newY);
-        Factory::Button::Create(chatHistory, result, newLabelLocation.GetText());
-        newY += 2;
+        currentText.Add(assistantLabel, PROMPT_YOU_AND_ASSISTANT_COLOR);
+        currentText.Add(result);
+        currentText.Add("\n");
+        chatHistory->SetText(currentText);
         prompt->SetText("");
     }
 
@@ -109,7 +107,7 @@ class SmartAssistantsTab : public AppCUI::Controls::TabPage
 
     void* AddSmartAssistant(SmartAssistantRegisterInterface* registerInterface)
     {
-        auto ptr = Pointer(new SmartAssistantEntryTab(registerInterface->GetSmartAssistantName(), registerInterface));
+        auto ptr      = Pointer(new SmartAssistantEntryTab(registerInterface->GetSmartAssistantName(), registerInterface));
         void* ptrVoid = ptr.get();
         tabs->AddControl(std::move(ptr));
         ++tabsCount;
@@ -170,15 +168,15 @@ struct PickPreferredSmartAssistant : public Window {
 namespace GView::App::QueryInterfaceImpl
 {
 
-std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_view prompt, bool& isSuccess)
+std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess)
 {
-    auto result      = smartAssistants[prefferedIndex].get()->AskSmartAssistant(prompt, isSuccess);
+    auto result = smartAssistants[prefferedIndex].get()->AskSmartAssistant(prompt, displayPrompt, isSuccess);
     if (!result.empty()) {
         if (result[result.size() - 1] == '\n')
             result.pop_back();
     }
     const auto ptrUI = static_cast<SmartAssistantEntryTab*>(smartAssistantEntryTabUIPointers[prefferedIndex]);
-    ptrUI->AskSmartAssistant(prompt, &result, &isSuccess);
+    ptrUI->AskSmartAssistant(prompt, displayPrompt, &result, &isSuccess);
     return result;
 }
 

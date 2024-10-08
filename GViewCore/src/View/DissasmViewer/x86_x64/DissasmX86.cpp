@@ -1646,6 +1646,9 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
         return;
     }
 
+    LocalString<128> displayPrompt;
+    displayPrompt.SetFormat("Give me an appropriate name for the function: %s", data.mnemonic);
+
     const auto assistantInterface = queryInterface->GetSmartAssistantInterface();
     if (!assistantInterface) {
         return;
@@ -1684,7 +1687,7 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
 
     LocalString<DISSASM_ASSISTANT_MAX_BYTE_TO_SEND> bufferToSendToAssistant;
     bufferToSendToAssistant.SetFormat("I am going to provide a list of x86 and x86 instructions and some OS functions used. Provide me the most appropriate "
-                                      "function name.The list of instructions is: ");
+                                      "function name. The list of instructions is: ");
     for (const auto& asmLine : assemblyLines) {
         bufferToSendToAssistant.AddFormat("%s; ", asmLine.data());
     }
@@ -1698,7 +1701,7 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
     auto textData = bufferToSendToAssistant.GetText();
 
     bool isSuccess = false;
-    auto result    = assistantInterface->AskSmartAssistant(textData, isSuccess);
+    auto result    = assistantInterface->AskSmartAssistant(textData, displayPrompt, isSuccess);
     if (!isSuccess) {
         bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
         Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());

@@ -648,7 +648,7 @@ namespace App
             uint32 validAssistants = 0;
             uint16 prefferedIndex  = UINT16_MAX;
 
-            virtual std::string AskSmartAssistant(std::string_view prompt, bool& isSuccess);
+            virtual std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess);
             bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface);
             SmartAssistantPromptInterface* GetSmartAssistantInterface();
 
