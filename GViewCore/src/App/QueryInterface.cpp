@@ -9,8 +9,9 @@ using namespace AppCUI::Input;
 
 constexpr ColorPair PROMPT_YOU_AND_ASSISTANT_COLOR = ColorPair{ Color::Aqua, Color::Black };
 
-#define SMART_ASSISTANTS_CONFIGURATION_NAME "SmartAssistants"
-#define BUTTON_1_ID                         1
+const char* SMART_ASSISTANTS_CONFIGURATION_NAME = "SmartAssistants";
+constexpr int32 PROMPT_BUTTON_ID = 1;
+constexpr int32 SHOW_LAST_PROMPT = 2;
 
 GView::CommonInterfaces::QueryInterface* FileWindow::GetQueryInterface()
 {
@@ -24,29 +25,35 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
     SmartAssistantRegisterInterface* smartAssistant;
     Reference<AppCUI::Controls::TextArea> chatHistory;
     Reference<AppCUI::Controls::TextField> prompt;
-    Reference<AppCUI::Controls::Button> sendButton;
+    Reference<AppCUI::Controls::Button> sendButton, lastPromptButton;
+    std::string lastPromptData;
 
     LocalString<128> gemini;
 
   public:
     SmartAssistantEntryTab(std::string_view caption, SmartAssistantRegisterInterface* smartAssistant) : TabPage(caption), smartAssistant(smartAssistant)
     {
-        Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:50");
+        lastPromptData = "There is no prompt given!";
+        Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:39");
+        lastPromptButton = Factory::Button::Create(this, "Show last prompt", "x:40,y:1,w:19", SHOW_LAST_PROMPT);
         chatHistory =
               Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:12", TextAreaFlags::Readonly | TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
 
         Factory::Label::Create(this, "Prompt", "l:1,r:1,b:9,h:1");
 
         prompt     = Factory::TextField::Create(this, "", "l:1,r:1,b:4,h:5");
-        sendButton = Factory::Button::Create(this, "Send", "l:45%,b:1,h:4,w:10", BUTTON_1_ID);
+        sendButton = Factory::Button::Create(this, "Send", "l:45%,b:1,h:4,w:10", PROMPT_BUTTON_ID);
     }
 
     bool OnEvent(Reference<Control>, Event evnt, int controlID) override
     {
         if (evnt == Event::ButtonClicked) {
-            if (controlID == BUTTON_1_ID) {
+            if (controlID == PROMPT_BUTTON_ID) {
                 const std::string text = prompt->GetText();
                 AskSmartAssistant(text, text);
+                return true;
+            } else if (controlID == SHOW_LAST_PROMPT) {
+                Dialogs::MessageBox::ShowNotification("Last Prompt", lastPromptData.data());
                 return true;
             }
             return true;
@@ -63,8 +70,9 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         }
         auto currentText = chatHistory->GetText();
         currentText.Add("You: ", PROMPT_YOU_AND_ASSISTANT_COLOR);
-        currentText.Add(promptText);
+        currentText.Add(displayPrompt);
         currentText.Add("\n");
+        lastPromptData = promptText;
 
         bool success = false;
         if (isSuccess)
@@ -91,6 +99,7 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
 
         prompt->SetText(textData);
         sendButton->SetEnabled(false);
+        lastPromptButton->SetEnabled(false);
     }
 };
 
