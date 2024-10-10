@@ -45,6 +45,7 @@ struct CORE_EXPORT TypeInterface {
     virtual std::string_view GetTypeName()                        = 0;
     virtual void RunCommand(std::string_view commandName)         = 0;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) = 0;
+    virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
 
     virtual ~TypeInterface()
     {
