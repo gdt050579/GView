@@ -14,6 +14,7 @@ constexpr uint32 COMMAND_ADD_OR_EDIT_COMMENT    = 106;
 constexpr uint32 COMMAND_REMOVE_COMMENT         = 107;
 constexpr uint32 COMMAND_AVAILABLE_KEYS         = 108;
 constexpr uint32 COMMAND_SHOW_ONLY_DISSASM      = 109;
+constexpr uint32 COMMAND_SAVE_DISSASM_CACHE     = 110;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -145,12 +146,13 @@ namespace View
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
             inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
+            inline static KeyboardControl SaveCacheCommand = { Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = { AddOrEditCommentCommand,
-                                                                                                    RemoveCommentCommand,
-                                                                                                    RenameLabelCommand };
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = {
+                AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand
+            };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 10> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -158,13 +160,16 @@ namespace View
                 GotoEntrypointCommand,
                 AddOrEditCommentCommand,
                 RemoveCommentCommand,
-                ShowKeysWindowCommand
+                ShowKeysWindowCommand,
+                RenameLabelCommand,
+                SaveCacheCommand
             };
             bool Loaded;
 
             bool ShowFileContent;
             bool ShowOnlyDissasm;
             bool EnableDeepScanDissasmOnStart;
+            bool CacheSameLocationAsAnalyzedFile;
             static void Update(AppCUI::Utils::IniSection sect);
             void Initialize();
         };

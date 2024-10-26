@@ -9,6 +9,7 @@ constexpr uint32 PROP_ID_SHOW_FILE_CONTENT     = 3;
 constexpr uint32 PROP_ID_SHOW_FILE_CONTENT_KEY = 4;
 constexpr uint32 PROP_ID_SHOW_ONLY_DISSAM      = 5;
 constexpr uint32 PROP_ID_SHOW_ONLY_DISSAM_KEY  = 6;
+constexpr uint32 PROP_ID_ENABLE_DEEP_SCAN_DISSASM  = 7;
 
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
 {
@@ -30,6 +31,9 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
         return true;
     case PROP_ID_SHOW_ONLY_DISSAM_KEY:
         value = config.ShowOnlyDissasmCommand.Key;
+        return true;
+    case PROP_ID_ENABLE_DEEP_SCAN_DISSASM:
+        value = config.EnableDeepScanDissasmOnStart;
         return true;
     }
     return false;
@@ -55,6 +59,9 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
     case PROP_ID_SHOW_ONLY_DISSAM_KEY:
         config.ShowOnlyDissasmCommand.Key = std::get<Key>(value);
         return true;
+    case PROP_ID_ENABLE_DEEP_SCAN_DISSASM:
+        config.EnableDeepScanDissasmOnStart = std::get<bool>(value);
+        return true;
     }
     return false;
 }
@@ -75,5 +82,6 @@ const vector<Property> Instance::GetPropertiesList()
         //{ PROP_ID_SHOW_FILE_CONTENT_KEY, "General", "Show file content key", PropertyType::Key},
         { PROP_ID_SHOW_ONLY_DISSAM, "General", "Show only dissasm code", PropertyType::Boolean },
         { PROP_ID_SHOW_ONLY_DISSAM_KEY, "General", "Show only dissasm code key", PropertyType::Key },
+        { PROP_ID_ENABLE_DEEP_SCAN_DISSASM, "General", "Enable dissasm deep scan on start", PropertyType::Boolean },
     };
 }
