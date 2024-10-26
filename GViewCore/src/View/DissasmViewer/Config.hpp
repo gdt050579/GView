@@ -166,6 +166,7 @@ namespace View
             bool ShowFileContent;
             bool ShowOnlyDissasm;
             bool EnableDeepScanDissasmOnStart;
+            bool CacheSameLocationAsAnalyzedFile;
             static void Update(AppCUI::Utils::IniSection sect);
             void Initialize();
         };
