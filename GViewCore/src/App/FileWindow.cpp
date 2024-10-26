@@ -191,7 +191,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == INSTANCE_SWITCH_TO.Key)
+    if (keyCode == INSTANCE_CHOOSE_TYPE.Key)
     {
         if (!view->HasFocus())
             view->SetFocus();
@@ -278,7 +278,7 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, "GoTo", CMD_GOTO);
     commandBar.SetCommand(INSTANCE_COMMAND_FIND.Key, "Find", CMD_FIND);
-    commandBar.SetCommand(INSTANCE_NEW_TYPE.Key, "SelectType", CMD_CHOSE_NEW_TYPE);
+    commandBar.SetCommand(INSTANCE_CHOOSE_TYPE.Key, "SelectType", CMD_CHOSE_NEW_TYPE);
     commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "ShowKeys", CMD_SHOW_KEY_CONFIGURATOR);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
@@ -309,8 +309,8 @@ bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
     impl->RegisterKey(&FILE_WINDOW_COMMAND_COPY);
     impl->RegisterKey(&FILE_WINDOW_COMMAND_INSERT);
     impl->RegisterKey(&INSTANCE_CHANGE_VIEW);
-    impl->RegisterKey(&INSTANCE_SWITCH_TO);
-    impl->RegisterKey(&INSTANCE_NEW_TYPE);
+    impl->RegisterKey(&INSTANCE_SWITCH_TO_VIEW);
+    impl->RegisterKey(&INSTANCE_CHOOSE_TYPE);
     impl->RegisterKey(&INSTANCE_KEY_CONFIGURATOR);
     return true;
 }

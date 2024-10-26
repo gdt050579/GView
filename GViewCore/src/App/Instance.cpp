@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include <array>
 
 using namespace GView::App;
 using namespace GView::App::InstanceCommands;
@@ -104,13 +105,17 @@ bool Instance::LoadSettings()
     // read instance settings
     auto sect                                  = ini->GetSection("GView");
     this->defaultCacheSize                     = std::max<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
-    INSTANCE_CHANGE_VIEW.Key                   = sect.GetValue("Key.ChangeView").ToKey(INSTANCE_CHANGE_VIEW.Key);
-    INSTANCE_SWITCH_TO.Key                     = sect.GetValue("Key.SwitchToView").ToKey(INSTANCE_SWITCH_TO.Key);                    
-    FILE_WINDOW_COMMAND_FIND.Key               = sect.GetValue("Key.Find").ToKey(FILE_WINDOW_COMMAND_FIND.Key);                           
-    INSTANCE_COMMAND_GOTO.Key                  = sect.GetValue("Key.GoTo").ToKey(INSTANCE_COMMAND_GOTO.Key);                                     
-    INSTANCE_NEW_TYPE.Key                      = sect.GetValue("Key.ChoseType").ToKey(INSTANCE_NEW_TYPE.Key);
-    INSTANCE_KEY_CONFIGURATOR.Key              = sect.GetValue("Key.ShowKeys").ToKey(INSTANCE_KEY_CONFIGURATOR.Key);
 
+    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
+        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
+        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
+    };
+
+    LocalString<64> keyCommand;
+    for (auto& k : localKeys) {
+        keyCommand.SetFormat("Key.%s", k.get().Caption);
+        k.get().Key = sect.GetValue(keyCommand.GetText()).ToKey(k.get().Key);
+    }
     return true;
 }
 bool Instance::BuildMainMenus()
