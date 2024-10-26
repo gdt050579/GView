@@ -474,6 +474,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         hexValue = hexVal;
         if (hexVal == 0 && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             hexValue = params.zone->cachedCodeOffsets[0].offset;
+        else if (hexVal < params.zone->cachedCodeOffsets[0].offset)
+            hexValue = hexVal + params.zone->cachedCodeOffsets[0].offset;
     }
     bool alreadyInitComment = false;
     if (params.zone->asmPreCacheData.HasAnyFlag(params.asmLine))
