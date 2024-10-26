@@ -107,7 +107,7 @@ void Config::Initialize()
             this->ShowFileContent              = sect.GetValue("Config.ShowFileContent").ToBool(true);
             this->ShowOnlyDissasm              = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
             this->EnableDeepScanDissasmOnStart = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
-            this->EnableDeepScanDissasmOnStart = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
+            this->CacheSameLocationAsAnalyzedFile = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
             foundSettings                      = true;
         }
     }

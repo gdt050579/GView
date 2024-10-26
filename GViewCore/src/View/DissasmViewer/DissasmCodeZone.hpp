@@ -52,6 +52,8 @@ struct DissasmCodeZone : public ParseZone {
     bool AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr = true);
     bool RemoveComment(uint32 line, bool showErr = true);
     DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
+
+    bool ToBuffer(std::vector<uint8>& buffer) const;
 };
 
 } // namespace GView::View::DissasmViewer

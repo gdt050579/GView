@@ -87,6 +87,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     this->Layout.totalLinesSize                  = 0;
 
     this->CurrentSelection = {};
+    this->cacheData        = {};
 
     this->codePage = CodePageID::DOS_437;
 
@@ -1317,6 +1318,7 @@ void Instance::OnStart()
         }
         asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
     }
+    LoadCacheData();
 }
 
 void Instance::RecomputeDissasmLayout()

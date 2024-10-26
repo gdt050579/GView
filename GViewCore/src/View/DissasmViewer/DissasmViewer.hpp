@@ -12,6 +12,7 @@
 #include "AdvancedSelection.hpp"
 #include "DissasmDataTypes.hpp"
 #include "Config.hpp"
+#include "DissasmCache.hpp"
 
 class DissasmTestInstance;
 
@@ -37,6 +38,8 @@ namespace View
             uint64 size;
             uint64 entryPoint;
             DisassemblyLanguage language;
+
+            bool ToBuffer(std::vector<uint8>& buffer, Reference<GView::Object> obj) const;
         };
 
         enum class InternalDissasmType : uint8 {
@@ -394,6 +397,9 @@ namespace View
             std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
             std::unordered_map<TypeID, DissasmStructureType> userDesignedTypes; // user defined types
             Reference<BufferViewer::OffsetTranslateInterface> offsetTranslateCallback;
+
+            bool SaveToCache(DissasmCache& cache, Reference<GView::Object> obj);
+            bool ValidateCacheData(DissasmCache& cache, Reference<GView::Object> obj);
             SettingsData();
         };
 
@@ -556,6 +562,7 @@ namespace View
 
             AsmData asmData;
             JumpsHolder jumps_holder;
+            DissasmCache cacheData;
 
             inline void UpdateCurrentZoneIndex(const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
@@ -610,6 +617,9 @@ namespace View
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
             void EditDissasmCodeZoneCommand();
+
+            void LoadCacheData();
+            void SaveCacheData();
 
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
