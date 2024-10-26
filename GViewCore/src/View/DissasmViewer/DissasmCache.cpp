@@ -63,7 +63,8 @@ bool DissasmCache::SaveCacheFile(std::u16string_view location)
 
 bool DissasmCache::LoadCacheFile(std::u16string_view location)
 {
-    cacheFile.open(location, std::ios::in | std::ios::binary);
+    const std::filesystem::path filePath(location.begin(), location.end());
+    cacheFile.open(filePath, std::ios::in | std::ios::binary);
     if (!cacheFile.is_open())
         return false;
     cacheFile.seekg(0, std::ios::end);
@@ -170,9 +171,6 @@ void Instance::SaveCacheData()
         if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
             return;
     }
-
-    constexpr char16 currentLoc  = '.';
-    const auto cacheDataLocation = config.CacheSameLocationAsAnalyzedFile ? obj->GetPath() : std::u16string_view(&currentLoc, 1);
 
     const std::filesystem::path path = DissasmCache::GetCacheFilePath(obj->GetPath(), config.CacheSameLocationAsAnalyzedFile);
     cacheData.SaveCacheFile(path.u16string());
