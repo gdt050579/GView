@@ -21,7 +21,7 @@ bool DissasmCache::AddRegion(std::string regionName, const AppCUI::uint8* data, 
         return false;
     DissasmCacheEntry entry = { std::make_unique<uint8[]>(size), size };
     memcpy(entry.data.get(), data, size);
-    zonesData[regionName]   = std::move(entry);
+    zonesData[std::move(regionName)] = std::move(entry);
     return true;
 }
 
@@ -78,7 +78,7 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
     if (fileSize < sizeof(uint32))
         return false;
 
-    uint32 offset = 0;
+    uint32 offset     = 0;
     uint32 zonesCount = 0;
     memcpy(&zonesCount, buffer.data() + offset, sizeof(zonesCount));
     offset += sizeof(zonesCount);
@@ -95,7 +95,7 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
         offset += entrySize;
         if (offset > buffer.size())
             return false;
-        std::string_view entryName = { (const char*)entryDataName, entrySize };
+        std::string_view entryName = { (const char*) entryDataName, entrySize };
 
         if (offset + sizeof(uint32) > buffer.size())
             return false;
@@ -113,7 +113,6 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
         zonesData.emplace(entryName, std::move(newCacheEntry));
     }
     return true;
-
 }
 
 bool DisassemblyZone::ToBuffer(std::vector<uint8>& buffer, Reference<GView::Object> obj) const
@@ -152,7 +151,7 @@ void Instance::SaveCacheData()
 {
     if (!config.EnableDeepScanDissasmOnStart)
         return;
-    cacheData.ClearCache();//TODO: optimise this better? maybe clear cache after loading
+    cacheData.ClearCache(); // TODO: optimise this better? maybe clear cache after loading
     if (!settings->SaveToCache(cacheData, obj))
         return;
 
@@ -172,7 +171,7 @@ void Instance::SaveCacheData()
     constexpr char16 currentLoc  = '.';
     const auto cacheDataLocation = config.CacheSameLocationAsAnalyzedFile ? obj->GetPath() : std::u16string_view(&currentLoc, 1);
 
-    const std::filesystem::path path = DissasmCache::GetCacheFilePath(obj->GetPath() , config.CacheSameLocationAsAnalyzedFile);
+    const std::filesystem::path path = DissasmCache::GetCacheFilePath(obj->GetPath(), config.CacheSameLocationAsAnalyzedFile);
     cacheData.SaveCacheFile(path.u16string());
 }
 
@@ -218,32 +217,110 @@ bool DissasmCodeZone::ToBuffer(std::vector<uint8>& buffer) const
         reserveSize += sizeof(comment.first) + sizeof(uint32) + comment.second.size();
     }
     for (const auto& annotation : dissasmType.annotations) {
-            reserveSize += sizeof(annotation.first) + sizeof(uint32) + annotation.second.first.size() + sizeof(annotation.second.second);
+        reserveSize += sizeof(annotation.first) + sizeof(uint32) + annotation.second.first.size() + sizeof(annotation.second.second);
     }
     buffer.reserve(reserveSize);
 
     // comments
     uint32 entriesCount = (uint32) dissasmType.commentsData.comments.size();
     uint32 entryStringSizeCount;
-    buffer.insert(buffer.end(), &entriesCount, &entriesCount + sizeof(entriesCount));
+    buffer.insert(buffer.end(), (const char*) &entriesCount, (const char*) &entriesCount + sizeof(entriesCount));
     for (const auto& comment : dissasmType.commentsData.comments) {
-        buffer.insert(buffer.end(), &comment.first, &comment.first + sizeof(comment.first));
+        buffer.insert(buffer.end(), (const char*) &comment.first, (const char*) &comment.first + sizeof(comment.first));
         entryStringSizeCount = (uint32) comment.second.size();
-        buffer.insert(buffer.end(), &entryStringSizeCount, &entryStringSizeCount + sizeof(entryStringSizeCount));
+        buffer.insert(buffer.end(), (const char*) &entryStringSizeCount, (const char*) &entryStringSizeCount + sizeof(entryStringSizeCount));
         buffer.insert(buffer.end(), comment.second.data(), comment.second.data() + entryStringSizeCount);
     }
 
     // annotations
     entriesCount = (uint32) dissasmType.annotations.size();
-    buffer.insert(buffer.end(), &entriesCount, &entriesCount + sizeof(entriesCount));
+    buffer.insert(buffer.end(), (const char*) &entriesCount, (const char*) &entriesCount + sizeof(entriesCount));
     for (const auto& annotation : dissasmType.annotations) {
-        buffer.insert(buffer.end(), &annotation.first, &annotation.first + sizeof(annotation.first));
+        buffer.insert(buffer.end(), (const char*) &annotation.first, (const char*) &annotation.first + sizeof(annotation.first));
 
         entryStringSizeCount = (uint32) annotation.second.first.size();
-        buffer.insert(buffer.end(), &entryStringSizeCount, &entryStringSizeCount + sizeof(entryStringSizeCount));
+        buffer.insert(buffer.end(), (const char*) &entryStringSizeCount, (const char*) &entryStringSizeCount + sizeof(entryStringSizeCount));
         buffer.insert(buffer.end(), annotation.second.first.data(), annotation.second.first.data() + entryStringSizeCount);
 
-        buffer.insert(buffer.end(), &annotation.second.second, &annotation.second.second + sizeof(annotation.second.second));
+        buffer.insert(buffer.end(), (const char*) &annotation.second.second, (const char*) &annotation.second.second + sizeof(annotation.second.second));
+    }
+
+    return true;
+}
+
+bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache)
+{
+    if (!cache.hasCache)
+        return true;
+    if (zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+        return false;
+    LocalString<64> zoneName;
+    zoneName.SetFormat("DissasmParseZoneType.%llu", startLineIndex);
+
+    auto it = cache.zonesData.find(zoneName.GetText());
+    if (it == cache.zonesData.end())
+        return false;
+    auto dataPtr          = it->second.data.get();
+    const auto dataPtrEnd = dataPtr + it->second.size;
+
+    if (dataPtr + sizeof(uint32) > dataPtrEnd)
+        return false;
+
+    std::vector<uint8> buffer;
+    buffer.reserve(512);
+
+    uint32 commentsCount = *(uint32*) dataPtr;
+    dataPtr += sizeof(uint32);
+
+    while (commentsCount > 0) {
+        if (dataPtr + sizeof(uint32) > dataPtrEnd)
+            return false;
+        const uint32 offset = *(uint32*) dataPtr;
+        dataPtr += sizeof(uint32);
+
+        if (dataPtr + sizeof(uint32) > dataPtrEnd)
+            return false;
+        const uint32 commLen = *(uint32*) dataPtr;
+        if (dataPtr + commLen > dataPtrEnd)
+            return false;
+        dataPtr += sizeof(uint32);
+        buffer.clear();
+        buffer.insert(buffer.end(), dataPtr, dataPtr + commLen);
+        dataPtr += commLen;
+
+        dissasmType.commentsData.comments[offset] = std::string((const char*)buffer.data(), commLen);
+        --commentsCount;
+    }
+
+    if (dataPtr + sizeof(uint32) > dataPtrEnd)
+        return false;
+    uint32 annotationsCount = *(uint32*) dataPtr;
+    dataPtr += sizeof(uint32);
+    while (annotationsCount > 0) {
+        if (dataPtr + sizeof(uint32) > dataPtrEnd)
+            return false;
+        const uint32 offset = *(uint32*) dataPtr;
+        dataPtr += sizeof(uint32);
+
+        if (dataPtr + sizeof(uint32) > dataPtrEnd)
+            return false;
+        const uint32 annLen = *(uint32*) dataPtr;
+        if (dataPtr + annLen > dataPtrEnd)
+            return false;
+        dataPtr += sizeof(uint32);
+
+        buffer.clear();
+        buffer.insert(buffer.end(), dataPtr, dataPtr + annLen);
+        dataPtr += annLen;
+
+        if (dataPtr + sizeof(uint64) > dataPtrEnd)
+            return false;
+        const uint64 annValue = *(uint64*) dataPtr;
+        dataPtr += sizeof(uint64);
+        --annotationsCount;
+
+        std::string annName((const char*)buffer.data(), annLen);
+        dissasmType.annotations[offset] = { std::move(annName), annValue };
     }
 
     return true;

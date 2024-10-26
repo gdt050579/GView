@@ -264,6 +264,14 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         return true;
     }
 
+    if (keyCode == Config::SaveCacheCommand.Key) {
+        SaveCacheData();
+        return true;
+    }
+
+    if (keyCode == Key::Escape)
+        SaveCacheData();
+
     return ViewControl::OnKeyEvent(select ? (keyCode | Key::Shift) : keyCode, charCode);
 }
 

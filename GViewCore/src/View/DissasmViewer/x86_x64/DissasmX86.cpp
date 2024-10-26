@@ -714,6 +714,12 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
                     return false;
                 if (initData.hasAdjustedSize)
                     AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
+                if (!zone->TryLoadDataFromCache(cacheData)) {
+                    //TODO: will enable errors in the next version
+                    //dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
+                    //return false;
+                
+                }
             }
         }
 

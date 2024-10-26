@@ -54,6 +54,7 @@ struct DissasmCodeZone : public ParseZone {
     DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
 
     bool ToBuffer(std::vector<uint8>& buffer) const;
+    bool TryLoadDataFromCache(DissasmCache& cache);
 };
 
 } // namespace GView::View::DissasmViewer
