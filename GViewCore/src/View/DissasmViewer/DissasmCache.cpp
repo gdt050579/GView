@@ -1,3 +1,5 @@
+#include <filesystem>
+
 #include "DissasmCache.hpp"
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
@@ -39,7 +41,8 @@ bool DissasmCache::SaveCacheFile(std::u16string_view location)
 {
     if (zonesData.empty())
         return false;
-    cacheFile.open(location, std::ios::out | std::ios::binary);
+    const std::filesystem::path filePath(location.begin(), location.end());
+    cacheFile.open(filePath, std::ios::out | std::ios::binary);
     if (!cacheFile.is_open())
         return false;
     const uint32 zonesCount = (uint32) zonesData.size();
