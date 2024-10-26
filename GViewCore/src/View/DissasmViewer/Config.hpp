@@ -150,7 +150,7 @@ namespace View
                                                                                                     RemoveCommentCommand,
                                                                                                     RenameLabelCommand };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 9> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -158,7 +158,8 @@ namespace View
                 GotoEntrypointCommand,
                 AddOrEditCommentCommand,
                 RemoveCommentCommand,
-                ShowKeysWindowCommand
+                ShowKeysWindowCommand,
+                RenameLabelCommand
             };
             bool Loaded;
 
