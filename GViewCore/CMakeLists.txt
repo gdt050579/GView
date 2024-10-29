@@ -57,7 +57,7 @@ find_package(re2 CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE re2::re2)
 
 find_package(CURL REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl nlohmann_json::nlohmann_json)
+target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
 
 find_package(nlohmann_json REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)

@@ -125,7 +125,7 @@ struct GeminiSmartAssistant : SmartAssistantRegisterInterface {
     {
         return "Gemini is a smart assistant that can help you with various questions";
     }
-    std::string AskSmartAssistant(std::string_view prompt, bool& isSuccess) override
+    std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess) override
     {
         /*std::vector<char> content;
         size_t size, nmemb;
