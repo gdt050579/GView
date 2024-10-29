@@ -98,11 +98,17 @@ bool GView::App::ResetConfiguration()
 
     // generic GView settings
     ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
-    ini["GView"]["Key.ChangeView"]   = Key::F4;
-    ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
-    ini["GView"]["Key.GoTo"]         = Key::F5;
-    ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
-    ini["GView"]["Key.ChooseType"]   = Key::Alt | Key::F1;
+
+    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
+        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
+        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
+    };
+
+    LocalString<64> keyCommand;
+    for (auto& k : localKeys) {
+        keyCommand.SetFormat("Key.%s", k.get().Caption);
+        ini["GView"][keyCommand.GetText()] = k.get().Key;
+    }
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());

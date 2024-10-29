@@ -479,6 +479,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         hexValue = hexVal;
         if (hexVal == 0 && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             hexValue = params.zone->cachedCodeOffsets[0].offset;
+        else if (hexVal < params.zone->cachedCodeOffsets[0].offset)
+            hexValue = hexVal + params.zone->cachedCodeOffsets[0].offset;
     }
     bool alreadyInitComment = false;
     if (params.zone->asmPreCacheData.HasAnyFlag(params.asmLine))
@@ -722,6 +724,12 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
                     return false;
                 if (initData.hasAdjustedSize)
                     AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
+                if (!zone->TryLoadDataFromCache(cacheData)) {
+                    //TODO: will enable errors in the next version
+                    //dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
+                    //return false;
+                
+                }
             }
         }
 
