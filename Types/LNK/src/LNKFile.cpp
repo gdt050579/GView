@@ -1,8 +1,10 @@
+#include <array>
+#include <nlohmann/json.hpp>
+
 #include "LNK.hpp"
 
-#include <array>
-
 using namespace GView::Type::LNK;
+using nlohmann::json;
 
 LNKFile::LNKFile()
 {
@@ -158,6 +160,48 @@ bool LNKFile::Update()
     }
 
     return true;
+}
+
+std::string LNKFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+
+    context["Header"] = { { "LinkFlags", header.linkFlags },       { "FileAttributes", header.fileAttributeFlags },
+                          { "CreationTime", header.creationDate }, { "AccessTime", header.lastAccessDate },
+                          { "FileSize", header.fileSize },         { "IconIndex", header.iconIndex },
+                          { "ShowCommand", header.showCommand } };
+
+    if (header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo) {
+        context["LocationInformation"] = {
+            { "Size", locationInformation.size },
+            { "HeaderSize", locationInformation.headerSize },
+            { "Flags", locationInformation.flags },
+            { "VolumeIDOffset", locationInformation.volumeInformationOffset },
+            { "LocalBasePathOffset", locationInformation.localPathOffset },
+            { "CommonNetworkRelativeLinkOffset", locationInformation.commonPathOffset },
+            { "CommonPathSuffixOffset", locationInformation.commonPathOffset },
+        };
+
+        if (locationInformation.volumeInformationOffset > 0) {
+            context["VolumeInformation"] = {
+                { "Size", volumeInformation->size },
+                { "DriveType", volumeInformation->driveType },
+                { "DriveSerialNumber", volumeInformation->driveSerialNumber },
+                { "VolumeLabelOffset", volumeInformation->volumeLabelOffset },
+            };
+        }
+
+        if (locationInformation.networkShareOffset > 0) {
+            context["NetworkShareInformation"] = {
+                { "Size", networkShareInformation->size },
+                { "Flags", networkShareInformation->flags },
+                { "ShareNameOffset", networkShareInformation->networkShareNameOffset },
+            };
+        }
+    }
+    return context.dump();
 }
 
 namespace GView::Type::LNK::Panels

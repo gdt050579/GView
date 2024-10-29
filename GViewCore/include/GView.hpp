@@ -45,6 +45,12 @@ struct CORE_EXPORT TypeInterface {
     virtual std::string_view GetTypeName()                        = 0;
     virtual void RunCommand(std::string_view commandName)         = 0;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) = 0;
+    /**
+     * \brief Function to retrieve the context of the smart assistant for user's prompt based on the current type plugin
+     * \param prompt The actual prompt (question) that the smart assistant will be asked
+     * \param displayPrompt The information that will be seen by the user (summarised version)
+     * \return string that has a json textual format with minimal information: {"Name": obj->GetName(), "ContentSize": obj->GetData().GetSize()} 
+     */
     virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
 
     virtual ~TypeInterface()

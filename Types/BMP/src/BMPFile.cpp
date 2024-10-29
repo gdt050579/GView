@@ -1,5 +1,5 @@
-#include "bmp.hpp"
 #include <nlohmann/json.hpp>
+#include "bmp.hpp"
 
 using namespace GView::Type::BMP;
 
