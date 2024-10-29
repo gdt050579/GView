@@ -1,8 +1,10 @@
 #include "bmp.hpp"
+#include <nlohmann/json.hpp>
 
 using namespace GView::Type::BMP;
 
 constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
+using nlohmann::json;
 
 BMPFile::BMPFile()
 {
@@ -32,4 +34,19 @@ bool BMPFile::LoadImageToObject(Image& img, uint32 index)
     CHECK(img.Create(bf), false, "");
 
     return true;
+}
+
+std::string BMPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]                    = obj->GetName();
+    context["ContentSize"]             = obj->GetData().GetSize();
+    context["ImageSize"]               = infoHeader.imageSize;
+    context["Width"]                   = infoHeader.width;
+    context["Height"]                  = infoHeader.height;
+    context["BitsPerPixel"]            = infoHeader.bitsPerPixel;
+    context["CompressionMethod"]       = infoHeader.comppresionMethod;
+    context["NumberOfColors"]          = infoHeader.numberOfColors;
+    context["NumberOfImportantColors"] = infoHeader.numberOfImportantColors;
+    return context.dump();
 }

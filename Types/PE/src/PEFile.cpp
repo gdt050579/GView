@@ -799,7 +799,7 @@ std::string PEFile::GetSmartAssistantContext(const std::string_view& prompt, std
             resources.emplace_back(ResourceIDToName(r.Type).data());
         context["Resources"] = resources;
     }
-    return context;
+    return context.dump();
 }
 
 bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
