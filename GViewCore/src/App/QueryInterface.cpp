@@ -204,7 +204,7 @@ std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_vi
         if (result[result.size() - 1] == '\n')
             result.pop_back();
     }
-    const auto ptrUI = static_cast<SmartAssistantEntryTab*>(smartAssistantEntryTabUIPointers[prefferedIndex]);
+    const auto ptrUI = static_cast<SmartAssistantEntryTab*>(smartAssistantEntryTabUIPointers[indexToUse]);
     ptrUI->AskSmartAssistant(prompt, displayPrompt, &result, &isSuccess);
     return result;
 }

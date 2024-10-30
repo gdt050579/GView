@@ -168,37 +168,28 @@ std::string LNKFile::GetSmartAssistantContext(const std::string_view& prompt, st
     context["Name"]        = obj->GetName();
     context["ContentSize"] = obj->GetData().GetSize();
 
-    context["Header"] = { { "LinkFlags", header.linkFlags },       { "FileAttributes", header.fileAttributeFlags },
-                          { "CreationTime", header.creationDate }, { "AccessTime", header.lastAccessDate },
-                          { "FileSize", header.fileSize },         { "IconIndex", header.iconIndex },
-                          { "ShowCommand", header.showCommand } };
+    context["Header"];
+    context["LinkFlags"]      = header.linkFlags;
+    context["FileAttributes"] = header.fileAttributeFlags;
+    context["CreationTime"]   = header.creationDate;
+    context["AccessTime"]     = header.lastAccessDate;
+    context["FileSize"]       = header.fileSize;
+    context["IconIndex"]      = header.iconIndex;
 
     if (header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo) {
-        context["LocationInformation"] = {
-            { "Size", locationInformation.size },
-            { "HeaderSize", locationInformation.headerSize },
-            { "Flags", locationInformation.flags },
-            { "VolumeIDOffset", locationInformation.volumeInformationOffset },
-            { "LocalBasePathOffset", locationInformation.localPathOffset },
-            { "CommonNetworkRelativeLinkOffset", locationInformation.commonPathOffset },
-            { "CommonPathSuffixOffset", locationInformation.commonPathOffset },
-        };
+        context["CommonNetworkRelativeLinkOffset"] = locationInformation.commonPathOffset;
+        context["VolumeInformationOffset"]         = locationInformation.volumeInformationOffset;
 
         if (locationInformation.volumeInformationOffset > 0) {
-            context["VolumeInformation"] = {
-                { "Size", volumeInformation->size },
-                { "DriveType", volumeInformation->driveType },
-                { "DriveSerialNumber", volumeInformation->driveSerialNumber },
-                { "VolumeLabelOffset", volumeInformation->volumeLabelOffset },
-            };
+            context["VolumeSize"]             = volumeInformation->size;
+            context["DriveSerialNumber"] = volumeInformation->driveSerialNumber;
+            context["VolumeLabelOffset"] = volumeInformation->volumeLabelOffset;
         }
 
         if (locationInformation.networkShareOffset > 0) {
-            context["NetworkShareInformation"] = {
-                { "Size", networkShareInformation->size },
-                { "Flags", networkShareInformation->flags },
-                { "ShareNameOffset", networkShareInformation->networkShareNameOffset },
-            };
+            context["NetworkShareSize"] = networkShareInformation->size;
+            context["NetworkShareFlags"] = networkShareInformation->flags;
+            context["NetworkShareNameOffset"] = networkShareInformation->networkShareNameOffset;
         }
     }
     return context.dump();
