@@ -765,12 +765,6 @@ bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
 std::string PEFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
     json context;
-    if (prompt.empty())
-        return {};
-
-    if (displayPrompt.empty())
-        displayPrompt = prompt;
-
     context["ContentType"]     = "PE";
     context["FileName"]        = obj->GetName();
     context["Size"]            = obj->GetData().GetSize();

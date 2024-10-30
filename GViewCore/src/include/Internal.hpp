@@ -646,11 +646,13 @@ namespace App
             std::vector<bool> validSmartAssistants;
             std::vector<void*> smartAssistantEntryTabUIPointers;
             uint32 validAssistants = 0;
-            uint16 prefferedIndex  = UINT16_MAX;
+            uint16 prefferedIndex = UINT16_MAX, prefferedChatIndex = UINT16_MAX;
+            Reference<TypeInterface> typePlugin;
 
             virtual std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess);
             bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface);
             SmartAssistantPromptInterface* GetSmartAssistantInterface();
+            std::string BuildChatContext(std::string_view prompt, std::string_view displayPrompt, uint32 assistantIndex);
 
             void Start(Reference<FileWindow> fileWindow);
         };

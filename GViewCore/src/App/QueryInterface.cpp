@@ -19,21 +19,26 @@ GView::CommonInterfaces::QueryInterface* FileWindow::GetQueryInterface()
 }
 
 using GView::CommonInterfaces::SmartAssistants::SmartAssistantRegisterInterface;
+using QueryInterfaceImpl::SmartAssistantPromptInterfaceProxy;
 #pragma region SmartAssistantUI
 class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
 {
     SmartAssistantRegisterInterface* smartAssistant;
+    SmartAssistantPromptInterfaceProxy* proxyInterface;
     Reference<AppCUI::Controls::TextArea> chatHistory;
     Reference<AppCUI::Controls::TextField> prompt;
     Reference<AppCUI::Controls::Button> sendButton, lastPromptButton;
     std::string lastPromptData;
+    uint32 assistantIndex;
 
     LocalString<128> gemini;
 
   public:
-    SmartAssistantEntryTab(std::string_view caption, SmartAssistantRegisterInterface* smartAssistant) : TabPage(caption), smartAssistant(smartAssistant)
+    SmartAssistantEntryTab(std::string_view caption, SmartAssistantPromptInterfaceProxy* proxyInterface, uint32 assistantIndex)
+        : TabPage(caption), proxyInterface(proxyInterface), assistantIndex(assistantIndex)
     {
         lastPromptData = "There is no prompt given!";
+        smartAssistant = proxyInterface->smartAssistants[assistantIndex].get();
         Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:39");
         lastPromptButton = Factory::Button::Create(this, "Show last prompt", "x:40,y:1,w:19", SHOW_LAST_PROMPT);
         chatHistory =
@@ -77,7 +82,14 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         bool success = false;
         if (isSuccess)
             success = *isSuccess;
-        std::string result = hasAnswer ? *hasAnswer : smartAssistant->AskSmartAssistant(promptText, promptText, success);
+        std::string result;
+        if (hasAnswer)
+            result = *hasAnswer;
+        else {
+            proxyInterface->prefferedChatIndex = static_cast<uint16>(assistantIndex);
+            const auto chatContext             = proxyInterface->BuildChatContext(promptText, displayPrompt, assistantIndex);
+            result                             = proxyInterface->AskSmartAssistant(chatContext, promptText, success);
+        }
 
         const char* assistantLabel = success ? "Assistant: " : "Error:";
         currentText.Add(assistantLabel, PROMPT_YOU_AND_ASSISTANT_COLOR);
@@ -114,9 +126,10 @@ class SmartAssistantsTab : public AppCUI::Controls::TabPage
         tabs = Factory::Tab::Create(this, "l:1,t:1,r:1,b:1", TabFlags::TopTabs | TabFlags::TransparentBackground);
     }
 
-    void* AddSmartAssistant(SmartAssistantRegisterInterface* registerInterface)
+    void* AddSmartAssistant(SmartAssistantPromptInterfaceProxy* proxyInterface, uint32 assistantIndex)
     {
-        auto ptr      = Pointer(new SmartAssistantEntryTab(registerInterface->GetSmartAssistantName(), registerInterface));
+        auto ptr =
+              Pointer(new SmartAssistantEntryTab(proxyInterface->smartAssistants[assistantIndex]->GetSmartAssistantName(), proxyInterface, assistantIndex));
         void* ptrVoid = ptr.get();
         tabs->AddControl(std::move(ptr));
         ++tabsCount;
@@ -179,7 +192,14 @@ namespace GView::App::QueryInterfaceImpl
 
 std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess)
 {
-    auto result = smartAssistants[prefferedIndex].get()->AskSmartAssistant(prompt, displayPrompt, isSuccess);
+    uint16 indexToUse = prefferedChatIndex;
+    if (prefferedChatIndex == UINT16_MAX) {
+        indexToUse = prefferedIndex;
+    }else {
+        prefferedChatIndex = UINT16_MAX;
+    }
+    assert(indexToUse < smartAssistants.size());
+    auto result = smartAssistants[indexToUse].get()->AskSmartAssistant(prompt, displayPrompt, isSuccess);
     if (!result.empty()) {
         if (result[result.size() - 1] == '\n')
             result.pop_back();
@@ -242,6 +262,13 @@ SmartAssistantPromptInterface* SmartAssistantPromptInterfaceProxy::GetSmartAssis
     return this;
 }
 
+std::string SmartAssistantPromptInterfaceProxy::BuildChatContext(std::string_view prompt, std::string_view displayPrompt, uint32 assistantIndex)
+{
+    std::string chatContext = std::string(prompt.data(), prompt.size());
+    auto n                  = typePlugin->GetSmartAssistantContext(prompt, displayPrompt);
+    return chatContext;
+}
+
 void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
 {
     if (smartAssistants.empty()) {
@@ -263,8 +290,8 @@ void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
     smartAssistantEntryTabUIPointers.resize(smartAssistants.size(), nullptr);
 
     uint32 index = 0;
-    for (auto& smartAssistant : smartAssistants) {
-        const auto ptrUI                        = convertedPtr->AddSmartAssistant(smartAssistant.get());
+    for (const auto& smartAssistant : smartAssistants) {
+        const auto ptrUI                        = convertedPtr->AddSmartAssistant(this, index);
         smartAssistantEntryTabUIPointers[index] = ptrUI;
         bool hasConfig                          = false;
         if (hasSmartAssistantConfigDat) {
@@ -285,6 +312,7 @@ void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
         ++index;
     }
     fileWindow->AddPanel(std::move(ptrSmartAssistantsTab), true);
+    this->typePlugin = fileWindow->GetObject()->GetContentType();
 }
 
 bool GViewQueryInterface::RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface)
