@@ -1501,11 +1501,22 @@ void Instance::OnLoseFocus()
     ColorMan.OnLostFocus();
 }
 
-void Instance::QuerySmartAssistantFunctionName()
+void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
 {
-    const auto linePos = Cursor.ToLinePosition();
+    uint32 lineStart;
+    uint32 lineEnd = 0;
+    if (queryType != QueryTypeSmartAssistant::FunctionName) {
+        if (!selection.HasSelection(0)) {
+            Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone to select some code!");
+            return;
+        }
+        lineStart = selection.GetSelectionStart(0).line;
+        lineEnd   = selection.GetSelectionEnd(0).line;
+    } else {
+        lineStart = Cursor.ToLinePosition().line;
+    }
 
-    const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
+    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart, lineEnd);
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on a single zone!");
         return;
@@ -1524,10 +1535,30 @@ void Instance::QuerySmartAssistantFunctionName()
         Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on a dissasm zone!");
         return;
     }
-    auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     if (convertedZone->zoneDetails.language != DisassemblyLanguage::x86 && convertedZone->zoneDetails.language != DisassemblyLanguage::x64) {
         Dialogs::MessageBox::ShowNotification("Error", "Query function name available only for x86 and x64 functions!");
         return;
     }
-    QuerySmartAssistantFunctionNameX86X64(convertedZone, zonesFound[0].startingLine);
+    QuerySmartAssistantParams params = {};
+    if (queryType == QueryTypeSmartAssistant::FunctionName) {
+        params.mnemonicStarsWith              = "sub_";
+        params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "
+                                                "If they are not available please enable DeepScanning.";
+        params.stopAtTheEndOfTheFunction      = true;
+        params.displayPrompt                  = "Give me an appropriate name for the function: ";
+        params.displayPromptUsesMnemonicParam = true;
+        params.prompt = "Provide me the most appropriate function name.Write only the function name, do not write anything else. Do not write any symbols, "
+                        "just the function name.";
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params);
+    } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
+        params.displayPrompt = "Explain the selected code";
+        params.prompt        = "Explain what does this assembly x86/x84 code does.";
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params);
+    } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
+        params.displayPrompt                  = "Decompile the following assembly into a higher level language.";
+        params.displayPromptUsesMnemonicParam = true;
+        params.prompt                         = "Decompile the following assembly into a higher level language.";
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params);
+    }
 }

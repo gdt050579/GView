@@ -307,7 +307,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             EditDissasmCodeZoneCommand();
             return true;
         case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION:
-            QuerySmartAssistantFunctionName();
+            QuerySmartAssistant(QueryTypeSmartAssistant::FunctionName);
+            return true;
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE:
+            QuerySmartAssistant(QueryTypeSmartAssistant::ExplainCode);
+            return true;
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL:
+            QuerySmartAssistant(QueryTypeSmartAssistant::ConvertToHighLevel);
             return true;
         case RIGHT_CLICK_REMOVE_COMMENT:
             RemoveComment();

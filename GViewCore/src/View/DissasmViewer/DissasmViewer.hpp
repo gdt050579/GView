@@ -33,6 +33,16 @@ namespace View
         using AnnotationDetails   = std::pair<std::string, uint64>;
         using AnnotationContainer = std::map<uint32, AnnotationDetails>;
 
+        enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel  };
+
+        struct QuerySmartAssistantParams {
+            bool stopAtTheEndOfTheFunction;
+            bool displayPromptUsesMnemonicParam;
+            std::string_view mnemonicStarsWith, mnemonicStartsWithError;
+            std::string_view displayPrompt;
+            std::string_view prompt;
+        };
+
         struct DisassemblyZone {
             uint64 startingZonePoint;
             uint64 size;
@@ -139,21 +149,21 @@ namespace View
                 DrawEndingLine   = 0x40
             };
 
-            uint64 address;
-            uint8 bytes[24];
-            uint16 size;
-            uint32 currentLine;
+            uint64 address = 0;
+            uint8 bytes[24] = {};
+            uint16 size = 0;
+            uint32 currentLine = 0;
             char mnemonic[CS_MNEMONIC_SIZE];
-            char* op_str;
-            uint32 op_str_size;
+            char* op_str = nullptr;
+            uint32 op_str_size = 0;
             std::optional<uint64> hexValue;
-            uint8 flags;
-            uint8 lineArrowToDraw;
-            const void* mapping;
-            const DissasmCodeInternalType* parent;
+            uint8 flags = 0;
+            uint8 lineArrowToDraw = 0;
+            const void* mapping = nullptr;
+            const DissasmCodeInternalType* parent = nullptr;
 
-            bool shouldAddButton;
-            bool isZoneCollapsed;
+            bool shouldAddButton = false;
+            bool isZoneCollapsed = false;
 
             uint32 GetLineSize() const
             {
@@ -618,8 +628,8 @@ namespace View
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
             void EditDissasmCodeZoneCommand();
-            void QuerySmartAssistantFunctionName();
-            void QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, uint32 line);
+            void QuerySmartAssistant(QueryTypeSmartAssistant queryType);
+            void QuerySmartAssistantX86X64(DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams);
 
             void LoadCacheData();
             void SaveCacheData();

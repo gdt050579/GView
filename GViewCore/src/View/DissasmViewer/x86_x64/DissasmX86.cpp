@@ -1637,7 +1637,7 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 
 #pragma endregion
 
-void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, uint32 line)
+void Instance::QuerySmartAssistantX86X64(DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams)
 {
     assert(line >= 2); // 2 for title and menu
     line -= 2;
@@ -1649,15 +1649,19 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
     params.dli      = nullptr;
     params.zone     = codeZone;
 
-    auto data                 = codeZone->GetCurrentAsmLine(line, obj, &params);
-    if (memcmp(data.mnemonic, "sub_", 4) != 0) {
-        Dialogs::MessageBox::ShowNotification(
-              "Warning", "This is not a function start! Please select a \"sub\" instruction! If they are not available please enable DeepScanning.");
-        return;
-    }
-
     LocalString<128> displayPrompt;
-    displayPrompt.SetFormat("Give me an appropriate name for the function: %s", data.mnemonic);
+
+    displayPrompt.SetFormat(queryParams.displayPrompt.data());
+    if (!queryParams.mnemonicStarsWith.empty())
+    {
+        auto data = codeZone->GetCurrentAsmLine(line, obj, &params);
+        if (memcmp(data.mnemonic, queryParams.mnemonicStarsWith.data(), queryParams.mnemonicStarsWith.size()) != 0) {
+            Dialogs::MessageBox::ShowNotification("Warning", queryParams.mnemonicStartsWithError);
+            return;
+        }
+        if (queryParams.displayPromptUsesMnemonicParam)
+            displayPrompt.AddFormat("%s", data.mnemonic);
+    }
 
     const auto assistantInterface = queryInterface->GetSmartAssistantInterface();
     if (!assistantInterface) {
@@ -1686,7 +1690,7 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
                     apisInstructions.emplace_back(currentBuffer.GetText());
             }
         }
-        if (*(uint32*) currentLine.mnemonic == retOP)
+        if (queryParams.stopAtTheEndOfTheFunction && *(uint32*) currentLine.mnemonic == retOP)
             break;
         actualLineInDocument++;
         lineIndex++;
@@ -1698,8 +1702,8 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
     }
 
     LocalString<DISSASM_ASSISTANT_MAX_BYTE_TO_SEND> bufferToSendToAssistant;
-    bufferToSendToAssistant.SetFormat("I am going to provide a list of x86 and x86 instructions and some OS functions used. Provide me the most appropriate "
-                                      "function name. The list of instructions is: ");
+    bufferToSendToAssistant.SetFormat("I am going to provide a list of x86 and x86 instructions and some OS functions used."
+                                      " The list of instructions is: ");
     for (const auto& asmLine : assemblyLines) {
         bufferToSendToAssistant.AddFormat("%s; ", asmLine.data());
     }
@@ -1709,7 +1713,8 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
             bufferToSendToAssistant.AddFormat("%s; ", apiCall.data());
         }
     }
-    bufferToSendToAssistant.AddFormat("Write only the function name, do not write anything else. Do not write any symbols, just the function name.");
+
+    bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
     auto textData = bufferToSendToAssistant.GetText();
 
     bool isSuccess = false;

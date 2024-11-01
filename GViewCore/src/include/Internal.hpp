@@ -340,11 +340,11 @@ namespace Type
                 uint16 u16[8];
                 uint32 u32[4];
                 uint64 u64[2];
-            } unionData;
+            };
             uint8 count;
 
           public:
-            MagicMatcher() : unionData(), count(0)
+            MagicMatcher() : count(0)
             {
             }
             virtual bool Init(std::string_view text) override;
