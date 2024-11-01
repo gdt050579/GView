@@ -11,7 +11,7 @@ struct DissasmCodeZone : public ParseZone {
     uint32 lastClosestLine;
     uint32 offsetCacheMaxLine;
     BufferView lastData;
-    uint32 lastReachedLine = -1u;
+    uint32 lastReachedLine = UINT32_MAX;
 
     // fields only for dissasmx86/x64
     const uint8* asmData;

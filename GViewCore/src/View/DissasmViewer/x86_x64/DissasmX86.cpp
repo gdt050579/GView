@@ -492,7 +492,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                                                               params.zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
     auto& lastZone          = params.zone->types.back().get();
     bool shouldConsiderCall = false;
-    if (flags == DissasmAsmPreCacheLine::InstructionFlag::CallFlag) {
+    if (flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) {
         const MemoryMappingEntry* mappingPtr = nullptr; // TryExtractMemoryMapping(params.settings, hexVal, finalIndex);
 
         const auto& mapping_ptr = params.settings->memoryMappings.find(hexVal);
@@ -524,13 +524,13 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                     }
                 } else {
                     op_str      = strdup(mappingPtr->name.data());
-                    op_str_size = mappingPtr->name.size();
+                    op_str_size = (uint32)mappingPtr->name.size();
                 }
             }
         } else {
             shouldConsiderCall = true;
         }
-    } else if (flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+    } else if (flags & DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
         if (!alreadyInitComment && !lastZone.commentsData.comments.contains(params.actualLine)) {
             const auto offset = params.settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
             if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < params.obj->GetData().GetSize()) {
@@ -546,7 +546,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         }
     }
 
-    if (flags == DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
+    if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
         if (!hexValue.has_value()) {
             flags       = 0;
             op_str      = strdup(insn->op_str);

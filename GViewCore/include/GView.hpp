@@ -418,7 +418,7 @@ namespace DigitalSignature
     };
 
     struct CORE_EXPORT Certificate {
-        int32 version;
+        int32 version{ 0 };
         String serialNumber;
         String signatureAlgorithm;
         String publicKeyAlgorithm;
@@ -426,7 +426,7 @@ namespace DigitalSignature
         String validityNotAfter;
         String issuer;
         String subject;
-        int32 verify;
+        int32 verify{ 0 };
         String errorVerify{};
 
         int32 signerVerify{ 0 }; //  compares the certificate cert against the signer identifier si

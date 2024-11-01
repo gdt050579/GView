@@ -218,7 +218,7 @@ bool DissasmCodeZone::ToBuffer(std::vector<uint8>& buffer) const
         reserveSize += sizeof(comment.first) + sizeof(uint32) + comment.second.size();
     }
     for (const auto& annotation : dissasmType.annotations) {
-        reserveSize += sizeof(annotation.first) + sizeof(uint32) + annotation.second.first.size() + sizeof(annotation.second.second);
+        reserveSize += sizeof(annotation.first) + sizeof(uint32) + (uint32)annotation.second.first.size() + sizeof(annotation.second.second);
     }
     buffer.reserve(reserveSize);
 
