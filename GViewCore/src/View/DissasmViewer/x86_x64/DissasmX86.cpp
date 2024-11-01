@@ -1686,6 +1686,8 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
                     apisInstructions.emplace_back(currentBuffer.GetText());
             }
         }
+        if (*(uint32*) currentLine.mnemonic == retOP)
+            break;
         actualLineInDocument++;
         lineIndex++;
         currentDissasmLine++;
@@ -1707,7 +1709,7 @@ void Instance::QuerySmartAssistantFunctionNameX86X64(DissasmCodeZone* codeZone, 
             bufferToSendToAssistant.AddFormat("%s; ", apiCall.data());
         }
     }
-    bufferToSendToAssistant.AddFormat("Write only the function name, do not write anything else.");
+    bufferToSendToAssistant.AddFormat("Write only the function name, do not write anything else. Do not write any symbols, just the function name.");
     auto textData = bufferToSendToAssistant.GetText();
 
     bool isSuccess = false;
