@@ -216,7 +216,7 @@ void Instance::OpenCurrentSelection()
     std::string out;
     usb.ToString(out);
 
-    LocalUnicodeStringBuilder<2048> fullPath;
+    LocalUnicodeStringBuilder<512> fullPath;
     fullPath.Add(this->obj->GetPath());
     fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
     fullPath.Add("temp_dissasm");

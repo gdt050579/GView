@@ -12,8 +12,9 @@ using nlohmann::json;
 constexpr ColorPair PROMPT_YOU_AND_ASSISTANT_COLOR = ColorPair{ Color::Aqua, Color::Black };
 
 const char* SMART_ASSISTANTS_CONFIGURATION_NAME = "SmartAssistants";
-constexpr int32 PROMPT_BUTTON_ID = 1;
-constexpr int32 SHOW_LAST_PROMPT = 2;
+constexpr int32 PROMPT_BUTTON_ID                = 1;
+constexpr int32 SHOW_LAST_PROMPT_BUTTON_ID      = 2;
+constexpr int32 OPEN_SELECTION_BUTTON_ID        = 3;
 
 GView::CommonInterfaces::QueryInterface* FileWindow::GetQueryInterface()
 {
@@ -29,10 +30,11 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
     SmartAssistantPromptInterfaceProxy* proxyInterface;
     Reference<AppCUI::Controls::TextArea> chatHistory;
     Reference<AppCUI::Controls::TextField> prompt;
-    Reference<AppCUI::Controls::Button> sendButton, lastPromptButton;
+    Reference<AppCUI::Controls::Button> sendButton, lastPromptButton, openSelectionButton;
     std::string lastPromptData;
     uint32 assistantIndex;
 
+    uint32 newWindowIndex;
     LocalString<128> gemini;
 
   public:
@@ -42,14 +44,39 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         lastPromptData = "There is no prompt given!";
         smartAssistant = proxyInterface->smartAssistants[assistantIndex].get();
         Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:39");
-        lastPromptButton = Factory::Button::Create(this, "Show last prompt", "x:40,y:1,w:19", SHOW_LAST_PROMPT);
+        lastPromptButton = Factory::Button::Create(this, "Show last prompt", "r:5%,t:1,w:19", SHOW_LAST_PROMPT_BUTTON_ID);
         chatHistory =
               Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:12", TextAreaFlags::Readonly | TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
+        openSelectionButton = Factory::Button::Create(this, "Open Selection", "r:5%,b:10,h:1,w:19", OPEN_SELECTION_BUTTON_ID);
 
         Factory::Label::Create(this, "Prompt", "l:1,r:1,b:9,h:1");
 
-        prompt     = Factory::TextField::Create(this, "", "l:1,r:1,b:4,h:5");
-        sendButton = Factory::Button::Create(this, "Send", "l:45%,b:1,h:4,w:10", PROMPT_BUTTON_ID);
+        prompt         = Factory::TextField::Create(this, "", "l:1,r:1,b:4,h:5");
+        sendButton     = Factory::Button::Create(this, "Send", "l:45%,b:1,h:4,w:10", PROMPT_BUTTON_ID);
+        newWindowIndex = 0;
+    }
+
+    void OpenSelection()
+    {
+        if(!chatHistory->HasSelection()) {
+            Dialogs::MessageBox::ShowError("Smart Assistant", "No selection to open!");
+            return;
+        }
+        uint32 start, end;
+        const auto hasSelection = chatHistory->GetSelection(start,end);
+        if (!hasSelection) {
+            Dialogs::MessageBox::ShowError("Smart Assistant", "Failed to obtain selection!");
+            return;
+        }
+
+        UnicodeStringBuilder usb{};
+        auto selectionData      = chatHistory->GetText().SubString(start, end);
+        BufferView buffer = { selectionData.data(), selectionData.size() };
+
+        LocalString<128> title;
+        title.SetFormat("%s %d", smartAssistant->GetSmartAssistantName().data(), newWindowIndex++);
+
+        GView::App::OpenBuffer(buffer, title.GetText(), ".", GView::App::OpenMethod::Select);
     }
 
     bool OnEvent(Reference<Control>, Event evnt, int controlID) override
@@ -59,8 +86,11 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
                 const std::string text = prompt->GetText();
                 AskSmartAssistant(text, text);
                 return true;
-            } else if (controlID == SHOW_LAST_PROMPT) {
+            } else if (controlID == SHOW_LAST_PROMPT_BUTTON_ID) {
                 Dialogs::MessageBox::ShowNotification("Last Prompt", lastPromptData.data());
+                return true;
+            } else if (controlID == OPEN_SELECTION_BUTTON_ID) {
+                OpenSelection();
                 return true;
             }
             return true;
@@ -114,6 +144,15 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         prompt->SetText(textData);
         sendButton->SetEnabled(false);
         lastPromptButton->SetEnabled(false);
+    }
+
+    bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override
+    {
+        if (keyCode == Key::Enter) {
+            OpenSelection();
+            return true;
+        }
+        return false;
     }
 };
 
@@ -197,7 +236,7 @@ std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_vi
     uint16 indexToUse = prefferedChatIndex;
     if (prefferedChatIndex == UINT16_MAX) {
         indexToUse = prefferedIndex;
-    }else {
+    } else {
         prefferedChatIndex = UINT16_MAX;
     }
     assert(indexToUse < smartAssistants.size());
@@ -310,7 +349,7 @@ std::string GetFinalContext(const json& contextualData, std::string_view userPro
     json resultContext;
     // Add fields to final context based on relevance, until max size N is reached
     for (const auto& [key, score] : scoredFields) {
-        resultContext[key]      = contextualData[key].dump();
+        resultContext[key] = contextualData[key].dump();
 
         // Check if adding this field exceeds max size
         if (resultContext.size() >= maxPromptSize) {
