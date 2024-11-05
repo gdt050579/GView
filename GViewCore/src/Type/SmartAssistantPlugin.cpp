@@ -147,6 +147,12 @@ struct GeminiSmartAssistant : SmartAssistantRegisterInterface {
     {
         this->configData = configDataParam;
     }
+
+    uint32 GetCharacterLimit() override
+    {
+        return 1024u;
+    }
+};
 };
 
 bool GView::Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(Reference<GView::View::WindowInterface> win)

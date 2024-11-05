@@ -1,11 +1,13 @@
 #include <cassert>
 
 #include "Internal.hpp"
+#include <nlohmann/json.hpp>
 
 using namespace GView::App;
 using namespace GView::App::InstanceCommands;
 using namespace GView::View;
 using namespace AppCUI::Input;
+using nlohmann::json;
 
 constexpr ColorPair PROMPT_YOU_AND_ASSISTANT_COLOR = ColorPair{ Color::Aqua, Color::Black };
 
@@ -262,11 +264,71 @@ SmartAssistantPromptInterface* SmartAssistantPromptInterfaceProxy::GetSmartAssis
     return this;
 }
 
+const std::unordered_map<std::string, std::vector<std::string>> synonymMap = { { "FileName", { "document", "file", "name" } },
+                                                                               { "ImagesCount", { "pictures", "photos", "images", "graphics" } },
+                                                                               { "FileSize", { "size", "memory", "storage" } },
+                                                                               { "Author", { "writer", "creator", "author" } },
+                                                                               { "CreationDate", { "date", "created", "creation" } } };
+
+int computeRelevanceScore(const std::string& fieldName, std::string_view userPrompt)
+{
+    int score = 0;
+    // Direct match for field name in prompt
+    if (userPrompt.find(fieldName) != std::string::npos) {
+        score += 10;
+    }
+
+    // Check for synonyms in the prompt
+    const auto synonymsIt = synonymMap.find(fieldName);
+    if (synonymsIt != synonymMap.end()) {
+        for (const auto& synonym : synonymsIt->second) {
+            if (userPrompt.find(synonym) != std::string::npos) {
+                score += 5; // Lesser score for a synonym match
+                break;      // Only count the first synonym match to avoid over-scoring
+            }
+        }
+    }
+
+    return score;
+}
+
+std::string GetFinalContext(const json& contextualData, std::string_view userPrompt, uint32 maxPromptSize)
+{
+    // Vector to store fields with their relevance scores
+    std::vector<std::pair<std::string, int>> scoredFields;
+    scoredFields.reserve(10);
+
+    // Calculate relevance scores for each field
+    for (auto& [key, value] : contextualData.items()) {
+        int score = computeRelevanceScore(key, userPrompt);
+        scoredFields.emplace_back(key, score);
+    }
+
+    // Sort fields based on relevance scores (descending order)
+    std::sort(scoredFields.begin(), scoredFields.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+
+    json resultContext;
+    // Add fields to final context based on relevance, until max size N is reached
+    for (const auto& [key, score] : scoredFields) {
+        resultContext[key]      = contextualData[key].dump();
+
+        // Check if adding this field exceeds max size
+        if (resultContext.size() >= maxPromptSize) {
+            resultContext.erase(key);
+            break;
+        }
+    }
+
+    return resultContext.dump();
+}
+
 std::string SmartAssistantPromptInterfaceProxy::BuildChatContext(std::string_view prompt, std::string_view displayPrompt, uint32 assistantIndex)
 {
     std::string chatContext = std::string(prompt.data(), prompt.size());
-    auto n                  = typePlugin->GetSmartAssistantContext(prompt, displayPrompt);
-    return chatContext;
+    auto pluginTypeContext  = typePlugin->GetSmartAssistantContext(prompt, displayPrompt);
+    const json jsonData     = json::parse(pluginTypeContext);
+    const uint32 maxSize    = smartAssistants[assistantIndex]->GetCharacterLimit();
+    return GetFinalContext(jsonData, prompt, maxSize);
 }
 
 void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)

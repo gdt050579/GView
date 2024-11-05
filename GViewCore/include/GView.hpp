@@ -222,13 +222,14 @@ namespace CommonInterfaces
         struct CORE_EXPORT SmartAssistantPromptInterface
         {
             virtual std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess) = 0;
-            virtual ~SmartAssistantPromptInterface()                                              = default;
+            virtual ~SmartAssistantPromptInterface()                                                                        = default;
         };
         struct CORE_EXPORT SmartAssistantRegisterInterface : SmartAssistantPromptInterface
         {
             virtual std::string_view GetSmartAssistantName() const                                = 0;
             virtual std::string_view GetSmartAssistantDescription() const                         = 0;
             virtual void ReceiveConfigToken(std::string_view config_data)                         = 0;
+            virtual uint32 GetCharacterLimit()                                                    = 0;
         };
     }// namespace SmartAssistants
 
