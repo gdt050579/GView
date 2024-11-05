@@ -626,12 +626,11 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
 
     if (typeSize > 0) {
         // TODO: check textFileOffset!!
-        auto buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
+        const BufferView buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
 
-        char buffer[9];
-        memset(buffer, '\0', 9);
+        char buffer[9] = {};
         for (uint32 i = 0; i < typeSize; i++)
-            buffer[i] = buf[i];
+            buffer[i] = static_cast<char>(buf[i]);
 
         if (isSignedValue) {
             int64 value = *(int64*) buffer;
@@ -642,7 +641,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
         }
     }
 
-    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
+    const uint32 buffer_size = static_cast<uint32>(dli.chText - this->chars.GetBuffer());
 
     // const uint32 cursorLine = Cursor.lineInView;
     // if (cursorLine == dli.screenLineToDraw)
@@ -659,7 +658,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
 
     // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, bufferToDraw, false);
     return true;
 }
 
@@ -721,7 +720,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                     dli.start++;
                 }
 
-                HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength() + Layout.startingTextLineOffset);
+                HighlightSelectionAndDrawCursorText(dli, (uint32)buf.GetLength(), (uint32)(buf.GetLength() + Layout.startingTextLineOffset));
 
                 // const uint32 cursorLine = Cursor.lineInView;
                 // if (cursorLine == dli.screenLineToDraw)
@@ -1070,7 +1069,7 @@ bool Instance::ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb)
                     CHECK(usb.Add(cc), false, "");
                     continue;
                 }
-                CHECK(cc.AddChar((cp[c] & 0xFF)), false, "");
+                CHECK(cc.AddChar((cp[c & 0xFF] & 0xFF)), false, "");
                 CHECK(usb.Add(cc), false, "");
             }
         }
@@ -1163,7 +1162,7 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
-    uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.textLineToDraw;
+    const uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.textLineToDraw;
 
     if (textFileOffset >= this->obj->GetData().GetSize())
         return false;
@@ -1175,7 +1174,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         clearChar++;
     }
 
-    auto buf = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
+    const auto buf = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
 
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
@@ -1193,7 +1192,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength());
+    HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength(), (uint32) buf.GetLength());
 
     // const uint32 cursorLine = Cursor.lineInView;
     // if (cursorLine == dli.screenLineToDraw)
@@ -1202,7 +1201,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
     //     dli.chNameAndSize[index].Color = config.Colors.Selection;
     // }
 
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, true);
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, true);
     return true;
 }
 
@@ -1383,7 +1382,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
     constexpr uint32 MAX_LINE_DIFF = 10;
 
     const uint32 startingLine = cachedAsmLines.back().currentLine;
-    uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
+    uint32 pushIndex = 0, pushesRemaining = (uint32)functionDetails->params.size();
 
     for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && pushesRemaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
