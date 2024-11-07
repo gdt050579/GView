@@ -62,16 +62,22 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
             Dialogs::MessageBox::ShowError("Smart Assistant", "No selection to open!");
             return;
         }
-        uint32 start, end;
-        const auto hasSelection = chatHistory->GetSelection(start,end);
+        uint32 start, size;
+        const auto hasSelection = chatHistory->GetSelection(start,size);
         if (!hasSelection) {
             Dialogs::MessageBox::ShowError("Smart Assistant", "Failed to obtain selection!");
             return;
         }
 
         UnicodeStringBuilder usb{};
-        auto selectionData      = chatHistory->GetText().SubString(start, end);
-        BufferView buffer = { selectionData.data(), selectionData.size() };
+        const CharacterView selectionData = chatHistory->GetText().SubString(start, start + size);//TODO: convert
+        String data;
+        if (!data.Realloc(size))
+            return;
+        for (auto& c : selectionData) {
+            data.AddChar((char)c.Code);
+        }
+        const BufferView buffer = { data.GetText(), data.Len() };
 
         LocalString<128> title;
         title.SetFormat("%s %d", smartAssistant->GetSmartAssistantName().data(), newWindowIndex++);
