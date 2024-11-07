@@ -808,13 +808,14 @@ void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 max
 
             if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine) {
                 uint32 startingIndex = selectionStart.offset; // % Layout.textSize;
-                uint32 endIndex      = selectionEnd.offset % Layout.textSize + 1;
+                uint32 endIndex;
+                //= selectionEnd.offset % Layout.textSize + 1;
                 if (!isAltPressed) {
                     if (selectStartLine < lineToDrawTo)
                         startingIndex = 0;
-                    if (lineToDrawTo < selectionEndLine)
-                        endIndex = static_cast<uint32>(maxLineLength);
                 }
+                endIndex = static_cast<uint32>(maxLineLength);
+                //}
                 // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
                 // TODO: variables can be skipped, use startingPointer < EndPointer
                 const auto savedChText = dli.chText;
@@ -1192,7 +1193,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength(), (uint32) buf.GetLength());
+    HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength() - Layout.startingTextLineOffset, (uint32) buf.GetLength());
 
     // const uint32 cursorLine = Cursor.lineInView;
     // if (cursorLine == dli.screenLineToDraw)
