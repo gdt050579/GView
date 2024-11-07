@@ -217,7 +217,7 @@ inline void DissasmAddColorsToInstruction(
             const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? colors.AsmLocationInstruction : colors.AsmFunctionColor;
             cb.Add(string, mapColor);
         }
-        //assert(mappingPtr);
+        // assert(mappingPtr);
     }
 
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
@@ -424,9 +424,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternal
     // strncpy((char*) bytes, "------", sizeof(bytes));
     // size        = static_cast<uint32>(strlen((char*) bytes));
 
-    //op_str      = strdup("<--");
-    //op_str_size = static_cast<uint32>(strlen(op_str));
-    op_str = nullptr;
+    // op_str      = strdup("<--");
+    // op_str_size = static_cast<uint32>(strlen(op_str));
+    op_str      = nullptr;
     op_str_size = 0;
     return true;
 }
@@ -524,7 +524,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                     }
                 } else {
                     op_str      = strdup(mappingPtr->name.data());
-                    op_str_size = (uint32)mappingPtr->name.size();
+                    op_str_size = (uint32) mappingPtr->name.size();
                 }
             }
         } else {
@@ -562,7 +562,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         const auto res = n.ToString(hexValue.value(), { NumericFormatFlags::HexPrefix, 16 });
 
         auto fnName = FormatFunctionName(hexValue.value(), prefix);
-        //fnName.AddFormat(" (%s)", res.data());
+        // fnName.AddFormat(" (%s)", res.data());
 
         op_str      = strdup(fnName.GetText());
         op_str_size = static_cast<uint32>(fnName.Len());
@@ -727,10 +727,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
                 if (initData.hasAdjustedSize)
                     AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
                 if (!zone->TryLoadDataFromCache(cacheData)) {
-                    //TODO: will enable errors in the next version
-                    //dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
-                    //return false;
-                
+                    // TODO: will enable errors in the next version
+                    // dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
+                    // return false;
                 }
             }
         }
@@ -1637,7 +1636,8 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 
 #pragma endregion
 
-void Instance::QuerySmartAssistantX86X64(DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams)
+void Instance::QuerySmartAssistantX86X64(
+      DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType)
 {
     assert(line >= 2); // 2 for title and menu
     line -= 2;
@@ -1652,8 +1652,7 @@ void Instance::QuerySmartAssistantX86X64(DissasmCodeZone* codeZone, uint32 line,
     LocalString<128> displayPrompt;
 
     displayPrompt.SetFormat(queryParams.displayPrompt.data());
-    if (!queryParams.mnemonicStarsWith.empty())
-    {
+    if (!queryParams.mnemonicStarsWith.empty()) {
         auto data = codeZone->GetCurrentAsmLine(line, obj, &params);
         if (memcmp(data.mnemonic, queryParams.mnemonicStarsWith.data(), queryParams.mnemonicStarsWith.size()) != 0) {
             Dialogs::MessageBox::ShowNotification("Warning", queryParams.mnemonicStartsWithError);
@@ -1724,7 +1723,10 @@ void Instance::QuerySmartAssistantX86X64(DissasmCodeZone* codeZone, uint32 line,
         Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());
         return;
     }
+
     std::string_view sv = result;
-    codeZone->TryRenameLine(line, &sv);
+    if (queryType == QueryTypeSmartAssistant::FunctionName)
+        codeZone->TryRenameLine(line, &sv);
+
     codeZone->asmPreCacheData.Clear();
 }

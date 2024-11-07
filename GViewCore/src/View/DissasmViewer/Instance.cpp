@@ -1549,15 +1549,15 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         params.displayPromptUsesMnemonicParam = true;
         params.prompt = "Provide me the most appropriate function name.Write only the function name, do not write anything else. Do not write any symbols, "
                         "just the function name.";
-        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params);
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         params.displayPrompt = "Explain the selected code";
         params.prompt        = "Explain what does this assembly x86/x84 code does.";
-        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params);
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         params.displayPrompt                  = "Decompile the following assembly into a higher level language.";
         params.displayPromptUsesMnemonicParam = true;
         params.prompt                         = "Decompile the following assembly into a higher level language.";
-        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params);
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     }
 }

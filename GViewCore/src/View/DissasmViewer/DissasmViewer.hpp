@@ -629,7 +629,8 @@ namespace View
 
             void EditDissasmCodeZoneCommand();
             void QuerySmartAssistant(QueryTypeSmartAssistant queryType);
-            void QuerySmartAssistantX86X64(DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams);
+            void QuerySmartAssistantX86X64(
+                  DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType);
 
             void LoadCacheData();
             void SaveCacheData();
