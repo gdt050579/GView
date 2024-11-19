@@ -1640,19 +1640,21 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 class QueryFunctionNameDialog : public AppCUI::Controls::Window
 {
     uint32 selectedIndex;
+    int32 initialIndex;
+
   public:
     QueryFunctionNameDialog(const std::vector<std::string>& names) : Window("Name selector", "d:c,w:50%,h:50%", WindowFlags::Sizeable)
     {
-        selectedIndex = UINT32_MAX;
+        selectedIndex    = UINT32_MAX;
+        initialIndex     = 0;
         uint32 yLocation = 1;
-        int32 initialIndex = 0;
         LocalString<32> location;
         uint32 maxLen = 0;
         for (auto& name : names) {
-            maxLen = std::max<uint32>(maxLen, (uint32)name.size());
+            maxLen = std::max<uint32>(maxLen, (uint32) name.size());
         }
 
-        for (auto& name: names) {
+        for (auto& name : names) {
             location.SetFormat("x:5,y:%d,w:50,h:1", yLocation);
             auto label = Factory::Label::Create(this, name, location.GetText());
 
@@ -1661,12 +1663,20 @@ class QueryFunctionNameDialog : public AppCUI::Controls::Window
 
             yLocation += 2;
         }
+
+        location.SetFormat("x:45%,y:%d,w:50,h:1", yLocation);
+        Factory::Button::Create(this, "Close", location.GetText(), initialIndex);
     }
     bool OnEvent(Reference<Control> control, Event eventType, int ID) override
     {
         if (Window::OnEvent(control, eventType, ID))
             return true;
         if (eventType == Event::ButtonClicked) {
+            if (ID == initialIndex) {
+                selectedIndex = UINT32_MAX;
+                Exit(Dialogs::Result::Ok);
+                return true;
+            }
             selectedIndex = ID;
             Exit(Dialogs::Result::Ok);
             return true;
@@ -1678,6 +1688,94 @@ class QueryFunctionNameDialog : public AppCUI::Controls::Window
         if (selectedIndex == UINT32_MAX)
             return {};
         return selectedIndex;
+    }
+};
+
+constexpr uint32 QueryShowCodeDialog_BTN_CLOSE          = 0;
+constexpr uint32 QueryShowCodeDialog_BTN_APPLY_COMMENTS = 0;
+
+inline void ltrim(std::string& s)
+{
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+}
+
+// trim from end (in place)
+inline void rtrim(std::string& s)
+{
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+inline void trim(std::string& s)
+{
+    rtrim(s);
+    ltrim(s);
+}
+
+class QueryShowCodeDialog : public AppCUI::Controls::Window
+{
+    Reference<AppCUI::Controls::TextArea> codeArea;
+    std::vector<std::pair<std::string, std::string>> result;
+    bool applyComments = false;
+
+  public:
+    QueryShowCodeDialog(const std::string& code, std::string_view window_name) : Window(window_name, "d:c,w:80%,h:80%", WindowFlags::Sizeable)
+    {
+        codeArea = Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:5", TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
+        codeArea->SetText(code);
+        result.reserve(16);
+
+        std::istringstream stream(code);
+        std::string line;
+        bool foundCommentsZone = false;
+
+        while (std::getline(stream, line)) {
+            if (!foundCommentsZone) {
+                if (line.find("CommentsZoneExplained") != std::string::npos) {
+                    foundCommentsZone = true;
+                }
+                continue;
+            }
+            const size_t pos = line.rfind('#');
+            if (pos != std::string::npos) {
+                std::string codePart = line.substr(0, pos);
+                rtrim(codePart);
+
+                std::string commentPart = line.substr(pos + 1);
+                trim(commentPart);
+                result.emplace_back(codePart, commentPart);
+            }
+        }
+
+        Factory::Button::Create(this, "Close", "l:45%,b:1,w:10", QueryShowCodeDialog_BTN_CLOSE);
+
+        if (result.empty()) {
+            Factory::Label::Create(this, "No comments found", "l:10,b:3,w:25");
+            return;
+        }
+        Factory::Label::Create(this, "Apply comments found", "l:10,b:3,w:25");
+        Factory::Button::Create(this, "Apply", "l:35,b:2,w:10", QueryShowCodeDialog_BTN_APPLY_COMMENTS);
+    }
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ButtonClicked) {
+            if (ID == QueryShowCodeDialog_BTN_APPLY_COMMENTS)
+                applyComments = true;
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        return false;
+    }
+
+    const std::vector<std::pair<std::string, std::string>>& GetAppliedComments() const
+    {
+        return result;
+    }
+
+    bool GetApplyComments() const
+    {
+        return applyComments;
     }
 };
 
@@ -1769,7 +1867,7 @@ void Instance::QuerySmartAssistantX86X64(
         return;
     }
 
-    //std::string_view sv = result;
+    // std::string_view sv = result;
     if (queryType == QueryTypeSmartAssistant::FunctionName) {
         std::vector<std::string> names;
         names.reserve(DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
@@ -1786,7 +1884,6 @@ void Instance::QuerySmartAssistantX86X64(
             return;
         }
 
-        //codeZone->TryRenameLine(line, &sv);
         QueryFunctionNameDialog dlg(names);
         dlg.Show();
 
@@ -1794,6 +1891,47 @@ void Instance::QuerySmartAssistantX86X64(
         if (indexResult.has_value()) {
             auto sv = std::string_view(names[indexResult.value()]);
             codeZone->TryRenameLine(line, &sv);
+        }
+    } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
+        QueryShowCodeDialog dlg(result, "Code explanation");
+        dlg.Show();
+
+        if (dlg.GetApplyComments()) {
+            const auto& resultValue = dlg.GetAppliedComments();
+            if (resultValue.empty()) {
+                Dialogs::MessageBox::ShowNotification("Warning", "No comments found!");
+                return;
+            }
+            currentDissasmLine = line + 1;
+            auto initialLine   = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
+            if (initialLine.size == 0) {
+                Dialogs::MessageBox::ShowNotification("Warning", "No instructions found!");
+                return;
+            }
+            currentBuffer.SetFormat("%s %s", initialLine.mnemonic, initialLine.op_str);
+            if (resultValue[0].first != currentBuffer.GetText()) {
+                Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected comments!");
+            }
+            for (const auto& [asmLine, comment] : resultValue) {
+                do {
+                    auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
+                    if (currentLine.op_str)
+                        break;
+                    if (++currentDissasmLine >= codeZone->endingLineIndex)
+                        return; // todo: check in the future
+                } while (true);
+
+                std::string initialComment;
+                if (codeZone->GetComment(currentDissasmLine, initialComment)) {
+                    bufferToSendToAssistant.SetFormat("%s; %s", comment.data(), initialComment.data());
+                    initialComment = bufferToSendToAssistant.GetText();
+                } else {
+                    initialComment = comment;
+                }
+                codeZone->AddOrUpdateComment(currentDissasmLine, initialComment, false);
+                currentDissasmLine++;
+            }
+            selection.Clear();
         }
     }
 

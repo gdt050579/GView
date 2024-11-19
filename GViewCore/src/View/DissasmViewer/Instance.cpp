@@ -1560,7 +1560,9 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         params.displayPrompt = "Explain the selected code";
-        params.prompt        = "Explain what does this assembly x86/x84 code does.";
+        params.prompt        = "Explain what does this assembly x86/x84 code does. Please also add a new chapter at the end for comments where you explain each line in order and suggest "
+                               "maximum 8 words for comments describing what happens in than line. Please mark the new chapter by writing CommentsZoneExplained and then on the new line they start."
+                               "The format for the this section should be instruction found separated by # character and then the comment without additional special characters.";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         params.displayPrompt                  = "Decompile the following assembly into a higher level language.";
