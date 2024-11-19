@@ -1548,8 +1548,15 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         params.stopAtTheEndOfTheFunction      = true;
         params.displayPrompt                  = "Give me an appropriate name for the function: ";
         params.displayPromptUsesMnemonicParam = true;
-        params.prompt = "Provide me the most appropriate function name.Write only the function name, do not write anything else. Do not write any symbols, "
-                        "just the function name.";
+
+        LocalString<320> prompt;
+        prompt.SetFormat(
+              "Provide me %u possible names for this function that represent what it does separated by comma. "
+              "Write only the function names,separated by comma, do not write anything else. Do not write any symbols, "
+              "just the function names.",
+              DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
+
+        params.prompt = prompt.GetText();
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         params.displayPrompt = "Explain the selected code";

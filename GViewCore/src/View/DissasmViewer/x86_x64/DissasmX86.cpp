@@ -1637,6 +1637,50 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 
 #pragma endregion
 
+class QueryFunctionNameDialog : public AppCUI::Controls::Window
+{
+    uint32 selectedIndex;
+  public:
+    QueryFunctionNameDialog(const std::vector<std::string>& names) : Window("Name selector", "d:c,w:50%,h:50%", WindowFlags::Sizeable)
+    {
+        selectedIndex = UINT32_MAX;
+        uint32 yLocation = 1;
+        int32 initialIndex = 0;
+        LocalString<32> location;
+        uint32 maxLen = 0;
+        for (auto& name : names) {
+            maxLen = std::max<uint32>(maxLen, (uint32)name.size());
+        }
+
+        for (auto& name: names) {
+            location.SetFormat("x:5,y:%d,w:50,h:1", yLocation);
+            auto label = Factory::Label::Create(this, name, location.GetText());
+
+            location.SetFormat("x:%d,y:%d,w:50,h:1", label->GetX() + maxLen + 5, yLocation);
+            Factory::Button::Create(this, "Select", location.GetText(), initialIndex++);
+
+            yLocation += 2;
+        }
+    }
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ButtonClicked) {
+            selectedIndex = ID;
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        return false;
+    }
+    std::optional<uint32> GetSelectedIndex() const
+    {
+        if (selectedIndex == UINT32_MAX)
+            return {};
+        return selectedIndex;
+    }
+};
+
 void Instance::QuerySmartAssistantX86X64(
       DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType)
 {
@@ -1725,9 +1769,33 @@ void Instance::QuerySmartAssistantX86X64(
         return;
     }
 
-    std::string_view sv = result;
-    if (queryType == QueryTypeSmartAssistant::FunctionName)
-        codeZone->TryRenameLine(line, &sv);
+    //std::string_view sv = result;
+    if (queryType == QueryTypeSmartAssistant::FunctionName) {
+        std::vector<std::string> names;
+        names.reserve(DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
+
+        std::stringstream ss(result);
+        std::string name;
+
+        while (std::getline(ss, name, ',')) {
+            names.push_back(name);
+        }
+
+        if (name.size() != DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST) {
+            Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected number of names!");
+            return;
+        }
+
+        //codeZone->TryRenameLine(line, &sv);
+        QueryFunctionNameDialog dlg(names);
+        dlg.Show();
+
+        auto indexResult = dlg.GetSelectedIndex();
+        if (indexResult.has_value()) {
+            auto sv = std::string_view(names[indexResult.value()]);
+            codeZone->TryRenameLine(line, &sv);
+        }
+    }
 
     codeZone->asmPreCacheData.Clear();
 }

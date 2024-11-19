@@ -58,24 +58,24 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
 
     void OpenSelection()
     {
-        if(!chatHistory->HasSelection()) {
+        if (!chatHistory->HasSelection()) {
             Dialogs::MessageBox::ShowError("Smart Assistant", "No selection to open!");
             return;
         }
         uint32 start, size;
-        const auto hasSelection = chatHistory->GetSelection(start,size);
+        const auto hasSelection = chatHistory->GetSelection(start, size);
         if (!hasSelection) {
             Dialogs::MessageBox::ShowError("Smart Assistant", "Failed to obtain selection!");
             return;
         }
 
         UnicodeStringBuilder usb{};
-        const CharacterView selectionData = chatHistory->GetText().SubString(start, start + size);//TODO: convert
+        const CharacterView selectionData = chatHistory->GetText().SubString(start, start + size); // TODO: convert
         String data;
         if (!data.Realloc(size))
             return;
         for (auto& c : selectionData) {
-            data.AddChar((char)c.Code);
+            data.AddChar((char) c.Code);
         }
         const BufferView buffer = { data.GetText(), data.Len() };
 
@@ -251,8 +251,8 @@ std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_vi
         if (result[result.size() - 1] == '\n')
             result.pop_back();
     }
-    const auto ptrUI = static_cast<SmartAssistantEntryTab*>(smartAssistantEntryTabUIPointers[indexToUse]);
-    ptrUI->AskSmartAssistant(prompt, displayPrompt, &result, &isSuccess);
+    //const auto ptrUI = static_cast<SmartAssistantEntryTab*>(smartAssistantEntryTabUIPointers[indexToUse]);
+    //ptrUI->AskSmartAssistant(prompt, displayPrompt, &result, &isSuccess);
     return result;
 }
 
