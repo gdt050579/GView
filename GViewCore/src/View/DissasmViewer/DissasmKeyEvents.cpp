@@ -306,6 +306,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case RIGHT_CLICK_CODE_ZONE_EDIT:
             EditDissasmCodeZoneCommand();
             return true;
+        case COMMAND_QUERY_FUNCTION_NAME:
         case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION:
             QuerySmartAssistant(QueryTypeSmartAssistant::FunctionName);
             return true;

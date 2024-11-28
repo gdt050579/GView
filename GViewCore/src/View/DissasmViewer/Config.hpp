@@ -15,6 +15,7 @@ constexpr uint32 COMMAND_REMOVE_COMMENT         = 107;
 constexpr uint32 COMMAND_AVAILABLE_KEYS         = 108;
 constexpr uint32 COMMAND_SHOW_ONLY_DISSASM      = 109;
 constexpr uint32 COMMAND_SAVE_DISSASM_CACHE     = 110;
+constexpr uint32 COMMAND_QUERY_FUNCTION_NAME    = 111;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -140,13 +141,18 @@ namespace View
             };
             inline static KeyboardControl ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 6> CommandBarCommands = {
+            inline static KeyboardControl CommandQueryFunctionName = {
+                Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
+            };
+
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 7> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
                 GotoEntrypointCommand,
-                ShowKeysWindowCommand
+                ShowKeysWindowCommand,
+                CommandQueryFunctionName
             };
 
             // Other keys
@@ -159,7 +165,7 @@ namespace View
                 AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 10> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 11> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -169,7 +175,8 @@ namespace View
                 RemoveCommentCommand,
                 ShowKeysWindowCommand,
                 RenameLabelCommand,
-                SaveCacheCommand
+                SaveCacheCommand,
+                CommandQueryFunctionName
             };
             bool Loaded;
 
