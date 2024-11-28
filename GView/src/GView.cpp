@@ -1,5 +1,6 @@
 #include "../GViewCore/include/GView.hpp"
 #include <iostream>
+#include <fstream>
 
 enum class CommandID
 {
@@ -8,7 +9,8 @@ enum class CommandID
     Open,
     Reset,
     ListTypes,
-    UpdateConfig
+    UpdateConfig,
+    Test,
 };
 
 struct CommandInfo
@@ -37,35 +39,38 @@ CommandInfo commands[] = {
     { CommandID::Reset, _U("reset") },
     { CommandID::ListTypes, _U("list-types") },
     { CommandID::UpdateConfig, _U("updateconfig") },
+    { CommandID::Test, _U("test") },
 };
 
 std::string_view help = R"HELP(
 Use: GView <command> [File|Files|Folder] <options> 
 Where <command> is on of:
-   help                   Shows this help
-                          Ex: 'GView help'
+   help                     Shows this help
+                            Ex: 'GView help'
 
-   open [fileName|path]   Opens one or multiple file names or folders
-                          Ex: 'GView open a.exe b.pdf c.doc'
+   open [fileName|path]     Opens one or multiple file names or folders
+                            Ex: 'GView open a.exe b.pdf c.doc'
 
-   reset                  Resets the entire configuration file (gview.ini)
-                          and reload all existing plugins. Be carefull when
-                          using this options as all your presets will be 
-                          lost.
-                          Ex: 'GView reset'        
+   reset                    Resets the entire configuration file (gview.ini)
+                            and reload all existing plugins. Be carefull when
+                            using this options as all your presets will be 
+                            lost.
+                            Ex: 'GView reset'        
 
-   updateConfig           Updates current condiguration file (gview.ini) by
-                          adding new plugins (if any). For old plugins new
-                          configuration options will be added as well. 
-                          Ex: 'GView updateConfig'                  
+   updateConfig             Updates current condiguration file (gview.ini) by
+                            adding new plugins (if any). For old plugins new
+                            configuration options will be added as well. 
+                            Ex: 'GView updateConfig'
+   
+   test [fileName|path]     Opens a script for testing                     
 
-   list-types             List all available types (as loaded from gview.ini).
-                          Ex: 'GView list-types' 
+   list-types               List all available types (as loaded from gview.ini).
+                            Ex: 'GView list-types' 
 And <options> are:
-   --type:<type>          Specify the type of the file (if knwon)
-                          Ex: 'GView open a.temp --type:PE'    
-   --selectType           Specify the type of the file should be manually selected
-                          Ex: 'GView open a.temp --selectType'   
+   --type:<type>            Specify the type of the file (if knwon)
+                            Ex: 'GView open a.temp --type:PE'    
+   --selectType             Specify the type of the file should be manually selected
+                            Ex: 'GView open a.temp --selectType'   
 )HELP";
 
 void ShowHelp()
@@ -92,7 +97,7 @@ CommandID GetCommandID(T name)
 
 bool ListTypes()
 {
-    CHECK(GView::App::Init(), false, "");
+    CHECK(GView::App::Init(false), false, "");
     auto cnt = GView::App::GetTypePluginsCount();
     std::cout << "Types : " << cnt << std::endl;
     for (auto index = 0U; index < cnt; index++)
@@ -104,10 +109,22 @@ bool ListTypes()
     return true;
 }
 
-template <typename T>
-int ProcessOpenCommand(int argc, T** argv, int startIndex)
+std::string readFile(const std::filesystem::path& path)
 {
-    CHECK(GView::App::Init(), 1, "");
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return "";
+    }
+
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    return content;
+}
+
+template <typename T>
+int ProcessOpenCommand(int argc, T** argv, int startIndex, bool isTesting = false)
+{
+    CHECK(GView::App::Init(isTesting), 1, "");
     auto start = startIndex;
     LocalString<128> tempString;
     LocalString<16> type;
@@ -137,22 +154,44 @@ int ProcessOpenCommand(int argc, T** argv, int startIndex)
                 method = GView::App::OpenMethod::Select;
                 continue;
             }
-            std::cout << "Unknwon option: " << tempString.ToStringView() << std::endl;
+            std::cout << "Unknown option: " << tempString.ToStringView() << std::endl;
             std::cout << "Type 'GView help' for a detailed list of available options" << std::endl;
             return 1;
         }
     }
+    std::string testingContent;
     start = startIndex;
-    while (start < argc)
-    {
-        // skip options
-        if (argv[start][0] != '-')
-            GView::App::OpenFile(argv[start], method, type.ToStringView());
-        start++;
+    if (!isTesting) {
+        while (start < argc) {
+            // skip options
+            if (argv[start][0] != '-')
+                GView::App::OpenFile(argv[start], method, type.ToStringView());
+            start++;
+        }
+    }else {
+        bool foundFile = false;
+        while (start < argc) {
+            if (!foundFile && argv[start][0] != '-') {
+                foundFile = true;
+                GView::App::OpenFile(argv[start], method, type.ToStringView());
+                start++;
+                continue;
+            }
+            testingContent = readFile(argv[start]);
+            break;
+        }
+        if (!foundFile) {
+            std::cout << "Missing file to test\n";
+            return 1;
+        }
+        if (testingContent.empty()) {
+            std::cout << "Unable to read testing script file\n";
+            return 1;
+        }
     }
 
     AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
-    GView::App::Run();
+    GView::App::Run(testingContent);
 
     return 0;
 }
@@ -183,6 +222,13 @@ int main(int argc, const char** argv)
         return 0;
     case CommandID::Open:
         return ProcessOpenCommand(argc, argv, 2);
+    case CommandID::Test: {
+        if (argc < 4) {
+            std::cout << "The program should have 3 arguments: test <fileToAnalyze> <scriptToRun>\n";
+            return 1;
+        }
+        return ProcessOpenCommand(argc, argv, 2, true);
+    }
     case CommandID::Unknown:
         return ProcessOpenCommand(argc, argv, 1);
     default:

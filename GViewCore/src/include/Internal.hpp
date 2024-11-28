@@ -546,7 +546,7 @@ namespace App
       public:
         Instance();
         virtual ~Instance() {}
-        bool Init();
+        bool Init(bool isTestingEnabled);
         bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
         bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);

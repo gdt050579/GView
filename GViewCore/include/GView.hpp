@@ -1538,8 +1538,8 @@ namespace View
 namespace App
 {
     enum class OpenMethod { FirstMatch, BestMatch, Select, ForceType };
-    bool CORE_EXPORT Init();
-    void CORE_EXPORT Run();
+    bool CORE_EXPORT Init(bool isTestingEnabled);
+    void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);

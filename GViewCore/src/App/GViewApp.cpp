@@ -44,21 +44,24 @@ bool UpdateSettingsForGenericPlugin(AppCUI::Utils::IniObject& ini, const std::fi
     fnUpdateSettings(sect);
     return true;
 }
-bool GView::App::Init()
+bool GView::App::Init(bool isTestingEnabled)
 {
     gviewAppInstance = new GView::App::Instance();
-    if (!gviewAppInstance->Init())
+    if (!gviewAppInstance->Init(isTestingEnabled))
     {
         delete gviewAppInstance;
         RETURNERROR(false, "Fail to initialize GView app");
     }
     return true;
 }
-void GView::App::Run()
+void GView::App::Run(std::string_view testing_script)
 {
     if (gviewAppInstance)
     {
-        AppCUI::Application::Run();
+        if (testing_script.empty())
+            AppCUI::Application::Run();
+        else
+            AppCUI::Application::RunTestScript(testing_script);
     }
 }
 bool GView::App::ResetConfiguration()

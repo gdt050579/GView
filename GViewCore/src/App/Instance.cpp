@@ -135,7 +135,7 @@ bool Instance::BuildMainMenus()
     return true;
 }
 
-bool Instance::Init()
+bool Instance::Init(bool isTestingEnabled)
 {
     InitializationData initData;
     initData.Flags =
@@ -152,7 +152,13 @@ bool Instance::Init()
     }
     settingsFile.Close();
 
-    CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    if (isTestingEnabled) {
+        CHECK(AppCUI::Application::InitForTests(initData.Width, initData.Height, initData.Flags, false),
+              false,
+              "Fail to initialize AppCUI framework for tests!");
+    } else {
+        CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    }
     // reserve some space fo type
     this->typePlugins.reserve(128);
     if (!LoadSettings()) {
