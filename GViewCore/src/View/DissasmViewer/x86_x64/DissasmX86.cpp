@@ -1716,44 +1716,52 @@ class QueryShowCodeDialog : public AppCUI::Controls::Window
     Reference<AppCUI::Controls::TextArea> codeArea;
     std::vector<std::pair<std::string, std::string>> result;
     bool applyComments = false;
+    bool isDecompilation;
 
   public:
-    QueryShowCodeDialog(const std::string& code, std::string_view window_name) : Window(window_name, "d:c,w:80%,h:80%", WindowFlags::Sizeable)
+    QueryShowCodeDialog(const std::string& code, std::string_view windowName, bool decompile) : Window(windowName, "d:c,w:80%,h:80%", WindowFlags::Sizeable)
     {
         codeArea = Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:5", TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
         codeArea->SetText(code);
-        result.reserve(16);
+        isDecompilation = decompile;
 
-        std::istringstream stream(code);
-        std::string line;
-        bool foundCommentsZone = false;
+        if (!decompile) {
+            result.reserve(16);
 
-        while (std::getline(stream, line)) {
-            if (!foundCommentsZone) {
-                if (line.find("CommentsZoneExplained") != std::string::npos) {
-                    foundCommentsZone = true;
+            std::istringstream stream(code);
+            std::string line;
+            bool foundCommentsZone = false;
+
+            while (std::getline(stream, line)) {
+                if (!foundCommentsZone) {
+                    if (line.find("CommentsZoneExplained") != std::string::npos) {
+                        foundCommentsZone = true;
+                    }
+                    continue;
                 }
-                continue;
-            }
-            const size_t pos = line.rfind('#');
-            if (pos != std::string::npos) {
-                std::string codePart = line.substr(0, pos);
-                rtrim(codePart);
+                const size_t pos = line.rfind('#');
+                if (pos != std::string::npos) {
+                    std::string codePart = line.substr(0, pos);
+                    rtrim(codePart);
 
-                std::string commentPart = line.substr(pos + 1);
-                trim(commentPart);
-                result.emplace_back(codePart, commentPart);
+                    std::string commentPart = line.substr(pos + 1);
+                    trim(commentPart);
+                    result.emplace_back(codePart, commentPart);
+                }
             }
         }
 
         Factory::Button::Create(this, "Close", "l:45%,b:1,w:10", QueryShowCodeDialog_BTN_CLOSE);
 
-        if (result.empty()) {
+        if (!decompile && result.empty()) {
             Factory::Label::Create(this, "No comments found", "l:10,b:3,w:25");
             return;
         }
-        Factory::Label::Create(this, "Apply comments found", "l:10,b:3,w:25");
-        Factory::Button::Create(this, "Apply", "l:35,b:2,w:10", QueryShowCodeDialog_BTN_APPLY_COMMENTS);
+        const char* labelText = decompile ? "Open in new tab" : "Apply comments found";
+        Factory::Label::Create(this, labelText, "l:10,b:3,w:25");
+
+        const char* buttonText = decompile ? "Open" : "Apply";
+        Factory::Button::Create(this, buttonText, "l:35,b:2,w:10", QueryShowCodeDialog_BTN_APPLY_COMMENTS);
     }
     bool OnEvent(Reference<Control> control, Event eventType, int ID) override
     {
@@ -1879,10 +1887,10 @@ void Instance::QuerySmartAssistantX86X64(
             names.push_back(name);
         }
 
-        if (name.size() != DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST) {
-            Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected number of names!");
-            return;
-        }
+        //if (name.size() != DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST) {
+        //    Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected number of names!");
+        //    return;
+        //}
 
         QueryFunctionNameDialog dlg(names);
         dlg.Show();
@@ -1893,7 +1901,7 @@ void Instance::QuerySmartAssistantX86X64(
             codeZone->TryRenameLine(line, &sv);
         }
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
-        QueryShowCodeDialog dlg(result, "Code explanation");
+        QueryShowCodeDialog dlg(result, "Code explanation", false);
         dlg.Show();
 
         if (dlg.GetApplyComments()) {
@@ -1932,6 +1940,19 @@ void Instance::QuerySmartAssistantX86X64(
                 currentDissasmLine++;
             }
             selection.Clear();
+        }
+    } else if (queryType ==  QueryTypeSmartAssistant::ConvertToHighLevel) {
+        QueryShowCodeDialog dlg(result, "Code explanation", true);
+        dlg.Show();
+
+        if (dlg.GetApplyComments()) {
+            LocalUnicodeStringBuilder<512> fullPath;
+            fullPath.Add(this->obj->GetPath());
+            fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+            fullPath.Add("temp_dissasm");
+
+            BufferView buffer = { result.data(), result.size() };
+            GView::App::OpenBuffer(buffer, "temp_decompile.cpp", fullPath, GView::App::OpenMethod::Select,"CPP");
         }
     }
 

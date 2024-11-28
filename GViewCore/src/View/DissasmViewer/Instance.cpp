@@ -1567,7 +1567,7 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         params.displayPrompt                  = "Decompile the following assembly into a higher level language.";
         params.displayPromptUsesMnemonicParam = true;
-        params.prompt                         = "Decompile the following assembly into a higher level language.";
+        params.prompt                         = "Decompile the following assembly into a higher level language in C.";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     }
 }
