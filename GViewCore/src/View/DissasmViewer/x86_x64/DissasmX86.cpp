@@ -1711,6 +1711,99 @@ inline void trim(std::string& s)
     ltrim(s);
 }
 
+std::string wrapText(const std::string& code, size_t windowWidth)
+{
+    String wrappedLines;
+    if (!wrappedLines.Realloc((uint32) code.length()))
+        return {};
+    std::istringstream codeStream(code);
+    std::string line;
+    std::string word;
+    LocalString<2048> currentLine;
+
+    bool lastLineWasEmpty = false;
+    while (std::getline(codeStream, line)) {
+        if (line.empty()) {
+            if (currentLine.Len()) {
+                wrappedLines.AddFormat("%s\n\n", currentLine.GetText());
+                currentLine.Clear();
+            } else {
+                wrappedLines.AddFormat("\n");
+            }
+            lastLineWasEmpty = true;
+            continue;
+        }
+        lastLineWasEmpty = false;
+        std::istringstream lineStream(line);
+        while (lineStream >> word) {
+            if (currentLine.Len() + word.length() + 1 > windowWidth) {
+                wrappedLines.AddFormat("%s\n", currentLine.GetText());
+                currentLine.SetFormat("%s", word.data());
+            } else {
+                if (currentLine.Len() && currentLine[currentLine.Len() - 1u] != '\n') {
+                    currentLine.AddChar(' ');
+                }
+                currentLine.AddFormat("%s", word.data());
+            }
+        }
+    }
+    if (currentLine.Len()) {
+        wrappedLines.AddFormat("%s\n", currentLine.GetText());
+    }
+    std::string result = wrappedLines.GetText();
+    return result;
+}
+
+void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
+{
+    Graphics::Character* end   = chars + charsCount;
+    Graphics::Character* start = nullptr;
+    ColorPair col;
+    while (chars < end) {
+        if (chars->Code == '*') // Check for '**'
+        {
+            start = chars;
+            chars++;
+            if ((chars < end) && (chars->Code == '*')) // Confirm second '*'
+            {
+                chars++;
+                start += 2; // Move past '**'
+                while ((chars < end) && !(chars->Code == '*' && (chars + 1 < end) && (chars + 1)->Code == '*')) {
+                    chars->Color = ColorPair{ Color::Yellow, Color::Transparent }; // Color for '**...**'
+                    chars++;
+                }
+                if (chars < end && (chars + 1 < end) && (chars + 1)->Code == '*') {
+                    chars += 2; // Move past closing '**'
+                }
+            }
+        } else if (chars->Code == '`') // Check for backticks '`'
+        {
+            start = chars;
+            chars++;
+            while ((chars < end) && (chars->Code != '`')) {
+                chars->Color = ColorPair{ Color::Green, Color::Transparent }; // Color for `...`
+                chars++;
+            }
+            if (chars < end && chars->Code == '`') {
+                chars++; // Move past closing backtick
+            }
+        } else if (chars->Code == '"') // Check for double quotes '"'
+        {
+            start = chars;
+            chars++;
+            while ((chars < end) && (chars->Code != '"')) {
+                chars->Color = ColorPair{ Color::DarkRed, Color::Transparent }; // Color for "..."
+                chars++;
+            }
+            if (chars < end && chars->Code == '"') {
+                chars++; // Move past closing double quote
+            }
+        } else {
+            chars++; // Move to the next character for non-matching cases
+        }
+    }
+}
+
 class QueryShowCodeDialog : public AppCUI::Controls::Window
 {
     Reference<AppCUI::Controls::TextArea> codeArea;
@@ -1719,10 +1812,14 @@ class QueryShowCodeDialog : public AppCUI::Controls::Window
     bool isDecompilation;
 
   public:
-    QueryShowCodeDialog(const std::string& code, std::string_view windowName, bool decompile) : Window(windowName, "d:c,w:80%,h:80%", WindowFlags::Sizeable)
+    QueryShowCodeDialog(const std::string& code, std::string_view windowName, bool decompile, bool needComments)
+        : Window(windowName, "d:c,w:80%,h:80%", WindowFlags::Sizeable)
     {
         codeArea = Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:5", TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
-        codeArea->SetText(code);
+        codeArea->Handlers()->OnTextColor = TextHighligh;
+
+        std::string wrappedCode = wrapText(code, codeArea->GetWidth() - 2);
+        codeArea->SetText(wrappedCode);
         isDecompilation = decompile;
 
         if (!decompile) {
@@ -1754,7 +1851,8 @@ class QueryShowCodeDialog : public AppCUI::Controls::Window
         Factory::Button::Create(this, "Close", "l:45%,b:1,w:10", QueryShowCodeDialog_BTN_CLOSE);
 
         if (!decompile && result.empty()) {
-            Factory::Label::Create(this, "No comments found", "l:10,b:3,w:25");
+            if (needComments)
+                Factory::Label::Create(this, "No comments found", "l:10,b:3,w:25");
             return;
         }
         const char* labelText = decompile ? "Open in new tab" : "Apply comments found";
@@ -1834,16 +1932,14 @@ void Instance::QuerySmartAssistantX86X64(
         auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
         if (currentLine.size > 0) {
             currentBuffer.SetFormat("   %s %s", currentLine.mnemonic, currentLine.op_str);
-            if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT)
-            {
+            if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
                 if (queryParams.includeComments) {
                     if (codeZone->GetComment(currentDissasmLine, comment)) {
                         currentBuffer.AddFormat(" ; %s", comment.data());
                     }
                 }
                 assemblyLines.emplace_back(currentBuffer.GetText());
-            }
-            else if (currentLine.mnemonic[0] == 'c' && memcmp(currentLine.mnemonic, "call", 4) == 0) {
+            } else if (currentLine.mnemonic[0] == 'c' && memcmp(currentLine.mnemonic, "call", 4) == 0) {
                 if (apisInstructions.size() < DISSASM_ASSISTANT_MAX_API_CALLS)
                     apisInstructions.emplace_back(currentBuffer.GetText());
             }
@@ -1915,7 +2011,7 @@ void Instance::QuerySmartAssistantX86X64(
             codeZone->TryRenameLine(line, &sv);
         }
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
-        QueryShowCodeDialog dlg(result, "Code explanation", false);
+        QueryShowCodeDialog dlg(result, "Code explanation", false, true);
         dlg.Show();
 
         if (dlg.GetApplyComments()) {
@@ -1956,7 +2052,7 @@ void Instance::QuerySmartAssistantX86X64(
             selection.Clear();
         }
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
-        QueryShowCodeDialog dlg(result, "Code explanation", true);
+        QueryShowCodeDialog dlg(result, "Code explanation", true, false);
         dlg.Show();
 
         if (dlg.GetApplyComments()) {
@@ -1969,7 +2065,7 @@ void Instance::QuerySmartAssistantX86X64(
             GView::App::OpenBuffer(buffer, "temp_decompile.cpp", fullPath, GView::App::OpenMethod::Select, "CPP");
         }
     } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
-        QueryShowCodeDialog dlg(result, "MITRE techniques", false);
+        QueryShowCodeDialog dlg(result, "MITRE techniques", false, false);
         dlg.Show();
     }
 
