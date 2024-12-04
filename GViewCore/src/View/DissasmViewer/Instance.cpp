@@ -1405,6 +1405,11 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
         commentResult.SetFormat("%s", functionDetails->params[pushIndex].name);
         std::string foundComment;
         if (comments.GetComment(it->currentLine, foundComment)) {
+            if (foundComment.starts_with(commentResult.GetText())) {
+                pushesRemaining--;
+                pushIndex++;
+                continue;
+            }
             commentResult.AddFormat(" %s", foundComment.c_str());
         }
         comments.AddOrUpdateComment(it->currentLine, commentResult.GetText());
