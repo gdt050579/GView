@@ -15,7 +15,7 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
+const std::array<AsmFunctionDetails, 12> KNOWN_FUNCTIONS = { {
       { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
@@ -44,6 +44,16 @@ const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
       { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } },
       { "RegOpenKeyExW", { { "hKey", "HKEY" }, { "lpSubKey", "LPCWSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
       { "RegOpenKeyExA", { { "hKey", "HKEY" }, { "lpSubKey", "LPCSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
+      { "RegSetValueExA",
+        {
+              { "hKey", "HKEY" },
+              { "lpValueName", "LPCSTR" },
+              { "ulOptions", "DWORD" },
+              { "Reserved", "DWORD" },
+              { "dwType", "DWORD" },
+              { "lpData", "const BYTE *" },
+              { "cbData", "DWORD" },
+        } },
       { "RegSetValueExW",
         { { "hKey", "HKEY" },
           { "lpValueName", "LPCWSTR" },
@@ -51,6 +61,7 @@ const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
           { "dwType", "DWORD" },
           { "lpData", "const BYTE*" },
           { "cbData", "DWORD" } } },
+      { "RegCloseKey", { { "hKey", "HKEY" } } },
       { "GetKeyboardLayout", { { "idThread", "DWORD" } } },
       { "GetKeyboardState", { { "lpKeyState", "PBYTE" } } },
 } };
@@ -720,7 +731,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                     dli.start++;
                 }
 
-                HighlightSelectionAndDrawCursorText(dli, (uint32)buf.GetLength(), (uint32)(buf.GetLength() + Layout.startingTextLineOffset));
+                HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength(), (uint32) (buf.GetLength() + Layout.startingTextLineOffset));
 
                 // const uint32 cursorLine = Cursor.lineInView;
                 // if (cursorLine == dli.screenLineToDraw)
@@ -1383,7 +1394,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
     constexpr uint32 MAX_LINE_DIFF = 10;
 
     const uint32 startingLine = cachedAsmLines.back().currentLine;
-    uint32 pushIndex = 0, pushesRemaining = (uint32)functionDetails->params.size();
+    uint32 pushIndex = 0, pushesRemaining = (uint32) functionDetails->params.size();
 
     for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && pushesRemaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
