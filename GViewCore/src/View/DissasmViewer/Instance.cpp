@@ -1585,7 +1585,8 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         params.displayPrompt                  = "Decompile the following assembly into a higher level language.";
         params.displayPromptUsesMnemonicParam = true;
-        params.prompt                         = "Decompile the following assembly into a higher level language in C.";
+        params.includeComments                = true;
+        params.prompt                         = "Decompile the following assembly into a higher level language in C. Surround the code with \"```\"";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::FunctionNameAndExplanation) {
         Dialogs::MessageBox::ShowNotification("Information", "Not yet implemented!");

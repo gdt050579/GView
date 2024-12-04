@@ -1691,8 +1691,8 @@ class QueryFunctionNameDialog : public AppCUI::Controls::Window
     }
 };
 
-constexpr uint32 QueryShowCodeDialog_BTN_CLOSE          = 0;
-constexpr uint32 QueryShowCodeDialog_BTN_APPLY_COMMENTS = 0;
+constexpr uint32 QueryShowCodeDialog_BTN_CLOSE                  = 0;
+constexpr uint32 QueryShowCodeDialog_BTN_OPEN_OR_APPLY_COMMENTS = 0;
 
 inline void ltrim(std::string& s)
 {
@@ -1808,8 +1808,9 @@ class QueryShowCodeDialog : public AppCUI::Controls::Window
 {
     Reference<AppCUI::Controls::TextArea> codeArea;
     std::vector<std::pair<std::string, std::string>> result;
-    bool applyComments = false;
+    bool OpenOrApply = false;
     bool isDecompilation;
+    std::string codeString;
 
   public:
     QueryShowCodeDialog(const std::string& code, std::string_view windowName, bool decompile, bool needComments)
@@ -1859,15 +1860,40 @@ class QueryShowCodeDialog : public AppCUI::Controls::Window
         Factory::Label::Create(this, labelText, "l:10,b:3,w:25");
 
         const char* buttonText = decompile ? "Open" : "Apply";
-        Factory::Button::Create(this, buttonText, "l:35,b:2,w:10", QueryShowCodeDialog_BTN_APPLY_COMMENTS);
+        auto btn               = Factory::Button::Create(this, buttonText, "l:35,b:2,w:10", QueryShowCodeDialog_BTN_OPEN_OR_APPLY_COMMENTS);
+
+        if (decompile) {
+            auto codeStart = code.find("```");
+            if (codeStart == std::string::npos) {
+                btn->SetEnabled(false);
+                return;
+            }
+            codeStart += 3;
+            if (codeStart + 4 >= code.size()) {
+                btn->SetEnabled(false);
+                return;
+            }
+            if (code[codeStart] == 'c')
+                codeStart++;
+            if (code[codeStart] == '+')
+                codeStart++;
+            if (code[codeStart] == '+')
+                codeStart++;
+            auto codeEnd = code.find("```", codeStart + 3);
+            if (codeEnd == std::string::npos) {
+                btn->SetEnabled(false);
+                return;
+            }
+            codeString = code.substr(codeStart, codeEnd - codeStart - 3);
+        }
     }
     bool OnEvent(Reference<Control> control, Event eventType, int ID) override
     {
         if (Window::OnEvent(control, eventType, ID))
             return true;
         if (eventType == Event::ButtonClicked) {
-            if (ID == QueryShowCodeDialog_BTN_APPLY_COMMENTS)
-                applyComments = true;
+            if (ID == QueryShowCodeDialog_BTN_OPEN_OR_APPLY_COMMENTS)
+                OpenOrApply = true;
             Exit(Dialogs::Result::Ok);
             return true;
         }
@@ -1879,9 +1905,14 @@ class QueryShowCodeDialog : public AppCUI::Controls::Window
         return result;
     }
 
-    bool GetApplyComments() const
+    std::string GetDecompiledCode() const
     {
-        return applyComments;
+        return codeString;
+    }
+
+    bool GetOpenOrApply() const
+    {
+        return OpenOrApply;
     }
 };
 
@@ -2014,7 +2045,7 @@ void Instance::QuerySmartAssistantX86X64(
         QueryShowCodeDialog dlg(result, "Code explanation", false, true);
         dlg.Show();
 
-        if (dlg.GetApplyComments()) {
+        if (dlg.GetOpenOrApply()) {
             const auto& resultValue = dlg.GetAppliedComments();
             if (resultValue.empty()) {
                 Dialogs::MessageBox::ShowNotification("Warning", "No comments found!");
@@ -2055,13 +2086,14 @@ void Instance::QuerySmartAssistantX86X64(
         QueryShowCodeDialog dlg(result, "Code explanation", true, false);
         dlg.Show();
 
-        if (dlg.GetApplyComments()) {
+        if (dlg.GetOpenOrApply()) {
             LocalUnicodeStringBuilder<512> fullPath;
             fullPath.Add(this->obj->GetPath());
             fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
             fullPath.Add("temp_dissasm");
 
-            BufferView buffer = { result.data(), result.size() };
+            auto code         = dlg.GetDecompiledCode();
+            BufferView buffer = { code.data(), code.size() };
             GView::App::OpenBuffer(buffer, "temp_decompile.cpp", fullPath, GView::App::OpenMethod::Select, "CPP");
         }
     } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
