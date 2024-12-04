@@ -35,11 +35,12 @@ namespace View
         using AnnotationDetails   = std::pair<std::string, uint64>;
         using AnnotationContainer = std::map<uint32, AnnotationDetails>;
 
-        enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel  };
+        enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel, FunctionNameAndExplanation, MitreTechiques };
 
         struct QuerySmartAssistantParams {
             bool stopAtTheEndOfTheFunction;
             bool displayPromptUsesMnemonicParam;
+            bool includeComments;
             std::string_view mnemonicStarsWith, mnemonicStartsWithError;
             std::string_view displayPrompt;
             std::string_view prompt;
@@ -151,17 +152,17 @@ namespace View
                 DrawEndingLine   = 0x40
             };
 
-            uint64 address = 0;
-            uint8 bytes[24] = {};
-            uint16 size = 0;
+            uint64 address     = 0;
+            uint8 bytes[24]    = {};
+            uint16 size        = 0;
             uint32 currentLine = 0;
             char mnemonic[CS_MNEMONIC_SIZE];
-            char* op_str = nullptr;
+            char* op_str       = nullptr;
             uint32 op_str_size = 0;
             std::optional<uint64> hexValue;
-            uint8 flags = 0;
-            uint8 lineArrowToDraw = 0;
-            const void* mapping = nullptr;
+            uint8 flags                           = 0;
+            uint8 lineArrowToDraw                 = 0;
+            const void* mapping                   = nullptr;
             const DissasmCodeInternalType* parent = nullptr;
 
             bool shouldAddButton = false;

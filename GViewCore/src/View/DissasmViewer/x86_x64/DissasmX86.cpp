@@ -9,8 +9,8 @@
 #include <list>
 #include <algorithm>
 
-constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 20;
-constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 50;
+constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 100;
+constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 150;
 constexpr uint32 DISSASM_ASSISTANT_MAX_API_CALLS              = 10;
 constexpr uint32 DISSASM_ASSISTANT_MAX_BYTE_TO_SEND           = 640;
 
@@ -1829,15 +1829,27 @@ void Instance::QuerySmartAssistantX86X64(
     apisInstructions.reserve(DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT);
 
     LocalString<64> currentBuffer;
+    std::string comment;
     while (actualLineInDocument < codeZone->endingLineIndex && lineIndex < DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED) {
         auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
         if (currentLine.size > 0) {
-            currentBuffer.SetFormat("%s %s", currentLine.mnemonic, currentLine.op_str);
+            currentBuffer.SetFormat("   %s %s", currentLine.mnemonic, currentLine.op_str);
             if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT)
+            {
+                if (queryParams.includeComments) {
+                    if (codeZone->GetComment(currentDissasmLine, comment)) {
+                        currentBuffer.AddFormat(" ; %s", comment.data());
+                    }
+                }
                 assemblyLines.emplace_back(currentBuffer.GetText());
+            }
             else if (currentLine.mnemonic[0] == 'c' && memcmp(currentLine.mnemonic, "call", 4) == 0) {
                 if (apisInstructions.size() < DISSASM_ASSISTANT_MAX_API_CALLS)
                     apisInstructions.emplace_back(currentBuffer.GetText());
+            }
+        } else {
+            if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
+                assemblyLines.emplace_back(currentLine.mnemonic);
             }
         }
         if (queryParams.stopAtTheEndOfTheFunction && *(uint32*) currentLine.mnemonic == retOP)
@@ -1852,19 +1864,21 @@ void Instance::QuerySmartAssistantX86X64(
     }
 
     LocalString<DISSASM_ASSISTANT_MAX_BYTE_TO_SEND> bufferToSendToAssistant;
-    bufferToSendToAssistant.SetFormat("I am going to provide a list of x86 and x86 instructions and some OS functions used."
-                                      " The list of instructions is: ");
+    bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
+    bufferToSendToAssistant.AddFormat("Here is x86 assembly code: \n");
+    // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
+    // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
     for (const auto& asmLine : assemblyLines) {
-        bufferToSendToAssistant.AddFormat("%s; ", asmLine.data());
+        bufferToSendToAssistant.AddFormat("%s\n", asmLine.data());
     }
     if (!apisInstructions.empty()) {
-        bufferToSendToAssistant.AddFormat("The list of API calls is: ");
+        bufferToSendToAssistant.AddFormat("The function also makes these API calls: ");
         for (const auto& apiCall : apisInstructions) {
-            bufferToSendToAssistant.AddFormat("%s; ", apiCall.data());
+            bufferToSendToAssistant.AddFormat("%s\n", apiCall.data());
         }
     }
 
-    bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
+    // bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
     auto textData = bufferToSendToAssistant.GetText();
 
     bool isSuccess = false;
@@ -1887,10 +1901,10 @@ void Instance::QuerySmartAssistantX86X64(
             names.push_back(name);
         }
 
-        //if (name.size() != DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST) {
-        //    Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected number of names!");
-        //    return;
-        //}
+        // if (name.size() != DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST) {
+        //     Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected number of names!");
+        //     return;
+        // }
 
         QueryFunctionNameDialog dlg(names);
         dlg.Show();
@@ -1941,7 +1955,7 @@ void Instance::QuerySmartAssistantX86X64(
             }
             selection.Clear();
         }
-    } else if (queryType ==  QueryTypeSmartAssistant::ConvertToHighLevel) {
+    } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         QueryShowCodeDialog dlg(result, "Code explanation", true);
         dlg.Show();
 
@@ -1952,8 +1966,11 @@ void Instance::QuerySmartAssistantX86X64(
             fullPath.Add("temp_dissasm");
 
             BufferView buffer = { result.data(), result.size() };
-            GView::App::OpenBuffer(buffer, "temp_decompile.cpp", fullPath, GView::App::OpenMethod::Select,"CPP");
+            GView::App::OpenBuffer(buffer, "temp_decompile.cpp", fullPath, GView::App::OpenMethod::Select, "CPP");
         }
+    } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
+        QueryShowCodeDialog dlg(result, "MITRE techniques", false);
+        dlg.Show();
     }
 
     codeZone->asmPreCacheData.Clear();

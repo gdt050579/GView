@@ -48,7 +48,6 @@ const std::array<AsmFunctionDetails, 12> KNOWN_FUNCTIONS = { {
         {
               { "hKey", "HKEY" },
               { "lpValueName", "LPCSTR" },
-              { "ulOptions", "DWORD" },
               { "Reserved", "DWORD" },
               { "dwType", "DWORD" },
               { "lpData", "const BYTE *" },
@@ -1516,7 +1515,7 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
 {
     uint32 lineStart;
     uint32 lineEnd = 0;
-    if (queryType != QueryTypeSmartAssistant::FunctionName) {
+    if (queryType != QueryTypeSmartAssistant::FunctionName && queryType != QueryTypeSmartAssistant::MitreTechiques) {
         if (!selection.HasSelection(0)) {
             Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone to select some code!");
             return;
@@ -1562,23 +1561,36 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
 
         LocalString<320> prompt;
         prompt.SetFormat(
-              "Provide me %u possible names for this function that represent what it does separated by comma. "
-              "Write only the function names,separated by comma, do not write anything else. Do not write any symbols, "
-              "just the function names.",
+              "Suggest %u names for this code based on what it does separated by comma. "
+              "Write only the names, separated by comma, do not write anything else. Do not write any symbols, "
+              "just the names. ",
               DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
 
         params.prompt = prompt.GetText();
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         params.displayPrompt = "Explain the selected code";
-        params.prompt        = "Explain what does this assembly x86/x84 code does. Please also add a new chapter at the end for comments where you explain each line in order and suggest "
-                               "maximum 8 words for comments describing what happens in than line. Please mark the new chapter by writing CommentsZoneExplained and then on the new line they start."
-                               "The format for the this section should be instruction found separated by # character and then the comment without additional special characters.";
+        params.prompt = "Explain what does this assembly x86/x84 code does. Please also add a new chapter at the end for comments where you explain each line "
+                        "in order and suggest "
+                        "maximum 8 words for comments describing what happens in than line. Please mark the new chapter by writing CommentsZoneExplained and "
+                        "then on the new line they start."
+                        "The format for the this section should be instruction found separated by # character and then the comment without additional special "
+                        "characters.";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         params.displayPrompt                  = "Decompile the following assembly into a higher level language.";
         params.displayPromptUsesMnemonicParam = true;
         params.prompt                         = "Decompile the following assembly into a higher level language in C.";
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
+    } else if (queryType == QueryTypeSmartAssistant::FunctionNameAndExplanation) {
+        Dialogs::MessageBox::ShowNotification("Information", "Not yet implemented!");
+        return;
+    } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
+        params.displayPrompt                  = "What is the MITRE techniques associated with the following assembly code?";
+        params.displayPromptUsesMnemonicParam = true;
+        params.stopAtTheEndOfTheFunction      = true;
+        params.includeComments                = true;
+        params.prompt                         = "What is the MITRE techniques associated with the following assembly code? Use the MITRE format: T<techniqueID>.<sub-techniqueID>.";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     }
 }

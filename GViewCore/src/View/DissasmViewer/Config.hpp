@@ -23,19 +23,19 @@ constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_STRUCTURE    = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT_STRUCTURE   = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE_STRUCTURE = 2;
 
-constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE                 = 3;
-constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE               = 4;
-constexpr int32 RIGHT_CLICK_ADD_COMMENT                                = 5;
-constexpr int32 RIGHT_CLICK_REMOVE_COMMENT                             = 6;
-constexpr int32 RIGHT_CLICK_CLEAR_SELECTION                            = 7;
-constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE                      = 8;
-constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE                        = 9;
-constexpr int32 RIGHT_CLICK_CODE_ZONE_EDIT                             = 10;
-constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION      = 11;
-constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE       = 12;
-constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL = 13;
-
-
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE                      = 3;
+constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE                    = 4;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT                                     = 5;
+constexpr int32 RIGHT_CLICK_REMOVE_COMMENT                                  = 6;
+constexpr int32 RIGHT_CLICK_CLEAR_SELECTION                                 = 7;
+constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE                           = 8;
+constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE                             = 9;
+constexpr int32 RIGHT_CLICK_CODE_ZONE_EDIT                                  = 10;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION           = 11;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE            = 12;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL      = 13;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION = 14;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES        = 15;
 
 struct RightClickCommand {
     int commandID;
@@ -65,11 +65,14 @@ const RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = {
         { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" } } },
     { "Comment", { { RIGHT_CLICK_ADD_COMMENT, "Add comment" }, { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" } } },
     { "CodeZone", { { RIGHT_CLICK_CODE_ZONE_EDIT, "Edit zone" } } },
-    { "Assistant", {
-        { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION, "Ask appropriate name function" },
-        { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE, "Explain the code in selection" },
-        { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL, "Convert selection code to a higher form" },
-    } }
+    { "Assistant",
+      {
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION, "Ask appropriate name function" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE, "Explain the code in selection" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL, "Convert selection code to a higher form" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION, "Ask for name and small explanation" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES, "Ask for MITRE techniques" },
+      } }
 };
 
 namespace GView
@@ -159,11 +162,13 @@ namespace View
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
             inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
-            inline static KeyboardControl SaveCacheCommand = { Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE };
-
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = {
-                AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand
+            inline static KeyboardControl SaveCacheCommand        = {
+                Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE
             };
+
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = { AddOrEditCommentCommand,
+                                                                                                     RemoveCommentCommand,
+                                                                                                     RenameLabelCommand };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 11> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,

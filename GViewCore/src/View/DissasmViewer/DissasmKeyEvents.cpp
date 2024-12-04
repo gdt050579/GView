@@ -316,6 +316,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL:
             QuerySmartAssistant(QueryTypeSmartAssistant::ConvertToHighLevel);
             return true;
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION:
+            QuerySmartAssistant(QueryTypeSmartAssistant::FunctionNameAndExplanation);
+            return true;
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES:
+            QuerySmartAssistant(QueryTypeSmartAssistant::MitreTechiques);
+            return true;
         case RIGHT_CLICK_REMOVE_COMMENT:
             RemoveComment();
             return true;
