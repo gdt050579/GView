@@ -15,7 +15,7 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 45> KNOWN_FUNCTIONS = { {
+const std::array<AsmFunctionDetails, 56> KNOWN_FUNCTIONS = { {
       { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
@@ -140,6 +140,24 @@ const std::array<AsmFunctionDetails, 45> KNOWN_FUNCTIONS = { {
       { "DeleteDC", { { "hdc", "HDC" } } },
       { "ReleaseDC", { { "hWnd", "HWND" }, { "hDC", "HDC" } } },
       { "GetKeyboardLayoutList", { { "nBuff", "int" }, { "lpList", "HKL *" } } },
+      { "OpenProcess", { { "dwDesiredAccess", "DWORD" }, { "bInheritHandle", "BOOL" }, { "dwProcessId", "DWORD" } } },
+      { "GetSystemInfo", { { "lpSystemInfo", "LPSYSTEM_INFO" } } },
+      { "VirtualQueryEx", { { "hProcess", "HANDLE" }, { "lpAddress", "LPCVOID" }, { "lpBuffer", "PMEMORY_BASIC_INFORMATION" }, { "dwLength", "SIZE_T" } } },
+      { "ReadProcessMemory",
+        { { "hProcess", "HANDLE" }, { "lpBaseAddress", "LPCVOID" }, { "lpBuffer", "LPVOID" }, { "nSize", "SIZE_T" }, { "lpNumberOfBytesRead", "SIZE_T*" } } },
+      { "GetWindowTextA", { { "hWnd", "HWND" }, { "lpString", "LPSTR" }, { "nMaxCount", "int" } } },
+      { "SetWindowsHookEx", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
+      { "GetMessage", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
+      { "DispatchMessage", { { "lpMsg", "const MSG*" } } },
+      { "SetFileAttributesA", { { "lpFileName", "LPCSTR" }, { "dwFileAttributes", "DWORD" } } },
+      { "RegQueryValueExA",
+        { { "hKey", "HKEY" },
+          { "lpValueName", "LPCSTR" },
+          { "lpReserved", "LPDWORD" },
+          { "lpType", "LPDWORD" },
+          { "lpData", "LPBYTE" },
+          { "lpcbData", "LPDWORD" } } },
+      { "GetModuleHandle", { { "lpModuleName", "LPCSTR" } } },
 } };
 
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)

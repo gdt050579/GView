@@ -9,6 +9,8 @@
 #include <list>
 #include <algorithm>
 
+//#define DISSASM_DISABLE_STRING_PREVIEW
+
 constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 100;
 constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 150;
 constexpr uint32 DISSASM_ASSISTANT_MAX_API_CALLS              = 10;
@@ -531,6 +533,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             shouldConsiderCall = true;
         }
     } else if (flags & DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+#ifndef DISSASM_DISABLE_STRING_PREVIEW
         if (!alreadyInitComment && !lastZone.commentsData.comments.contains(params.actualLine)) {
             const auto offset = params.settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
             if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < params.obj->GetData().GetSize()) {
@@ -544,6 +547,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 }
             }
         }
+#endif
     }
 
     if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
