@@ -15,7 +15,7 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 12> KNOWN_FUNCTIONS = { {
+const std::array<AsmFunctionDetails, 45> KNOWN_FUNCTIONS = { {
       { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
@@ -63,6 +63,83 @@ const std::array<AsmFunctionDetails, 12> KNOWN_FUNCTIONS = { {
       { "RegCloseKey", { { "hKey", "HKEY" } } },
       { "GetKeyboardLayout", { { "idThread", "DWORD" } } },
       { "GetKeyboardState", { { "lpKeyState", "PBYTE" } } },
+      { "CreateProcessA",
+        {
+              { "lpApplicationName", "LPCSTR" },
+              { "lpCommandLine", "LPSTR" },
+              { "lpProcessAttributes", "LPSECURITY_ATTRIBUTES" },
+              { "lpThreadAttributes", "LPSECURITY_ATTRIBUTES" },
+              { "bInheritHandles", "BOOL" },
+              { "dwCreationFlags", "DWORD" },
+              { "lpEnvironment", "LPVOID" },
+              { "lpCurrentDirectory", "LPCSTR" },
+              { "lpStartupInfo", "LPSTARTUPINFOA" },
+              { "lpProcessInformation", "LPPROCESS_INFORMATION" },
+        } },
+      { "WaitForSingleObject",
+        {
+              { "hHandle", "HANDLE" },
+              { "dwMilliseconds", "DWORD" },
+        } },
+      { "LoadLibraryA",
+        {
+              { "lpLibFileName", "LPCSTR" },
+        } },
+      { "GetProcAddress",
+        {
+              { "hModule", "HMODULE" },
+              { "lpProcName", "LPCSTR" },
+        } },
+      { "FreeLibrary",
+        {
+              { "hLibModule", "HMODULE" },
+        } },
+      { "ShellExecuteA",
+        {
+              { "hwnd", "HWND" },
+              { "lpOperation", "LPCSTR" },
+              { "lpFile", "LPCSTR" },
+              { "lpParameters", "LPCSTR" },
+              { "lpDirectory", "LPCSTR" },
+              { "nShowCmd", "int" },
+        } },
+      { "EnumWindows", { { "lpEnumFunc", "WNDENUMPROC" }, { "lParam", "LPARAM" } } },
+      { "CallNextHookEx", { { "hhk", "HHOOK" }, { "nCode", "int" }, { "wParam", "WPARAM" }, { "lParam", "LPARAM" } } },
+      { "SetWindowsHookExA", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
+      { "SetWindowsHookExW", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
+      { "GetMessageA", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
+      { "GetMessageW", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
+      { "TranslateMessage", { { "lpMsg", "const MSG *" } } },
+      { "DispatchMessageA", { { "lpMsg", "const MSG *" } } },
+      { "DispatchMessageW", { { "lpMsg", "const MSG *" } } },
+      { "UnhookWindowsHookEx", { { "hhk", "HHOOK" } } },
+      { "GetModuleHandleA", { { "lpModuleName", "LPCSTR" } } },
+      { "GetModuleHandleW", { { "lpModuleName", "LPCWSTR" } } },
+      { "GetComputerNameA", { { "lpBuffer", "LPSTR" }, { "nSize", "LPDWORD" } } },
+      { "GetUserNameA", { { "lpBuffer", "LPSTR" }, { "pcbBuffer", "LPDWORD" } } },
+      { "GetDriveTypeA", { { "lpRootPathName", "LPCSTR" } } },
+      { "CopyFileA", { { "lpExistingFileName", "LPCSTR" }, { "lpNewFileName", "LPCSTR" }, { "bFailIfExists", "BOOL" } } },
+      { "URLDownloadToFileA",
+        { { "pCaller", "LPUNKNOWN" }, { "szURL", "LPCSTR" }, { "szFileName", "LPCSTR" }, { "dwReserved", "DWORD" }, { "lpfnCB", "LPBINDSTATUSCALLBACK" } } },
+      { "GetDC", { { "hWnd", "HWND" } } },
+      { "CreateCompatibleDC", { { "hDC", "HDC" } } },
+      { "GetSystemMetrics", { { "nIndex", "int" } } },
+      { "CreateCompatibleBitmap", { { "hdc", "HDC" }, { "cx", "int" }, { "cy", "int" } } },
+      { "SelectObject", { { "hDC", "HDC" }, { "hGdiObj", "HGDIOBJ" } } },
+      { "BitBlt",
+        { { "hdcDest", "HDC" },
+          { "xDest", "int" },
+          { "yDest", "int" },
+          { "cx", "int" },
+          { "cy", "int" },
+          { "hdcSrc", "HDC" },
+          { "xSrc", "int" },
+          { "ySrc", "int" },
+          { "rop", "DWORD" } } },
+      { "DeleteObject", { { "hObject", "HGDIOBJ" } } },
+      { "DeleteDC", { { "hdc", "HDC" } } },
+      { "ReleaseDC", { { "hWnd", "HWND" }, { "hDC", "HDC" } } },
+      { "GetKeyboardLayoutList", { { "nBuff", "int" }, { "lpList", "HKL *" } } },
 } };
 
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
@@ -1520,7 +1597,8 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
 {
     uint32 lineStart;
     uint32 lineEnd = 0;
-    if (queryType != QueryTypeSmartAssistant::FunctionName && queryType != QueryTypeSmartAssistant::MitreTechiques) {
+    if (queryType != QueryTypeSmartAssistant::FunctionName && queryType != QueryTypeSmartAssistant::MitreTechiques &&
+        queryType != QueryTypeSmartAssistant::FunctionNameAndExplanation) {
         if (!selection.HasSelection(0)) {
             Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone to select some code!");
             return;
@@ -1589,14 +1667,26 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         params.prompt                         = "Decompile the following assembly into a higher level language in C. Surround the code with \"```\"";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::FunctionNameAndExplanation) {
-        Dialogs::MessageBox::ShowNotification("Information", "Not yet implemented!");
-        return;
+        LocalString<320> prompt;
+        prompt.SetFormat(
+              "Suggest %u pairs of name and a short statement. The name must be first and on the next line a statement. Each pair must be separated by 2 new "
+              "lines."
+              "Write only the text, do not write anything else. Do not write any symbols, just the pairs. ",
+              DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
+
+        params.mnemonicStarsWith              = "sub_";
+        params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "
+                                                "If they are not available please enable DeepScanning.";
+        params.stopAtTheEndOfTheFunction      = true;
+        params.displayPrompt                  = "Give me pairs of name and explanation for this function.";
+        params.displayPromptUsesMnemonicParam = true;
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
         params.displayPrompt                  = "What is the MITRE techniques associated with the following assembly code?";
         params.displayPromptUsesMnemonicParam = true;
         params.stopAtTheEndOfTheFunction      = true;
         params.includeComments                = true;
-        params.prompt                         = "What is the MITRE techniques associated with the following assembly code? Use the MITRE format: T<techniqueID>.<sub-techniqueID>.";
+        params.prompt = "What is the MITRE techniques associated with the following assembly code? Use the MITRE format: T<techniqueID>.<sub-techniqueID>.";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     }
 }

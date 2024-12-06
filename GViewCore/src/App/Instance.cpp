@@ -148,7 +148,8 @@ bool Instance::Init(bool isTestingEnabled)
     // no .ini file found
     if (!settingsFile.OpenRead(settingsPath)) {
         CHECK(GView::App::ResetConfiguration(), false, "");
-        showTutorial = true;
+        if (!isTestingEnabled)
+            showTutorial = true;
     }
     settingsFile.Close();
 
@@ -170,7 +171,7 @@ bool Instance::Init(bool isTestingEnabled)
         CHECK(GView::App::ResetConfiguration(), false, "");
 
         AppCUI::Dialogs::MessageBox::ShowError(
-              "Errorr reading configuration",
+              "Error reading configuration",
               "Found an invalid configuration, it will be renamed as \".ini.bak\". Will generated a new one! Please restart GView.");
     }
 

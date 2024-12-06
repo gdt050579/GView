@@ -44,15 +44,16 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         lastPromptData = "There is no prompt given!";
         smartAssistant = proxyInterface->smartAssistants[assistantIndex].get();
         Factory::Label::Create(this, smartAssistant->GetSmartAssistantName(), "x:1,y:1,w:39");
-        lastPromptButton = Factory::Button::Create(this, "Show last prompt", "r:5%,t:1,w:19", SHOW_LAST_PROMPT_BUTTON_ID);
+        lastPromptButton = Factory::Button::Create(this, "Show last prompt", "l:60%,b:10,w:19", SHOW_LAST_PROMPT_BUTTON_ID, ButtonFlags::Flat);
         chatHistory =
               Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:12", TextAreaFlags::Readonly | TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
-        openSelectionButton = Factory::Button::Create(this, "Open Selection", "r:5%,b:10,h:1,w:19", OPEN_SELECTION_BUTTON_ID);
+        //chatHistory->Handlers()->OnTextColor = TextHighlighPrivate;
+        openSelectionButton = Factory::Button::Create(this, "Open Selection", "l:15%,b:10,h:1,w:19", OPEN_SELECTION_BUTTON_ID, ButtonFlags::Flat);
 
-        Factory::Label::Create(this, "Prompt", "l:1,r:1,b:9,h:1");
+        Factory::Label::Create(this, "Prompt", "l:1,r:1,b:8,h:1");
 
-        prompt         = Factory::TextField::Create(this, "", "l:1,r:1,b:4,h:5");
-        sendButton     = Factory::Button::Create(this, "Send", "l:45%,b:1,h:4,w:10", PROMPT_BUTTON_ID);
+        prompt         = Factory::TextField::Create(this, "", "l:1,r:1,b:3,h:5");
+        sendButton     = Factory::Button::Create(this, "Send", "l:45%,b:1,h:4,w:10", PROMPT_BUTTON_ID, ButtonFlags::Flat);
         newWindowIndex = 0;
     }
 

@@ -2099,6 +2099,9 @@ void Instance::QuerySmartAssistantX86X64(
     } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
         QueryShowCodeDialog dlg(result, "MITRE techniques", false, false);
         dlg.Show();
+    } else if (queryType == QueryTypeSmartAssistant::FunctionNameAndExplanation) {
+        QueryShowCodeDialog dlg(result, "Code explanation", false, true);
+        dlg.Show();
     }
 
     codeZone->asmPreCacheData.Clear();
