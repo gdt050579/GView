@@ -16,6 +16,7 @@ constexpr uint32 COMMAND_AVAILABLE_KEYS         = 108;
 constexpr uint32 COMMAND_SHOW_ONLY_DISSASM      = 109;
 constexpr uint32 COMMAND_SAVE_DISSASM_CACHE     = 110;
 constexpr uint32 COMMAND_QUERY_FUNCTION_NAME    = 111;
+constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -148,14 +149,19 @@ namespace View
                 Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 7> CommandBarCommands = {
+            inline static KeyboardControl CommandQueryMITRETechnique = {
+                Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
+            };
+
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
                 GotoEntrypointCommand,
                 ShowKeysWindowCommand,
-                CommandQueryFunctionName
+                CommandQueryFunctionName,
+                CommandQueryMITRETechnique
             };
 
             // Other keys
@@ -170,7 +176,7 @@ namespace View
                                                                                                      RemoveCommentCommand,
                                                                                                      RenameLabelCommand };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 11> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 12> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -181,7 +187,8 @@ namespace View
                 ShowKeysWindowCommand,
                 RenameLabelCommand,
                 SaveCacheCommand,
-                CommandQueryFunctionName
+                CommandQueryFunctionName,
+                CommandQueryMITRETechnique
             };
             bool Loaded;
 
