@@ -21,6 +21,61 @@ GView::CommonInterfaces::QueryInterface* FileWindow::GetQueryInterface()
     return &queryInterface;
 }
 
+void TextHighlighAdvanced(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
+{
+    Graphics::Character* end   = chars + charsCount;
+    Graphics::Character* start = nullptr;
+    ColorPair col;
+    while (chars < end) {
+        if (chars->Code == '*') // Check for '**'
+        {
+            start = chars;
+            chars++;
+            if ((chars < end) && (chars->Code == '*')) // Confirm second '*'
+            {
+                chars++;
+                start += 2; // Move past '**'
+                while ((chars < end) && !(chars->Code == '*' && (chars + 1 < end) && (chars + 1)->Code == '*')) {
+                    chars->Color = ColorPair{ Color::Yellow, Color::Transparent }; // Color for '**...**'
+                    chars++;
+                }
+                if (chars < end && (chars + 1 < end) && (chars + 1)->Code == '*') {
+                    chars += 2; // Move past closing '**'
+                }
+            }
+        } else if (chars->Code == '`') // Check for backticks '`'
+        {
+            start = chars;
+            chars++;
+            while ((chars < end) && (chars->Code != '`')) {
+                chars->Color = ColorPair{ Color::Green, Color::Transparent }; // Color for `...`
+                chars++;
+            }
+            if (chars < end && chars->Code == '`') {
+                chars++; // Move past closing backtick
+            }
+        } else if (chars->Code == '"') // Check for double quotes '"'
+        {
+            start = chars;
+            chars++;
+            while ((chars < end)) {
+                if (chars->Code == '\\' && (chars + 1 < end) && (chars + 1)->Code == '"') {
+                    chars++; // Skip the backslash
+                } else if (chars->Code == '"') {
+                    break; // End of quoted string
+                }
+                chars->Color = ColorPair{ Color::DarkRed, Color::Transparent }; // Color for "..."
+                chars++;
+            }
+            if (chars < end && chars->Code == '"') {
+                chars++; // Move past closing double quote
+            }
+        } else {
+            chars++; // Move to the next character for non-matching cases
+        }
+    }
+}
+
 using GView::CommonInterfaces::SmartAssistants::SmartAssistantRegisterInterface;
 using QueryInterfaceImpl::SmartAssistantPromptInterfaceProxy;
 #pragma region SmartAssistantUI
@@ -47,6 +102,7 @@ class SmartAssistantEntryTab : public AppCUI::Controls::TabPage
         lastPromptButton = Factory::Button::Create(this, "Show last prompt", "l:60%,b:10,w:19", SHOW_LAST_PROMPT_BUTTON_ID, ButtonFlags::Flat);
         chatHistory =
               Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:12", TextAreaFlags::Readonly | TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
+        chatHistory->Handlers()->OnTextColor = TextHighlighAdvanced;
         //chatHistory->Handlers()->OnTextColor = TextHighlighPrivate;
         openSelectionButton = Factory::Button::Create(this, "Open Selection", "l:15%,b:10,h:1,w:19", OPEN_SELECTION_BUTTON_ID, ButtonFlags::Flat);
 
