@@ -1,0 +1,58 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: 'GView: A versatile assistant for security researchers'
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Raul
+    family-names: Zaharia
+    orcid: 'https://orcid.org/0009-0005-6366-9152'
+    affiliation: 'Al. I. Cuza University & Bitdefender, Iaşi, Romania'
+  - given-names: Dragoş
+    family-names: Gavriluţ
+    affiliation: 'Al. I. Cuza University & Bitdefender, Iaşi, Romania'
+    orcid: 'https://orcid.org/0009-0004-3339-9625'
+  - given-names: Gheorghiță
+    family-names: Mutu
+    orcid: 'https://orcid.org/0009-0007-6998-9469'
+    affiliation: 'Al. I. Cuza University & Bitdefender, Iaşi, Romania'
+  - affiliation: 'Al. I. Cuza University, Iași, Romania'
+    given-names: Dorel
+    family-names: Lucanu
+    orcid: 'https://orcid.org/0000-0001-8097-040X'
+identifiers:
+  - type: doi
+    value: 10.1016/j.softx.2024.101940
+  - type: url
+    value: >-
+      https://www.sciencedirect.com/science/article/pii/S2352711024003108
+repository-code: 'https://github.com/gdt050579/GView'
+repository-artifact: 'https://github.com/gdt050579/GView/tags'
+abstract: >-
+  We propose a tool, GView (Generic View), that is tailored
+  to assist the investigation of possible attack vectors by
+  providing guided analysis for a broad range of file types
+  using automatic artifact identification, extraction,
+  inference&coherent correlation, and meaningful&intuitive
+  views at different levels of granularity w.r.t. revealed
+  information. GView simplifies the analysis of every
+  payload in a complex attack, streamlining the workflow for
+  security researchers, and increasing the accuracy of the
+  analysis. The ’generic’ aspect derives from the fact that
+  it accommodates various file types and also features
+  multiple visualization modes (that can be automatically
+  configured for each specific file type). Our results show
+  that the analysis time of an attack is significantly
+  reduced by GView, compared to conventional tools used in
+  forensics.
+keywords:
+  - Cybersecurity
+  - Automatic artifact identification
+  - Intuitive views
+  - Coherent data correlation
+  - Malware analysis
+license: MIT
