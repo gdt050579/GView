@@ -44,7 +44,11 @@
     },
     {
       "name": "capstone",
-      "features": [ "x86", "arm", "arm64" ],
+      "features": [
+        "x86",
+        "arm",
+        "arm64"
+      ],
       "platform": "windows | linux | osx"
     },
     {
@@ -63,12 +67,18 @@
       "name": "re2",
       "platform": "windows | linux | osx"
     },
-	{
-			"name": "libjpeg-turbo",
-			"platform": "windows | linux | osx"
-	}
+    {
+      "name": "libjpeg-turbo",
+      "platform": "windows | linux | osx"
+    },
+    {
+      "name": "curl",
+      "platform": "windows | linux | osx"
+    }
   ],
   "vcpkg-configuration": {
-    "overlay-ports": [ "./AppCUI/vcpkg-ports/ncurses"]
+    "overlay-ports": [
+      "./AppCUI/vcpkg-ports/ncurses"
+    ]
   }
 }

@@ -56,6 +56,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::sqlite3::sqlite3)
 find_package(re2 CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE re2::re2)
 
+find_package(CURL CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
+
 if (MSVC)
     add_compile_options(-W3)
 elseif (APPLE)
