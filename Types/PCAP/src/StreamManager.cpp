@@ -1,4 +1,5 @@
-#include "PCAP.hpp"
+#include "StreamManager.hpp"
+#include "Utils.hpp"
 
 using namespace GView::Type::PCAP;
 
@@ -379,4 +380,10 @@ void StreamManager::FinishedAdding()
     }
 
     streams.clear();
+}
+
+bool StreamManager::RegisterPayloadParser(unique_ptr<PayloadDataParserInterface> parser)
+{
+    payloadParsers.push_back(std::move(parser));
+    return true;
 }

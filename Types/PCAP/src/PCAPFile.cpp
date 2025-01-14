@@ -53,7 +53,7 @@ bool PCAPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVi
             data++;
         }
         const auto& stream = streamManager[value];
-        totalItems         = stream->applicationLayers.size();
+        totalItems         = (uint32)stream->applicationLayers.size();
         parent.SetData(value);
     }
 
@@ -70,7 +70,7 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
     bool isTree           = false;
     if (itemData != ITEM_INVALID_VALUE)
     {
-        streamIndex = itemData;
+        streamIndex = (uint32)itemData;
     }
     else
     {
@@ -132,7 +132,7 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     for (const auto c : path)
     {
         if (c >= '0' && c <= '9')
-            toAppend->push_back(c);
+            toAppend->push_back((char)c);
         else
             toAppend = &applicationText;
     }
