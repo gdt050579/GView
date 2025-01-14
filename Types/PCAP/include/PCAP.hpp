@@ -199,15 +199,15 @@ namespace Panels
 
             std::string_view GetValue(NumericFormatter& n, uint64 value);
             void Add_PacketHeader(LinkType type, const PacketHeader* packet);
-            void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 packetInclLen);
-            void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 packetInclLen);
-            void Add_IPv4Header(const IPv4Header* ipv4, uint32 packetInclLen);
-            void Add_IPv6Header(const IPv6Header* ipv6, uint32 packetInclLen);
-            void Add_UDPHeader(const UDPHeader* udp);
-            void Add_DNSHeader(const DNSHeader* dns);
-            void Add_ICMPHeader(const ICMPHeader_Base* icmpBase, uint32 icmpSize);
+            void Add_Package_EthernetHeader(PacketData *packetData, const Package_EthernetHeader* peh, uint32 packetInclLen);
+            void Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 packetInclLen);
+            void Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, uint32 packetInclLen);
+            void Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, uint32 packetInclLen);
+            void Add_UDPHeader(PacketData* packetData, const UDPHeader* udp);
+            void Add_DNSHeader(PacketData* packetData, const DNSHeader* dns);
+            void Add_ICMPHeader(PacketData* packetData, const ICMPHeader_Base* icmpBase, uint32 icmpSize);
             void Add_DNSHeader_Question(const DNSHeader_Question& question);
-            void Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen);
+            void Add_TCPHeader(PacketData* packetData, const TCPHeader* tcp, uint32 packetInclLen);
             void Add_TCPHeader_Options(const uint8* optionsPtr, uint32 optionsLen);
 
           public:

@@ -1948,11 +1948,29 @@ struct StreamTCPOrder
     uint32 maxNumber; // between seqNumber and ackNumber
 };
 
-struct StreamPacketData
-{
+struct LinkTypeInfo {
+    LinkType type;
+    void* header;
+};
+
+struct TransportLayerInfo {
+    IP_Protocol transportLayer;
+    void* transportLayerHeader;
+};
+
+struct PacketData {
+    const PacketHeader* packet;
+
+    std::optional<LinkTypeInfo> physicalLayer;        // Ethernet, Null layer, etc. with structs: EthernetHeader, NullHeader, etc.
+    std::optional<LinkTypeInfo> linkLayer;            // also found as "network layer", IPv4, IPv6, etc, structs: IPv4Header, IPv6Header, etc.
+    std::optional<TransportLayerInfo> transportLayer; // TCP, UDP, etc. with structs: TCPHeader, UDPHeader, etc.
+};
+
+struct StreamPacketData {
     const PacketHeader* header;
     StreamPayload payload;
     StreamTCPOrder order;
+    PacketData packetData;
 
     // TODO
     bool operator<(const StreamPacketData& other) const
@@ -2043,13 +2061,13 @@ class StreamManager
     std::vector<std::string> protocolsFound;
 
     // TODO: maybe sync functions with those used in Panels?
-    void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet);
-    void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet);
+    void Add_Package_EthernetHeader(PacketData* packetData, const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet);
+    void Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet);
 
-    void Add_IPv4Header(const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet);
-    void Add_IPv6Header(const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet);
+    void Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet);
+    void Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet);
 
-    void Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet);
+    void Add_TCPHeader(PacketData* packetData, const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet);
 
 	void AddToKnownProtocols(const std::string& layerName);
 

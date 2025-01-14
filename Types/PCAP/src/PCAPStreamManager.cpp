@@ -23,7 +23,7 @@ void StreamData::computeFinalPayload()
     tryParsePayload();
 }
 
-void StreamManager::Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet)
+void StreamManager::Add_Package_EthernetHeader(PacketData* packetData, const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet)
 {
     auto pehRef = *peh;
     Swap(pehRef);
@@ -32,30 +32,34 @@ void StreamManager::Add_Package_EthernetHeader(const Package_EthernetHeader* peh
     if (etherType == EtherType::IPv4)
     {
         auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
-        Add_IPv4Header(ipv4, length - sizeof(Package_EthernetHeader), packet);
+        packetData->linkLayer = { LinkType::IPV4, ipv4 };
+        Add_IPv4Header(packetData, ipv4, length - sizeof(Package_EthernetHeader), packet);
     }
     else if (etherType == EtherType::IPv6)
     {
         auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
-        Add_IPv6Header(ipv6, length - sizeof(Package_EthernetHeader), packet);
+        packetData->linkLayer = { LinkType::IPV6, ipv6 };
+        Add_IPv6Header(packetData, ipv6, length - sizeof(Package_EthernetHeader), packet);
     }
 }
 
-void StreamManager::Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet)
+void StreamManager::Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet)
 {
     if (pnh->family_ip == NULL_FAMILY_IP)
     {
         auto ipv4 = (IPv4Header*) ((uint8*) pnh + sizeof(Package_NullHeader));
-        Add_IPv4Header(ipv4, length - sizeof(Package_NullHeader), packet);
+        packetData->linkLayer = { LinkType::IPV4, ipv4 };
+        Add_IPv4Header(packetData, ipv4, length - sizeof(Package_NullHeader), packet);
     }
 }
 
-void StreamManager::Add_IPv4Header(const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet)
+void StreamManager::Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet)
 {
     if (ipv4->protocol == IP_Protocol::TCP)
     {
         auto tcp = (TCPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
-        Add_TCPHeader(tcp, packetInclLen - sizeof(IPv4Header), ipv4, static_cast<uint32>(EtherType::IPv4), packet);
+        packetData->transportLayer = { IP_Protocol::TCP, tcp };
+        Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv4Header), ipv4, static_cast<uint32>(EtherType::IPv4), packet);
     }
     // TODO: add support for UDP streams
     /*else if (ipv4->protocol == IP_Protocol::UDP)
@@ -65,12 +69,13 @@ void StreamManager::Add_IPv4Header(const IPv4Header* ipv4, size_t packetInclLen,
     }*/
 }
 
-void StreamManager::Add_IPv6Header(const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet)
+void StreamManager::Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet)
 {
     if (ipv6->nextHeader == IP_Protocol::TCP)
     {
         auto tcp = (TCPHeader*) ((uint8*) ipv6 + sizeof(IPv4Header));
-        Add_TCPHeader(tcp, packetInclLen - sizeof(IPv6Header), ipv6, static_cast<uint32>(EtherType::IPv6), packet);
+        packetData->transportLayer = { IP_Protocol::TCP, tcp };
+        Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv6Header), ipv6, static_cast<uint32>(EtherType::IPv6), packet);
     }
     // TODO: add support for UDP streams
     /*else if (ipv6->nextHeader == IP_Protocol::UDP)
@@ -80,7 +85,8 @@ void StreamManager::Add_IPv6Header(const IPv6Header* ipv6, size_t packetInclLen,
     }*/
 }
 
-void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet)
+void StreamManager::Add_TCPHeader(
+      PacketData* packetData, const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet)
 {
     const auto etherProto = static_cast<EtherType>(ipProto);
     LocalString<64> srcIp, dstIp, srcPort, dstPort;
@@ -189,7 +195,7 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
     order.packetIndex = (uint32) streamToAddTo->packetsOffsets.size();
 
     streamToAddTo->totalPayload += payload.size;
-    streamToAddTo->packetsOffsets.push_back({ packet, payload, order });
+    streamToAddTo->packetsOffsets.push_back({ packet, payload, order, *packetData });
 }
 
 void StreamManager::AddToKnownProtocols(const std::string& layerName)
@@ -336,15 +342,19 @@ void StreamData::tryParsePayload()
 
 void StreamManager::AddPacket(const PacketHeader* packet, LinkType network)
 {
+    PacketData packetData = {};
+    packetData.packet     = packet;
     if (network == LinkType::ETHERNET)
     {
         auto peh = (Package_EthernetHeader*) ((uint8*) packet + sizeof(PacketHeader));
-        Add_Package_EthernetHeader(peh, packet->inclLen, packet);
+        packetData.physicalLayer = { LinkType::ETHERNET, peh };
+        Add_Package_EthernetHeader(&packetData, peh, packet->inclLen, packet);
     }
     if (network == LinkType::NULL_)
     {
         auto pnh = (Package_NullHeader*) ((uint8*) packet + sizeof(PacketHeader));
-        Add_Package_NullHeader(pnh, packet->inclLen, packet);
+        packetData.physicalLayer = { LinkType::NULL_, pnh };
+        Add_Package_NullHeader(&packetData, pnh, packet->inclLen, packet);
     }
 }
 
