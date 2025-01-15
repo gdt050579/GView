@@ -3,7 +3,7 @@
 
 using namespace GView::Type::PCAP;
 
-void StreamData::computeFinalPayload()
+void StreamData::ComputeFinalPayload()
 {
     if (totalPayload == 0)
         return;
@@ -21,7 +21,7 @@ void StreamData::computeFinalPayload()
     connPayload.size     = (uint32) totalPayload;
     connPayload.location = payload;
 
-    tryParsePayload();
+    //CallTransportLayerPlugins();
 }
 
 void StreamManager::Add_Package_EthernetHeader(PacketData* packetData, const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet)
@@ -233,7 +233,7 @@ void GetFileExtracted(StreamTcpLayer& output)
     output.extractionName = extractedLocation.substr(slashLoc + 1);
 }
 
-void StreamData::tryParsePayload()
+void StreamData::TryParsePayload()
 {
     if (connPayload.size < 3)
         return;
@@ -295,7 +295,7 @@ void StreamData::tryParsePayload()
                     identified      = true;
                     auto payloadLen = Number::ToInt64((char*) buffer + httpContentPattern.size());
                     if (payloadLen.has_value())
-                        layer.payload.size = payloadLen.value();
+                        layer.payload.size = (uint32)payloadLen.value();
                 }
             }
 
@@ -359,31 +359,13 @@ void StreamManager::AddPacket(const PacketHeader* packet, LinkType network)
     }
 }
 
-void StreamManager::FinishedAdding()
-{
-    if (streams.empty())
-        return;
-
-    finalStreams.reserve(streams.size());
-
-    for (auto& [streamName, connections] : streams)
-    {
-        for (auto& conn : connections)
-        {
-            conn.name = streamName;
-            // conn.sortPackets();
-            conn.computeFinalPayload();
-            if (!conn.appLayerName.empty())
-                AddToKnownProtocols(conn.appLayerName);
-            finalStreams.push_back(conn);
-        }
-    }
-
-    streams.clear();
-}
-
 bool StreamManager::RegisterPayloadParser(unique_ptr<PayloadDataParserInterface> parser)
 {
     payloadParsers.push_back(std::move(parser));
     return true;
+}
+
+void StreamManager::InitStreamManager(Reference<GView::View::WindowInterface> windowParam)
+{
+    window = windowParam;
 }

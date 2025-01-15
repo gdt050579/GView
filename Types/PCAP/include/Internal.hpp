@@ -2015,8 +2015,9 @@ struct StreamData
     std::string appLayerName                                 = "";
     std::string summary                                      = "";
 
-    StreamPayload connPayload                    = {};
-    std::deque<StreamTcpLayer> applicationLayers = {};
+    StreamPayload connPayload                             = {};
+    std::deque<StreamTcpLayer> applicationLayers          = {};
+    struct PayloadDataParserInterface* payloadParserFound = nullptr;
 
     void AddDataToSummary(std::string_view sv)
     {
@@ -2045,13 +2046,13 @@ struct StreamData
         return IP_ProtocolNames.at(static_cast<IP_Protocol>(transportProtocol));
     }
 
-    void sortPackets()
+    void SortPackets()
     {
         std::sort(packetsOffsets.begin(), packetsOffsets.end());
     }
 
-    void computeFinalPayload();
-    void tryParsePayload();
+    void ComputeFinalPayload();
+    void TryParsePayload();
 };
 
 } // namespace GView::Type::PCAP

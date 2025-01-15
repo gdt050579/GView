@@ -46,6 +46,10 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
     }
 
   public:
+    void InitStreamManager(Reference<GView::View::WindowInterface> windowParam)
+    {
+        streamManager.InitStreamManager(windowParam);
+    }
     Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override

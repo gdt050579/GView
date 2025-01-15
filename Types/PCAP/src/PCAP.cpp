@@ -105,6 +105,7 @@ extern "C"
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto pcap = win->GetObject()->GetContentType<PCAP::PCAPFile>();
+        pcap->InitStreamManager(win);
         pcap->Update();
 
         // add views
