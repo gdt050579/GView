@@ -1948,11 +1948,29 @@ struct StreamTCPOrder
     uint32 maxNumber; // between seqNumber and ackNumber
 };
 
-struct StreamPacketData
-{
+struct LinkTypeInfo {
+    LinkType type;
+    void* header;
+};
+
+struct TransportLayerInfo {
+    IP_Protocol transportLayer;
+    void* transportLayerHeader;
+};
+
+struct PacketData {
+    const PacketHeader* packet;
+
+    std::optional<LinkTypeInfo> physicalLayer;        // Ethernet, Null layer, etc. with structs: EthernetHeader, NullHeader, etc.
+    std::optional<LinkTypeInfo> linkLayer;            // also found as "network layer", IPv4, IPv6, etc, structs: IPv4Header, IPv6Header, etc.
+    std::optional<TransportLayerInfo> transportLayer; // TCP, UDP, etc. with structs: TCPHeader, UDPHeader, etc.
+};
+
+struct StreamPacketData {
     const PacketHeader* header;
     StreamPayload payload;
     StreamTCPOrder order;
+    PacketData packetData;
 
     // TODO
     bool operator<(const StreamPacketData& other) const
@@ -1975,10 +1993,42 @@ struct StreamPacketContext
 
 struct StreamTcpLayer
 {
-    // TODO: delete name when no longer used!
-    uint8* name;
+    std::unique_ptr<uint8[]> name;
     std::string_view extractionName;
     StreamPayload payload;
+    void* payloadData;
+
+    StreamTcpLayer() : name(nullptr), extractionName(), payload(), payloadData(nullptr)
+    {
+    }
+    StreamTcpLayer(StreamTcpLayer&& other) noexcept
+        : name(std::move(other.name)), extractionName(other.extractionName), payload(std::move(other.payload)), payloadData(other.payloadData)
+    {
+        other.payloadData = nullptr;
+    }
+
+    StreamTcpLayer& operator=(StreamTcpLayer&& other) noexcept
+    {
+        if (this != &other) {
+            name              = std::move(other.name);
+            extractionName    = other.extractionName;
+            payload           = other.payload;
+            payloadData       = other.payloadData;
+            other.payloadData = nullptr;
+        }
+        return *this;
+    }
+
+    StreamTcpLayer(const StreamTcpLayer&)            = delete;
+    StreamTcpLayer& operator=(const StreamTcpLayer&) = delete;
+
+    void Clear()
+    {
+        name.reset();
+        extractionName = "";
+        payload        = {};
+        payloadData    = nullptr;
+    }
 };
 
 // TODO: for the future maybe change structure for a more generic structure
@@ -1997,8 +2047,19 @@ struct StreamData
     std::string appLayerName                                 = "";
     std::string summary                                      = "";
 
-    StreamPayload connPayload                    = {};
-    std::deque<StreamTcpLayer> applicationLayers = {};
+    std::deque<StreamTcpLayer> applicationLayers;
+    struct PayloadDataParserInterface* payloadParserFound = nullptr;
+
+    StreamPayload connPayload;
+    // Delete copy constructor and assignment operator
+    StreamData(const StreamData&)            = delete;
+    StreamData& operator=(const StreamData&) = delete;
+
+    // Allow move constructor and assignment operator
+    StreamData(StreamData&&) noexcept            = default;
+    StreamData& operator=(StreamData&&) noexcept = default;
+
+    StreamData() = default;
 
     void AddDataToSummary(std::string_view sv)
     {
@@ -2027,73 +2088,13 @@ struct StreamData
         return IP_ProtocolNames.at(static_cast<IP_Protocol>(transportProtocol));
     }
 
-    void sortPackets()
+    void SortPackets()
     {
         std::sort(packetsOffsets.begin(), packetsOffsets.end());
     }
 
-    void computeFinalPayload();
-    void tryParsePayload();
-};
-
-class StreamManager
-{
-    std::unordered_map<std::string, std::deque<StreamData>> streams;
-    std::vector<StreamData> finalStreams;
-    std::vector<std::string> protocolsFound;
-
-    // TODO: maybe sync functions with those used in Panels?
-    void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet);
-    void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet);
-
-    void Add_IPv4Header(const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet);
-    void Add_IPv6Header(const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet);
-
-    void Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet);
-
-	void AddToKnownProtocols(const std::string& layerName);
-
-  public:
-    void AddPacket(const PacketHeader* header, LinkType network);
-    void FinishedAdding();
-
-    bool empty() const noexcept
-    {
-        return finalStreams.empty();
-    }
-
-    decltype(finalStreams.size()) size() const noexcept
-    {
-        return finalStreams.size();
-    }
-
-    decltype(finalStreams)::iterator begin() noexcept
-    {
-        return finalStreams.begin();
-    }
-    decltype(finalStreams)::iterator end() noexcept
-    {
-        return finalStreams.end();
-    }
-
-    const StreamData* operator[](uint32 index) const
-    {
-        if (index < finalStreams.size())
-            return &finalStreams.at(index);
-        return nullptr;
-    }
-
-    std::string GetProtocolsFound() const
-    {
-        if (protocolsFound.empty())
-            return "none recognized";
-		//TODO: improve performance with faster string addition
-        std::string res;
-        for (const auto& proto : protocolsFound)
-            res += proto + " ";
-
-        return res;
-    }
+    void ComputeFinalPayload();
+    //void TryParsePayload();
 };
 
 } // namespace GView::Type::PCAP

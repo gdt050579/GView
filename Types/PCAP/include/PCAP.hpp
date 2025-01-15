@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Internal.hpp"
+#include "Utils.hpp"
+#include "StreamManager.hpp"
 
 namespace GView::Type::PCAP
 {
@@ -38,7 +40,16 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
         return true;
     }
 
+    bool RegisterPayloadParser(unique_ptr<PayloadDataParserInterface> parser)
+    {
+        return streamManager.RegisterPayloadParser(std::move(parser));
+    }
+
   public:
+    void InitStreamManager(Reference<GView::View::WindowInterface> windowParam)
+    {
+        streamManager.InitStreamManager(windowParam);
+    }
     Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override
@@ -58,36 +69,6 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
 
 	std::vector<std::pair<std::string, std::string>> GetPropertiesForContainerView();
 };
-
-namespace Utils
-{
-    static void IPv4ElementToString(uint32 ip, LocalString<64>& out)
-    {
-        union
-        {
-            uint8 values[4];
-            uint32 value;
-        } ipv4{ .value = ip };
-
-        out.Format("%02u.%02u.%02u.%02u (0x%X)", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0], ipv4.value);
-    }
-
-	static void IPv4ElementToStringNoHex(uint32 ip, LocalString<64>& out)
-    {
-        union
-        {
-            uint8 values[4];
-            uint32 value;
-        } ipv4{ .value = ip };
-
-        out.Format("%u.%u.%u.%u", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0]);
-    }
-
-    static void IPv6ElementToString(const uint16 ipv6[8], LocalString<64>& out)
-    {
-        out.Format("%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", ipv6[0], ipv6[1], ipv6[2], ipv6[3], ipv6[4], ipv6[5], ipv6[6], ipv6[7]);
-    }
-} // namespace Utils
 
 namespace Panels
 {
@@ -199,15 +180,15 @@ namespace Panels
 
             std::string_view GetValue(NumericFormatter& n, uint64 value);
             void Add_PacketHeader(LinkType type, const PacketHeader* packet);
-            void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 packetInclLen);
-            void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 packetInclLen);
-            void Add_IPv4Header(const IPv4Header* ipv4, uint32 packetInclLen);
-            void Add_IPv6Header(const IPv6Header* ipv6, uint32 packetInclLen);
-            void Add_UDPHeader(const UDPHeader* udp);
-            void Add_DNSHeader(const DNSHeader* dns);
-            void Add_ICMPHeader(const ICMPHeader_Base* icmpBase, uint32 icmpSize);
+            void Add_Package_EthernetHeader(PacketData *packetData, const Package_EthernetHeader* peh, uint32 packetInclLen);
+            void Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 packetInclLen);
+            void Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, uint32 packetInclLen);
+            void Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, uint32 packetInclLen);
+            void Add_UDPHeader(PacketData* packetData, const UDPHeader* udp);
+            void Add_DNSHeader(PacketData* packetData, const DNSHeader* dns);
+            void Add_ICMPHeader(PacketData* packetData, const ICMPHeader_Base* icmpBase, uint32 icmpSize);
             void Add_DNSHeader_Question(const DNSHeader_Question& question);
-            void Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen);
+            void Add_TCPHeader(PacketData* packetData, const TCPHeader* tcp, uint32 packetInclLen);
             void Add_TCPHeader_Options(const uint8* optionsPtr, uint32 optionsLen);
 
           public:
