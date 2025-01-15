@@ -110,7 +110,7 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetData(currentItemIndex);
 
         item.SetText(tmp.Format("%s", n.ToString(currentItemIndex, NUMERIC_FORMAT).data()));
-        item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name));
+        item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name.get()));
 
         item.SetText(4, tmp.Format("%s", n.ToString(stream->applicationLayers[currentItemIndex].payload.size, NUMERIC_FORMAT).data()));
         if (stream->applicationLayers[currentItemIndex].payload.size > 0)
@@ -163,7 +163,7 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     if (!layer.extractionName.empty())
         extractionName = std::string(layer.extractionName.data(), layer.extractionName.size());
     else
-        extractionName = (const char*) layer.name;
+        extractionName = (const char*) layer.name.get();
 
     const Buffer buffer = { payload, layer.payload.size };
 

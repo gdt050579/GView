@@ -24,6 +24,8 @@ class StreamManager
     void AddToKnownProtocols(const std::string& layerName);
 
   public:
+    StreamManager() = default;
+
     void AddPacket(const PacketHeader* packet, LinkType network);
     void FinishedAdding();
     bool RegisterPayloadParser(unique_ptr<PayloadDataParserInterface> parser);

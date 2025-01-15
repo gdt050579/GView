@@ -1993,10 +1993,42 @@ struct StreamPacketContext
 
 struct StreamTcpLayer
 {
-    // TODO: delete name when no longer used!
-    uint8* name;
+    std::unique_ptr<uint8[]> name;
     std::string_view extractionName;
     StreamPayload payload;
+    void* payloadData;
+
+    StreamTcpLayer() : name(nullptr), extractionName(), payload(), payloadData(nullptr)
+    {
+    }
+    StreamTcpLayer(StreamTcpLayer&& other) noexcept
+        : name(std::move(other.name)), extractionName(other.extractionName), payload(std::move(other.payload)), payloadData(other.payloadData)
+    {
+        other.payloadData = nullptr;
+    }
+
+    StreamTcpLayer& operator=(StreamTcpLayer&& other) noexcept
+    {
+        if (this != &other) {
+            name              = std::move(other.name);
+            extractionName    = other.extractionName;
+            payload           = other.payload;
+            payloadData       = other.payloadData;
+            other.payloadData = nullptr;
+        }
+        return *this;
+    }
+
+    StreamTcpLayer(const StreamTcpLayer&)            = delete;
+    StreamTcpLayer& operator=(const StreamTcpLayer&) = delete;
+
+    void Clear()
+    {
+        name.reset();
+        extractionName = "";
+        payload        = {};
+        payloadData    = nullptr;
+    }
 };
 
 // TODO: for the future maybe change structure for a more generic structure
@@ -2015,9 +2047,19 @@ struct StreamData
     std::string appLayerName                                 = "";
     std::string summary                                      = "";
 
-    StreamPayload connPayload                             = {};
-    std::deque<StreamTcpLayer> applicationLayers          = {};
+    std::deque<StreamTcpLayer> applicationLayers;
     struct PayloadDataParserInterface* payloadParserFound = nullptr;
+
+    StreamPayload connPayload;
+    // Delete copy constructor and assignment operator
+    StreamData(const StreamData&)            = delete;
+    StreamData& operator=(const StreamData&) = delete;
+
+    // Allow move constructor and assignment operator
+    StreamData(StreamData&&) noexcept            = default;
+    StreamData& operator=(StreamData&&) noexcept = default;
+
+    StreamData() = default;
 
     void AddDataToSummary(std::string_view sv)
     {

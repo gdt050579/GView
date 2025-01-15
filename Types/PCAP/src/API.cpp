@@ -21,6 +21,11 @@ struct ConnectionCallbackInterfaceImpl : public ConnectionCallbackInterface {
     {
         return streamManager->GetWindow()->AddPanel(std::move(panel), isVertical);
     }
+
+    std::deque<StreamTcpLayer>& GetApplicationLayers() override
+    {
+        return streamData->applicationLayers;
+    }
 };
 
 void StreamManager::FinishedAdding()
@@ -52,7 +57,7 @@ void StreamManager::FinishedAdding()
 
             if (!conn.appLayerName.empty())
                 AddToKnownProtocols(conn.appLayerName);
-            finalStreams.push_back(conn);
+            finalStreams.emplace_back(std::move(conn));
         }
     }
 

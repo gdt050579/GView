@@ -27,6 +27,12 @@ struct ConnectionCallbackInterface {
      */
     virtual bool AddPanel(Pointer<TabPage> panel, bool isVertical) = 0;
 
+    /**
+     * \brief When parsing the payloads set the application layers. Each layer contains relevant information for the payload parser. The parser can set its payloadData pointer memory
+     * \return the list where the payload parser can set up relevant information about layers
+     */
+    virtual std::deque<StreamTcpLayer>& GetApplicationLayers() = 0;
+
     virtual ~ConnectionCallbackInterface() = default;
 };
 

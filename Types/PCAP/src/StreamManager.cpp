@@ -167,7 +167,7 @@ void StreamManager::Add_TCPHeader(
         auto& currentStream = streams[name.data()];
         if (currentStream.empty())
         {
-            currentStream.push_back({});
+            currentStream.emplace_back();
             streamToAddTo                    = &currentStream.back();
             streamToAddTo->ipProtocol        = (uint16) ipProto;
             streamToAddTo->transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
@@ -175,7 +175,7 @@ void StreamManager::Add_TCPHeader(
         streamToAddTo = &currentStream.back();
         if (streamToAddTo->isFinished)
         {
-            revStream->second.push_back({});
+            revStream->second.emplace_back();
             streamToAddTo                    = &revStream->second.back();
             streamToAddTo->ipProtocol        = (uint16) ipProto;
             streamToAddTo->transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
@@ -216,7 +216,7 @@ constexpr std::string_view httpContentPattern = "Content-Length: ";
 
 void GetFileExtracted(StreamTcpLayer& output)
 {
-    const auto sv         = std::string_view((char*) output.name);
+    const auto sv         = std::string_view((char*) output.name.get());
     const auto firstSpace = sv.find_first_of(' ');
     if (firstSpace == std::string::npos)
         return;
@@ -235,110 +235,114 @@ void GetFileExtracted(StreamTcpLayer& output)
 
 void StreamData::TryParsePayload()
 {
-    if (connPayload.size < 3)
-        return;
-    for (int i = 0; i < 3; i++)
-        if (!isalpha(connPayload.location[i]))
-            return;
+    //if (connPayload.size < 3)
+    //    return;
+    //for (int i = 0; i < 3; i++)
+    //    if (!isalpha(connPayload.location[i]))
+    //        return;
 
-    uint8 buffer[300]     = {};
-    uint32 bufferSize     = 0;
-    const uint8* startPtr = connPayload.location;
-    const uint8* endPtr   = connPayload.location + connPayload.size;
-    bool wasEndline       = false;
-    uint32 spaces         = 0;
+    //uint8 buffer[300]     = {};
+    //uint32 bufferSize     = 0;
+    //const uint8* startPtr = connPayload.location;
+    //const uint8* endPtr   = connPayload.location + connPayload.size;
+    //bool wasEndline       = false;
+    //uint32 spaces         = 0;
 
-    bool identified = false;
+    //bool identified = false;
 
-    StreamTcpLayer layer{};
+    //StreamTcpLayer layer{};
 
-    while (startPtr < endPtr)
-    {
-        if (*startPtr == 0x0D || *startPtr == 0x0a)
-        {
-            wasEndline = true;
-            ++spaces;
-        }
-        else if (wasEndline)
-        {
-            if (spaces >= 4)
-            {
-                if (identified)
-                {
-                    if (layer.payload.size)
-                    {
-                        layer.payload.location = (uint8*) startPtr;
-                        // push
+    //while (startPtr < endPtr)
+    //{
+    //    if (*startPtr == 0x0D || *startPtr == 0x0a)
+    //    {
+    //        wasEndline = true;
+    //        ++spaces;
+    //    }
+    //    else if (wasEndline)
+    //    {
+    //        if (spaces >= 4)
+    //        {
+    //            if (identified)
+    //            {
+    //                if (layer.payload.size)
+    //                {
+    //                    layer.payload.location = (uint8*) startPtr;
+    //                    // push
 
-                        startPtr += layer.payload.size;
-                        bufferSize         = 0;
-                        buffer[bufferSize] = '\0';
-                        identified         = false;
-                        if (!applicationLayers.empty() && !applicationLayers.back().extractionName.empty())
-                            layer.extractionName = applicationLayers.back().extractionName;
-                        applicationLayers.push_back(layer);
-                        layer = {};
-                        continue;
-                    }
-                    applicationLayers.push_back(layer);
-                    layer      = {};
-                    identified = false;
-                }
-            }
+    //                    startPtr += layer.payload.size;
+    //                    bufferSize         = 0;
+    //                    buffer[bufferSize] = '\0';
+    //                    identified         = false;
+    //                    if (!applicationLayers.empty() && !applicationLayers.back().extractionName.empty())
+    //                        layer.extractionName = applicationLayers.back().extractionName;
+    //                    applicationLayers.emplace_back(std::move(layer));
+    //                    layer.Clear();
+    //                    continue;
+    //                }
+    //                applicationLayers.emplace_back(std::move(layer));
+    //                layer.Clear();
+    //                identified = false;
+    //            }
+    //        }
 
-            buffer[bufferSize] = '\0';
+    //        buffer[bufferSize] = '\0';
 
-            if (identified)
-            {
-                if (bufferSize >= httpContentPattern.size() && memcmp(buffer, httpContentPattern.data(), httpContentPattern.size()) == 0)
-                {
-                    identified      = true;
-                    auto payloadLen = Number::ToInt64((char*) buffer + httpContentPattern.size());
-                    if (payloadLen.has_value())
-                        layer.payload.size = (uint32)payloadLen.value();
-                }
-            }
+    //        if (identified)
+    //        {
+    //            if (bufferSize >= httpContentPattern.size() && memcmp(buffer, httpContentPattern.data(), httpContentPattern.size()) == 0)
+    //            {
+    //                identified      = true;
+    //                auto payloadLen = Number::ToInt64((char*) buffer + httpContentPattern.size());
+    //                if (payloadLen.has_value())
+    //                    layer.payload.size = (uint32)payloadLen.value();
+    //            }
+    //        }
 
-            wasEndline = false;
-            spaces     = 0;
+    //        wasEndline = false;
+    //        spaces     = 0;
 
-            if (!identified)
-            {
-                if (bufferSize < httpPattern.size())
-                    break;
-                if (memcmp(buffer, httpPattern.data(), httpPattern.size()) == 0)
-                {
-                    identified = true;
-                    layer.name = (uint8*) strdup((char*) buffer);
-                }
-                else if (memcmp(buffer + bufferSize - httpPattern.size() - 1, httpPattern.data(), httpPattern.size()) == 0)
-                {
-                    identified          = true;
-                    layer.name          = (uint8*) strdup((char*) buffer);
-                    std::string_view sv = { (char*) buffer, bufferSize - httpPattern.size() - 2 };
-                    GetFileExtracted(layer);
-                    AddDataToSummary(sv);
-                }
-            }
-            bufferSize         = 0;
-            buffer[bufferSize] = '\0';
+    //        if (!identified)
+    //        {
+    //            if (bufferSize < httpPattern.size())
+    //                break;
+    //            if (memcmp(buffer, httpPattern.data(), httpPattern.size()) == 0)
+    //            {
+    //                identified         = true;
+    //                const auto nameLen = strlen((char*) buffer);
+    //                layer.name         = std::make_unique<uint8[]>(nameLen+1);
+    //                memcpy(layer.name.get(), buffer, nameLen + 1);
+    //            }
+    //            else if (memcmp(buffer + bufferSize - httpPattern.size() - 1, httpPattern.data(), httpPattern.size()) == 0)
+    //            {
+    //                identified         = true;
+    //                const auto nameLen = strlen((char*) buffer);
+    //                layer.name         = std::make_unique<uint8[]>(nameLen + 1);
+    //                memcpy(layer.name.get(), buffer, nameLen + 1);
+    //                std::string_view sv = { (char*) buffer, bufferSize - httpPattern.size() - 2 };
+    //                GetFileExtracted(layer);
+    //                AddDataToSummary(sv);
+    //            }
+    //        }
+    //        bufferSize         = 0;
+    //        buffer[bufferSize] = '\0';
 
-            if (bufferSize >= maxWaitUntilEndLine - 1)
-                break;
-            buffer[bufferSize++] = *startPtr;
-        }
-        else
-        {
-            if (bufferSize >= maxWaitUntilEndLine - 1)
-                return;
-            buffer[bufferSize++] = *startPtr;
-        }
+    //        if (bufferSize >= maxWaitUntilEndLine - 1)
+    //            break;
+    //        buffer[bufferSize++] = *startPtr;
+    //    }
+    //    else
+    //    {
+    //        if (bufferSize >= maxWaitUntilEndLine - 1)
+    //            return;
+    //        buffer[bufferSize++] = *startPtr;
+    //    }
 
-        startPtr++;
-    }
+    //    startPtr++;
+    //}
 
-    if (startPtr >= endPtr)
-        appLayerName = "HTTP";
+    //if (startPtr >= endPtr)
+    //    appLayerName = "HTTP";
 }
 
 void StreamManager::AddPacket(const PacketHeader* packet, LinkType network)
