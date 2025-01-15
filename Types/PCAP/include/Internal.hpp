@@ -2094,7 +2094,7 @@ struct StreamData
     }
 
     void ComputeFinalPayload();
-    void TryParsePayload();
+    //void TryParsePayload();
 };
 
 } // namespace GView::Type::PCAP

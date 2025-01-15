@@ -1,13 +1,31 @@
 #include "HttpParser.hpp"
 
+using namespace GView::Type::PCAP;
+
 constexpr uint32 maxWaitUntilEndLine = 300;
 
 constexpr std::string_view httpPattern        = "HTTP/1.";
 constexpr std::string_view httpContentPattern = "Content-Length: ";
 
-GView::Type::PCAP::PayloadDataParserInterface* GView::Type::PCAP::HTTP::HTTPParser::ParsePayload(
-    const PayloadInformation& payloadInformation,
-    ConnectionCallbackInterface* callbackInterface)
+void GetFileExtracted(StreamTcpLayer& output)
+{
+    const auto sv         = std::string_view((char*) output.name.get());
+    const auto firstSpace = sv.find_first_of(' ');
+    if (firstSpace == std::string::npos)
+        return;
+    const auto lastSpace = sv.find_last_of(' ');
+    if (lastSpace == std::string::npos)
+        return;
+    const auto extractedLocation = sv.substr(firstSpace + 1, lastSpace - firstSpace - 1);
+    const auto slashLoc          = extractedLocation.find_last_of('/');
+    if (slashLoc == std::string::npos) {
+        output.extractionName = extractedLocation;
+        return;
+    }
+    output.extractionName = extractedLocation.substr(slashLoc + 1);
+}
+
+PayloadDataParserInterface* HTTP::HTTPParser::ParsePayload(const PayloadInformation& payloadInformation, ConnectionCallbackInterface* callbackInterface)
 {
     const auto connPayload = payloadInformation.payload;
     if (payloadInformation.payload->size < 3)
@@ -74,18 +92,18 @@ GView::Type::PCAP::PayloadDataParserInterface* GView::Type::PCAP::HTTP::HTTPPars
                 if (bufferSize < httpPattern.size())
                     break;
                 if (memcmp(buffer, httpPattern.data(), httpPattern.size()) == 0) {
-                    identified = true;
+                    identified         = true;
                     const auto nameLen = strlen((char*) buffer);
                     layer.name         = std::make_unique<uint8[]>(nameLen + 1);
                     memcpy(layer.name.get(), buffer, nameLen + 1);
                 } else if (memcmp(buffer + bufferSize - httpPattern.size() - 1, httpPattern.data(), httpPattern.size()) == 0) {
-                    identified          = true;
+                    identified         = true;
                     const auto nameLen = strlen((char*) buffer);
                     layer.name         = std::make_unique<uint8[]>(nameLen + 1);
                     memcpy(layer.name.get(), buffer, nameLen + 1);
                     std::string_view sv = { (char*) buffer, bufferSize - httpPattern.size() - 2 };
-                    //GetFileExtracted(layer);
-                    //AddDataToSummary(sv);
+                    GetFileExtracted(layer);
+                    callbackInterface->AddConnectionSummary(std::string(sv.data(), sv.length()));
                 }
             }
             bufferSize         = 0;
