@@ -74,6 +74,10 @@
     {
       "name": "curl",
       "platform": "windows | linux | osx"
+    },
+    {
+      "name": "nlohmann-json",
+      "platform": "windows | linux | osx"
     }
   ],
   "vcpkg-configuration": {
