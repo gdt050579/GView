@@ -1,7 +1,7 @@
-#include "Hashing.hpp"
+#include "utils/Hashing.hpp"
 #include <inttypes.h>
 
-namespace GView::GenericPlugins::OnlineAnalytics
+namespace GView::GenericPlugins::OnlineAnalytics::Utils
 {
 
 String hashSha256(Reference<GView::Object> object)
@@ -33,4 +33,4 @@ String hashSha256(Reference<GView::Object> object)
     return hash;
 };
 
-} // namespace GView::GenericPlugins::OnlineAnalytics
+} // namespace GView::GenericPlugins::OnlineAnalytics::Utils

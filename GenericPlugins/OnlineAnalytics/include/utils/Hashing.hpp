@@ -2,7 +2,7 @@
 
 #include "GView.hpp"
 
-namespace GView::GenericPlugins::OnlineAnalytics
+namespace GView::GenericPlugins::OnlineAnalytics::Utils
 {
 using namespace GView::Hashes;
 

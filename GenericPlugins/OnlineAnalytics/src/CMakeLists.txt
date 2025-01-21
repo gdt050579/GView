@@ -1,4 +1,5 @@
 target_sources(OnlineAnalytics PRIVATE 
     Plugin.cpp
-    Hashing.cpp
-    OnlineAnalyticsUI.cpp)
+    utils/Hashing.cpp
+    ui/OnlineAnalyticsInitialUI.cpp
+    ui/OnlineAnalyticsResultsUI.cpp)
