@@ -1,10 +1,10 @@
-#include "utils/Hashing.hpp"
 #include <inttypes.h>
+#include "utils/Hashing.hpp"
 
 namespace GView::GenericPlugins::OnlineAnalytics::Utils
 {
 
-String hashSha256(Reference<GView::Object> object)
+std::string_view HashSHA256(Reference<GView::Object> object)
 {
     const char* format   = "Read %+" PRIu64 "/%+" PRIu64 " bytes";
     const uint64 size    = object->GetData().GetSize();
@@ -29,7 +29,7 @@ String hashSha256(Reference<GView::Object> object)
 
     CHECK(sha256.Final(), String(""), "");
 
-    String hash = sha256.GetHexValue();
+    std::string_view hash = sha256.GetHexValue();
     return hash;
 };
 

@@ -10,8 +10,6 @@ namespace GView::GenericPlugins::OnlineAnalytics
 {
 constexpr std::string_view CMD_ONLINE_ANALYTICS = "OnlineAnalytics";
 
-using namespace GView::GenericPlugins::OnlineAnalytics::UI;
-using namespace GView::GenericPlugins::OnlineAnalytics::Utils;
 
 extern "C" {
 
@@ -27,13 +25,13 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
         return false;
     }
 
-    OnlineAnalyticsInitialUI initialUi(object);
+    UI::OnlineAnalyticsInitialUI initialUi(object);
 
     if (initialUi.Show() != AppCUI::Dialogs::Result::Ok || object->GetData().GetSize() == 0) {
         return true;
     }
 
-    String hash = hashSha256(object);
+    String hash = Utils::HashSHA256(object);
 
     CHECK(hash.Len() != 0, false, "There was an error when computing the hash of the file");
 
