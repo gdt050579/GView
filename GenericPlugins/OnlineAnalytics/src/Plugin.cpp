@@ -36,6 +36,11 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 
     Reference<Utils::Report> report = provider->GetReport(hash);
 
+    if (report == NULL) {
+        Dialogs::MessageBox::ShowError("Report retrieval", "The report retrieval failed. Possible reasons: Network failure or report was not found");
+        return true;
+    }
+
     UI::OnlineAnalyticsResultsUI resultsUi(object, report);
     resultsUi.Init();
     resultsUi.Show();
