@@ -70,15 +70,14 @@ Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequest(Reference<std::ar
     return result;
 }
 
-Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequestInternal(
-      CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status)
+Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequestInternal(CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status)
 {
     CHECK(curl_easy_setopt(curl, CURLOPT_URL, url.c_str()) == CURLE_OK, NULL, "Could not set cURL url");
     CHECK(curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers) == CURLE_OK, NULL, "Could not set cURL headers");
     CHECK(curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback) == CURLE_OK, NULL, "Could not set cURL write callback");
-    CHECK(curl_easy_setopt(curl, CURLOPT_WRITEDATA, data) == CURLE_OK, NULL, "Could not set cURL read buffer");
+    CHECK(curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data) == CURLE_OK, NULL, "Could not set cURL read buffer");
     CHECK(curl_easy_perform(curl) == CURLE_OK, NULL, "Could not perform cURL request");
-    CHECK(curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, status) == CURLE_OK, NULL, "Could not get cURL response status code");
+    CHECK(curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status) == CURLE_OK, NULL, "Could not get cURL response status code");
 
     Reference<Utils::HTTPResponse> result(new Utils::HTTPResponse{ .url = url, .status = status, .data = data });
     return result;
@@ -107,8 +106,8 @@ Reference<Utils::Report> VirusTotalProvider::ProcessRequest(Reference<Utils::HTT
 
     for (auto it = data["last_analysis_results"].begin(); it != data["last_analysis_results"].end(); it++) {
         analysis.push_back(Utils::Analysis{
-              .engine  = (*it)["engine_name"],
-              .version = (*it)["engine_version"],
+              .engine  = std::string((*it)["engine_name"].is_string() ? (*it)["engine_name"] : "Unknown"),
+              .version = std::string((*it)["engine_version"].is_string() ? (*it)["engine_version"] : "Unknown"),
               .result  = (*it)["category"] == std::string("malicious") ? Utils::AnalysisResult::Malicious : Utils::AnalysisResult::Undetected,
         });
     }
