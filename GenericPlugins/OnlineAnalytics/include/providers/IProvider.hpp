@@ -11,7 +11,9 @@ using namespace GView::Hashes;
 class IProvider
 {
   public:
-    virtual Reference<Utils::Report> GetReport(unsigned char sha256[32]) = 0;
+    virtual std::string GetName() = 0;
+    virtual std::string GetApiKey() = 0;
+    virtual Reference<Utils::Report> GetReport(Reference<std::array<uint8, 32>> sha256) = 0;
 };
 
 }; // namespace GView::GenericPlugins::OnlineAnalytics::Providers

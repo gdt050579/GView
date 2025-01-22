@@ -1,5 +1,7 @@
 #pragma once
 
+#include <variant>
+#include <curl/curl.h>
 #include "GView.hpp"
 
 #include "utils/Report.hpp"
@@ -16,10 +18,15 @@ class VirusTotalProvider : public IProvider
 
   public:
     VirusTotalProvider(std::string apiKey);
-    Reference<Utils::Report> GetReport(unsigned char sha256[32]);
+    std::string GetName();
+    std::string GetApiKey();
+    Reference<Utils::Report> GetReport(Reference<std::array<uint8, 32>> sha256);
 
   private:
-    Reference<Utils::HTTPResponse> MakeRequest(unsigned char sha256[32]);
+    Reference<Utils::HTTPResponse> MakeRequest(Reference<std::array<uint8, 32>> sha256);
+    Reference<Utils::HTTPResponse> MakeRequestInternal(
+          CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status
+    );
     Reference<Utils::Report> ProcessRequest(Reference<Utils::HTTPResponse> response);
 };
 
