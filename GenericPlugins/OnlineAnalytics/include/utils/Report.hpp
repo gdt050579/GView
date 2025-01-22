@@ -8,9 +8,9 @@
 namespace GView::GenericPlugins::OnlineAnalytics::Utils
 {
 
-enum class Severity { None = 0, Low, Medium, High, Critical };
+enum Severity : int { None = 0, Low, Medium, High, Critical };
 
-enum class AnalysisResult { Undetected = 0, Malicious };
+enum AnalysisResult : int { Undetected = 0, Malicious };
 
 struct Analysis {
     std::string engine;
