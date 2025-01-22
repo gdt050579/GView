@@ -12,16 +12,15 @@ constexpr int32 CMD_BUTTON_EXIT = 1;
 constexpr int32 CMD_BUTTON_OK   = 2;
 
 OnlineAnalyticsInitialUI::OnlineAnalyticsInitialUI(Reference<GView::Object> object)
-    : Controls::Window("Online analytics", "d:c,w:60,h:30", WindowFlags::FixedPosition)
+    : Controls::Window("Online analytics", "d:c,w:80,h:24", WindowFlags::None)
 {
-    this->object = object;
+    this->object  = object;
     this->didInit = false;
 
-    this->providersList = Factory::ListView::Create(this, "x:1,y:1,w:50%,h:80%", { "w:100%" }, Controls::ListViewFlags::HideColumns);
+    this->providersList = Factory::ListView::Create(this, "a:t,l:1,r:1%,y:1,h:80%", { "n:&Provider,w:35%", "n:&Api key,w:65%" });
     this->providersList->Handlers()->OnCurrentItemChanged = this;
 
-    this->providerApiKeyLabel = Factory::Label::Create(this, "Api key: -", "x:55%,y:2,h:1,w:30");
-    this->disclaimerLabel     = Factory::Label::Create(this, "Note: A request will be performed on your behalf", "a:l,x:1,y:85%,w:100%");
+    this->disclaimerLabel = Factory::Label::Create(this, "NOTE: A request to the given provider will be performed on your behalf.", "a:b,l:1,r:1,y:95%,h:2");
 
     this->exitButton                              = Factory::Button::Create(this, "&Close", "a:b,x:75%,y:100%,w:16", CMD_BUTTON_EXIT);
     this->exitButton->Handlers()->OnButtonPressed = this;
@@ -48,12 +47,12 @@ bool OnlineAnalyticsInitialUI::Init()
     this->provider = this->providers[0];
 
     for (Reference<Providers::IProvider> provider : this->providers) {
-        ListViewItem item = this->providersList->AddItem(provider->GetName());
+        ListViewItem item = this->providersList->AddItem({ provider->GetName(), provider->GetApiKey() });
         item.SetData<Providers::IProvider>(provider);
     }
 
     this->providersList->GetItem(0).SetSelected(true);
-    this->providerApiKeyLabel->SetText(std::format("Api key: {}", this->provider->GetApiKey()));
+    this->providersList->SetCurrentItem(this->providersList->GetItem(0));
 
     this->didInit = true;
     return true;
@@ -78,7 +77,6 @@ void OnlineAnalyticsInitialUI::OnButtonPressed(Reference<Controls::Button> butto
 void OnlineAnalyticsInitialUI::OnListViewCurrentItemChanged(Reference<Controls::ListView> listView, Controls::ListViewItem item)
 {
     this->provider = item.GetData<Providers::IProvider>();
-    this->providerApiKeyLabel->SetText(std::format("Api key: {}", this->provider->GetApiKey()));
 }
 
 Reference<Providers::IProvider> OnlineAnalyticsInitialUI::GetProvider()

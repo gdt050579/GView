@@ -18,7 +18,6 @@ class OnlineAnalyticsInitialUI : public Controls::Window,
 
     Reference<GView::Object> object;
     Reference<Controls::ListView> providersList;
-    Reference<Controls::Label> providerApiKeyLabel;
     Reference<Controls::Label> disclaimerLabel;
     Reference<Controls::Button> exitButton;
     Reference<Controls::Button> okButton;
