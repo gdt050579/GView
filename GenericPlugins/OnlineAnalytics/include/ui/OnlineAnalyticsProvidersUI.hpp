@@ -6,7 +6,7 @@ namespace GView::GenericPlugins::OnlineAnalytics::UI
 {
 using namespace AppCUI::Controls;
 
-class OnlineAnalyticsInitialUI : public Controls::Window,
+class OnlineAnalyticsProvidersUI : public Controls::Window,
                                  public Controls::Handlers::OnButtonPressedInterface,
                                  public Controls::Handlers::OnListViewCurrentItemChangedInterface
 {
@@ -23,7 +23,7 @@ class OnlineAnalyticsInitialUI : public Controls::Window,
     Reference<Controls::Button> okButton;
 
   public:
-    OnlineAnalyticsInitialUI(Reference<GView::Object> object);
+    OnlineAnalyticsProvidersUI(Reference<GView::Object> object);
     bool Init();
 
     AppCUI::Dialogs::Result Show();

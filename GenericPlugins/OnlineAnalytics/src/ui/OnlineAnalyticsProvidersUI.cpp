@@ -2,7 +2,7 @@
 
 #include "providers/IProvider.hpp"
 #include "providers/VirusTotal.hpp"
-#include "ui/OnlineAnalyticsInitialUI.hpp"
+#include "ui/OnlineAnalyticsProvidersUI.hpp"
 
 namespace GView::GenericPlugins::OnlineAnalytics::UI
 {
@@ -11,8 +11,8 @@ using namespace AppCUI::Controls;
 constexpr int32 CMD_BUTTON_EXIT = 1;
 constexpr int32 CMD_BUTTON_OK   = 2;
 
-OnlineAnalyticsInitialUI::OnlineAnalyticsInitialUI(Reference<GView::Object> object)
-    : Controls::Window("Online analytics", "d:c,w:80,h:24", WindowFlags::None)
+OnlineAnalyticsProvidersUI::OnlineAnalyticsProvidersUI(Reference<GView::Object> object)
+    : Controls::Window("Online analytics: provider selection", "d:c,w:80,h:24", WindowFlags::None)
 {
     this->object  = object;
     this->didInit = false;
@@ -30,7 +30,7 @@ OnlineAnalyticsInitialUI::OnlineAnalyticsInitialUI(Reference<GView::Object> obje
     this->okButton->SetFocus();
 };
 
-bool OnlineAnalyticsInitialUI::Init()
+bool OnlineAnalyticsProvidersUI::Init()
 {
     CHECK(this->didInit == false, NULL, "Initial UI was already inited");
 
@@ -58,13 +58,13 @@ bool OnlineAnalyticsInitialUI::Init()
     return true;
 }
 
-AppCUI::Dialogs::Result OnlineAnalyticsInitialUI::Show()
+AppCUI::Dialogs::Result OnlineAnalyticsProvidersUI::Show()
 {
     CHECK(this->didInit == true, AppCUI::Dialogs::Result::Cancel, "Did not call init on Initial UI");
     return Window::Show();
 }
 
-void OnlineAnalyticsInitialUI::OnButtonPressed(Reference<Controls::Button> button)
+void OnlineAnalyticsProvidersUI::OnButtonPressed(Reference<Controls::Button> button)
 {
     switch (button->GetControlID()) {
     case CMD_BUTTON_EXIT:
@@ -74,22 +74,22 @@ void OnlineAnalyticsInitialUI::OnButtonPressed(Reference<Controls::Button> butto
     }
 }
 
-void OnlineAnalyticsInitialUI::OnListViewCurrentItemChanged(Reference<Controls::ListView> listView, Controls::ListViewItem item)
+void OnlineAnalyticsProvidersUI::OnListViewCurrentItemChanged(Reference<Controls::ListView> listView, Controls::ListViewItem item)
 {
     this->provider = item.GetData<Providers::IProvider>();
 }
 
-Reference<Providers::IProvider> OnlineAnalyticsInitialUI::GetProvider()
+Reference<Providers::IProvider> OnlineAnalyticsProvidersUI::GetProvider()
 {
     return this->provider;
 }
 
-void OnlineAnalyticsInitialUI::OnExitButtonPressed()
+void OnlineAnalyticsProvidersUI::OnExitButtonPressed()
 {
     this->Exit(Dialogs::Result::Cancel);
 }
 
-void OnlineAnalyticsInitialUI::OnOkButtonPressed()
+void OnlineAnalyticsProvidersUI::OnOkButtonPressed()
 {
     if (this->object->GetData().GetSize() == 0) {
         Dialogs::MessageBox::ShowError("Error!", "Must open a file before running analytics");
