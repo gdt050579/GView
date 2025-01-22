@@ -30,7 +30,7 @@ Reference<std::array<uint8, 32>> HashSHA256(Reference<GView::Object> object)
 
     CHECK(sha256.Final(), NULL, "");
 
-    Reference<std::array<uint8, 32>> hash;
+    Reference<std::array<uint8, 32>> hash = Reference<std::array<uint8, 32>>(new std::array<uint8, 32>());
     std::memcpy(hash->data(), sha256.Get(), 32);
     return hash;
 };
