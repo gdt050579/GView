@@ -1,10 +1,11 @@
+#include <cstring>
 #include <inttypes.h>
 #include "utils/Hashing.hpp"
 
 namespace GView::GenericPlugins::OnlineAnalytics::Utils
 {
 
-std::string_view HashSHA256(Reference<GView::Object> object)
+Reference<std::array<uint8, 32>> HashSHA256(Reference<GView::Object> object)
 {
     const char* format   = "Read %+" PRIu64 "/%+" PRIu64 " bytes";
     const uint64 size    = object->GetData().GetSize();
@@ -20,16 +21,17 @@ std::string_view HashSHA256(Reference<GView::Object> object)
         requestedSize         = offset + block > size ? size - offset : block;
         BufferView bufferView = object->GetData().Get(offset, requestedSize, true);
 
-        CHECK(bufferView.IsValid(), String(""), "");
-        CHECK(sha256.Update(bufferView.GetData(), bufferView.GetLength()), String(""), "");
-        CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, size)) == false, String(""), "");
+        CHECK(bufferView.IsValid(), NULL, "");
+        CHECK(sha256.Update(bufferView.GetData(), bufferView.GetLength()), NULL, "");
+        CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, size)) == false, NULL, "");
 
         offset += block;
     } while (offset < size);
 
-    CHECK(sha256.Final(), String(""), "");
+    CHECK(sha256.Final(), NULL, "");
 
-    std::string_view hash = sha256.GetHexValue();
+    Reference<std::array<uint8, 32>> hash;
+    std::memcpy(hash->data(), sha256.Get(), 32);
     return hash;
 };
 

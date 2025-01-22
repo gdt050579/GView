@@ -6,6 +6,6 @@ namespace GView::GenericPlugins::OnlineAnalytics::Utils
 {
 using namespace GView::Hashes;
 
-std::string_view HashSHA256(Reference<GView::Object> object);
+Reference<std::array<uint8, 32>> HashSHA256(Reference<GView::Object> object);
 
 };
