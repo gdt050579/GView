@@ -59,6 +59,7 @@ LogFile::LogFile()
         pos++;                                                                                                                                                 \
         break;
 
+
 bool IsIPAddress(const std::string_view& str)
 {
     size_t dotCount   = 0;
@@ -183,6 +184,26 @@ bool LogFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicod
     NOT_IMPLEMENTED(false);
 }
 
+std::string ExtractMessage(const std::string_view& line)
+{
+    // assume messages start after a timestamp and severity
+    size_t messageStart = line.find("] ");
+    if (messageStart != std::string_view::npos)
+        return std::string(line.substr(messageStart + 2));
+    return std::string(line);
+}
+
+std::string CategorizeMessage(const std::string& message)
+{
+    if (message.find("timeout") != std::string::npos)
+        return "Timeouts";
+    if (message.find("error") != std::string::npos)
+        return "Errors";
+    if (message.find("login") != std::string::npos)
+        return "User Actions";
+    return "General";
+}
+
 void LogFile::AnalyzeLogFile()
 {
     auto& data = this->obj->GetData();
@@ -196,6 +217,7 @@ void LogFile::AnalyzeLogFile()
     infoCount    = 0;
     firstTimestamp.clear();
     lastTimestamp.clear();
+    logCategories.clear();
 
     auto bufferView = data.GetEntireFile();
     if (!bufferView.IsValid()) {
@@ -222,6 +244,14 @@ void LogFile::AnalyzeLogFile()
                 warningCount++;
             else if (line.find("INFO") != std::string_view::npos)
                 infoCount++;
+
+            std::string message = ExtractMessage(line);
+            std::string category = CategorizeMessage(message);
+            auto& summary = logCategories[category];
+            summary.count++;
+            if (summary.recentMessages.size() < 5) { // memorizing only the latest 5 messages for the category
+                summary.recentMessages.push_back(message);
+            }
 
             std::regex timestampRegex(R"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])");
             auto match = std::smatch();

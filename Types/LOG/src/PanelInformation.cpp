@@ -39,9 +39,26 @@ void Panels::Information::UpdateGeneralInformation()
     // first and last timestamps
     general->AddItem({ "First Timestamp", log->firstTimestamp.data() });
     general->AddItem({ "Last Timestamp", log->lastTimestamp.data() });
+
+    // ip addresses
     general->AddItem("IP Addresses");
     for (const auto& ip : log->ipAddresses) {
         general->AddItem({ "", ip.c_str() });
+    }
+
+    // messages info
+    general->AddItem("Log Categories");
+    for (const auto& [category, summary] : log->logCategories) {
+        // Add category name and count
+        general->AddItem({ category.c_str(), tempStr.Format("%d entries", summary.count) });
+
+        // Add recent messages for the category
+        for (const auto& msg : summary.recentMessages) {
+            std::string truncatedMsg = msg.substr(0, 50);
+            if (msg.length() > 50)
+                truncatedMsg += "...";
+            general->AddItem({ "  - Message", truncatedMsg.c_str() });
+        }
     }
 }
 

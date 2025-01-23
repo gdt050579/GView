@@ -26,6 +26,11 @@ namespace Type
             constexpr uint32 value         = 11;
         } // namespace TokenType
 
+        struct LogSummary {
+            int count;
+            std::vector<std::string> recentMessages;
+        };
+
         class LogFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
             void ParseFile(GView::View::LexicalViewer::SyntaxManager& syntax);
@@ -43,6 +48,7 @@ namespace Type
             std::string firstTimestamp;
             std::string lastTimestamp;
             std::vector<std::string> ipAddresses;
+            std::unordered_map<std::string, LogSummary> logCategories;
 
             std::string_view GetTypeName() override
             {
