@@ -1,5 +1,6 @@
 #include "PCAP.hpp"
 #include "PayloadParsers/HttpParser.hpp"
+#include "PayloadParsers/FtpParser.hpp"
 #include <array>
 
 using namespace AppCUI;
@@ -107,6 +108,7 @@ extern "C"
         auto pcap = win->GetObject()->GetContentType<PCAP::PCAPFile>();
         pcap->InitStreamManager(win);
         pcap->RegisterPayloadParser(std::make_unique<PCAP::HTTP::HTTPParser>());
+        pcap->RegisterPayloadParser(std::make_unique<PCAP::FTP::FTPParser>());
         pcap->Update();
 
         // add views
