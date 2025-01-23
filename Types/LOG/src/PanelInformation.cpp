@@ -1,9 +1,9 @@
 #include "log.hpp"
 
-using namespace GView::Type::Log;
+using namespace GView::Type::LOG;
 using namespace AppCUI::Controls;
 
-Panels::Information::Information(Reference<GView::Type::Log::LogFile> _log) : TabPage("&Information")
+Panels::Information::Information(Reference<GView::Type::LOG::LogFile> _log) : TabPage("&Information")
 {
     log     = _log;
     general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
@@ -21,9 +21,30 @@ void Panels::Information::UpdateGeneralInformation()
     general->DeleteAllItems();
     general->AddItem("File");
 
-    // Add the size of the file
+    // size of the file
     general->AddItem({ "Size", tempStr.Format("%s bytes", n.ToString(log->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+
+    // number of log entries
+    general->AddItem({ "Entries", n.ToString(log->entryCount, { NumericFormatFlags::None, 10, 3, ',' }) });
+
+    // number of error entries
+    general->AddItem({ "Errors", n.ToString(log->errorCount, { NumericFormatFlags::None, 10, 3, ',' }) });
+
+    // number of warnings
+    general->AddItem({ "Warnings", n.ToString(log->warningCount, { NumericFormatFlags::None, 10, 3, ',' }) });
+
+    // number of informational entries
+    general->AddItem({ "Infos", n.ToString(log->infoCount, { NumericFormatFlags::None, 10, 3, ',' }) });
+
+    // first and last timestamps
+    general->AddItem({ "First Timestamp", log->firstTimestamp.data() });
+    general->AddItem({ "Last Timestamp", log->lastTimestamp.data() });
+    general->AddItem("IP Addresses");
+    for (const auto& ip : log->ipAddresses) {
+        general->AddItem({ "", ip.c_str() });
+    }
 }
+
 
 void Panels::Information::UpdateIssues()
 {

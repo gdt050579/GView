@@ -1,6 +1,6 @@
 #include "log.hpp"
 
-namespace GView::Type::Log
+namespace GView::Type::LOG
 {
 using namespace GView::View::LexicalViewer;
 
@@ -14,11 +14,14 @@ namespace CharacterType
     constexpr uint32 space         = 5;
     constexpr uint32 alphanum      = 6;
     constexpr uint32 invalid       = 7;
+    constexpr uint32 colon         = 8;
+    constexpr uint32 slash         = 9;
+    constexpr uint32 period        = 10;
 
     uint32 GetCharacterType(char16 ch)
     {
         if (ch == '.')
-            return ip_address; // for parts of IP addresses
+            return period;
         if (ch == '-')
             return dash;
         if (ch == '[')
@@ -27,6 +30,10 @@ namespace CharacterType
             return bracket_close;
         if (ch == '"')
             return quotes;
+        if (ch == ':')
+            return colon;
+        if (ch == '/')
+            return slash; 
         if (ch == ' ' || ch == '\t')
             return space;
         if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_')
@@ -35,14 +42,47 @@ namespace CharacterType
     }
 } // namespace CharacterType
 
+LogFile::LogFile()
+{
+    entryCount     = 0;
+    errorCount     = 0;
+    warningCount   = 0;
+    infoCount      = 0;
+    firstTimestamp = "";
+    lastTimestamp  = "";
+    ipAddresses.clear();
+}
+
 #define CHAR_CASE(char_type, align)                                                                                                                            \
     case CharacterType::char_type:                                                                                                                             \
         syntax.tokens.Add(TokenType::char_type, pos, pos + 1, TokenColor::Operator, TokenDataType::None, (align), TokenFlags::DisableSimilaritySearch);        \
         pos++;                                                                                                                                                 \
         break;
 
-LogFile::LogFile()
+bool IsIPAddress(const std::string_view& str)
 {
+    size_t dotCount   = 0;
+    size_t digitCount = 0;
+    int segmentValue  = 0;
+
+    for (char c : str) {
+        if (c == '.') {
+            dotCount++;
+            if (digitCount == 0 || segmentValue > 255)
+                return false;
+            digitCount   = 0;
+            segmentValue = 0;
+        } else if (c >= '0' && c <= '9') {
+            digitCount++;
+            segmentValue = segmentValue * 10 + (c - '0');
+            if (digitCount > 3 || segmentValue > 255)
+                return false;
+        } else {
+            return false;
+        }
+    }
+
+    return dotCount == 3 && digitCount > 0 && segmentValue <= 255;
 }
 
 void LogFile::ParseFile(GView::View::LexicalViewer::SyntaxManager& syntax)
@@ -60,11 +100,24 @@ void LogFile::ParseFile(GView::View::LexicalViewer::SyntaxManager& syntax)
             CHAR_CASE(bracket_close, TokenAlignament::None);
             CHAR_CASE(quotes, TokenAlignament::None);
             CHAR_CASE(space, TokenAlignament::None);
-        case CharacterType::alphanum:
+            CHAR_CASE(colon, TokenAlignament::None);
+            CHAR_CASE(slash, TokenAlignament::None);
+            CHAR_CASE(period, TokenAlignament::None);
+        case CharacterType::alphanum: {
             next = syntax.text.ParseSameGroupID(pos, CharacterType::GetCharacterType);
-            syntax.tokens.Add(TokenType::value, pos, next, TokenColor::Word, TokenAlignament::AddSpaceBefore);
+            auto substring = syntax.text.GetSubString(pos, next);
+            std::string word(substring.begin(), substring.end());
+
+            if (IsIPAddress(word)) {
+                ipAddresses.push_back(std::string(word));
+                syntax.tokens.Add(TokenType::ip_address, pos, next, TokenColor::Keyword, TokenAlignament::None);
+            } else {
+                syntax.tokens.Add(TokenType::value, pos, next, TokenColor::Word, TokenAlignament::AddSpaceBefore);
+            }
+
             pos = next;
             break;
+        }
         case CharacterType::invalid:
             next = syntax.text.ParseSameGroupID(pos, CharacterType::GetCharacterType);
             syntax.tokens.Add(TokenType::invalid, pos, next, TokenColor::Error, TokenAlignament::AddSpaceBefore).SetError("Invalid character in log file");
@@ -116,6 +169,8 @@ void LogFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     ParseFile(syntax);
     BuildBlocks(syntax);
+
+    AnalyzeLogFile();
 }
 
 bool LogFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
@@ -128,8 +183,69 @@ bool LogFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicod
     NOT_IMPLEMENTED(false);
 }
 
+void LogFile::AnalyzeLogFile()
+{
+    auto& data = this->obj->GetData();
+    auto size  = data.GetSize();
+    std::unordered_set<std::string> uniqueIPAddresses;
+
+    // Reset metadata
+    entryCount   = 0;
+    errorCount   = 0;
+    warningCount = 0;
+    infoCount    = 0;
+    firstTimestamp.clear();
+    lastTimestamp.clear();
+
+    auto bufferView = data.GetEntireFile();
+    if (!bufferView.IsValid()) {
+        return;
+    }
+    std::string_view logContent(reinterpret_cast<const char*>(bufferView.GetData()), bufferView.GetLength());
+
+    size_t pos = 0;
+
+    while (pos < logContent.size()) {
+        // Extract a single log entry (assuming each log entry ends with a newline)
+        size_t endPos = logContent.find('\n', pos);
+        if (endPos == std::string_view::npos)
+            endPos = logContent.size();
+
+        std::string_view line = logContent.substr(pos, endPos - pos);
+
+        if (!line.empty()) {
+            entryCount++;
+
+            if (line.find("ERROR") != std::string_view::npos)
+                errorCount++;
+            else if (line.find("WARN") != std::string_view::npos)
+                warningCount++;
+            else if (line.find("INFO") != std::string_view::npos)
+                infoCount++;
+
+            std::regex timestampRegex(R"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])");
+            auto match = std::smatch();
+            std::string lineStr(line);
+            if (std::regex_search(lineStr, match, timestampRegex)) {
+                std::string timestamp = match.str();
+                if (firstTimestamp.empty())
+                    firstTimestamp = timestamp;
+                lastTimestamp = timestamp;
+            }
+
+            std::regex ipRegex(R"((\d{1,3}\.){3}\d{1,3})");
+            if (std::regex_search(lineStr, match, ipRegex)) {
+                std::string ipAddress = match.str();
+                uniqueIPAddresses.insert(ipAddress);
+            }
+        }
+        pos = endPos + 1;
+    }
+    ipAddresses.clear();
+    ipAddresses.insert(ipAddresses.end(), uniqueIPAddresses.begin(), uniqueIPAddresses.end());
+}
 
 LogFile::~LogFile()
 {
 }
-} // namespace GView::Type::Log
+} // namespace GView::Type::LOG

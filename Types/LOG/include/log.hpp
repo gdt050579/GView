@@ -1,12 +1,14 @@
 #pragma once
 
+#include <unordered_set>
+#include <regex>
 #include "GView.hpp"
 
 namespace GView
 {
 namespace Type
 {
-    namespace Log
+    namespace LOG
     {
         namespace TokenType
         {
@@ -18,21 +20,33 @@ namespace Type
             constexpr uint32 space         = 5;
             constexpr uint32 alphanum      = 6;
             constexpr uint32 invalid       = 7;
-            constexpr uint32 value         = 8;
+            constexpr uint32 colon         = 8;
+            constexpr uint32 slash         = 9;
+            constexpr uint32 period        = 10;
+            constexpr uint32 value         = 11;
         } // namespace TokenType
 
         class LogFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
             void ParseFile(GView::View::LexicalViewer::SyntaxManager& syntax);
             void BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax);
+            void AnalyzeLogFile(); // method for extracting log metadata
 
           public:
             LogFile();
             virtual ~LogFile();
 
+            uint32 entryCount;
+            uint32 errorCount;
+            uint32 warningCount;
+            uint32 infoCount;
+            std::string firstTimestamp;
+            std::string lastTimestamp;
+            std::vector<std::string> ipAddresses;
+
             std::string_view GetTypeName() override
             {
-                return "Log";
+                return "LOG";
             }
             void RunCommand(std::string_view) override
             {
@@ -70,7 +84,7 @@ namespace Type
         {
             class Information : public AppCUI::Controls::TabPage
             {
-                Reference<GView::Type::Log::LogFile> log;
+                Reference<GView::Type::LOG::LogFile> log;
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
 
@@ -79,7 +93,7 @@ namespace Type
                 void RecomputePanelsPositions();
 
               public:
-                Information(Reference<GView::Type::Log::LogFile> log);
+                Information(Reference<GView::Type::LOG::LogFile> log);
 
                 void Update();
                 virtual void OnAfterResize(int newWidth, int newHeight) override

@@ -18,11 +18,11 @@ extern "C" {
     }
     PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new GView::Type::Log::LogFile();
+        return new GView::Type::LOG::LogFile();
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
-        auto log = win->GetObject()->GetContentType<GView::Type::Log::LogFile>();
+        auto log = win->GetObject()->GetContentType<GView::Type::LOG::LogFile>();
 
         LexicalViewer::Settings settings;
         settings.SetParser(log.ToObjectRef<LexicalViewer::ParseInterface>());
@@ -34,8 +34,7 @@ extern "C" {
         GView::View::BufferViewer::Settings s{};
         log->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
-        // add panels
-        win->AddPanel(Pointer<TabPage>(new GView::Type::Log::Panels::Information(log)), true);
+        win->AddPanel(Pointer<TabPage>(new GView::Type::LOG::Panels::Information(log)), true);
 
         return true;
     }
@@ -43,7 +42,7 @@ extern "C" {
     {
         sect["Extension"]   = "log";
         sect["Priority"]    = 1;
-        sect["Description"] = "Logs file format (*.log)";
+        sect["Description"] = "LOG file format (*.log)";
     }
 }
 
