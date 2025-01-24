@@ -2,6 +2,7 @@
 
 #include "providers/IProvider.hpp"
 #include "providers/VirusTotal.hpp"
+#include "providers/Opswat.hpp"
 #include "ui/OnlineAnalyticsProvidersUI.hpp"
 
 namespace GView::GenericPlugins::OnlineAnalytics::UI
@@ -43,6 +44,7 @@ bool OnlineAnalyticsProvidersUI::Init()
     }
 
     this->providers.push_back(Reference<Providers::IProvider>(new Providers::VirusTotalProvider(settings)));
+    this->providers.push_back(Reference<Providers::IProvider>(new Providers::OpswatProvider(settings)));
     this->provider = this->providers[0];
 
     for (Reference<Providers::IProvider> provider : this->providers) {
