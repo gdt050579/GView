@@ -10,7 +10,11 @@ namespace GView::GenericPlugins::OnlineAnalytics::Providers
 
 VirusTotalProvider::VirusTotalProvider(AppCUI::Utils::IniSection& settings)
 {
-    this->apiKey = settings.GetValue("Config.VirusTotal.ApiKey").ToString();
+    if (!settings.HasValue("Config.VirusTotal.ApiKey")) {
+        this->apiKey = std::string("-");
+    } else {
+        this->apiKey = settings.GetValue("Config.VirusTotal.ApiKey").ToString();
+    }
 }
 
 std::string VirusTotalProvider::GetName()
@@ -34,13 +38,6 @@ Reference<Utils::Report> VirusTotalProvider::GetReport(Reference<std::array<uint
     CHECK(result != NULL, NULL, "Could not create report");
 
     return result;
-}
-
-static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
-{
-    size_t realsize = size * nmemb;
-    ((std::string*) userp)->append((char*) contents, realsize);
-    return realsize;
 }
 
 Reference<std::string> VirusTotalProvider::MakeId(Reference<std::array<uint8, 32>> sha256)
@@ -77,6 +74,13 @@ Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequest(Reference<std::st
     return result;
 }
 
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
+{
+    size_t realsize = size * nmemb;
+    ((std::string*) userp)->append((char*) contents, realsize);
+    return realsize;
+}
+
 Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequestInternal(CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status)
 {
     CHECK(curl_easy_setopt(curl, CURLOPT_URL, url.c_str()) == CURLE_OK, NULL, "Could not set cURL url");
@@ -106,9 +110,22 @@ Reference<Utils::Report> VirusTotalProvider::CreateReport(Reference<Utils::HTTPR
         return NULL;
     }
 
+    Utils::Severity severity;
     std::vector<std::string> capabilities;
     std::vector<Utils::Analysis> analysis;
     std::vector<std::string> tags;
+
+    if (data["last_analysis_stats"]["malicious"] > 4) {
+        severity = Utils::Severity::Critical;
+    } else if (data["last_analysis_stats"]["malicious"] > 2) {
+        severity = Utils::Severity::High;
+    } else if (data["last_analysis_stats"]["malicious"] > 0) {
+        severity = Utils::Severity::Medium;
+    } else if (data["last_analysis_stats"]["suspicious"] > 0) {
+        severity = Utils::Severity::Low;
+    } else {
+        severity = Utils::Severity::None;
+    }
 
     for (auto it = data["last_analysis_results"].begin(); it != data["last_analysis_results"].end(); it++) {
         analysis.push_back(Utils::Analysis{
@@ -132,7 +149,7 @@ Reference<Utils::Report> VirusTotalProvider::CreateReport(Reference<Utils::HTTPR
                                                        .fileName     = data["names"][0],
                                                        .fileSize     = data["size"],
                                                        .url          = std::format("https://www.virustotal.com/gui/file/{}", id.operator std::string&()),
-                                                       .severity     = Utils::Severity::None,
+                                                       .severity     = severity,
                                                        .capabilities = capabilities,
                                                        .analysis     = analysis,
                                                        .tags         = tags });
