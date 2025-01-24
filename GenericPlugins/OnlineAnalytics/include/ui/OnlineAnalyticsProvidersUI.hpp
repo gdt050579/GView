@@ -7,20 +7,16 @@ namespace GView::GenericPlugins::OnlineAnalytics::UI
 using namespace AppCUI::Controls;
 
 class OnlineAnalyticsProvidersUI : public Controls::Window,
-                                 public Controls::Handlers::OnButtonPressedInterface,
-                                 public Controls::Handlers::OnListViewCurrentItemChangedInterface
+                                   public Controls::Handlers::OnButtonPressedInterface,
+                                   public Controls::Handlers::OnListViewCurrentItemChangedInterface
 {
   private:
-    AppCUI::Utils::IniSection settings;
     bool didInit;
+    Reference<GView::Object> object;
     std::vector<Reference<Providers::IProvider>> providers;
     Reference<Providers::IProvider> provider;
 
-    Reference<GView::Object> object;
     Reference<Controls::ListView> providersList;
-    Reference<Controls::Label> disclaimerLabel;
-    Reference<Controls::Button> exitButton;
-    Reference<Controls::Button> okButton;
 
   public:
     OnlineAnalyticsProvidersUI(Reference<GView::Object> object);
@@ -29,12 +25,12 @@ class OnlineAnalyticsProvidersUI : public Controls::Window,
     AppCUI::Dialogs::Result Show();
     void OnButtonPressed(Reference<Controls::Button> button) override;
     void OnListViewCurrentItemChanged(Reference<Controls::ListView> listView, Controls::ListViewItem item) override;
-    
+
     Reference<Providers::IProvider> GetProvider();
 
   private:
-    void OnExitButtonPressed();
     void OnOkButtonPressed();
+    void OnExitButtonPressed();
 };
 
 }; // namespace GView::GenericPlugins::OnlineAnalytics::UI
