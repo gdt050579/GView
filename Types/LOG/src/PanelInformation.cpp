@@ -6,9 +6,9 @@ using namespace AppCUI::Controls;
 Panels::Information::Information(Reference<GView::Type::LOG::LogFile> _log) : TabPage("&Information")
 {
     log     = _log;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:50%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
 
-    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
+    issues = Factory::ListView::Create(this, "x:0,y:21,w:50%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
     this->Update();
 }
@@ -44,21 +44,6 @@ void Panels::Information::UpdateGeneralInformation()
     general->AddItem("IP Addresses");
     for (const auto& ip : log->ipAddresses) {
         general->AddItem({ "", ip.c_str() });
-    }
-
-    // messages info
-    general->AddItem("Log Categories");
-    for (const auto& [category, summary] : log->logCategories) {
-        // Add category name and count
-        general->AddItem({ category.c_str(), tempStr.Format("%d entries", summary.count) });
-
-        // Add recent messages for the category
-        for (const auto& msg : summary.recentMessages) {
-            std::string truncatedMsg = msg.substr(0, 100);
-            if (msg.length() > 50)
-                truncatedMsg += "...";
-            general->AddItem({ "  - Message", truncatedMsg.c_str() });
-        }
     }
 }
 

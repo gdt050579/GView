@@ -51,6 +51,7 @@ LogFile::LogFile()
     firstTimestamp = "";
     lastTimestamp  = "";
     ipAddresses.clear();
+    constexpr uint32 numberOfMessages = 5;
 }
 
 #define CHAR_CASE(char_type, align)                                                                                                                            \
@@ -249,7 +250,7 @@ void LogFile::AnalyzeLogFile()
             std::string category = CategorizeMessage(message);
             auto& summary = logCategories[category];
             summary.count++;
-            if (summary.recentMessages.size() < 5) { // memorizing only the latest 5 messages for the category
+            if (summary.recentMessages.size() < numberOfMessages) { // memorizing only the latest X messages for the category
                 summary.recentMessages.push_back(message);
             }
 

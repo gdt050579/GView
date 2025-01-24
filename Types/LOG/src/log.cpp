@@ -35,6 +35,7 @@ extern "C" {
         log->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
         win->AddPanel(Pointer<TabPage>(new GView::Type::LOG::Panels::Information(log)), true);
+        win->AddPanel(Pointer<TabPage>(new GView::Type::LOG::Panels::LogData(log)), true);
 
         return true;
     }

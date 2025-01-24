@@ -40,7 +40,7 @@ namespace Type
           public:
             LogFile();
             virtual ~LogFile();
-
+            
             uint32 entryCount;
             uint32 errorCount;
             uint32 warningCount;
@@ -49,6 +49,7 @@ namespace Type
             std::string lastTimestamp;
             std::vector<std::string> ipAddresses;
             std::unordered_map<std::string, LogSummary> logCategories;
+            static constexpr uint32 numberOfMessages = 10;
 
             std::string_view GetTypeName() override
             {
@@ -67,7 +68,6 @@ namespace Type
             virtual bool StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result) override;
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
 
-          public:
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
             uint32 GetSelectionZonesCount() override
@@ -100,6 +100,26 @@ namespace Type
 
               public:
                 Information(Reference<GView::Type::LOG::LogFile> log);
+
+                void Update();
+                virtual void OnAfterResize(int newWidth, int newHeight) override
+                {
+                    RecomputePanelsPositions();
+                }
+            };
+
+            class LogData : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::LOG::LogFile> log;
+                Reference<AppCUI::Controls::ListView> general;
+                Reference<AppCUI::Controls::ListView> issues;
+
+                void UpdateGeneralInformation();
+                void UpdateIssues();
+                void RecomputePanelsPositions();
+
+              public:
+                LogData(Reference<GView::Type::LOG::LogFile> log);
 
                 void Update();
                 virtual void OnAfterResize(int newWidth, int newHeight) override
