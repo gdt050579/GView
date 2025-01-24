@@ -17,7 +17,7 @@ OnlineAnalyticsProvidersUI::OnlineAnalyticsProvidersUI(Reference<GView::Object> 
     this->object  = object;
     this->didInit = false;
 
-    this->providersList = Factory::ListView::Create(this, "a:t,l:1,r:1%,y:1,h:80%", { "n:&Provider,w:35%", "n:&Api key,w:65%" });
+    this->providersList = Factory::ListView::Create(this, "a:t,l:1,r:1,y:1,h:80%", { "n:&Provider,w:35%", "n:&Api key,w:65%" });
     this->providersList->Handlers()->OnCurrentItemChanged = this;
 
     this->disclaimerLabel = Factory::Label::Create(this, "NOTE: A request to the given provider will be performed on your behalf.", "a:b,l:1,r:1,y:95%,h:2");
