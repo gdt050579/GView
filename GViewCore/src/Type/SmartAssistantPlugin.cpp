@@ -153,7 +153,6 @@ struct GeminiSmartAssistant : SmartAssistantRegisterInterface {
         return 1024u;
     }
 };
-};
 
 bool GView::Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(Reference<GView::View::WindowInterface> win)
 {
