@@ -54,7 +54,7 @@ void Panels::Information::UpdateGeneralInformation()
 
         // Add recent messages for the category
         for (const auto& msg : summary.recentMessages) {
-            std::string truncatedMsg = msg.substr(0, 50);
+            std::string truncatedMsg = msg.substr(0, 100);
             if (msg.length() > 50)
                 truncatedMsg += "...";
             general->AddItem({ "  - Message", truncatedMsg.c_str() });

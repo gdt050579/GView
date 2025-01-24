@@ -197,9 +197,10 @@ std::string CategorizeMessage(const std::string& message)
 {
     if (message.find("timeout") != std::string::npos)
         return "Timeouts";
-    if (message.find("error") != std::string::npos)
+    if (message.find("error") != std::string::npos || message.find("failure") != std::string::npos)
         return "Errors";
-    if (message.find("login") != std::string::npos)
+    if (message.find("login") != std::string::npos || message.find("logout") != std::string::npos || message.find("sign") != std::string::npos ||
+        message.find("user") != std::string::npos)
         return "User Actions";
     return "General";
 }
@@ -210,7 +211,6 @@ void LogFile::AnalyzeLogFile()
     auto size  = data.GetSize();
     std::unordered_set<std::string> uniqueIPAddresses;
 
-    // Reset metadata
     entryCount   = 0;
     errorCount   = 0;
     warningCount = 0;
