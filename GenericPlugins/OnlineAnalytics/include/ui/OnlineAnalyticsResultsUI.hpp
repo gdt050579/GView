@@ -12,11 +12,10 @@ class OnlineAnalyticsResultsUI : public Window, public Controls::Handlers::OnBut
 {
   private:
     bool didInit;
-    Reference<GView::Object> object;
     Reference<Utils::Report> report;
 
   public:
-    OnlineAnalyticsResultsUI(Reference<GView::Object> object, Reference<Utils::Report> report);
+    OnlineAnalyticsResultsUI(Reference<Utils::Report> report);
     bool Init();
 
     AppCUI::Dialogs::Result Show();

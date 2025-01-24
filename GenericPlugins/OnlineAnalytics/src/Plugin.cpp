@@ -21,7 +21,6 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
         return false;
     }
 
-
     if (object->GetData().GetSize() == 0) {
         Dialogs::MessageBox::ShowError("Error!", "Must open a file before running analytics");
         return true;
@@ -47,7 +46,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
         return true;
     }
 
-    UI::OnlineAnalyticsResultsUI resultsUi(object, report);
+    UI::OnlineAnalyticsResultsUI resultsUi(report);
     resultsUi.Init();
     resultsUi.Show();
 
