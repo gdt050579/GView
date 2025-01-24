@@ -10,7 +10,7 @@ constexpr int32 TAB_ID_GENERAL      = 0;
 constexpr int32 TAB_ID_HASHES       = 1;
 constexpr int32 TAB_ID_CAPABILITIES = 2;
 constexpr int32 TAB_ID_ANALYSIS     = 3;
-constexpr int32 TAB_ID_URLS         = 4;
+constexpr int32 TAB_ID_TAGS         = 4;
 
 constexpr int32 BUTTON_VISIT_URL = 5;
 
@@ -30,6 +30,7 @@ OnlineAnalyticsResultsUI::OnlineAnalyticsResultsUI(Reference<GView::Object> obje
     Reference<Controls::TabPage> hashesTabPage       = Factory::TabPage::Create(tabs, "Hashes", TAB_ID_HASHES);
     Reference<Controls::TabPage> capabilitiesTabPage = Factory::TabPage::Create(tabs, "Capabilities", TAB_ID_CAPABILITIES);
     Reference<Controls::TabPage> analysisTabPage     = Factory::TabPage::Create(tabs, "Analysis", TAB_ID_ANALYSIS);
+    Reference<Controls::TabPage> tagsTabPage         = Factory::TabPage::Create(tabs, "Tags", TAB_ID_TAGS);
 
     Reference<Controls::Label> nameLabel = Factory::Label::Create(generalTabPage, std::format("File name: {}", this->report->fileName), "a:t,l:1,r:1,y:1,h:1");
     Reference<Controls::Label> sizeLabel =
@@ -51,12 +52,19 @@ OnlineAnalyticsResultsUI::OnlineAnalyticsResultsUI(Reference<GView::Object> obje
     for (std::string& capability : report->capabilities) {
         capabilitiesListView->AddItem(capability.c_str());
     };
+
     Reference<Controls::ListView> analysisListView =
           Factory::ListView::Create(analysisTabPage, "l:1,r:1,t:1,b:1", { "n:&Analysis,w:33%", "n:&Version,w:33%", "n:&Result,w:34%" });
 
     for (Utils::Analysis& analysis : report->analysis) {
         analysisListView->AddItem(
               { analysis.engine.c_str(), analysis.version.c_str(), analysis.result == Utils::AnalysisResult::Malicious ? "Malicious" : "Undetected" });
+    }
+
+    Reference<Controls::ListView> tagsListView = Factory::ListView::Create(tagsTabPage, "l:1,r:1,t:1,b:1", { "n:&Tags,w:100%" });
+
+    for (std::string& tag : report->tags) {
+        tagsListView->AddItem(tag);
     }
 };
 
