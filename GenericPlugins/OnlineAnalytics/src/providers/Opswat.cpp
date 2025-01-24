@@ -30,7 +30,7 @@ std::string OpswatProvider::GetApiKey()
 Reference<Utils::Report> OpswatProvider::GetReport(Reference<std::array<uint8, 32>> sha256)
 {
     Reference<std::string> id               = this->MakeId(sha256);
-    Reference<Utils::HTTPResponse> response = this->MakeRequest(id);
+    Reference<Utils::HTTPResponse> response = this->MakeReportRequest(id);
     CHECK(response != NULL, NULL, "Could not retrieve cURL response");
     CHECK(response->status == 200, NULL, std::format("Request status was not 200: was {}", response->status).c_str());
 
@@ -39,6 +39,12 @@ Reference<Utils::Report> OpswatProvider::GetReport(Reference<std::array<uint8, 3
 
     return result;
 }
+
+bool OpswatProvider::UploadFile(Reference<GView::Object> object)
+{
+    return true;
+}
+
 Reference<std::string> OpswatProvider::MakeId(Reference<std::array<uint8, 32>> sha256)
 {
     Reference<std::string> id(new std::string());
@@ -50,7 +56,7 @@ Reference<std::string> OpswatProvider::MakeId(Reference<std::array<uint8, 32>> s
     return id;
 }
 
-Reference<Utils::HTTPResponse> OpswatProvider::MakeRequest(Reference<std::string> id)
+Reference<Utils::HTTPResponse> OpswatProvider::MakeReportRequest(Reference<std::string> id)
 {
     CURL* curl = curl_easy_init();
     CHECK(curl, NULL, "Could not initialise cURL");
@@ -66,7 +72,7 @@ Reference<Utils::HTTPResponse> OpswatProvider::MakeRequest(Reference<std::string
 
     url = std::format("https://api.metadefender.com/v5/threat-intel/file-analysis/{}", id->c_str());
 
-    Reference<Utils::HTTPResponse> result = this->MakeRequestInternal(curl, url, headers, data, status);
+    Reference<Utils::HTTPResponse> result = this->MakeReportRequestInternal(curl, url, headers, data, status);
 
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
@@ -81,7 +87,7 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     return realsize;
 }
 
-Reference<Utils::HTTPResponse> OpswatProvider::MakeRequestInternal(CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status)
+Reference<Utils::HTTPResponse> OpswatProvider::MakeReportRequestInternal(CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status)
 {
     CHECK(curl_easy_setopt(curl, CURLOPT_URL, url.c_str()) == CURLE_OK, NULL, "Could not set cURL url");
     CHECK(curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers) == CURLE_OK, NULL, "Could not set cURL headers");

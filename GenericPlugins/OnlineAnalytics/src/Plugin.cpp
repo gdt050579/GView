@@ -42,8 +42,26 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
     Reference<Utils::Report> report = provider->GetReport(hash);
 
     if (report == NULL) {
-        Dialogs::MessageBox::ShowError("Report retrieval", "The report retrieval failed. Possible reasons: Network failure or report was not found");
-        return true;
+        if (Dialogs::MessageBox::ShowOkCancel(
+                  "Report retrieval failed",
+                  "The report retrieval failed. The file might have not been analysed before. Would you like to upload the file the provider?") ==
+            AppCUI::Dialogs::Result::Cancel) {
+            return true;
+        }
+
+        if (!provider->UploadFile(object)) {
+            Dialogs::MessageBox::ShowError(
+                  "File upload failed",
+                  "An error occured while uploading the file to the given provider. Possible reasons: Network failure or report was not found");
+            return true;
+        }
+
+        report = provider->GetReport(hash);
+
+        if (report == NULL) {
+            Dialogs::MessageBox::ShowError("Report retrieval", "The report retrieval failed. Possible reasons: Network failure or report was not found");
+            return true;
+        }
     }
 
     UI::OnlineAnalyticsResultsUI resultsUi(report);
