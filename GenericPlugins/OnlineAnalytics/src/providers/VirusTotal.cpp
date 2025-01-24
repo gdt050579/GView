@@ -8,9 +8,9 @@
 namespace GView::GenericPlugins::OnlineAnalytics::Providers
 {
 
-VirusTotalProvider::VirusTotalProvider(std::string apiKey)
+VirusTotalProvider::VirusTotalProvider(AppCUI::Utils::IniSection& settings)
 {
-    this->apiKey = apiKey;
+    this->apiKey = settings.GetValue("Config.VirusTotal.ApiKey").ToString();
 }
 
 std::string VirusTotalProvider::GetName()
@@ -25,12 +25,13 @@ std::string VirusTotalProvider::GetApiKey()
 
 Reference<Utils::Report> VirusTotalProvider::GetReport(Reference<std::array<uint8, 32>> sha256)
 {
-    Reference<Utils::HTTPResponse> response = this->MakeRequest(sha256);
+    Reference<std::string> id               = this->MakeId(sha256);
+    Reference<Utils::HTTPResponse> response = this->MakeRequest(id);
     CHECK(response != NULL, NULL, "Could not retrieve cURL response");
     CHECK(response->status == 200, NULL, std::format("Request status was not 200: was {}", response->status).c_str());
 
-    Reference<Utils::Report> result = this->ProcessRequest(response);
-    CHECK(result != NULL, NULL, "Could not process response");
+    Reference<Utils::Report> result = this->CreateReport(response, id);
+    CHECK(result != NULL, NULL, "Could not create report");
 
     return result;
 }
@@ -42,13 +43,23 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     return realsize;
 }
 
-Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequest(Reference<std::array<uint8, 32>> sha256)
+Reference<std::string> VirusTotalProvider::MakeId(Reference<std::array<uint8, 32>> sha256)
+{
+    Reference<std::string> id(new std::string());
+
+    for (long unsigned int i = 0; i < sha256->size(); i++) {
+        id->append(std::format("{:02x}", sha256->at(i)));
+    }
+
+    return id;
+}
+
+Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequest(Reference<std::string> id)
 {
     CURL* curl = curl_easy_init();
     CHECK(curl, NULL, "Could not initialise cURL");
 
     long status;
-    std::string id;
     std::string data;
     std::string url;
 
@@ -56,11 +67,7 @@ Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequest(Reference<std::ar
     headers                    = curl_slist_append(headers, "Accept: application/json");
     headers                    = curl_slist_append(headers, std::format("x-apikey: {}", this->apiKey).c_str());
 
-    for (long unsigned int i = 0; i < sha256->size(); i++) {
-        id += std::format("{:02x}", sha256->at(i));
-    }
-
-    url = std::format("https://www.virustotal.com/api/v3/files/{}", id);
+    url = std::format("https://www.virustotal.com/api/v3/files/{}", id->c_str());
 
     Reference<Utils::HTTPResponse> result = this->MakeRequestInternal(curl, url, headers, data, status);
 
@@ -83,7 +90,7 @@ Reference<Utils::HTTPResponse> VirusTotalProvider::MakeRequestInternal(CURL* cur
     return result;
 }
 
-Reference<Utils::Report> VirusTotalProvider::ProcessRequest(Reference<Utils::HTTPResponse> response)
+Reference<Utils::Report> VirusTotalProvider::CreateReport(Reference<Utils::HTTPResponse> response, Reference<std::string> id)
 {
     nlohmann::json data;
     try {
@@ -101,7 +108,6 @@ Reference<Utils::Report> VirusTotalProvider::ProcessRequest(Reference<Utils::HTT
 
     std::vector<std::string> capabilities;
     std::vector<Utils::Analysis> analysis;
-    std::vector<std::string> urls;
     std::vector<std::string> tags;
 
     for (auto it = data["last_analysis_results"].begin(); it != data["last_analysis_results"].end(); it++) {
@@ -116,8 +122,6 @@ Reference<Utils::Report> VirusTotalProvider::ProcessRequest(Reference<Utils::HTT
         capabilities.push_back(it.value());
     }
 
-    urls.push_back(response->url);
-
     for (auto it = data["tags"].begin(); it != data["tags"].end(); it++) {
         tags.push_back(it.value());
     }
@@ -127,13 +131,11 @@ Reference<Utils::Report> VirusTotalProvider::ProcessRequest(Reference<Utils::HTT
                                                        .sha256       = data["sha256"],
                                                        .fileName     = data["names"][0],
                                                        .fileSize     = data["size"],
+                                                       .url          = std::format("https://www.virustotal.com/gui/file/{}", id.operator std::string&()),
                                                        .severity     = Utils::Severity::None,
                                                        .capabilities = capabilities,
                                                        .analysis     = analysis,
-                                                       .urls         = urls,
-                                                       .tags         = tags
-
-    });
+                                                       .tags         = tags });
     return result;
 }
 

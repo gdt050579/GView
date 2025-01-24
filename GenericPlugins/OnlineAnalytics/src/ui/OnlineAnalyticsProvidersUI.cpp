@@ -42,7 +42,7 @@ bool OnlineAnalyticsProvidersUI::Init()
         return this->Exit(AppCUI::Dialogs::Result::Cancel);
     }
 
-    this->providers.push_back(Reference<Providers::IProvider>(new Providers::VirusTotalProvider(settings.GetValue("Config.VirusTotal.ApiKey").ToString())));
+    this->providers.push_back(Reference<Providers::IProvider>(new Providers::VirusTotalProvider(settings)));
     this->provider = this->providers[0];
 
     for (Reference<Providers::IProvider> provider : this->providers) {

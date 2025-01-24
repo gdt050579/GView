@@ -24,10 +24,10 @@ struct Report {
     std::string sha256;
     std::string fileName;
     int32 fileSize;
+    std::string url;
     Severity severity;
     std::vector<std::string> capabilities;
     std::vector<Analysis> analysis;
-    std::vector<std::string> urls;
     std::vector<std::string> tags;
 };
 
