@@ -638,6 +638,9 @@ namespace View
             void LoadCacheData();
             void SaveCacheData();
 
+            void LoadCacheData();
+            void SaveCacheData();
+
           public:
             Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
             virtual ~Instance() override;

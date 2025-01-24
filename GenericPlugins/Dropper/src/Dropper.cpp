@@ -126,7 +126,7 @@ bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result res
 
     if (!writeValueOnly) {
         auto& cache = this->object->GetData();
-        auto bv     = cache.Get(start, static_cast<uint32>(end - start), true);
+        auto bv     = cache.Get(start, static_cast<uint32>(end - start), false);
         CHECK(bv.IsValid(), false, "");
 
         f << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
@@ -172,7 +172,7 @@ bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result res
 
 bool Instance::WriteToFile(std::filesystem::path path, uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result)
 {
-    auto bv = object->GetData().Get(start, static_cast<uint32>(end - start), true);
+    auto bv = object->GetData().Get(start, static_cast<uint32>(end - start), false);
     CHECK(bv.IsValid(), false, "");
 
     auto flags = std::ios::out | std::ios::binary;
