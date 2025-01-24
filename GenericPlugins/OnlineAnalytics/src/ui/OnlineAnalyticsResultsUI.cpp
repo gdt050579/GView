@@ -19,7 +19,7 @@ constexpr std::string SEVERITY_LABELS[] = {
 };
 
 OnlineAnalyticsResultsUI::OnlineAnalyticsResultsUI(Reference<GView::Object> object, Reference<Utils::Report> report)
-    : Window("Online analytics: results", "d:c,w:80,h:24", WindowFlags::None)
+    : Window("Online analytics: results", "d:c,w:96,h:24", WindowFlags::None)
 {
     this->object  = object;
     this->report  = report;
