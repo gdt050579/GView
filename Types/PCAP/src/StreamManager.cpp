@@ -155,7 +155,7 @@ void StreamManager::Add_TCPHeader(
             streamToAddTo = &revStream->second.back();
         else
         {
-            revStream->second.push_back({});
+            revStream->second.emplace_back();
             streamToAddTo                    = &revStream->second.back();
             streamToAddTo->ipProtocol        = (uint16) ipProto;
             streamToAddTo->transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
@@ -175,8 +175,8 @@ void StreamManager::Add_TCPHeader(
         streamToAddTo = &currentStream.back();
         if (streamToAddTo->isFinished)
         {
-            revStream->second.emplace_back();
-            streamToAddTo                    = &revStream->second.back();
+            currentStream.emplace_back();
+            streamToAddTo                    = &currentStream.back();
             streamToAddTo->ipProtocol        = (uint16) ipProto;
             streamToAddTo->transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
         }
