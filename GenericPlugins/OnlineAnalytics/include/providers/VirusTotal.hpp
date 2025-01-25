@@ -26,8 +26,14 @@ class VirusTotalProvider : public IProvider
   private:
     Reference<std::string> MakeId(Reference<std::array<uint8, 32>> sha256);
     Reference<Utils::HTTPResponse> MakeReportRequest(Reference<std::string> id);
-    Reference<Utils::HTTPResponse> MakeReportRequestInternal(CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status);
+    Reference<Utils::HTTPResponse> MakeReportRequestInternal(CURL* curl, std::string& url, curl_slist* headers);
     Reference<Utils::Report> CreateReport(Reference<Utils::HTTPResponse> response, Reference<std::string> id);
+
+    Reference<Utils::HTTPResponse> MakeUploadRequest(Reference<Utils::HTTPUploadData> uploadData);
+    Reference<Utils::HTTPResponse> MakeUploadRequestInternal(
+          CURL* curl, std::string& url, curl_slist* headers, curl_mime* mime, curl_mimepart* part, Reference<Utils::HTTPUploadData> uploadData);
+    Reference<Utils::HTTPResponse> MakeAnalysisRequest(Reference<std::string> id);
+    Reference<Utils::HTTPResponse> MakeAnalysisRequestInternal(CURL* curl, std::string& url, curl_slist* headers);
 };
 
 }; // namespace GView::GenericPlugins::OnlineAnalytics::Providers
