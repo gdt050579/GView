@@ -80,10 +80,10 @@ Reference<Utils::HTTPResponse> OpswatProvider::MakeReportRequest(Reference<std::
     return result;
 }
 
-static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
+static size_t WriteCallback(void* buffer, size_t size, size_t nmemb, void* userp)
 {
     size_t realsize = size * nmemb;
-    ((std::string*) userp)->append((char*) contents, realsize);
+    ((std::string*) userp)->append((char*) buffer, realsize);
     return realsize;
 }
 
@@ -162,7 +162,7 @@ Reference<Utils::Report> OpswatProvider::CreateReport(Reference<Utils::HTTPRespo
                                                        .sha256       = data["sha256"],
                                                        .fileName     = std::string("Unknown"),
                                                        .fileSize     = data["file_info"]["file_size"],
-                                                       .url          = std::format("https://metadefender.com/results/hash/{}", id.operator std::string &()),
+                                                       .url          = std::format("https://metadefender.com/results/hash/{}", id.operator std::string&()),
                                                        .severity     = severity,
                                                        .capabilities = capabilities,
                                                        .analysis     = analysis,
