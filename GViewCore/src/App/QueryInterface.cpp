@@ -318,14 +318,14 @@ bool SmartAssistantPromptInterfaceProxy::RegisterSmartAssistantInterface(Pointer
     const auto newAssistantName = registerInterface->GetSmartAssistantName();
     if (newAssistantName.empty()) {
         LocalString<128> data;
-        data.SetFormat("Assistant \"%s\" has empty name!");
+        data.SetFormat("Assistant has empty name!");
         Dialogs::MessageBox::ShowError("Smart Assistant Error", data);
         return false;
     }
     for (const auto& smartAssistant : smartAssistants) {
         if (smartAssistant->GetSmartAssistantName().compare(newAssistantName) == 0) {
             LocalString<128> data;
-            data.SetFormat("Assistant with name: \"%s\" already exists!");
+            data.SetFormat("Assistant with name: \"%s\" already exists!", newAssistantName.data());
             Dialogs::MessageBox::ShowError("Smart Assistant Error", data);
             return false;
         }
