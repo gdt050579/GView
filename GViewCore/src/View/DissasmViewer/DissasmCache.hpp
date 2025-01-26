@@ -1,5 +1,4 @@
 #pragma once
-#include <fstream>
 #include <unordered_map>
 
 #include <AppCUI/include/AppCUI.hpp>
@@ -14,7 +13,7 @@ struct DissasmCacheEntry
 
 struct DissasmCache {
     bool hasCache;
-    std::fstream cacheFile;
+    AppCUI::OS::File cacheFile;
     std::unordered_map<std::string, DissasmCacheEntry> zonesData;
 
     void ClearCache(bool forceClear = false);
