@@ -1,6 +1,5 @@
 #include "../GViewCore/include/GView.hpp"
 #include <iostream>
-#include <fstream>
 
 enum class CommandID
 {
@@ -111,13 +110,11 @@ bool ListTypes()
 
 std::string readFile(const std::filesystem::path& path)
 {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        return "";
-    }
+    const auto dataBuffer = AppCUI::OS::File::ReadContent(path);
+    if (!dataBuffer.GetLength())
+        return {};
 
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    file.close();
+    auto content = std::string(reinterpret_cast<char*>(dataBuffer.GetData()), dataBuffer.GetLength());
     return content;
 }
 
