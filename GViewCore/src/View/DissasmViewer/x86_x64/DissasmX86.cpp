@@ -8,6 +8,7 @@
 #include <utility>
 #include <list>
 #include <algorithm>
+#include <sstream>
 
 //#define DISSASM_DISABLE_STRING_PREVIEW
 
