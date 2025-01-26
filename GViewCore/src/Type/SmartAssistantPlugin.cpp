@@ -1,5 +1,4 @@
 #include <codecvt>
-#include <fstream>
 
 #include "Internal.hpp"
 #include <curl/curl.h>
