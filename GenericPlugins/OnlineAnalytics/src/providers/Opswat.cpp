@@ -1,5 +1,8 @@
 #include <stdexcept>
 #include <format>
+#include <string>
+#include <locale>
+#include <codecvt>
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
@@ -7,6 +10,29 @@
 
 namespace GView::GenericPlugins::OnlineAnalytics::Providers
 {
+
+static size_t ReadCallback(char* buffer, size_t size, size_t nmemb, void* userp)
+{
+    Reference<Utils::HTTPUploadData> uploadData = *((Reference<Utils::HTTPUploadData>*) (userp));
+    size_t maxToRead                            = size * nmemb;
+    size_t remaining                            = uploadData->size - uploadData->position;
+
+    if (maxToRead > remaining) {
+        maxToRead = remaining;
+    }
+
+    std::memcpy(buffer, uploadData->data + uploadData->position, maxToRead);
+    uploadData->position += maxToRead;
+
+    return maxToRead;
+}
+
+static size_t WriteCallback(void* buffer, size_t size, size_t nmemb, void* userp)
+{
+    size_t realsize = size * nmemb;
+    ((std::string*) userp)->append((char*) buffer, realsize);
+    return realsize;
+}
 
 OpswatProvider::OpswatProvider(AppCUI::Utils::IniSection& settings)
 {
@@ -27,6 +53,11 @@ std::string OpswatProvider::GetApiKey()
     return this->apiKey;
 }
 
+bool OpswatProvider::GetIsUploadSupported()
+{
+    return false;
+}
+
 Reference<Utils::Report> OpswatProvider::GetReport(Reference<std::array<uint8, 32>> sha256)
 {
     Reference<std::string> id               = this->MakeId(sha256);
@@ -42,7 +73,7 @@ Reference<Utils::Report> OpswatProvider::GetReport(Reference<std::array<uint8, 3
 
 bool OpswatProvider::UploadFile(Reference<GView::Object> object)
 {
-    return true;
+    return false;
 }
 
 Reference<std::string> OpswatProvider::MakeId(Reference<std::array<uint8, 32>> sha256)
@@ -78,13 +109,6 @@ Reference<Utils::HTTPResponse> OpswatProvider::MakeReportRequest(Reference<std::
     curl_easy_cleanup(curl);
 
     return result;
-}
-
-static size_t WriteCallback(void* buffer, size_t size, size_t nmemb, void* userp)
-{
-    size_t realsize = size * nmemb;
-    ((std::string*) userp)->append((char*) buffer, realsize);
-    return realsize;
 }
 
 Reference<Utils::HTTPResponse> OpswatProvider::MakeReportRequestInternal(CURL* curl, std::string& url, curl_slist* headers, std::string& data, long& status)
@@ -168,6 +192,27 @@ Reference<Utils::Report> OpswatProvider::CreateReport(Reference<Utils::HTTPRespo
                                                        .analysis     = analysis,
                                                        .tags         = tags });
     return result;
+}
+
+Reference<Utils::HTTPResponse> OpswatProvider::MakeUploadRequest(Reference<Utils::HTTPUploadData> uploadData)
+{
+    return NULL;
+}
+
+Reference<Utils::HTTPResponse> OpswatProvider::MakeUploadRequestInternal(
+      CURL* curl, std::string& url, curl_slist* headers, curl_mime* mime, curl_mimepart* part, Reference<Utils::HTTPUploadData> uploadData)
+{
+    return NULL;
+}
+
+Reference<Utils::HTTPResponse> OpswatProvider::MakeAnalysisRequest(Reference<std::string> id)
+{
+    return NULL;
+}
+
+Reference<Utils::HTTPResponse> OpswatProvider::MakeAnalysisRequestInternal(CURL* curl, std::string& url, curl_slist* headers)
+{
+    return NULL;
 }
 
 } // namespace GView::GenericPlugins::OnlineAnalytics::Providers

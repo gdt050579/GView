@@ -20,6 +20,7 @@ class VirusTotalProvider : public IProvider
     VirusTotalProvider(AppCUI::Utils::IniSection& settings);
     std::string GetName();
     std::string GetApiKey();
+    bool GetIsUploadSupported();
     Reference<Utils::Report> GetReport(Reference<std::array<uint8, 32>> sha256);
     bool UploadFile(Reference<GView::Object>);
 

@@ -42,6 +42,11 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
     Reference<Utils::Report> report = provider->GetReport(hash);
 
     if (report == NULL) {
+        if (!provider->GetIsUploadSupported()) {
+            Dialogs::MessageBox::ShowError("Report retrieval", "The report retrieval failed. Possible reasons: Network failure, file was not previously analyzed or report was not found");
+            return true;
+        }
+
         if (Dialogs::MessageBox::ShowOkCancel(
                   "Report retrieval failed",
                   "The report retrieval failed. The file might have not been analysed before. Would you like to upload the file the provider?") ==

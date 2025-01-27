@@ -53,6 +53,11 @@ std::string VirusTotalProvider::GetApiKey()
     return this->apiKey;
 }
 
+bool VirusTotalProvider::GetIsUploadSupported()
+{
+    return true;
+}
+
 Reference<Utils::Report> VirusTotalProvider::GetReport(Reference<std::array<uint8, 32>> sha256)
 {
     Reference<std::string> id               = this->MakeId(sha256);
