@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include <curl/curl.h>
 #include <array>
 
 using namespace GView::App;
@@ -152,6 +153,7 @@ bool Instance::Init()
     }
     settingsFile.Close();
 
+    CHECK(curl_global_init(CURL_GLOBAL_DEFAULT) == 0, false, "Failed to initialize cURL library !");
     CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
     // reserve some space fo type
     this->typePlugins.reserve(128);
