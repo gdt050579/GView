@@ -30,8 +30,21 @@ namespace View
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 90;
 
+        static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
+
         using AnnotationDetails   = std::pair<std::string, uint64>;
         using AnnotationContainer = std::map<uint32, AnnotationDetails>;
+
+        enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel, FunctionNameAndExplanation, MitreTechiques };
+
+        struct QuerySmartAssistantParams {
+            bool stopAtTheEndOfTheFunction;
+            bool displayPromptUsesMnemonicParam;
+            bool includeComments;
+            std::string_view mnemonicStarsWith, mnemonicStartsWithError;
+            std::string_view displayPrompt;
+            std::string_view prompt;
+        };
 
         struct DisassemblyZone {
             uint64 startingZonePoint;
@@ -139,21 +152,21 @@ namespace View
                 DrawEndingLine   = 0x40
             };
 
-            uint64 address;
-            uint8 bytes[24];
-            uint16 size;
-            uint32 currentLine;
+            uint64 address     = 0;
+            uint8 bytes[24]    = {};
+            uint16 size        = 0;
+            uint32 currentLine = 0;
             char mnemonic[CS_MNEMONIC_SIZE];
-            char* op_str;
-            uint32 op_str_size;
+            char* op_str       = nullptr;
+            uint32 op_str_size = 0;
             std::optional<uint64> hexValue;
-            uint8 flags;
-            uint8 lineArrowToDraw;
-            const void* mapping;
-            const DissasmCodeInternalType* parent;
+            uint8 flags                           = 0;
+            uint8 lineArrowToDraw                 = 0;
+            const void* mapping                   = nullptr;
+            const DissasmCodeInternalType* parent = nullptr;
 
-            bool shouldAddButton;
-            bool isZoneCollapsed;
+            bool shouldAddButton = false;
+            bool isZoneCollapsed = false;
 
             uint32 GetLineSize() const
             {
@@ -563,6 +576,7 @@ namespace View
             AsmData asmData;
             JumpsHolder jumps_holder;
             DissasmCache cacheData;
+            CommonInterfaces::QueryInterface* queryInterface;
 
             inline void UpdateCurrentZoneIndex(const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
@@ -617,12 +631,15 @@ namespace View
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
             void EditDissasmCodeZoneCommand();
+            void QuerySmartAssistant(QueryTypeSmartAssistant queryType);
+            void QuerySmartAssistantX86X64(
+                  DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType);
 
             void LoadCacheData();
             void SaveCacheData();
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
             virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;

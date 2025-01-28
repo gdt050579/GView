@@ -1,5 +1,7 @@
 #include "eml.hpp"
+#include <nlohmann/json.hpp>
 
+using nlohmann::json;
 namespace GView::Type::EML
 {
 using namespace GView::View::LexicalViewer;
@@ -164,6 +166,15 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
         }
     }
+}
+
+std::string EMLFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"] = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["ItemsCount"] = items.size();
+    return context.dump();
 }
 
 uint32 EMLFile::ParseHeaderFieldBody(TextParser text, uint32 start)

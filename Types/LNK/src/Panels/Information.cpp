@@ -63,7 +63,7 @@ void Information::UpdateGeneralInformation()
     AddDateTime("Creation Date", "%-20s (%s)", lnk->header.creationDate);
     AddDateTime("Last Access Date", "%-20s (%s)", lnk->header.lastAccessDate);
     AddDateTime("Last Modification Date", "%-20s (%s)", lnk->header.lastModificationDate);
-    AddDecAndHexElement("File size", "%-20s (%s)", lnk->header.filesize);
+    AddDecAndHexElement("File size", "%-20s (%s)", lnk->header.fileSize);
     AddDecAndHexElement("Icon Index", "%-20s (%s)", lnk->header.iconIndex);
 
     const auto showCommandName        = LNK::GetShowWindowName(lnk->header.showCommand).data();

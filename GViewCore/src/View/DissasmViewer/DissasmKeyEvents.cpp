@@ -306,6 +306,23 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case RIGHT_CLICK_CODE_ZONE_EDIT:
             EditDissasmCodeZoneCommand();
             return true;
+        case COMMAND_QUERY_FUNCTION_NAME:
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION:
+            QuerySmartAssistant(QueryTypeSmartAssistant::FunctionName);
+            return true;
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE:
+            QuerySmartAssistant(QueryTypeSmartAssistant::ExplainCode);
+            return true;
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL:
+            QuerySmartAssistant(QueryTypeSmartAssistant::ConvertToHighLevel);
+            return true;
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION:
+            QuerySmartAssistant(QueryTypeSmartAssistant::FunctionNameAndExplanation);
+            return true;
+        case COMMAND_QUERY_MITRE_TECHNIQUE:
+        case RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES:
+            QuerySmartAssistant(QueryTypeSmartAssistant::MitreTechiques);
+            return true;
         case RIGHT_CLICK_REMOVE_COMMENT:
             RemoveComment();
             return true;

@@ -1,4 +1,7 @@
+#include <nlohmann/json.hpp>
 #include "js.hpp"
+
+using nlohmann::json;
 
 namespace GView::Type::JS
 {
@@ -1276,5 +1279,13 @@ bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicode
     result.Add(newContent);
     result.Add("`");
     return true;
+}
+
+std::string JSFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    return context.dump();
 }
 } // namespace GView::Type::JS

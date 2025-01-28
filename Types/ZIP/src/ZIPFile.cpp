@@ -1,7 +1,10 @@
 #include "zip.hpp"
 
-#include <queue>
 #include <map>
+#include <queue>
+#include <nlohmann/json.hpp>
+
+using nlohmann::json;
 
 namespace GView::Type::ZIP
 {
@@ -296,5 +299,14 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     }
 
     Dialogs::MessageBox::ShowError("Error!", "Unable to decompress without a password!");
+}
+
+std::string ZIPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"] = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["EntriesCount"] = this->info.GetCount();
+    return context.dump();
 }
 } // namespace GView::Type::ZIP

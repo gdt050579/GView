@@ -1,4 +1,6 @@
 #include "cpp.hpp"
+#include <nlohmann/json.hpp>
+using nlohmann::json;
 
 namespace GView::Type::CPP
 {
@@ -1111,5 +1113,13 @@ bool CPPFile::StringToContent(std::u16string_view string, AppCUI::Utils::Unicode
 bool CPPFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
 {
     NOT_IMPLEMENTED(false);
+}
+
+std::string CPPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    return context.dump();
 }
 } // namespace GView::Type::CPP

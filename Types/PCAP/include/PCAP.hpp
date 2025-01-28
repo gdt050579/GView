@@ -68,6 +68,7 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
     }
 
 	std::vector<std::pair<std::string, std::string>> GetPropertiesForContainerView();
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

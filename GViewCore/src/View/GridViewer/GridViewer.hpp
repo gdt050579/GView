@@ -130,7 +130,7 @@ namespace View
             std::string exportedPathUTF8;
             std::string exportedFolderPath;
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
 
             bool GoTo(uint64 offset) override;
             bool Select(uint64 offset, uint64 size) override;

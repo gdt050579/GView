@@ -40,7 +40,7 @@ bool DefaultAsciiMask[256] = {
 
 Config Instance::config;
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
     : obj(_obj), settings(nullptr), ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });

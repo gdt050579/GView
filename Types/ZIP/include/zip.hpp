@@ -56,6 +56,8 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     {
         return true;
     }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

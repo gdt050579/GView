@@ -135,7 +135,7 @@ bool Instance::BuildMainMenus()
     return true;
 }
 
-bool Instance::Init()
+bool Instance::Init(bool isTestingEnabled)
 {
     InitializationData initData;
     initData.Flags =
@@ -148,11 +148,18 @@ bool Instance::Init()
     // no .ini file found
     if (!settingsFile.OpenRead(settingsPath)) {
         CHECK(GView::App::ResetConfiguration(), false, "");
-        showTutorial = true;
+        if (!isTestingEnabled)
+            showTutorial = true;
     }
     settingsFile.Close();
 
-    CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    if (isTestingEnabled) {
+        CHECK(AppCUI::Application::InitForTests(initData.Width, initData.Height, initData.Flags, false),
+              false,
+              "Fail to initialize AppCUI framework for tests!");
+    } else {
+        CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    }
     // reserve some space fo type
     this->typePlugins.reserve(128);
     if (!LoadSettings()) {
@@ -164,7 +171,7 @@ bool Instance::Init()
         CHECK(GView::App::ResetConfiguration(), false, "");
 
         AppCUI::Dialogs::MessageBox::ShowError(
-              "Errorr reading configuration",
+              "Error reading configuration",
               "Found an invalid configuration, it will be renamed as \".ini.bak\". Will generated a new one! Please restart GView.");
     }
 
@@ -173,7 +180,7 @@ bool Instance::Init()
     }
 
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
-    this->defaultPlugin.Init();
+    this->defaultPlugin.InitDefaultPlugin();
 
     // set up handlers
     auto dsk                 = AppCUI::Application::GetDesktop();
@@ -394,6 +401,7 @@ bool Instance::Add(
     // instantiate window
     while (true) {
         CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
+        CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parentWindow);

@@ -281,6 +281,11 @@ namespace Type
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     } // namespace DefaultTypePlugin
 
+    namespace InterfaceTabs
+    {
+        bool PopulateWindowSmartAssistantsTab(Reference<GView::View::WindowInterface> win);
+    } // namespace InterfaceTabs
+
     namespace FolderViewPlugin
     {
         TypeInterface* CreateInstance(const std::filesystem::path& path);
@@ -392,7 +397,7 @@ namespace Type
       public:
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
-        void Init();
+        void InitDefaultPlugin();
         bool MatchExtension(uint64 extensionHash);
         bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
         bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, const std::string_view& extension = "");
@@ -541,7 +546,7 @@ namespace App
       public:
         Instance();
         virtual ~Instance() {}
-        bool Init();
+        bool Init(bool isTestingEnabled);
         bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
         bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
@@ -629,6 +634,40 @@ namespace App
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
 
+    class FileWindow;
+
+    namespace QueryInterfaceImpl
+    {
+        using namespace GView::CommonInterfaces::SmartAssistants;
+
+        struct SmartAssistantPromptInterfaceProxy : SmartAssistantPromptInterface
+        {
+            std::vector<Pointer<SmartAssistantRegisterInterface>> smartAssistants;
+            std::vector<bool> validSmartAssistants;
+            std::vector<void*> smartAssistantEntryTabUIPointers;
+            uint32 validAssistants = 0;
+            uint16 prefferedIndex = UINT16_MAX, prefferedChatIndex = UINT16_MAX;
+            Reference<TypeInterface> typePlugin;
+
+            virtual std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess);
+            bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface);
+            SmartAssistantPromptInterface* GetSmartAssistantInterface();
+            std::string BuildChatContext(std::string_view prompt, std::string_view displayPrompt, uint32 assistantIndex);
+
+            void Start(Reference<FileWindow> fileWindow);
+        };
+
+        struct GViewQueryInterface : public CommonInterfaces::QueryInterface {
+            Reference<FileWindow> fileWindow;
+            SmartAssistantPromptInterfaceProxy smartAssistantProxy;
+
+            bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface) override;
+            SmartAssistantPromptInterface* GetSmartAssistantInterface() override;
+
+            void Start();
+        };   
+    }
+
     class FileWindow : public Window, public GView::View::WindowInterface
     {
         Reference<GView::App::Instance> gviewApp;
@@ -641,6 +680,7 @@ namespace App
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
+        QueryInterfaceImpl::GViewQueryInterface queryInterface;
 
         void ShowFilePropertiesDialog();
         void ShowGoToDialog();
@@ -664,6 +704,7 @@ namespace App
         bool CreateViewer(View::TextViewer::Settings& settings) override;
         bool CreateViewer(View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(View::LexicalViewer::Settings& settings) override;
+        CommonInterfaces::QueryInterface* GetQueryInterface() override;
 
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 

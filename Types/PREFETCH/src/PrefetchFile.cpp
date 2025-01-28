@@ -1,6 +1,8 @@
-﻿#include "Prefetch.hpp"
+﻿#include <nlohmann/json.hpp>
+#include "Prefetch.hpp"
 
 using namespace GView::Type::Prefetch;
+using nlohmann::json;
 
 PrefetchFile::PrefetchFile()
 {
@@ -258,6 +260,19 @@ bool PrefetchFile::SetEntries(uint32 sectionASize, uint32 sectionBSize, uint32 s
     bufferSectionD = obj->GetData().CopyToBuffer(area.sectionD.offset, (uint32) obj->GetData().GetSize() - area.sectionD.offset);
 
     return true;
+}
+
+std::string PrefetchFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]                    = obj->GetName();
+    context["ContentSize"]             = obj->GetData().GetSize();
+    context["Filename"]                = filename;
+    context["ExecutablePath"]          = exePath;
+    context["XPHash"]                  = xpHash;
+    context["VistaHash"]               = vistaHash;
+    context["Hash2008"]                = hash2008;
+    return context.dump();
 }
 
 bool PrefetchFile::UpdateSectionArea()

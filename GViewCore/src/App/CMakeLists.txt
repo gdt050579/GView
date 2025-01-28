@@ -8,4 +8,5 @@ target_sources(GViewCore PRIVATE
     TutorialWindow.cpp
     AboutWindow.cpp
     KeyConfiguratorWindow.cpp
+    QueryInterface.cpp
 )

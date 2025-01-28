@@ -28,9 +28,9 @@ bool Instance::DrawDissasmJavaByteCodeZone(DrawLineInfo& dli, DissasmCodeZone* z
 
         auto clazz = creator.create();
         if (clazz) {
-            PopulateZoneTextToDissasmAsmPreCacheLine(zone, "Constant data:", strlen("Constant data:"));
+            PopulateZoneTextToDissasmAsmPreCacheLine(zone, "Constant data:", (uint32)strlen("Constant data:"));
             if (parser.constant_data.empty()) {
-                PopulateZoneTextToDissasmAsmPreCacheLine(zone, "No constant data!", strlen("No constant data!"));
+                PopulateZoneTextToDissasmAsmPreCacheLine(zone, "No constant data!", (uint32)strlen("No constant data!"));
             }
 
             LocalString<64> line;
@@ -40,10 +40,10 @@ bool Instance::DrawDissasmJavaByteCodeZone(DrawLineInfo& dli, DissasmCodeZone* z
             }
         } else {
             const char* msg = "Failed to parse class file, there are still some features in progress!";
-            PopulateZoneTextToDissasmAsmPreCacheLine(zone, msg, strlen(msg));
+            PopulateZoneTextToDissasmAsmPreCacheLine(zone, msg, (uint32)strlen(msg));
         }
 
-        AdjustZoneExtendedSize(zone, zone->asmPreCacheData.cachedAsmLines.size());
+        AdjustZoneExtendedSize(zone, (uint32)zone->asmPreCacheData.cachedAsmLines.size());
 
         zone->isInit = true;
     }
