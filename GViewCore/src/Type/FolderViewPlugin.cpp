@@ -44,10 +44,15 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
     void RunCommand(std::string_view) override
     {
     }
+    bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+    virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem)
 {
@@ -111,6 +116,12 @@ void FolderType::OnOpenItem(std::u16string_view relativePath, AppCUI::Controls::
     path /= relativePath;
     GView::App::OpenFile(path,GView::App::OpenMethod::BestMatch);
 }
+
+std::string FolderType::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    NOT_IMPLEMENTED("FOLDER PLUGIN");
+}
+
 TypeInterface* CreateInstance(const std::filesystem::path& path)
 {
     auto* ft = new FolderType();

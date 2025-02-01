@@ -94,37 +94,6 @@ namespace Utils
         void CopySetTo(bool ascii[256]);
     };
 
-    // Structure to represent an interval
-    struct Zone
-    {
-        struct Interval
-        {
-            uint64 low{ INVALID_OFFSET }, high{ INVALID_OFFSET };
-        } interval{};
-
-        AppCUI::Graphics::ColorPair color{ NoColorPair };
-        AppCUI::Utils::FixSizeString<25> name{};
-
-        Zone(uint64 low, uint64 high) : interval{ low, high }
-        {
-        }
-        Zone(uint64 low, uint64 high, ColorPair cp, std::string_view name) : interval{ low, high }, color(cp), name(name)
-        {
-        }
-        Zone() : interval{ INVALID_OFFSET, INVALID_OFFSET }, color(NoColorPair), name(){};
-    };
-
-    class ZonesList
-    {
-        std::vector<Zone> zones{};
-        std::vector<Zone> cache{};
-
-      public:
-        void Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
-        const std::optional<Zone> OffsetToZone(uint64 offset) const;
-        void SetCache(const Zone::Interval& interval);
-    };
-
     struct UnicodeString
     {
         char16* text;
@@ -312,6 +281,11 @@ namespace Type
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     } // namespace DefaultTypePlugin
 
+    namespace InterfaceTabs
+    {
+        bool PopulateWindowSmartAssistantsTab(Reference<GView::View::WindowInterface> win);
+    } // namespace InterfaceTabs
+
     namespace FolderViewPlugin
     {
         TypeInterface* CreateInstance(const std::filesystem::path& path);
@@ -423,7 +397,7 @@ namespace Type
       public:
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
-        void Init();
+        void InitDefaultPlugin();
         bool MatchExtension(uint64 extensionHash);
         bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
         bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, const std::string_view& extension = "");
@@ -467,6 +441,7 @@ namespace App
 
         constexpr int CHECK_FOR_UPDATES = 110000;
         constexpr int ABOUT             = 110001;
+        constexpr int AVAILABLE_KEYS    = 110002;
 
         constexpr int OPEN_FILE         = 120000;
         constexpr int OPEN_FOLDER       = 120001;
@@ -474,6 +449,28 @@ namespace App
         constexpr int OPEN_PROCESS_TREE = 120003;
 
     }; // namespace MenuCommands
+
+    namespace InstanceCommands
+    {
+        constexpr int CMD_NEXT_VIEW             = 30012345;
+        constexpr int CMD_GOTO                  = 30012346;
+        constexpr int CMD_FIND                  = 30012347;
+        constexpr int CMD_CHOSE_NEW_TYPE        = 30012348;
+        constexpr int CMD_SHOW_KEY_CONFIGURATOR = 30012349;
+        constexpr int CMD_COPY_DIALOG           = 30012350;
+        constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
+
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
+        static GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_FIND   = { Input::Key::Ctrl | Input::Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
+        static GView::KeyboardControl INSTANCE_COMMAND_FIND      = { Input::Key::Alt | Input::Key::F7, "FindDialog", "Open the Find dialog", CMD_FIND };
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Input::Key::Ctrl | Input::Key::C, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
+        static GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Input::Key::Ctrl | Input::Key::Insert, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
+        static GView::KeyboardControl INSTANCE_CHANGE_VIEW      = { Input::Key::F4, "ChangeView", "Change the current viewer", CMD_NEXT_VIEW };
+        static GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW        = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Set focus on viewer", CMD_SWITCH_TO_VIEW };
+        static GView::KeyboardControl INSTANCE_CHOOSE_TYPE         = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
+        static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
+    }
 
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
@@ -488,14 +485,6 @@ namespace App
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
         std::filesystem::path lastOpenedFolderLocation;
-        struct
-        {
-            AppCUI::Input::Key changeViews;
-            AppCUI::Input::Key switchToView;
-            AppCUI::Input::Key goTo;
-            AppCUI::Input::Key find;
-            AppCUI::Input::Key choseNewType;
-        } Keys;
 
         bool BuildMainMenus();
         bool LoadSettings();
@@ -503,6 +492,7 @@ namespace App
         void OpenFolder();
         void ShowErrors();
         void ShowTutorial();
+        void ShowAboutWindow();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
@@ -556,7 +546,7 @@ namespace App
       public:
         Instance();
         virtual ~Instance() {}
-        bool Init();
+        bool Init(bool isTestingEnabled);
         bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
         bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
@@ -565,26 +555,6 @@ namespace App
         constexpr inline uint32 GetDefaultCacheSize() const
         {
             return this->defaultCacheSize;
-        }
-        constexpr inline AppCUI::Input::Key GetChangeViewesKey() const
-        {
-            return this->Keys.changeViews;
-        }
-        constexpr inline AppCUI::Input::Key GetSwitchToViewKey() const
-        {
-            return this->Keys.switchToView;
-        }
-        constexpr inline AppCUI::Input::Key GetGoToKey() const
-        {
-            return this->Keys.goTo;
-        }
-        constexpr inline AppCUI::Input::Key GetFindKey() const
-        {
-            return this->Keys.find;
-        }
-        constexpr inline AppCUI::Input::Key GetChoseNewTypeKey() const
-        {
-            return this->Keys.choseNewType;
         }
 
         // property interface
@@ -664,6 +634,40 @@ namespace App
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
 
+    class FileWindow;
+
+    namespace QueryInterfaceImpl
+    {
+        using namespace GView::CommonInterfaces::SmartAssistants;
+
+        struct SmartAssistantPromptInterfaceProxy : SmartAssistantPromptInterface
+        {
+            std::vector<Pointer<SmartAssistantRegisterInterface>> smartAssistants;
+            std::vector<bool> validSmartAssistants;
+            std::vector<void*> smartAssistantEntryTabUIPointers;
+            uint32 validAssistants = 0;
+            uint16 prefferedIndex = UINT16_MAX, prefferedChatIndex = UINT16_MAX;
+            Reference<TypeInterface> typePlugin;
+
+            virtual std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess);
+            bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface);
+            SmartAssistantPromptInterface* GetSmartAssistantInterface();
+            std::string BuildChatContext(std::string_view prompt, std::string_view displayPrompt, uint32 assistantIndex);
+
+            void Start(Reference<FileWindow> fileWindow);
+        };
+
+        struct GViewQueryInterface : public CommonInterfaces::QueryInterface {
+            Reference<FileWindow> fileWindow;
+            SmartAssistantPromptInterfaceProxy smartAssistantProxy;
+
+            bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface) override;
+            SmartAssistantPromptInterface* GetSmartAssistantInterface() override;
+
+            void Start();
+        };   
+    }
+
     class FileWindow : public Window, public GView::View::WindowInterface
     {
         Reference<GView::App::Instance> gviewApp;
@@ -676,11 +680,15 @@ namespace App
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
+        QueryInterfaceImpl::GViewQueryInterface queryInterface;
 
         void ShowFilePropertiesDialog();
         void ShowGoToDialog();
         void ShowFindDialog();
         void ShowCopyDialog();
+        void ShowKeyConfiguratorWindow();
+
+        bool UpdateKeys(KeyboardControlsInterface* interface);
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
@@ -696,6 +704,7 @@ namespace App
         bool CreateViewer(View::TextViewer::Settings& settings) override;
         bool CreateViewer(View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(View::LexicalViewer::Settings& settings) override;
+        CommonInterfaces::QueryInterface* GetQueryInterface() override;
 
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 
@@ -714,6 +723,22 @@ namespace App
       public:
         ErrorDialog(const GView::Utils::ErrorList& errList);
         bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
+    };
+
+    struct KeyboardControlsImplementation : public KeyboardControlsInterface
+    {
+        struct OwnedKeyboardControl {
+            Input::Key Key;
+            std::string Caption;
+            std::string Explanation;
+            uint32 CommandId;
+
+            OwnedKeyboardControl(KeyboardControl* key) : Key(key->Key), Caption(key->Caption), Explanation(key->Explanation), CommandId(key->CommandId){}
+        };
+
+        std::vector<OwnedKeyboardControl> keys;
+
+        virtual bool RegisterKey(KeyboardControl* key) override;
     };
 } // namespace App
 } // namespace GView

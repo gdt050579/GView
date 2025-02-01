@@ -40,6 +40,6 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["command.CharacterTable"] = Input::Key::Ctrl | Input::Key::Alt | Input::Key::Shift | Input::Key::F1;
+        sect["Command.CharacterTable"] = Input::Key::Ctrl | Input::Key::Alt | Input::Key::Shift | Input::Key::F1;
     }
 }

@@ -1,6 +1,8 @@
+#include <nlohmann/json.hpp>
 #include "JT.hpp"
 
 using namespace GView::Type::JT;
+using nlohmann::json;
 
 JTFile::JTFile()
 {
@@ -24,4 +26,14 @@ bool JTFile::Update()
     }
 
     return true;
+}
+
+std::string JTFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"] = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["TOCOffset"] = fh.tocOffset;
+    context["TOCEntryCount"] = tc.entryCount;
+    return context.dump();
 }

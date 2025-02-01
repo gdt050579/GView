@@ -1,8 +1,10 @@
+#include <array>
+#include <nlohmann/json.hpp>
+
 #include "LNK.hpp"
 
-#include <array>
-
 using namespace GView::Type::LNK;
+using nlohmann::json;
 
 LNKFile::LNKFile()
 {
@@ -158,6 +160,39 @@ bool LNKFile::Update()
     }
 
     return true;
+}
+
+std::string LNKFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+
+    context["Header"];
+    context["LinkFlags"]      = header.linkFlags;
+    context["FileAttributes"] = header.fileAttributeFlags;
+    context["CreationTime"]   = header.creationDate;
+    context["AccessTime"]     = header.lastAccessDate;
+    context["FileSize"]       = header.fileSize;
+    context["IconIndex"]      = header.iconIndex;
+
+    if (header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo) {
+        context["CommonNetworkRelativeLinkOffset"] = locationInformation.commonPathOffset;
+        context["VolumeInformationOffset"]         = locationInformation.volumeInformationOffset;
+
+        if (locationInformation.volumeInformationOffset > 0) {
+            context["VolumeSize"]             = volumeInformation->size;
+            context["DriveSerialNumber"] = volumeInformation->driveSerialNumber;
+            context["VolumeLabelOffset"] = volumeInformation->volumeLabelOffset;
+        }
+
+        if (locationInformation.networkShareOffset > 0) {
+            context["NetworkShareSize"] = networkShareInformation->size;
+            context["NetworkShareFlags"] = networkShareInformation->flags;
+            context["NetworkShareNameOffset"] = networkShareInformation->networkShareNameOffset;
+        }
+    }
+    return context.dump();
 }
 
 namespace GView::Type::LNK::Panels

@@ -15,6 +15,12 @@ target_sources(
 	AdvancedSelection.cpp
 	DissasmDataTypes.hpp
 	DissasmDataTypes.cpp
+	DissasmCodeZone.hpp
+	DissasmCodeZone.cpp
+	DissasmFunctionUtils.hpp
+	DissasmFunctionUtils.cpp
+	DissasmCache.hpp
+	DissasmCache.cpp
 
 	x86_x64/DissasmX86.hpp        
 	x86_x64/DissasmX86.cpp

@@ -53,6 +53,10 @@ namespace Type
             void RunCommand(std::string_view) override
             {
             }
+            virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
             virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) override;
             virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
@@ -76,6 +80,8 @@ namespace Type
 
                 return selectionZoneInterface->GetSelectionZone(index);
             }
+
+            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
         };
         namespace Panels
         {

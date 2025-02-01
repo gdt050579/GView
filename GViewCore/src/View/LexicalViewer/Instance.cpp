@@ -2,17 +2,11 @@
 #include <algorithm>
 
 using namespace GView::View::LexicalViewer;
+using namespace GView::View::LexicalViewer::Commands;
 using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_SHOW_METADATA    = 0xBF00;
-constexpr int32 CMD_ID_SAVE_AS          = 0xBF01;
-constexpr int32 CMD_ID_DELETE           = 0xBF02;
-constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
-constexpr int32 CMD_ID_FOLD_ALL         = 0xBF04;
-constexpr int32 CMD_ID_EXPAND_ALL       = 0xBF05;
-constexpr int32 CMD_ID_SHOW_PLUGINS     = 0xBF06;
 constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
 
 /*
@@ -76,7 +70,7 @@ inline std::string_view TokenDataTypeToString(TokenDataType dataType)
     }
 }
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
     : settings(nullptr), ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj = _obj;
@@ -1067,22 +1061,22 @@ void Instance::Paint(Graphics::Renderer& renderer)
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     if (this->showMetaData)
-        commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:ON", CMD_ID_SHOW_METADATA);
+        commandBar.SetCommand(ShowPluginsCmd.Key, "ShowMetaData:ON", ShowPluginsCmd.CommandId);
     else
-        commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:OFF", CMD_ID_SHOW_METADATA);
+        commandBar.SetCommand(ShowPluginsCmd.Key, "ShowMetaData:OFF", ShowPluginsCmd.CommandId);
 
     if (this->noItemsVisible == false)
-        commandBar.SetCommand(Key::Delete, "Delete", CMD_ID_DELETE);
+        commandBar.SetCommand(DeleteCmd.Key, DeleteCmd.Caption, DeleteCmd.CommandId);
 
     if (this->selection.IsSingleSelectionEnabled())
-        commandBar.SetCommand(config.Keys.changeSelectionType, "Select:Single", CMD_ID_CHANGE_SELECTION);
+        commandBar.SetCommand(ChangeSelectionTypeCmd.Key, "Select:Single", ChangeSelectionTypeCmd.CommandId);
     else
-        commandBar.SetCommand(config.Keys.changeSelectionType, "Select:Multiple", CMD_ID_CHANGE_SELECTION);
+        commandBar.SetCommand(ChangeSelectionTypeCmd.Key, "Select:Multiple", ChangeSelectionTypeCmd.CommandId);
 
-    commandBar.SetCommand(config.Keys.foldAll, "Fold all", CMD_ID_FOLD_ALL);
-    commandBar.SetCommand(config.Keys.expandAll, "Expand all", CMD_ID_EXPAND_ALL);
-    commandBar.SetCommand(config.Keys.showPlugins, "Plugins", CMD_ID_SHOW_PLUGINS);
-    commandBar.SetCommand(config.Keys.saveAs, "Save As", CMD_ID_SAVE_AS);
+    commandBar.SetCommand(FoldAllCmd.Key, FoldAllCmd.Caption, FoldAllCmd.CommandId);
+    commandBar.SetCommand(ExpandAllCmd.Key, ExpandAllCmd.Caption, ExpandAllCmd.CommandId);
+    commandBar.SetCommand(ShowPluginsCmd.Key, ShowPluginsCmd.Caption, ShowPluginsCmd.CommandId);
+    commandBar.SetCommand(SaveAsCmd.Key, SaveAsCmd.Caption, SaveAsCmd.CommandId);
 
     return false;
 }
@@ -2257,22 +2251,22 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = this->settings->maxWidth;
         return true;
     case PropertyID::ShowPluginListKey:
-        value = this->config.Keys.showPlugins;
+        value = ShowPluginsCmd.Key;
         return true;
     case PropertyID::SaveAsKey:
-        value = this->config.Keys.saveAs;
+        value = SaveAsCmd.Key;
         return true;
     case PropertyID::ShowMetaDataKey:
-        value = this->config.Keys.showMetaData;
+        value = ShowMetaDataCmd.Key;
         return true;
     case PropertyID::ChangeSelectionTypeKey:
-        value = this->config.Keys.changeSelectionType;
+        value = ChangeSelectionTypeCmd.Key;
         return true;
     case PropertyID::FoldAllKey:
-        value = this->config.Keys.foldAll;
+        value = FoldAllCmd.Key;
         return true;
     case PropertyID::ExpandAllKey:
-        value = this->config.Keys.expandAll;
+        value = ExpandAllCmd.Key;
         return true;
     case PropertyID::NoOfTokens:
         value = static_cast<uint32>(this->tokens.size());
@@ -2314,22 +2308,22 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         Parse();
         return true;
     case PropertyID::ShowPluginListKey:
-        this->config.Keys.showPlugins = std::get<Input::Key>(value);
+        ShowPluginsCmd.Key = std::get<Input::Key>(value);
         return true;
     case PropertyID::SaveAsKey:
-        this->config.Keys.saveAs = std::get<Input::Key>(value);
+        SaveAsCmd.Key = std::get<Input::Key>(value);
         return true;
     case PropertyID::ShowMetaDataKey:
-        this->config.Keys.showMetaData = std::get<Input::Key>(value);
+        ShowMetaDataCmd.Key = std::get<Input::Key>(value);
         return true;
     case PropertyID::ChangeSelectionTypeKey:
-        this->config.Keys.changeSelectionType = std::get<Input::Key>(value);
+        ChangeSelectionTypeCmd.Key = std::get<Input::Key>(value);
         return true;
     case PropertyID::FoldAllKey:
-        this->config.Keys.foldAll = std::get<Input::Key>(value);
+        FoldAllCmd.Key = std::get<Input::Key>(value);
         return true;
     case PropertyID::ExpandAllKey:
-        this->config.Keys.expandAll = std::get<Input::Key>(value);
+        ExpandAllCmd.Key = std::get<Input::Key>(value);
         return true;
     case PropertyID::Pretty:
         this->prettyFormat = std::get<bool>(value);
@@ -2392,5 +2386,14 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ShowMetaData), "View", "Show/Hide metadate", PropertyType::Boolean },
         { BT(PropertyID::HighlightSimilarTokens), "View", "Highlight similar tokens", PropertyType::Boolean },
     };
+}
+
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (const auto& cmd : LexicalViewerCommands) {
+        interface->RegisterKey(cmd);
+    }
+
+    return true;
 }
 #undef BT

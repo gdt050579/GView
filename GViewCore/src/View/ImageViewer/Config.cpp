@@ -5,8 +5,11 @@ using namespace AppCUI::Input;
 
 void Config::Update(IniSection sect)
 {
-    sect.UpdateValue("Key.ZoomIn", Key::F3, true);
-    sect.UpdateValue("Key.ZoomOut", Key::F2, true);
+    LocalString<128> buffer;
+    for (const auto& cmd : Commands::ImageViewCommands) {
+        buffer.SetFormat("Key.%s", cmd->Caption);
+        sect.UpdateValue(buffer.GetText(), cmd->Key, true);
+    }
 }
 void Config::Initialize()
 {
@@ -14,13 +17,11 @@ void Config::Initialize()
     if (ini)
     {
         auto sect          = ini->GetSection("View.Image");
-        this->Keys.ZoomIn  = sect.GetValue("Key.ZoomIn").ToKey(Key::F3);
-        this->Keys.ZoomOut = sect.GetValue("Key.ZoomOut").ToKey(Key::F2);
-    }
-    else
-    {
-        this->Keys.ZoomIn  = Key::F3;
-        this->Keys.ZoomOut = Key::F2;
+        LocalString<128> buffer;
+        for (auto& cmd : Commands::ImageViewCommands) {
+            buffer.SetFormat("Key.%s", cmd->Caption);
+            cmd->Key = sect.GetValue(buffer.GetText()).ToKey(cmd->Key);
+        }
     }
 
     this->Loaded = true;

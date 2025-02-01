@@ -6,4 +6,7 @@ target_sources(GViewCore PRIVATE
     Instance.cpp 
     SelectTypeDialog.cpp 
     TutorialWindow.cpp
+    AboutWindow.cpp
+    KeyConfiguratorWindow.cpp
+    QueryInterface.cpp
 )

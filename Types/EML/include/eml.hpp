@@ -2,11 +2,10 @@
 
 #include "GView.hpp"
 
-struct EML_Item_Record
-{
-    uint32 parentStartIndex;
-    uint32 startIndex;
+struct EML_Item_Record {
+    uint32 startOffset;
     uint32 dataLength;
+    uint32 partIndex;
     std::u16string contentType;
     std::u16string identifier;
     bool leafNode;
@@ -45,10 +44,14 @@ namespace Type
             void ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& index);
             uint32 ParseHeaderFieldBody(GView::View::LexicalViewer::TextParser text, uint32 index);
             std::u16string ExtractContentType(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end);
+            void ExtractFieldNameAndBody(
+                  GView::View::LexicalViewer::TextParser text, uint32& start, uint32& end, std::u16string& fieldName, std::u16string& fieldBody);
 
           public:
             EMLFile();
-            virtual ~EMLFile() override {}
+            virtual ~EMLFile() override
+            {
+            }
 
             virtual std::string_view GetTypeName() override
             {
@@ -58,6 +61,7 @@ namespace Type
             {
                 // here
             }
+
           public:
 
             bool ProcessData();
@@ -88,7 +92,12 @@ namespace Type
 
             // View::ContainerViewer::OpenItemInterface
             virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+            virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
 
+            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
         };
 
         namespace Panels

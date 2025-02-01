@@ -1,4 +1,7 @@
+#include <nlohmann/json.hpp>
 #include "js.hpp"
+
+using nlohmann::json;
 
 namespace GView::Type::JS
 {
@@ -444,7 +447,7 @@ namespace CharType
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Space,     Operator,       String,
-                               Preprocess, Invalid,  Operator,   Operator,   String,    ExpressionOpen, ExpressionClose,
+                               Preprocess, Word,     Operator,   Operator,   String,    ExpressionOpen, ExpressionClose,
                                Operator,   Operator, Comma,      Operator,   Operator,  Operator,       Number,
                                Number,     Number,   Number,     Number,     Number,    Number,         Number,
                                Number,     Number,   Operator,   Semicolumn, Operator,  Operator,       Operator,
@@ -564,13 +567,13 @@ int32 JSFile::ParseRegEx(const GView::View::LexicalViewer::TextParser& text, Tok
     while (pos < text.Len())
     {
         pos++;
-        auto ch = text[pos];
+        auto ch        = text[pos];
         auto previewCh = text[pos - 1];
         if (ch == '/' && previewCh != '\\')
         {
             return pos + 1;
-		}   
-	}
+        }
+    }
     return -1;
 }
 uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -590,8 +593,14 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
             break;
         case TokenType::Operator_Assignment:
         case TokenType::Operator_PlusAssignment:
+        case TokenType::Operator_MinusAssignment:
+        case TokenType::Operator_DivisionAssignment:
+        case TokenType::Operator_MupliplyAssignment:
+        case TokenType::Operator_ModuloAssignment:
+        {
             align = TokenAlignament::SameColumn | TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
             break;
+        }
         case TokenType::Operator_Minus:
             next2 = text.ParseSpace(pos + 1);
             if (CharType::GetCharType(text[next2]) == CharType::Number)
@@ -616,9 +625,10 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
             if (next2 != -1)
             {
                 align = align | TokenAlignament::WrapToNextLine;
-                tokenList.Add(TokenType::RegEx, pos, next2, TokenColor::String, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
-				return next2;
-			}
+                tokenList.Add(
+                      TokenType::RegEx, pos, next2, TokenColor::String, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
+                return next2;
+            }
             break;
         }
             /*
@@ -717,7 +727,7 @@ uint32 JSFile::TokenizeList(const TextParser& text, TokensList& tokenList, uint3
 }
 uint32 JSFile::TokenizePreprocessDirective(const TextParser& text, TokensList& list, BlocksList& blocks, uint32 pos)
 {
-    auto eol   = text.ParseUntillEndOfLine(pos);
+    auto eol   = text.ParseUntilEndOfLine(pos);
     auto start = pos;
     pos        = text.ParseSpace(pos + 1, SpaceType::SpaceAndTabs);
     if ((CharType::GetCharType(text[pos])) != CharType::Word)
@@ -827,7 +837,7 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
             idx = text.ParseSpace(idx, SpaceType::SpaceAndTabs);
             break;
         case CharType::SingleLineComment:
-            next = text.ParseUntillEndOfLine(idx);
+            next = text.ParseUntilEndOfLine(idx);
             tokenList.Add(
                   TokenType::Comment,
                   idx,
@@ -1269,5 +1279,13 @@ bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicode
     result.Add(newContent);
     result.Add("`");
     return true;
+}
+
+std::string JSFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    return context.dump();
 }
 } // namespace GView::Type::JS

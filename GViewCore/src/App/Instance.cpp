@@ -1,6 +1,8 @@
 #include "Internal.hpp"
+#include <array>
 
 using namespace GView::App;
+using namespace GView::App::InstanceCommands;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
@@ -44,6 +46,8 @@ constexpr GViewMenuCommand menuHelpList[] = {
     { "&About", MenuCommands::ABOUT, Key::None },
 };
 
+constexpr ItemHandle menuHelpListDisabledCommandsList[] = { 0 };
+
 bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
 {
     while (count > 0) {
@@ -63,15 +67,10 @@ bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
 
 Instance::Instance()
 {
-    this->defaultCacheSize  = DEFAULT_CACHE_SIZE;
-    this->Keys.changeViews  = Key::F4;
-    this->Keys.choseNewType = Key::Alt | Key::F1;
-    this->Keys.find         = Key::Alt | Key::F7;
-    this->Keys.switchToView = Key::Alt | Key::F;
-    this->Keys.goTo         = Key::F5;
-    this->mnuWindow         = nullptr;
-    this->mnuHelp           = nullptr;
-    this->mnuFile           = nullptr;
+    this->defaultCacheSize         = DEFAULT_CACHE_SIZE;
+    this->mnuWindow                = nullptr;
+    this->mnuHelp                  = nullptr;
+    this->mnuFile                  = nullptr;
     this->lastOpenedFolderLocation = ".";
 }
 bool Instance::LoadSettings()
@@ -104,14 +103,19 @@ bool Instance::LoadSettings()
     std::sort(this->typePlugins.begin(), this->typePlugins.end());
 
     // read instance settings
-    auto sect               = ini->GetSection("GView");
-    this->defaultCacheSize  = std::max<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
-    this->Keys.changeViews  = sect.GetValue("Key.ChangeView").ToKey(Key::F4);
-    this->Keys.switchToView = sect.GetValue("Key.SwitchToView").ToKey(Key::F | Key::Alt);
-    this->Keys.find         = sect.GetValue("Key.Find").ToKey(Key::F7 | Key::Alt);
-    this->Keys.goTo         = sect.GetValue("Key.GoTo").ToKey(Key::F5);
-    this->Keys.choseNewType = sect.GetValue("Key.ChoseType").ToKey(Key::F1 | Key::Alt);
+    auto sect                                  = ini->GetSection("GView");
+    this->defaultCacheSize                     = std::max<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
 
+    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
+        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
+        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
+    };
+
+    LocalString<64> keyCommand;
+    for (auto& k : localKeys) {
+        keyCommand.SetFormat("Key.%s", k.get().Caption);
+        k.get().Key = sect.GetValue(keyCommand.GetText()).ToKey(k.get().Key);
+    }
     return true;
 }
 bool Instance::BuildMainMenus()
@@ -125,10 +129,13 @@ bool Instance::BuildMainMenus()
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
     CHECK(AddMenuCommands(mnuHelp, menuHelpList, ARRAY_LEN(menuHelpList)), false, "");
+    for (auto itemHandle : menuHelpListDisabledCommandsList) {
+        CHECK(mnuHelp->SetEnable(itemHandle, false), false, "Fail to disable menu item");
+    }
     return true;
 }
 
-bool Instance::Init()
+bool Instance::Init(bool isTestingEnabled)
 {
     InitializationData initData;
     initData.Flags =
@@ -141,11 +148,18 @@ bool Instance::Init()
     // no .ini file found
     if (!settingsFile.OpenRead(settingsPath)) {
         CHECK(GView::App::ResetConfiguration(), false, "");
-        showTutorial = true;
+        if (!isTestingEnabled)
+            showTutorial = true;
     }
     settingsFile.Close();
 
-    CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    if (isTestingEnabled) {
+        CHECK(AppCUI::Application::InitForTests(initData.Width, initData.Height, initData.Flags, false),
+              false,
+              "Fail to initialize AppCUI framework for tests!");
+    } else {
+        CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    }
     // reserve some space fo type
     this->typePlugins.reserve(128);
     if (!LoadSettings()) {
@@ -157,7 +171,7 @@ bool Instance::Init()
         CHECK(GView::App::ResetConfiguration(), false, "");
 
         AppCUI::Dialogs::MessageBox::ShowError(
-              "Errorr reading configuration",
+              "Error reading configuration",
               "Found an invalid configuration, it will be renamed as \".ini.bak\". Will generated a new one! Please restart GView.");
     }
 
@@ -166,7 +180,7 @@ bool Instance::Init()
     }
 
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
-    this->defaultPlugin.Init();
+    this->defaultPlugin.InitDefaultPlugin();
 
     // set up handlers
     auto dsk                 = AppCUI::Application::GetDesktop();
@@ -387,6 +401,7 @@ bool Instance::Add(
     // instantiate window
     while (true) {
         CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
+        CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parentWindow);
@@ -488,6 +503,7 @@ void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         idx += GENERIC_PLUGINS_FRAME;
     }
 }
+
 uint32 Instance::GetObjectsCount()
 {
     auto dsk = AppCUI::Application::GetDesktop();
@@ -551,6 +567,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::OPEN_FOLDER:
             OpenFolder();
+            return true;
+        case MenuCommands::ABOUT:
+            ShowAboutWindow();
             return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {

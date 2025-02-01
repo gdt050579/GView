@@ -1,4 +1,7 @@
+#include <nlohmann/json.hpp>
 #include "ini.hpp"
+
+using nlohmann::json;
 
 namespace GView::Type::INI
 {
@@ -143,7 +146,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -187,7 +190,7 @@ struct ParserData
             state = ParserState::ExpectEqual;
             break;
         default:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
                   .SetError("Invalid character (expecting either a key or a section)");
             pos = next;
@@ -200,7 +203,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -220,7 +223,7 @@ struct ParserData
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::Invalid:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
                   .SetError("Invalid character (expecting either a avlue or an array)");
             pos   = next;
@@ -256,7 +259,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -281,7 +284,7 @@ struct ParserData
             state = ParserState::ExpectValueOrArray;
             break;
         default:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word).SetError("Invalid character (expecting either ':' or '=')");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
@@ -294,7 +297,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -348,7 +351,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -367,7 +370,7 @@ struct ParserData
             state = ParserState::ExpectCommaOrEndOfArray;
             break;
         case CharType::Invalid:
-            next = text.ParseUntillEndOfLine(pos);
+            next = text.ParseUntilEndOfLine(pos);
             tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
                   .SetError("Invalid character (expecting either a avlue or an array)");
             pos   = next;
@@ -609,5 +612,13 @@ bool INIFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicod
     // else it means it contains either a " or '
     // swicth to multi-line format
     return CreateIniFileString(result, content, u"\"\"\"");
+}
+
+std::string INIFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    return context.dump();
 }
 } // namespace GView::Type::INI

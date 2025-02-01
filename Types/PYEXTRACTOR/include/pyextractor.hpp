@@ -4,8 +4,7 @@
 
 namespace GView::Type::PYEXTRACTOR
 {
-enum class Magic : uint16
-{
+enum class Magic : uint16 {
     NoCompression      = 0x0178, // - No Compression / low
     DefaultCompression = 0x9C78, // - Default Compression
     BestCompression    = 0xDA78  // - Best Compression
@@ -15,17 +14,11 @@ constexpr auto PYINSTALLER20_COOKIE_SIZE     = 24U;                             
 constexpr auto PYINSTALLER21_COOKIE_SIZE     = PYINSTALLER20_COOKIE_SIZE + 64U; // For pyinstaller 2.1 +
 constexpr std::string_view PYINSTALLER_MAGIC = "MEI\014\013\012\013\016";       // Magic number which identifies pyinstaller
 
-enum class PyInstallerVersion : uint8
-{
-    Unknown,
-    V20,
-    V21Plus
-};
+enum class PyInstallerVersion : uint8 { Unknown, V20, V21Plus };
 
 constexpr std::string_view GetNameForPyInstallerVersion(PyInstallerVersion v)
 {
-    switch (v)
-    {
+    switch (v) {
     case GView::Type::PYEXTRACTOR::PyInstallerVersion::Unknown:
         return "Unknown";
     case GView::Type::PYEXTRACTOR::PyInstallerVersion::V20:
@@ -37,8 +30,7 @@ constexpr std::string_view GetNameForPyInstallerVersion(PyInstallerVersion v)
     }
 }
 
-struct TOCEntry
-{
+struct TOCEntry {
 #pragma pack(push, 1)
     uint32 entrySize{ 0 };
     uint32 entryPos{ 0 };
@@ -52,14 +44,12 @@ struct TOCEntry
 
 constexpr auto TOC_ENTRY_KNOWN_SIZE = 18;
 
-struct Archive
-{
+struct Archive {
     uint64 cookiePosition{ 0 };
     PyInstallerVersion version{ PyInstallerVersion::Unknown };
 
 #pragma pack(push, 1)
-    struct
-    {
+    struct {
         char magic[8]{ 0 };
         uint32 lengthofPackage{ 0 };
         uint32 tableOfContentPosition{ 0 };
@@ -72,16 +62,10 @@ struct Archive
 
 namespace Panels
 {
-    enum class IDs : uint8
-    {
-        Information = 0x0,
-        TOCEntries  = 0x1
-    };
+    enum class IDs : uint8 { Information = 0x0, TOCEntries = 0x1 };
 };
 
-class PYEXTRACTORFile : public TypeInterface,
-                        public View::ContainerViewer::EnumerateInterface,
-                        public View::ContainerViewer::OpenItemInterface
+class PYEXTRACTORFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
     uint64 panelsMask{ 0 };
@@ -108,6 +92,10 @@ class PYEXTRACTORFile : public TypeInterface,
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 
   private:
     bool SetCookiePosition();
@@ -132,6 +120,8 @@ class PYEXTRACTORFile : public TypeInterface,
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels
@@ -155,8 +145,7 @@ namespace Panels
         void RecomputePanelsPositions();
 
         template <typename T>
-        ListViewItem AddDecAndHexElement(
-              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
         {
             LocalString<1024> ls;
             NumericFormatter nf;

@@ -1,10 +1,11 @@
 #include "pe.hpp"
 #include "DigitalSignature.hpp"
+#include <nlohmann/json.hpp>
 
 using namespace GView::Type::PE;
+using nlohmann::json;
 
-struct CV_INFO_PDB20
-{
+struct CV_INFO_PDB20 {
     uint32 CvSignature;   // NBxx
     uint32 Offset;        // Always 0 for NB10
     uint32 Signature;     // seconds since 01.01.1970
@@ -12,8 +13,7 @@ struct CV_INFO_PDB20
     uint8 PdbFileName[1]; // zero terminated string with the name of the PDB file
 };
 
-struct CV_INFO_PDB70
-{
+struct CV_INFO_PDB70 {
     uint32 CvSignature;
     Guid Signature;       // unique identifier
     uint32 Age;           // an always-incrementing value
@@ -262,15 +262,13 @@ std::string_view PEFile::ReadString(uint32 RVA, uint32 maxSize)
 {
     const auto fa = RVAToFA(RVA);
     auto buf      = obj->GetData().Get(fa, maxSize, true);
-    if (buf.IsValid() == false || buf.Empty())
-    {
+    if (buf.IsValid() == false || buf.Empty()) {
         return std::string_view{};
     }
 
     auto p       = buf.begin();
     const auto e = buf.end();
-    while ((p < e) && (*p) && isprint(*p) != 0)
-    {
+    while ((p < e) && (*p) && isprint(*p) != 0) {
         p++;
     }
 
@@ -299,12 +297,10 @@ uint64 PEFile::VAtoFA(uint64 va) const
     CHECK(nrSections > 0, PE_INVALID_ADDRESS, "");
     CHECK(rva >= sect[0].VirtualAddress, PE_INVALID_ADDRESS, "");
 
-    for (uint32 i = 0; i < nrSections; i++)
-    {
+    for (uint32 i = 0; i < nrSections; i++) {
         const auto start = sect[i].VirtualAddress;
         const auto end   = start + sect[i].Misc.VirtualSize;
-        if (rva >= start && rva < end)
-        {
+        if (rva >= start && rva < end) {
             return rva - sect[i].VirtualAddress + sect[i].PointerToRawData;
         }
     }
@@ -322,17 +318,14 @@ uint64 PEFile::RVAToFA(uint64 RVA)
 
     uint64 tr;
     uint64 fi = 0;
-    for (tr = 0; tr < nrSections; tr++)
-    {
-        if (RVA < sect[tr].VirtualAddress && tr > 0)
-        {
+    for (tr = 0; tr < nrSections; tr++) {
+        if (RVA < sect[tr].VirtualAddress && tr > 0) {
             fi = (uint64) sect[tr - 1].PointerToRawData + (RVA - (uint64) sect[tr - 1].VirtualAddress);
             break;
         };
     }
 
-    if (tr == nrSections)
-    {
+    if (tr == nrSections) {
         fi = (uint64) sect[tr - 1].PointerToRawData + ((uint64) RVA - (uint64) sect[tr - 1].VirtualAddress);
     }
 
@@ -341,10 +334,8 @@ uint64 PEFile::RVAToFA(uint64 RVA)
 
 int32 PEFile::RVAToSectionIndex(uint64 RVA)
 {
-    for (auto tr = 0U; tr < nrSections; tr++)
-    {
-        if ((RVA >= sect[tr].VirtualAddress) && (RVA < (uint64) sect[tr].VirtualAddress + sect[tr].Misc.VirtualSize))
-        {
+    for (auto tr = 0U; tr < nrSections; tr++) {
+        if ((RVA >= sect[tr].VirtualAddress) && (RVA < (uint64) sect[tr].VirtualAddress + sect[tr].Misc.VirtualSize)) {
             return tr;
         }
     }
@@ -354,8 +345,7 @@ int32 PEFile::RVAToSectionIndex(uint64 RVA)
 
 std::string_view PEFile::GetMachine()
 {
-    switch (static_cast<MachineType>(nth32.FileHeader.Machine))
-    {
+    switch (static_cast<MachineType>(nth32.FileHeader.Machine)) {
     case MachineType::ALPHA:
         return "ALPHA";
     case MachineType::ALPHA64:
@@ -424,8 +414,7 @@ std::string_view PEFile::GetMachine()
 
 std::string_view PEFile::GetSubsystem()
 {
-    switch (static_cast<SubsystemType>(nth32.OptionalHeader.Subsystem))
-    {
+    switch (static_cast<SubsystemType>(nth32.OptionalHeader.Subsystem)) {
     case SubsystemType::Unknown:
         return "Unknown";
     case SubsystemType::Native:
@@ -461,10 +450,8 @@ uint64_t PEFile::FAToRVA(uint64_t fileAddress)
     uint32 tr;
     uint64_t temp;
 
-    for (tr = 0; tr < nrSections; tr++)
-    {
-        if ((fileAddress >= sect[tr].PointerToRawData) && (fileAddress < sect[tr].PointerToRawData + sect[tr].SizeOfRawData) && (sect[tr].VirtualAddress > 0))
-        {
+    for (tr = 0; tr < nrSections; tr++) {
+        if ((fileAddress >= sect[tr].PointerToRawData) && (fileAddress < sect[tr].PointerToRawData + sect[tr].SizeOfRawData) && (sect[tr].VirtualAddress > 0)) {
             temp = fileAddress - sect[tr].PointerToRawData;
             if (temp < sect[tr].Misc.VirtualSize)
                 return temp + sect[tr].VirtualAddress;
@@ -494,11 +481,9 @@ uint64_t PEFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationInd
 }
 uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType)
 {
-    switch (fromAddressType)
-    {
+    switch (fromAddressType) {
     case AddressType::FileOffset:
-        switch (toAddressType)
-        {
+        switch (toAddressType) {
         case AddressType::FileOffset:
             return address;
         case AddressType::VA:
@@ -508,27 +493,23 @@ uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, A
         };
         break;
     case AddressType::VA:
-        switch (toAddressType)
-        {
+        switch (toAddressType) {
         case AddressType::FileOffset:
-            if (address > imageBase)
-            {
+            if (address > imageBase) {
                 return RVAToFA(address - imageBase);
             }
             break;
         case AddressType::VA:
             return address;
         case AddressType::RVA:
-            if (address > imageBase)
-            {
+            if (address > imageBase) {
                 return address - imageBase;
             }
             break;
         };
         break;
     case AddressType::RVA:
-        switch (toAddressType)
-        {
+        switch (toAddressType) {
         case AddressType::FileOffset:
             return RVAToFA(address);
         case AddressType::VA:
@@ -553,32 +534,25 @@ bool PEFile::BuildExport()
     RVA = dirs[(uint8) DirectoryType::Export].VirtualAddress; // export directory
     CHECK(RVA != 0, false, "")
 
-    if ((faddr = RVAToFA(RVA)) == PE_INVALID_ADDRESS)
-    {
+    if ((faddr = RVAToFA(RVA)) == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid RVA for Export directory (0x%X)", (uint32) RVA);
         return false;
     }
-    if (obj->GetData().Copy<ImageExportDirectory>(faddr, exportDir) == false)
-    {
+    if (obj->GetData().Copy<ImageExportDirectory>(faddr, exportDir) == false) {
         errList.AddError("Unable to read full Export Directory structure from RVA (0x%X)", (uint32) RVA);
         return false;
     }
-    if (exportDir.Name == 0)
-    {
+    if (exportDir.Name == 0) {
         errList.AddWarning("Invalid RVA for export name (0x%08X)", (uint32) exportDir.Name);
-    }
-    else
-    {
+    } else {
         auto dllName = ReadString(exportDir.Name, MAX_DLL_NAME);
-        if (dllName.empty())
-        {
+        if (dllName.empty()) {
             errList.AddError("Unable to read export name from RVA (0x%X)", (uint32) exportDir.Name);
             return false;
         }
         this->dllName = dllName;
         for (auto ch : dllName)
-            if ((ch < 32) || (ch > 127))
-            {
+            if ((ch < 32) || (ch > 127)) {
                 errList.AddWarning("Export name contains invalid characters !");
                 break;
             }
@@ -588,60 +562,49 @@ bool PEFile::BuildExport()
         errList.AddWarning("No functions in Export Directory");
         return false;
     }
-    if (exportDir.NumberOfFunctions > 0xFFFF)
-    {
+    if (exportDir.NumberOfFunctions > 0xFFFF) {
         errList.AddError("Too many exported functions(0x % 08X).Maximum allowes is 0xFFFF. ", exportDir.NumberOfFunctions);
         return false;
     }
 
-    if ((naddr = RVAToFA(exportDir.AddressOfNames)) == PE_INVALID_ADDRESS)
-    {
+    if ((naddr = RVAToFA(exportDir.AddressOfNames)) == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid AddressOfNames (0x%x) from export directory", (uint32) exportDir.AddressOfNames);
         return false;
     }
-    if ((oaddr = RVAToFA(exportDir.AddressOfNameOrdinals)) == PE_INVALID_ADDRESS)
-    {
+    if ((oaddr = RVAToFA(exportDir.AddressOfNameOrdinals)) == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid AddressOfNameOrdinals (0x%x) from export directory", (uint32) exportDir.AddressOfNameOrdinals);
         return false;
     }
-    if ((faddr = RVAToFA(exportDir.AddressOfFunctions)) == PE_INVALID_ADDRESS)
-    {
+    if ((faddr = RVAToFA(exportDir.AddressOfFunctions)) == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid AddressOfFunctions (0x%x) from export directory", (uint32) exportDir.AddressOfFunctions);
         return false;
     }
 
-    if (exportDir.NumberOfNames < exportDir.NumberOfFunctions)
-    {
+    if (exportDir.NumberOfNames < exportDir.NumberOfFunctions) {
         ordinals.resize(exportDir.NumberOfFunctions);
         for (uint32 tr = 0; tr < exportDir.NumberOfFunctions; tr++)
             ordinals[tr] = false;
     }
-    for (uint32 tr = 0; tr < exportDir.NumberOfNames; tr++, naddr += 4, oaddr += 2)
-    {
-        if (obj->GetData().Copy<uint32>(naddr, RVA) == false)
-        {
+    for (uint32 tr = 0; tr < exportDir.NumberOfNames; tr++, naddr += 4, oaddr += 2) {
+        if (obj->GetData().Copy<uint32>(naddr, RVA) == false) {
             errList.AddError("Unable to read export function name");
             return false;
         }
-        if (obj->GetData().Copy<uint16>(oaddr, exportOrdinal) == false)
-        {
+        if (obj->GetData().Copy<uint16>(oaddr, exportOrdinal) == false) {
             errList.AddError("Unable to read export function ordinal");
             return false;
         }
-        if (obj->GetData().Copy<uint32>(faddr + ((uint64) exportOrdinal) * 4, export_RVA) == false)
-        {
+        if (obj->GetData().Copy<uint32>(faddr + ((uint64) exportOrdinal) * 4, export_RVA) == false) {
             errList.AddError("Unable to read export function address");
             return false;
         }
         auto exportName = ReadString(RVA, MAX_EXPORTFNC_SIZE);
-        if (exportName.empty())
-        {
+        if (exportName.empty()) {
             errList.AddError("Unable to read export function name");
             return false;
         }
         exportOrdinal += exportDir.Base;
-        if ((exportDir.NumberOfNames < exportDir.NumberOfFunctions) && (exportOrdinal < exportDir.NumberOfFunctions))
-        {
+        if ((exportDir.NumberOfNames < exportDir.NumberOfFunctions) && (exportOrdinal < exportDir.NumberOfFunctions)) {
             ordinals[exportOrdinal] = true;
         }
 
@@ -649,30 +612,23 @@ bool PEFile::BuildExport()
         auto& item   = exp.emplace_back();
         item.RVA     = export_RVA;
         item.Ordinal = exportOrdinal;
-        if (GView::Utils::Demangle(exportName, item.Name) == false)
-        {
+        if (GView::Utils::Demangle(exportName, item.Name) == false) {
             item.Name.Set(exportName.data(), (uint32) exportName.size());
         }
     }
 
     // adaug si ordinalii
-    if (exportDir.NumberOfNames < exportDir.NumberOfFunctions)
-    {
+    if (exportDir.NumberOfNames < exportDir.NumberOfFunctions) {
         LocalString<128> ordinal_name;
-        for (uint32 tr = 0; tr < exportDir.NumberOfFunctions; tr++)
-        {
-            if (ordinals[tr] == false)
-            {
-                if (obj->GetData().Copy<uint32>(faddr + ((uint64) tr) * 4, export_RVA) == false)
-                {
+        for (uint32 tr = 0; tr < exportDir.NumberOfFunctions; tr++) {
+            if (ordinals[tr] == false) {
+                if (obj->GetData().Copy<uint32>(faddr + ((uint64) tr) * 4, export_RVA) == false) {
                     errList.AddError("Unable to read export function ordinal ID");
                     return false;
                 }
-                if (export_RVA > 0)
-                {
+                if (export_RVA > 0) {
                     exportOrdinal = tr;
-                    if (!ordinal_name.SetFormat("_Ordinal_%u", tr))
-                    {
+                    if (!ordinal_name.SetFormat("_Ordinal_%u", tr)) {
                         errList.AddError("Fail to create ordinal name for ID");
                         return false;
                     }
@@ -711,8 +667,7 @@ void PEFile::BuildVersionInfo()
 {
     uint32 szRead;
 
-    for (auto& ri : this->res)
-    {
+    for (auto& ri : this->res) {
         if (ri.Type != ResourceType::Version)
             continue;
         if (ri.Start >= obj->GetData().GetSize())
@@ -725,13 +680,11 @@ void PEFile::BuildVersionInfo()
 
         auto buf = obj->GetData().Get(ri.Start, szRead, false);
 
-        if (buf.Empty())
-        {
+        if (buf.Empty()) {
             errList.AddWarning("Unable to read version infornation resource");
             break;
         }
-        if (Ver.ComputeVersionInformation(buf.GetData(), (int32) buf.GetLength()) == false)
-        {
+        if (Ver.ComputeVersionInformation(buf.GetData(), (int32) buf.GetLength()) == false) {
             errList.AddWarning("Invalid version information resource.");
             break;
         }
@@ -740,8 +693,7 @@ void PEFile::BuildVersionInfo()
 
 std::string_view PEFile::ResourceIDToName(ResourceType resType)
 {
-    switch (resType)
-    {
+    switch (resType) {
     case ResourceType::Cursor:
         return "Cursor";
     case ResourceType::Bitmap:
@@ -803,23 +755,61 @@ std::string_view PEFile::DirectoryIDToName(uint32_t dirID)
     return std::string_view{};
 }
 
+bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (auto& entry : PE_COMMANDS)
+        interface->RegisterKey(&entry);
+    return true;
+}
+
+std::string PEFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]            = obj->GetName();
+    context["ContentType"]     = "PE";
+    context["ContentSize"]     = obj->GetData().GetSize();
+    context["Image Base"]      = imageBase;
+    context["Machine"]         = GetMachine();
+    context["Subsystem"]       = GetSubsystem();
+    context["Number Sections"] = nrSections;
+    if (!exp.empty()) {
+        std::vector<std::string> exports;
+        exports.reserve(exp.size());
+        for (const auto& e : exp)
+            exports.emplace_back(e.Name.GetText());
+        context["Exports"] = exports;
+    }
+    if (!impDLL.empty()) {
+        std::vector<std::string> imports;
+        imports.reserve(impDLL.size());
+        for (const auto& i : impDLL)
+            imports.emplace_back(i.Name.GetText());
+        context["Imports"] = imports;
+    }
+    if (!res.empty()) {
+        std::vector<std::string> resources;
+        resources.reserve(res.size());
+        for (const auto& r : res)
+            resources.emplace_back(ResourceIDToName(r.Type).data());
+        context["Resources"] = resources;
+    }
+    return context.dump();
+}
+
 bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
 {
     DIBInfoHeader dibHeader{};
     r.Image.type = ImageType::Unknown;
     auto buf     = this->obj->GetData().Get(r.Start, sizeof(dibHeader), true);
-    if (buf.Empty())
-    {
+    if (buf.Empty()) {
         errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) (sizeof(dibHeader), r.Start));
         return false;
     }
     auto iconHeader = buf.GetObject<DIBInfoHeader>();
     // check if possible DIB
-    if (iconHeader->sizeOfHeader == 40)
-    {
+    if (iconHeader->sizeOfHeader == 40) {
         r.Image.type = ImageType::DIB;
-        switch (iconHeader->bitsPerPixel)
-        {
+        switch (iconHeader->bitsPerPixel) {
         case 1:
         case 4:
         case 8:
@@ -838,8 +828,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
         }
         r.Image.width  = iconHeader->width;
         r.Image.height = iconHeader->height;
-        if (r.Type == ResourceType::Icon)
-        {
+        if (r.Type == ResourceType::Icon) {
             r.Image.height = r.Image.width;
             if (iconHeader->height != iconHeader->width * 2)
                 errList.AddWarning(
@@ -851,8 +840,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
     }
     // check is possible PNG
     auto pngHeader = buf.GetObject<PNGHeader>();
-    if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849))
-    {
+    if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849)) {
         r.Image.type  = ImageType::PNG;
         r.Image.width = ((pngHeader->width & 0xFF) << 24) | ((pngHeader->width & 0xFF00) << 8) | ((pngHeader->width & 0xFF0000) >> 8) |
                         ((pngHeader->width & 0xFF000000) >> 24);
@@ -861,8 +849,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
         r.Image.bitsPerPixel = 0;
     }
     // general checks
-    if (r.Image.type == ImageType::Unknown)
-    {
+    if (r.Image.type == ImageType::Unknown) {
         errList.AddWarning("Unkown image resourse type (for resourse at offset %llu)", r.Start);
         return false;
     }
@@ -870,13 +857,11 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
         errList.AddWarning("Invalid width (0) for image at offset %llu", r.Start);
     if (r.Image.height == 0)
         errList.AddWarning("Invalid height (0) for image at offset %llu", r.Start);
-    if (r.Type == ResourceType::Icon)
-    {
+    if (r.Type == ResourceType::Icon) {
         if (r.Image.width != r.Image.height)
             errList.AddWarning(
                   "Invalid ICON (width should be equal to height) - icon size is %ux%u (for resource at offset %llu)", r.Image.width, r.Image.height, r.Start);
-        switch (r.Image.width)
-        {
+        switch (r.Image.width) {
         case 8:
         case 16:
         case 24:
@@ -904,14 +889,12 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
 
     fileAddress = relAddress + startRes;
 
-    if (obj->GetData().Copy<ImageResourceDataEntry>(fileAddress, resDE) == false)
-    {
+    if (obj->GetData().Copy<ImageResourceDataEntry>(fileAddress, resDE) == false) {
         errList.AddWarning("Unable to read Resource Data Entry from (0x%X)", (uint32_t) fileAddress);
         return false;
     }
 
-    if ((fileAddress = RVAToFA(resDE.OffsetToData)) == PE_INVALID_ADDRESS)
-    {
+    if ((fileAddress = RVAToFA(resDE.OffsetToData)) == PE_INVALID_ADDRESS) {
         errList.AddWarning("Invalid RVA for resource entry (0x%X)", (uint32_t) resDE.OffsetToData);
         return false;
     }
@@ -927,8 +910,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
     resInf.Image.type = ImageType::Unknown;
     resInf.Name.Set(resName);
 
-    if (resInf.Type == ResourceType::Icon)
-    {
+    if (resInf.Type == ResourceType::Icon) {
         ProcessResourceImageInformation(resInf);
     }
 
@@ -945,13 +927,11 @@ bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uin
 
     fileAddress = relAddress + startRes;
 
-    if (indexLevel > 3)
-    {
+    if (indexLevel > 3) {
         errList.AddError("Resource depth is too big (>3)");
         return false;
     }
-    if (obj->GetData().Copy<ImageResourceDirectory>(fileAddress, resDir) == false)
-    {
+    if (obj->GetData().Copy<ImageResourceDirectory>(fileAddress, resDir) == false) {
         errList.AddWarning("Unable to read Resource Structure from (0x%X)", (uint32_t) fileAddress);
         return false;
     }
@@ -961,45 +941,35 @@ bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uin
         nrEnt += resDir.NumberOfNamedEntries;
     if (resDir.NumberOfNamedEntries > nrEnt)
         nrEnt = resDir.NumberOfNamedEntries;
-    if (nrEnt > 1024)
-    {
+    if (nrEnt > 1024) {
         errList.AddError("Too many resources (>1024)");
         return false;
     }
     // citesc intrarile
-    if (resDir.Characteristics != 0)
-    {
+    if (resDir.Characteristics != 0) {
         errList.AddWarning("IMAGE_RESOURCE_DIRECTORY (Invalid Characteristics field)");
         return false;
     }
 
     fileAddress += sizeof(ImageResourceDirectory);
-    for (tr = 0; tr < nrEnt; tr++, fileAddress += sizeof(ImageResourceDirectoryEntry))
-    {
-        if (obj->GetData().Copy<ImageResourceDirectoryEntry>(fileAddress, dirEnt) == false)
-        {
+    for (tr = 0; tr < nrEnt; tr++, fileAddress += sizeof(ImageResourceDirectoryEntry)) {
+        if (obj->GetData().Copy<ImageResourceDirectoryEntry>(fileAddress, dirEnt) == false) {
             errList.AddWarning("Unable to read Resource Directory Entry from (0x%X)", (uint32_t) fileAddress);
             return false;
         }
         level[indexLevel] = dirEnt.Id;
 
         resName[0] = 0;
-        if (dirEnt.NameIsString == 1)
-        {
+        if (dirEnt.NameIsString == 1) {
             if (ReadUnicodeLengthString(dirEnt.NameOffset + (uint32_t) startRes, resName, 255) == false)
                 resName[0] = 0;
         }
-        if (dirEnt.DataIsDirectory == 1)
-        {
-            if (ProcessResourceDirTable(dirEnt.OffsetToDirectory, startRes, level, indexLevel + 1, resName) == false)
-            {
+        if (dirEnt.DataIsDirectory == 1) {
+            if (ProcessResourceDirTable(dirEnt.OffsetToDirectory, startRes, level, indexLevel + 1, resName) == false) {
                 // return false;
             }
-        }
-        else
-        {
-            if (ProcessResourceDataEntry(dirEnt.OffsetToData, startRes, level, indexLevel, parentName) == false)
-            {
+        } else {
+            if (ProcessResourceDataEntry(dirEnt.OffsetToData, startRes, level, indexLevel, parentName) == false) {
                 // return false;
             }
         }
@@ -1016,8 +986,7 @@ bool PEFile::BuildResources()
     RVA = dirs[2].VirtualAddress; // export directory
     if (RVA == 0)
         return false;
-    if ((addr = RVAToFA(RVA)) == PE_INVALID_ADDRESS)
-    {
+    if ((addr = RVAToFA(RVA)) == PE_INVALID_ADDRESS) {
         errList.AddWarning("Invalid RVA for Resource directory (0x%X)", (uint32_t) RVA);
         return false;
     }
@@ -1033,50 +1002,39 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
     LocalString<64> tempStr;
     uint32 count_f = 0;
 
-    if (impD->OriginalFirstThunk == 0)
-    {
+    if (impD->OriginalFirstThunk == 0) {
         addr = RVAToFA(impD->FirstThunk);
-    }
-    else
-    {
+    } else {
         addr = RVAToFA(impD->OriginalFirstThunk);
     }
-    if (addr == PE_INVALID_ADDRESS)
-    {
+    if (addr == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid RVA for OriginalFirstThunk (0x%X)", (uint32_t) impD->OriginalFirstThunk);
         return false;
     }
 
     IATaddr = impD->FirstThunk;
-    if (RVAToFA(impD->FirstThunk) == PE_INVALID_ADDRESS)
-    {
+    if (RVAToFA(impD->FirstThunk) == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid RVA for FirstThunk (0x%X)", (uint32_t) impD->FirstThunk);
         return false;
     }
 
     std::string_view importName;
-    if (hdr64)
-    {
-        while ((obj->GetData().Copy<ImageThunkData64>(addr, rvaFName64)) && (rvaFName64.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
-        {
+    if (hdr64) {
+        while ((obj->GetData().Copy<ImageThunkData64>(addr, rvaFName64)) && (rvaFName64.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS)) {
             if ((rvaFName64.u1.AddressOfData & __IMAGE_ORDINAL_FLAG64) != 0) // imported by ordinal
             {
                 tempStr.SetFormat("Ordinal:%u", (rvaFName64.u1.Ordinal - __IMAGE_ORDINAL_FLAG64));
                 importName = tempStr.ToStringView();
-            }
-            else
-            {
+            } else {
                 importName = ReadString((uint32_t) (rvaFName64.u1.AddressOfData + 2), MAX_IMPORTFNC_SIZE);
-                if (importName.empty())
-                {
+                if (importName.empty()) {
                     errList.AddError("Invalid RVA import name (0x%X)", (uint32_t) rvaFName64.u1.AddressOfData + 2);
                     return false;
                 }
             }
 
             auto& item = impFunc.emplace_back();
-            if (GView::Utils::Demangle(importName.data(), item.Name) == false)
-            {
+            if (GView::Utils::Demangle(importName.data(), item.Name) == false) {
                 item.Name = importName.data();
             }
 
@@ -1086,29 +1044,22 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
             addr += sizeof(ImageThunkData64);
             IATaddr += sizeof(ImageThunkData64);
         }
-    }
-    else
-    {
-        while ((obj->GetData().Copy<ImageThunkData32>(addr, rvaFName32)) && (rvaFName32.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
-        {
+    } else {
+        while ((obj->GetData().Copy<ImageThunkData32>(addr, rvaFName32)) && (rvaFName32.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS)) {
             if ((rvaFName32.u1.AddressOfData & __IMAGE_ORDINAL_FLAG32) != 0) // avem functie importata prin ordinal:
             {
                 tempStr.SetFormat("Ordinal:%u", (rvaFName32.u1.Ordinal - __IMAGE_ORDINAL_FLAG32));
                 importName = tempStr.ToStringView();
-            }
-            else
-            {
+            } else {
                 importName = ReadString(rvaFName32.u1.AddressOfData + 2, MAX_IMPORTFNC_SIZE);
-                if (importName.empty())
-                {
+                if (importName.empty()) {
                     errList.AddError("Invalid RVA import name (0x%X)", (uint32_t) rvaFName32.u1.AddressOfData + 2);
                     return false;
                 }
             }
 
             auto& item = impFunc.emplace_back();
-            if (GView::Utils::Demangle(importName.data(), item.Name) == false)
-            {
+            if (GView::Utils::Demangle(importName.data(), item.Name) == false) {
                 item.Name = importName.data();
             }
 
@@ -1119,8 +1070,7 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
             IATaddr += sizeof(ImageThunkData32);
         }
     }
-    if (count_f >= MAX_IMPORTED_FUNCTIONS)
-    {
+    if (count_f >= MAX_IMPORTED_FUNCTIONS) {
         errList.AddError("Too many imported functions (0x%X)", (uint32_t) rvaFName32.u1.AddressOfData + 2);
         return false;
     }
@@ -1140,16 +1090,14 @@ bool PEFile::BuildImport()
     RVA = dirs[1].VirtualAddress; // export directory
     if (RVA == 0)
         return false;
-    if ((addr = RVAToFA(RVA)) == PE_INVALID_ADDRESS)
-    {
+    if ((addr = RVAToFA(RVA)) == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid RVA for Import directory (0x%X)", (uint32_t) RVA);
         return false;
     }
     // citesc numele de DLL-uri , unul cate unu
 
     nrDLLs = 0;
-    while ((result = obj->GetData().Copy<ImageImportDescriptor>(addr, impD)) == true)
-    {
+    while ((result = obj->GetData().Copy<ImageImportDescriptor>(addr, impD)) == true) {
         if (impD.Name == 0)
             break;
         auto imp_name = ReadString(impD.Name, MAX_IMPORTFNC_SIZE);
@@ -1164,8 +1112,7 @@ bool PEFile::BuildImport()
         nrDLLs++;
         addr += sizeof(ImageImportDescriptor);
     }
-    if (!result)
-    {
+    if (!result) {
         errList.AddError("Unable to read import directory data from RVA (0x%X)", (uint32_t) RVA);
         return false;
     }
@@ -1182,36 +1129,28 @@ bool PEFile::BuildDebugData()
     CHECK(dirDebug.VirtualAddress != 0, false, "");
 
     uint64 faddr;
-    if ((faddr = RVAToFA(dirDebug.VirtualAddress)) == PE_INVALID_ADDRESS)
-    {
+    if ((faddr = RVAToFA(dirDebug.VirtualAddress)) == PE_INVALID_ADDRESS) {
         errList.AddError("Invalid RVA for Debug directory (0x%X)", (uint32) dirDebug.VirtualAddress);
         return false;
     }
 
     const auto size = dirDebug.Size / sizeof(ImageDebugDirectory);
-    if (((dirDebug.Size % sizeof(ImageDebugDirectory)) != 0) || (size == 0) || (size > 14))
-    {
+    if (((dirDebug.Size % sizeof(ImageDebugDirectory)) != 0) || (size == 0) || (size > 14)) {
         errList.AddWarning("Invalid alignament for Debug directory (0x%X)", (uint32) dirDebug.Size);
     }
 
-    for (auto tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory))
-    {
+    for (auto tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory)) {
         ImageDebugDirectory imgd;
-        if (obj->GetData().Copy<ImageDebugDirectory>(faddr, imgd) == false)
-        {
+        if (obj->GetData().Copy<ImageDebugDirectory>(faddr, imgd) == false) {
             errList.AddError("Unable to read Debug structure from (0x%X)", (uint32) faddr);
             return false;
         }
 
-        if (imgd.Type == __IMAGE_DEBUG_TYPE_CODEVIEW)
-        {
+        if (imgd.Type == __IMAGE_DEBUG_TYPE_CODEVIEW) {
             uint32 bufSize;
-            if (imgd.SizeOfData > (MAX_PDB_NAME + 64))
-            {
+            if (imgd.SizeOfData > (MAX_PDB_NAME + 64)) {
                 bufSize = (MAX_PDB_NAME + 64);
-            }
-            else
-            {
+            } else {
                 bufSize = imgd.SizeOfData;
             }
 
@@ -1219,8 +1158,7 @@ bool PEFile::BuildDebugData()
             if (buf.IsValid() && buf.GetLength() >= 5) // at least the first 32 bytes
             {
                 std::string_view name = "";
-                switch (*(uint32*) buf.GetData())
-                {
+                switch (*(uint32*) buf.GetData()) {
                 case CV_SIGNATURE_NB10:
                     name = std::string_view{ (const char*) ((CV_INFO_PDB20*) buf.GetData())->PdbFileName, MAX_PDB_NAME };
                     break;
@@ -1232,13 +1170,10 @@ bool PEFile::BuildDebugData()
                     break;
                 }
 
-                if (name.size() > 0)
-                {
+                if (name.size() > 0) {
                     pdbName.Set(std::string_view{ name.data(), name.find_first_of('\0') });
                 }
-            }
-            else
-            {
+            } else {
                 errList.AddError("Unable to read IMAGE_DEBUG_TYPE_CODEVIEW (%d bytes) from (0x%X)", bufSize, imgd.PointerToRawData);
             }
         }
@@ -1254,18 +1189,13 @@ void PEFile::CopySectionName(uint32 index, String& name)
     //     name.Set("UNDEFINED");
     //     return;
     // }
-    if ((uint16) index == IMAGE_SYM_ABSOLUTE)
-    {
+    if ((uint16) index == IMAGE_SYM_ABSOLUTE) {
         name.Set("ABSOLUTE");
         return;
-    }
-    else if ((uint16) index == IMAGE_SYM_DEBUG)
-    {
+    } else if ((uint16) index == IMAGE_SYM_DEBUG) {
         name.Set("DEBUG");
         return;
-    }
-    else if (index >= nrSections)
-    {
+    } else if (index >= nrSections) {
         return;
     }
 
@@ -1281,11 +1211,9 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
         const auto& sectionHeader = sect[index];
 
         const auto symbolIndex = Number::ToUInt64((const char*) sectionHeader.Name + 1);
-        if (symbolIndex.has_value())
-        {
+        if (symbolIndex.has_value()) {
             auto strtableOffset = 0ULL;
-            switch (nth32.OptionalHeader.Magic)
-            {
+            switch (nth32.OptionalHeader.Magic) {
             case __IMAGE_NT_OPTIONAL_HDR32_MAGIC:
                 strtableOffset = nth32.FileHeader.PointerToSymbolTable + nth32.FileHeader.NumberOfSymbols * sizeof(ImageSymbol);
                 break;
@@ -1295,15 +1223,12 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
             }
 
             auto bufferLongName = obj->GetData().CopyToBuffer(strtableOffset + *symbolIndex, __IMAGE_SIZEOF_SHORT_NAME * 2);
-            if (bufferLongName.IsValid() && strtableOffset != 0ULL)
-            {
+            if (bufferLongName.IsValid() && strtableOffset != 0ULL) {
                 const auto length = (uint32) strnlen((char*) bufferLongName.GetData(), __IMAGE_SIZEOF_SHORT_NAME * 2);
                 String name;
-                if (name.Set((char*) bufferLongName.GetData(), length))
-                {
+                if (name.Set((char*) bufferLongName.GetData(), length)) {
                     String indexName;
-                    if (indexName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME))
-                    {
+                    if (indexName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME)) {
                         longSectionNameProcessed = sectionName.Format("(%s) %s", indexName.GetText(), name.GetText()).size() != 0;
                     }
                 }
@@ -1311,8 +1236,7 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
         }
     }
 
-    if (longSectionNameProcessed == false)
-    {
+    if (longSectionNameProcessed == false) {
         sectionName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME);
     }
 }
@@ -1320,8 +1244,7 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
 bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& info)
 {
     CHECK(r.Image.type != ImageType::Unknown, false, "Imvalid image type !");
-    switch (r.Image.type)
-    {
+    switch (r.Image.type) {
     case ImageType::DIB:
         info.Set("DIB:", 4);
         break;
@@ -1334,8 +1257,7 @@ bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& i
     }
     info.AddFormat("%u x %u ", r.Image.width, r.Image.height);
 
-    switch (r.Image.bitsPerPixel)
-    {
+    switch (r.Image.bitsPerPixel) {
     case 0:
         break; // don't add this informatioon
     case 1:
@@ -1365,20 +1287,16 @@ bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
     CHECK(res.Type == ResourceType::Icon, false, "Expecting a valid ICON resource !");
     auto buf = this->obj->GetData().CopyToBuffer(res.Start, (uint32) res.Size);
     CHECK(buf.IsValid(), false, "Fail to read %llu bytes from offset %llu", res.Size, res.Start);
-    if (buf.IsValid())
-    {
+    if (buf.IsValid()) {
         auto iconHeader = buf.GetObject<DIBInfoHeader>();
-        if (iconHeader.IsValid())
-        {
-            if (iconHeader->sizeOfHeader == 40)
-            {
+        if (iconHeader.IsValid()) {
+            if (iconHeader->sizeOfHeader == 40) {
                 CHECK(img.CreateFromDIB(buf.GetData(), (uint32) buf.GetLength(), true), false, "Fail to create icon from buffer !");
                 return true;
             }
         }
         auto pngHeader = buf.GetObject<PNGHeader>();
-        if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849))
-        {
+        if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849)) {
             CHECK(img.Create(buf), false, "Fail to create an image from a PNG buffer !");
             return true;
         }
@@ -1404,8 +1322,7 @@ bool PEFile::Update()
         return false;
     if (!obj->GetData().Copy<ImageNTHeaders32>(dos.e_lfanew, nth32))
         return false;
-    switch (nth32.OptionalHeader.Magic)
-    {
+    switch (nth32.OptionalHeader.Magic) {
     case __IMAGE_NT_OPTIONAL_HDR32_MAGIC:
         hdr64         = false;
         dirs          = &nth32.OptionalHeader.DataDirectory[0];
@@ -1431,8 +1348,7 @@ bool PEFile::Update()
     peStart      = dos.e_lfanew;
     computedSize = virtualComputedSize = 0;
 
-    if ((nrSections > MAX_NR_SECTIONS) || (nrSections < 1))
-    {
+    if ((nrSections > MAX_NR_SECTIONS) || (nrSections < 1)) {
         errList.AddError("Invalid number of sections (%d)", nrSections);
         nrSections = 0;
     }
@@ -1450,10 +1366,8 @@ bool PEFile::Update()
     /*obj->GetData().ResetBookmarks();
      */
     // b.AddZone(poz, poz + nrSections * sizeof(ImageSectionHeader) - 1, peCols.colSectDef, "SectDef");
-    for (tr = 0; tr < nrSections; tr++, poz += sizeof(ImageSectionHeader))
-    {
-        if (!obj->GetData().Copy<ImageSectionHeader>(poz, sect[tr]))
-        {
+    for (tr = 0; tr < nrSections; tr++, poz += sizeof(ImageSectionHeader)) {
+        if (!obj->GetData().Copy<ImageSectionHeader>(poz, sect[tr])) {
             memset(&sect[tr], 0, sizeof(ImageSectionHeader));
         }
         if ((sect[tr].SizeOfRawData > 0) && (sect[tr].PointerToRawData + sect[tr].SizeOfRawData > computedSize))
@@ -1469,17 +1383,13 @@ bool PEFile::Update()
           if ((tr<9) && (sect[tr].VirtualAddress != 0)) obj->GetData().SetBookmark(tr + 1, sect[tr].VirtualAddress);
         }*/
     }
-    for (tr = 0; tr < nrSections; tr++)
-    {
-        if (tr + 1 < nrSections)
-        {
-            if (sect[tr].VirtualAddress + SectionALIGN(sect[tr].Misc.VirtualSize, nth32.OptionalHeader.SectionAlignment) != sect[tr + 1].VirtualAddress)
-            {
+    for (tr = 0; tr < nrSections; tr++) {
+        if (tr + 1 < nrSections) {
+            if (sect[tr].VirtualAddress + SectionALIGN(sect[tr].Misc.VirtualSize, nth32.OptionalHeader.SectionAlignment) != sect[tr + 1].VirtualAddress) {
                 errList.AddError("Section %d and %d are not consecutive.", (tr + 1), (tr + 2));
             }
         }
-        if ((tr > 0) && ((*(uint64*) &sect[tr - 1].Name) == (*(uint64*) &sect[tr].Name)))
-        {
+        if ((tr > 0) && ((*(uint64*) &sect[tr - 1].Name) == (*(uint64*) &sect[tr].Name))) {
             tempStr.SetFormat("Sections %d and %d have the same name: [", (tr + 1), (tr + 2));
             for (gr = 0; gr < 8; gr++)
                 if (sect[tr].Name[gr] != 0)
@@ -1490,8 +1400,7 @@ bool PEFile::Update()
     }
     // recalculez :
     computedSize = sect[nrSections - 1].PointerToRawData + sect[nrSections - 1].SizeOfRawData;
-    if (sect[nrSections - 1].SizeOfRawData == 0)
-    {
+    if (sect[nrSections - 1].SizeOfRawData == 0) {
         computedSize = obj->GetData().GetSize();
         errList.AddWarning("File is using LastSection.SizeOfRawData = 0 trick");
     }
@@ -1504,20 +1413,16 @@ bool PEFile::Update()
 
     computedWithCertificate = computedSize;
     auto dirSec             = GetDirectory(DirectoryType::Security);
-    if ((dirSec.VirtualAddress > 0) && (dirSec.Size > 0))
-    {
-        if (dirSec.VirtualAddress < computedWithCertificate)
-        {
+    if ((dirSec.VirtualAddress > 0) && (dirSec.Size > 0)) {
+        if (dirSec.VirtualAddress < computedWithCertificate) {
             errList.AddWarning("Security certificate starts within the file");
         }
-        if ((dirSec.VirtualAddress + dirSec.Size) > computedWithCertificate)
-        {
+        if ((dirSec.VirtualAddress + dirSec.Size) > computedWithCertificate) {
             computedWithCertificate = dirSec.VirtualAddress + dirSec.Size;
         }
     }
 
-    if (computedSize > obj->GetData().GetSize())
-    {
+    if (computedSize > obj->GetData().GetSize()) {
         errList.AddError(
               "File is truncated. Missing %d bytes (%3d%%)",
               (int) (computedSize - obj->GetData().GetSize()),
@@ -1525,18 +1430,13 @@ bool PEFile::Update()
     }
 
     tmp = sect[nrSections - 1].VirtualAddress + sect[nrSections - 1].Misc.VirtualSize;
-    if (nth32.OptionalHeader.SectionAlignment > 0)
-    {
+    if (nth32.OptionalHeader.SectionAlignment > 0) {
         tmp += (nth32.OptionalHeader.SectionAlignment - tmp % nth32.OptionalHeader.SectionAlignment) % nth32.OptionalHeader.SectionAlignment;
     }
-    if (tmp != nth32.OptionalHeader.SizeOfImage)
-    {
+    if (tmp != nth32.OptionalHeader.SizeOfImage) {
         errList.AddError("SizeOfImage is invalid");
-    }
-    else
-    {
-        if ((nth32.OptionalHeader.SectionAlignment > 0) && (nth32.OptionalHeader.SizeOfImage % nth32.OptionalHeader.SectionAlignment) != 0)
-        {
+    } else {
+        if ((nth32.OptionalHeader.SectionAlignment > 0) && (nth32.OptionalHeader.SizeOfImage % nth32.OptionalHeader.SectionAlignment) != 0) {
             errList.AddWarning("SizeOfImage unaligned");
         }
     }
@@ -1551,55 +1451,40 @@ bool PEFile::Update()
     // EP
     filePoz = RVAToFA(rvaEntryPoint);
 
-    if (filePoz != PE_INVALID_ADDRESS)
-    {
+    if (filePoz != PE_INVALID_ADDRESS) {
         // FileInfo->CursorPos = filePoz;
         // FileInfo->Bookmarks.SetBookmark(0, filePoz);
-        if (filePoz >= obj->GetData().GetSize())
-        {
+        if (filePoz >= obj->GetData().GetSize()) {
             errList.AddError("Entry Point is outside the file RVA=(0x%x)", rvaEntryPoint);
-        }
-        else
-        {
+        } else {
             auto buf = obj->GetData().Get(filePoz, 16, false);
-            if (buf.Empty())
-            {
+            if (buf.Empty()) {
                 errList.AddError("Unable to read data from Entry Point RVA=(0x%x)", rvaEntryPoint);
-            }
-            else
-            {
+            } else {
                 tmp = 0;
                 for (auto ch : buf)
                     tmp += ch;
-                if (tmp == 0)
-                {
+                if (tmp == 0) {
                     errList.AddError("Invalid code at Entry Point RVA=(0x%x)", rvaEntryPoint);
                 }
             }
         }
-    }
-    else
-    {
+    } else {
         errList.AddError("Invalid Entry Point RVA (0x%x)", rvaEntryPoint);
-        if (rvaEntryPoint < obj->GetData().GetSize())
-        {
+        if (rvaEntryPoint < obj->GetData().GetSize()) {
             errList.AddWarning("Entry Point is a File Address");
         }
     }
     int ep_sect = RVAToSectionIndex(rvaEntryPoint);
-    if (rvaEntryPoint == 0)
-    {
+    if (rvaEntryPoint == 0) {
         errList.AddWarning("Posible executable resource file !");
         if ((nth32.FileHeader.Characteristics & __IMAGE_FILE_DLL) == 0)
             errList.AddWarning("NON-DLL file with EP RVA = 0");
     }
-    if (ep_sect == -1)
-    {
+    if (ep_sect == -1) {
         if (rvaEntryPoint > 0)
             errList.AddWarning("EP is not inside any section");
-    }
-    else
-    {
+    } else {
         if ((sect[ep_sect].Characteristics & __IMAGE_SCN_MEM_EXECUTE) == 0)
             errList.AddWarning("EP section without Executable characteristic");
         if ((sect[ep_sect].Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE)) == 0)
@@ -1608,62 +1493,47 @@ bool PEFile::Update()
     // directoare
 
     ImageDataDirectory *dr, *d2;
-    for (tr = 0; tr < 15; tr++)
-    {
+    for (tr = 0; tr < 15; tr++) {
         dr = &dirs[tr];
-        if ((dr->VirtualAddress > 0) && (dr->Size > 0))
-        {
-            if (dr->Size > obj->GetData().GetSize())
-            {
+        if ((dr->VirtualAddress > 0) && (dr->Size > 0)) {
+            if (dr->Size > obj->GetData().GetSize()) {
                 errList.AddWarning("Directory '%s' (#%d) has an invalid Size (0x%08X)", peDirsNames[tr].data(), tr, dr->Size);
             }
 
             filePoz = RVAToFA(dr->VirtualAddress);
-            if (filePoz == PE_INVALID_ADDRESS)
-            {
+            if (filePoz == PE_INVALID_ADDRESS) {
                 errList.AddWarning("Directory '%s' (#%d) has an invalid RVA address (0x%08X)", peDirsNames[tr].data(), tr, dr->VirtualAddress);
-            }
-            else
-            {
-                if (filePoz + dr->Size > obj->GetData().GetSize())
-                {
+            } else {
+                if (filePoz + dr->Size > obj->GetData().GetSize()) {
                     errList.AddWarning(
                           "Directory '%s' (#%d) extends outside the file (to: 0x%08X)", peDirsNames[tr].data(), tr, (uint32_t) (dr->Size + filePoz));
                 }
             }
         }
-        if ((dr->VirtualAddress == 0) && (dr->Size > 0))
-        {
+        if ((dr->VirtualAddress == 0) && (dr->Size > 0)) {
             errList.AddWarning("Directory '%s' (#%d) has no address but size bigger than 0 (%d bytes)", peDirsNames[tr].data(), tr, dr->Size);
         }
-        if ((dr->VirtualAddress > 0) && (dr->Size == 0))
-        {
+        if ((dr->VirtualAddress > 0) && (dr->Size == 0)) {
             errList.AddWarning("Directory '%s' (#%d) has size equal to 0 and a valid addrees (0x%08X)", peDirsNames[tr].data(), tr, dr->VirtualAddress);
         }
     }
 
     // overlap cases
-    for (tr = 0; tr < 15; tr++)
-    {
+    for (tr = 0; tr < 15; tr++) {
         if (tr == (uint8_t) DirectoryType::Security)
             continue;
         dr = &dirs[tr];
-        if ((dr->VirtualAddress > 0) && (dr->Size > 0))
-        {
-            for (gr = tr + 1; gr < 15; gr++)
-            {
+        if ((dr->VirtualAddress > 0) && (dr->Size > 0)) {
+            for (gr = tr + 1; gr < 15; gr++) {
                 if (gr == (uint8_t) DirectoryType::Security)
                     continue;
                 d2 = &dirs[gr];
-                if ((d2->VirtualAddress > 0) && (dr->Size > 0))
-                {
-                    if ((dr->VirtualAddress <= d2->VirtualAddress) && (dr->VirtualAddress + dr->Size > d2->VirtualAddress))
-                    {
+                if ((d2->VirtualAddress > 0) && (dr->Size > 0)) {
+                    if ((dr->VirtualAddress <= d2->VirtualAddress) && (dr->VirtualAddress + dr->Size > d2->VirtualAddress)) {
                         errList.AddWarning("Directory '%s' and '%s' overlapp !", peDirsNames[tr].data(), peDirsNames[gr].data());
                         continue;
                     }
-                    if ((d2->VirtualAddress <= dr->VirtualAddress) && (d2->VirtualAddress + d2->Size > dr->VirtualAddress))
-                    {
+                    if ((d2->VirtualAddress <= dr->VirtualAddress) && (d2->VirtualAddress + d2->Size > dr->VirtualAddress)) {
                         errList.AddWarning("Directory '%s' and '%s' overlapp !", peDirsNames[tr].data(), peDirsNames[gr].data());
                         continue;
                     }
@@ -1674,11 +1544,9 @@ bool PEFile::Update()
 
     hasOverlay = computedSize < obj->GetData().GetSize();
 
-    for (auto i = 0U; i < nrSections; i++)
-    {
+    for (auto i = 0U; i < nrSections; i++) {
         const auto& section = sect[i];
-        if ((section.Characteristics & __IMAGE_SCN_MEM_EXECUTE) == __IMAGE_SCN_MEM_EXECUTE)
-        {
+        if ((section.Characteristics & __IMAGE_SCN_MEM_EXECUTE) == __IMAGE_SCN_MEM_EXECUTE) {
             executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ section.PointerToRawData, section.PointerToRawData + section.SizeOfRawData });
         }
     }
@@ -1689,8 +1557,7 @@ bool PEFile::Update()
     ADD_PANEL(Panels::IDs::Sections);
     ADD_PANEL(Panels::IDs::Headers);
 
-    switch ((PE::MachineType) nth32.FileHeader.Machine)
-    {
+    switch ((PE::MachineType) nth32.FileHeader.Machine) {
     case PE::MachineType::I386:
     case PE::MachineType::IA64:
     case PE::MachineType::AMD64:
@@ -1707,10 +1574,8 @@ bool PEFile::Update()
     if (res.size() > 0)
         ADD_PANEL(Panels::IDs::Resources);
 
-    for (auto& r : res)
-    {
-        if (r.Type == ResourceType::Icon)
-        {
+    for (auto& r : res) {
+        if (r.Type == ResourceType::Icon) {
             ADD_PANEL(Panels::IDs::Icons);
             break;
         }
@@ -1719,25 +1584,19 @@ bool PEFile::Update()
     if (hasTLS)
         ADD_PANEL(Panels::IDs::TLS);
 
-    if (this->hdr64)
-    {
-        if (nth64.FileHeader.PointerToSymbolTable != 0 && nth64.FileHeader.NumberOfSymbols != 0)
-        {
+    if (this->hdr64) {
+        if (nth64.FileHeader.PointerToSymbolTable != 0 && nth64.FileHeader.NumberOfSymbols != 0) {
             ADD_PANEL(Panels::IDs::Symbols);
             BuildSymbols();
         }
-    }
-    else
-    {
-        if (nth32.FileHeader.PointerToSymbolTable != 0 && nth32.FileHeader.NumberOfSymbols != 0)
-        {
+    } else {
+        if (nth32.FileHeader.PointerToSymbolTable != 0 && nth32.FileHeader.NumberOfSymbols != 0) {
             ADD_PANEL(Panels::IDs::Symbols);
             BuildSymbols();
         }
     }
 
-    if (ParseGoData())
-    {
+    if (ParseGoData()) {
         ADD_PANEL(Panels::IDs::GoInformation);
     }
 
@@ -1749,13 +1608,10 @@ bool PEFile::BuildSymbols()
     auto offset    = 0ULL;
     auto symbolsNo = 0ULL;
 
-    if (this->hdr64)
-    {
+    if (this->hdr64) {
         offset    = nth64.FileHeader.PointerToSymbolTable;
         symbolsNo = nth64.FileHeader.NumberOfSymbols;
-    }
-    else
-    {
+    } else {
         offset    = nth32.FileHeader.PointerToSymbolTable;
         symbolsNo = nth32.FileHeader.NumberOfSymbols;
     }
@@ -1776,40 +1632,29 @@ bool PEFile::BuildSymbols()
     CHECK(stringsBuffer.IsValid(), false, "");
 
     this->symbols.reserve(symbolsNo);
-    for (decltype(symbolsNo) i = 0ULL; i < symbolsNo; i++)
-    {
+    for (decltype(symbolsNo) i = 0ULL; i < symbolsNo; i++) {
         const auto is = (ImageSymbol*) (symbolsBuffer.GetData() + i * IMAGE_SIZEOF_SYMBOL);
         CHECKBK((uint64) (is) < endSymbolsBuffer - IMAGE_SIZEOF_SYMBOL, "");
-        if (is->StorageClass == IMAGE_SYM_CLASS_NULL)
-        {
+        if (is->StorageClass == IMAGE_SYM_CLASS_NULL) {
             continue;
         }
 
         auto& s = this->symbols.emplace_back(SymbolInformation{ { /* symbol name */ }, *is });
 
-        if (is->N.Name.Short != 0)
-        {
+        if (is->N.Name.Short != 0) {
             CHECK(s.name.Set((char*) is->N.ShortName, sizeof(is->N.ShortName) / sizeof(is->N.ShortName[0])), false, "");
-        }
-        else if (is->N.Name.Long >= sizeof(strTableSize) && is->N.Name.Long < strTableSize)
-        {
+        } else if (is->N.Name.Long >= sizeof(strTableSize) && is->N.Name.Long < strTableSize) {
             const auto name     = std::string_view{ (char*) (stringsBuffer.GetData() + is->N.Name.Long) };
             const auto dolarPos = name.find_first_of('$');
-            if (dolarPos != std::string::npos)
-            {
+            if (dolarPos != std::string::npos) {
                 const auto fname = std::string_view{ name.data() + dolarPos + 1, name.size() - 1 - dolarPos };
                 String sName;
-                if (GView::Utils::Demangle(fname.data(), sName))
-                {
+                if (GView::Utils::Demangle(fname.data(), sName)) {
                     s.name.Format("[%.*s]: %s", dolarPos, name.data(), sName.GetText());
-                }
-                else
-                {
+                } else {
                     s.name.Format("[%.*s]: %.*s", dolarPos, name.data(), name.size() - dolarPos + 1, name.data() + dolarPos + 1);
                 }
-            }
-            else if (GView::Utils::Demangle(name.data(), s.name) == false)
-            {
+            } else if (GView::Utils::Demangle(name.data(), s.name) == false) {
                 s.name = name.data();
             }
         }
@@ -1824,18 +1669,14 @@ bool PEFile::ParseGoData()
     ParseGoBuildInfo();
 
     // we assume we parsed the symbols first!
-    if (symbols.empty() == false)
-    {
+    if (symbols.empty() == false) {
         std::map<std::string_view, ImageSymbol> pclntabSymbols{
             { "runtime.pclntab", { 0 } }, { "runtime.epclntab", { 0 } }, { "pclntab", { 0 } }, { "epclntab", { 0 } }
         };
 
-        for (const auto& symbol : symbols)
-        {
-            for (auto& [pclntabSymbol, value] : pclntabSymbols)
-            {
-                if (symbol.name.Equals(pclntabSymbol.data()))
-                {
+        for (const auto& symbol : symbols) {
+            for (auto& [pclntabSymbol, value] : pclntabSymbols) {
+                if (symbol.name.Equals(pclntabSymbol.data())) {
                     value = symbol.is;
                 }
             }
@@ -1843,19 +1684,16 @@ bool PEFile::ParseGoData()
 
         auto& start = pclntabSymbols.at("runtime.pclntab");
         auto& end   = pclntabSymbols.at("runtime.epclntab");
-        if (start.Value == 0 || end.Value == 0)
-        {
+        if (start.Value == 0 || end.Value == 0) {
             start = pclntabSymbols.at("pclntab");
             end   = pclntabSymbols.at("epclntab");
         }
 
         const auto cacheSize = obj->GetData().GetCacheSize();
-        if (start.Value < end.Value && end.Value - start.Value < cacheSize && start.SectionNumber == end.SectionNumber)
-        {
+        if (start.Value < end.Value && end.Value - start.Value < cacheSize && start.SectionNumber == end.SectionNumber) {
             const auto fa       = static_cast<uint64>(sect[start.SectionNumber - 1ULL].PointerToRawData);
             const auto fileView = obj->GetData().CopyToBuffer(fa + start.Value, static_cast<uint32>(fa + end.Value - start.Value), false);
-            if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
-            {
+            if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86)) {
                 return true;
             }
         }
@@ -1866,13 +1704,11 @@ bool PEFile::ParseGoData()
     CHECK(pcLnTabSigsCandidates.empty() == false, false, "");
 
     bool found = false;
-    for (const auto& candidatesVA : pcLnTabSigsCandidates)
-    {
+    for (const auto& candidatesVA : pcLnTabSigsCandidates) {
         const auto cacheSize = obj->GetData().GetCacheSize();
         const auto fa        = VAtoFA(candidatesVA);
         const auto fileView  = obj->GetData().CopyToBuffer(fa, cacheSize, false);
-        if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
-        {
+        if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86)) {
             return true;
         }
     }
@@ -1909,10 +1745,8 @@ bool PEFile::ParseGoBuildInfo()
     // we should find go build info at the start of the file .data section
     constexpr uint32 flags = __IMAGE_SCN_CNT_INITIALIZED_DATA | __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE;
     auto dataOffset        = 0ULL;
-    for (auto i = 0U; i < nrSections; i++)
-    {
-        if (sect[i].VirtualAddress != 0 && (sect[i].Characteristics & flags) == flags)
-        {
+    for (auto i = 0U; i < nrSections; i++) {
+        if (sect[i].VirtualAddress != 0 && (sect[i].Characteristics & flags) == flags) {
             dataOffset = static_cast<uint64>(sect[i].PointerToRawData);
             break;
         }
@@ -1942,13 +1776,10 @@ bool PEFile::ParseGoBuildInfo()
 
     uint64 runtimeBuildVersionVA = 0;
     uint64 runtimeModInfoVA      = 0;
-    if (ptrSize == 4)
-    {
+    if (ptrSize == 4) {
         runtimeBuildVersionVA = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
         runtimeModInfoVA      = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
-    }
-    else
-    {
+    } else {
         runtimeBuildVersionVA = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
         runtimeModInfoVA      = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
     }
@@ -1965,15 +1796,12 @@ bool PEFile::ParseGoBuildInfo()
     uint64 strRuntimeBuildVersionLength = 0;
     uint64 strViewRuntimeModInfoVA      = 0;
     uint64 strViewRuntimeModInfoLength  = 0;
-    if (ptrSize == 4)
-    {
+    if (ptrSize == 4) {
         strRuntimeBuildVersionVA     = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData());
         strRuntimeBuildVersionLength = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
         strViewRuntimeModInfoVA      = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData());
         strViewRuntimeModInfoLength  = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData() + ptrSize);
-    }
-    else
-    {
+    } else {
         strRuntimeBuildVersionVA     = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData());
         strRuntimeBuildVersionLength = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
         strViewRuntimeModInfoVA      = *reinterpret_cast<uint64*>(ptrViewRuntimeModInfo.GetData());
@@ -1991,8 +1819,7 @@ bool PEFile::ParseGoBuildInfo()
     const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, static_cast<uint32>(strViewRuntimeModInfoLength), false);
     CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
     std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
-    if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
-    {
+    if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n') {
         runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
     }
     pcLnTab.SetRuntimeBuildModInfo(runtimeModInfo);
@@ -2008,19 +1835,15 @@ std::vector<uint64> PEFile::FindPcLnTabSigsCandidates() const
     std::vector<uint64> indexes;
     indexes.reserve(10); // usually not that many sigs found matching
 
-    for (uint32 i = 0; i < nrSections; i++)
-    {
+    for (uint32 i = 0; i < nrSections; i++) {
         const auto sectionBuffer = obj->GetData().CopyToBuffer(sect[i].PointerToRawData, sect[i].SizeOfRawData);
         CHECK(sectionBuffer.IsValid(), indexes, "");
         const auto section = std::string_view{ reinterpret_cast<char*>(sectionBuffer.GetData()), sectionBuffer.GetLength() };
 
-        for (const auto& sig : pclntabSigs)
-        {
+        for (const auto& sig : pclntabSigs) {
             uint64 index = 0;
-            while ((index = section.find(sig, index)) != std::string::npos)
-            {
-                if (index != std::string::npos && index < sect[i].SizeOfRawData)
-                {
+            while ((index = section.find(sig, index)) != std::string::npos) {
+                if (index != std::string::npos && index < sect[i].SizeOfRawData) {
                     indexes.push_back(index + sect[i].VirtualAddress + imageBase);
                 }
                 index += sig.size();
@@ -2034,27 +1857,22 @@ std::vector<uint64> PEFile::FindPcLnTabSigsCandidates() const
 bool PEFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
     const auto* p = buf.begin();
-    switch (*p)
-    {
+    switch (*p) {
     case 0xFF:
-        if (buf.GetLength() >= 6)
-        {
+        if (buf.GetLength() >= 6) {
             if (p[1] == 0x15) // possible call to API
             {
                 const auto addr = *reinterpret_cast<const uint32_t*>(p + 2);
-                if (addr >= this->imageBase && addr <= this->imageBase + this->virtualComputedSize)
-                {
+                if (addr >= this->imageBase && addr <= this->imageBase + this->virtualComputedSize) {
                     result.start = offset;
                     result.end   = offset + 5;
                     result.color = INS_CALL_COLOR;
                     return true;
                 }
-            }
-            else if (p[1] == 0x25) // possible jump to API
+            } else if (p[1] == 0x25) // possible jump to API
             {
                 const auto addr = *reinterpret_cast<const uint32_t*>(p + 2);
-                if (addr >= this->imageBase && addr <= this->imageBase + this->virtualComputedSize)
-                {
+                if (addr >= this->imageBase && addr <= this->imageBase + this->virtualComputedSize) {
                     result.start = offset;
                     result.end   = offset + 5;
                     result.color = INS_JUMP_COLOR;
@@ -2069,8 +1887,7 @@ bool PEFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::
         result.color              = INS_BREAKPOINT_COLOR;
         return true;
     case 0x55:
-        if (buf.GetLength() >= 3)
-        {
+        if (buf.GetLength() >= 3) {
             if (*reinterpret_cast<const uint16_t*>(p + 1) == 0xEC8B) // possible `push EBP` followed by MOV ebp, sep
             {
                 result.start = offset;
@@ -2081,8 +1898,7 @@ bool PEFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::
         }
         return false;
     case 0x8B:
-        if (buf.GetLength() >= 4)
-        {
+        if (buf.GetLength() >= 4) {
             if ((*reinterpret_cast<const uint16_t*>(p + 1) == 0x5DE5) && (p[3] == 0xC3)) // possible `MOV esp, EBP` followed by `POP ebp` and `RET`
             {
                 result.start = offset;
@@ -2104,15 +1920,11 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
     CHECK(showOpcodesMask != 0, false, "");
 
     auto* p = buf.begin();
-    switch (*p)
-    {
+    switch (*p) {
     case 0x4D:
-        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
-        {
-            if (buf.GetLength() >= 4)
-            {
-                if (*reinterpret_cast<const uint16*>(p) == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90 || p[2] == 0x78) && p[3] == 0x00)
-                {
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header)) {
+            if (buf.GetLength() >= 4) {
+                if (*reinterpret_cast<const uint16*>(p) == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90 || p[2] == 0x78) && p[3] == 0x00) {
                     result.start = offset;
                     result.end   = offset + 3;
                     result.color = END_FUNCTION_COLOR;
@@ -2122,12 +1934,9 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
             }
         }
     case 0x50:
-        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
-        {
-            if (buf.GetLength() >= 4)
-            {
-                if (*reinterpret_cast<const uint32*>(p) == 0x00004550)
-                {
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header)) {
+            if (buf.GetLength() >= 4) {
+                if (*reinterpret_cast<const uint32*>(p) == 0x00004550) {
                     result.start = offset;
                     result.end   = offset + 3;
                     result.color = END_FUNCTION_COLOR;
@@ -2137,15 +1946,12 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
             }
         }
     default:
-        switch ((PE::MachineType) nth32.FileHeader.Machine)
-        {
+        switch ((PE::MachineType) nth32.FileHeader.Machine) {
         case PE::MachineType::I386:
         case PE::MachineType::IA64:
         case PE::MachineType::AMD64:
-            for (const auto& [start, end] : executableZonesFAs)
-            {
-                if (offset >= start && offset < end)
-                {
+            for (const auto& [start, end] : executableZonesFAs) {
+                if (offset >= start && offset < end) {
                     return GetColorForBufferIntel(offset, buf, result);
                 }
             }
@@ -2160,10 +1966,8 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
 
 void PEFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "DigitalSignature")
-    {
-        while (!signatureChecked)
-        {
+    if (commandName == "DigitalSignature") {
+        while (!signatureChecked) {
             data.winTrust.errorMessage = "Digital signature not found!";
 
             const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
@@ -2180,8 +1984,7 @@ void PEFile::RunCommand(std::string_view commandName)
             GView::DigitalSignature::GetSignaturesInformation(obj->GetPath(), data);
 #endif
 
-            while (!signatureChecked)
-            {
+            while (!signatureChecked) {
                 Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
                 GView::DigitalSignature::AuthenticodeToHumanReadable(blob, data.data.humanReadable);
 
@@ -2191,17 +1994,12 @@ void PEFile::RunCommand(std::string_view commandName)
             }
         };
 
-        if (signatureChecked)
-        {
+        if (signatureChecked) {
             PE::Commands::DigitalSignature(this).Show();
-        }
-        else
-        {
+        } else {
             AppCUI::Dialogs::MessageBox::ShowError("Error", data.winTrust.errorMessage);
         }
-    }
-    else if (commandName == "AreaHighlighter")
-    {
+    } else if (commandName == "AreaHighlighter") {
         static auto ah = PE::Commands::AreaHighlighter(this);
         ah.Show();
     }

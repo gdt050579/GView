@@ -5,6 +5,7 @@ using namespace AppCUI::Input;
 using GView::View::BufferViewer::OffsetTranslateInterface;
 
 #define INTERNAL_SETTINGS static_cast<SettingsData*>(this->data)
+//#define DISSASM_DISABLE_API_CALLS
 
 Settings::Settings()
 {
@@ -27,7 +28,9 @@ void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zone
 
 void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType)
 {
+#ifndef DISSASM_DISABLE_API_CALLS
     INTERNAL_SETTINGS->memoryMappings.insert({ address, { name.data(), mappingType } });
+#endif
     if (address > INTERNAL_SETTINGS->maxLocationMemoryMappingSize)
         INTERNAL_SETTINGS->maxLocationMemoryMappingSize = address;
 }

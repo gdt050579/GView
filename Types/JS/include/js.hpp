@@ -252,6 +252,22 @@ namespace Type
 
         namespace Plugins
         {
+            class Simplify : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+            class FoldConstants : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
             class AddStrings : public GView::View::LexicalViewer::Plugin
             {
               public:
@@ -270,7 +286,112 @@ namespace Type
                 virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
             };
 
+			class ReplaceConstants : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
             class ConstPropagation : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class RemoveDeadCode : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class RemoveDummyCode : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class ContextAwareRename : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class Emulate : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class RemoveComments : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class MarkAlwaysTrue : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class MarkAlwaysFalse : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class UnrollLoop : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+            class InlineFunctions : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+            class HoistFunctions : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+            class DumpAST : public GView::View::LexicalViewer::Plugin
             {
               public:
                 virtual std::string_view GetName() override;
@@ -282,11 +403,12 @@ namespace Type
 
         class JSFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
+		  private:
             uint32 TokenizeWord(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             int32 ParseRegEx(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
-            uint32 TokenizeOperator(
+			uint32 TokenizeOperator(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             uint32 TokenizeList(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 idx);
@@ -315,9 +437,23 @@ namespace Type
           public:
             struct
             {
+                Plugins::Simplify simplify;
+                Plugins::FoldConstants foldConstants;
+                Plugins::ConstPropagation constPropagation;
+                Plugins::RemoveDeadCode removeDeadCode;
+                Plugins::RemoveDummyCode removeDummyCode;
+                Plugins::ContextAwareRename contextAwareRename;
+                Plugins::Emulate emulate;
+                Plugins::InlineFunctions inlineFunctions;
+                Plugins::HoistFunctions hoistFunctions;
+                Plugins::RemoveComments removeComments;
+                Plugins::MarkAlwaysTrue markAlwaysTrue;
+                Plugins::MarkAlwaysFalse markAlwaysFalse;
+                Plugins::UnrollLoop unrollLoop;
+                Plugins::DumpAST dumpAST;
                 Plugins::AddStrings addStrings;
                 Plugins::ReverseStrings reverseStrings;
-                Plugins::ConstPropagation constPropagation;
+                Plugins::ReplaceConstants replaceConstants;
             } plugins;
             JSFile();
             virtual ~JSFile()
@@ -333,29 +469,16 @@ namespace Type
             void RunCommand(std::string_view) override
             {
             }
+            virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+            {
+                return true;
+            }
             virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) override;
             virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
             virtual bool StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result) override;
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
-
-          public:
-            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
-
-            uint32 GetSelectionZonesCount() override
-            {
-                CHECK(selectionZoneInterface.IsValid(), 0, "");
-                return selectionZoneInterface->GetSelectionZonesCount();
-            }
-
-            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
-            {
-                static auto d = TypeInterface::SelectionZone{ 0, 0 };
-                CHECK(selectionZoneInterface.IsValid(), d, "");
-                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
-
-                return selectionZoneInterface->GetSelectionZone(index);
-            }
+            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
         };
         namespace Panels
         {

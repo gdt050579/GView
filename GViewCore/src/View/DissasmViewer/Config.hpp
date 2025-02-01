@@ -1,7 +1,8 @@
 #pragma once
 
-#include <AppCUI/include/AppCUI.hpp>
+#include <Internal.hpp>
 #include <array>
+
 using AppCUI::uint32;
 constexpr uint32 COMMAND_ADD_NEW_TYPE           = 100;
 constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT  = 101;
@@ -13,6 +14,9 @@ constexpr uint32 COMMAND_ADD_OR_EDIT_COMMENT    = 106;
 constexpr uint32 COMMAND_REMOVE_COMMENT         = 107;
 constexpr uint32 COMMAND_AVAILABLE_KEYS         = 108;
 constexpr uint32 COMMAND_SHOW_ONLY_DISSASM      = 109;
+constexpr uint32 COMMAND_SAVE_DISSASM_CACHE     = 110;
+constexpr uint32 COMMAND_QUERY_FUNCTION_NAME    = 111;
+constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -20,19 +24,25 @@ constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_STRUCTURE    = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT_STRUCTURE   = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE_STRUCTURE = 2;
 
-constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE   = 3;
-constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE = 4;
-constexpr int32 RIGHT_CLICK_ADD_COMMENT                  = 5;
-constexpr int32 RIGHT_CLICK_REMOVE_COMMENT               = 6;
-constexpr int32 RIGHT_CLICK_CLEAR_SELECTION              = 7;
-constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE        = 8;
-constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE          = 9;
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE                      = 3;
+constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE                    = 4;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT                                     = 5;
+constexpr int32 RIGHT_CLICK_REMOVE_COMMENT                                  = 6;
+constexpr int32 RIGHT_CLICK_CLEAR_SELECTION                                 = 7;
+constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE                           = 8;
+constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE                             = 9;
+constexpr int32 RIGHT_CLICK_CODE_ZONE_EDIT                                  = 10;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION           = 11;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE            = 12;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL      = 13;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION = 14;
+constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES        = 15;
 
 struct RightClickCommand {
     int commandID;
     std::string_view text;
     // Input::Key shortcutKey = Input::Key::None;
-    AppCUI::Controls::ItemHandle handle = AppCUI::Controls::InvalidItemHandle;
+    // AppCUI::Controls::ItemHandle handle = AppCUI::Controls::InvalidItemHandle;
 };
 
 inline RightClickCommand RIGHT_CLICK_MENU_COMMANDS[] = {
@@ -45,21 +55,26 @@ inline RightClickCommand RIGHT_CLICK_MENU_COMMANDS[] = {
 struct RightClickSubMenus {
     const char* name;
     std::vector<RightClickCommand> commands;
-    AppCUI::Controls::ItemHandle handle;
+    // AppCUI::Controls::ItemHandle handle;
 };
 
-inline RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = { { "CollapsibleZone",
-                                                             {
-                                                                   { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
-                                                                   { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
-                                                                   { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
-                                                                   { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" },
-                                                             } },
-                                                           { "Comment",
-                                                             {
-                                                                   { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
-                                                                   { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
-                                                             } } };
+const RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = {
+    { "CollapsibleZone",
+      { { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
+        { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
+        { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
+        { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" } } },
+    { "Comment", { { RIGHT_CLICK_ADD_COMMENT, "Add comment" }, { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" } } },
+    { "CodeZone", { { RIGHT_CLICK_CODE_ZONE_EDIT, "Edit zone" } } },
+    { "Assistant",
+      {
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_NAME_FUNCTION, "Ask appropriate name function" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE, "Explain the code in selection" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL, "Convert selection code to a higher form" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION, "Ask for name and small explanation" },
+            { RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES, "Ask for MITRE techniques" },
+      } }
+};
 
 namespace GView
 {
@@ -109,53 +124,59 @@ namespace View
         struct Config {
             DissasmColors ConfigColors;
 
-            struct DissasmCommand {
-                Input::Key Key;
-                const char* Caption;
-                const char* Explanation;
-                uint32 CommandId;
-            };
-
             // TODO: reenable when the functionality is implemented
             //  Command Bar keys
             // inline static DissasmCommand AddNewTypeCommand            = { Input::Key::F6, "AddNewType", "Add new data type", COMMAND_ADD_NEW_TYPE };
-            inline static DissasmCommand ShowOnlyDissasmCommand = {
+            inline static KeyboardControl ShowOnlyDissasmCommand = {
                 Input::Key::F7, "ShowOnlyDissasm", "Show only the dissasm code", COMMAND_SHOW_ONLY_DISSASM
             };
             // inline static DissasmCommand ShowOrHideFileContentCommand = {
             //     Input::Key::F9, "ShowOrHideFileContent", "Show or hide file content", COMMAND_ADD_SHOW_FILE_CONTENT
             // };
-            inline static DissasmCommand AsmExportFileContentCommand = {
+            inline static KeyboardControl AsmExportFileContentCommand = {
                 Input::Key::F8, "AsmExportToFile", "Export ASM content to file", COMMAND_EXPORT_ASM_FILE
             };
-            inline static DissasmCommand JumpBackCommand    = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
-            inline static DissasmCommand JumpForwardCommand = {
+            inline static KeyboardControl JumpBackCommand    = { Input::Key::Ctrl | Input::Key::Q, "JumpBack", "Jump to previous location", COMMAND_JUMP_BACK };
+            inline static KeyboardControl JumpForwardCommand = {
                 Input::Key::Ctrl | Input::Key::E, "JumpForward", "Jump to a forward location", COMMAND_JUMP_FORWARD
             };
-            inline static DissasmCommand GotoEntrypointCommand = {
+            inline static KeyboardControl GotoEntrypointCommand = {
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
-            inline static DissasmCommand ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
+            inline static KeyboardControl ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 6> CommandBarCommands = {
+            inline static KeyboardControl CommandQueryFunctionName = {
+                Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
+            };
+
+            inline static KeyboardControl CommandQueryMITRETechnique = {
+                Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
+            };
+
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
                 GotoEntrypointCommand,
-                ShowKeysWindowCommand
+                ShowKeysWindowCommand,
+                CommandQueryFunctionName,
+                CommandQueryMITRETechnique
             };
 
             // Other keys
-            inline static DissasmCommand AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
-            inline static DissasmCommand RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
-            inline static DissasmCommand RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
+            inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
+            inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
+            inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
+            inline static KeyboardControl SaveCacheCommand        = {
+                Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE
+            };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 3> KeyDownCommands = { AddOrEditCommentCommand,
-                                                                                                    RemoveCommentCommand,
-                                                                                                    RenameLabelCommand };
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = { AddOrEditCommentCommand,
+                                                                                                     RemoveCommentCommand,
+                                                                                                     RenameLabelCommand };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 8> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 12> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -163,13 +184,18 @@ namespace View
                 GotoEntrypointCommand,
                 AddOrEditCommentCommand,
                 RemoveCommentCommand,
-                ShowKeysWindowCommand
+                ShowKeysWindowCommand,
+                RenameLabelCommand,
+                SaveCacheCommand,
+                CommandQueryFunctionName,
+                CommandQueryMITRETechnique
             };
             bool Loaded;
 
             bool ShowFileContent;
             bool ShowOnlyDissasm;
             bool EnableDeepScanDissasmOnStart;
+            bool CacheSameLocationAsAnalyzedFile;
             static void Update(AppCUI::Utils::IniSection sect);
             void Initialize();
         };

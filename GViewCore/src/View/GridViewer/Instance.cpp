@@ -3,22 +3,17 @@
 #include <filesystem>
 
 using namespace GView::View::GridViewer;
+using namespace GView::View::GridViewer::Commands;
 using namespace AppCUI::Input;
 
 constexpr uint32 PROP_ID_REPLACE_HEADER_WITH_1ST_ROW = 0;
 constexpr uint32 PROP_ID_TOGGLE_HORIZONTAL_LINES     = 1;
 constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 
-constexpr uint32 COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW = 0x1000;
-constexpr uint32 COMMAND_ID_TOGGLE_HORIZONTAL_LINES     = 0x1001;
-constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
-constexpr uint32 COMMAND_ID_VIEW_CELL_CONTENT           = 0x1003;
-constexpr uint32 COMMAND_ID_EXPORT_CELL_CONTENT         = 0x1004;
-constexpr uint32 COMMAND_ID_EXPORT_COLUMN_CONTENT       = 0x1005;
-
 Config Instance::config;
 
-Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : settings(nullptr), ViewControl("Grid View")
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+    : settings(nullptr), ViewControl("Grid View")
 {
     this->obj = obj;
     // settings
@@ -136,12 +131,9 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(config.keys.replaceHeaderWith1stRow, "ReplaceHeader", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW);
-    commandBar.SetCommand(config.keys.toggleHorizontalLines, "ToggleHorizontalLines", COMMAND_ID_TOGGLE_HORIZONTAL_LINES);
-    commandBar.SetCommand(config.keys.toggleVerticalLines, "ToggleVerticalLines", COMMAND_ID_TOGGLE_VERTICAL_LINES);
-    commandBar.SetCommand(config.keys.viewCellContent, "ViewCellContent", COMMAND_ID_VIEW_CELL_CONTENT);
-    commandBar.SetCommand(config.keys.exportCellContent, "ExportCellContent", COMMAND_ID_EXPORT_CELL_CONTENT);
-    commandBar.SetCommand(config.keys.exportColumnContent, "ExportColumnContent", COMMAND_ID_EXPORT_COLUMN_CONTENT);
+    for (const auto& cmd : AllGridCommands) {
+        commandBar.SetCommand(cmd->Key, cmd->Caption, (int32)cmd->CommandId);
+    }
     return false;
 }
 
@@ -459,13 +451,13 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (id) {
     case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
-        value = config.keys.replaceHeaderWith1stRow;
+        value = ReplaceHeader.Key;
         return true;
     case PROP_ID_TOGGLE_HORIZONTAL_LINES:
-        value = config.keys.toggleHorizontalLines;
+        value = ToggleHorizontalLines.Key;
         return true;
     case PROP_ID_TOGGLE_VERTICAL_LINES:
-        value = config.keys.toggleVerticalLines;
+        value = ToggleVerticalLines.Key;
         return true;
     default:
         break;
@@ -477,13 +469,13 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (id) {
     case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
-        config.keys.replaceHeaderWith1stRow = std::get<Key>(value);
+        ReplaceHeader.Key = std::get<Key>(value);
         return true;
     case PROP_ID_TOGGLE_HORIZONTAL_LINES:
-        config.keys.toggleHorizontalLines = std::get<Key>(value);
+        ToggleHorizontalLines.Key = std::get<Key>(value);
         return true;
     case PROP_ID_TOGGLE_VERTICAL_LINES:
-        config.keys.toggleVerticalLines = std::get<Key>(value);
+        ToggleVerticalLines.Key = std::get<Key>(value);
         return true;
     default:
         break;
@@ -507,4 +499,13 @@ const vector<Property> Instance::GetPropertiesList()
         { PROP_ID_TOGGLE_HORIZONTAL_LINES, "Look", "Hide/Show horizontal lines", PropertyType::Key },
         { PROP_ID_TOGGLE_VERTICAL_LINES, "Look", "Hide/Show vertical lines", PropertyType::Key },
     };
+}
+
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (const auto& cmd : AllGridCommands) {
+        interface->RegisterKey(cmd);
+    }
+
+    return true;
 }

@@ -10,5 +10,11 @@ class ClassViewer : public TypeInterface
   public:
     string_view GetTypeName() override;
     void RunCommand(std::string_view) override;
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 } // namespace GView::Type::JClass

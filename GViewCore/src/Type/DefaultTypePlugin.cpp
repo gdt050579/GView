@@ -13,6 +13,11 @@ class DefaultType : public TypeInterface
     void RunCommand(std::string_view) override
     {
     }
+    bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
+
     ~DefaultType()
     {
     }
@@ -32,6 +37,11 @@ class DefaultType : public TypeInterface
         CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
 
         return selectionZoneInterface->GetSelectionZone(index);
+    }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override
+    {
+        NOT_IMPLEMENTED("NOT IMPLEMENTED")
     }
 };
 

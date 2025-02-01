@@ -30,15 +30,28 @@ extern "C"
 
         settings.SetMaxTokenSize({ 30u, 5u });
 
+        settings.AddPlugin(&js->plugins.simplify);
+        settings.AddPlugin(&js->plugins.foldConstants);
+        settings.AddPlugin(&js->plugins.constPropagation);
+        settings.AddPlugin(&js->plugins.removeDeadCode);
+        settings.AddPlugin(&js->plugins.removeDummyCode);
+        settings.AddPlugin(&js->plugins.contextAwareRename);
+        settings.AddPlugin(&js->plugins.emulate);
+        settings.AddPlugin(&js->plugins.inlineFunctions);
+        settings.AddPlugin(&js->plugins.hoistFunctions);
+        settings.AddPlugin(&js->plugins.removeComments);
+        settings.AddPlugin(&js->plugins.markAlwaysTrue);
+        settings.AddPlugin(&js->plugins.markAlwaysFalse);
+        settings.AddPlugin(&js->plugins.unrollLoop);
+        settings.AddPlugin(&js->plugins.dumpAST);
         settings.AddPlugin(&js->plugins.addStrings);
         settings.AddPlugin(&js->plugins.reverseStrings);
-        settings.AddPlugin(&js->plugins.constPropagation);
+        settings.AddPlugin(&js->plugins.replaceConstants);
+
         win->CreateViewer(settings);
 
-        win->CreateViewer<TextViewer::Settings>();
-
-        GView::View::BufferViewer::Settings s{};
-        js->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
+        win->CreateViewer<TextViewer::Settings>("Text View");
+        win->CreateViewer<BufferViewer::Settings>("Buffer View");
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new JS::Panels::Information(js)), true);

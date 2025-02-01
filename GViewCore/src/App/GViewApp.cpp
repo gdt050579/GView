@@ -44,21 +44,24 @@ bool UpdateSettingsForGenericPlugin(AppCUI::Utils::IniObject& ini, const std::fi
     fnUpdateSettings(sect);
     return true;
 }
-bool GView::App::Init()
+bool GView::App::Init(bool isTestingEnabled)
 {
     gviewAppInstance = new GView::App::Instance();
-    if (!gviewAppInstance->Init())
+    if (!gviewAppInstance->Init(isTestingEnabled))
     {
         delete gviewAppInstance;
         RETURNERROR(false, "Fail to initialize GView app");
     }
     return true;
 }
-void GView::App::Run()
+void GView::App::Run(std::string_view testing_script)
 {
     if (gviewAppInstance)
     {
-        AppCUI::Application::Run();
+        if (testing_script.empty())
+            AppCUI::Application::Run();
+        else
+            AppCUI::Application::RunTestScript(testing_script);
     }
 }
 bool GView::App::ResetConfiguration()
@@ -73,7 +76,7 @@ bool GView::App::ResetConfiguration()
     GView::View::TextViewer::Config::Update(ini["View.Text"]);
     GView::View::ImageViewer::Config::Update(ini["View.Image"]);
     GView::View::GridViewer::Config::Update(ini["View.Grid"]);
-    GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
+    GView::View::DissasmViewer::Config::Update(ini["View.Dissasm"]);
     GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
 
     // parse types and add specs
@@ -98,11 +101,17 @@ bool GView::App::ResetConfiguration()
 
     // generic GView settings
     ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
-    ini["GView"]["Key.ChangeView"]   = Key::F4;
-    ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
-    ini["GView"]["Key.GoTo"]         = Key::F5;
-    ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
-    ini["GView"]["Key.ChoseType"]    = Key::Alt | Key::F1;
+
+    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
+        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
+        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
+    };
+
+    LocalString<64> keyCommand;
+    for (auto& k : localKeys) {
+        keyCommand.SetFormat("Key.%s", k.get().Caption);
+        ini["GView"][keyCommand.GetText()] = k.get().Key;
+    }
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());

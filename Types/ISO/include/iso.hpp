@@ -41,6 +41,10 @@ class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     {
     }
 
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
@@ -62,6 +66,8 @@ class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

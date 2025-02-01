@@ -32,6 +32,7 @@ function (create_generic_plugin generic_plugin_name)
 
 	add_dependencies(${PROJECT_NAME} GViewCore)
 	add_dependencies(${PROJECT_NAME} AppCUI)
+	
 	target_link_libraries(${PROJECT_NAME} PRIVATE GViewCore)
 	target_link_libraries(${PROJECT_NAME} PRIVATE AppCUI)
 	

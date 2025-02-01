@@ -63,11 +63,11 @@ void Information::UpdateGeneralInformation()
     AddDateTime("Creation Date", "%-20s (%s)", lnk->header.creationDate);
     AddDateTime("Last Access Date", "%-20s (%s)", lnk->header.lastAccessDate);
     AddDateTime("Last Modification Date", "%-20s (%s)", lnk->header.lastModificationDate);
-    AddDecAndHexElement("File size", "%-20s (%s)", lnk->header.filesize);
+    AddDecAndHexElement("File size", "%-20s (%s)", lnk->header.fileSize);
     AddDecAndHexElement("Icon Index", "%-20s (%s)", lnk->header.iconIndex);
 
-    const auto showCommandName        = LNK::ShowWindowNames.at(lnk->header.showCommand).data();
-    const auto showCommandDescription = LNK::ShowWindowDescriptions.at(lnk->header.showCommand).data();
+    const auto showCommandName        = LNK::GetShowWindowName(lnk->header.showCommand).data();
+    const auto showCommandDescription = LNK::GetShowWindowDescription(lnk->header.showCommand).data();
     const auto showCommandHex         = nf.ToString((uint32) lnk->header.showCommand, hex);
     general->AddItem({ "Show Command", ls.Format("%-20s (%s) %s", showCommandName, showCommandHex.data(), showCommandDescription) })
           .SetType(ListViewItem::Type::Emphasized_2);

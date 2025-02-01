@@ -1,4 +1,6 @@
 #include "cpp.hpp"
+#include <nlohmann/json.hpp>
+using nlohmann::json;
 
 namespace GView::Type::CPP
 {
@@ -652,7 +654,7 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
 }
 uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& list, BlocksList& blocks, uint32 pos)
 {
-    auto eol   = text.ParseUntillEndOfLine(pos);
+    auto eol   = text.ParseUntilEndOfLine(pos);
     auto start = pos;
     pos        = text.ParseSpace(pos + 1, SpaceType::SpaceAndTabs);
     if ((CharType::GetCharType(text[pos])) != CharType::Word)
@@ -742,7 +744,7 @@ void CPPFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
             idx = text.ParseSpace(idx, SpaceType::All);
             break;
         case CharType::SingleLineComment:
-            next = text.ParseUntillEndOfLine(idx);
+            next = text.ParseUntilEndOfLine(idx);
             tokenList.Add(
                   TokenType::Comment,
                   idx,
@@ -1111,5 +1113,13 @@ bool CPPFile::StringToContent(std::u16string_view string, AppCUI::Utils::Unicode
 bool CPPFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
 {
     NOT_IMPLEMENTED(false);
+}
+
+std::string CPPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    return context.dump();
 }
 } // namespace GView::Type::CPP

@@ -32,6 +32,10 @@ class JTFile : public TypeInterface
     void RunCommand(std::string_view) override
     {
     }
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
 
   public:
     Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
@@ -50,6 +54,8 @@ class JTFile : public TypeInterface
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

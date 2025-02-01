@@ -1,6 +1,7 @@
 #include <array>
 
 #include "DissasmViewer.hpp"
+#include "DissasmCodeZone.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -14,7 +15,7 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
+const std::array<AsmFunctionDetails, 56> KNOWN_FUNCTIONS = { {
       { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
@@ -43,6 +44,15 @@ const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
       { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } },
       { "RegOpenKeyExW", { { "hKey", "HKEY" }, { "lpSubKey", "LPCWSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
       { "RegOpenKeyExA", { { "hKey", "HKEY" }, { "lpSubKey", "LPCSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
+      { "RegSetValueExA",
+        {
+              { "hKey", "HKEY" },
+              { "lpValueName", "LPCSTR" },
+              { "Reserved", "DWORD" },
+              { "dwType", "DWORD" },
+              { "lpData", "const BYTE *" },
+              { "cbData", "DWORD" },
+        } },
       { "RegSetValueExW",
         { { "hKey", "HKEY" },
           { "lpValueName", "LPCWSTR" },
@@ -50,12 +60,108 @@ const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
           { "dwType", "DWORD" },
           { "lpData", "const BYTE*" },
           { "cbData", "DWORD" } } },
+      { "RegCloseKey", { { "hKey", "HKEY" } } },
       { "GetKeyboardLayout", { { "idThread", "DWORD" } } },
       { "GetKeyboardState", { { "lpKeyState", "PBYTE" } } },
+      { "CreateProcessA",
+        {
+              { "lpApplicationName", "LPCSTR" },
+              { "lpCommandLine", "LPSTR" },
+              { "lpProcessAttributes", "LPSECURITY_ATTRIBUTES" },
+              { "lpThreadAttributes", "LPSECURITY_ATTRIBUTES" },
+              { "bInheritHandles", "BOOL" },
+              { "dwCreationFlags", "DWORD" },
+              { "lpEnvironment", "LPVOID" },
+              { "lpCurrentDirectory", "LPCSTR" },
+              { "lpStartupInfo", "LPSTARTUPINFOA" },
+              { "lpProcessInformation", "LPPROCESS_INFORMATION" },
+        } },
+      { "WaitForSingleObject",
+        {
+              { "hHandle", "HANDLE" },
+              { "dwMilliseconds", "DWORD" },
+        } },
+      { "LoadLibraryA",
+        {
+              { "lpLibFileName", "LPCSTR" },
+        } },
+      { "GetProcAddress",
+        {
+              { "hModule", "HMODULE" },
+              { "lpProcName", "LPCSTR" },
+        } },
+      { "FreeLibrary",
+        {
+              { "hLibModule", "HMODULE" },
+        } },
+      { "ShellExecuteA",
+        {
+              { "hwnd", "HWND" },
+              { "lpOperation", "LPCSTR" },
+              { "lpFile", "LPCSTR" },
+              { "lpParameters", "LPCSTR" },
+              { "lpDirectory", "LPCSTR" },
+              { "nShowCmd", "int" },
+        } },
+      { "EnumWindows", { { "lpEnumFunc", "WNDENUMPROC" }, { "lParam", "LPARAM" } } },
+      { "CallNextHookEx", { { "hhk", "HHOOK" }, { "nCode", "int" }, { "wParam", "WPARAM" }, { "lParam", "LPARAM" } } },
+      { "SetWindowsHookExA", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
+      { "SetWindowsHookExW", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
+      { "GetMessageA", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
+      { "GetMessageW", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
+      { "TranslateMessage", { { "lpMsg", "const MSG *" } } },
+      { "DispatchMessageA", { { "lpMsg", "const MSG *" } } },
+      { "DispatchMessageW", { { "lpMsg", "const MSG *" } } },
+      { "UnhookWindowsHookEx", { { "hhk", "HHOOK" } } },
+      { "GetModuleHandleA", { { "lpModuleName", "LPCSTR" } } },
+      { "GetModuleHandleW", { { "lpModuleName", "LPCWSTR" } } },
+      { "GetComputerNameA", { { "lpBuffer", "LPSTR" }, { "nSize", "LPDWORD" } } },
+      { "GetUserNameA", { { "lpBuffer", "LPSTR" }, { "pcbBuffer", "LPDWORD" } } },
+      { "GetDriveTypeA", { { "lpRootPathName", "LPCSTR" } } },
+      { "CopyFileA", { { "lpExistingFileName", "LPCSTR" }, { "lpNewFileName", "LPCSTR" }, { "bFailIfExists", "BOOL" } } },
+      { "URLDownloadToFileA",
+        { { "pCaller", "LPUNKNOWN" }, { "szURL", "LPCSTR" }, { "szFileName", "LPCSTR" }, { "dwReserved", "DWORD" }, { "lpfnCB", "LPBINDSTATUSCALLBACK" } } },
+      { "GetDC", { { "hWnd", "HWND" } } },
+      { "CreateCompatibleDC", { { "hDC", "HDC" } } },
+      { "GetSystemMetrics", { { "nIndex", "int" } } },
+      { "CreateCompatibleBitmap", { { "hdc", "HDC" }, { "cx", "int" }, { "cy", "int" } } },
+      { "SelectObject", { { "hDC", "HDC" }, { "hGdiObj", "HGDIOBJ" } } },
+      { "BitBlt",
+        { { "hdcDest", "HDC" },
+          { "xDest", "int" },
+          { "yDest", "int" },
+          { "cx", "int" },
+          { "cy", "int" },
+          { "hdcSrc", "HDC" },
+          { "xSrc", "int" },
+          { "ySrc", "int" },
+          { "rop", "DWORD" } } },
+      { "DeleteObject", { { "hObject", "HGDIOBJ" } } },
+      { "DeleteDC", { { "hdc", "HDC" } } },
+      { "ReleaseDC", { { "hWnd", "HWND" }, { "hDC", "HDC" } } },
+      { "GetKeyboardLayoutList", { { "nBuff", "int" }, { "lpList", "HKL *" } } },
+      { "OpenProcess", { { "dwDesiredAccess", "DWORD" }, { "bInheritHandle", "BOOL" }, { "dwProcessId", "DWORD" } } },
+      { "GetSystemInfo", { { "lpSystemInfo", "LPSYSTEM_INFO" } } },
+      { "VirtualQueryEx", { { "hProcess", "HANDLE" }, { "lpAddress", "LPCVOID" }, { "lpBuffer", "PMEMORY_BASIC_INFORMATION" }, { "dwLength", "SIZE_T" } } },
+      { "ReadProcessMemory",
+        { { "hProcess", "HANDLE" }, { "lpBaseAddress", "LPCVOID" }, { "lpBuffer", "LPVOID" }, { "nSize", "SIZE_T" }, { "lpNumberOfBytesRead", "SIZE_T*" } } },
+      { "GetWindowTextA", { { "hWnd", "HWND" }, { "lpString", "LPSTR" }, { "nMaxCount", "int" } } },
+      { "SetWindowsHookEx", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
+      { "GetMessage", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
+      { "DispatchMessage", { { "lpMsg", "const MSG*" } } },
+      { "SetFileAttributesA", { { "lpFileName", "LPCSTR" }, { "dwFileAttributes", "DWORD" } } },
+      { "RegQueryValueExA",
+        { { "hKey", "HKEY" },
+          { "lpValueName", "LPCSTR" },
+          { "lpReserved", "LPDWORD" },
+          { "lpType", "LPDWORD" },
+          { "lpData", "LPBYTE" },
+          { "lpcbData", "LPDWORD" } } },
+      { "GetModuleHandle", { { "lpModuleName", "LPCSTR" } } },
 } };
 
-Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
-    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS), queryInterface(queryInterface)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
     // settings
@@ -86,19 +192,22 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     this->Layout.totalLinesSize                  = 0;
 
     this->CurrentSelection = {};
+    this->cacheData        = {};
 
     this->codePage = CodePageID::DOS_437;
 
-    for (auto& submenu : RIGHT_CLICK_SUB_MENUS_COMMANDS) {
-        submenu.handle = rightClickMenu.AddSubMenu(submenu.name);
-        auto subMenu   = rightClickMenu.GetSubMenu(submenu.handle);
-        for (auto& command : submenu.commands) {
-            command.handle = subMenu->AddCommandItem(command.text, command.commandID);
+    for (const auto& submenu : RIGHT_CLICK_SUB_MENUS_COMMANDS) {
+        assert(submenu.name);
+        const auto handle = rightClickMenu.AddSubMenu(submenu.name);
+        auto subMenu      = rightClickMenu.GetSubMenu(handle);
+        for (const auto& command : submenu.commands) {
+            assert(!command.text.empty());
+            subMenu->AddCommandItem(command.text, command.commandID);
         }
     }
 
     for (auto& menu_command : RIGHT_CLICK_MENU_COMMANDS) {
-        menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
+        rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
     }
     // rightClickOffset = 0;
 
@@ -158,6 +267,14 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
     }
 }
 
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    for (auto& key : Config::AllKeyboardCommands) {
+        interface->RegisterKey(&key.get());
+    }
+    return true;
+}
+
 int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;
@@ -204,7 +321,7 @@ void Instance::OpenCurrentSelection()
     std::string out;
     usb.ToString(out);
 
-    LocalUnicodeStringBuilder<2048> fullPath;
+    LocalUnicodeStringBuilder<512> fullPath;
     fullPath.Add(this->obj->GetPath());
     fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
     fullPath.Add("temp_dissasm");
@@ -614,12 +731,11 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
 
     if (typeSize > 0) {
         // TODO: check textFileOffset!!
-        auto buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
+        const BufferView buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
 
-        char buffer[9];
-        memset(buffer, '\0', 9);
+        char buffer[9] = {};
         for (uint32 i = 0; i < typeSize; i++)
-            buffer[i] = buf[i];
+            buffer[i] = static_cast<char>(buf[i]);
 
         if (isSignedValue) {
             int64 value = *(int64*) buffer;
@@ -630,7 +746,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
         }
     }
 
-    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
+    const uint32 buffer_size = static_cast<uint32>(dli.chText - this->chars.GetBuffer());
 
     // const uint32 cursorLine = Cursor.lineInView;
     // if (cursorLine == dli.screenLineToDraw)
@@ -647,7 +763,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
 
     // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, bufferToDraw, false);
     return true;
 }
 
@@ -709,7 +825,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                     dli.start++;
                 }
 
-                HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength() + Layout.startingTextLineOffset);
+                HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength(), (uint32) (buf.GetLength() + Layout.startingTextLineOffset));
 
                 // const uint32 cursorLine = Cursor.lineInView;
                 // if (cursorLine == dli.screenLineToDraw)
@@ -797,13 +913,14 @@ void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 max
 
             if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine) {
                 uint32 startingIndex = selectionStart.offset; // % Layout.textSize;
-                uint32 endIndex      = selectionEnd.offset % Layout.textSize + 1;
+                uint32 endIndex;
+                //= selectionEnd.offset % Layout.textSize + 1;
                 if (!isAltPressed) {
                     if (selectStartLine < lineToDrawTo)
                         startingIndex = 0;
-                    if (lineToDrawTo < selectionEndLine)
-                        endIndex = static_cast<uint32>(maxLineLength);
                 }
+                endIndex = static_cast<uint32>(maxLineLength);
+                //}
                 // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
                 // TODO: variables can be skipped, use startingPointer < EndPointer
                 const auto savedChText = dli.chText;
@@ -1058,7 +1175,7 @@ bool Instance::ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb)
                     CHECK(usb.Add(cc), false, "");
                     continue;
                 }
-                CHECK(cc.AddChar((cp[c] & 0xFF)), false, "");
+                CHECK(cc.AddChar((cp[c & 0xFF] & 0xFF)), false, "");
                 CHECK(usb.Add(cc), false, "");
             }
         }
@@ -1151,7 +1268,7 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
-    uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.textLineToDraw;
+    const uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.textLineToDraw;
 
     if (textFileOffset >= this->obj->GetData().GetSize())
         return false;
@@ -1163,7 +1280,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         clearChar++;
     }
 
-    auto buf = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
+    const auto buf = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
 
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
@@ -1181,7 +1298,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength());
+    HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength() - Layout.startingTextLineOffset, (uint32) buf.GetLength());
 
     // const uint32 cursorLine = Cursor.lineInView;
     // if (cursorLine == dli.screenLineToDraw)
@@ -1190,7 +1307,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
     //     dli.chNameAndSize[index].Color = config.Colors.Selection;
     // }
 
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, true);
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, true);
     return true;
 }
 
@@ -1306,6 +1423,7 @@ void Instance::OnStart()
         }
         asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
     }
+    LoadCacheData();
 }
 
 void Instance::RecomputeDissasmLayout()
@@ -1370,7 +1488,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
     constexpr uint32 MAX_LINE_DIFF = 10;
 
     const uint32 startingLine = cachedAsmLines.back().currentLine;
-    uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
+    uint32 pushIndex = 0, pushesRemaining = (uint32) functionDetails->params.size();
 
     for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && pushesRemaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
@@ -1382,6 +1500,11 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
         commentResult.SetFormat("%s", functionDetails->params[pushIndex].name);
         std::string foundComment;
         if (comments.GetComment(it->currentLine, foundComment)) {
+            if (foundComment.starts_with(commentResult.GetText())) {
+                pushesRemaining--;
+                pushIndex++;
+                continue;
+            }
             commentResult.AddFormat(" %s", foundComment.c_str());
         }
         comments.AddOrUpdateComment(it->currentLine, commentResult.GetText());
@@ -1486,4 +1609,102 @@ void Instance::OnFocus()
 void Instance::OnLoseFocus()
 {
     ColorMan.OnLostFocus();
+}
+
+void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
+{
+    uint32 lineStart;
+    uint32 lineEnd = 0;
+    if (queryType != QueryTypeSmartAssistant::FunctionName && queryType != QueryTypeSmartAssistant::MitreTechiques &&
+        queryType != QueryTypeSmartAssistant::FunctionNameAndExplanation) {
+        if (!selection.HasSelection(0)) {
+            Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone to select some code!");
+            return;
+        }
+        lineStart = selection.GetSelectionStart(0).line;
+        lineEnd   = selection.GetSelectionEnd(0).line;
+    } else {
+        lineStart = Cursor.ToLinePosition().line;
+    }
+
+    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart, lineEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1) {
+        Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on a single zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->isCollapsed) {
+        Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on an expanded zone!");
+        return;
+    }
+    if (zonesFound[0].startingLine <= 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please do not select the title in the collapsible zones!");
+        return;
+    }
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Error", "Please make a selection on a dissasm zone!");
+        return;
+    }
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    if (convertedZone->zoneDetails.language != DisassemblyLanguage::x86 && convertedZone->zoneDetails.language != DisassemblyLanguage::x64) {
+        Dialogs::MessageBox::ShowNotification("Error", "Query function name available only for x86 and x64 functions!");
+        return;
+    }
+    QuerySmartAssistantParams params = {};
+    if (queryType == QueryTypeSmartAssistant::FunctionName) {
+        params.mnemonicStarsWith              = "sub_";
+        params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "
+                                                "If they are not available please enable DeepScanning.";
+        params.stopAtTheEndOfTheFunction      = true;
+        params.displayPrompt                  = "Give me an appropriate name for the function: ";
+        params.displayPromptUsesMnemonicParam = true;
+
+        LocalString<320> prompt;
+        prompt.SetFormat(
+              "Suggest %u names for this code based on what it does separated by comma. "
+              "Write only the names, separated by comma, do not write anything else. Do not write any symbols, "
+              "just the names. ",
+              DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
+
+        params.prompt = prompt.GetText();
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
+    } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
+        params.displayPrompt = "Explain the selected code";
+        params.prompt = "Explain what does this assembly x86/x84 code does. Please also add a new chapter at the end for comments where you explain each line "
+                        "in order and suggest "
+                        "maximum 8 words for comments describing what happens in than line. Please mark the new chapter by writing CommentsZoneExplained and "
+                        "then on the new line they start."
+                        "The format for the this section should be instruction found separated by # character and then the comment without additional special "
+                        "characters.";
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
+    } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
+        params.displayPrompt                  = "Decompile the following assembly into a higher level language.";
+        params.displayPromptUsesMnemonicParam = true;
+        params.includeComments                = true;
+        params.prompt                         = "Decompile the following assembly into a higher level language in C. Surround the code with \"```\"";
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
+    } else if (queryType == QueryTypeSmartAssistant::FunctionNameAndExplanation) {
+        LocalString<320> prompt;
+        prompt.SetFormat(
+              "Suggest %u pairs of name and a short statement. The name must be first and on the next line a statement. Each pair must be separated by 2 new "
+              "lines."
+              "Write only the text, do not write anything else. Do not write any symbols, just the pairs. ",
+              DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
+
+        params.mnemonicStarsWith              = "sub_";
+        params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "
+                                                "If they are not available please enable DeepScanning.";
+        params.stopAtTheEndOfTheFunction      = true;
+        params.displayPrompt                  = "Give me pairs of name and explanation for this function.";
+        params.displayPromptUsesMnemonicParam = true;
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
+    } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
+        params.displayPrompt                  = "What is the MITRE techniques associated with the following assembly code?";
+        params.displayPromptUsesMnemonicParam = true;
+        params.stopAtTheEndOfTheFunction      = true;
+        params.includeComments                = true;
+        params.prompt = "What is the MITRE techniques associated with the following assembly code? Use the MITRE format: T<techniqueID>.<sub-techniqueID>.";
+        QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
+    }
 }

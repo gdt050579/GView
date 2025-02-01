@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Internal.hpp"
+#include <array>
 
 namespace GView
 {
@@ -9,6 +10,22 @@ namespace View
     namespace ImageViewer
     {
         using namespace AppCUI;
+
+        namespace Commands
+        {
+            using namespace AppCUI::Input;
+            constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
+            constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
+            constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
+            constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
+
+            static KeyboardControl ZoomIn    = { Key::F3, "ZoomIn", "Zoom in the picture", CMD_ID_ZOOMIN };
+            static KeyboardControl ZoomOut   = { Key::F2, "ZoomOut", "Zoom out the picture", CMD_ID_ZOOMOUT };
+            static KeyboardControl NextImage = { Key::PageUp, "PrevImage", "Go to the previous image", CMD_ID_NEXT_IMAGE };
+            static KeyboardControl PrevImage = { Key::PageDown, "NextImage", "Go to the next image", CMD_ID_PREV_IMAGE };
+
+            static std::array ImageViewCommands = { &ZoomIn, &ZoomOut, &NextImage, &PrevImage };
+        }
 
         struct ImageInfo
         {
@@ -24,12 +41,6 @@ namespace View
 
         struct Config
         {
-            
-            struct
-            {
-                AppCUI::Input::Key ZoomIn;
-                AppCUI::Input::Key ZoomOut;
-            } Keys;
             bool Loaded;
 
             static void Update(IniSection sect);
@@ -51,7 +62,7 @@ namespace View
             void RedrawImage();
             ImageScaleMethod NextPreviousScale(bool next);
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
@@ -72,6 +83,7 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+            bool UpdateKeys(KeyboardControlsInterface* interface) override;
         };
         class GoToDialog : public Window
         {

@@ -4,6 +4,12 @@
 
 namespace GView::Type::MAM
 {
+static constexpr uint32 MAM_COMMAND_DECOMPRESS = 0;
+
+static KeyboardControl MAM_COMMANDS[] = {
+    { Input::Key::Shift | Input::Key::F10, "Decompress", "Decompress file", MAM_COMMAND_DECOMPRESS },
+};
+
 class MAMFile : public TypeInterface
 {
   public:
@@ -43,6 +49,8 @@ class MAMFile : public TypeInterface
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

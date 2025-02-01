@@ -24,6 +24,13 @@ class SQLiteFile : public TypeInterface
     void GetStatementResult(const std::string_view& entity, bool fromTable);
 
     virtual void RunCommand(std::string_view commandName) override;
+
+    virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
+    {
+        return true;
+    }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

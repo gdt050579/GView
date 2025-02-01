@@ -12,6 +12,7 @@
 #include "AdvancedSelection.hpp"
 #include "DissasmDataTypes.hpp"
 #include "Config.hpp"
+#include "DissasmCache.hpp"
 
 class DissasmTestInstance;
 
@@ -29,14 +30,29 @@ namespace View
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 90;
 
+        static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
+
         using AnnotationDetails   = std::pair<std::string, uint64>;
         using AnnotationContainer = std::map<uint32, AnnotationDetails>;
+
+        enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel, FunctionNameAndExplanation, MitreTechiques };
+
+        struct QuerySmartAssistantParams {
+            bool stopAtTheEndOfTheFunction;
+            bool displayPromptUsesMnemonicParam;
+            bool includeComments;
+            std::string_view mnemonicStarsWith, mnemonicStartsWithError;
+            std::string_view displayPrompt;
+            std::string_view prompt;
+        };
 
         struct DisassemblyZone {
             uint64 startingZonePoint;
             uint64 size;
             uint64 entryPoint;
             DisassemblyLanguage language;
+
+            bool ToBuffer(std::vector<uint8>& buffer, Reference<GView::Object> obj) const;
         };
 
         enum class InternalDissasmType : uint8 {
@@ -107,6 +123,7 @@ namespace View
             uint32 line;
         };
 
+        struct DissasmCodeZone;
         struct DissasmInsnExtractLineParams {
             Reference<GView::Object> obj;
             uint32 asmLine;
@@ -135,21 +152,21 @@ namespace View
                 DrawEndingLine   = 0x40
             };
 
-            uint64 address;
-            uint8 bytes[24];
-            uint16 size;
-            uint32 currentLine;
+            uint64 address     = 0;
+            uint8 bytes[24]    = {};
+            uint16 size        = 0;
+            uint32 currentLine = 0;
             char mnemonic[CS_MNEMONIC_SIZE];
-            char* op_str;
-            uint32 op_str_size;
+            char* op_str       = nullptr;
+            uint32 op_str_size = 0;
             std::optional<uint64> hexValue;
-            uint8 flags;
-            uint8 lineArrowToDraw;
-            const void* mapping;
-            const DissasmCodeInternalType* parent;
+            uint8 flags                           = 0;
+            uint8 lineArrowToDraw                 = 0;
+            const void* mapping                   = nullptr;
+            const DissasmCodeInternalType* parent = nullptr;
 
-            bool shouldAddButton;
-            bool isZoneCollapsed;
+            bool shouldAddButton = false;
+            bool isZoneCollapsed = false;
 
             uint32 GetLineSize() const
             {
@@ -369,55 +386,6 @@ namespace View
             bool isCollapsed;
         };
 
-        struct DissasmCodeZone : public ParseZone {
-            enum class CollapseExpandType : uint8 { Collapse, Expand, NegateCurrentState };
-            uint32 lastDrawnLine; // optimization not to recompute buffer every time
-            uint32 lastClosestLine;
-            uint32 offsetCacheMaxLine;
-            BufferView lastData;
-            uint32 lastReachedLine = -1u;
-
-            //fields only for dissasmx86/x64
-            const uint8* asmData;
-            uint64 asmSize, asmAddress;
-
-            uint32 structureIndex;
-            std::list<std::reference_wrapper<DissasmCodeInternalType>> types;
-            std::list<uint32> levels;
-            DissasmCodeInternalType dissasmType;
-
-            DissasmAsmPreCacheData asmPreCacheData;
-
-            std::vector<AsmOffsetLine> cachedCodeOffsets;
-            DisassemblyZone zoneDetails;
-            int internalArchitecture; // used for dissasm libraries
-            bool isInit;
-            bool changedLevel;
-            InternalTypeNewLevelChangeData newLevelChangeData;
-
-            void ResetZoneCaching();
-            bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
-            bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
-            {
-                if (zoneLineStart > zoneLineEnd || zoneLineEnd > dissasmType.indexZoneEnd)
-                    return false;
-                return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
-            }
-            bool CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference);
-            bool RemoveCollapsibleZone(uint32 zoneLine);
-
-            bool InitZone(DissasmCodeZoneInitData& initData);
-            void ReachZoneLine(uint32 line);
-
-            bool ResetTypesReferenceList();
-            bool TryRenameLine(uint32 line);
-
-            bool GetComment(uint32 line, std::string& comment);
-            bool AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr = true);
-            bool RemoveComment(uint32 line, bool showErr = true);
-            DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
-        };
-
         struct MemoryMappingEntry {
             std::string name;
             MemoryMappingType type;
@@ -442,6 +410,9 @@ namespace View
             std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
             std::unordered_map<TypeID, DissasmStructureType> userDesignedTypes; // user defined types
             Reference<BufferViewer::OffsetTranslateInterface> offsetTranslateCallback;
+
+            bool SaveToCache(DissasmCache& cache, Reference<GView::Object> obj);
+            bool ValidateCacheData(DissasmCache& cache, Reference<GView::Object> obj);
             SettingsData();
         };
 
@@ -604,6 +575,8 @@ namespace View
 
             AsmData asmData;
             JumpsHolder jumps_holder;
+            DissasmCache cacheData;
+            CommonInterfaces::QueryInterface* queryInterface;
 
             inline void UpdateCurrentZoneIndex(const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
@@ -657,8 +630,16 @@ namespace View
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
+            void EditDissasmCodeZoneCommand();
+            void QuerySmartAssistant(QueryTypeSmartAssistant queryType);
+            void QuerySmartAssistantX86X64(
+                  DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType);
+
+            void LoadCacheData();
+            void SaveCacheData();
+
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
             virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
@@ -672,6 +653,7 @@ namespace View
             virtual bool ShowCopyDialog() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
+            virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
 
             // Mouse events
             virtual void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override;

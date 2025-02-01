@@ -4,6 +4,7 @@
 
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
+using namespace Commands;
 
 const char hexCharsList[]              = "0123456789ABCDEF";
 const uint32 characterFormatModeSize[] = { 2 /*Hex*/, 3 /*Oct*/, 4 /*signed 8*/, 3 /*unsigned 8*/ };
@@ -30,16 +31,6 @@ bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false, false, false, false, false, false
 };
 
-constexpr int BUFFERVIEW_CMD_CHANGECOL         = 0xBF00;
-constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
-constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
-constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
-constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
-constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
-constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
-constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
-constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
-constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
 /*
     constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
     constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
@@ -49,7 +40,7 @@ constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
 
 Config Instance::config;
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
     : obj(_obj), settings(nullptr), ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
@@ -60,14 +51,11 @@ Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
     this->ResetStringInfo();
 
     // settings
-    if ((_settings) && (_settings->data))
-    {
+    if ((_settings) && (_settings->data)) {
         // move settings data pointer
         this->settings.reset((SettingsData*) _settings->data);
         _settings->data = nullptr;
-    }
-    else
-    {
+    } else {
         // default setup
         this->settings.reset(new SettingsData());
     }
@@ -94,14 +82,11 @@ bool Instance::GetViewData(ViewData& vd, uint64 offset)
     vd.viewSize          = static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows;
     vd.cursorStartOffset = cursor.GetCurrentPosition();
 
-    if (offset != GView::Utils::INVALID_OFFSET)
-    {
+    if (offset != GView::Utils::INVALID_OFFSET) {
         const auto b = this->GetObject()->GetData().Get(offset, 1, true);
         CHECK(b.IsValid(), false, "");
         vd.byte = b.GetData()[0];
-    }
-    else
-    {
+    } else {
         vd.byte = 0;
     }
 
@@ -110,10 +95,8 @@ bool Instance::GetViewData(ViewData& vd, uint64 offset)
 
 bool Instance::AdvanceStartView(int64 offset)
 {
-    if (offset < 0)
-    {
-        if (static_cast<uint64>(abs(offset)) > cursor.GetStartView())
-        {
+    if (offset < 0) {
+        if (static_cast<uint64>(abs(offset)) > cursor.GetStartView()) {
             offset = -1ll * cursor.GetStartView();
         }
     }
@@ -125,17 +108,25 @@ bool Instance::AdvanceStartView(int64 offset)
     return true;
 }
 
+bool Instance::SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones)
+{
+    return this->SetZones(zones);
+}
+
+GView::Utils::ZonesList& Instance::GetObjectsHighlightingZonesList()
+{
+    return this->settings->zListObjects;
+}
+
 void Instance::OpenCurrentSelection()
 {
     uint64 start, end;
     auto res = this->selection.OffsetToSelection(this->cursor.GetCurrentPosition(), start, end);
-    if (res >= 0)
-    {
+    if (res >= 0) {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
         auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start + 1));
-        if (buf.IsValid() == false)
-        {
+        if (buf.IsValid() == false) {
             Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
             return;
         }
@@ -154,21 +145,15 @@ void Instance::UpdateCurrentSelection()
     this->CurrentSelection.start = GView::Utils::INVALID_OFFSET;
     this->CurrentSelection.end   = GView::Utils::INVALID_OFFSET;
 
-    if (this->selection.IsSingleSelectionEnabled())
-    {
+    if (this->selection.IsSingleSelectionEnabled()) {
         uint64 start, end;
-        if ((this->selection.GetSelection(0, start, end)))
-        {
-            if ((end - start) < 254)
-            {
+        if ((this->selection.GetSelection(0, start, end))) {
+            if ((end - start) < 254) {
                 this->CurrentSelection.size = ((uint32) (end - start)) + 1;
                 auto b                      = obj->GetData().Get(start, this->CurrentSelection.size, true);
-                if (b.IsValid())
-                {
+                if (b.IsValid()) {
                     memcpy(this->CurrentSelection.buffer, b.begin(), b.GetLength());
-                }
-                else
-                {
+                } else {
                     this->CurrentSelection.size = 0;
                 }
             }
@@ -183,19 +168,16 @@ void Instance::MoveTo(uint64 offset, bool select)
     if (offset > (obj->GetData().GetSize() - 1))
         offset = obj->GetData().GetSize() - 1;
 
-    if (offset == cursor.GetCurrentPosition())
-    {
+    if (offset == cursor.GetCurrentPosition()) {
         cursor.SetStartView(offset);
         return;
     }
 
     auto sidx     = (!select) ? (-1) : selection.BeginSelection(cursor.GetCurrentPosition());
     const auto sz = Layout.charactersPerLine * Layout.visibleRows;
-    if ((offset >= cursor.GetStartView()) && (offset < cursor.GetStartView() + sz))
-    {
+    if ((offset >= cursor.GetStartView()) && (offset < cursor.GetStartView() + sz)) {
         cursor.SetCurrentPosition(offset);
-        if (select && sidx >= 0)
-        {
+        if (select && sidx >= 0) {
             selection.UpdateSelection(sidx, offset);
             UpdateCurrentSelection();
             return; // nothing to do ... already in visual space
@@ -203,37 +185,27 @@ void Instance::MoveTo(uint64 offset, bool select)
     }
 
     const auto& startView = cursor.GetStartView();
-    if (offset < startView)
-    {
+    if (offset < startView) {
         cursor.SetStartView(offset);
-    }
-    else
-    {
+    } else {
         const auto delta = cursor.GetCurrentPosition() - startView;
-        if (offset >= delta)
-        {
-            if (offset - delta != startView)
-            {
+        if (offset >= delta) {
+            if (offset - delta != startView) {
                 cursor.SetStartView(offset - delta);
             }
-        }
-        else
-        {
+        } else {
             cursor.SetStartView(0);
         }
     }
 
     cursor.SetCurrentPosition(offset);
-    if (select && sidx >= 0)
-    {
+    if (select && sidx >= 0) {
         selection.UpdateSelection(sidx, offset);
         UpdateCurrentSelection();
     }
 
-    if (moveInSync && settings && settings->onStartViewMoveCallback)
-    {
-        if (cursor.GetDeltaStartView() != 0)
-        {
+    if (moveInSync && settings && settings->onStartViewMoveCallback) {
+        if (cursor.GetDeltaStartView() != 0) {
             settings->onStartViewMoveCallback->GenerateActionOnMove(
                   this,
                   cursor.GetDeltaStartView(),
@@ -256,19 +228,13 @@ void Instance::MoveScrollTo(uint64 offset)
 
     const auto previous = cursor.GetStartView();
     cursor.SetStartView(offset);
-    if (cursor.GetStartView() > previous)
-    {
+    if (cursor.GetStartView() > previous) {
         MoveTo(cursor.GetCurrentPosition() + (cursor.GetStartView() - previous), false);
-    }
-    else
-    {
+    } else {
         auto delta = previous - cursor.GetStartView();
-        if (delta <= cursor.GetCurrentPosition() && delta != 0)
-        {
+        if (delta <= cursor.GetCurrentPosition() && delta != 0) {
             MoveTo(cursor.GetCurrentPosition() - delta, false);
-        }
-        else
-        {
+        } else {
             MoveTo(0, false);
         }
     }
@@ -277,8 +243,7 @@ void Instance::MoveToSelection(uint32 selIndex)
 {
     uint64 start, end;
 
-    if (this->selection.GetSelection(selIndex, start, end))
-    {
+    if (this->selection.GetSelection(selIndex, start, end)) {
         if (this->cursor.GetCurrentPosition() != start)
             MoveTo(start, false);
         else
@@ -297,8 +262,7 @@ void Instance::SkipCurentCaracter(bool selected)
     auto toSkip = *buf.GetData();
 
     fileSize = this->obj->GetData().GetSize();
-    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;)
-    {
+    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;) {
         auto buf = this->obj->GetData().Get(tr, 256, false);
         if (!buf.IsValid())
             break;
@@ -359,31 +323,25 @@ void Instance::MoveTillEndBlock(bool selected)
 
     fileSize = this->obj->GetData().GetSize();
 
-    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;)
-    {
+    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;) {
         auto buf = this->obj->GetData().Get(tr, 4096, false);
         if (!buf.IsValid())
             break;
         auto* s = buf.begin();
         auto* e = buf.end();
-        while (s < e)
-        {
-            if ((*s) == lastValue)
-            {
+        while (s < e) {
+            if ((*s) == lastValue) {
                 count++;
                 if (count == 16)
                     break;
-            }
-            else
-            {
+            } else {
                 count     = 1;
                 lastValue = *s;
             }
             s++;
         }
         tr += (s - buf.begin());
-        if (count == 16)
-        {
+        if (count == 16) {
             tr -= 16;
             break;
         }
@@ -392,8 +350,7 @@ void Instance::MoveTillEndBlock(bool selected)
 }
 void Instance::MoveToZone(bool startOfZone, bool select)
 {
-    if (auto z = settings->zList.OffsetToZone(this->cursor.GetCurrentPosition()))
-    {
+    if (auto z = settings->zList.OffsetToZone(this->cursor.GetCurrentPosition())) {
         MoveTo(startOfZone ? z->interval.low : z->interval.high, select);
     }
 }
@@ -401,8 +358,7 @@ void Instance::MoveToZone(bool startOfZone, bool select)
 bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(settings.get(), this->cursor.GetCurrentPosition(), this->obj->GetData().GetSize());
-    if (dlg.Show() == Dialogs::Result::Ok)
-    {
+    if (dlg.Show() == Dialogs::Result::Ok) {
         MoveTo(dlg.GetResultedPos(), false);
     }
     return true;
@@ -413,27 +369,20 @@ bool Instance::ShowFindDialog()
     CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
 
     const auto [start, length] = findDialog.GetNextMatch(this->cursor.GetCurrentPosition());
-    if (start != GView::Utils::INVALID_OFFSET && length != GView::Utils::INVALID_OFFSET)
-    {
-        if (findDialog.AlignToUpperRightCorner())
-        {
+    if (start != GView::Utils::INVALID_OFFSET && length != GView::Utils::INVALID_OFFSET) {
+        if (findDialog.AlignToUpperRightCorner()) {
             MoveScrollTo(start);
-        }
-        else
-        {
+        } else {
             MoveTo(start, false);
         }
 
-        if (findDialog.SelectMatch())
-        {
+        if (findDialog.SelectMatch()) {
             this->selection.Clear();
             this->selection.BeginSelection(start);
             this->selection.UpdateSelection(0, start + length - 1);
             UpdateCurrentSelection();
         }
-    }
-    else
-    {
+    } else {
         Dialogs::MessageBox::ShowError("Error!", "Pattern not found!");
     }
 
@@ -446,7 +395,6 @@ bool Instance::ShowCopyDialog()
 
     return true;
 }
-
 bool Instance::ShowDissasmDialog()
 {
     DissasmDialog dlg(this);
@@ -464,24 +412,20 @@ void Instance::ResetStringInfo()
 void Instance::UpdateStringInfo(uint64 offset)
 {
     auto buf = this->obj->GetData().Get(offset, 1024, false);
-    if (!buf.IsValid())
-    {
+    if (!buf.IsValid()) {
         ResetStringInfo();
         return;
     }
 
     // check for ascii
-    if (this->StringInfo.showAscii)
-    {
+    if (this->StringInfo.showAscii) {
         auto* s = buf.GetData();
         auto* e = s + buf.GetLength();
 
-        if (StringInfo.AsciiMask[*s])
-        {
+        if (StringInfo.AsciiMask[*s]) {
             while ((s < e) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - buf.GetData() >= StringInfo.minCount)
-            {
+            if (s - buf.GetData() >= StringInfo.minCount) {
                 // ascii string found
                 StringInfo.start = offset;
                 StringInfo.end   = offset + (s - buf.GetData());
@@ -492,16 +436,13 @@ void Instance::UpdateStringInfo(uint64 offset)
     }
 
     // check for unicode
-    if (this->StringInfo.showUnicode)
-    {
+    if (this->StringInfo.showUnicode) {
         auto* s = (char16*) buf.GetData();
         auto* e = s + buf.GetLength() / 2;
-        if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
-        {
+        if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s])) {
             while ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - (char16*) buf.GetData() >= StringInfo.minCount)
-            {
+            if (s - (char16*) buf.GetData() >= StringInfo.minCount) {
                 // ascii string found
                 StringInfo.start  = offset;
                 StringInfo.end    = offset + ((const uint8*) s - buf.GetData());
@@ -521,8 +462,7 @@ void Instance::UpdateStringInfo(uint64 offset)
         auto* s = buf.GetData();
         auto* e = s + buf.GetLength();
 
-        while (s < e)
-        {
+        while (s < e) {
             while ((s < e) && (!StringInfo.AsciiMask[*s]))
                 s++;
             if (s == e)
@@ -530,12 +470,10 @@ void Instance::UpdateStringInfo(uint64 offset)
             // reached a possible string --> check for minim size
             auto* s_s = s;
             auto* s_e = s + StringInfo.minCount;
-            if (s_e <= e)
-            {
+            if (s_e <= e) {
                 while ((s_s < s_e) && (StringInfo.AsciiMask[*s_s]))
                     s_s++;
-                if (s_s == s_e)
-                {
+                if (s_s == s_e) {
                     // found a possible string at 's' position --> stop before 's'
                     StringInfo.end = offset + (s - buf.GetData());
                     return;
@@ -544,12 +482,10 @@ void Instance::UpdateStringInfo(uint64 offset)
             // check if not an unicode string
             auto* u_s = (char16_t*) s;
             auto* u_e = u_s + StringInfo.minCount;
-            if ((((const uint8*) u_e) + 1) <= e)
-            {
+            if ((((const uint8*) u_e) + 1) <= e) {
                 while ((u_s < u_e) && (*u_s < 256) && (StringInfo.AsciiMask[*u_s]))
                     u_s++;
-                if (u_s == u_e)
-                {
+                if (u_s == u_e) {
                     // found a possible unicode at 's' position --> stop before 's'
                     StringInfo.end = offset + (s - buf.GetData());
                     return;
@@ -577,8 +513,7 @@ bool Instance::SetStringAsciiMask(string_view stringRepresentation)
 {
     GView::Utils::CharacterSet cSet;
     cSet.ClearAll();
-    if (cSet.Set(stringRepresentation, true))
-    {
+    if (cSet.Set(stringRepresentation, true)) {
         cSet.CopySetTo(this->StringInfo.AsciiMask);
         return true;
     }
@@ -595,18 +530,14 @@ ColorPair Instance::OffsetToColorZone(uint64 offset)
 ColorPair Instance::OffsetToColor(uint64 offset)
 {
     // current selection
-    if ((this->CurrentSelection.size) && (this->CurrentSelection.highlight))
-    {
+    if ((this->CurrentSelection.size) && (this->CurrentSelection.highlight)) {
         if ((offset >= this->CurrentSelection.start) && (offset < this->CurrentSelection.end))
             return Cfg.Selection.SimilarText;
 
         auto b = this->obj->GetData().Get(offset, this->CurrentSelection.size, true);
-        if (b.IsValid())
-        {
-            if (b[0] == this->CurrentSelection.buffer[0])
-            {
-                if (memcmp(b.begin(), this->CurrentSelection.buffer, this->CurrentSelection.size) == 0)
-                {
+        if (b.IsValid()) {
+            if (b[0] == this->CurrentSelection.buffer[0]) {
+                if (memcmp(b.begin(), this->CurrentSelection.buffer, this->CurrentSelection.size) == 0) {
                     this->CurrentSelection.start = offset;
                     this->CurrentSelection.end   = offset + this->CurrentSelection.size;
                     return Cfg.Selection.SimilarText;
@@ -616,26 +547,28 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     }
 
     // color
-    if (settings)
-    {
-        if ((showCodeExecution || showSyncCompare) && settings->bufferColorCallback)
-        {
+    if (settings) {
+        if (showObjectsHighlighting) {
+            if (auto z = this->settings->zListObjects.OffsetToZone(offset)) {
+                return z->color;
+            }
+            return Cfg.Text.Inactive;
+        }
+
+        if ((showCodeExecution || showSyncCompare) && settings->bufferColorCallback) {
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
 
-            if (cursor.GetStartView() <= offset)
-            {
+            if (cursor.GetStartView() <= offset) {
                 auto b = this->obj->GetData().Get(offset, 1, true);
-                if (b.IsValid())
-                {
+                if (b.IsValid()) {
                     if (settings->bufferColorCallback->GetColorForByteAt(
                               offset,
                               ViewData{ .viewStartOffset   = cursor.GetStartView(),
                                         .viewSize          = static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows,
                                         .cursorStartOffset = cursor.GetCurrentPosition(),
                                         .byte              = b.GetData()[0] },
-                              bufColor.color))
-                    {
+                              bufColor.color)) {
                         bufColor.start = offset;
                         bufColor.end   = offset;
                         return bufColor.color;
@@ -645,8 +578,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
             // no color provided for the specific buffer --> check show types
         }
 
-        if (showTypeObjects && settings->positionToColorCallback)
-        {
+        if (showTypeObjects && settings->positionToColorCallback) {
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
             if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->GetData().Get(offset, 16, false), bufColor))
@@ -657,25 +589,18 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     }
 
     // check strings
-    if (this->StringInfo.showAscii || this->StringInfo.showUnicode)
-    {
-        if ((offset >= StringInfo.start) && (offset < StringInfo.end))
-        {
-            switch (StringInfo.type)
-            {
+    if (this->StringInfo.showAscii || this->StringInfo.showUnicode) {
+        if ((offset >= StringInfo.start) && (offset < StringInfo.end)) {
+            switch (StringInfo.type) {
             case StringType::Ascii:
                 return config.Colors.Ascii;
             case StringType::Unicode:
                 return config.Colors.Unicode;
             }
-        }
-        else
-        {
+        } else {
             UpdateStringInfo(offset);
-            if ((offset >= StringInfo.start) && (offset < StringInfo.end))
-            {
-                switch (StringInfo.type)
-                {
+            if ((offset >= StringInfo.start) && (offset < StringInfo.end)) {
+                switch (StringInfo.type) {
                 case StringType::Ascii:
                     return config.Colors.Ascii;
                 case StringType::Unicode:
@@ -695,23 +620,19 @@ void Instance::UpdateViewSizes()
     auto sz            = this->Layout.lineNameSize;
     this->Layout.xName = 0;
 
-    if (this->Layout.lineAddressSize > 0)
-    {
+    if (this->Layout.lineAddressSize > 0) {
         this->Layout.xAddress = sz;
-        if (sz > 0)
-        {
+        if (sz > 0) {
             sz += this->Layout.lineAddressSize + 1; // one extra space
             this->Layout.xAddress++;
-        }
-        else
+        } else
             sz += this->Layout.lineAddressSize;
     }
 
     if (sz > 0)
         sz += 3; // 3 extra spaces between offset (address) and characters
     this->Layout.xNumbers = sz;
-    if (this->Layout.nrCols == 0)
-    {
+    if (this->Layout.nrCols == 0) {
         this->Layout.xText = sz;
         // full screen --> ascii only
         auto width = (uint32) this->GetWidth();
@@ -719,9 +640,7 @@ void Instance::UpdateViewSizes()
             this->Layout.charactersPerLine = width - (1 + sz);
         else
             this->Layout.charactersPerLine = 1;
-    }
-    else
-    {
+    } else {
         this->Layout.xText             = sz + this->Layout.nrCols * (characterFormatModeSize[(uint32) this->Layout.charFormatMode] + 1) + 3;
         this->Layout.charactersPerLine = this->Layout.nrCols;
     }
@@ -734,12 +653,10 @@ void Instance::UpdateViewSizes()
 }
 void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
-    if (dli.recomputeOffsets)
-    {
+    if (dli.recomputeOffsets) {
         // need to recompute all offsets
         dli.offsetAndNameSize = this->Layout.lineAddressSize;
-        if (this->Layout.lineNameSize > 0)
-        {
+        if (this->Layout.lineNameSize > 0) {
             if (dli.offsetAndNameSize > 0)
                 dli.offsetAndNameSize += this->Layout.lineNameSize + 1; // one extra space
             else
@@ -747,8 +664,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         }
         if (dli.offsetAndNameSize > 0)
             dli.offsetAndNameSize += 3; // 3 extra spaces between offset (address) and characters
-        if (this->Layout.nrCols == 0)
-        {
+        if (this->Layout.nrCols == 0) {
             // full screen --> ascii only
             auto width      = (uint32) this->GetWidth();
             dli.numbersSize = 0;
@@ -756,9 +672,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                 dli.textSize = width - (1 + dli.offsetAndNameSize);
             else
                 dli.textSize = 0;
-        }
-        else
-        {
+        } else {
             auto sz         = characterFormatModeSize[(uint32) this->Layout.charFormatMode];
             dli.numbersSize = this->Layout.nrCols * (sz + 1) + 3; // one extra space between chrars + 3 spaces at the end
             dli.textSize    = this->Layout.nrCols;
@@ -779,18 +693,16 @@ void Instance::WriteHeaders(Renderer& renderer)
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
     params.Align = TextAlignament::Left;
     params.Y     = 0;
-    params.Color = this->HasFocus() ? Cfg.Header.Text.Focused : Cfg.Header.Text.Normal;
+    params.Color = (this->showColorNotFocused || this->HasFocus()) ? Cfg.Header.Text.Focused : Cfg.Header.Text.Normal;
 
     renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', params.Color);
 
-    if (this->Layout.lineNameSize > 0)
-    {
+    if (this->Layout.lineNameSize > 0) {
         params.X     = this->Layout.xName;
         params.Width = this->Layout.lineNameSize;
         renderer.WriteText("Name", params);
     }
-    if (this->Layout.lineAddressSize > 0)
-    {
+    if (this->Layout.lineAddressSize > 0) {
         params.X     = this->Layout.xAddress;
         params.Width = this->Layout.lineAddressSize;
         if (this->settings->translationMethodsCount == 0)
@@ -798,12 +710,10 @@ void Instance::WriteHeaders(Renderer& renderer)
         else
             renderer.WriteText(this->settings->translationMethods[this->currentAdrressMode].name.GetText(), params);
     }
-    if (this->Layout.nrCols != 0)
-    {
+    if (this->Layout.nrCols != 0) {
         params.X     = this->Layout.xNumbers;
         params.Width = this->Layout.xText - (this->Layout.xNumbers + 3);
-        switch (this->Layout.charFormatMode)
-        {
+        switch (this->Layout.charFormatMode) {
         case CharacterFormatMode::Hex:
             renderer.WriteText(hex_header, params);
             break;
@@ -828,27 +738,31 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
     auto c     = Cfg.Text.Inactive;
     auto n     = dli.chNameAndSize;
 
-    if (HasFocus())
-    {
+    if (this->showColorNotFocused || this->HasFocus()) {
         c = OffsetToColorZone(dli.offset);
     }
 
-    if (this->Layout.lineNameSize > 0)
-    {
+    if (this->Layout.lineNameSize > 0) {
         auto e             = n + this->Layout.lineNameSize;
         const char* nm     = "--------------------------------------------------------------------------------------------------------------";
         const char* nm_end = nm + 100;
 
-        auto z = this->settings->zList.OffsetToZone(dli.offset);
-        if (z)
-        {
+        std::optional<GView::Utils::Zone> z;
+        if (showObjectsHighlighting) {
+            z = this->settings->zListObjects.OffsetToZone(dli.offset);
+        }
+
+        if (!z) {
+            z = this->settings->zList.OffsetToZone(dli.offset);
+        }
+
+        if (z) {
             nm     = z->name.GetText();
             nm_end = nm + z->name.Len();
         }
 
-        while (n < e)
-        {
-            n->Code = nm < nm_end ? *nm : ' ';
+        while (n < e) {
+            n->Code  = nm < nm_end ? *nm : ' ';
             n->Color = c;
             n++;
             nm++;
@@ -858,38 +772,30 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
         n++;
     }
 
-    if (this->Layout.lineAddressSize > 0)
-    {
+    if (this->Layout.lineAddressSize > 0) {
         auto prev_n = n;
         auto s      = n + this->Layout.lineAddressSize - 1;
         n           = s + 1;
 
-        if ((settings) && (settings->translationMethodsCount > 0) && (this->currentAdrressMode > 0))
-        {
+        if ((settings) && (settings->translationMethodsCount > 0) && (this->currentAdrressMode > 0)) {
             ofs = settings->offsetTranslateCallback->TranslateFromFileOffset(ofs, this->currentAdrressMode);
         }
 
-        if (ofs == GView::Utils::INVALID_OFFSET)
-        {
-            while (s >= prev_n)
-            {
+        if (ofs == GView::Utils::INVALID_OFFSET) {
+            while (s >= prev_n) {
                 s->Code  = '-';
                 s->Color = Cfg.Text.Inactive;
                 s--;
             }
-        }
-        else
-        {
+        } else {
             // hex
-            while (s >= prev_n)
-            {
+            while (s >= prev_n) {
                 s->Code  = hexCharsList[ofs & 0xF];
                 s->Color = c;
                 ofs >>= 4;
                 s--;
             }
-            if ((ofs > 0) && (this->Layout.lineAddressSize >= 3))
-            {
+            if ((ofs > 0) && (this->Layout.lineAddressSize >= 3)) {
                 // value is to large --> add some points
                 s        = prev_n;
                 s->Code  = '.';
@@ -902,8 +808,7 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
     }
 
     // clear space
-    while (n < dli.chNumbers)
-    {
+    while (n < dli.chNumbers) {
         n->Code  = ' ';
         n->Color = c;
         n++;
@@ -911,27 +816,22 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
 }
 void Instance::WriteLineTextToChars(DrawLineInfo& dli)
 {
-    auto cp    = Cfg.Text.Inactive;
-    bool activ = this->HasFocus();
+    auto cp     = Cfg.Text.Inactive;
+    bool active = this->showColorNotFocused || this->HasFocus();
 
-    if (activ)
-    {
+    if (active) {
         const auto startCh  = dli.chText;
         const auto ofsStart = dli.offset;
-        while (dli.start < dli.end)
-        {
+        while (dli.start < dli.end) {
             cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
                 cp = Cfg.Selection.Editor;
-            if (StringInfo.type == StringType::Unicode)
-            {
+            if (StringInfo.type == StringType::Unicode) {
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
                 else
                     dli.chText->Code = codePage[obj->GetData().GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
-            }
-            else
-            {
+            } else {
                 dli.chText->Code = codePage[*dli.start];
             }
             dli.chText->Color = cp;
@@ -939,15 +839,11 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
             dli.start++;
             dli.offset++;
         }
-        if ((this->cursor.GetCurrentPosition() >= ofsStart) && (this->cursor.GetCurrentPosition() < dli.offset))
-        {
+        if ((this->cursor.GetCurrentPosition() >= ofsStart) && (this->cursor.GetCurrentPosition() < dli.offset)) {
             (startCh + (this->cursor.GetCurrentPosition() - ofsStart))->Color = Cfg.Cursor.Normal;
         }
-    }
-    else
-    {
-        while (dli.start < dli.end)
-        {
+    } else {
+        while (dli.start < dli.end) {
             dli.chText->Code  = codePage[*dli.start];
             dli.chText->Color = Cfg.Text.Inactive;
             dli.chText++;
@@ -960,27 +856,23 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
     auto c     = dli.chNumbers;
     auto cp    = Cfg.Text.Inactive;
-    bool activ = this->HasFocus();
+    bool active = this->showColorNotFocused || this->HasFocus();
     auto ut    = (uint8) 0;
     auto sps   = dli.chText;
     auto start = dli.offset;
     auto end   = start + (dli.end - dli.start);
 
-    while (dli.start < dli.end)
-    {
-        if (activ)
-        {
+    while (dli.start < dli.end) {
+        if (active) {
             cp = OffsetToColor(dli.offset);
 
-            if (selection.Contains(dli.offset))
-            {
+            if (selection.Contains(dli.offset)) {
                 cp = Cfg.Selection.Editor;
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }
         }
-        switch (this->Layout.charFormatMode)
-        {
+        switch (this->Layout.charFormatMode) {
         case CharacterFormatMode::Hex:
             c->Code  = hexCharsList[(*dli.start) >> 4];
             c->Color = cp;
@@ -1001,8 +893,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
             c++;
             break;
         case CharacterFormatMode::UnsignedDecimal:
-            if ((*dli.start) < 10)
-            {
+            if ((*dli.start) < 10) {
                 c->Code  = ' ';
                 c->Color = cp;
                 c++;
@@ -1012,9 +903,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
                 c->Code  = '0' + *dli.start;
                 c->Color = cp;
                 c++;
-            }
-            else if ((*dli.start) < 100)
-            {
+            } else if ((*dli.start) < 100) {
                 c->Code  = ' ';
                 c->Color = cp;
                 c++;
@@ -1024,9 +913,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
                 c->Code  = '0' + ((*dli.start) % 10);
                 c->Color = cp;
                 c++;
-            }
-            else
-            {
+            } else {
                 ut       = *dli.start;
                 c->Code  = '0' + (ut / 100);
                 c->Color = cp;
@@ -1044,15 +931,13 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         case CharacterFormatMode::SignedDecimal:
             int tmp   = *(const char*) dli.start;
             char sign = '+';
-            if (tmp < 0)
-            {
+            if (tmp < 0) {
                 sign = '-';
                 tmp  = -tmp;
             }
             if (tmp == 0)
                 sign = ' ';
-            if (tmp < 10)
-            {
+            if (tmp < 10) {
                 c->Code  = ' ';
                 c->Color = cp;
                 c++;
@@ -1065,9 +950,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
                 c->Code  = '0' + tmp;
                 c->Color = cp;
                 c++;
-            }
-            else if (tmp < 100)
-            {
+            } else if (tmp < 100) {
                 c->Code  = ' ';
                 c->Color = cp;
                 c++;
@@ -1080,9 +963,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
                 c->Code  = '0' + (tmp % 10);
                 c->Color = cp;
                 c++;
-            }
-            else
-            {
+            } else {
                 c->Code  = sign;
                 c->Color = cp;
                 c++;
@@ -1105,22 +986,16 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Color = cp;
         c++;
 
-        if (activ)
-        {
-            if (StringInfo.type == StringType::Unicode)
-            {
+        if (active) {
+            if (StringInfo.type == StringType::Unicode) {
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
                 else
                     dli.chText->Code = codePage[obj->GetData().GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
-            }
-            else
-            {
+            } else {
                 dli.chText->Code = codePage[*dli.start];
             }
-        }
-        else
-        {
+        } else {
             dli.chText->Code = codePage[*dli.start];
         }
 
@@ -1130,21 +1005,18 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         dli.offset++;
     }
     // clear space until text column
-    while (c < sps)
-    {
+    while (c < sps) {
         c->Code  = ' ';
         c->Color = Cfg.Text.Inactive;
         c++;
     }
-    if ((activ) && (this->cursor.GetCurrentPosition() >= start) && (this->cursor.GetCurrentPosition() < end))
-    {
+    if ((active) && (this->cursor.GetCurrentPosition() >= start) && (this->cursor.GetCurrentPosition() < end)) {
         const auto reprsz = characterFormatModeSize[static_cast<uint32>(this->Layout.charFormatMode)] + 1;
         c                 = dli.chNumbers + (this->cursor.GetCurrentPosition() - start) * reprsz;
         const auto st     = this->chars.GetBuffer();
         const auto c_e    = std::min<>(c + reprsz, sps);
         c                 = std::max<>(c - 1, st);
-        while (c < c_e)
-        {
+        while (c < c_e) {
             c->Color = Cfg.Cursor.Normal;
             c++;
         }
@@ -1160,20 +1032,25 @@ void Instance::Paint(Renderer& renderer)
     WriteHeaders(renderer);
 
     const auto& startView = cursor.GetStartView();
-    settings->zList.SetCache({ startView, ((uint64) Layout.charactersPerLine) * (Layout.visibleRows - 1ull) + startView });
+    if (showObjectsHighlighting) {
+        settings->zListObjects.SetCache({ startView, ((uint64) Layout.charactersPerLine) * (Layout.visibleRows - 1ull) + startView });
+    } else {
+        settings->zList.SetCache({ startView, ((uint64) Layout.charactersPerLine) * (Layout.visibleRows - 1ull) + startView });
+    }
 
     DrawLineInfo dli;
-    for (uint32 tr = 0; tr < Layout.visibleRows; tr++)
-    {
+    for (uint32 tr = 0; tr < Layout.visibleRows; tr++) {
         dli.offset = ((uint64) Layout.charactersPerLine) * tr + startView;
-        if (dli.offset >= obj->GetData().GetSize())
+        if (dli.offset >= obj->GetData().GetSize()) {
             break;
+        }
         PrepareDrawLineInfo(dli);
         WriteLineAddress(dli);
-        if (Layout.nrCols == 0)
+        if (Layout.nrCols == 0) {
             WriteLineTextToChars(dli);
-        else
+        } else {
             WriteLineNumbersToChars(dli);
+        }
         renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 }
@@ -1184,8 +1061,7 @@ void Instance::OnAfterResize(int width, int height)
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     // columns
-    switch (this->Layout.nrCols)
-    {
+    switch (this->Layout.nrCols) {
     case 0:
         commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:FullScr", BUFFERVIEW_CMD_CHANGECOL);
         break;
@@ -1204,16 +1080,12 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     }
 
     // Value format & codepage
-    if (this->Layout.nrCols == 0)
-    {
+    if (this->Layout.nrCols == 0) {
         LocalString<64> tmp;
         commandBar.SetCommand(
               config.Keys.ChangeValueFormatOrCP, tmp.Format("CP:%s", CodePage::GetCodePageName(this->codePage).data()), BUFFERVIEW_CMD_CHANGECODEPAGE);
-    }
-    else
-    {
-        switch (this->Layout.charFormatMode)
-        {
+    } else {
+        switch (this->Layout.charFormatMode) {
         case CharacterFormatMode::Hex:
             commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
             break;
@@ -1230,8 +1102,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     }
 
     // address mode
-    if ((this->settings) && (this->settings->translationMethodsCount > 0))
-    {
+    if ((this->settings) && (this->settings->translationMethodsCount > 0)) {
         commandBar.SetCommand(
               config.Keys.ChangeAddressMode, this->settings->translationMethods[this->currentAdrressMode].name, BUFFERVIEW_CMD_CHANGEADDRESSMODE);
     }
@@ -1246,28 +1117,30 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Multiple", BUFFERVIEW_CMD_CHANGESELECTION);
 
     // Strings
-    if (this->StringInfo.showAscii)
-    {
+    if (this->StringInfo.showAscii) {
         if (this->StringInfo.showUnicode)
             commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:ON", BUFFERVIEW_CMD_HIDESTRINGS);
         else
             commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Ascii", BUFFERVIEW_CMD_HIDESTRINGS);
-    }
-    else
-    {
+    } else {
         if (this->StringInfo.showUnicode)
             commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Unicode", BUFFERVIEW_CMD_HIDESTRINGS);
         else
             commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:OFF", BUFFERVIEW_CMD_HIDESTRINGS);
     }
 
-    if (findDialog.HasResults())
-    {
+    if (findDialog.HasResults()) {
         commandBar.SetCommand(config.Keys.FindNext, "FindNext", BUFFERVIEW_CMD_FINDNEXT);
         commandBar.SetCommand(config.Keys.FindPrevious, "FindPrevious", BUFFERVIEW_CMD_FINDPREVIOUS);
     }
 
     commandBar.SetCommand(config.Keys.DissasmDialog, "Dissasm", BUFFERVIEW_CMD_DISSASM_DIALOG);
+
+    if (this->showColorNotFocused) {
+        commandBar.SetCommand(config.Keys.ShowColorNotFocused, "ShowColorWhenNotFocused:ON", BUFFERVIEW_CMD_SHOW_COLOR);
+    } else {
+        commandBar.SetCommand(config.Keys.ShowColorNotFocused, "ShowColorWhenNotFocused:OFF", BUFFERVIEW_CMD_SHOW_COLOR);
+    }
 
     return false;
 }
@@ -1302,8 +1175,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     //    }
     //}
 
-    switch (keyCode)
-    {
+    switch (keyCode) {
     case Key::Down:
         MoveTo(this->cursor.GetCurrentPosition() + this->Layout.charactersPerLine, select);
         return true;
@@ -1404,16 +1276,14 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         return true;
     };
 
-    if ((charCode >= '0') && (charCode <= '9'))
-    {
+    if ((charCode >= '0') && (charCode <= '9')) {
         auto addr = this->settings->bookmarks[charCode - '0'];
         if (addr != GView::Utils::INVALID_OFFSET)
             MoveTo(addr, select);
         return true;
     }
 
-    switch (charCode)
-    {
+    switch (charCode) {
     case '[':
         if (this->Layout.lineAddressSize > 0)
             Layout.lineAddressSize--;
@@ -1442,8 +1312,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     CHECK(eventType == Event::Command, false, "");
 
-    switch (ID)
-    {
+    switch (ID) {
     case BUFFERVIEW_CMD_CHANGECOL:
         if (this->Layout.nrCols == 0)
             this->Layout.nrCols = 8;
@@ -1454,12 +1323,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         UpdateViewSizes();
         return true;
     case BUFFERVIEW_CMD_CHANGEBASE:
-        if (this->Layout.nrCols == 0)
-        {
+        if (this->Layout.nrCols == 0) {
             // not implemented yet
-        }
-        else
-        {
+        } else {
             this->Layout.charFormatMode = static_cast<CharacterFormatMode>((((uint8) this->Layout.charFormatMode) + 1) % ((uint8) CharacterFormatMode::Count));
             UpdateViewSizes();
         }
@@ -1468,78 +1334,61 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         codePage = static_cast<CodePageID>((((uint32) ((CodePageID) codePage)) + 1) % CodePage::GetSupportedCodePagesCount());
         return true;
     case BUFFERVIEW_CMD_CHANGEADDRESSMODE:
-        if ((this->settings) && (this->settings->translationMethodsCount > 0))
-        {
+        if ((this->settings) && (this->settings->translationMethodsCount > 0)) {
             this->currentAdrressMode = (this->currentAdrressMode + 1) % this->settings->translationMethodsCount;
             return true;
         }
         return false;
     case BUFFERVIEW_CMD_GOTOEP:
-        if ((this->settings) && (this->settings->entryPointOffset != GView::Utils::INVALID_OFFSET))
-        {
+        if ((this->settings) && (this->settings->entryPointOffset != GView::Utils::INVALID_OFFSET)) {
             MoveTo(this->settings->entryPointOffset, false);
             return true;
         }
         return false;
     case BUFFERVIEW_CMD_CHANGESELECTION:
-        if (this->selection.IsMultiSelectionEnabled())
-        {
+        if (this->selection.IsMultiSelectionEnabled()) {
             this->CurrentSelection.Clear();
         }
         this->selection.InvertMultiSelectionMode();
         return true;
     case BUFFERVIEW_CMD_HIDESTRINGS:
-        if (this->StringInfo.showAscii && this->StringInfo.showUnicode)
-        {
+        if (this->StringInfo.showAscii && this->StringInfo.showUnicode) {
             this->StringInfo.showAscii = this->StringInfo.showUnicode = false;
-        }
-        else
-        {
+        } else {
             this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
         }
         return true;
-    case BUFFERVIEW_CMD_FINDNEXT:
-    {
+    case BUFFERVIEW_CMD_FINDNEXT: {
         selection.Clear();
         CurrentSelection.Clear();
         const auto [start, length] = findDialog.GetNextMatch(this->cursor.GetCurrentPosition() + 1);
-        if (start != GView::Utils::INVALID_OFFSET && length > 0)
-        {
+        if (start != GView::Utils::INVALID_OFFSET && length > 0) {
             bool samePosition = this->cursor.GetCurrentPosition() == start;
 
-            if (findDialog.AlignToUpperRightCorner())
-            {
+            if (findDialog.AlignToUpperRightCorner()) {
                 MoveScrollTo(start);
-            }
-            else
-            {
+            } else {
                 MoveTo(start, false);
             }
 
-            if (findDialog.SelectMatch())
-            {
+            if (findDialog.SelectMatch()) {
                 this->selection.Clear();
                 this->selection.BeginSelection(start);
                 this->selection.UpdateSelection(0, start + length - 1);
                 UpdateCurrentSelection();
             }
 
-            if (samePosition)
-            {
+            if (samePosition) {
                 Dialogs::MessageBox::ShowError("Error!", "No next match found!");
             }
-        }
-        else
-        {
+        } else {
             Dialogs::MessageBox::ShowError("Error!", "No next match found!");
         }
 
         return true;
     }
-    case BUFFERVIEW_CMD_FINDPREVIOUS:
-    {
-        if (this->cursor.GetCurrentPosition() == 0)
-        {
+    case BUFFERVIEW_CMD_FINDPREVIOUS: {
+        if (this->cursor.GetCurrentPosition() == 0) {
             Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
             return true;
         }
@@ -1547,34 +1396,26 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         selection.Clear();
         CurrentSelection.Clear();
         const auto [start, length] = findDialog.GetPreviousMatch(this->cursor.GetCurrentPosition() - 1);
-        if (start != GView::Utils::INVALID_OFFSET && length > 0)
-        {
+        if (start != GView::Utils::INVALID_OFFSET && length > 0) {
             bool samePosition = this->cursor.GetCurrentPosition() == start;
 
-            if (findDialog.AlignToUpperRightCorner())
-            {
+            if (findDialog.AlignToUpperRightCorner()) {
                 MoveScrollTo(start);
-            }
-            else
-            {
+            } else {
                 MoveTo(start, false);
             }
 
-            if (findDialog.SelectMatch())
-            {
+            if (findDialog.SelectMatch()) {
                 this->selection.Clear();
                 this->selection.BeginSelection(start);
                 this->selection.UpdateSelection(0, start + length - 1);
                 UpdateCurrentSelection();
             }
 
-            if (samePosition)
-            {
+            if (samePosition) {
                 Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
             }
-        }
-        else
-        {
+        } else {
             Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
         }
 
@@ -1604,6 +1445,18 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION:
         showCodeExecution = false;
         return true;
+
+    case VIEW_COMMAND_ACTIVATE_OBJECT_HIGHLIGHTING:
+        showObjectsHighlighting = true;
+        return true;
+    case VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING:
+        showObjectsHighlighting = false;
+        return true;
+
+    case BUFFERVIEW_CMD_SHOW_COLOR:
+        this->showColorNotFocused = !this->showColorNotFocused;
+        UpdateViewSizes();
+        return true;
     }
     return false;
 }
@@ -1615,6 +1468,22 @@ void Instance::OnLoseFocus()
 {
     cursor.SetStartView(cursor.GetStartView()); // invalidate delta;
 }
+
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    interface->RegisterKey(&ChangeColumnsCount);
+    interface->RegisterKey(&ChangeValueFormatOrCP);
+    interface->RegisterKey(&ChangeAddressMode);
+    interface->RegisterKey(&GoToEntryPoint);
+    interface->RegisterKey(&ChangeSelectionType);
+    interface->RegisterKey(&ShowHideStrings);
+    interface->RegisterKey(&FindNext);
+    interface->RegisterKey(&FindPrevious);
+    interface->RegisterKey(&DissasmDialogCmd);
+    interface->RegisterKey(&ShowColorNotFocused);
+    return true;
+}
+
 bool Instance::GoTo(uint64 offset)
 {
     this->MoveTo(offset, false);
@@ -1637,16 +1506,12 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
 {
     uint64 start, end;
     bool show = (selectionID == 0) || (this->selection.IsMultiSelectionEnabled());
-    if (show)
-    {
-        if (this->selection.GetSelection(selectionID, start, end))
-        {
+    if (show) {
+        if (this->selection.GetSelection(selectionID, start, end)) {
             LocalString<32> tmp;
             tmp.Format("%X,%X", start, (end - start) + 1);
             r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
-        }
-        else
-        {
+        } else {
             r.WriteSingleLineText(x, y, width, "NO Selection", Cfg.Text.Inactive, TextAlignament::Center);
         }
     }
@@ -1663,14 +1528,11 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
         r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     // percentage
 
-    if (this->obj->GetData().GetSize() > 0)
-    {
+    if (this->obj->GetData().GetSize() > 0) {
         LocalString<32> tmp;
         tmp.Format("%3u%%", (this->cursor.GetCurrentPosition() + 1) * 100ULL / this->obj->GetData().GetSize());
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
-    }
-    else
-    {
+    } else {
         r.WriteSingleLineText(x, y, "----", this->CursorColors.Line);
     }
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
@@ -1678,10 +1540,19 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 }
 int Instance::PrintCursorZone(int x, int y, uint32 width, Renderer& r)
 {
-    if (auto z = this->settings->zList.OffsetToZone(this->cursor.GetCurrentPosition()))
-    {
+    std::optional<GView::Utils::Zone> z;
+    if (showObjectsHighlighting) {
+        z = this->settings->zListObjects.OffsetToZone(this->cursor.GetCurrentPosition());
+    }
+
+    if (!z) {
+        z = this->settings->zList.OffsetToZone(this->cursor.GetCurrentPosition());
+    }
+
+    if (z) {
         r.WriteSingleLineText(x, y, width, z->name, this->CursorColors.Highlighted);
     }
+
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;
 }
@@ -1692,8 +1563,7 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
     const uint8 v_u8 = buffer[0];
     NumericFormatter n;
     NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 2 };
-    switch (height)
-    {
+    switch (height) {
     case 0:
         break;
     case 1:
@@ -1725,8 +1595,7 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
         fmt.Base        = 2;
         fmt.DigitsCount = 8;
         r.WriteSingleLineText(x + 4, 2, n.ToString(v_u8, fmt), this->CursorColors.Normal);
-        if (height > 3)
-        {
+        if (height > 3) {
             r.WriteSingleLineText(x, 3, "Oct:", this->CursorColors.Highlighted);
             fmt.Base        = 8;
             fmt.DigitsCount = 3;
@@ -1737,7 +1606,6 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
     }
     return x;
 }
-
 int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r)
 {
     if (buffer.GetLength() < 2)
@@ -1745,8 +1613,7 @@ int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffe
     const uint16 v_u16 = *(uint16*) buffer.GetData();
     NumericFormatter n;
     NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 4 };
-    switch (height)
-    {
+    switch (height) {
     case 0:
         break;
     case 1:
@@ -1778,8 +1645,7 @@ int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffe
         fmt.Base        = 2;
         fmt.DigitsCount = 16;
         r.WriteSingleLineText(x + 4, 2, n.ToString(v_u16, fmt), this->CursorColors.Normal);
-        if (height > 3)
-        {
+        if (height > 3) {
             r.WriteSingleLineText(x, 3, "Oct:", this->CursorColors.Highlighted);
             fmt.Base        = 8;
             fmt.DigitsCount = 6;
@@ -1798,8 +1664,7 @@ int Instance::Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffe
     NumericFormatter n;
     NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
     NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
-    switch (height)
-    {
+    switch (height) {
     case 0:
         break;
     case 1:
@@ -1813,13 +1678,11 @@ int Instance::Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffe
         r.WriteSingleLineText(x, 1, "I32:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x + 4, 0, n.ToString(v_u32, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
-        if (height >= 3)
-        {
+        if (height >= 3) {
             r.WriteSingleLineText(x, 2, "U32:", this->CursorColors.Highlighted);
             r.WriteSingleLineText(x + 4, 2, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);
         }
-        if (height >= 4)
-        {
+        if (height >= 4) {
             r.WriteSingleLineText(x, 3, "Flt:", this->CursorColors.Highlighted);
             LocalString<32> tmp;
             tmp.SetFormat("%f", *(const float*) (&v_u32));
@@ -1840,8 +1703,7 @@ int Instance::Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buf
     NumericFormatter n;
     NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
     NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
-    switch (height)
-    {
+    switch (height) {
     case 0:
     case 1:
     case 2:
@@ -1874,28 +1736,23 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
     int x = 0;
     // set up the cursor colors
 
-    if (this->HasFocus())
-    {
+    if (this->HasFocus()) {
         this->CursorColors.Normal      = Cfg.Text.Normal;
         this->CursorColors.Line        = Cfg.Lines.Normal;
         this->CursorColors.Highlighted = Cfg.Text.Highlighted;
-    }
-    else
-    {
+    } else {
         this->CursorColors.Normal      = Cfg.Text.Inactive;
         this->CursorColors.Line        = Cfg.Lines.Inactive;
         this->CursorColors.Highlighted = Cfg.Text.Inactive;
     }
     r.Clear();
     auto buf = this->obj->GetData().Get(this->cursor.GetCurrentPosition(), 8, false);
-    switch (height)
-    {
+    switch (height) {
     case 0:
         break;
     case 1:
         x = PrintSelectionInfo(0, 0, 0, 16, r);
-        if (this->selection.IsMultiSelectionEnabled())
-        {
+        if (this->selection.IsMultiSelectionEnabled()) {
             x = PrintSelectionInfo(1, x, 0, 16, r);
             x = PrintSelectionInfo(2, x, 0, 16, r);
             x = PrintSelectionInfo(3, x, 0, 16, r);
@@ -1951,43 +1808,34 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
 {
     mpInfo.location = MouseLocation::Outside;
-    if (y < 0)
-    {
+    if (y < 0) {
         mpInfo.location = MouseLocation::Outside;
         return;
     }
-    if (y == 0)
-    {
+    if (y == 0) {
         mpInfo.location = MouseLocation::OnHeader;
         return;
     }
     // y>=1 --> check if in buffer
     auto yPoz = y - 1;
-    if (x < 0)
-    {
+    if (x < 0) {
         mpInfo.location = MouseLocation::Outside;
         return;
     }
     auto xPoz = (uint32) x;
-    if ((xPoz >= Layout.xText) && (xPoz < Layout.xText + Layout.charactersPerLine))
-    {
+    if ((xPoz >= Layout.xText) && (xPoz < Layout.xText + Layout.charactersPerLine)) {
         mpInfo.location     = MouseLocation::OnView;
         mpInfo.bufferOffset = yPoz * Layout.charactersPerLine + xPoz - Layout.xText;
-    }
-    else
-    {
-        if ((Layout.nrCols > 0) && (xPoz >= Layout.xNumbers))
-        {
+    } else {
+        if ((Layout.nrCols > 0) && (xPoz >= Layout.xNumbers)) {
             auto sz_char = characterFormatModeSize[(uint32) this->Layout.charFormatMode] + 1;
-            if (xPoz < Layout.nrCols * sz_char + Layout.xNumbers)
-            {
+            if (xPoz < Layout.nrCols * sz_char + Layout.xNumbers) {
                 mpInfo.location     = MouseLocation::OnView;
                 mpInfo.bufferOffset = yPoz * Layout.charactersPerLine + ((xPoz - Layout.xNumbers) / sz_char);
             }
         }
     }
-    if (mpInfo.location == MouseLocation::OnView)
-    {
+    if (mpInfo.location == MouseLocation::OnView) {
         mpInfo.bufferOffset += cursor.GetStartView();
         if (mpInfo.bufferOffset >= this->obj->GetData().GetSize())
             mpInfo.location = MouseLocation::Outside;
@@ -1998,8 +1846,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, I
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != cursor.GetCurrentPosition()))
-    {
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != cursor.GetCurrentPosition())) {
         MoveTo(mpInfo.bufferOffset, false);
     }
 }
@@ -2011,8 +1858,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Inpu
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != cursor.GetCurrentPosition()))
-    {
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != cursor.GetCurrentPosition())) {
         MoveTo(mpInfo.bufferOffset, true);
         return true;
     }
@@ -2032,8 +1878,7 @@ bool Instance::OnMouseLeave()
 }
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key)
 {
-    switch (direction)
-    {
+    switch (direction) {
     case MouseWheel::Up:
         return OnKeyEvent(Key::Up | Key::Ctrl, false);
     case MouseWheel::Down:
@@ -2054,8 +1899,7 @@ void Instance::OnUpdateScrollBars()
 }
 
 //======================================================================[PROPERTY]============================
-enum class PropertyID : uint32
-{
+enum class PropertyID : uint32 {
     // display
     Columns = 0,
     CursorOffset,
@@ -2088,13 +1932,14 @@ enum class PropertyID : uint32
     ChangeSelectionType,
     ShowHideStrings,
     Dissasm,
+    // color behavior
+    ShowColorNotFocused
 };
 #define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
-    switch (static_cast<PropertyID>(id))
-    {
+    switch (static_cast<PropertyID>(id)) {
     case PropertyID::Columns:
         value = this->Layout.nrCols;
         return true;
@@ -2179,14 +2024,16 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::Dissasm:
         value = config.Keys.DissasmDialog;
         return true;
+    case PropertyID::ShowColorNotFocused:
+        value = config.Keys.ShowColorNotFocused;
+        return true;
     }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
     uint32 tmpValue;
-    switch (static_cast<PropertyID>(id))
-    {
+    switch (static_cast<PropertyID>(id)) {
     case PropertyID::Columns:
         this->Layout.nrCols = (uint32) std::get<uint64>(value);
         UpdateViewSizes();
@@ -2208,8 +2055,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PropertyID::MinimCharsInString:
         tmpValue = std::get<uint32>(value);
-        if ((tmpValue < 3) || (tmpValue > 20))
-        {
+        if ((tmpValue < 3) || (tmpValue > 20)) {
             error = "The minim size of a string must be a value between 3 and 20 !";
             return false;
         }
@@ -2224,8 +2070,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PropertyID::AddressBarWidth:
         tmpValue = std::get<uint32>(value);
-        if (tmpValue > 20)
-        {
+        if (tmpValue > 20) {
             error = "Address bar size must not exceed 20 characters !";
             return false;
         }
@@ -2234,8 +2079,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PropertyID::ZoneNameWidth:
         tmpValue = std::get<uint32>(value);
-        if (tmpValue > 20)
-        {
+        if (tmpValue > 20) {
             error = "Zone name bar size must not exceed 20 characters !";
             return false;
         }
@@ -2286,6 +2130,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::AddressType:
         this->currentAdrressMode = (uint32) std::get<uint64>(value);
         return true;
+    case PropertyID::ShowColorNotFocused:
+        this->showColorNotFocused = (bool) std::get<bool>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -2294,8 +2141,7 @@ void Instance::SetCustomPropertyValue(uint32 propertyID)
 {
     auto propID = static_cast<PropertyID>(propertyID);
     if ((propID == PropertyID::Selection_1) || (propID == PropertyID::Selection_2) || (propID == PropertyID::Selection_3) ||
-        (propID == PropertyID::Selection_4))
-    {
+        (propID == PropertyID::Selection_4)) {
         const auto idx = propertyID - (uint32) (PropertyID::Selection_1);
         SelectionEditor dlg(&this->selection, idx, this->settings.get(), this->obj->GetData().GetSize());
         dlg.Show();
@@ -2303,8 +2149,7 @@ void Instance::SetCustomPropertyValue(uint32 propertyID)
 }
 bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
-    switch (static_cast<PropertyID>(propertyID))
-    {
+    switch (static_cast<PropertyID>(propertyID)) {
     case PropertyID::DataFormat:
         return (this->Layout.nrCols == 0); // if full screen display --> dataformat is not available
     case PropertyID::Selection_2:
@@ -2318,14 +2163,10 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     addressModesList.Clear();
-    if (this->settings->translationMethodsCount == 0)
-    {
+    if (this->settings->translationMethodsCount == 0) {
         addressModesList.Set("FileOffset=0");
-    }
-    else
-    {
-        for (uint32 tr = 0; tr < settings->translationMethodsCount; tr++)
-        {
+    } else {
+        for (uint32 tr = 0; tr < settings->translationMethodsCount; tr++) {
             if (tr > 0)
                 addressModesList.AddChar(',');
             addressModesList.AddFormat("%s=%u", settings->translationMethods[tr].name.GetText(), tr);
@@ -2371,6 +2212,9 @@ const vector<Property> Instance::GetPropertiesList()
 
         // dissasm
         { BT(PropertyID::Dissasm), "Shortcuts", "Dissasm", PropertyType::Key },
+
+        // coloring
+        { BT(PropertyID::ShowColorNotFocused), "Coloring", "Show color when main window is not in focus", PropertyType::Boolean },
     };
 }
 #undef BT

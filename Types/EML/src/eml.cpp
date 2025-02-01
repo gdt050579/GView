@@ -40,35 +40,35 @@ std::string toUTF8(const std::basic_string<T>& source)
     return result;
 }
 
-void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<EML::EMLFile> eml)
+void BuildViews(Reference<GView::View::WindowInterface> win, Reference<EML::EMLFile> eml)
 {
     ContainerViewer::Settings settings;
 
     const auto& headers = eml->GetHeaders();
     for (const auto& [name, value] : headers) {
-        if (name == u"Cc") // TODO: to be removed when issues https://github.com/gdt050579/GView/issues/301 is fixed
-            continue;
-
         std::string nameStr = toUTF8(name);
         settings.AddProperty(nameStr, value);
     }
 
     settings.SetIcon(EML_ICON);
     settings.SetColumns({
-          "n:&Identifier,a:l,w:30",
-          "n:&Content-Type,a:c,w:40",
-          "n:&Size,a:c,w:15",
-          "n:&OffsetInFile,a:c,w:15",
+          "n:&Index,a:r,w:50",
+          "n:&Content-Type,a:r,w:50",
+          "n:&Size,a:r,w:20",
+          "n:&Offset,a:r,w:20",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<EML::EMLFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(win->GetObject()->GetContentType<EML::EMLFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
     win->CreateViewer(settings);
+
+    BufferViewer::Settings bSettings;
+    eml->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(bSettings);
 }
 
 extern "C" {
-PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
+PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView&, const std::string_view&)
 {
     // no validation atm
     return true;
@@ -85,7 +85,7 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     // TODO: consider check??
     eml->ProcessData();
 
-    CreateContainerView(win, eml);
+    BuildViews(win, eml);
     win->AddPanel(Pointer<TabPage>(new EML::Panels::Information(eml)), true);
 
     return true;
@@ -96,9 +96,4 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     sect["Priority"]    = 1;
     sect["Description"] = "Electronic Mail Format (*.eml)";
 }
-}
-
-int main()
-{
-    return 0;
 }

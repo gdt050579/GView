@@ -537,9 +537,9 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["command.SyncCompare"]        = Input::Key::Ctrl | Input::Key::Shift | Input::Key::Space;
-        sect["command.ToggleSync"]         = Input::Key::Shift | Input::Key::Space;
-        sect["command.FindNextDifference"] = Input::Key::Shift | Input::Key::F11;
-        sect["command.FindNextDC"]         = Input::Key::Ctrl | Input::Key::Shift | Input::Key::F11;
+        sect["Command.SyncCompare"]        = Input::Key::Ctrl | Input::Key::Shift | Input::Key::Space;
+        sect["Command.ToggleSync"]         = Input::Key::Shift | Input::Key::Space;
+        sect["Command.FindNextDifference"] = Input::Key::Shift | Input::Key::F11;
+        sect["Command.FindNextDC"]         = Input::Key::Ctrl | Input::Key::Shift | Input::Key::F11;
     }
 }
