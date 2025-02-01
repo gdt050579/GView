@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <sstream>
 
-//#define DISSASM_DISABLE_STRING_PREVIEW
+// #define DISSASM_DISABLE_STRING_PREVIEW
 
 constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 100;
 constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 150;
@@ -1642,48 +1642,63 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 
 #pragma endregion
 
-class QueryFunctionNameDialog : public AppCUI::Controls::Window
+constexpr uint32 BTN_CLOSE_ID   = 0;
+constexpr uint32 BTN_APPLY_ID   = 1;
+constexpr uint32 RADIO_GROUP_ID = 2;
+
+class QueryFunctionNameDialog : public AppCUI::Controls::Window, Handlers::OnCheckInterface
 {
     uint32 selectedIndex;
-    int32 initialIndex;
 
   public:
-    QueryFunctionNameDialog(const std::vector<std::string>& names) : Window("Name selector", "d:c,w:50%,h:50%", WindowFlags::Sizeable)
+    QueryFunctionNameDialog(const std::vector<std::string>& names) : Window("Name selector", "d:c,w:30%,h:40%", WindowFlags::Sizeable)
     {
         selectedIndex    = UINT32_MAX;
-        initialIndex     = 0;
         uint32 yLocation = 1;
         LocalString<32> location;
-        uint32 maxLen = 0;
-        for (auto& name : names) {
-            maxLen = std::max<uint32>(maxLen, (uint32) name.size());
-        }
 
+        int32 radioBoxIndex = 0;
         for (auto& name : names) {
             location.SetFormat("x:5,y:%d,w:50,h:1", yLocation);
-            auto label = Factory::Label::Create(this, name, location.GetText());
-
-            location.SetFormat("x:%d,y:%d,w:50,h:1", label->GetX() + maxLen + 5, yLocation);
-            Factory::Button::Create(this, "Select", location.GetText(), initialIndex++);
-
+            auto radioBox                 = Factory::RadioBox::Create(this, name, location.GetText(), RADIO_GROUP_ID, radioBoxIndex++);
+            radioBox->Handlers()->OnCheck = this;
             yLocation += 2;
         }
 
-        location.SetFormat("x:45%,y:%d,w:50,h:1", yLocation);
-        Factory::Button::Create(this, "Close", location.GetText(), initialIndex);
+        location.SetFormat("x:15%,y:%d,w:10,h:1", yLocation);
+        Factory::Button::Create(this, "Apply", location.GetText(), BTN_APPLY_ID);
+
+        location.SetFormat("x:25%,y:%d,w:10,h:1", yLocation);
+        Factory::Button::Create(this, "Close", location.GetText(), BTN_CLOSE_ID);
     }
+
+    virtual void OnCheck(Reference<Controls::Control> control, bool value) override
+    {
+        selectedIndex = control->GetControlID();
+    }
+
+    bool IsValidApply() const
+    {
+        if (selectedIndex == UINT32_MAX) {
+            AppCUI::Dialogs::MessageBox::ShowWarning("Make selection", "Please select a name before applying it");
+            return false;
+        }
+        return true;
+    }
+
     bool OnEvent(Reference<Control> control, Event eventType, int ID) override
     {
         if (Window::OnEvent(control, eventType, ID))
             return true;
         if (eventType == Event::ButtonClicked) {
-            if (ID == initialIndex) {
+            if (ID == BTN_CLOSE_ID) {
                 selectedIndex = UINT32_MAX;
                 Exit(Dialogs::Result::Ok);
                 return true;
             }
-            selectedIndex = ID;
-            Exit(Dialogs::Result::Ok);
+            // BTN_APPLY_ID
+            if (IsValidApply())
+                Exit(Dialogs::Result::Ok);
             return true;
         }
         return false;
@@ -2030,6 +2045,7 @@ void Instance::QuerySmartAssistantX86X64(
         std::string name;
 
         while (std::getline(ss, name, ',')) {
+            trim(name);
             names.push_back(name);
         }
 
