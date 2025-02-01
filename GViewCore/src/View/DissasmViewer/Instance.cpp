@@ -15,7 +15,7 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 56> KNOWN_FUNCTIONS = { {
+const std::array<AsmFunctionDetails, 58> KNOWN_FUNCTIONS = { {
       { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
@@ -158,6 +158,8 @@ const std::array<AsmFunctionDetails, 56> KNOWN_FUNCTIONS = { {
           { "lpData", "LPBYTE" },
           { "lpcbData", "LPDWORD" } } },
       { "GetModuleHandle", { { "lpModuleName", "LPCSTR" } } },
+      { "DeleteFileA", { { "lpFileName", "LPCSTR" } } },
+      { "lstrlenA", { { "lpString", "LPCSTR" } } },
 } };
 
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
@@ -1671,9 +1673,9 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         params.displayPrompt = "Explain the selected code";
-        params.prompt = "Explain what does this assembly x86/x84 code does. Please also add a new chapter at the end for comments where you explain each line "
+        params.prompt = "Explain what this x86/x84 assembly code does. Please also add a new section at the end for comments where you explain each line "
                         "in order and suggest "
-                        "maximum 8 words for comments describing what happens in than line. Please mark the new chapter by writing CommentsZoneExplained and "
+                        "maximum 8 words for comments describing what happens in than line. Please mark the new section by writing CommentsZoneExplained and "
                         "then on the new line they start."
                         "The format for the this section should be instruction found separated by # character and then the comment without additional special "
                         "characters.";
@@ -1700,7 +1702,7 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         params.displayPromptUsesMnemonicParam = true;
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
-        params.displayPrompt                  = "What is the MITRE techniques associated with the following assembly code?";
+        params.displayPrompt                  = "What are the MITRE techniques associated with the following assembly code?";
         params.displayPromptUsesMnemonicParam = true;
         params.stopAtTheEndOfTheFunction      = true;
         params.includeComments                = true;
