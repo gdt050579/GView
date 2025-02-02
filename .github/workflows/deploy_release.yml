@@ -1,5 +1,9 @@
 name: "Deploy release"
 
+permissions:
+  id-token: write
+  attestations: write
+
 on:
   push:
     branches:
@@ -61,6 +65,11 @@ jobs:
         name: windows_artifacts
         path: "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
+
+    - name: Generate signed build provenance
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip
      
   build-macos:
     runs-on: [macos-13] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
@@ -111,6 +120,11 @@ jobs:
         name: apple_artifacts
         path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
+
+    - name: Generate signed build provenance
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         
   build-ubuntu:
     runs-on: [ubuntu-20.04]
@@ -165,6 +179,11 @@ jobs:
         name: linux_artifacts
         path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1     
+
+    - name: Generate signed build provenance
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
       
   publish_job:
     name: "Publish to release"
@@ -178,17 +197,17 @@ jobs:
         output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
 
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: windows_artifacts
         path: artifacts
 
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: linux_artifacts
         path: artifacts
 
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: apple_artifacts
         path: artifacts
