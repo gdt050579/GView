@@ -124,7 +124,7 @@ jobs:
     - name: Generate signed build provenance
       uses: actions/attest-build-provenance@v2
       with:
-        subject-path: GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip
+        subject-path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         
   build-ubuntu:
     runs-on: [ubuntu-20.04]
@@ -183,7 +183,7 @@ jobs:
     - name: Generate signed build provenance
       uses: actions/attest-build-provenance@v2
       with:
-        subject-path: GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip
+        subject-path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
       
   publish_job:
     name: "Publish to release"
