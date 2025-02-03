@@ -3,6 +3,8 @@ name: "Deploy release"
 permissions:
   id-token: write
   attestations: write
+  contents: write
+  actions: write
 
 on:
   push:
