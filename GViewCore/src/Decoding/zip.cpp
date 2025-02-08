@@ -11,7 +11,7 @@
 #include <locale>
 #include <codecvt>
 
-namespace GView::ZIP
+namespace GView::Decoding::ZIP
 {
 using mz_zip_reader_create_ptr = struct Reader
 {

@@ -26,8 +26,8 @@ DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "
     list->SetFocus();
 
     architecture             = Factory::Label::Create(this, "Architecture", "x:90%,y:2,w:11%,h:1");
-    x64                      = Factory::RadioBox::Create(this, "x&64", "x:90%,y:3,w:11%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X86);
-    x86                      = Factory::RadioBox::Create(this, "x&86", "x:90%,y:4,w:11%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X64);
+    x64                      = Factory::RadioBox::Create(this, "x&64", "x:90%,y:3,w:11%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X64);
+    x86                      = Factory::RadioBox::Create(this, "x&86", "x:90%,y:4,w:11%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X86);
     x64->Handlers()->OnCheck = this;
     x86->Handlers()->OnCheck = this;
 

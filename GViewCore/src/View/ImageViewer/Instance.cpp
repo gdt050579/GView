@@ -6,7 +6,8 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl("Image View")
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+    : settings(nullptr), ViewControl("Image View")
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
     imgView->SetVScrollBarTopMargin(4);

@@ -86,6 +86,12 @@ inline bool ExtractCallsToInsertFunctionNames(
         }
     }
 
+    if (callsFound.empty()) {
+        cs_free(insn, 1);
+        cs_close(&handle);
+        return false;
+    }
+
     auto val = callsFound[0].first;
 
     enum labelType { SUB, OFFSET, OTHER };

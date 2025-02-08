@@ -1,9 +1,11 @@
 #include "iso.hpp"
 
+#include <nlohmann/json.hpp>
 #include <queue>
 #include <map>
 
 using namespace GView::Type::ISO;
+using nlohmann::json;
 
 ISOFile::ISOFile()
 {
@@ -202,4 +204,15 @@ void ISOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     fullPath.append(lus.ToStringView());
 
     GView::App::OpenBuffer(buffer, name, fullPath, GView::App::OpenMethod::BestMatch);
+}
+
+std::string ISOFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    if (root.lengthOfFileIdentifier > 0)
+        context["RootDirectory"] = std::string{ root.fileIdentifier, root.lengthOfFileIdentifier };
+    context["NumberOfRecords"]       = objects.size();
+    return context.dump();
 }

@@ -36,31 +36,16 @@ bool PDFFile::PopulateItem(TreeViewItem item)
     LocalString<128> tmp;
     NumericFormatter n;
     
-    if (trailer_processed) {
-        if (objectNodeRoot.type == PDFObjectType::Trailer) {
-            item.SetText(0, "Trailer");
-            item.SetText(1, "Dictionary");
-        }
+    if (objectNodeRoot.pdfObject.type == SectionPDFObjectType::Trailer) {
+        item.SetText(0, "Trailer");
+        item.SetText(1, "Dictionary");
+        
 
-        item.SetText(2, String().Format("%llu", objectNodeRoot.offset));
-        item.SetText(3, String().Format("%llu", objectNodeRoot.size));
-        item.SetData<ObjectNode>(&objectNodeRoot);
-        trailer_processed = false;
-        //item.SetExpandable(true);
-    } else {
-        auto& obj = objectNodeRoot.keyValues[index];
-
-        item.SetText(0, obj.key);
-        if (obj.keyType == PDFObjectType::Dictionary) {
-            item.SetText(1, "Dictionary");
-        } else if (obj.keyType == PDFObjectType::Name) {
-            item.SetText(1, "Name");
-        }
-        item.SetText(2, String().Format("%llu", obj.offset));
-        item.SetText(3, String().Format("%llu", obj.key.GetLength()));
-        index++;
-    }
-
+    item.SetText(2, String().Format("%llu", objectNodeRoot.pdfObject.startBuffer));
+    item.SetText(3, String().Format("%llu", objectNodeRoot.pdfObject.endBuffer - objectNodeRoot.pdfObject.startBuffer));
+    //item.SetData<ObjectNode>(&objectNodeRoot);
+    //item.SetExpandable(true);
+    } 
     /*if (objectNodeRoot.children.size() > 0) {
         item.SetExpandable(true);
         for (auto& obj : objectNodeRoot.children) {
@@ -75,8 +60,7 @@ bool PDFFile::PopulateItem(TreeViewItem item)
             item.SetText(4, String().Format("%u", obj.size));
         }
     }*/
-
-    return index < objectNodeRoot.keyValues.size();
+    return false;
 }
 
 void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)

@@ -72,6 +72,8 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     // set the name
     this->SetText(obj->GetName());
     this->SetTag(obj->GetContentType()->GetTypeName(), "");
+
+    queryInterface.fileWindow = this;
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -125,38 +127,40 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 
 bool FileWindow::CreateViewer(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
 }
 
 Reference<GView::Utils::SelectionZoneInterface> FileWindow::GetSelectionZoneInterfaceFromViewerCreation(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings)
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface)
           .ToBase<GView::Utils::SelectionZoneInterface>();
 }
 
 bool FileWindow::CreateViewer(GView::View::TextViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
 }
 bool FileWindow::CreateViewer(GView::View::ImageViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
 }
 bool FileWindow::CreateViewer(View::GridViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
 }
 bool FileWindow::CreateViewer(View::ContainerViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface)
+          .IsValid();
 }
 bool FileWindow::CreateViewer(GView::View::DissasmViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
 }
 bool FileWindow::CreateViewer(GView::View::LexicalViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface)
+          .IsValid();
 }
 
 Reference<ViewControl> FileWindow::GetCurrentView()
@@ -191,7 +195,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == INSTANCE_SWITCH_TO.Key)
+    if (keyCode == INSTANCE_CHOOSE_TYPE.Key)
     {
         if (!view->HasFocus())
             view->SetFocus();
@@ -278,7 +282,7 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, "GoTo", CMD_GOTO);
     commandBar.SetCommand(INSTANCE_COMMAND_FIND.Key, "Find", CMD_FIND);
-    commandBar.SetCommand(INSTANCE_NEW_TYPE.Key, "SelectType", CMD_CHOSE_NEW_TYPE);
+    commandBar.SetCommand(INSTANCE_CHOOSE_TYPE.Key, "SelectType", CMD_CHOSE_NEW_TYPE);
     commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "ShowKeys", CMD_SHOW_KEY_CONFIGURATOR);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
@@ -298,6 +302,8 @@ void FileWindow::Start()
 {
     this->view->SetCurrentTabPageByIndex(0);
     this->view->SetFocus();
+
+    queryInterface.Start();
 }
 
 bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
@@ -309,8 +315,8 @@ bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
     impl->RegisterKey(&FILE_WINDOW_COMMAND_COPY);
     impl->RegisterKey(&FILE_WINDOW_COMMAND_INSERT);
     impl->RegisterKey(&INSTANCE_CHANGE_VIEW);
-    impl->RegisterKey(&INSTANCE_SWITCH_TO);
-    impl->RegisterKey(&INSTANCE_NEW_TYPE);
+    impl->RegisterKey(&INSTANCE_SWITCH_TO_VIEW);
+    impl->RegisterKey(&INSTANCE_CHOOSE_TYPE);
     impl->RegisterKey(&INSTANCE_KEY_CONFIGURATOR);
     return true;
 }

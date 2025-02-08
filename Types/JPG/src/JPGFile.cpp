@@ -1,6 +1,8 @@
 #include "jpg.hpp"
+#include <nlohmann/json.hpp>
 
 using namespace GView::Type::JPG;
+using nlohmann::json;
 
 JPGFile::JPGFile()
 {
@@ -48,4 +50,14 @@ bool JPGFile::LoadImageToObject(Image& img, uint32 index)
     CHECK(img.Create(bf), false, "");
 
     return true;
+}
+
+std::string JPGFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["Width"]       = sof0MarkerSegment.width;
+    context["Height"]      = sof0MarkerSegment.height;
+    return context.dump();
 }

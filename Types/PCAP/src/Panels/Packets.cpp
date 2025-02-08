@@ -96,19 +96,24 @@ void Packets::PacketDialog::Add_PacketHeader(LinkType type, const PacketHeader* 
     list->AddItem({ "Original Length", tmp.Format("%s", GetValue(n, packet->origLen).data()) });
 
     list->AddItem(LinkTypeNames.at(type).data()).SetType(ListViewItem::Type::Category);
+
+    PacketData packetData = {};
+    packetData.packet     = packet;
     if (type == LinkType::ETHERNET)
     {
         auto peh = (Package_EthernetHeader*) ((uint8*) packet + sizeof(PacketHeader));
-        Add_Package_EthernetHeader(peh, packet->inclLen);
+        packetData.physicalLayer = { LinkType::ETHERNET, peh };
+        Add_Package_EthernetHeader(&packetData, peh, packet->inclLen);
     }
     if (type == LinkType::NULL_)
     {
         auto pnh = (Package_NullHeader*) ((uint8*) packet + sizeof(PacketHeader));
-        Add_Package_NullHeader(pnh, packet->inclLen);
+        packetData.physicalLayer = { LinkType::NULL_, pnh };
+        Add_Package_NullHeader(&packetData, pnh, packet->inclLen);
     }
 }
 
-void Packets::PacketDialog::Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 packetInclLen)
+void Packets::PacketDialog::Add_Package_EthernetHeader(PacketData* packetData, const Package_EthernetHeader* peh, uint32 packetInclLen)
 {
     LocalString<128> tmp;
     NumericFormatter n;
@@ -133,16 +138,18 @@ void Packets::PacketDialog::Add_Package_EthernetHeader(const Package_EthernetHea
     if (etherType == EtherType::IPv4)
     {
         auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
-        Add_IPv4Header(ipv4, packetInclLen - sizeof(Package_EthernetHeader));
+        packetData->linkLayer = { LinkType::IPV4, ipv4 };
+        Add_IPv4Header(packetData, ipv4, packetInclLen - sizeof(Package_EthernetHeader));
     }
     else if (etherType == EtherType::IPv6)
     {
         auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
-        Add_IPv6Header(ipv6, packetInclLen - sizeof(Package_EthernetHeader));
+        packetData->linkLayer = { LinkType::IPV6, ipv6 };
+        Add_IPv6Header(packetData, ipv6, packetInclLen - sizeof(Package_EthernetHeader));
     }
 }
 
-void Packets::PacketDialog::Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 packetInclLen)
+void Packets::PacketDialog::Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 packetInclLen)
 {
     LocalString<32> tmp;
     if (pnh->family_ip == NULL_FAMILY_IP)
@@ -150,11 +157,12 @@ void Packets::PacketDialog::Add_Package_NullHeader(const Package_NullHeader* pnh
         list->AddItem({ "Family: IP ", tmp.Format("%u", pnh->family_ip) });
         list->AddItem("IPv4").SetType(ListViewItem::Type::Category);
         auto ipv4 = (IPv4Header*) ((uint8*) pnh + sizeof(Package_NullHeader));
-        Add_IPv4Header(ipv4, packetInclLen - sizeof(Package_NullHeader));
+        packetData->linkLayer = { LinkType::IPV4, ipv4 };
+        Add_IPv4Header(packetData, ipv4, packetInclLen - sizeof(Package_NullHeader));
     }
 }
 
-void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packetInclLen)
+void Packets::PacketDialog::Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, uint32 packetInclLen)
 {
     LocalString<128> tmp;
     NumericFormatter n;
@@ -212,22 +220,25 @@ void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packet
     if (ipv4Ref.protocol == IP_Protocol::TCP)
     {
         auto tcp = (TCPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
-        Add_TCPHeader(tcp, packetInclLen - sizeof(IPv4Header));
+        packetData->transportLayer = { IP_Protocol::TCP, tcp };
+        Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv4Header));
     }
     else if (ipv4Ref.protocol == IP_Protocol::UDP)
     {
         auto udp = (UDPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
-        Add_UDPHeader(udp);
+        packetData->transportLayer = { IP_Protocol::UDP, udp };
+        Add_UDPHeader(packetData, udp);
     }
     else if (ipv4Ref.protocol == IP_Protocol::ICMP)
     {
         auto icmpBase = (ICMPHeader_Base*) ((uint8*) ipv4 + sizeof(IPv4Header));
         // TODO: fix this later!!
-        Add_ICMPHeader(icmpBase, packetInclLen - sizeof(Package_EthernetHeader) - sizeof(IPv4Header));
+        packetData->transportLayer = { IP_Protocol::ICMP, icmpBase };
+        Add_ICMPHeader(packetData, icmpBase, packetInclLen - sizeof(Package_EthernetHeader) - sizeof(IPv4Header));
     }
 }
 
-void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6, uint32 packetInclLen)
+void Packets::PacketDialog::Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, uint32 packetInclLen)
 {
     LocalString<128> tmp;
     NumericFormatter n;
@@ -261,16 +272,18 @@ void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6, uint32 packet
     if (ipv6Ref.nextHeader == IP_Protocol::TCP)
     {
         auto tcp = (TCPHeader*) ((uint8*) ipv6 + sizeof(IPv6Header));
-        Add_TCPHeader(tcp, packetInclLen - sizeof(IPv6Header));
+        packetData->transportLayer = { IP_Protocol::TCP, tcp };
+        Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv6Header));
     }
     else if (ipv6Ref.nextHeader == IP_Protocol::UDP)
     {
         auto udp = (UDPHeader*) ((uint8*) ipv6 + sizeof(IPv6Header));
-        Add_UDPHeader(udp);
+        packetData->transportLayer = { IP_Protocol::UDP, udp };
+        Add_UDPHeader(packetData, udp);
     }
 }
 
-void Packets::PacketDialog::Add_UDPHeader(const UDPHeader* udp)
+void Packets::PacketDialog::Add_UDPHeader(PacketData* packetData, const UDPHeader* udp)
 {
     LocalString<128> tmp;
     NumericFormatter n;
@@ -288,7 +301,7 @@ void Packets::PacketDialog::Add_UDPHeader(const UDPHeader* udp)
     {
         list->AddItem("DNS").SetType(ListViewItem::Type::Category);
         auto dns = (DNSHeader*) ((uint8*) udp + sizeof(UDPHeader));
-        Add_DNSHeader(dns);
+        Add_DNSHeader(packetData, dns);
     }
     else
     {
@@ -296,7 +309,7 @@ void Packets::PacketDialog::Add_UDPHeader(const UDPHeader* udp)
     }
 }
 
-void Packets::PacketDialog::Add_DNSHeader(const DNSHeader* dns)
+void Packets::PacketDialog::Add_DNSHeader(PacketData* packetData, const DNSHeader* dns)
 {
     LocalString<128> tmp;
     NumericFormatter n;
@@ -396,7 +409,7 @@ void Packets::PacketDialog::Add_DNSHeader(const DNSHeader* dns)
     }
 }
 
-void Packets::PacketDialog::Add_ICMPHeader(const ICMPHeader_Base* icmpBase, uint32 icmpSize)
+void Packets::PacketDialog::Add_ICMPHeader(PacketData* packetData, const ICMPHeader_Base* icmpBase, uint32 icmpSize)
 {
     LocalString<128> tmp;
     NumericFormatter n;
@@ -554,7 +567,7 @@ void Packets::PacketDialog::Add_DNSHeader_Question(const DNSHeader_Question& que
     list->AddItem({ "QClass", tmp.Format("%-6s (%s)", qClassName, qClassHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 }
 
-void Packets::PacketDialog::Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen)
+void Packets::PacketDialog::Add_TCPHeader(PacketData* packetData, const TCPHeader* tcp, uint32 packetInclLen)
 {
     LocalString<128> tmp;
     NumericFormatter n;

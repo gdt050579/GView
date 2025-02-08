@@ -58,7 +58,7 @@ namespace View
             bool PopulateItem(TreeViewItem item);
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;

@@ -1,7 +1,10 @@
 #include "zip.hpp"
 
-#include <queue>
 #include <map>
+#include <queue>
+#include <nlohmann/json.hpp>
+
+using nlohmann::json;
 
 namespace GView::Type::ZIP
 {
@@ -19,10 +22,10 @@ bool ZIPFile::Update()
     isTopContainer = std::filesystem::exists(sv);
     if (isTopContainer) // top container (exists on disk)
     {
-        CHECK(GView::ZIP::GetInfo(obj->GetPath(), this->info), false, "");
+        CHECK(GView::Decoding::ZIP::GetInfo(obj->GetPath(), this->info), false, "");
     } else // child container (does not exist on disk)
     {
-        CHECK(GView::ZIP::GetInfo(obj->GetData(), this->info), false, "");
+        CHECK(GView::Decoding::ZIP::GetInfo(obj->GetData(), this->info), false, "");
     }
 
     return true;
@@ -38,7 +41,7 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
     if (path.empty()) {
         for (uint32 i = 0; i < count; i++) {
-            GView::ZIP::Entry entry{ 0 };
+            GView::Decoding::ZIP::Entry entry{ 0 };
             CHECK(this->info.GetEntry(i, entry), false, "");
 
             auto filename        = entry.GetFilename();
@@ -46,8 +49,8 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
             const auto f = filename.find_first_of('/');
 
-            if ((entryType == GView::ZIP::EntryType::Directory && f == filename.size() - 1) ||
-                (entryType != GView::ZIP::EntryType::Directory && f == std::string::npos)) {
+            if ((entryType == GView::Decoding::ZIP::EntryType::Directory && f == filename.size() - 1) ||
+                (entryType != GView::Decoding::ZIP::EntryType::Directory && f == std::string::npos)) {
                 curentChildIndexes.push_back(i);
             }
         }
@@ -59,13 +62,13 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
     UnicodeStringBuilder usb;
     for (uint32 i = 0; i < count; i++) {
-        GView::ZIP::Entry entry{ 0 };
+        GView::Decoding::ZIP::Entry entry{ 0 };
         CHECK(this->info.GetEntry(i, entry), false, "");
 
         auto filename        = entry.GetFilename();
         const auto entryType = entry.GetType();
 
-        if (entryType == GView::ZIP::EntryType::Directory) {
+        if (entryType == GView::Decoding::ZIP::EntryType::Directory) {
             if (filename[filename.size() - 1] == '/') {
                 filename = { filename.data(), filename.size() - 1 };
             }
@@ -92,16 +95,16 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     const static NumericFormat NUMERIC_FORMAT{ NumericFormatFlags::HexPrefix, 16 };
 
     const auto realIndex = curentChildIndexes.at(currentItemIndex);
-    GView::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{ 0 };
     CHECK(this->info.GetEntry(realIndex, entry), false, "");
 
     auto filename = entry.GetFilename();
 
     const auto entryType = entry.GetType();
-    item.SetPriority(entryType == GView::ZIP::EntryType::Directory);
-    item.SetExpandable(entryType == GView::ZIP::EntryType::Directory);
+    item.SetPriority(entryType == GView::Decoding::ZIP::EntryType::Directory);
+    item.SetExpandable(entryType == GView::Decoding::ZIP::EntryType::Directory);
 
-    if (entryType == GView::ZIP::EntryType::Directory) {
+    if (entryType == GView::Decoding::ZIP::EntryType::Directory) {
         if (filename[filename.size() - 1] == '/') {
             filename = { filename.data(), filename.size() - 1 };
         }
@@ -212,7 +215,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 
     const auto index = item.GetData(-1);
     CHECKRET(index != -1, "");
-    GView::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{ 0 };
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
     Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
@@ -296,5 +299,14 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     }
 
     Dialogs::MessageBox::ShowError("Error!", "Unable to decompress without a password!");
+}
+
+std::string ZIPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"] = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["EntriesCount"] = this->info.GetCount();
+    return context.dump();
 }
 } // namespace GView::Type::ZIP

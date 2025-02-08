@@ -9,7 +9,7 @@
 #    undef GetObject
 #endif
 
-namespace GView::Compression::LZXPRESS::Huffman
+namespace GView::Decoding::LZXPRESS::Huffman
 {
 constexpr uint32 MAX_BITS_COUNT     = 32U;
 constexpr uint32 UINT32_BITS_COUNT  = 32U;

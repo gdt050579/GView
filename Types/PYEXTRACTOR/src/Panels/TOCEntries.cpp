@@ -43,8 +43,7 @@ std::string_view TOCEntries::GetValue(NumericFormatter& n, uint32 value)
 void TOCEntries::GoToSelectedEntry()
 {
     auto entry = list->GetCurrentItem().GetData<PYEXTRACTOR::TOCEntry>();
-    if (entry.IsValid())
-    {
+    if (entry.IsValid()) {
         win->GetCurrentView()->GoTo(entry->entryPos);
     }
 }
@@ -52,8 +51,7 @@ void TOCEntries::GoToSelectedEntry()
 void TOCEntries::SelectCurrentEntry()
 {
     auto entry = list->GetCurrentItem().GetData<PYEXTRACTOR::TOCEntry>();
-    if (entry.IsValid())
-    {
+    if (entry.IsValid()) {
         win->GetCurrentView()->Select(entry->entryPos, entry->entrySize);
     }
 }
@@ -68,7 +66,7 @@ void TOCEntries::OpenCurrentEntry()
     CHECKRET(bufferCompressed.IsValid(), "");
 
     Buffer bufferDecompressed{};
-    CHECKRET(ZLIB::Decompress(bufferCompressed, bufferCompressed.GetLength(), bufferDecompressed, entry->uncmprsdDataSize), "");
+    CHECKRET(Decoding::ZLIB::Decompress(bufferCompressed, bufferCompressed.GetLength(), bufferDecompressed, entry->uncmprsdDataSize), "");
 
     LocalUnicodeStringBuilder<2048> fullPath;
     fullPath.Add(py->obj->GetPath());
@@ -84,8 +82,7 @@ void TOCEntries::Update()
     LocalString<128> tmp;
     list->DeleteAllItems();
 
-    for (auto i = 0U; i < py->tocEntries.size(); i++)
-    {
+    for (auto i = 0U; i < py->tocEntries.size(); i++) {
         auto& entry = py->tocEntries.at(i);
         auto item   = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
         item.SetData<PYEXTRACTOR::TOCEntry>(&py->tocEntries.at(i));
@@ -104,12 +101,9 @@ bool TOCEntries::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", ENTRY_GOTO);
     commandBar.SetCommand(Key::F9, "Select", ENTRY_SELECT);
-    if (base == 10)
-    {
+    if (base == 10) {
         commandBar.SetCommand(Key::F2, "Dec", ENTRY_CHANGEBASE);
-    }
-    else
-    {
+    } else {
         commandBar.SetCommand(Key::F2, "Hex", ENTRY_CHANGEBASE);
     }
     commandBar.SetCommand(Key::Ctrl | Key::O, "Open", ENTRY_OPEN);
@@ -121,15 +115,12 @@ bool TOCEntries::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
-    if (evnt == Event::ListViewItemPressed)
-    {
+    if (evnt == Event::ListViewItemPressed) {
         GoToSelectedEntry();
         return true;
     }
-    if (evnt == Event::Command)
-    {
-        switch (controlID)
-        {
+    if (evnt == Event::Command) {
+        switch (controlID) {
         case ENTRY_GOTO:
             GoToSelectedEntry();
             return true;

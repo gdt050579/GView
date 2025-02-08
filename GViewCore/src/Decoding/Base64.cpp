@@ -10,9 +10,8 @@ constexpr char BASE64_DECODE_TABLE[] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                                          10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1, -1, 26, 27, 28,
                                          29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51 };
 
-namespace GView::Unpack::Base64
+namespace GView::Decoding::Base64
 {
-
 void Encode(BufferView view, Buffer& output)
 {
     uint32 sequence      = 0;
@@ -62,7 +61,7 @@ bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMe
         }
 
         if (lastEncoded == '=' && sequenceIndex == 0) {
-            hasWarning = true;
+            hasWarning     = true;
             warningMessage = "Ignoring extra bytes after the end of buffer";
             break;
         }
@@ -110,4 +109,4 @@ bool Decode(BufferView view, Buffer& output)
     return Decode(view, output, tempHasWarning, tempWarningMessage);
 }
 
-} // namespace GView::Unpack::Base64
+} // namespace GView::Decoding::Base64

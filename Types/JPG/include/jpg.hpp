@@ -92,7 +92,9 @@ namespace Type
             {
                 return true;
             }
-		};
+
+            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+        };
         namespace Panels
         {
             class Information : public AppCUI::Controls::TabPage

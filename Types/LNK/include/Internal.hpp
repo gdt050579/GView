@@ -492,7 +492,7 @@ struct Header
     uint64 creationDate;
     uint64 lastAccessDate;
     uint64 lastModificationDate;
-    uint32 filesize;
+    uint32 fileSize;
     int32 iconIndex;
     ShowWindow showCommand;
     HotKey hotKey;
@@ -1635,7 +1635,8 @@ struct PropertyValueData_FMTID_InternetShortcut
     wchar_t URL[1];
 };
 
-constexpr MyGUID FMTID_InternetSite                  = { 0x000214a1, 0x0000, 0x0000, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 };
+constexpr MyGUID Link_CLSID                          = { 0x00021401, 0x0000, 0x0000, { 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 } };
+constexpr MyGUID FMTID_InternetSite                  = { 0x000214a1, 0x0000, 0x0000, { 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 } };
 constexpr MyGUID WPD_STORAGE_OBJECT_PROPERTIES_V1    = { 0x01a3057a, 0x74d6, 0x4e80, 0xbe, 0xa7, 0xdc, 0x4c, 0x21, 0x2c, 0xe5, 0x0a };
 constexpr MyGUID FMTID_SID                           = { 0x46588ae2, 0x4cbc, 0x4338, 0xbb, 0xfc, 0x13, 0x93, 0x26, 0x98, 0x6d, 0xce };
 constexpr MyGUID UNKNOWN_1                           = { 0x4d545058, 0x4fce, 0x4578, 0x95, 0xc8, 0x86, 0x98, 0xa9, 0xbc, 0x0f, 0x49 };
@@ -1798,6 +1799,7 @@ static std::string_view GetNameFromGUID(const MyGUID& guid)
     CHECK_GUID(guid, FOLDERID_AppDataFavorites);
     CHECK_GUID(guid, FOLDERID_AppDataProgramData);
 
+    CHECK_GUID(guid, Link_CLSID);
     CHECK_GUID(guid, FMTID_InternetSite);
     CHECK_GUID(guid, WPD_STORAGE_OBJECT_PROPERTIES_V1);
     CHECK_GUID(guid, FMTID_SID);
@@ -1827,4 +1829,19 @@ static std::string_view GetExtraDataSignaturesName(ExtraDataSignatures type) {
     return "?Signature";
 }
 
+static std::string_view GetShowWindowName(ShowWindow type) {
+    if (LNK::ShowWindowNames.contains(type)) {
+        return LNK::ShowWindowNames.at(type);
+    }
+
+    return "?Command";
+}
+
+static std::string_view GetShowWindowDescription(ShowWindow type) {
+    if (LNK::ShowWindowDescriptions.contains(type)) {
+        return LNK::ShowWindowDescriptions.at(type);
+    }
+
+    return "?Description";
+}
 } // namespace GView::Type::LNK

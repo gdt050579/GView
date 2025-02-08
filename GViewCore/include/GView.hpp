@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.351.0"
+#define GVIEW_VERSION "0.363.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -34,20 +34,28 @@ struct CORE_EXPORT KeyboardControl {
     const char* Explanation;
     uint32 CommandId;
 };
-struct CORE_EXPORT KeyboardControlsInterface
-{
+struct CORE_EXPORT KeyboardControlsInterface {
     virtual bool RegisterKey(KeyboardControl* key) = 0;
-    virtual ~KeyboardControlsInterface() = default;
+    virtual ~KeyboardControlsInterface()           = default;
 };
 class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface {
     Object* obj{ nullptr };
 
-    virtual std::string_view GetTypeName()                = 0;
-    virtual void RunCommand(std::string_view commandName) = 0;
+    virtual std::string_view GetTypeName()                        = 0;
+    virtual void RunCommand(std::string_view commandName)         = 0;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) = 0;
+    /**
+     * \brief Function to retrieve the context of the smart assistant for user's prompt based on the current type plugin
+     * \param prompt The actual prompt (question) that the smart assistant will be asked
+     * \param displayPrompt The information that will be seen by the user (summarised version)
+     * \return string that has a json textual format with minimal information: {"Name": obj->GetName(), "ContentSize": obj->GetData().GetSize()} 
+     */
+    virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
 
-    virtual ~TypeInterface(){}
+    virtual ~TypeInterface()
+    {
+    }
 
     struct SelectionZone {
         uint64 start, end;
@@ -180,7 +188,7 @@ namespace Utils
         Zone(uint64 low, uint64 high, ColorPair cp, std::string_view name) : interval{ low, high }, color(cp), name(name)
         {
         }
-        Zone() : interval{ INVALID_OFFSET, INVALID_OFFSET }, color(NoColorPair), name(){};
+        Zone() : interval{ INVALID_OFFSET, INVALID_OFFSET }, color(NoColorPair), name() {};
     };
 
     class CORE_EXPORT ZonesList
@@ -206,6 +214,32 @@ namespace Utils
         virtual bool SetZones(const ZonesList& zones)                  = 0;
     };
 } // namespace Utils
+
+namespace CommonInterfaces
+{
+    namespace SmartAssistants
+    {
+        struct CORE_EXPORT SmartAssistantPromptInterface
+        {
+            virtual std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess) = 0;
+            virtual ~SmartAssistantPromptInterface()                                                                        = default;
+        };
+        struct CORE_EXPORT SmartAssistantRegisterInterface : SmartAssistantPromptInterface
+        {
+            virtual std::string_view GetSmartAssistantName() const                                = 0;
+            virtual std::string_view GetSmartAssistantDescription() const                         = 0;
+            virtual void ReceiveConfigToken(std::string_view config_data)                         = 0;
+            virtual uint32 GetCharacterLimit()                                                    = 0;
+        };
+    }// namespace SmartAssistants
+
+    struct CORE_EXPORT QueryInterface
+    {
+        virtual bool RegisterSmartAssistantInterface(Pointer<SmartAssistants::SmartAssistantRegisterInterface> smartAssistantInterface) = 0;
+        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                    = 0;
+        virtual ~QueryInterface()                                                                                               = default;
+    };
+} // namespace CommonInterfaces
 
 namespace Hashes
 {
@@ -385,7 +419,7 @@ namespace DigitalSignature
     };
 
     struct CORE_EXPORT Certificate {
-        int32 version;
+        int32 version{ 0 };
         String serialNumber;
         String signatureAlgorithm;
         String publicKeyAlgorithm;
@@ -393,7 +427,7 @@ namespace DigitalSignature
         String validityNotAfter;
         String issuer;
         String subject;
-        int32 verify;
+        int32 verify{ 0 };
         String errorVerify{};
 
         int32 signerVerify{ 0 }; //  compares the certificate cert against the signer identifier si
@@ -605,47 +639,68 @@ namespace Golang
     CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);
 } // namespace Golang
 
-namespace ZLIB
+namespace Decoding
 {
-    CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
-    CORE_EXPORT bool DecompressStream(const Buffer& input, uint64 inputSize, Buffer& output, uint64& outputSize);
-}
+    namespace Base64
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMessage);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace Base64
 
-namespace ZIP
-{
-    enum class EntryType { Unknown = 0, Directory = 1, Symlink = 2, File = 3 };
+    namespace LZXPRESS::Huffman
+    {
+        CORE_EXPORT bool Decompress(const BufferView& compressed, Buffer& uncompressed);
+    } // namespace LZXPRESS::Huffman
 
-    struct CORE_EXPORT Entry {
-        void* context{ nullptr };
+    namespace QuotedPrintable
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace QuotedPrintable
 
-        std::u8string_view GetFilename() const;
-        uint16 GetFlags() const;
-        std::string GetFlagNames() const;
-        int64 GetCompressedSize() const;
-        int64 GetUncompressedSize() const;
-        int64 GetCompressionMethod() const;
-        std::string GetCompressionMethodName() const;
-        uint32 GetDiskNumber() const;
-        int64 GetDiskOffset() const;
-        EntryType GetType() const;
-        std::string_view GetTypeName() const;
-        bool IsEncrypted() const;
-    };
+    namespace ZLIB
+    {
+        CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
+        CORE_EXPORT bool DecompressStream(const BufferView& input, Buffer& output, String& message, uint64& sizeConsumed);
+    } // namespace ZLIB
 
-    struct CORE_EXPORT Info {
-        void* context{ nullptr };
+    namespace ZIP
+    {
+        enum class EntryType { Unknown = 0, Directory = 1, Symlink = 2, File = 3 };
 
-        uint32 GetCount() const;
-        bool GetEntry(uint32 index, Entry& entry) const;
-        bool Decompress(Buffer& output, uint32 index, const std::string& password) const;
-        bool Decompress(const BufferView& input, Buffer& output, uint32 index, const std::string& password) const;
+        struct CORE_EXPORT Entry {
+            void* context{ nullptr };
 
-        Info();
-        ~Info();
-    };
-    CORE_EXPORT bool GetInfo(std::u16string_view path, Info& info);
-    CORE_EXPORT bool GetInfo(Utils::DataCache& cache, Info& info);
-} // namespace ZIP
+            std::u8string_view GetFilename() const;
+            uint16 GetFlags() const;
+            std::string GetFlagNames() const;
+            int64 GetCompressedSize() const;
+            int64 GetUncompressedSize() const;
+            int64 GetCompressionMethod() const;
+            std::string GetCompressionMethodName() const;
+            uint32 GetDiskNumber() const;
+            int64 GetDiskOffset() const;
+            EntryType GetType() const;
+            std::string_view GetTypeName() const;
+            bool IsEncrypted() const;
+        };
+
+        struct CORE_EXPORT Info {
+            void* context{ nullptr };
+
+            uint32 GetCount() const;
+            bool GetEntry(uint32 index, Entry& entry) const;
+            bool Decompress(Buffer& output, uint32 index, const std::string& password) const;
+            bool Decompress(const BufferView& input, Buffer& output, uint32 index, const std::string& password) const;
+
+            Info();
+            ~Info();
+        };
+        CORE_EXPORT bool GetInfo(std::u16string_view path, Info& info);
+        CORE_EXPORT bool GetInfo(Utils::DataCache& cache, Info& info);
+    } // namespace ZIP
+} // namespace Decoding
 
 namespace Dissasembly
 {
@@ -721,11 +776,6 @@ namespace Dissasembly
     };
 } // namespace Dissasembly
 
-namespace Compression::LZXPRESS::Huffman
-{
-    CORE_EXPORT bool Decompress(const BufferView& compressed, Buffer& uncompressed);
-} // namespace Compression::LZXPRESS::Huffman
-
 namespace SQLite3
 {
     class CORE_EXPORT Column
@@ -788,6 +838,7 @@ namespace Regex
 namespace Entropy
 {
     CORE_EXPORT double ShannonEntropy(const BufferView& buffer);
+    CORE_EXPORT double RenyiEntropy(const BufferView& buffer, double alpha);
 } // namespace Entropy
 
 /*
@@ -887,7 +938,7 @@ namespace View
         virtual bool ShowGoToDialog()                   = 0;
         virtual bool ShowFindDialog()                   = 0;
         virtual bool ShowCopyDialog()                   = 0;
-        virtual bool UpdateKeys(KeyboardControlsInterface* interface)
+        virtual bool UpdateKeys(KeyboardControlsInterface*)
         {
             return true;
         }
@@ -1469,6 +1520,7 @@ namespace View
         virtual uint32 GetViewsCount()                                 = 0;
         virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
         virtual bool SetViewByIndex(uint32 index)                      = 0;
+        virtual CommonInterfaces::QueryInterface* GetQueryInterface()  = 0;
 
         template <typename T>
         inline bool CreateViewer(const std::optional<std::string_view> name = {})
@@ -1486,8 +1538,8 @@ namespace View
 namespace App
 {
     enum class OpenMethod { FirstMatch, BestMatch, Select, ForceType };
-    bool CORE_EXPORT Init();
-    void CORE_EXPORT Run();
+    bool CORE_EXPORT Init(bool isTestingEnabled);
+    void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
@@ -1505,21 +1557,6 @@ namespace App
     uint32 CORE_EXPORT GetTypePluginsCount();
 
 }; // namespace App
-
-namespace Unpack
-{
-    namespace Base64
-    {
-        CORE_EXPORT void Encode(BufferView view, Buffer& output);
-        CORE_EXPORT bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMessage);
-        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
-    } // namespace Base64
-    namespace QuotedPrintable
-    {
-        CORE_EXPORT void Encode(BufferView view, Buffer& output);
-        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
-    } // namespace QuotedPrintable
-} // namespace Unpack
 }; // namespace GView
 
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);

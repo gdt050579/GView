@@ -1,5 +1,5 @@
 #include "PCAP.hpp"
-
+#include "PayloadParsers/HttpParser.hpp"
 #include <array>
 
 using namespace AppCUI;
@@ -105,6 +105,8 @@ extern "C"
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto pcap = win->GetObject()->GetContentType<PCAP::PCAPFile>();
+        pcap->InitStreamManager(win);
+        pcap->RegisterPayloadParser(std::make_unique<PCAP::HTTP::HTTPParser>());
         pcap->Update();
 
         // add views

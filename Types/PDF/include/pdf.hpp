@@ -179,7 +179,7 @@ namespace Type
             uint64 startBuffer;
             uint64 endBuffer;
             SectionPDFObjectType type;
-            uint32 number;
+            uint64 number;
         };
 
         enum class PDFObjectType : uint8 {
@@ -196,35 +196,34 @@ namespace Type
             Indirect = 10,
             Trailer = 11,
         };
-
-        struct ObjectKeyVal {
-            Buffer key;
-            PDFObjectType keyType;
-            uint64 offset;
-            Buffer value;
+        // data needed for decoding the stream 
+        struct Metadata {
+            uint64 streamOffsetStart;
+            uint64 streamOffsetEnd;
+            std::vector<std::string> filters;
+            TypeFlags typeFlags;
+            DecodeParms decodeParams;
         };
 
         struct ObjectNode {
-            PDFObjectType type;
-            uint64 offset;
-            uint64 size;
-            uint32 objectNr = 0;
-            std::vector<ObjectKeyVal> keyValues;
-            std::vector<ObjectNode> children;   
+            bool hasStream;
+            PDFObject pdfObject;
+            Metadata metadata;
+            std::vector<ObjectNode> children;                                                       
         };
 
 #pragma pack(pop) // Back to default packing
 
         class PDFFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
-        {
+        {   
           public:
             Header header{};
-            bool hasXrefTable; // Cross-reference table or Cross-reference Stream
-            bool trailer_processed;
+            bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
             uint64 index         = 0;
             ObjectNode objectNodeRoot;
             std::vector<uint32> curentChildIndexes{};
             vector<PDFObject> pdfObjects;
+            vector<uint64> processedObjects; 
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
           public:

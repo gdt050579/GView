@@ -1,6 +1,8 @@
+#include <nlohmann/json.hpp>
 #include "ico.hpp"
 
 using namespace GView::Type::ICO;
+using nlohmann::json;
 
 constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
 
@@ -67,4 +69,13 @@ bool ICOFile::LoadImageToObject(Image& img, uint32 index)
         CHECK(img.CreateFromDIB(bf, true), false, "");
     }
     return true;
+}
+
+std::string ICOFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"] = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["ImagesCount"] = dirs.size();
+    return context.dump();
 }

@@ -1,5 +1,7 @@
 #include "eml.hpp"
+#include <nlohmann/json.hpp>
 
+using nlohmann::json;
 namespace GView::Type::EML
 {
 using namespace GView::View::LexicalViewer;
@@ -141,7 +143,7 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                 bool hasWarning;
                 String warningMessage;
 
-                if (GView::Unpack::Base64::Decode(itemBufferView, output, hasWarning, warningMessage)) {
+                if (GView::Decoding::Base64::Decode(itemBufferView, output, hasWarning, warningMessage)) {
                     if (hasWarning) {
                         AppCUI::Dialogs::MessageBox::ShowError("Warning!", warningMessage);
                     }
@@ -151,7 +153,7 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                     AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
                 }
             } else if (encodingHeader->second == u"quoted-printable") {
-                if (GView::Unpack::QuotedPrintable::Decode(itemBufferView, output)) {
+                if (GView::Decoding::QuotedPrintable::Decode(itemBufferView, output)) {
                     GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
                 } else {
                     AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed quoted-printable buffer!");
@@ -164,6 +166,15 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
         }
     }
+}
+
+std::string EMLFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"] = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["ItemsCount"] = items.size();
+    return context.dump();
 }
 
 uint32 EMLFile::ParseHeaderFieldBody(TextParser text, uint32 start)

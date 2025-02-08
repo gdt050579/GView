@@ -11,7 +11,7 @@ struct DissasmCodeZone : public ParseZone {
     uint32 lastClosestLine;
     uint32 offsetCacheMaxLine;
     BufferView lastData;
-    uint32 lastReachedLine = -1u;
+    uint32 lastReachedLine = UINT32_MAX;
 
     // fields only for dissasmx86/x64
     const uint8* asmData;
@@ -46,12 +46,15 @@ struct DissasmCodeZone : public ParseZone {
     void ReachZoneLine(uint32 line);
 
     bool ResetTypesReferenceList();
-    bool TryRenameLine(uint32 line);
+    bool TryRenameLine(uint32 line, std::string_view *newName = nullptr);
 
     bool GetComment(uint32 line, std::string& comment);
     bool AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr = true);
     bool RemoveComment(uint32 line, bool showErr = true);
     DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
+
+    bool ToBuffer(std::vector<uint8>& buffer) const;
+    bool TryLoadDataFromCache(DissasmCache& cache);
 };
 
 } // namespace GView::View::DissasmViewer

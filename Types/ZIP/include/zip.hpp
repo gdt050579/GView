@@ -8,7 +8,7 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 {
   public:
     uint32 currentItemIndex{ 0 };
-    GView::ZIP::Info info{};
+    GView::Decoding::ZIP::Info info{};
     std::vector<uint32> curentChildIndexes{};
     bool isTopContainer{ true };
     std::string password;
@@ -56,6 +56,8 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     {
         return true;
     }
+
+    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

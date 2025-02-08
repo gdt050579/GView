@@ -1,6 +1,8 @@
+#include <nlohmann/json.hpp>
 #include "PCAP.hpp"
 
 using namespace GView::Type::PCAP;
+using nlohmann::json;
 
 PCAPFile::PCAPFile()
 {
@@ -53,7 +55,7 @@ bool PCAPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVi
             data++;
         }
         const auto& stream = streamManager[value];
-        totalItems         = stream->applicationLayers.size();
+        totalItems         = (uint32)stream->applicationLayers.size();
         parent.SetData(value);
     }
 
@@ -70,7 +72,7 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
     bool isTree           = false;
     if (itemData != ITEM_INVALID_VALUE)
     {
-        streamIndex = itemData;
+        streamIndex = (uint32)itemData;
     }
     else
     {
@@ -110,7 +112,7 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetData(currentItemIndex);
 
         item.SetText(tmp.Format("%s", n.ToString(currentItemIndex, NUMERIC_FORMAT).data()));
-        item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name));
+        item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name.get()));
 
         item.SetText(4, tmp.Format("%s", n.ToString(stream->applicationLayers[currentItemIndex].payload.size, NUMERIC_FORMAT).data()));
         if (stream->applicationLayers[currentItemIndex].payload.size > 0)
@@ -132,7 +134,7 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     for (const auto c : path)
     {
         if (c >= '0' && c <= '9')
-            toAppend->push_back(c);
+            toAppend->push_back((char)c);
         else
             toAppend = &applicationText;
     }
@@ -163,7 +165,7 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     if (!layer.extractionName.empty())
         extractionName = std::string(layer.extractionName.data(), layer.extractionName.size());
     else
-        extractionName = (const char*) layer.name;
+        extractionName = (const char*) layer.name.get();
 
     const Buffer buffer = { payload, layer.payload.size };
 
@@ -185,4 +187,15 @@ std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForConta
     result.emplace_back("Protocols", streamManager.GetProtocolsFound().data());
 
     return result;
+}
+
+std::string PCAPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"] = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    context["TotalPackets"] = packetHeaders.size();
+    context["TotalStreams"] = streamManager.size();
+    context["Protocols"] = streamManager.GetProtocolsFound();
+    return context.dump();
 }

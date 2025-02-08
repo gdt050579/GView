@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include <array>
 
 using namespace GView::App;
 using namespace GView::App::InstanceCommands;
@@ -104,13 +105,17 @@ bool Instance::LoadSettings()
     // read instance settings
     auto sect                                  = ini->GetSection("GView");
     this->defaultCacheSize                     = std::max<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
-    INSTANCE_CHANGE_VIEW.Key                   = sect.GetValue("Key.ChangeView").ToKey(INSTANCE_CHANGE_VIEW.Key);
-    INSTANCE_SWITCH_TO.Key                     = sect.GetValue("Key.SwitchToView").ToKey(INSTANCE_SWITCH_TO.Key);                    
-    FILE_WINDOW_COMMAND_FIND.Key               = sect.GetValue("Key.Find").ToKey(FILE_WINDOW_COMMAND_FIND.Key);                           
-    INSTANCE_COMMAND_GOTO.Key                  = sect.GetValue("Key.GoTo").ToKey(INSTANCE_COMMAND_GOTO.Key);                                     
-    INSTANCE_NEW_TYPE.Key                      = sect.GetValue("Key.ChoseType").ToKey(INSTANCE_NEW_TYPE.Key);
-    INSTANCE_KEY_CONFIGURATOR.Key              = sect.GetValue("Key.ShowKeys").ToKey(INSTANCE_KEY_CONFIGURATOR.Key);
 
+    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
+        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
+        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
+    };
+
+    LocalString<64> keyCommand;
+    for (auto& k : localKeys) {
+        keyCommand.SetFormat("Key.%s", k.get().Caption);
+        k.get().Key = sect.GetValue(keyCommand.GetText()).ToKey(k.get().Key);
+    }
     return true;
 }
 bool Instance::BuildMainMenus()
@@ -130,7 +135,7 @@ bool Instance::BuildMainMenus()
     return true;
 }
 
-bool Instance::Init()
+bool Instance::Init(bool isTestingEnabled)
 {
     InitializationData initData;
     initData.Flags =
@@ -143,11 +148,18 @@ bool Instance::Init()
     // no .ini file found
     if (!settingsFile.OpenRead(settingsPath)) {
         CHECK(GView::App::ResetConfiguration(), false, "");
-        showTutorial = true;
+        if (!isTestingEnabled)
+            showTutorial = true;
     }
     settingsFile.Close();
 
-    CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    if (isTestingEnabled) {
+        CHECK(AppCUI::Application::InitForTests(initData.Width, initData.Height, initData.Flags, false),
+              false,
+              "Fail to initialize AppCUI framework for tests!");
+    } else {
+        CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
+    }
     // reserve some space fo type
     this->typePlugins.reserve(128);
     if (!LoadSettings()) {
@@ -159,7 +171,7 @@ bool Instance::Init()
         CHECK(GView::App::ResetConfiguration(), false, "");
 
         AppCUI::Dialogs::MessageBox::ShowError(
-              "Errorr reading configuration",
+              "Error reading configuration",
               "Found an invalid configuration, it will be renamed as \".ini.bak\". Will generated a new one! Please restart GView.");
     }
 
@@ -168,7 +180,7 @@ bool Instance::Init()
     }
 
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
-    this->defaultPlugin.Init();
+    this->defaultPlugin.InitDefaultPlugin();
 
     // set up handlers
     auto dsk                 = AppCUI::Application::GetDesktop();
@@ -389,6 +401,7 @@ bool Instance::Add(
     // instantiate window
     while (true) {
         CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
+        CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parentWindow);

@@ -1,5 +1,11 @@
 name: "Deploy release"
 
+permissions:
+  id-token: write
+  attestations: write
+  contents: write
+  actions: write
+
 on:
   push:
     branches:
@@ -20,7 +26,7 @@ jobs:
   build-win:
     runs-on: [windows-latest]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         
@@ -56,16 +62,21 @@ jobs:
         echo "$output"
     
     - name: Store Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: windows_artifacts
         path: "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
+
+    - name: Generate signed build provenance
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip
      
   build-macos:
     runs-on: [macos-13] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         
@@ -106,11 +117,16 @@ jobs:
         echo "$output"
 
     - name: Store Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: apple_artifacts
         path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
+
+    - name: Generate signed build provenance
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         
   build-ubuntu:
     runs-on: [ubuntu-20.04]
@@ -118,7 +134,7 @@ jobs:
       CC: gcc-10
       CXX: g++-10
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
     
@@ -160,35 +176,40 @@ jobs:
         echo "$output"
     
     - name: Store Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: linux_artifacts
         path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1     
+
+    - name: Generate signed build provenance
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
       
   publish_job:
     name: "Publish to release"
     runs-on: [ubuntu-latest]
     needs: [build-win, build-ubuntu, build-macos]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Add tag data to enviroment
       run: |
         output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
 
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: windows_artifacts
         path: artifacts
 
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: linux_artifacts
         path: artifacts
 
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: apple_artifacts
         path: artifacts

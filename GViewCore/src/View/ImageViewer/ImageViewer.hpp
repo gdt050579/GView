@@ -62,7 +62,7 @@ namespace View
             void RedrawImage();
             ImageScaleMethod NextPreviousScale(bool next);
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
