@@ -704,7 +704,8 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     if (filters[0] == PDF::FILTER::FLATE) {
                         Buffer decompressedData;
                         uint64 decompressDataSize = lengthVal;
-                        if (GView::ZLIB::DecompressStream(streamData, lengthVal, decompressedData, decompressDataSize)) {
+                        AppCUI::Utils::String message;
+                        if (GView::Decoding::ZLIB::DecompressStream(streamData, decompressedData, message, decompressDataSize)) {
                             if (typeFlags.hasDecodeParms) {
                                 ApplyPNGFilter(decompressedData, decodeParms.column, decodeParms.predictor, decodeParms.bitsPerComponent);
                                 decompressDataSize = decompressedData.GetLength();

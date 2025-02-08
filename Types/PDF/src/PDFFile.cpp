@@ -1,4 +1,6 @@
 #include "pdf.hpp"
+#include <nlohmann/json.hpp>
+using nlohmann::json;
 
 using namespace GView::Type::PDF;
 
@@ -66,4 +68,12 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
     // TODO: open stream content in a new window for each obj
+}
+
+std::string PDFFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    return context.dump();
 }
