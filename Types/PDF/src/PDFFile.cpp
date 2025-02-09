@@ -28,42 +28,73 @@ void PDFFile::AddPDFObject(Reference<GView::Type::PDF::PDFFile> pdf, const PDFOb
 
 bool PDFFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
-    // TODO: BeginIteration for each item which is SetExpandable
-    index = 0;
-    return true;
+    this->currentPath = path;
+    this->currentChildNodes.clear();
+    this->currentItemIndex = 0;
+
+    if (path.empty()) {
+        this->currentChildNodes.push_back(&this->objectNodeRoot);
+        return true;
+    }
+
+    Reference<GView::Type::PDF::PDFFile> pdfRef = this;
+    auto node                                   = FindNodeByPath(pdfRef, path);
+    if (!node) {
+        return false;
+    }
+    for (auto& child : node->children) {
+        this->currentChildNodes.push_back(&child);
+    }
+    return !this->currentChildNodes.empty();
 }
 
 bool PDFFile::PopulateItem(TreeViewItem item)
 {
+    if (currentItemIndex >= currentChildNodes.size()) {
+        return false;
+    }
+
+    auto* childNode = currentChildNodes[currentItemIndex++];
     LocalString<128> tmp;
     NumericFormatter n;
-    
-    if (objectNodeRoot.pdfObject.type == SectionPDFObjectType::Trailer) {
-        item.SetText(0, "Trailer");
-        item.SetText(1, "Dictionary");
-        
+    const static NumericFormat NUMERIC_FORMAT{ NumericFormatFlags::HexPrefix, 16 };
 
-    item.SetText(2, String().Format("%llu", objectNodeRoot.pdfObject.startBuffer));
-    item.SetText(3, String().Format("%llu", objectNodeRoot.pdfObject.endBuffer - objectNodeRoot.pdfObject.startBuffer));
-    //item.SetData<ObjectNode>(&objectNodeRoot);
-    //item.SetExpandable(true);
-    } 
-    /*if (objectNodeRoot.children.size() > 0) {
-        item.SetExpandable(true);
-        for (auto& obj : objectNodeRoot.children) {
-            item.SetText(0, obj.object);
-            item.SetText(1, obj.value);
-            if (obj.type == PDFObjectType::Dictionary) {
-                item.SetText(2, "Dictionary");
-            } else if (obj.type == PDFObjectType::Name) {
-                item.SetText(2, "Name");
-            }
-            item.SetText(3, String().Format("%u", obj.offset));
-            item.SetText(4, String().Format("%u", obj.size));
-        }
-    }*/
-    return false;
+    if (childNode->pdfObject.type == PDF::SectionPDFObjectType::Trailer) {
+        item.SetText(u"Trailer");
+    } else if (childNode->pdfObject.type == PDF::SectionPDFObjectType::CrossRefStream) {
+        std::u16string tmpName = u"CrossRefStream ";
+        tmpName += to_u16string((uint32_t) childNode->pdfObject.number);
+        item.SetText(tmpName);
+    } else {
+        std::u16string tmpName = u"Object ";
+        tmpName += PDF::PDFFile::to_u16string((uint32_t) childNode->pdfObject.number);
+        item.SetText(tmpName);
+    }
+
+    const char16_t* typeName = u"Unknown";
+    switch (childNode->pdfObject.type) {
+    case PDF::SectionPDFObjectType::Trailer:
+        typeName = u"Trailer";
+        break;
+    case PDF::SectionPDFObjectType::CrossRefStream:
+        typeName = u"CrossRefStream";
+        break;
+    case PDF::SectionPDFObjectType::Object:
+        typeName = u"Object";
+        break;
+    }
+    item.SetText(1, typeName);
+    item.SetText(2, tmp.Format("%s", n.ToString(childNode->pdfObject.startBuffer, NUMERIC_FORMAT).data()));
+    const auto size = childNode->pdfObject.endBuffer - childNode->pdfObject.startBuffer;
+    item.SetText(3, tmp.Format("%s", n.ToString(size, NUMERIC_FORMAT).data()));
+
+    item.SetExpandable(!childNode->children.empty());
+
+    item.SetData(static_cast<uint64_t>(childNode->pdfObject.number));
+
+    return (currentItemIndex < currentChildNodes.size());
 }
+
 
 void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {

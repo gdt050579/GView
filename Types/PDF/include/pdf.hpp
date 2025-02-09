@@ -116,6 +116,9 @@ namespace Type
             constexpr uint8_t PDF_FREE_ENTRY  = 'f';
             constexpr uint8_t ZERO            = 0;
             constexpr uint8_t PDF_INDIRECTOBJ = 'R';
+
+            constexpr uint8_t PDF_PARENT[] = "/Parent";
+            constexpr uint8_t PDF_PARENT_SIZE   = 7;
         } // namespace KEY
 
         namespace PREDICTOR
@@ -169,10 +172,12 @@ namespace Type
         };
 
         enum class SectionPDFObjectType : uint8 {
+            Unknown        = 0,
             Object         = 1,
             CrossRefTable  = 2,
             CrossRefStream = 3,
             Trailer        = 4,
+            Stream         = 5,
         };
 
         struct PDFObject {
@@ -220,8 +225,10 @@ namespace Type
             Header header{};
             bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
             uint64 index         = 0;
-            ObjectNode objectNodeRoot;
-            std::vector<uint32> curentChildIndexes{};
+            PDF::ObjectNode objectNodeRoot;
+            std::u16string currentPath;
+            uint32 currentItemIndex = 0;
+            std::vector<PDF::ObjectNode*> currentChildNodes;
             vector<PDFObject> pdfObjects;
             vector<uint64> processedObjects; 
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
@@ -269,6 +276,10 @@ namespace Type
                 return true;
             }
             std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+
+            ObjectNode* FindNodeByPath(Reference<GView::Type::PDF::PDFFile> pdf, std::u16string_view path);
+
+            std::u16string to_u16string(uint32_t value);
         };
         namespace Panels
         {
