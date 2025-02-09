@@ -778,7 +778,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
 }
 
-void GetObjectReference(const uint64& dataSize, GView::Utils::DataCache& data, uint64& objectOffset, uint8& buffer, std::vector<uint64> objectsNumber)
+void GetObjectReference(const uint64& dataSize, GView::Utils::DataCache& data, uint64& objectOffset, uint8& buffer, std::vector<uint64> &objectsNumber)
 {
     bool foundObjRef    = false;
     const uint64 number = GetTypeValue(data, objectOffset, dataSize);
