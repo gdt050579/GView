@@ -806,14 +806,68 @@ void GetObjectReference(const uint64& dataSize, GView::Utils::DataCache& data, u
     }
 }
 
+uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, const uint64& dataSize, vector<PDF::PDFObject>& pdfObjects)
+{
+    uint64 numberLength = 0;
+    uint8 buffer;
+    bool foundRef = false;
+    objectOffset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
+    numberLength = GetTypeValue(data, objectOffset, dataSize);
+    uint64 copyOffset = objectOffset;
+
+
+    if (!data.Copy(copyOffset, buffer)) {
+        Dialogs::MessageBox::ShowError("Error!", "Buffer copy failed!");
+    }
+    copyOffset++;
+    if (!data.Copy(copyOffset, buffer)) {
+        Dialogs::MessageBox::ShowError("Error!", "Buffer copy failed!");
+    }
+    if (buffer == '0') {
+        copyOffset += 2;
+        if (!data.Copy(copyOffset, buffer)) {
+            Dialogs::MessageBox::ShowError("Error!", "Buffer copy failed!");
+        }
+        if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
+            foundRef = true;
+        }
+    }
+    if (foundRef) {
+        for (auto& object : pdfObjects) {
+            if (object.number == numberLength) {
+                uint64 refObjectOffset = object.startBuffer;
+                while (refObjectOffset <= object.endBuffer) {
+                    if (CheckType(data, refObjectOffset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ)) {
+                        refObjectOffset += PDF::KEY::PDF_OBJ_SIZE;
+                        while (data.Copy(refObjectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
+                            refObjectOffset++;
+                        }
+                        numberLength = GetTypeValue(data, refObjectOffset, dataSize);
+                        break;
+                    } else {
+                        refObjectOffset++;
+                    }
+                }
+                break;
+            }
+        }
+        objectOffset = copyOffset;
+    }
+    return numberLength;
+}
+
 void ProcessPDFTree(
       const uint64& dataSize, GView::Utils::DataCache& data, PDF::ObjectNode& objectNode, vector<PDF::PDFObject>& pdfObjects, vector<uint64> &processedObjects)
 {
     // TODO: treat the other particular cases for getting the references of the objects
     uint64 objectOffset = objectNode.pdfObject.startBuffer;
     uint8 buffer;
+    uint64 streamLength = 0;
+    bool foundLength    = false;
     std::vector<uint64> objectsNumber;     
     processedObjects.push_back(objectNode.pdfObject.number);
+    objectNode.hasStream = false;
+
     while (objectOffset < objectNode.pdfObject.endBuffer) {
         if (!data.Copy(objectOffset, buffer)) {
             break;
@@ -846,19 +900,55 @@ void ProcessPDFTree(
                 }
             }
         }
-        if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
-            bool foundObjRef    = false;
-            const uint64 number = GetTypeValue(data, objectOffset, dataSize);
-            if (!data.Copy(objectOffset, buffer)) {
+        if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIUDS) {
+            if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
+                streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects);
+                foundLength  = true;
+            }
+        }
+        // object has a stream
+        if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM) && foundLength) {
+            objectNode.hasStream = true;
+            objectOffset += PDF::KEY::PDF_STREAM_SIZE;
+            // skip some bytes
+            while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
+                objectOffset++;
+            }
+            objectNode.metadata.streamOffsetStart = objectOffset;
+            objectOffset += streamLength;
+            objectNode.metadata.streamOffsetEnd = objectOffset;
+            // additional checking
+            while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
+                objectOffset++;
+            }
+            if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token!");
+            } else {
+                PDF::ObjectNode streamChild;
+                streamChild.pdfObject.type   = PDF::SectionPDFObjectType::Stream;
+                streamChild.pdfObject.number = objectNode.pdfObject.number;
+                streamChild.hasStream        = false;
+                streamChild.pdfObject.startBuffer = objectNode.metadata.streamOffsetStart;
+                streamChild.pdfObject.endBuffer   = objectNode.metadata.streamOffsetEnd;
+                objectNode.children.push_back(streamChild);
                 break;
             }
-            objectOffset++;
-            if (!data.Copy(objectOffset, buffer)) {
+        }
+        // get the next object (nr 0 R)
+        if (buffer >= '0' && buffer <= '9') {
+            bool foundObjRef    = false;
+            const uint64 number = GetTypeValue(data, objectOffset, dataSize);
+            uint64 copyOffset   = objectOffset;
+            if (!data.Copy(copyOffset, buffer)) {
+                break;
+            }
+            copyOffset++;
+            if (!data.Copy(copyOffset, buffer)) {
                 break;
             }
             if (buffer == '0') {
-                objectOffset += 2;
-                if (!data.Copy(objectOffset, buffer)) {
+                copyOffset += 2;
+                if (!data.Copy(copyOffset, buffer)) {
                     break;
                 }
                 if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
@@ -872,6 +962,7 @@ void ProcessPDFTree(
                         objectsNumber.push_back(number);
                     }
                 }
+                objectOffset = copyOffset;
             }
         } else {
             objectOffset++;
@@ -955,11 +1046,12 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
         }
     } else {
         bool crossStreamCnt = false;
+        bool foundLength    = false;
+        uint64 streamLength = 0;
         for (auto& object : pdf->pdfObjects) {
             if (object.type == PDF::SectionPDFObjectType::CrossRefStream && !crossStreamCnt) {
                 uint64 objectOffset           = object.startBuffer;
                 pdf->objectNodeRoot.pdfObject = object;
-                pdf->objectNodeRoot.hasStream = true;
                 uint8 buffer;
 
                 while (objectOffset < object.endBuffer - PDF::KEY::PDF_STARTXREF_SIZE) {
@@ -967,6 +1059,39 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                         break;
                     } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
                         GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
+                    } else if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIUDS) {
+                        if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
+                            streamLength = GetLengthNumber(data, objectOffset, dataSize, pdf->pdfObjects);
+                            foundLength  = true;
+                        } else {
+                            objectOffset++;
+                        }
+                    } else if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM) && foundLength) {
+                        pdf->objectNodeRoot.hasStream = true;
+                        objectOffset += PDF::KEY::PDF_STREAM_SIZE;
+                        // skip some bytes
+                        while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
+                            objectOffset++;
+                        }
+                        pdf->objectNodeRoot.metadata.streamOffsetStart = objectOffset;
+                        objectOffset += streamLength;
+                        pdf->objectNodeRoot.metadata.streamOffsetEnd = objectOffset;
+                        // additional checking
+                        while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
+                            objectOffset++;
+                        }
+                        if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                            Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token!");
+                        } else {
+                            PDF::ObjectNode streamChild;
+                            streamChild.pdfObject.type = PDF::SectionPDFObjectType::Stream;
+                            streamChild.pdfObject.number = pdf->objectNodeRoot.pdfObject.number;
+                            streamChild.hasStream        = false;
+                            streamChild.pdfObject.startBuffer = pdf->objectNodeRoot.metadata.streamOffsetStart;
+                            streamChild.pdfObject.endBuffer   = pdf->objectNodeRoot.metadata.streamOffsetEnd;
+                            pdf->objectNodeRoot.children.push_back(streamChild);
+                            break;
+                        }
                     } else {
                         objectOffset++;
                     }
@@ -1036,51 +1161,61 @@ PDF::ObjectNode* PDF::PDFFile::FindNodeByPath(Reference<GView::Type::PDF::PDFFil
 
     PDF::ObjectNode* currentNode = &pdf->objectNodeRoot;
     std::u16string rootName;
-    if (currentNode->pdfObject.type == PDF::SectionPDFObjectType::Trailer) {
+    switch (currentNode->pdfObject.type) {
+    case PDF::SectionPDFObjectType::Trailer:
         rootName = u"Trailer";
-    } else if (currentNode->pdfObject.type == PDF::SectionPDFObjectType::CrossRefStream) {
+        break;
+    case PDF::SectionPDFObjectType::CrossRefStream:
         rootName = u"CrossRefStream ";
-        rootName += to_u16string((uint32_t) currentNode->pdfObject.number);
-    } else {
+        rootName += to_u16string(static_cast<uint32_t>(currentNode->pdfObject.number));
+        break;
+    case PDF::SectionPDFObjectType::Stream:
+        rootName = u"Stream ";
+        rootName += to_u16string(static_cast<uint32_t>(currentNode->pdfObject.number));
+        break;
+    default:
         rootName = u"Object ";
-        rootName += to_u16string((uint32_t) currentNode->pdfObject.number);
+        rootName += to_u16string(static_cast<uint32_t>(currentNode->pdfObject.number));
+        break;
     }
+
     if (!tokens.empty() && tokens[0] == rootName) {
         // we are already sitting on that node
         // so skip this token:
         tokens.erase(tokens.begin());
     }
 
-    for (auto &tk : tokens)
-    {
+    for (auto &tk : tokens) {
         PDF::ObjectNode* found = nullptr;
-        for (auto &child : currentNode->children)
-        {
+        for (auto &child : currentNode->children) {
             std::u16string childName;
-            if (child.pdfObject.type == PDF::SectionPDFObjectType::Trailer)
-            {
+            switch (child.pdfObject.type) {
+            case PDF::SectionPDFObjectType::Trailer:
                 childName = u"Trailer";
-            }
-            else if (child.pdfObject.type == PDF::SectionPDFObjectType::CrossRefStream)
-            {
+                break;
+            case PDF::SectionPDFObjectType::CrossRefStream:
                 childName = u"CrossRefStream ";
-                childName += to_u16string((uint32_t) child.pdfObject.number);
-            }
-            else
-            {
+                childName += to_u16string(static_cast<uint32_t>(child.pdfObject.number));
+                break;
+            case PDF::SectionPDFObjectType::Stream:
+                childName = u"Stream ";
+                childName += to_u16string(static_cast<uint32_t>(child.pdfObject.number));
+                break;
+            default:
                 childName = u"Object ";
-                childName += to_u16string((uint32_t) child.pdfObject.number);
+                childName += to_u16string(static_cast<uint32_t>(child.pdfObject.number));
+                break;
             }
 
             // if match -> descend
-            if (childName == tk)
-            {
+            if (childName == tk) {
                 found = &child;
                 break;
             }
         }
-        if (!found)
+        if (!found) {
             return nullptr;
+        }
 
         currentNode = found;
     }

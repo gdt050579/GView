@@ -65,6 +65,10 @@ bool PDFFile::PopulateItem(TreeViewItem item)
         std::u16string tmpName = u"CrossRefStream ";
         tmpName += to_u16string((uint32_t) childNode->pdfObject.number);
         item.SetText(tmpName);
+    } else if (childNode->pdfObject.type == PDF::SectionPDFObjectType::Stream) {
+        std::u16string tmpName = u"Stream ";
+        tmpName += to_u16string((uint32_t) childNode->pdfObject.number);
+        item.SetText(tmpName);
     } else {
         std::u16string tmpName = u"Object ";
         tmpName += PDF::PDFFile::to_u16string((uint32_t) childNode->pdfObject.number);
@@ -78,6 +82,9 @@ bool PDFFile::PopulateItem(TreeViewItem item)
         break;
     case PDF::SectionPDFObjectType::CrossRefStream:
         typeName = u"CrossRefStream";
+        break;
+    case PDF::SectionPDFObjectType::Stream:
+        typeName = u"Stream";
         break;
     case PDF::SectionPDFObjectType::Object:
         typeName = u"Object";
