@@ -90,10 +90,22 @@ bool PDFFile::PopulateItem(TreeViewItem item)
         typeName = u"Object";
         break;
     }
+
     item.SetText(1, typeName);
     item.SetText(2, tmp.Format("%s", n.ToString(childNode->pdfObject.startBuffer, NUMERIC_FORMAT).data()));
     const auto size = childNode->pdfObject.endBuffer - childNode->pdfObject.startBuffer;
     item.SetText(3, tmp.Format("%s", n.ToString(size, NUMERIC_FORMAT).data()));
+
+    LocalUnicodeStringBuilder<512> ub;
+    bool first = true;
+    for (auto& filter : childNode->metadata.filters) {
+        if (!first) {
+            ub.Add(u", ");
+        }
+        ub.Add(filter);
+        first = false;
+    }
+    item.SetText(4, ub);
 
     item.SetExpandable(!childNode->children.empty());
 
@@ -105,7 +117,56 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 
 void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
-    // TODO: open stream content in a new window for each obj
+    const auto objectNumber = static_cast<uint32_t>(item.GetData(-1));
+    if (objectNumber == static_cast<uint32_t>(-1)) {
+        return;
+    }
+
+    auto node = FindNodeByObjectNumber(objectNumber);
+    if (!node) {
+        return;
+    }
+
+    auto entireFile = this->obj->GetData().GetEntireFile();
+    if (!entireFile.IsValid()) {
+        return;
+    }
+
+    if (node->hasStream) {
+        const uint64 offset = node->metadata.streamOffsetStart;
+        const uint64 end    = node->metadata.streamOffsetEnd;
+        if (end <= offset || end > entireFile.GetLength()) {
+            return;
+        }
+
+        const size_t size = static_cast<size_t>(end - offset);
+
+        Buffer buffer;
+        buffer.Resize(size);
+        memcpy(buffer.GetData(), entireFile.GetData() + offset, size);
+
+        // decompress the stream
+        if (!node->metadata.filters.empty()) {
+            for (auto& filter : node->metadata.filters) {
+                if (filter == PDF::FILTER::FLATE) {
+                    Buffer decompressedData;
+                    uint64 decompressDataSize = size;
+                    AppCUI::Utils::String message;
+                    if (GView::Decoding::ZLIB::DecompressStream(buffer, decompressedData, message, decompressDataSize)) {
+                        buffer = decompressedData;
+                    } else {
+                        Dialogs::MessageBox::ShowError("Error!", message);
+                    }
+                }
+            }
+        }
+        std::u16string tmpName = u"Stream ";
+        tmpName += to_u16string((uint32_t) node->pdfObject.number);
+        LocalUnicodeStringBuilder<64> streamName;
+        CHECKRET(streamName.Set(tmpName), "")
+
+        GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
+    }
 }
 
 std::string PDFFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)

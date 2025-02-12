@@ -1,4 +1,5 @@
 #include "pdf.hpp"
+#include <deque>
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;
@@ -96,26 +97,57 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
 {
     uint8_t buffer;
     std::string filterValue;
-    filterValue += "/";
-    if (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE) { // /Filter /
+    while (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE && offset < dataSize) {
         offset++;
     }
-    offset++; // skip "/"
-    while (offset < dataSize) {
-        if (!data.Copy(offset, buffer)) {
-            break;
+    // [ -> we have a list of filters
+    if (data.Copy(offset, buffer) && buffer == PDF::DC::LEFT_SQUARE_BRACKET)
+    {
+        offset++;
+        while (data.Copy(offset, buffer) && buffer != PDF::DC::RIGHT_SQUARE_BRACKET && offset < dataSize) {
+            if (!data.Copy(offset, buffer)) {
+                break;
+            }
+            if (buffer == PDF::DC::RIGHT_SQUARE_BRACKET) {
+                break;
+            }
+            if (buffer == PDF::DC::SOLIUDS) {
+                filterValue.clear();
+                filterValue += "/";
+                offset++;
+                while (data.Copy(offset, buffer) && buffer != PDF::DC::SOLIUDS && buffer != PDF::DC::GREATER_THAN && buffer != PDF::WSC::LINE_FEED &&
+                       buffer != PDF::WSC::SPACE) {
+                    filterValue += static_cast<char>(buffer);
+                    offset++;
+                }
+                if (filterValue.length() > 1) {
+                    filters.push_back(filterValue);
+                }
+            } else {
+                offset++;
+            }
         }
-        if (buffer == PDF::DC::SOLIUDS || buffer == PDF::DC::GREATER_THAN || buffer == PDF::WSC::LINE_FEED) {
-            break;
-        } else {
-            filterValue += static_cast<char>(buffer);
-            offset++;
+    } else {
+        // a single filter
+        offset++; // skip "/"
+        filterValue.clear();
+        filterValue += "/";
+        while (offset < dataSize) {
+            if (!data.Copy(offset, buffer)) {
+                break;
+            }
+            if (buffer == PDF::DC::SOLIUDS || buffer == PDF::DC::GREATER_THAN || buffer == PDF::WSC::LINE_FEED) {
+                break;
+            } else {
+                filterValue += static_cast<char>(buffer);
+                offset++;
+            }
+        }
+        if (filterValue.length() > 1) {
+            filters.push_back(filterValue);
         }
     }
-
-    if (filterValue.length() > 1) {
-        filters.push_back(filterValue);
-    }
+    offset--;
 }
 
 void GetDecompressDataValue(Buffer& decompressedData, uint64& offset, const uint8& value, uint64& obj)
@@ -901,9 +933,15 @@ void ProcessPDFTree(
             }
         }
         if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIUDS) {
+            // /Length
             if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
                 streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects);
                 foundLength  = true;
+            }
+            // /Filter
+            if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
+                objectOffset += PDF::KEY::PDF_FILTER_SIZE;
+                GetFilters(data, objectOffset, dataSize, objectNode.metadata.filters);
             }
         }
         // object has a stream
@@ -1223,6 +1261,24 @@ PDF::ObjectNode* PDF::PDFFile::FindNodeByPath(Reference<GView::Type::PDF::PDFFil
     return currentNode;
 }
 
+PDF::ObjectNode* PDF::PDFFile::FindNodeByObjectNumber(uint32_t number)
+{
+    std::deque<PDF::ObjectNode*> queue;
+    queue.push_back(&this->objectNodeRoot);
+
+    while (!queue.empty()) {
+        auto* front = queue.front();
+        queue.pop_front();
+
+        if (front->pdfObject.number == number)
+            return front;
+
+        for (auto& ch : front->children)
+            queue.push_back(&ch);
+    }
+    return nullptr;
+}
+
 void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::PDF::PDFFile> pdf)
 {
     ContainerViewer::Settings settings;
@@ -1234,6 +1290,7 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
           "n:&Type,a:r,w:20",
           "n:&Offset start,a:r,w:20",
           "n:&Size,a:r,w:20",
+          "n:&Filters,a:r,w:30",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PDF::PDFFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());

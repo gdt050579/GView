@@ -160,15 +160,15 @@ namespace Type
         };
 
         struct WValues { // W[x y z]
-            uint8 x;
-            uint8 y;
-            uint8 z;
+            uint8 x = 0;
+            uint8 y = 0;
+            uint8 z = 0;
         };
 
         struct DecodeParms {
-            uint8 predictor;
-            uint16 column;
-            uint8 bitsPerComponent;
+            uint8 predictor = 1;
+            uint16 column = 1;
+            uint8 bitsPerComponent = 8;
         };
 
         enum class SectionPDFObjectType : uint8 {
@@ -278,6 +278,7 @@ namespace Type
             std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 
             ObjectNode* FindNodeByPath(Reference<GView::Type::PDF::PDFFile> pdf, std::u16string_view path);
+            ObjectNode* FindNodeByObjectNumber(uint32_t number);
 
             std::u16string to_u16string(uint32_t value);
         };
