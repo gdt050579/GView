@@ -281,6 +281,11 @@ namespace Type
             ObjectNode* FindNodeByObjectNumber(uint32_t number);
 
             std::u16string to_u16string(uint32_t value);
+
+            static void GetPreviousRow(const Buffer& data, uint64_t offset, uint8_t* buffer, const uint64_t rowLength);
+            static void ApplyFilter(
+                    Buffer& data, uint64_t offset, uint8_t* rowBuffer, const uint64_t rowLength, const uint8_t bytesPerComponent, const uint8_t predictor);
+            static void ApplyPNGFilter(Buffer& data, const uint16_t& column, const uint8_t& predictor, const uint8_t& bitsPerComponent);
         };
         namespace Panels
         {

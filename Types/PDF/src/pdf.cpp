@@ -116,7 +116,7 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
                 filterValue += "/";
                 offset++;
                 while (data.Copy(offset, buffer) && buffer != PDF::DC::SOLIUDS && buffer != PDF::DC::GREATER_THAN && buffer != PDF::WSC::LINE_FEED &&
-                       buffer != PDF::WSC::SPACE) {
+                       buffer != PDF::WSC::SPACE && buffer != PDF::DC::RIGHT_SQUARE_BRACKET) {
                     filterValue += static_cast<char>(buffer);
                     offset++;
                 }
@@ -257,91 +257,6 @@ bool GetTrailerOffset(uint64& offset, const uint64& dataSize, GView::Utils::Data
         }
     }
     return foundTrailer;
-}
-
-static void GetPreviousRow(const Buffer& data, uint64_t offset, uint8_t* buffer, const uint64_t rowLength)
-{
-    if (offset >= rowLength) {
-        memcpy(buffer, data.GetData() + offset - rowLength, rowLength);
-    } else {
-        memset(buffer, 0, rowLength);
-    }
-}
-
-static void ApplyFilter(Buffer& data, uint64_t offset, uint8_t* rowBuffer, const uint64_t rowLength, const uint8_t bytesPerComponent, const uint8_t predictor)
-{
-    GetPreviousRow(data, offset, rowBuffer, rowLength);
-
-    for (uint64_t i = 0; i < rowLength; ++i) {
-        uint8_t newValue       = data.GetData()[offset];
-        uint8_t left           = (offset % bytesPerComponent == 0) ? 0 : data.GetData()[offset - bytesPerComponent];
-        uint8_t above          = rowBuffer[i];
-        uint8_t aboveLeft      = (offset >= rowLength && (offset - bytesPerComponent) >= rowLength) ? rowBuffer[i - bytesPerComponent] : 0;
-        uint8_t paethPredictor = 0, p = 0, pLeft = 0, pAbove = 0, pAboveLeft = 0;
-
-        switch (predictor) {
-        case PDF::PREDICTOR::SUB:
-            newValue = data.GetData()[offset] + left;
-            break;
-        case PDF::PREDICTOR::UP:
-            newValue = data.GetData()[offset] + above;
-            break;
-        case PDF::PREDICTOR::AVERAGE:
-            newValue = data.GetData()[offset] + ((left + above) / 2);
-            break;
-        case PDF::PREDICTOR::PAETH:
-            paethPredictor = left + above - aboveLeft;
-            p              = data.GetData()[offset] - paethPredictor;
-            pLeft          = std::abs(p - left);
-            pAbove         = std::abs(p - above);
-            pAboveLeft     = std::abs(p - aboveLeft);
-            newValue       = data.GetData()[offset] + (pLeft <= pAbove && pLeft <= pAboveLeft ? left : pAbove <= pAboveLeft ? above : aboveLeft);
-            break;
-        case PDF::PREDICTOR::NONE:
-        case PDF::PREDICTOR::OPTIMUM:
-            return; // No filtering needed for None or Optimum
-        default:
-            // unknown predictor
-            return;
-        }
-
-        data.GetData()[offset] = newValue;
-        ++offset;
-    }
-}
-
-void ApplyPNGFilter(Buffer& data, const uint16_t& column, const uint8_t& predictor, const uint8_t& bitsPerComponent)
-{
-    if (!data.IsValid()) {
-        return;
-    }
-
-    const uint8_t bytesPerComponent = (bitsPerComponent + 7) / 8; // ceil(bitsPerComponent / 8)
-    const uint64_t rowLength        = column * bytesPerComponent + 1;
-    const uint64_t dataLength       = data.GetLength();
-
-    Buffer rowBuffer;
-    rowBuffer.Resize(rowLength);
-
-    for (uint64_t offset = 0; offset < dataLength;) {
-        ApplyFilter(data, offset, rowBuffer.GetData(), rowLength, bytesPerComponent, predictor);
-        offset += rowLength;
-    }
-
-    const uint64_t newSize = dataLength - (dataLength / (rowLength + 1));
-    Buffer filteredData;
-    filteredData.Resize(newSize);
-
-    uint64_t srcOffset = 0;
-    uint64_t dstOffset = 0;
-    while (srcOffset < dataLength) {
-        if (srcOffset % rowLength != 0) { // Skip filter type byte
-            filteredData.GetData()[dstOffset++] = data.GetData()[srcOffset];
-        }
-        ++srcOffset;
-    }
-
-    data = std::move(filteredData);
 }
 
 void HighlightObjectTypes(
@@ -739,7 +654,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         AppCUI::Utils::String message;
                         if (GView::Decoding::ZLIB::DecompressStream(streamData, decompressedData, message, decompressDataSize)) {
                             if (typeFlags.hasDecodeParms) {
-                                ApplyPNGFilter(decompressedData, decodeParms.column, decodeParms.predictor, decodeParms.bitsPerComponent);
+                                PDF::PDFFile::ApplyPNGFilter(decompressedData, decodeParms.column, decodeParms.predictor, decodeParms.bitsPerComponent);
                                 decompressDataSize = decompressedData.GetLength();
                             }
                             offset = 0;
@@ -935,13 +850,34 @@ void ProcessPDFTree(
         if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIUDS) {
             // /Length
             if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
-                streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects);
-                foundLength  = true;
+                uint64 copyObjectOffset = objectOffset;
+                copyObjectOffset += PDF::KEY::PDF_STREAM_LENGTH_SIZE;
+                if (!data.Copy(copyObjectOffset, buffer)) {
+                    break;
+                }
+                if (buffer == PDF::WSC::SPACE) {
+                    streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects);
+                    foundLength  = true;
+                } else {
+                    objectOffset = copyObjectOffset;
+                }
             }
             // /Filter
             if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
                 objectOffset += PDF::KEY::PDF_FILTER_SIZE;
                 GetFilters(data, objectOffset, dataSize, objectNode.metadata.filters);
+            }
+            if (CheckType(data, objectOffset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+                objectOffset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
+                objectNode.metadata.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
+            }
+            if (CheckType(data, objectOffset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+                objectOffset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
+                objectNode.metadata.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
+            } 
+            if (CheckType(data, objectOffset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+                objectOffset += PDF::KEY::PDF_BPC_SIZE + 1;
+                objectNode.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
             }
         }
         // object has a stream
@@ -960,7 +896,7 @@ void ProcessPDFTree(
                 objectOffset++;
             }
             if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
-                Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token!");
+                Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token! Object number: " + std::to_string(objectNode.pdfObject.number));
             } else {
                 PDF::ObjectNode streamChild;
                 streamChild.pdfObject.type   = PDF::SectionPDFObjectType::Stream;
@@ -1098,9 +1034,22 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                     } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
                         GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     } else if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIUDS) {
-                        if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
+                        if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
+                            objectOffset += PDF::KEY::PDF_FILTER_SIZE;
+                            GetFilters(data, objectOffset, dataSize, pdf->objectNodeRoot.metadata.filters);
+                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
                             streamLength = GetLengthNumber(data, objectOffset, dataSize, pdf->pdfObjects);
                             foundLength  = true;
+                        }
+                        else if (CheckType(data, objectOffset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+                            objectOffset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
+                            pdf->objectNodeRoot.metadata.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
+                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+                            objectOffset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
+                            pdf->objectNodeRoot.metadata.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
+                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+                            objectOffset += PDF::KEY::PDF_BPC_SIZE + 1;
+                            pdf->objectNodeRoot.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
                         } else {
                             objectOffset++;
                         }

@@ -146,6 +146,7 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         memcpy(buffer.GetData(), entireFile.GetData() + offset, size);
 
         // decompress the stream
+        // /DCTDecode -> LoadJPGToImage from JPG
         if (!node->metadata.filters.empty()) {
             for (auto& filter : node->metadata.filters) {
                 if (filter == PDF::FILTER::FLATE) {
@@ -153,6 +154,14 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                     uint64 decompressDataSize = size;
                     AppCUI::Utils::String message;
                     if (GView::Decoding::ZLIB::DecompressStream(buffer, decompressedData, message, decompressDataSize)) {
+                        if (node->metadata.decodeParams.predictor != 1) {
+                            ApplyPNGFilter(
+                                  decompressedData,
+                                  node->metadata.decodeParams.column,
+                                  node->metadata.decodeParams.predictor,
+                                  node->metadata.decodeParams.bitsPerComponent);
+                            decompressDataSize = decompressedData.GetLength();
+                        }
                         buffer = decompressedData;
                     } else {
                         Dialogs::MessageBox::ShowError("Error!", message);
