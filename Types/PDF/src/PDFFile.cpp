@@ -152,7 +152,7 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                 if (filter == PDF::FILTER::FLATE) {
                     Buffer decompressedData;
                     uint64 decompressDataSize = size;
-                    AppCUI::Utils::String message;
+                    String message;
                     if (GView::Decoding::ZLIB::DecompressStream(buffer, decompressedData, message, decompressDataSize)) {
                         if (node->metadata.decodeParams.predictor != 1) {
                             ApplyPNGFilter(
@@ -163,6 +163,30 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                             decompressDataSize = decompressedData.GetLength();
                         }
                         buffer = decompressedData;
+                    } else {
+                        Dialogs::MessageBox::ShowError("Error!", message);
+                    }
+                } else if (filter == PDF::FILTER::RUNLENGTH) {
+                    Buffer runLengthDecompressed;
+                    String message;
+                    if (RunLengthDecode(buffer, runLengthDecompressed, message)) {
+                        buffer = runLengthDecompressed;
+                    } else {
+                        Dialogs::MessageBox::ShowError("Error!", message);
+                    }
+                } else if (filter == PDF::FILTER::ASCIIHEX) {
+                    String message;
+                    Buffer asciiHexDecompressed;
+                    if (ASCIIHexDecode(buffer, asciiHexDecompressed, message)) {
+                        buffer = asciiHexDecompressed;
+                    } else {
+                        Dialogs::MessageBox::ShowError("Error!", message);
+                    }
+                } else if (filter == PDF::FILTER::ASCII85) {
+                    String message;
+                    Buffer ascii85Decompressed;
+                    if (ASCIIHexDecode(buffer, ascii85Decompressed, message)) {
+                        buffer = ascii85Decompressed;
                     } else {
                         Dialogs::MessageBox::ShowError("Error!", message);
                     }

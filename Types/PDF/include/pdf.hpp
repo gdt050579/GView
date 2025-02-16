@@ -286,6 +286,9 @@ namespace Type
             static void ApplyFilter(
                     Buffer& data, uint64_t offset, uint8_t* rowBuffer, const uint64_t rowLength, const uint8_t bytesPerComponent, const uint8_t predictor);
             static void ApplyPNGFilter(Buffer& data, const uint16_t& column, const uint8_t& predictor, const uint8_t& bitsPerComponent);
+            bool RunLengthDecode(const BufferView& input, Buffer& output, String& message);
+            bool ASCIIHexDecode(const BufferView& input, Buffer& output, String& message);
+            bool ASCII85Decode(const BufferView& input, Buffer& output, String& message);
         };
         namespace Panels
         {

@@ -136,7 +136,7 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
             if (!data.Copy(offset, buffer)) {
                 break;
             }
-            if (buffer == PDF::DC::SOLIUDS || buffer == PDF::DC::GREATER_THAN || buffer == PDF::WSC::LINE_FEED) {
+            if (buffer == PDF::DC::SOLIUDS || buffer == PDF::DC::GREATER_THAN || buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::SPACE) {
                 break;
             } else {
                 filterValue += static_cast<char>(buffer);
