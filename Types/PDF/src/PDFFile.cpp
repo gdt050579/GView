@@ -190,6 +190,18 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                     } else {
                         Dialogs::MessageBox::ShowError("Error!", message);
                     }
+                } else if (filter == PDF::FILTER::JPX) {
+                    // this one has to be a separate plugin for JPEG2000
+                    // for the moment being you can only see the decompressed data
+                    Buffer jpxDecompressed;
+                    uint32_t width = 0, height = 0;
+                    uint8_t components = 0;
+                    String message;
+                    if (!JPXDecode(buffer, jpxDecompressed, width, height, components, message)) {
+                        Dialogs::MessageBox::ShowError("Error!", message);
+                        return;
+                    }
+                    buffer = jpxDecompressed;
                 }
             }
         }

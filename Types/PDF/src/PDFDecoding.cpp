@@ -1,4 +1,5 @@
 #include "pdf.hpp"
+#include <openjpeg.h>
 
 using namespace GView::Type;
 using namespace GView;
@@ -307,5 +308,199 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
         }
         accum.clear();
     }
+    return true;
+}
+
+struct MemoryStreamData {
+    const uint8_t* data  = nullptr;
+    size_t size          = 0;
+    size_t currentOffset = 0;
+};
+
+static OPJ_SIZE_T read_fn(void* buffer, OPJ_SIZE_T nbBytes, void* userData)
+{
+    auto* msd = reinterpret_cast<MemoryStreamData*>(userData);
+    if (!msd || !msd->data) {
+        return (OPJ_SIZE_T) -1;
+    }
+
+    size_t remaining = msd->size - msd->currentOffset;
+
+    if (remaining == 0) {
+        return (OPJ_SIZE_T) -1;
+    }
+
+    if (nbBytes > remaining) {
+        nbBytes = remaining;
+    }
+
+    std::memcpy(buffer, msd->data + msd->currentOffset, static_cast<size_t>(nbBytes));
+    msd->currentOffset += static_cast<size_t>(nbBytes);
+
+    return nbBytes;
+}
+
+static OPJ_OFF_T skip_fn(OPJ_OFF_T n, void* userData)
+{
+    auto* msd = reinterpret_cast<MemoryStreamData*>(userData);
+    if (!msd) {
+        return -1;
+    }
+
+    OPJ_OFF_T oldOffset = static_cast<OPJ_OFF_T>(msd->currentOffset);
+    OPJ_OFF_T newOffset = oldOffset + n;
+
+    // clamp newOffset to [0, msd->size]
+    if (newOffset < 0) {
+        newOffset = 0;
+    } else if (newOffset > static_cast<OPJ_OFF_T>(msd->size)) {
+        newOffset = static_cast<OPJ_OFF_T>(msd->size);
+    }
+
+    msd->currentOffset = static_cast<size_t>(newOffset);
+    return newOffset - oldOffset;
+}
+
+static OPJ_BOOL seek_fn(OPJ_OFF_T pos, void* userData)
+{
+    auto* msd = reinterpret_cast<MemoryStreamData*>(userData);
+    if (!msd) {
+        return OPJ_FALSE;
+    }
+
+    if (pos < 0) {
+        pos = 0;
+    } else if (pos > static_cast<OPJ_OFF_T>(msd->size)) {
+        pos = static_cast<OPJ_OFF_T>(msd->size);
+    }
+
+    msd->currentOffset = static_cast<size_t>(pos);
+    return OPJ_TRUE;
+}
+
+static void close_fn(void* userData)
+{
+    auto* msd = reinterpret_cast<MemoryStreamData*>(userData);
+    delete msd; // Ensure MemoryStreamData is properly freed
+}
+
+opj_stream_t* CreateMemoryStream(MemoryStreamData* msd)
+{
+    const OPJ_SIZE_T kChunkSize = 4096;
+    opj_stream_t* stream = opj_stream_create(kChunkSize, OPJ_TRUE);
+    if (!stream) {
+        return nullptr;
+    }
+
+    opj_stream_set_read_function(stream, read_fn);
+    opj_stream_set_skip_function(stream, skip_fn);
+    opj_stream_set_seek_function(stream, seek_fn);
+
+    opj_stream_set_user_data(stream, msd, close_fn); // Assign close function
+    opj_stream_set_user_data_length(stream, msd->size);
+
+    return stream;
+}
+
+bool PDF::PDFFile::JPXDecode(const BufferView& jpxData, Buffer& output, uint32_t& width, uint32_t& height, uint8_t& components, AppCUI::Utils::String& message)
+{
+    message.Clear();
+    output.Resize(0);
+
+    MemoryStreamData* msd = new MemoryStreamData;
+    msd->data             = jpxData.GetData();
+    msd->size             = jpxData.GetLength();
+    msd->currentOffset    = 0;
+
+    opj_stream_t* stream = CreateMemoryStream(msd);
+    if (!stream) {
+        delete msd; // since close_fn won't be called if create fails
+        message.Set("Failed to create OpenJPEG memory stream!");
+        return false;
+    }
+
+    opj_codec_t* codec = opj_create_decompress(OPJ_CODEC_JP2);
+    if (!codec) {
+        message.Set("Failed to create JPX codec!");
+        opj_stream_destroy(stream); // automatically calls close_fn, which deletes msd
+        return false;
+    }
+
+    opj_set_info_handler(codec, [](const char* msg, void*) { /* info */ }, nullptr);
+    opj_set_warning_handler(codec, [](const char* msg, void*) { /* warning */ }, nullptr);
+    opj_set_error_handler(codec, [](const char* msg, void*) { /* error */ }, nullptr);
+
+    opj_dparameters_t parameters;
+    opj_set_default_decoder_parameters(&parameters);
+
+    if (!opj_setup_decoder(codec, &parameters)) {
+        message.Set("JPXDecode: opj_setup_decoder failed!");
+        opj_destroy_codec(codec);
+        opj_stream_destroy(stream);
+        return false;
+    }
+
+    opj_image_t* image = nullptr;
+    if (!opj_read_header(stream, codec, &image)) {
+        message.Set("JPXDecode: opj_read_header failed!");
+        opj_destroy_codec(codec);
+        opj_stream_destroy(stream);
+        return false;
+    }
+
+    if (!opj_decode(codec, stream, image)) {
+        message.Set("JPXDecode: opj_decode failed!");
+        opj_destroy_codec(codec);
+        opj_stream_destroy(stream);
+        if (image) {
+            opj_image_destroy(image);
+        }
+        return false;
+    }
+
+    if (!opj_end_decompress(codec, stream)) {
+        message.Set("JPXDecode: opj_end_decompress failed!");
+        opj_destroy_codec(codec);
+        opj_stream_destroy(stream);
+        if (image) {
+            opj_image_destroy(image);
+        }
+        return false;
+    }
+
+    width      = image->x1 - image->x0;
+    height     = image->y1 - image->y0;
+    components = static_cast<uint8_t>(image->numcomps);
+
+    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const size_t outSize    = pixelCount * components;
+
+    output.Resize(outSize);
+    uint8_t* outPtr = output.GetData();
+
+    for (uint32_t c = 0; c < components; c++) {
+        const opj_image_comp_t& comp = image->comps[c];
+        for (size_t p = 0; p < pixelCount; p++) {
+            int val = 0;
+            if (p < static_cast<size_t>(comp.w) * static_cast<size_t>(comp.h)) {
+                val = comp.data[p];
+            }
+            if (val < 0) {
+                val = 0;
+            }
+            if (val > 255) {
+                val = 255;
+            }
+
+            outPtr[p * components + c] = static_cast<uint8_t>(val);
+        }
+    }
+
+    opj_destroy_codec(codec);
+    opj_stream_destroy(stream);
+    if (image) {
+        opj_image_destroy(image);
+    }
+
     return true;
 }

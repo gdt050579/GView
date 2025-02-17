@@ -933,21 +933,21 @@ void ProcessPDFTree(
                 }
             }
             // /Filter
-            if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
+            else if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
                 objectOffset += PDF::KEY::PDF_FILTER_SIZE;
                 GetFilters(data, objectOffset, dataSize, objectNode.metadata.filters);
-            }
-            if (CheckType(data, objectOffset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
                 objectOffset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
                 objectNode.metadata.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
-            }
-            if (CheckType(data, objectOffset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+                objectOffset--;
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
                 objectOffset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
                 objectNode.metadata.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
-            } 
-            if (CheckType(data, objectOffset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+                objectOffset--;
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
                 objectOffset += PDF::KEY::PDF_BPC_SIZE + 1;
                 objectNode.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
+                objectOffset--;
             }
         }
         // object has a stream

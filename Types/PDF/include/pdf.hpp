@@ -289,6 +289,7 @@ namespace Type
             bool RunLengthDecode(const BufferView& input, Buffer& output, String& message);
             bool ASCIIHexDecode(const BufferView& input, Buffer& output, String& message);
             bool ASCII85Decode(const BufferView& input, Buffer& output, String& message);
+            bool JPXDecode(const BufferView& jpxData, Buffer& output, uint32_t& width, uint32_t& height, uint8_t& components, String& message);
         };
         namespace Panels
         {
