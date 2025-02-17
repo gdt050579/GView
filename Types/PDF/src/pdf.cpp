@@ -191,6 +191,9 @@ void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::D
                 }
                 objectOffsets.push_back(result);
             }
+        } else {
+            Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
+            break;
         }
         offset += PDF::KEY::PDF_XREF_ENTRY;
     }
@@ -377,6 +380,39 @@ void HighlightObjectTypes(
     }
 }
 
+bool IsCrossRefStream(uint64 offset, GView::Utils::DataCache& data, const uint64& dataSize)
+{
+    // number 0 obj
+    GetTypeValue(data, offset, dataSize);
+    uint8_t buffer;
+    if (!data.Copy(offset, buffer)) {
+        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
+        return false;
+    }
+    if (buffer != PDF::WSC::SPACE) {
+        return false;
+    }
+    offset++;
+    if (!data.Copy(offset, buffer)) {
+        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
+    }
+    if (buffer != '0') {
+        return false;
+    }
+    offset++;
+    if (!data.Copy(offset, buffer)) {
+        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
+    }
+    if (buffer != PDF::WSC::SPACE) {
+        return false;
+    }
+    offset++;
+    if (!CheckType(data, offset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ)) {
+        return false;
+    }
+    return true;
+}
+
 void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF::PDFFile> pdf)
 {
     BufferViewer::Settings settings;
@@ -425,6 +461,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         }
     }
 
+    if (!foundEOF) {
+        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End of file segment (%%EOF) is missing!");
+        return;
+    }
+
     // offset of the cross-reference
     if (foundEOF) {
         std::string xrefOffsetStr;
@@ -450,6 +491,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 }
                 if (!xrefOffsetStr.empty()) {
                     crossRefOffset = std::stoull(xrefOffsetStr);
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find the xref offset!");
+                    return;
                 }
                 break;
             }
@@ -469,6 +513,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.number      = 0;
             // get the offsets from the Cross-Reference Table
             const uint64 numEntries = GetNumberOfEntries(crossRefOffset, offset, dataSize, data);
+            if (numEntries == 0) {
+                Dialogs::MessageBox::ShowError("Error!", "Anomaly found: 0 entries in the Cross-Reference Table!");
+            }
             while (offset < dataSize) {
                 if (!data.Copy(offset, buffer)) {
                     break;
@@ -504,7 +551,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         }
 
                         prevOffset = GetTypeValue(data, offset, dataSize);
-                        found_prev = true;
+                        if (prevOffset != 0) {
+                            found_prev = true;
+                        } else {
+                            Dialogs::MessageBox::ShowError("Error!", "Anomaly found: /Prev in the trailer has the value equal to zero!");
+                        }
                     } else if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
                         settings.AddZone(offset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
                         offset += PDF::KEY::PDF_EOF_SIZE;
@@ -516,6 +567,8 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 if (!found_prev) {
                     next_table = false;
                 }
+            } else {
+                Dialogs::MessageBox::ShowError("Error!", "Anomaly found: The trailer is missing!");
             }
 
             pdfObject.endBuffer = offset;
@@ -527,8 +580,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             }
             crossRefOffset = prevOffset;
         }
-    } else { // cross-reference stream
-
+    } else if (IsCrossRefStream(crossRefOffset, data, dataSize)) { // cross-reference stream
         bool next_CR_stream = true;
         while (next_CR_stream) {
             offset = crossRefOffset;
@@ -547,7 +599,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.type        = PDF::SectionPDFObjectType::CrossRefStream;
             pdfObject.number      = GetTypeValue(data, offset, dataSize);
 
-            while (!end_tag) {
+            while (!end_tag && offset < dataSize) {
                 if (CheckType(data, offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
                     end_tag = true;
                     offset += PDF::KEY::PDF_STREAM_SIZE;
@@ -645,6 +697,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                             offset++;
                         }
                     }
+                    if (!found_eof) {
+                        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End of file segment (%%EOF) is missing for Cross-Reference Stream!");
+                    }
                 }
 
                 if (typeFlags.hasFilter) { // decode data
@@ -658,6 +713,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                                 decompressDataSize = decompressedData.GetLength();
                             }
                             offset = 0;
+                            if (!typeFlags.hasW) {
+                                Dialogs::MessageBox::ShowError(
+                                      "Error!", "Anomaly found: W values missing for objects offset references from the Cross-Reference Stream!");
+                                break;
+                            }
                             while (offset < decompressDataSize) {
                                 uint64_t obj1 = 0, obj2 = 0, obj3 = 0;
 
@@ -679,6 +739,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         } else {
                             Dialogs::MessageBox::ShowError("Error!", message);
                         }
+                    } else {
+                        Dialogs::MessageBox::ShowError(
+                              "Error!", "Unknown Filter for the Cross-Reference Stream!");
                     }
                 }
 
@@ -687,8 +750,12 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 } else {
                     next_CR_stream = false;
                 }
+            } else {
+                Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Cross-Reference Stream is missing!");
             }
         }
+    } else {
+        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find a Cross-Reference Table or Cross-Reference Stream!");
     }
 
     std::sort(objectOffsets.begin(), objectOffsets.end());
@@ -729,16 +796,17 @@ void GetObjectReference(const uint64& dataSize, GView::Utils::DataCache& data, u
 {
     bool foundObjRef    = false;
     const uint64 number = GetTypeValue(data, objectOffset, dataSize);
+    uint64 copyobjectOffset = objectOffset;
     if (!data.Copy(objectOffset, buffer)) {
         Dialogs::MessageBox::ShowError("Error!", "GetObjectReference - Copy buffer error");
     }
-    objectOffset++;
-    if (!data.Copy(objectOffset, buffer)) {
+    copyobjectOffset++;
+    if (!data.Copy(copyobjectOffset, buffer)) {
         Dialogs::MessageBox::ShowError("Error!", "GetObjectReference - Copy buffer error");
     }
     if (buffer == '0') {
-        objectOffset += 2;
-        if (!data.Copy(objectOffset, buffer)) {
+        copyobjectOffset += 2;
+        if (!data.Copy(copyobjectOffset, buffer)) {
             Dialogs::MessageBox::ShowError("Error!", "GetObjectReference - Copy buffer error");
         }
         if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
@@ -750,6 +818,7 @@ void GetObjectReference(const uint64& dataSize, GView::Utils::DataCache& data, u
         if (std::find(objectsNumber.begin(), objectsNumber.end(), number) == objectsNumber.end()) {
             objectsNumber.push_back(number);
         }
+        objectOffset = copyobjectOffset;
     }
 }
 
@@ -811,6 +880,7 @@ void ProcessPDFTree(
     uint8 buffer;
     uint64 streamLength = 0;
     bool foundLength    = false;
+    bool issueFound = false;
     std::vector<uint64> objectsNumber;     
     processedObjects.push_back(objectNode.pdfObject.number);
     objectNode.hasStream = false;
@@ -895,8 +965,9 @@ void ProcessPDFTree(
             while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
                 objectOffset++;
             }
-            if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+            if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM) && !issueFound) {
                 Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token! Object number: " + std::to_string(objectNode.pdfObject.number));
+                issueFound = true;
             } else {
                 PDF::ObjectNode streamChild;
                 streamChild.pdfObject.type   = PDF::SectionPDFObjectType::Stream;
@@ -942,6 +1013,12 @@ void ProcessPDFTree(
             objectOffset++;
         }
     }
+
+    if (!foundLength && objectNode.hasStream && !issueFound) {
+        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Missing /Length for an object which has a stream!");
+        issueFound = true;
+    }
+
     for (auto& objectNumber : objectsNumber) {
         for (auto& object : pdfObjects) {
             if (objectNumber == object.number) {
