@@ -334,7 +334,7 @@ static OPJ_SIZE_T read_fn(void* buffer, OPJ_SIZE_T nbBytes, void* userData)
         nbBytes = remaining;
     }
 
-    std::memcpy(buffer, msd->data + msd->currentOffset, static_cast<size_t>(nbBytes));
+    memcpy(buffer, msd->data + msd->currentOffset, static_cast<size_t>(nbBytes));
     msd->currentOffset += static_cast<size_t>(nbBytes);
 
     return nbBytes;
