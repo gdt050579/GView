@@ -504,3 +504,169 @@ bool PDF::PDFFile::JPXDecode(const BufferView& jpxData, Buffer& output, uint32_t
 
     return true;
 }
+
+bool PDF::PDFFile::LZWDecodeStream(const BufferView& input, Buffer& output, uint8_t earlyChange, AppCUI::Utils::String& message)
+{
+    message.Clear();
+    output.Resize(0);
+
+    if (!input.IsValid() || input.GetLength() == 0) {
+        message.Set("Empty or invalid LZW input!");
+        return false;
+    }
+
+    std::vector<std::vector<uint8_t>> dict;
+    dict.reserve(4096);
+
+    auto reInitDictionary = [&]() {
+        dict.clear();
+        dict.resize(258); // 0..255 -> single bytes, plus two special codes: CLEAR=256, EOD=257
+        for (int i = 0; i < 256; i++) {
+            dict[i].clear();
+            dict[i].push_back(static_cast<uint8_t>(i));
+        }
+        // 256 -> CLEAR, 257 -> EOD -> no data
+    };
+
+    reInitDictionary();
+    uint16_t nextCode     = 258;
+    uint16_t codeSize     = 9;
+    uint16_t maxCodeSize  = 12;
+    uint16_t maxCodeValue = (1 << codeSize);
+    bool pendingIncrement = false;
+    size_t inPos          = 0;
+    uint64_t bitBuf       = 0;
+    int bitCount          = 0;
+
+    auto readCode = [&](int bitsNeeded) -> int {
+        while (bitCount < bitsNeeded && inPos < input.GetLength()) {
+            bitBuf |= (static_cast<uint64_t>(input[inPos++]) << bitCount);
+            bitCount += 8;
+        }
+        if (bitCount < bitsNeeded) {
+            // truncated
+            return -1;
+        }
+        int code = static_cast<int>(bitBuf & ((1ULL << bitsNeeded) - 1));
+        bitBuf >>= bitsNeeded;
+        bitCount -= bitsNeeded;
+        return code;
+    };
+
+    reInitDictionary();
+    nextCode         = 258;
+    codeSize         = 9;
+    maxCodeValue     = (1 << codeSize);
+    pendingIncrement = false;
+
+    int prevCode = readCode(codeSize);
+    if (prevCode < 0) {
+        // no data
+        return true;
+    }
+
+    if (prevCode == 256)
+    {
+        // reinit dictionary again
+        reInitDictionary();
+        nextCode     = 258;
+        codeSize     = 9;
+        maxCodeValue = (1 << codeSize);
+        prevCode     = readCode(codeSize);
+        if (prevCode < 0) {
+            return true;
+        }
+    }
+    if (prevCode == 257) {
+        // EOD -> done
+        return true;
+    }
+    if (prevCode < 0 || prevCode > 255) {
+        // invalid
+        message.Set("LZW invalid initial code!");
+        return false;
+    }
+    output.Add(BufferView(&dict[prevCode][0], dict[prevCode].size()));
+    std::vector<uint8_t> oldString = dict[prevCode];
+
+    while (true) {
+        int code = readCode(codeSize);
+        if (code < 0) {
+            break;
+        }
+
+        if (code == 256) {
+            reInitDictionary();
+            nextCode         = 258;
+            codeSize         = 9;
+            maxCodeValue     = (1 << codeSize);
+            pendingIncrement = false;
+
+            code = readCode(codeSize);
+            if (code < 0) {
+                break;
+            }
+            if (code == 257) {
+                break; // EOD
+            }
+
+            if (code < 0 || code > 255) {
+                message.Set("LZW invalid code after CLEAR!");
+                return false;
+            }
+            output.Add(BufferView(&dict[code][0], dict[code].size()));
+            oldString = dict[code];
+            continue;
+        } else if (code == 257) {
+            break;
+        } else if (static_cast<size_t>(code) < dict.size() && !dict[code].empty()) {
+            output.Add(BufferView(&dict[code][0], dict[code].size()));
+            std::vector<uint8_t> newEntry = oldString;
+            newEntry.push_back(dict[code][0]);
+            if (nextCode < 4096) {
+                dict.resize(std::max<size_t>(dict.size(), nextCode + 1));
+                dict[nextCode] = std::move(newEntry);
+                nextCode++;
+            }
+        } else if (code == static_cast<int>(nextCode)) {
+            // "K+K[0]" scenario -> code is next to be assigned -> oldString + oldString[0]
+            std::vector<uint8_t> newEntry = oldString;
+            newEntry.push_back(oldString[0]);
+            dict.resize(std::max<size_t>(dict.size(), nextCode + 1));
+            dict[nextCode] = std::move(newEntry);
+            nextCode++;
+            output.Add(BufferView(&dict[nextCode - 1][0], dict[nextCode - 1].size()));
+        } else {
+            message.Set("LZW invalid code, out of dictionary range!");
+            return false;
+        }
+        if (nextCode >= maxCodeValue) {
+            if (codeSize < maxCodeSize) {
+                if (earlyChange == 1) {
+                    codeSize++;
+                    maxCodeValue = (1 << codeSize);
+                } else {
+                    if (!pendingIncrement) {
+                        pendingIncrement = true;
+                    } else {
+                        codeSize++;
+                        maxCodeValue     = (1 << codeSize);
+                        pendingIncrement = false;
+                    }
+                }
+            }
+        } else {
+            if (pendingIncrement) {
+                codeSize++;
+                if (codeSize > maxCodeSize)
+                    codeSize = maxCodeSize;
+                maxCodeValue     = (1 << codeSize);
+                pendingIncrement = false;
+            }
+        }
+        if (code >= 0 && static_cast<size_t>(code) < dict.size()) {
+            oldString = dict[code];
+        }
+    }
+    return true;
+}

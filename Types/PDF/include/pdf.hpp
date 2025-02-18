@@ -70,12 +70,15 @@ namespace Type
             constexpr uint8_t PDF_DECODEPARMS[]      = "/DecodeParms";
             constexpr uint8_t PDF_DECODEPARMS_SIZE   = 12;
 
+            // /FlateDecode and /LZWDecode params
             constexpr uint8_t PDF_COLUMNS[]      = "/Columns";
             constexpr uint8_t PDF_COLUMNS_SIZE   = 8;
             constexpr uint8_t PDF_PREDICTOR[]    = "/Predictor";
             constexpr uint8_t PDF_PREDICTOR_SIZE = 10;
             constexpr uint8_t PDF_BPC[]          = "/BitsPerComponent";
             constexpr uint8_t PDF_BPC_SIZE       = 17;
+            constexpr uint8_t PDF_EARLYCG[]      = "/EarlyChange";
+            constexpr uint8_t PDF_EARLYCG_SIZE   = 12;
 
             constexpr uint8_t PDF_W[]    = "/W";
             constexpr uint8_t PDF_W_SIZE = 2;
@@ -169,6 +172,7 @@ namespace Type
             uint8 predictor = 1;
             uint16 column = 1;
             uint8 bitsPerComponent = 8;
+            uint8 earlyChange      = 1;
         };
 
         enum class SectionPDFObjectType : uint8 {
@@ -290,6 +294,7 @@ namespace Type
             bool ASCIIHexDecode(const BufferView& input, Buffer& output, String& message);
             bool ASCII85Decode(const BufferView& input, Buffer& output, String& message);
             bool JPXDecode(const BufferView& jpxData, Buffer& output, uint32_t& width, uint32_t& height, uint8_t& components, String& message);
+            bool LZWDecodeStream(const BufferView& input, Buffer& output, uint8_t earlyChange, String& message);
         };
         namespace Panels
         {

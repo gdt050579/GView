@@ -197,11 +197,26 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                     uint32_t width = 0, height = 0;
                     uint8_t components = 0;
                     String message;
-                    if (!JPXDecode(buffer, jpxDecompressed, width, height, components, message)) {
+                    if (JPXDecode(buffer, jpxDecompressed, width, height, components, message)) {
+                        buffer = jpxDecompressed;
+                    } else {
                         Dialogs::MessageBox::ShowError("Error!", message);
-                        return;
                     }
-                    buffer = jpxDecompressed;
+                } else if (filter == PDF::FILTER::LZW) {
+                    Buffer lzwDecompressed;
+                    String message;
+                    if (LZWDecodeStream(buffer, lzwDecompressed, node->metadata.decodeParams.earlyChange, message)) {
+                        if (node->metadata.decodeParams.predictor != 1) {
+                            ApplyPNGFilter(
+                                  lzwDecompressed,
+                                  node->metadata.decodeParams.column,
+                                  node->metadata.decodeParams.predictor,
+                                  node->metadata.decodeParams.bitsPerComponent);
+                        }
+                        buffer = std::move(lzwDecompressed);
+                    } else {
+                        Dialogs::MessageBox::ShowError("Error!", message);
+                    }
                 }
             }
         }

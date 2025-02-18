@@ -592,7 +592,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
 
             PDF::TypeFlags typeFlags;
             PDF::WValues wValues         = { 0, 0, 0 };
-            PDF::DecodeParms decodeParms = { 1, 1, 8 };
+            PDF::DecodeParms decodeParms = { 1, 1, 8, 1 };
 
             PDF::PDFObject pdfObject;
             pdfObject.startBuffer = crossRefOffset;
@@ -640,6 +640,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                             } else if (CheckType(data, offset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
                                 offset += PDF::KEY::PDF_BPC_SIZE + 1;
                                 decodeParms.bitsPerComponent = GetTypeValue(data, offset, dataSize);
+                            } else if (CheckType(data, offset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
+                                offset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
+                                decodeParms.earlyChange = GetTypeValue(data, offset, dataSize);
                             } else {
                                 offset++;
                             }
@@ -948,6 +951,9 @@ void ProcessPDFTree(
                 objectOffset += PDF::KEY::PDF_BPC_SIZE + 1;
                 objectNode.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
+                objectOffset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
+                objectNode.metadata.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
             }
         }
         // object has a stream
@@ -1127,6 +1133,9 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                         } else if (CheckType(data, objectOffset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
                             objectOffset += PDF::KEY::PDF_BPC_SIZE + 1;
                             pdf->objectNodeRoot.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
+                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
+                            objectOffset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
+                            pdf->objectNodeRoot.metadata.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
                         } else {
                             objectOffset++;
                         }
