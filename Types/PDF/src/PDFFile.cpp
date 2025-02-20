@@ -217,6 +217,15 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                     } else {
                         Dialogs::MessageBox::ShowError("Error!", message);
                     }
+                } else if (filter == PDF::FILTER::JBIG2) {
+                    Buffer jbig2Decompressed;
+                    String message;
+                    if (JBIG2Decode(buffer, jbig2Decompressed, message)) {
+                        buffer = std::move(jbig2Decompressed);
+                    } else {
+
+                        Dialogs::MessageBox::ShowError("Error!", message);
+                    }
                 }
             }
         }

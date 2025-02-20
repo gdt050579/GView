@@ -1,5 +1,7 @@
 #include "pdf.hpp"
 #include <openjpeg.h>
+#include <jbig2.h>
+// #include <tiffio.h>
 
 using namespace GView::Type;
 using namespace GView;
@@ -668,5 +670,59 @@ bool PDF::PDFFile::LZWDecodeStream(const BufferView& input, Buffer& output, uint
             oldString = dict[code];
         }
     }
+    return true;
+}
+
+bool PDF::PDFFile::JBIG2Decode(const BufferView& input, Buffer& output, String& message)
+{
+    message.Clear();
+    output.Resize(0);
+
+    if (!input.IsValid() || input.GetLength() == 0) {
+        message.Set("JBIG2Decode: empty input!");
+        return false;
+    }
+
+    Jbig2Ctx* ctx = jbig2_ctx_new(nullptr, JBIG2_OPTIONS_EMBEDDED, nullptr, nullptr, nullptr);
+    if (!ctx) {
+        message.Set("JBIG2Decode: failed to create jbig2 context!");
+        return false;
+    }
+
+    int parse_result = jbig2_data_in(ctx, (unsigned char*) input.GetData(), (size_t) input.GetLength());
+    if (parse_result < 0) {
+        jbig2_ctx_free(ctx);
+        message.Set("JBIG2Decode: parse error from jbig2_data_in!");
+        return false;
+    }
+    jbig2_complete_page(ctx);
+    Jbig2Image* pageImage = jbig2_page_out(ctx);
+    if (!pageImage) {
+        jbig2_ctx_free(ctx);
+        message.Set("JBIG2Decode: no page image found!");
+        return false;
+    }
+    const uint32_t w        = pageImage->width;
+    const uint32_t h        = pageImage->height;
+    const uint32_t stride   = pageImage->stride;
+    const size_t totalBytes = (size_t) stride * (size_t) h;
+
+    if (totalBytes == 0) {
+        jbig2_release_page(ctx, pageImage);
+        jbig2_ctx_free(ctx);
+        message.Set("JBIG2Decode: zero-sized page image!");
+        return false;
+    }
+
+    output.Resize(totalBytes);
+    uint8_t* dst       = output.GetData();
+    const uint8_t* src = pageImage->data;
+
+    for (uint32_t row = 0; row < h; row++) {
+        memcpy(dst + row * stride, src + row * stride, stride);
+    }
+
+    jbig2_release_page(ctx, pageImage);
+    jbig2_ctx_free(ctx);
     return true;
 }

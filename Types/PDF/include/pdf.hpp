@@ -83,6 +83,23 @@ namespace Type
             constexpr uint8_t PDF_W[]    = "/W";
             constexpr uint8_t PDF_W_SIZE = 2;
 
+            // /CCITFaxDecode
+            constexpr uint8_t PDF_K[]                   = "/K";
+            constexpr uint8_t PDF_K_SIZE                = 2;
+            constexpr uint8_t PDF_ENDOFLINE[]           = "/EndOfLine";
+            constexpr uint8_t PDF_ENDOFLINE_SIZE        = 10;
+            constexpr uint8_t PDF_ENCODEDBYTEALIGN[]    = "/EncodedByteAlign";
+            constexpr uint8_t PDF_ENCODEDBYTEALIGN_SIZE = 17;
+            constexpr uint8_t PDF_ROWS[]                = "/Rows";
+            constexpr uint8_t PDF_ROWS_SIZE             = 5;
+            constexpr uint8_t PDF_ENDOFBLOCK[]          = "/EndOfBlock";
+            constexpr uint8_t PDF_ENDOFBLOCK_SIZE       = 11;
+            constexpr uint8_t PDF_BLACKIS1[]            = "/BlackIs1";
+            constexpr uint8_t PDF_BLACKIS1_SIZE         = 9;
+            constexpr uint8_t PDF_DMGROWSBEFERROR[]     = "/DamagedRowsBeforeError";
+            constexpr uint8_t PDF_DMGROWSBEFERROR_SIZE  = 23;
+
+
             constexpr uint8_t PDF_DIC_START[] = "<<";
             constexpr uint8_t PDF_DIC_END[]   = ">>";
             constexpr uint8_t PDF_DIC_SIZE    = 2;
@@ -169,10 +186,19 @@ namespace Type
         };
 
         struct DecodeParms {
+            // FlateDecode and LZWDecode params
             uint8 predictor = 1;
             uint16 column = 1;
             uint8 bitsPerComponent = 8;
             uint8 earlyChange      = 1;
+            // CCITTDecode params
+            int K                  = 0;
+            bool endOfLine         = false;
+            bool encodedByteAlign  = false;
+            uint16 rows            = 0;
+            bool endOfBlock        = true;
+            bool blackIs1          = false;
+            uint8 dmgRowsBefError = 0;
         };
 
         enum class SectionPDFObjectType : uint8 {
@@ -295,6 +321,7 @@ namespace Type
             bool ASCII85Decode(const BufferView& input, Buffer& output, String& message);
             bool JPXDecode(const BufferView& jpxData, Buffer& output, uint32_t& width, uint32_t& height, uint8_t& components, String& message);
             bool LZWDecodeStream(const BufferView& input, Buffer& output, uint8_t earlyChange, String& message);
+            bool JBIG2Decode(const BufferView& inputData, Buffer& output, String& message);
         };
         namespace Panels
         {

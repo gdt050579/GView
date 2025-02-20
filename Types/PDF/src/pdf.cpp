@@ -954,7 +954,67 @@ void ProcessPDFTree(
             } else if (CheckType(data, objectOffset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
                 objectOffset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
                 objectNode.metadata.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
-            }
+                objectOffset--;
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_K_SIZE, PDF::KEY::PDF_K)) {
+                objectOffset += PDF::KEY::PDF_K_SIZE + 1;
+                if (!data.Copy(objectOffset, buffer)) {
+                    break;
+                }
+                bool isNegative = false;
+                if (buffer == '-') {
+                    isNegative = true;
+                }
+                objectOffset++;
+                objectNode.metadata.decodeParams.K = GetTypeValue(data, objectOffset, dataSize);
+                if (isNegative) {
+                    objectNode.metadata.decodeParams.K *= -1;
+                }
+                objectOffset--;
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ROWS_SIZE, PDF::KEY::PDF_ROWS)) {
+                objectOffset += PDF::KEY::PDF_ROWS_SIZE + 1;
+                objectNode.metadata.decodeParams.rows = GetTypeValue(data, objectOffset, dataSize);
+                objectOffset--;
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDOFLINE_SIZE, PDF::KEY::PDF_ENDOFLINE)) {
+                objectOffset += PDF::KEY::PDF_ENDOFLINE_SIZE + 1;
+                if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
+                    objectNode.metadata.decodeParams.endOfLine = true;
+                    objectOffset += PDF::KEY::PDF_TRUE_SIZE;
+                } else {
+                    objectNode.metadata.decodeParams.endOfLine = false;
+                    objectOffset += PDF::KEY::PDF_FALSE_SIZE;
+                }
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ENCODEDBYTEALIGN_SIZE, PDF::KEY::PDF_ENCODEDBYTEALIGN)) {
+                objectOffset += PDF::KEY::PDF_ENCODEDBYTEALIGN_SIZE + 1;
+                if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
+                    objectNode.metadata.decodeParams.encodedByteAlign = true;
+                    objectOffset += PDF::KEY::PDF_TRUE_SIZE;
+                } else {
+                    objectNode.metadata.decodeParams.encodedByteAlign = false;
+                    objectOffset += PDF::KEY::PDF_FALSE_SIZE;
+                }
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDOFBLOCK_SIZE, PDF::KEY::PDF_ENDOFBLOCK)) {
+                objectOffset += PDF::KEY::PDF_ENDOFBLOCK_SIZE + 1;
+                if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
+                    objectNode.metadata.decodeParams.endOfBlock = true;
+                    objectOffset += PDF::KEY::PDF_TRUE_SIZE;
+                } else {
+                    objectNode.metadata.decodeParams.endOfBlock = false;
+                    objectOffset += PDF::KEY::PDF_FALSE_SIZE;
+                }
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_BLACKIS1_SIZE, PDF::KEY::PDF_BLACKIS1)) {
+                objectOffset += PDF::KEY::PDF_BLACKIS1_SIZE + 1;
+                if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
+                    objectNode.metadata.decodeParams.blackIs1 = true;
+                    objectOffset += PDF::KEY::PDF_TRUE_SIZE;
+                } else {
+                    objectNode.metadata.decodeParams.blackIs1 = false;
+                    objectOffset += PDF::KEY::PDF_FALSE_SIZE;
+                }
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_DMGROWSBEFERROR_SIZE, PDF::KEY::PDF_DMGROWSBEFERROR)) {
+                objectOffset += PDF::KEY::PDF_DMGROWSBEFERROR_SIZE + 1;
+                objectNode.metadata.decodeParams.dmgRowsBefError = GetTypeValue(data, objectOffset, dataSize);
+                objectOffset--;
+            } 
         }
         // object has a stream
         if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM) && foundLength) {
