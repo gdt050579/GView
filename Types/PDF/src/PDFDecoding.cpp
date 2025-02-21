@@ -404,7 +404,7 @@ opj_stream_t* CreateMemoryStream(MemoryStreamData* msd)
     return stream;
 }
 
-bool PDF::PDFFile::JPXDecode(const BufferView& jpxData, Buffer& output, uint32_t& width, uint32_t& height, uint8_t& components, AppCUI::Utils::String& message)
+bool PDF::PDFFile::JPXDecode(const BufferView& jpxData, Buffer& output, uint32_t& width, uint32_t& height, uint8_t& components, String& message)
 {
     message.Clear();
     output.Resize(0);

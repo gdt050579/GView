@@ -934,6 +934,7 @@ void ProcessPDFTree(
                 } else {
                     objectOffset = copyObjectOffset;
                 }
+                objectOffset--;
             }
             // /Filter
             else if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
@@ -1365,11 +1366,13 @@ PDF::ObjectNode* PDF::PDFFile::FindNodeByObjectNumber(uint32_t number)
         auto* front = queue.front();
         queue.pop_front();
 
-        if (front->pdfObject.number == number)
+        if (front->pdfObject.number == number) {
             return front;
+        }
 
-        for (auto& ch : front->children)
+        for (auto& ch : front->children) {
             queue.push_back(&ch);
+        }
     }
     return nullptr;
 }
