@@ -1,5 +1,6 @@
 #include "pdf.hpp"
 #include <deque>
+#include <podofo/podofo.h>
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;
@@ -9,6 +10,7 @@ using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
+using namespace PoDoFo;
 
 constexpr string_view PDF_ICON = "................"  // 1
                                  "................"  // 2
@@ -252,7 +254,7 @@ bool GetTrailerOffset(uint64& offset, const uint64& dataSize, GView::Utils::Data
     // trailer segment
     bool foundTrailer = false;
     for (; offset < dataSize - PDF::KEY::PDF_TRAILER_SIZE; ++offset) {
-        const bool match = CheckType(data, offset, PDF::KEY::PDF_TRAILER_SIZE, PDF::KEY::PDF_TRAILER);
+        const bool match = CheckType(data, offset, PDF::KEY::PDF_TRAILER_SIZE, PDF::KEY::PDF_TRAILER_KEY);
         if (match) {
             trailerOffset = offset;
             foundTrailer  = true;
@@ -1397,6 +1399,58 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
     win->CreateViewer(settings);
 }
 
+void CreateTextView(const std::string& textToShow)
+{
+    Buffer textBuffer;
+    textBuffer.Resize(textToShow.size());
+    memcpy(textBuffer.GetData(), textToShow.data(), textToShow.size());
+    BufferView bv = textBuffer;
+    GView::App::OpenBuffer(
+        bv,
+        u"PDF Extracted Text",
+        u"inmemory://pdf_extracted",
+        GView::App::OpenMethod::BestMatch,
+        "TXT"
+    );
+}
+
+bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)
+{
+    //PdfMemDocument doc;
+    //// Retrieve the DataCache object
+    //auto& dataCache = pdf->obj->GetData();
+
+    //// Obtain a BufferView for the entire file from the DataCache.
+    //auto fileBuffer = dataCache.GetEntireFile();
+
+    //// Construct a PoDoFo::bufferview from the underlying data.
+    //// Cast the pointer to const char* since bufferview is defined as cspan<char>.
+    //PoDoFo::bufferview buffer(reinterpret_cast<const char*>(fileBuffer.GetData()), fileBuffer.GetLength());
+
+    //// Load the PDF document from the buffer
+    //doc.LoadFromBuffer(buffer);
+
+    //std::string extractedText;
+    //auto& pages = doc.GetPages();
+    //for (unsigned i = 0; i < pages.GetCount(); i++) {
+    //    auto& page = pages.GetPageAt(i);
+    //    vector<PdfTextEntry> entries;
+    //    page.ExtractTextTo(entries);
+
+    //    for (auto& entry : entries) {
+    //        // Append each text entry with a newline separator
+    //        extractedText.append(entry.Text.data());
+    //        extractedText.append("\n");
+    //    }
+    //}
+
+    //// Pass the accumulated text to CreateTextView
+    std::string extractedText = "test test PDF";
+    CreateTextView(extractedText);
+
+    return true;
+}
+
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto pdf = win->GetObject()->GetContentType<PDF::PDFFile>();
@@ -1406,7 +1460,8 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     CreateBufferView(win, pdf);
     ProcessPDF(pdf);
     CreateContainerView(win, pdf);
-    // win->CreateViewer<TextViewer::Settings>();
+    // pdf->ExtractAndOpenText();
+    //win->CreateViewer<TextViewer::Settings>();
 
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Sections(pdf, win)), false);
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Information(pdf)), true);

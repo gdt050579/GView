@@ -6,6 +6,7 @@ using namespace AppCUI::Input;
 
 constexpr int PDF_SECTIONS_GOTO   = 1;
 constexpr int PDF_SECTIONS_SELECT = 2;
+constexpr int PDF_TEXTVIEWER_TEST = 3;
 
 Panels::Sections::Sections(Reference<GView::Type::PDF::PDFFile> _pdf, Reference<GView::View::WindowInterface> _win) : TabPage("&Sections")
 {
@@ -77,6 +78,7 @@ bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& comma
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PDF_SECTIONS_GOTO);
     commandBar.SetCommand(Key::F9, "Select", PDF_SECTIONS_SELECT);
+    commandBar.SetCommand(Key::F10, "Text Viewer", PDF_TEXTVIEWER_TEST);
     return true;
 }
 
@@ -95,6 +97,9 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
             return true;
         case PDF_SECTIONS_SELECT:
             SelectCurrentSection();
+            return true;
+        case PDF_TEXTVIEWER_TEST:
+            pdf->ExtractAndOpenText(pdf);
             return true;
         }
     }

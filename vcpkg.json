@@ -86,6 +86,10 @@
 	{
 		"name": "jbig2dec",
 		"platform": "windows | linux | osx"
+	},
+	{
+		"name": "podofo",
+		"platform": "windows | linux | osx"
 	}
   ],
   "vcpkg-configuration": {
