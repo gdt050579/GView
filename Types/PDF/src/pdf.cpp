@@ -827,6 +827,29 @@ void GetObjectReference(const uint64& dataSize, GView::Utils::DataCache& data, u
     }
 }
 
+void GetDictionaryType(GView::Utils::DataCache& data, uint64& objectOffset, const uint64& dataSize, std::vector<std::string>& entries)
+{
+    uint8 buffer;
+    std::string entry;
+    while (data.Copy(objectOffset, buffer) && buffer == PDF::WSC::SPACE && objectOffset < dataSize) {
+        objectOffset++;
+    }
+    if (buffer == PDF::DC::SOLIUDS) {
+        objectOffset++;
+        entry.clear();
+        while (data.Copy(objectOffset, buffer) && buffer != PDF::DC::SOLIUDS && buffer != PDF::DC::GREATER_THAN && buffer != PDF::WSC::LINE_FEED &&
+               buffer != PDF::WSC::SPACE && buffer != PDF::DC::RIGHT_SQUARE_BRACKET) {
+            entry += static_cast<char>(buffer);
+            objectOffset++;
+        }
+        if (entry.length() > 1) {
+            entries.push_back(entry);
+        }
+    } else {
+        objectOffset++;
+    }
+}
+
 uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, const uint64& dataSize, vector<PDF::PDFObject>& pdfObjects)
 {
     uint64 numberLength = 0;
@@ -1017,7 +1040,13 @@ void ProcessPDFTree(
                 objectOffset += PDF::KEY::PDF_DMGROWSBEFERROR_SIZE + 1;
                 objectNode.metadata.decodeParams.dmgRowsBefError = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } 
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
+                objectOffset += PDF::KEY::PDF_TYPE_SIZE;
+                GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionaryTypes);
+            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_SUBTYPE_SIZE, PDF::KEY::PDF_SUBTYPE)) {
+                objectOffset += PDF::KEY::PDF_SUBTYPE_SIZE;
+                GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionarySubtypes);
+            }
         }
         // object has a stream
         if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM) && foundLength) {
@@ -1199,6 +1228,12 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                         } else if (CheckType(data, objectOffset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
                             objectOffset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
                             pdf->objectNodeRoot.metadata.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
+                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
+                            objectOffset += PDF::KEY::PDF_TYPE_SIZE;
+                            GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
+                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_SUBTYPE_SIZE, PDF::KEY::PDF_SUBTYPE)) {
+                            objectOffset += PDF::KEY::PDF_SUBTYPE_SIZE;
+                            GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionarySubtypes);
                         } else {
                             objectOffset++;
                         }
@@ -1391,6 +1426,8 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
           "n:&Offset start,a:r,w:20",
           "n:&Size,a:r,w:20",
           "n:&Filters,a:r,w:30",
+          "n:&Dictionary Types,a:r,w:20",
+          "n:&Dictionary Subtypes,a:r,w:22",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PDF::PDFFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
@@ -1416,38 +1453,36 @@ void CreateTextView(const std::string& textToShow)
 
 bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)
 {
-    //PdfMemDocument doc;
+    PdfMemDocument doc;
     //// Retrieve the DataCache object
-    //auto& dataCache = pdf->obj->GetData();
+    auto& dataCache = pdf->obj->GetData();
+    auto fileBuffer = dataCache.GetEntireFile();
 
-    //// Obtain a BufferView for the entire file from the DataCache.
-    //auto fileBuffer = dataCache.GetEntireFile();
+    //// construct a PoDoFo::bufferview from the underlying data.
+    //// cast the pointer to const char* since bufferview is defined as cspan<char>.
+    PoDoFo::bufferview buffer(reinterpret_cast<const char*>(fileBuffer.GetData()), fileBuffer.GetLength());
 
-    //// Construct a PoDoFo::bufferview from the underlying data.
-    //// Cast the pointer to const char* since bufferview is defined as cspan<char>.
-    //PoDoFo::bufferview buffer(reinterpret_cast<const char*>(fileBuffer.GetData()), fileBuffer.GetLength());
+    //// load the PDF document from the buffer
+    doc.LoadFromBuffer(buffer);
 
-    //// Load the PDF document from the buffer
-    //doc.LoadFromBuffer(buffer);
+    std::string extractedText;
+    auto& pages = doc.GetPages();
+    for (unsigned i = 0; i < pages.GetCount(); i++) {
+        auto& page = pages.GetPageAt(i);
+        vector<PdfTextEntry> entries;
+        page.ExtractTextTo(entries);
 
-    //std::string extractedText;
-    //auto& pages = doc.GetPages();
-    //for (unsigned i = 0; i < pages.GetCount(); i++) {
-    //    auto& page = pages.GetPageAt(i);
-    //    vector<PdfTextEntry> entries;
-    //    page.ExtractTextTo(entries);
+        for (auto& entry : entries) {
+            extractedText.append(entry.Text.data());
+            extractedText.append("\n");
+        }
+    }
 
-    //    for (auto& entry : entries) {
-    //        // Append each text entry with a newline separator
-    //        extractedText.append(entry.Text.data());
-    //        extractedText.append("\n");
-    //    }
-    //}
-
-    //// Pass the accumulated text to CreateTextView
-    std::string extractedText = "test test PDF";
-    CreateTextView(extractedText);
-
+    // pass the accumulated text to CreateTextView
+    // std::string extractedText = "test test PDF";
+    if (extractedText.length() > 0) {
+        CreateTextView(extractedText);
+    }
     return true;
 }
 
@@ -1460,8 +1495,6 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     CreateBufferView(win, pdf);
     ProcessPDF(pdf);
     CreateContainerView(win, pdf);
-    // pdf->ExtractAndOpenText();
-    //win->CreateViewer<TextViewer::Settings>();
 
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Sections(pdf, win)), false);
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Information(pdf)), true);

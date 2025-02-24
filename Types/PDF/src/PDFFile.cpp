@@ -107,6 +107,28 @@ bool PDFFile::PopulateItem(TreeViewItem item)
     }
     item.SetText(4, ub);
 
+    ub.Clear();
+    first = true;
+    for (auto& filter : childNode->pdfObject.dictionaryTypes) {
+        if (!first) {
+            ub.Add(u", ");
+        }
+        ub.Add(filter);
+        first = false;
+    }
+    item.SetText(5, ub);
+
+    ub.Clear();
+    first = true;
+    for (auto& filter : childNode->pdfObject.dictionarySubtypes) {
+        if (!first) {
+            ub.Add(u", ");
+        }
+        ub.Add(filter);
+        first = false;
+    }
+    item.SetText(6, ub);
+
     item.SetExpandable(!childNode->children.empty());
 
     item.SetData(static_cast<uint64_t>(childNode->pdfObject.number));

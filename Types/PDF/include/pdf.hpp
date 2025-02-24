@@ -139,6 +139,15 @@ namespace Type
 
             constexpr uint8_t PDF_PARENT[] = "/Parent";
             constexpr uint8_t PDF_PARENT_SIZE   = 7;
+
+            constexpr uint8_t PDF_TYPE[]    = "/Type";
+            constexpr uint8_t PDF_TYPE_SIZE = 5;
+
+            constexpr uint8_t PDF_SUBTYPE[]    = "/Subtype";
+            constexpr uint8_t PDF_SUBTYPE_SIZE = 8;
+
+            constexpr uint8_t PDF_ENCRYPT[] = "/Encrypt";
+            constexpr uint8_t PDF_ENCRYPT_SIZE = 8;
         } // namespace KEY
 
         namespace PREDICTOR
@@ -215,6 +224,8 @@ namespace Type
             uint64 endBuffer;
             SectionPDFObjectType type;
             uint64 number;
+            std::vector<std::string> dictionaryTypes;
+            std::vector<std::string> dictionarySubtypes;
         };
 
         enum class PDFObjectType : uint8 {
@@ -254,6 +265,7 @@ namespace Type
           public:
             Header header{};
             bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
+            bool isEncrypted  = false; 
             uint64 index         = 0;
             PDF::ObjectNode objectNodeRoot;
             std::u16string currentPath;
