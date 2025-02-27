@@ -1,5 +1,6 @@
 #include "pdf.hpp"
 #include <deque>
+#include <codecvt>
 #include <podofo/podofo.h>
 
 using namespace AppCUI;
@@ -558,6 +559,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         } else {
                             Dialogs::MessageBox::ShowError("Error!", "Anomaly found: /Prev in the trailer has the value equal to zero!");
                         }
+                    } else if (CheckType(data, offset, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
+                        offset += PDF::KEY::PDF_ENCRYPT_SIZE;
+                        pdf->isEncrypted = true;
                     } else if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
                         settings.AddZone(offset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
                         offset += PDF::KEY::PDF_EOF_SIZE;
@@ -621,6 +625,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         offset += PDF::KEY::PDF_PREV_SIZE + 1;
                         prevOffset        = GetTypeValue(data, offset, dataSize);
                         typeFlags.hasPrev = true;
+                    } else if (CheckType(data, offset, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
+                        offset += PDF::KEY::PDF_ENCRYPT_SIZE;
+                        pdf->isEncrypted = true;
                     } else if (
                           !typeFlags.hasDecodeParms && CheckType(data, offset, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) { // /DecodeParms
                         offset += PDF::KEY::PDF_DECODEPARMS_SIZE + 2;
@@ -1436,40 +1443,37 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
     win->CreateViewer(settings);
 }
 
-void CreateTextView(const std::string& textToShow)
+std::u16string GetTxtFileName(const std::u16string_view pdfPath)
 {
-    Buffer textBuffer;
-    textBuffer.Resize(textToShow.size());
-    memcpy(textBuffer.GetData(), textToShow.data(), textToShow.size());
-    BufferView bv = textBuffer;
-    GView::App::OpenBuffer(
-        bv,
-        u"PDF Extracted Text",
-        u"inmemory://pdf_extracted",
-        GView::App::OpenMethod::BestMatch,
-        "TXT"
-    );
+    std::u16string result{ pdfPath };
+
+    auto lastDot = result.rfind(u'.');
+    if (lastDot != std::u16string::npos) {
+        result.erase(lastDot);
+    }
+
+    result += u".txt";
+    return result;
 }
 
-bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)
+std::string ExtractTextFromPDF(Reference<GView::Type::PDF::PDFFile> pdf)
 {
-    PdfMemDocument doc;
-    //// Retrieve the DataCache object
-    auto& dataCache = pdf->obj->GetData();
-    auto fileBuffer = dataCache.GetEntireFile();
+    PoDoFo::PdfMemDocument doc;
 
-    //// construct a PoDoFo::bufferview from the underlying data.
-    //// cast the pointer to const char* since bufferview is defined as cspan<char>.
+    auto& dataCache = pdf->obj->GetData();
+    const auto fileBuffer = dataCache.GetEntireFile();
+
+    // construct a PoDoFo::bufferview from the underlying data.
+    // cast the pointer to const char* since bufferview is defined as cspan<char>.
     PoDoFo::bufferview buffer(reinterpret_cast<const char*>(fileBuffer.GetData()), fileBuffer.GetLength());
 
-    //// load the PDF document from the buffer
     doc.LoadFromBuffer(buffer);
 
     std::string extractedText;
-    auto& pages = doc.GetPages();
+    const auto& pages = doc.GetPages();
     for (unsigned i = 0; i < pages.GetCount(); i++) {
-        auto& page = pages.GetPageAt(i);
-        vector<PdfTextEntry> entries;
+        const auto& page = pages.GetPageAt(i);
+        std::vector<PoDoFo::PdfTextEntry> entries;
         page.ExtractTextTo(entries);
 
         for (auto& entry : entries) {
@@ -1477,11 +1481,62 @@ bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)
             extractedText.append("\n");
         }
     }
+    return extractedText;
+}
 
-    // pass the accumulated text to CreateTextView
-    // std::string extractedText = "test test PDF";
-    if (extractedText.length() > 0) {
-        CreateTextView(extractedText);
+void CreateTextView(const std::string& textToShow, const std::u16string_view& pdfName)
+{
+    Buffer textBuffer;
+    textBuffer.Resize(textToShow.size());
+    memcpy(textBuffer.GetData(), textToShow.data(), textToShow.size());
+
+    BufferView bv = textBuffer;
+    GView::App::OpenBuffer(bv, pdfName, pdfName, GView::App::OpenMethod::BestMatch);
+}
+
+bool SaveExtractedTextToFile(const std::string& text, const std::u16string_view& filePath)
+{
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
+    std::string utf8FilePath = convert.to_bytes(filePath.data(), filePath.data() + filePath.size());
+
+    std::ofstream ofs(utf8FilePath, std::ios::out | std::ios::binary);
+    if (!ofs) {
+        return false;
+    }
+
+    ofs.write(text.data(), text.size());
+    ofs.close();
+
+    return true;
+}
+
+bool PDF::PDFFile::ExtractAndSaveText(Reference<GView::Type::PDF::PDFFile> pdf)
+{
+    const auto extractedText = ExtractTextFromPDF(pdf);
+    const auto txtFileName   = GetTxtFileName(pdf->obj->GetPath());
+
+    if (!extractedText.empty()) {
+        if (!SaveExtractedTextToFile(extractedText, txtFileName)) {
+            Dialogs::MessageBox::ShowError("Error!", "Failed to save text to a .txt file!");
+            return false;
+        }
+        std::u16string msg = u"The text from the PDF has been saved! File name: ";
+        msg += txtFileName;
+        Dialogs::MessageBox::ShowNotification(u"Success!", msg);
+        return true;
+    } else {
+        Dialogs::MessageBox::ShowNotification("Notification", "Couldn't find text to extract from this PDF!");
+        return false;
+    }
+}
+
+bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)
+{
+    auto extractedText = ExtractTextFromPDF(pdf);
+    if (!extractedText.empty()) {
+        CreateTextView(extractedText, pdf->obj->GetName());
+    } else {
+        Dialogs::MessageBox::ShowNotification("Notification", "Couldn't find text to extract from this PDF!");
     }
     return true;
 }

@@ -167,6 +167,18 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         buffer.Resize(size);
         memcpy(buffer.GetData(), entireFile.GetData() + offset, size);
 
+        std::u16string tmpName = u"Stream ";
+        tmpName += to_u16string((uint32_t) node->pdfObject.number);
+        LocalUnicodeStringBuilder<64> streamName;
+        CHECKRET(streamName.Set(tmpName), "")
+
+        // encrypted -> can't open the stream, for now
+        if (isEncrypted) {
+            Dialogs::MessageBox::ShowWarning("Warning!", "Unable to decompress the stream because the PDF is encrypted! Raw data will be displayed instead.");
+            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
+            return;
+        }
+
         // decompress the stream
         // /DCTDecode -> LoadJPGToImage from JPG
         if (!node->metadata.filters.empty()) {
@@ -251,10 +263,6 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                 }
             }
         }
-        std::u16string tmpName = u"Stream ";
-        tmpName += to_u16string((uint32_t) node->pdfObject.number);
-        LocalUnicodeStringBuilder<64> streamName;
-        CHECKRET(streamName.Set(tmpName), "")
 
         GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
     }

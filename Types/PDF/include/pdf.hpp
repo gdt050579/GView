@@ -265,7 +265,7 @@ namespace Type
           public:
             Header header{};
             bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
-            bool isEncrypted  = false; 
+            bool isEncrypted  = false;
             uint64 index         = 0;
             PDF::ObjectNode objectNodeRoot;
             std::u16string currentPath;
@@ -324,6 +324,7 @@ namespace Type
 
             std::u16string to_u16string(uint32_t value);
             bool ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf);
+            bool ExtractAndSaveText(Reference<GView::Type::PDF::PDFFile> pdf);
 
             static void GetPreviousRow(const Buffer& data, uint64_t offset, uint8_t* buffer, const uint64_t rowLength);
             static void ApplyFilter(
