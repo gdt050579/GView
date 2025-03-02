@@ -258,6 +258,15 @@ namespace Type
             std::vector<ObjectNode> children;                                                       
         };
 
+        struct PDFStats {
+            uint16 objectCount  = 0;
+            uint16 streamsCount = 0;
+            std::vector<std::string> filtersTypes;
+            std::vector<std::string> dictionaryTypes;
+            std::vector<std::string> dictionarySubtypes;
+            bool isEncrypted = false;
+        };
+
 #pragma pack(pop) // Back to default packing
 
         class PDFFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
@@ -265,7 +274,6 @@ namespace Type
           public:
             Header header{};
             bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
-            bool isEncrypted  = false;
             uint64 index         = 0;
             PDF::ObjectNode objectNodeRoot;
             std::u16string currentPath;
@@ -274,6 +282,7 @@ namespace Type
             vector<PDFObject> pdfObjects;
             vector<uint64> processedObjects; 
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+            PDFStats pdfStats;
 
           public:
             PDFFile();
@@ -321,6 +330,8 @@ namespace Type
 
             ObjectNode* FindNodeByPath(Reference<GView::Type::PDF::PDFFile> pdf, std::u16string_view path);
             ObjectNode* FindNodeByObjectNumber(uint32_t number);
+
+            void PopulateHeader(View::ContainerViewer::Settings &settings, const PDFStats pdfStats);
 
             std::u16string to_u16string(uint32_t value);
             bool ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf);

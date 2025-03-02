@@ -173,7 +173,7 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         CHECKRET(streamName.Set(tmpName), "")
 
         // encrypted -> can't open the stream, for now
-        if (isEncrypted) {
+        if (pdfStats.isEncrypted) {
             Dialogs::MessageBox::ShowWarning("Warning!", "Unable to decompress the stream because the PDF is encrypted! Raw data will be displayed instead.");
             GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
             return;
