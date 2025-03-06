@@ -1536,6 +1536,11 @@ std::string ExtractTextFromPDF(Reference<GView::Type::PDF::PDFFile> pdf)
 
     std::string extractedText;
     const auto& pages = doc.GetPages();
+    const uint64 totalPages = static_cast<uint64>(pages.GetCount());
+
+    ProgressStatus::Init("Extracting text", totalPages);
+
+    LocalString<128> ls;
     for (unsigned i = 0; i < pages.GetCount(); i++) {
         const auto& page = pages.GetPageAt(i);
         std::vector<PoDoFo::PdfTextEntry> entries;
@@ -1545,6 +1550,9 @@ std::string ExtractTextFromPDF(Reference<GView::Type::PDF::PDFFile> pdf)
             extractedText.append(entry.Text.data());
             extractedText.append("\n");
         }
+
+        ls.Format("Page %u/%u", i + 1, pages.GetCount());
+        ProgressStatus::Update(i + 1, ls.GetText());
     }
     return extractedText;
 }
