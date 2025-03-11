@@ -153,7 +153,7 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
             pdf->ExtractAndOpenText(pdf);
             return true;
         case PDF_SAVEASTXT:
-            pdf->ExtractAndSaveText(pdf);
+            pdf->ExtractAndSaveTextWithDialog(pdf);
         }
     }
     return false;

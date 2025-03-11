@@ -1619,24 +1619,52 @@ bool SaveExtractedTextToFile(const std::string& text, const std::u16string_view&
     return true;
 }
 
-bool PDF::PDFFile::ExtractAndSaveText(Reference<GView::Type::PDF::PDFFile> pdf)
+bool PDF::PDFFile::ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFFile> pdf)
 {
-    const auto extractedText = ExtractTextFromPDF(pdf);
-    const auto txtFileName   = GetTxtFileName(pdf->obj->GetPath());
-
-    if (!extractedText.empty()) {
-        if (!SaveExtractedTextToFile(extractedText, txtFileName)) {
-            Dialogs::MessageBox::ShowError("Error!", "Failed to save text to a .txt file!");
-            return false;
-        }
-        std::u16string msg = u"The text from the PDF has been saved! File name: ";
-        msg += txtFileName;
-        Dialogs::MessageBox::ShowNotification(u"Success!", msg);
-        return true;
-    } else {
+    auto extractedText = ExtractTextFromPDF(pdf);
+    if (extractedText.empty()) {
         Dialogs::MessageBox::ShowNotification("Notification", "Couldn't find text to extract from this PDF!");
         return false;
     }
+
+    // build default ".txt" name based on the PDF filename
+    std::u16string_view pdfU16Path = pdf->obj->GetPath();
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
+    std::string pdfUTF8Path = convert.to_bytes(pdfU16Path.data(), pdfU16Path.data() + pdfU16Path.size());
+
+    std::filesystem::path pdfFsPath(pdfUTF8Path);
+    std::string defaultTxtName       = pdfFsPath.stem().string() + ".txt";
+    std::filesystem::path defaultDir = pdfFsPath.parent_path();
+
+    // show "Save As" dialog
+    auto chosenPathOpt = AppCUI::Dialogs::FileDialog::ShowSaveFileWindow(defaultTxtName, "Text Files:txt|All files:*", defaultDir);
+
+    // if canceled
+    if (!chosenPathOpt.has_value()) {
+        return false;
+    }
+    auto chosenFsPath = chosenPathOpt.value();
+
+    // force the extension to be ".txt" if not present
+    if (chosenFsPath.extension() != ".txt") {
+        chosenFsPath.replace_extension(".txt");
+    }
+
+    // convert to std::u16string
+    std::wstring wide = chosenFsPath.wstring();
+    std::u16string savePath = std::u16string(wide.begin(), wide.end());
+
+    // save extracted text
+    if (!SaveExtractedTextToFile(extractedText, savePath)) {
+        Dialogs::MessageBox::ShowError("Error!", "Failed to save text to the chosen file path!");
+        return false;
+    }
+
+    std::u16string msg = u"The text from the PDF has been saved! File name: ";
+    msg += savePath;
+    Dialogs::MessageBox::ShowNotification(u"Success!", msg);
+
+    return true;
 }
 
 bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)

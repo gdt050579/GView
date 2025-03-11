@@ -8,7 +8,7 @@ using namespace PoDoFo;
 
 static bool Approximately(double value, double standard, double tolerance = 2.0)
 {
-    return (std::fabs(value - standard) <= tolerance);
+    return (fabs(value - standard) <= tolerance);
 }
 
 static std::string GuessPageFormat(double widthMm, double heightMm)

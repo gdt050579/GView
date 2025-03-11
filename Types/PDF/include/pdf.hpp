@@ -336,7 +336,7 @@ namespace Type
 
             std::u16string to_u16string(uint32_t value);
             bool ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf);
-            bool ExtractAndSaveText(Reference<GView::Type::PDF::PDFFile> pdf);
+            bool ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFFile> pdf);
 
             static void GetPreviousRow(const Buffer& data, uint64_t offset, uint8_t* buffer, const uint64_t rowLength);
             static void ApplyFilter(
