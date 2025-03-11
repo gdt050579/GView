@@ -163,6 +163,8 @@ void GetDecompressDataValue(Buffer& decompressedData, uint64& offset, const uint
 
 void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::DataCache& data, std::vector<uint64_t>& objectOffsets)
 {
+    std::unordered_set<uint64_t> seenOffsets; // Store seen offsets
+
     auto isValidEOFSequence = [](uint8_t eofSequence[2]) -> bool {
         return (eofSequence[0] == PDF::WSC::SPACE && eofSequence[1] == PDF::WSC::CARRIAGE_RETURN) ||
                (eofSequence[0] == PDF::WSC::SPACE && eofSequence[1] == PDF::WSC::LINE_FEED) ||
@@ -192,7 +194,11 @@ void GetObjectsOffsets(const uint64& numEntries, uint64& offset, GView::Utils::D
                         result      = 10 * result + digit;
                     }
                 }
-                objectOffsets.push_back(result);
+
+                if (seenOffsets.find(result) == seenOffsets.end()) {
+                    objectOffsets.push_back(result);
+                    seenOffsets.insert(result);
+                }
             }
         } else {
             Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
@@ -589,6 +595,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         }
     } else if (IsCrossRefStream(crossRefOffset, data, dataSize)) { // cross-reference stream
         bool next_CR_stream = true;
+        std::unordered_set<uint64_t> seenOffsets;
         while (next_CR_stream) {
             offset = crossRefOffset;
             uint8_t tag;
@@ -739,7 +746,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                                 GetDecompressDataValue(decompressedData, offset, wValues.z, obj3);
 
                                 if (obj1 == 1) { // don't include CR stream as an object
-                                    objectOffsets.push_back(obj2);
+                                    if (seenOffsets.find(obj2) == seenOffsets.end()) {
+                                        objectOffsets.push_back(obj2);
+                                        seenOffsets.insert(obj2);
+                                    }
+
                                     if (obj2 == crossRefOffset) {
                                         streamOffsets.push_back(obj2);
                                     }
@@ -846,11 +857,12 @@ void GetDictionaryType(GView::Utils::DataCache& data, uint64& objectOffset, cons
         objectOffset++;
         entry.clear();
         while (data.Copy(objectOffset, buffer) && buffer != PDF::DC::SOLIUDS && buffer != PDF::DC::GREATER_THAN && buffer != PDF::WSC::LINE_FEED &&
-               buffer != PDF::WSC::SPACE && buffer != PDF::DC::RIGHT_SQUARE_BRACKET) {
+                     buffer != PDF::WSC::SPACE && buffer != PDF::DC::RIGHT_SQUARE_BRACKET &&
+               buffer != PDF::WSC::CARRIAGE_RETURN) {
             entry += static_cast<char>(buffer);
             objectOffset++;
         }
-        if (entry.length() > 1) {
+        if (!entry.empty() && std::find(entries.begin(), entries.end(), entry) == entries.end()) {
             entries.push_back(entry);
         }
     } else {
@@ -917,6 +929,15 @@ void InsertValuesIntoStats(std::vector<std::string> &stats, std::vector<std::str
     stats.assign(uniqueFilters.begin(), uniqueFilters.end());
 }
 
+static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObjects, uint64 number, uint64 start)
+{
+    for (auto& obj : pdfObjects) {
+        if (obj.number == number && obj.startBuffer == start)
+            return &obj;
+    }
+    return nullptr;
+}
+
 void ProcessPDFTree(
       const uint64& dataSize,
       GView::Utils::DataCache& data,
@@ -933,7 +954,7 @@ void ProcessPDFTree(
     bool issueFound = false;
     std::vector<uint64> objectsNumber;     
     processedObjects.push_back(objectNode.pdfObject.number);
-    objectNode.hasStream = false;
+    objectNode.pdfObject.hasStream = false;
 
     while (objectOffset < objectNode.pdfObject.endBuffer) {
         if (!data.Copy(objectOffset, buffer)) {
@@ -1077,7 +1098,7 @@ void ProcessPDFTree(
         }
         // object has a stream
         if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM) && foundLength) {
-            objectNode.hasStream = true;
+            objectNode.pdfObject.hasStream = true;
             objectOffset += PDF::KEY::PDF_STREAM_SIZE;
             // skip some bytes
             while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
@@ -1097,7 +1118,7 @@ void ProcessPDFTree(
                 PDF::ObjectNode streamChild;
                 streamChild.pdfObject.type   = PDF::SectionPDFObjectType::Stream;
                 streamChild.pdfObject.number = objectNode.pdfObject.number;
-                streamChild.hasStream        = false;
+                streamChild.pdfObject.hasStream    = false;
                 streamChild.pdfObject.startBuffer = objectNode.metadata.streamOffsetStart;
                 streamChild.pdfObject.endBuffer   = objectNode.metadata.streamOffsetEnd;
                 objectNode.children.push_back(streamChild);
@@ -1139,9 +1160,16 @@ void ProcessPDFTree(
         }
     }
 
-    if (!foundLength && objectNode.hasStream && !issueFound) {
+    if (!foundLength && objectNode.pdfObject.hasStream && !issueFound) {
         Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Missing /Length for an object which has a stream!");
         issueFound = true;
+    }
+
+    if (auto* found = FindObjectByNumber(pdfObjects, objectNode.pdfObject.number, objectNode.pdfObject.startBuffer)) {
+        found->hasStream          = objectNode.pdfObject.hasStream;
+        found->filters            = objectNode.metadata.filters;
+        found->dictionaryTypes    = objectNode.pdfObject.dictionaryTypes;
+        found->dictionarySubtypes = objectNode.pdfObject.dictionarySubtypes;
     }
 
     for (auto& objectNumber : objectsNumber) {
@@ -1172,7 +1200,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
             if (object.type == PDF::SectionPDFObjectType::Trailer && !firstTrailer) {
                 uint64 objectOffset           = object.startBuffer;
                 pdf->objectNodeRoot.pdfObject = object;
-                pdf->objectNodeRoot.hasStream = false;
+                pdf->objectNodeRoot.pdfObject.hasStream = false;
                 uint8 buffer;
 
                 while (objectOffset < object.endBuffer - PDF::KEY::PDF_STARTXREF_SIZE) {
@@ -1268,7 +1296,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             objectOffset++;
                         }
                     } else if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM) && foundLength) {
-                        pdf->objectNodeRoot.hasStream = true;
+                        pdf->objectNodeRoot.pdfObject.hasStream = true;
                         objectOffset += PDF::KEY::PDF_STREAM_SIZE;
                         // skip some bytes
                         while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
@@ -1287,7 +1315,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             PDF::ObjectNode streamChild;
                             streamChild.pdfObject.type = PDF::SectionPDFObjectType::Stream;
                             streamChild.pdfObject.number = pdf->objectNodeRoot.pdfObject.number;
-                            streamChild.hasStream        = false;
+                            streamChild.pdfObject.hasStream    = false;
                             streamChild.pdfObject.startBuffer = pdf->objectNodeRoot.metadata.streamOffsetStart;
                             streamChild.pdfObject.endBuffer   = pdf->objectNodeRoot.metadata.streamOffsetEnd;
                             pdf->objectNodeRoot.children.push_back(streamChild);
@@ -1303,6 +1331,14 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
             }
         }
     }
+
+    if (auto* found = FindObjectByNumber(pdf->pdfObjects, pdf->objectNodeRoot.pdfObject.number, pdf->objectNodeRoot.pdfObject.startBuffer)) {
+        found->filters            = pdf->objectNodeRoot.metadata.filters;
+        found->dictionaryTypes    = pdf->objectNodeRoot.pdfObject.dictionaryTypes;
+        found->dictionarySubtypes = pdf->objectNodeRoot.pdfObject.dictionarySubtypes;
+        found->hasStream          = pdf->objectNodeRoot.pdfObject.hasStream;
+    }
+
     for (auto& objectNumber : objectsNumber) {
         for (auto& object : pdf->pdfObjects) {
             if (objectNumber == object.number) {

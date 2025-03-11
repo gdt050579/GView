@@ -224,6 +224,8 @@ namespace Type
             uint64 endBuffer;
             SectionPDFObjectType type;
             uint64 number;
+            bool hasStream = false;
+            std::vector<std::string> filters;
             std::vector<std::string> dictionaryTypes;
             std::vector<std::string> dictionarySubtypes;
         };
@@ -252,7 +254,6 @@ namespace Type
         };
 
         struct ObjectNode {
-            bool hasStream;
             PDFObject pdfObject;
             Metadata metadata;
             std::vector<ObjectNode> children;                                                       

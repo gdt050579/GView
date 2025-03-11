@@ -109,22 +109,22 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 
     ub.Clear();
     first = true;
-    for (auto& filter : childNode->pdfObject.dictionaryTypes) {
+    for (auto& type : childNode->pdfObject.dictionaryTypes) {
         if (!first) {
             ub.Add(u", ");
         }
-        ub.Add(filter);
+        ub.Add(type);
         first = false;
     }
     item.SetText(5, ub);
 
     ub.Clear();
     first = true;
-    for (auto& filter : childNode->pdfObject.dictionarySubtypes) {
+    for (auto& subtype : childNode->pdfObject.dictionarySubtypes) {
         if (!first) {
             ub.Add(u", ");
         }
-        ub.Add(filter);
+        ub.Add(subtype);
         first = false;
     }
     item.SetText(6, ub);
@@ -154,7 +154,7 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         return;
     }
 
-    if (node->hasStream) {
+    if (node->pdfObject.hasStream) {
         const uint64 offset = node->metadata.streamOffsetStart;
         const uint64 end    = node->metadata.streamOffsetEnd;
         if (end <= offset || end > entireFile.GetLength()) {
