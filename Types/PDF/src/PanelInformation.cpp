@@ -1,6 +1,7 @@
 #include "pdf.hpp"
 #include <podofo/podofo.h>
 #include <codecvt>
+#include <cmath>
 
 using namespace GView::Type::PDF;
 using namespace AppCUI::Controls;
