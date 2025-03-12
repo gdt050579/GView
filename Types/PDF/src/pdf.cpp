@@ -64,17 +64,110 @@ bool CheckType(GView::Utils::DataCache& data, uint64& offset, const uint64& size
     return match;
 }
 
+bool IsEqualType(const std::string& s, const uint64_t& size_type, const uint8_t PDF_ARRAY[])
+{
+    if (s.size() != size_type) {
+        return false;
+    }
+
+    for (uint64_t i = 0; i < size_type; i++) {
+        if (static_cast<uint8_t>(s[i]) != PDF_ARRAY[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool TerminateProcessing(const int8 buffer)
+{
+    switch (buffer) {
+    case PDF::WSC::SPACE:
+    case PDF::WSC::LINE_FEED:
+    case PDF::WSC::FORM_FEED:
+    case PDF::WSC::CARRIAGE_RETURN:
+    case PDF::DC::SOLIUDS:
+    case PDF::DC::RIGHT_SQUARE_BRACKET:
+    case PDF::DC::LEFT_SQUARE_BRACKET:
+    case PDF::DC::LESS_THAN:
+    case PDF::DC::GREATER_THAN:
+    case PDF::DC::LEFT_PARETHESIS:
+    case PDF::DC::RIGHT_PARETHESIS:
+    case PDF::DC::LEFT_CURLY_BRACKET:
+    case PDF::DC::RIGHT_CURLY_BRACKET:
+        return true;
+        break;
+    default:
+        return false;
+    }
+}
+
+static int HexVal(uint8_t c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    return -1;
+}
+
+static std::string DecodeName(GView::Utils::DataCache& data, uint64_t& offset, const uint64_t endBuffer)
+{
+    std::string result;
+    result += "/";
+    offset++;
+    while (offset < endBuffer) {
+        uint8 c;
+        if (!data.Copy(offset, c)) {
+            break;
+        }
+
+        if (TerminateProcessing(c)) {
+            break;
+        }
+
+        if (c == '#') {
+            if (offset + 2 < endBuffer) {
+                uint8 c1, c2;
+                if (!data.Copy(offset + 1, c1) || !data.Copy(offset + 2, c2))
+                    break;
+
+                int v1 = HexVal(c1);
+                int v2 = HexVal(c2);
+                if (v1 >= 0 && v2 >= 0) {
+                    uint8_t decoded = static_cast<uint8_t>(v1 * 16 + v2);
+                    result.push_back((char) decoded);
+                    // Skip the '#' + two hex digits
+                    offset += 3;
+                    continue;
+                }
+            }
+        }
+        result.push_back((char) c);
+        offset++;
+    }
+    // offset--;
+    return result;
+}
+
 uint64 GetTypeValue(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize)
 {
     std::string lengthValStr;
     uint8_t buffer;
     uint64 value = 0;
+    bool error   = false;
     while (offset < dataSize && data.Copy(offset, buffer) && buffer >= '0' && buffer <= '9') {
         lengthValStr.push_back(buffer);
         offset++;
+        if (lengthValStr.size() > 20) {
+            Dialogs::MessageBox::ShowError("Error!", "Unusual big size for length");
+            error = true;
+            break;
+        }
     }
 
-    if (!lengthValStr.empty()) {
+    if (!lengthValStr.empty() && !error) {
         value = std::stoull(lengthValStr);
     }
     return value;
@@ -99,59 +192,50 @@ uint8 GetWValue(GView::Utils::DataCache& data, uint64& offset)
 void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize, std::vector<std::string>& filters)
 {
     uint8_t buffer;
-    std::string filterValue;
     while (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE && offset < dataSize) {
         offset++;
     }
-    // [ -> we have a list of filters
-    if (data.Copy(offset, buffer) && buffer == PDF::DC::LEFT_SQUARE_BRACKET)
+    bool multipleFilters = false;
+    if (data.Copy(offset, buffer) && buffer == PDF::DC::LEFT_SQUARE_BRACKET) // '['
     {
-        offset++;
-        while (data.Copy(offset, buffer) && buffer != PDF::DC::RIGHT_SQUARE_BRACKET && offset < dataSize) {
+        multipleFilters = true;
+        offset++; // skip '['
+    }
+    while (offset < dataSize) {
+        while (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE && offset < dataSize) {
+            offset++;
+        }
+
+        if (multipleFilters) {
             if (!data.Copy(offset, buffer)) {
                 break;
             }
-            if (buffer == PDF::DC::RIGHT_SQUARE_BRACKET) {
+            if (buffer == PDF::DC::RIGHT_SQUARE_BRACKET) // ']'
+            {
                 break;
-            }
-            if (buffer == PDF::DC::SOLIUDS) {
-                filterValue.clear();
-                filterValue += "/";
-                offset++;
-                while (data.Copy(offset, buffer) && buffer != PDF::DC::SOLIUDS && buffer != PDF::DC::GREATER_THAN && buffer != PDF::WSC::LINE_FEED &&
-                       buffer != PDF::WSC::SPACE && buffer != PDF::DC::RIGHT_SQUARE_BRACKET) {
-                    filterValue += static_cast<char>(buffer);
-                    offset++;
-                }
-                if (filterValue.length() > 1) {
-                    filters.push_back(filterValue);
-                }
-            } else {
-                offset++;
             }
         }
-    } else {
-        // a single filter
-        offset++; // skip "/"
-        filterValue.clear();
-        filterValue += "/";
-        while (offset < dataSize) {
-            if (!data.Copy(offset, buffer)) {
-                break;
-            }
-            if (buffer == PDF::DC::SOLIUDS || buffer == PDF::DC::GREATER_THAN || buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::SPACE) {
-                break;
-            } else {
-                filterValue += static_cast<char>(buffer);
-                offset++;
-            }
+
+        if (!data.Copy(offset, buffer)) {
+            break;
         }
-        if (filterValue.length() > 1) {
-            filters.push_back(filterValue);
+
+        if (buffer == PDF::DC::SOLIUDS) // '/'
+        {
+            std::string filterValue = DecodeName(data, offset, dataSize);
+            if (filterValue.length() > 1) {
+                filters.push_back(filterValue);
+            }
+        } else {
+            offset++;
+        }
+        if (!multipleFilters) {
+            offset--;
+            break;
         }
     }
-    offset--;
 }
+
 
 void GetDecompressDataValue(Buffer& decompressedData, uint64& offset, const uint8& value, uint64& obj)
 {
@@ -294,10 +378,12 @@ void HighlightObjectTypes(
             settings.AddZone(objectOffset, PDF::KEY::PDF_DIC_SIZE, ColorPair{ Color::Yellow, Color::DarkBlue }, "Dictionary");
             objectOffset += PDF::KEY::PDF_DIC_SIZE;
         } else if (buffer == PDF::DC::SOLIUDS) {
+            uint64_t copyObjectOffset = objectOffset;
+            std::string decodedName   = DecodeName(data, copyObjectOffset, pdfObject.endBuffer);
             // get the length for the stream so that we don't have to go through all the bytes
-            if (!foundLength && CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length for the stream
-                settings.AddZone(objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
-                objectOffset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
+            if (!foundLength && IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length for the stream
+                settings.AddZone(objectOffset, copyObjectOffset - objectOffset, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
+                objectOffset = copyObjectOffset + 1;
                 const uint64_t start_segment = objectOffset;
                 lengthVal                    = GetTypeValue(data, objectOffset, dataSize);
                 settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
@@ -552,24 +638,29 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             if (foundTrailer) {
                 offset = trailerOffset;
                 while (offset < dataSize) {
-                    if (CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) {
-                        offset += PDF::KEY::PDF_PREV_SIZE;
+                    if (!data.Copy(offset, buffer)) {
+                        break;
+                    }
+                    if (buffer == PDF::DC::SOLIUDS) {
+                        std::string decodedName = DecodeName(data, offset, dataSize);
+                        if (IsEqualType(decodedName, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) {
 
-                        while (offset < dataSize && (data.Copy(offset, buffer) &&
-                                                     (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN))) {
-                            offset++;
-                        }
+                            while (offset < dataSize && (data.Copy(offset, buffer) &&
+                                                         (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN))) {
+                                offset++;
+                            }
 
-                        prevOffset = GetTypeValue(data, offset, dataSize);
-                        if (prevOffset != 0) {
-                            found_prev = true;
-                        } else {
-                            Dialogs::MessageBox::ShowError("Error!", "Anomaly found: /Prev in the trailer has the value equal to zero!");
+                            prevOffset = GetTypeValue(data, offset, dataSize);
+                            if (prevOffset != 0) {
+                                found_prev = true;
+                            } else {
+                                Dialogs::MessageBox::ShowError("Error!", "Anomaly found: /Prev in the trailer has the value equal to zero!");
+                            }
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
+                            pdf->pdfStats.isEncrypted = true;
                         }
-                    } else if (CheckType(data, offset, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
-                        offset += PDF::KEY::PDF_ENCRYPT_SIZE;
-                        pdf->pdfStats.isEncrypted = true;
-                    } else if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
+                    }
+                    if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
                         settings.AddZone(offset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
                         offset += PDF::KEY::PDF_EOF_SIZE;
                         break;
@@ -621,52 +712,58 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 }
 
                 if (data.Copy(offset, tag) && tag == PDF::DC::SOLIUDS) { // the first byte of tag is "/"
-                    if (!typeFlags.hasLength && CheckType(data, offset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length
-                        offset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
+                    std::string decodedName = DecodeName(data, offset, dataSize);
+                    if (!typeFlags.hasLength && IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length
+                        offset += 1;
                         lengthVal           = GetTypeValue(data, offset, dataSize);
                         typeFlags.hasLength = true;
-                    } else if (!typeFlags.hasFilter && CheckType(data, offset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) { // /Filter
-                        offset += PDF::KEY::PDF_FILTER_SIZE;
+                    } else if (!typeFlags.hasFilter && IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) { // /Filter
                         GetFilters(data, offset, dataSize, filters);
                         typeFlags.hasFilter = true;
-                    } else if (!typeFlags.hasPrev && CheckType(data, offset, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) { // /Prev
-                        offset += PDF::KEY::PDF_PREV_SIZE + 1;
+                    } else if (!typeFlags.hasPrev && IsEqualType(decodedName, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) { // /Prev
+                        offset += 1;
                         prevOffset        = GetTypeValue(data, offset, dataSize);
                         typeFlags.hasPrev = true;
-                    } else if (CheckType(data, offset, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
-                        offset += PDF::KEY::PDF_ENCRYPT_SIZE;
+                    } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
                         pdf->pdfStats.isEncrypted = true;
                     } else if (
-                          !typeFlags.hasDecodeParms && CheckType(data, offset, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) { // /DecodeParms
-                        offset += PDF::KEY::PDF_DECODEPARMS_SIZE + 2;
+                          !typeFlags.hasDecodeParms && IsEqualType(decodedName, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) { // /DecodeParms
+                        offset += 2;
                         uint16_t tag;
+                        uint8 buffer;
                         while (offset < dataSize) {
                             if (!data.Copy(offset, tag)) {
+                                continue;
+                            }
+                            if (!data.Copy(offset, buffer)) {
                                 continue;
                             }
                             if (tag == PDF::DC::END_TAG) {
                                 offset += 2;
                                 break;
                             }
-                            if (CheckType(data, offset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
-                                offset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
-                                decodeParms.column = GetTypeValue(data, offset, dataSize);
-                            } else if (CheckType(data, offset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
-                                offset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
-                                decodeParms.predictor = GetTypeValue(data, offset, dataSize);
-                            } else if (CheckType(data, offset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
-                                offset += PDF::KEY::PDF_BPC_SIZE + 1;
-                                decodeParms.bitsPerComponent = GetTypeValue(data, offset, dataSize);
-                            } else if (CheckType(data, offset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
-                                offset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
-                                decodeParms.earlyChange = GetTypeValue(data, offset, dataSize);
-                            } else {
+                            if (buffer == PDF::DC::SOLIUDS) {
+                                std::string decodedName2 = DecodeName(data, offset, dataSize);
+                                if (IsEqualType(decodedName2, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+                                    offset += 1;
+                                    decodeParms.column = GetTypeValue(data, offset, dataSize);
+                                } else if (IsEqualType(decodedName2, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+                                    offset += 1;
+                                    decodeParms.predictor = GetTypeValue(data, offset, dataSize);
+                                } else if (IsEqualType(decodedName2, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+                                    offset += 1;
+                                    decodeParms.bitsPerComponent = GetTypeValue(data, offset, dataSize);
+                                } else if (IsEqualType(decodedName2, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
+                                    offset += 1;
+                                    decodeParms.earlyChange = GetTypeValue(data, offset, dataSize);
+                                }
+                            }
+                            else {
                                 offset++;
                             }
                         }
                         typeFlags.hasDecodeParms = true;
-                    } else if (!typeFlags.hasW && CheckType(data, offset, PDF::KEY::PDF_W_SIZE, PDF::KEY::PDF_W)) { // /W
-                        offset += PDF::KEY::PDF_W_SIZE;
+                    } else if (!typeFlags.hasW && IsEqualType(decodedName, PDF::KEY::PDF_W_SIZE, PDF::KEY::PDF_W)) { // /W
                         if (data.Copy(offset, buffer) && buffer != PDF::DC::LEFT_SQUARE_BRACKET) {
                             offset++;
                         }
@@ -854,19 +951,10 @@ void GetDictionaryType(GView::Utils::DataCache& data, uint64& objectOffset, cons
         objectOffset++;
     }
     if (buffer == PDF::DC::SOLIUDS) {
-        objectOffset++;
-        entry.clear();
-        while (data.Copy(objectOffset, buffer) && buffer != PDF::DC::SOLIUDS && buffer != PDF::DC::GREATER_THAN && buffer != PDF::WSC::LINE_FEED &&
-                     buffer != PDF::WSC::SPACE && buffer != PDF::DC::RIGHT_SQUARE_BRACKET &&
-               buffer != PDF::WSC::CARRIAGE_RETURN) {
-            entry += static_cast<char>(buffer);
-            objectOffset++;
+        std::string filterValue = DecodeName(data, objectOffset, dataSize);
+        if (!filterValue.empty() && std::find(entries.begin(), entries.end(), filterValue) == entries.end()) {
+            entries.push_back(filterValue);
         }
-        if (!entry.empty() && std::find(entries.begin(), entries.end(), entry) == entries.end()) {
-            entries.push_back(entry);
-        }
-    } else {
-        objectOffset++;
     }
 }
 
@@ -875,7 +963,7 @@ uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, cons
     uint64 numberLength = 0;
     uint8 buffer;
     bool foundRef = false;
-    objectOffset += PDF::KEY::PDF_STREAM_LENGTH_SIZE + 1;
+    objectOffset += 1;
     numberLength = GetTypeValue(data, objectOffset, dataSize);
     uint64 copyOffset = objectOffset;
 
@@ -960,19 +1048,6 @@ void ProcessPDFTree(
         if (!data.Copy(objectOffset, buffer)) {
             break;
         }
-        // skip the /Parent
-        if (CheckType(data, objectOffset, PDF::KEY::PDF_PARENT_SIZE, PDF::KEY::PDF_PARENT)) { 
-            objectOffset += PDF::KEY::PDF_PARENT_SIZE;
-            if (!data.Copy(objectOffset, buffer)) {
-                break;
-            }
-            while (buffer != PDF::KEY::PDF_INDIRECTOBJ && objectOffset < objectNode.pdfObject.endBuffer) {
-                if (!data.Copy(objectOffset, buffer)) {
-                    break;
-                }
-                objectOffset++;
-            }
-        }
         // skip the < alnum > objects
         if (buffer == PDF::DC::LESS_THAN) {
             objectOffset++;
@@ -988,11 +1063,20 @@ void ProcessPDFTree(
                 }
             }
         }
+        if (buffer == PDF::DC::LEFT_PARETHESIS) {
+            while (objectOffset < objectNode.pdfObject.endBuffer && buffer != PDF::DC::RIGHT_PARETHESIS) {
+                if (!data.Copy(objectOffset, buffer)) {
+                    break;
+                }
+                objectOffset++;
+            }
+        }
         if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIUDS) {
+            // this is for name what use #xx in their component
+            std::string decodedName = DecodeName(data, objectOffset, objectNode.pdfObject.endBuffer);
             // /Length
-            if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
+            if (IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
                 uint64 copyObjectOffset = objectOffset;
-                copyObjectOffset += PDF::KEY::PDF_STREAM_LENGTH_SIZE;
                 if (!data.Copy(copyObjectOffset, buffer)) {
                     break;
                 }
@@ -1003,30 +1087,40 @@ void ProcessPDFTree(
                     objectOffset = copyObjectOffset;
                 }
                 objectOffset--;
+                // skip the /Parent
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_PARENT_SIZE, PDF::KEY::PDF_PARENT)) {
+                if (!data.Copy(objectOffset, buffer)) {
+                    break;
+                }
+                while (buffer != PDF::KEY::PDF_INDIRECTOBJ && objectOffset < objectNode.pdfObject.endBuffer) {
+                    if (!data.Copy(objectOffset, buffer)) {
+                        break;
+                    }
+                    objectOffset++;
+                }
             }
             // /Filter
-            else if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
-                objectOffset += PDF::KEY::PDF_FILTER_SIZE;
+            else if (IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
                 GetFilters(data, objectOffset, dataSize, objectNode.metadata.filters);
                 InsertValuesIntoStats(pdfStats.filtersTypes, objectNode.metadata.filters);
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
-                objectOffset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+                objectOffset += 1;
                 objectNode.metadata.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
-                objectOffset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+                objectOffset += 1;
                 objectNode.metadata.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
-                objectOffset += PDF::KEY::PDF_BPC_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+                objectOffset += 1;
                 objectNode.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
-                objectOffset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
+                objectOffset += 1;
                 objectNode.metadata.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_K_SIZE, PDF::KEY::PDF_K)) {
-                objectOffset += PDF::KEY::PDF_K_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_K_SIZE, PDF::KEY::PDF_K)) {
+                objectOffset += 1;
                 if (!data.Copy(objectOffset, buffer)) {
                     break;
                 }
@@ -1040,12 +1134,12 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.K *= -1;
                 }
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ROWS_SIZE, PDF::KEY::PDF_ROWS)) {
-                objectOffset += PDF::KEY::PDF_ROWS_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ROWS_SIZE, PDF::KEY::PDF_ROWS)) {
+                objectOffset += 1;
                 objectNode.metadata.decodeParams.rows = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDOFLINE_SIZE, PDF::KEY::PDF_ENDOFLINE)) {
-                objectOffset += PDF::KEY::PDF_ENDOFLINE_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENDOFLINE_SIZE, PDF::KEY::PDF_ENDOFLINE)) {
+                objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.endOfLine = true;
                     objectOffset += PDF::KEY::PDF_TRUE_SIZE;
@@ -1053,8 +1147,8 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.endOfLine = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ENCODEDBYTEALIGN_SIZE, PDF::KEY::PDF_ENCODEDBYTEALIGN)) {
-                objectOffset += PDF::KEY::PDF_ENCODEDBYTEALIGN_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENCODEDBYTEALIGN_SIZE, PDF::KEY::PDF_ENCODEDBYTEALIGN)) {
+                objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.encodedByteAlign = true;
                     objectOffset += PDF::KEY::PDF_TRUE_SIZE;
@@ -1062,8 +1156,8 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.encodedByteAlign = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDOFBLOCK_SIZE, PDF::KEY::PDF_ENDOFBLOCK)) {
-                objectOffset += PDF::KEY::PDF_ENDOFBLOCK_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENDOFBLOCK_SIZE, PDF::KEY::PDF_ENDOFBLOCK)) {
+                objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.endOfBlock = true;
                     objectOffset += PDF::KEY::PDF_TRUE_SIZE;
@@ -1071,8 +1165,8 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.endOfBlock = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_BLACKIS1_SIZE, PDF::KEY::PDF_BLACKIS1)) {
-                objectOffset += PDF::KEY::PDF_BLACKIS1_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_BLACKIS1_SIZE, PDF::KEY::PDF_BLACKIS1)) {
+                objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.blackIs1 = true;
                     objectOffset += PDF::KEY::PDF_TRUE_SIZE;
@@ -1080,19 +1174,24 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.blackIs1 = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_DMGROWSBEFERROR_SIZE, PDF::KEY::PDF_DMGROWSBEFERROR)) {
-                objectOffset += PDF::KEY::PDF_DMGROWSBEFERROR_SIZE + 1;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_DMGROWSBEFERROR_SIZE, PDF::KEY::PDF_DMGROWSBEFERROR)) {
+                objectOffset += 1;
                 objectNode.metadata.decodeParams.dmgRowsBefError = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
-                objectOffset += PDF::KEY::PDF_TYPE_SIZE;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
                 GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionaryTypes);
                 InsertValuesIntoStats(pdfStats.dictionaryTypes, objectNode.pdfObject.dictionaryTypes);
                 objectOffset--;
-            } else if (CheckType(data, objectOffset, PDF::KEY::PDF_SUBTYPE_SIZE, PDF::KEY::PDF_SUBTYPE)) {
-                objectOffset += PDF::KEY::PDF_SUBTYPE_SIZE;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_SUBTYPE_SIZE, PDF::KEY::PDF_SUBTYPE)) {
                 GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionarySubtypes);
                 InsertValuesIntoStats(pdfStats.dictionarySubtypes, objectNode.pdfObject.dictionarySubtypes);
+                objectOffset--;
+            } else if (
+                  IsEqualType(decodedName, PDF::KEY::PDF_JS_SIZE, PDF::KEY::PDF_JS) ||
+                  IsEqualType(decodedName, PDF::KEY::PDF_JAVASCRIPT_SIZE, PDF::KEY::PDF_JAVASCRIPT)) {
+                objectNode.pdfObject.hasJS = true;
+                objectOffset--;
+            } else {
                 objectOffset--;
             }
         }
@@ -1170,6 +1269,7 @@ void ProcessPDFTree(
         found->filters            = objectNode.metadata.filters;
         found->dictionaryTypes    = objectNode.pdfObject.dictionaryTypes;
         found->dictionarySubtypes = objectNode.pdfObject.dictionarySubtypes;
+        found->hasJS              = objectNode.pdfObject.hasJS;
     }
 
     for (auto& objectNumber : objectsNumber) {
@@ -1216,6 +1316,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                     } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
                         GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     } else if (buffer == PDF::DC::SOLIUDS) {
+                        // js case here?
                         const uint64_t start_segment = objectOffset;
                         objectOffset++;
                         bool end_name = false;
@@ -1264,32 +1365,30 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                     } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
                         GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     } else if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIUDS) {
-                        if (CheckType(data, objectOffset, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
-                            objectOffset += PDF::KEY::PDF_FILTER_SIZE;
+                        std::string decodedName = DecodeName(data, objectOffset, object.endBuffer);
+                        if (IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
                             GetFilters(data, objectOffset, dataSize, pdf->objectNodeRoot.metadata.filters);
                             InsertValuesIntoStats(pdf->pdfStats.filtersTypes, pdf->objectNodeRoot.metadata.filters);
-                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
                             streamLength = GetLengthNumber(data, objectOffset, dataSize, pdf->pdfObjects);
                             foundLength  = true;
                         }
-                        else if (CheckType(data, objectOffset, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
-                            objectOffset += PDF::KEY::PDF_COLUMNS_SIZE + 1;
+                        else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+                            objectOffset += 1;
                             pdf->objectNodeRoot.metadata.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
-                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
-                            objectOffset += PDF::KEY::PDF_PREDICTOR_SIZE + 1;
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+                            objectOffset += 1;
                             pdf->objectNodeRoot.metadata.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
-                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
-                            objectOffset += PDF::KEY::PDF_BPC_SIZE + 1;
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+                            objectOffset += 1;
                             pdf->objectNodeRoot.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
-                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
-                            objectOffset += PDF::KEY::PDF_EARLYCG_SIZE + 1;
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
+                            objectOffset += 1;
                             pdf->objectNodeRoot.metadata.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
-                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
-                            objectOffset += PDF::KEY::PDF_TYPE_SIZE;
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
                             GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
                             InsertValuesIntoStats(pdf->pdfStats.dictionaryTypes, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
-                        } else if (CheckType(data, objectOffset, PDF::KEY::PDF_SUBTYPE_SIZE, PDF::KEY::PDF_SUBTYPE)) {
-                            objectOffset += PDF::KEY::PDF_SUBTYPE_SIZE;
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_SUBTYPE_SIZE, PDF::KEY::PDF_SUBTYPE)) {
                             GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionarySubtypes);
                             InsertValuesIntoStats(pdf->pdfStats.dictionarySubtypes, pdf->objectNodeRoot.pdfObject.dictionarySubtypes);
                         } else {
@@ -1337,6 +1436,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
         found->dictionaryTypes    = pdf->objectNodeRoot.pdfObject.dictionaryTypes;
         found->dictionarySubtypes = pdf->objectNodeRoot.pdfObject.dictionarySubtypes;
         found->hasStream          = pdf->objectNodeRoot.pdfObject.hasStream;
+        found->hasJS              = pdf->objectNodeRoot.pdfObject.hasJS;
     }
 
     for (auto& objectNumber : objectsNumber) {
@@ -1536,6 +1636,7 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
           "n:&Filters,a:r,w:30",
           "n:&Dictionary Types,a:r,w:20",
           "n:&Dictionary Subtypes,a:r,w:22",
+          "n:&Has JS?,a:r,w:10",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PDF::PDFFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());

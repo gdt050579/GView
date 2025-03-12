@@ -128,6 +128,11 @@ bool PDFFile::PopulateItem(TreeViewItem item)
         first = false;
     }
     item.SetText(6, ub);
+    if (childNode->pdfObject.hasJS == false) {
+        item.SetText(7, "No");
+    } else {
+        item.SetText(7, "Yes");
+    }
 
     item.SetExpandable(!childNode->children.empty());
 
@@ -219,7 +224,7 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                 } else if (filter == PDF::FILTER::ASCII85) {
                     String message;
                     Buffer ascii85Decompressed;
-                    if (ASCIIHexDecode(buffer, ascii85Decompressed, message)) {
+                    if (ASCII85Decode(buffer, ascii85Decompressed, message)) {
                         buffer = ascii85Decompressed;
                     } else {
                         Dialogs::MessageBox::ShowError("Error!", message);

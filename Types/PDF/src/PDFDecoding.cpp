@@ -298,16 +298,28 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
     }
 
     if (!accum.empty()) {
-        if (accum.size() == 1) {
-            message.Set("ASCII85Decode: Partial group of only 1 char => invalid.");
-            return false;
+        // If exactly 5 leftover chars, decode as a full group:
+        if (accum.size() == 5) {
+            // full decode
+            if (!decodeGroup(accum.data(), false /* isPartial */, 5 /* partialLen */))
+                return false;
+        } else {
+            // partial decode
+            if (accum.size() == 1) {
+                message.Set("ASCII85Decode: Partial group of only 1 char => invalid.");
+                return false;
+            }
+
+            // Fill up to 5 with 'u'
+            size_t realCount = accum.size();
+            while (accum.size() < 5)
+                accum.push_back('u');
+
+            // Now decode as partial, passing the real character count
+            if (!decodeGroup(accum.data(), true, realCount))
+                return false;
         }
-        while (accum.size() < 5) {
-            accum.push_back('u'); //  'u' => 84 => max
-        }
-        if (!decodeGroup(accum.data(), true, accum.size())) {
-            return false;
-        }
+
         accum.clear();
     }
     return true;

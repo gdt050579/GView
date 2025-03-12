@@ -148,6 +148,13 @@ namespace Type
 
             constexpr uint8_t PDF_ENCRYPT[] = "/Encrypt";
             constexpr uint8_t PDF_ENCRYPT_SIZE = 8;
+
+            // Warnings
+            constexpr uint8_t PDF_JAVASCRIPT[]    = "/JavaScript";
+            constexpr uint8_t PDF_JAVASCRIPT_SIZE = 11;
+
+            constexpr uint8_t PDF_JS[]    = "/JS";
+            constexpr uint8_t PDF_JS_SIZE = 3;
         } // namespace KEY
 
         namespace PREDICTOR
@@ -225,6 +232,7 @@ namespace Type
             SectionPDFObjectType type;
             uint64 number;
             bool hasStream = false;
+            bool hasJS     = false;
             std::vector<std::string> filters;
             std::vector<std::string> dictionaryTypes;
             std::vector<std::string> dictionarySubtypes;

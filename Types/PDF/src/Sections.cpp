@@ -22,7 +22,8 @@ Panels::Sections::Sections(Reference<GView::Type::PDF::PDFFile> _pdf, Reference<
                 "n:Has Stream,a:r,w:12",
                 "n:Filters,a:r,w:30",
                 "n:Dictionary Types,a:r,w:25",
-                "n:Dictionary Subtypes,a:r,w:25"
+                "n:Dictionary Subtypes,a:r,w:25",
+                "n:&Has JS?,a:r,w:10"
         }, ListViewFlags::AllowMultipleItemsSelection);
     Update();
 }
@@ -113,6 +114,11 @@ void Panels::Sections::Update()
             first = false;
         }
         item.SetText(6, ub);
+        if (object.hasJS == false) {
+            item.SetText(7, "No");
+        } else {
+            item.SetText(7, "Yes");
+        }
     }
 }
 
