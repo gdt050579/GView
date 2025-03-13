@@ -229,7 +229,6 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
             outBytes = partialLen - 1;
         }
 
-        // add these 'outBytes' to output
         if (outBytes > 4) {
             message.Set("Internal error in ASCII85 partial decode size!");
             return false;
@@ -301,8 +300,9 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
         // If exactly 5 leftover chars, decode as a full group:
         if (accum.size() == 5) {
             // full decode
-            if (!decodeGroup(accum.data(), false /* isPartial */, 5 /* partialLen */))
+            if (!decodeGroup(accum.data(), false /* isPartial */, 5 /* partialLen */)) {
                 return false;
+            }
         } else {
             // partial decode
             if (accum.size() == 1) {
@@ -312,12 +312,14 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
 
             // Fill up to 5 with 'u'
             size_t realCount = accum.size();
-            while (accum.size() < 5)
+            while (accum.size() < 5) {
                 accum.push_back('u');
+            }
 
             // Now decode as partial, passing the real character count
-            if (!decodeGroup(accum.data(), true, realCount))
+            if (!decodeGroup(accum.data(), true, realCount)) {
                 return false;
+            }
         }
 
         accum.clear();

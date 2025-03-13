@@ -1,5 +1,6 @@
 #include "pdf.hpp"
 #include <nlohmann/json.hpp>
+#include <regex>
 using nlohmann::json;
 
 using namespace GView::Type::PDF;
@@ -141,6 +142,21 @@ bool PDFFile::PopulateItem(TreeViewItem item)
     return (currentItemIndex < currentChildNodes.size());
 }
 
+static bool IsValidJSON(const std::string& data)
+{
+    try {
+        auto json = nlohmann::json::parse(data);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+static bool IsValidJavaScript(const std::string& data)
+{
+    std::regex jsPattern(R"(\b(function|var|let|const|=>|console\.log|document\.)\b)");
+    return std::regex_search(data, jsPattern);
+}
 
 void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
@@ -262,11 +278,21 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                     if (JBIG2Decode(buffer, jbig2Decompressed, message)) {
                         buffer = std::move(jbig2Decompressed);
                     } else {
-
                         Dialogs::MessageBox::ShowError("Error!", message);
                     }
                 }
             }
+        }
+        // json
+        std::string newData(buffer.GetData(), buffer.GetData() + buffer.GetLength());
+        if (IsValidJSON(newData)) {
+            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "json");
+            return;
+        }
+        // js
+        if (IsValidJavaScript(newData)) {
+            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "js");
+            return;
         }
 
         GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);

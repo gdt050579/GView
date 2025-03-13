@@ -124,10 +124,11 @@ void Panels::Sections::Update()
 
 std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 {
-    if (Base == 10)
+    if (Base == 10) {
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });
-    else
+    } else {
         return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
+    }
 }
 
 bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -141,8 +142,9 @@ bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& comma
 
 bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    if (TabPage::OnEvent(ctrl, evnt, controlID))
+    if (TabPage::OnEvent(ctrl, evnt, controlID)) {
         return true;
+    }
     if (evnt == Event::ListViewItemPressed) {
         GoToSelectedSection();
         return true;

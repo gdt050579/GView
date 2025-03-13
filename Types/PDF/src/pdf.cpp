@@ -103,12 +103,15 @@ static bool TerminateProcessing(const int8 buffer)
 
 static int HexVal(uint8_t c)
 {
-    if (c >= '0' && c <= '9')
+    if (c >= '0' && c <= '9') {
         return c - '0';
-    if (c >= 'A' && c <= 'F')
+    }
+    if (c >= 'A' && c <= 'F') {
         return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f')
+    }
+    if (c >= 'a' && c <= 'f') {
         return c - 'a' + 10;
+    }
     return -1;
 }
 
@@ -130,8 +133,9 @@ static std::string DecodeName(GView::Utils::DataCache& data, uint64_t& offset, c
         if (c == '#') {
             if (offset + 2 < endBuffer) {
                 uint8 c1, c2;
-                if (!data.Copy(offset + 1, c1) || !data.Copy(offset + 2, c2))
+                if (!data.Copy(offset + 1, c1) || !data.Copy(offset + 2, c2)) {
                     break;
+                }
 
                 int v1 = HexVal(c1);
                 int v2 = HexVal(c2);
@@ -1020,8 +1024,9 @@ void InsertValuesIntoStats(std::vector<std::string> &stats, std::vector<std::str
 static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObjects, uint64 number, uint64 start)
 {
     for (auto& obj : pdfObjects) {
-        if (obj.number == number && obj.startBuffer == start)
+        if (obj.number == number && obj.startBuffer == start) {
             return &obj;
+        }
     }
     return nullptr;
 }
@@ -1103,23 +1108,25 @@ void ProcessPDFTree(
             else if (IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
                 GetFilters(data, objectOffset, dataSize, objectNode.metadata.filters);
                 InsertValuesIntoStats(pdfStats.filtersTypes, objectNode.metadata.filters);
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) {
+                objectNode.metadata.decodeParams.hasDecodeParms = true;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 objectNode.metadata.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 objectNode.metadata.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 objectNode.metadata.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 objectNode.metadata.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_K_SIZE, PDF::KEY::PDF_K)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_K_SIZE, PDF::KEY::PDF_K) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 if (!data.Copy(objectOffset, buffer)) {
                     break;
@@ -1134,11 +1141,11 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.K *= -1;
                 }
                 objectOffset--;
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ROWS_SIZE, PDF::KEY::PDF_ROWS)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ROWS_SIZE, PDF::KEY::PDF_ROWS) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 objectNode.metadata.decodeParams.rows = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENDOFLINE_SIZE, PDF::KEY::PDF_ENDOFLINE)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENDOFLINE_SIZE, PDF::KEY::PDF_ENDOFLINE) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.endOfLine = true;
@@ -1147,7 +1154,9 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.endOfLine = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENCODEDBYTEALIGN_SIZE, PDF::KEY::PDF_ENCODEDBYTEALIGN)) {
+            } else if (
+                  IsEqualType(decodedName, PDF::KEY::PDF_ENCODEDBYTEALIGN_SIZE, PDF::KEY::PDF_ENCODEDBYTEALIGN) &&
+                  objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.encodedByteAlign = true;
@@ -1156,7 +1165,7 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.encodedByteAlign = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENDOFBLOCK_SIZE, PDF::KEY::PDF_ENDOFBLOCK)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENDOFBLOCK_SIZE, PDF::KEY::PDF_ENDOFBLOCK) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.endOfBlock = true;
@@ -1165,7 +1174,7 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.endOfBlock = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_BLACKIS1_SIZE, PDF::KEY::PDF_BLACKIS1)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_BLACKIS1_SIZE, PDF::KEY::PDF_BLACKIS1) && objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 if (CheckType(data, objectOffset, PDF::KEY::PDF_TRUE_SIZE, PDF::KEY::PDF_TRUE)) {
                     objectNode.metadata.decodeParams.blackIs1 = true;
@@ -1174,7 +1183,9 @@ void ProcessPDFTree(
                     objectNode.metadata.decodeParams.blackIs1 = false;
                     objectOffset += PDF::KEY::PDF_FALSE_SIZE;
                 }
-            } else if (IsEqualType(decodedName, PDF::KEY::PDF_DMGROWSBEFERROR_SIZE, PDF::KEY::PDF_DMGROWSBEFERROR)) {
+            } else if (
+                  IsEqualType(decodedName, PDF::KEY::PDF_DMGROWSBEFERROR_SIZE, PDF::KEY::PDF_DMGROWSBEFERROR) &&
+                  objectNode.metadata.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
                 objectNode.metadata.decodeParams.dmgRowsBefError = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;

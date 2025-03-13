@@ -202,6 +202,7 @@ namespace Type
         };
 
         struct DecodeParms {
+            bool hasDecodeParms = false;
             // FlateDecode and LZWDecode params
             uint8 predictor = 1;
             uint16 column = 1;
