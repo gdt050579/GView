@@ -149,6 +149,22 @@ namespace Type
             constexpr uint8_t PDF_ENCRYPT[] = "/Encrypt";
             constexpr uint8_t PDF_ENCRYPT_SIZE = 8;
 
+            // Metadata
+            constexpr uint8_t PDF_TITLE[]    = "/Title";
+            constexpr uint8_t PDF_TITLE_SIZE = 6;
+
+            constexpr uint8_t PDF_AUTHOR[]    = "/Author";
+            constexpr uint8_t PDF_AUTHOR_SIZE = 7;
+
+            constexpr uint8_t PDF_CREATOR[]    = "/Creator";
+            constexpr uint8_t PDF_CREATOR_SIZE = 8;
+
+            constexpr uint8_t PDF_PRODUCER[]    = "/Producer";
+            constexpr uint8_t PDF_PRODUCER_SIZE = 9;
+
+            constexpr uint8_t PDF_CREATIONDATE[]    = "/CreationDate";
+            constexpr uint8_t PDF_CREATIONDATE_SIZE = 13;
+
             // Warnings
             constexpr uint8_t PDF_JAVASCRIPT[]    = "/JavaScript";
             constexpr uint8_t PDF_JAVASCRIPT_SIZE = 11;
