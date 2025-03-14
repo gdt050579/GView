@@ -27,6 +27,7 @@ extern "C"
 
         LexicalViewer::Settings settings;
         settings.SetParser(xml.ToObjectRef<LexicalViewer::ParseInterface>());
+        settings.AddPlugin(&xml->plugins.extractContent);
         win->CreateViewer(settings);
 
         win->CreateViewer<TextViewer::Settings>();

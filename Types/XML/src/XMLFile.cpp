@@ -16,10 +16,11 @@ namespace CharType
     constexpr uint8 Equals   = 5;
     constexpr uint8 Slash    = 6;
     constexpr uint8 Invalid  = 7;
+    constexpr uint8 String   = 8;
 
-    uint8 XML_Groups_IDs[] = { Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid,  Space,   Space,   Invalid, Invalid,
+uint8 XML_Groups_IDs[] = { Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid,  Space,   Space,   Invalid, Invalid,
                                Space,   Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid,  Invalid, Invalid, Invalid, Invalid,
-                               Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Space,   Text,    Text,     Invalid, Invalid, Text,    Text,
+                               Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Space,   Text,    String,   Invalid, Invalid, Text,    Text,
                                Text,    Invalid, Invalid, Text,    Text,    Invalid, Text,    Text,    Slash,    Text,    Text,    Text,    Text,
                                Text,    Text,    Text,    Text,    Text,    Text,    Colon,   Invalid, StartTag, Equals,  EndTag,  Text,    Invalid,
                                Text,    Text,    Text,    Text,    Text,    Text,    Text,    Text,    Text,     Text,    Text,    Text,    Text,
@@ -27,6 +28,7 @@ namespace CharType
                                Invalid, Invalid, Invalid, Text,    Text,    Invalid, Text,    Text,    Text,     Text,    Text,    Text,    Text,
                                Text,    Text,    Text,    Text,    Text,    Text,    Text,    Text,    Text,     Text,    Text,    Text,    Text,
                                Text,    Text,    Text,    Text,    Text,    Text,    Invalid, Text,    Invalid,  Text,    Invalid };
+
 
     inline uint32 GetCharType(char16 c)
     {
@@ -51,7 +53,7 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
         if (insideText && type != CharType::Text) {
             insideText = false;
 
-            auto tokenColor = TokenColor::String;
+            auto tokenColor = TokenColor::Word;
             auto tokenToUse = TokenType::Text;
             if (type == CharType::Colon) {
                 tokenToUse = TokenType::AttributeClass;
@@ -66,6 +68,7 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
             idx = text.ParseSpace(idx, SpaceType::All);
             break;
         case CharType::Text:
+            // text.ParseSameGroupID -- TODO cu GetCharType
             if (!insideText)
                 startText = idx;
             insideText = true;
@@ -96,6 +99,19 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
                   TokenType::Slash, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
+        case CharType::String: {
+            const auto next = text.ParseString(idx, StringFormat::DoubleQuotes);
+            tokenList.Add(
+                  TokenType::String,
+                  idx,
+                  next,
+                  TokenColor::String,
+                  TokenDataType::String,
+                  TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore,
+                  TokenFlags::None);
+            idx = next;
+            break;
+        }
         default:
             const auto next = text.ParseSameGroupID(idx, CharType::GetCharType);
             tokenList.Add(TokenType::ErrorValue, idx, next, TokenColor::Word).SetError("Invalid character sequence");
@@ -136,6 +152,11 @@ void XMLFile::BuildBlocks(SyntaxManager& syntax)
             if (wasStartTag) {
                 wasStartTag = false;
                 wasSlash    = true;
+            }else {
+                blocks.Pop();
+                auto token = syntax.tokens[index].Next();
+                if (token.IsValid())
+                    token.UpdateAlignament(TokenAlignament::NewLineAfter);
             }
             break;
         case TokenType::EndTag:
