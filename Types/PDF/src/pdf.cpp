@@ -1058,37 +1058,52 @@ static std::string ExtractXMPValue(const std::string& content, std::string_view 
     }
 
     std::string result;
-    std::string_view liStartTag = "<rdf:li";
-    std::string_view liEndTag   = "</rdf:li>";
+    bool foundLiTag = false;
+    size_t pos      = 0;
 
-    size_t pos = 0;
+    const std::string_view liStartTag = "<rdf:li";
+    const std::string_view liEndTag   = "</rdf:li>";
+
     while (true) {
         size_t liOpenPos = block.find(liStartTag, pos);
         if (liOpenPos == std::string::npos) {
             break;
         }
-        liOpenPos = block.find('>', liOpenPos);
-        if (liOpenPos == std::string::npos) {
-            break;
-        }
-        liOpenPos++;
-        size_t liClosePos = block.find(liEndTag, liOpenPos);
-        if (liClosePos == std::string::npos) {
+
+        size_t tagClosePos = block.find(PDF::DC::GREATER_THAN, liOpenPos);
+        if (tagClosePos == std::string::npos) {
             break;
         }
 
-        std::string liContent = block.substr(liOpenPos, liClosePos - liOpenPos);
-
-        if (!liContent.empty()) {
-            if (!result.empty()) {
-                result += "; ";
+        bool isSelfClosing = false;
+        {
+            std::string_view maybeSelfClosingBlock(block.c_str() + liOpenPos, (tagClosePos + 1) - liOpenPos);
+            if (maybeSelfClosingBlock.find("/>") != std::string::npos) {
+                isSelfClosing = true;
             }
-            result += liContent;
         }
-        pos = liClosePos + liEndTag.size();
+
+        foundLiTag = true;
+        if (isSelfClosing) {
+            pos = tagClosePos + 1;
+        } else {
+            size_t liContentStart = tagClosePos + 1;
+            size_t liClosePos     = block.find(liEndTag, liContentStart);
+            if (liClosePos == std::string::npos) {
+                break;
+            }
+            std::string liContent = block.substr(liContentStart, liClosePos - liContentStart);
+            if (!liContent.empty()) {
+                if (!result.empty()) {
+                    result += "; ";
+                }
+                result += liContent;
+            }
+            pos = liClosePos + liEndTag.size();
+        }
     }
-    if (result.empty()) {
-        result = block;
+    if (!foundLiTag) {
+        return block;
     }
     return result;
 }
@@ -2126,6 +2141,7 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Sections(pdf, win)), false);
     win->AddPanel(Pointer<TabPage>(new PDF::Panels::Information(pdf)), true);
+    win->AddPanel(Pointer<TabPage>(new PDF::Panels::Warnings(pdf)), true);
 
     return true;
 }

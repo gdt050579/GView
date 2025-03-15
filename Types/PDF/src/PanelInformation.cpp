@@ -214,6 +214,7 @@ void Panels::Information::UpdateGeneralInformation()
 void Panels::Information::UpdateIssues()
 {
 }
+
 void Panels::Information::RecomputePanelsPositions()
 {
     int py   = 0;

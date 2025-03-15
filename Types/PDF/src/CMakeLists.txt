@@ -3,4 +3,5 @@ target_sources(PDF PRIVATE
 	PDFFile.cpp
 	Sections.cpp
 	PanelInformation.cpp
-	PDFDecoding.cpp)
+	PDFDecoding.cpp
+	Warnings.cpp)

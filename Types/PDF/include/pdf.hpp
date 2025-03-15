@@ -448,6 +448,25 @@ namespace Type
                     RecomputePanelsPositions();
                 }
             };
+            class Warnings : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::PDF::PDFFile> pdf;
+                Reference<AppCUI::Controls::ListView> general;
+                Reference<AppCUI::Controls::ListView> issues;
+
+                void UpdateGeneralInformation();
+                void UpdateIssues();
+                void RecomputePanelsPositions();
+
+              public:
+                Warnings(Reference<GView::Type::PDF::PDFFile> pdf);
+
+                void Update();
+                virtual void OnAfterResize(int newWidth, int newHeight) override
+                {
+                    RecomputePanelsPositions();
+                }
+            };
         } // namespace Panels
     }     // namespace PDF
 } // namespace Type
