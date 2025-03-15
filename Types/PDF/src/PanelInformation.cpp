@@ -126,7 +126,7 @@ static bool LoadPDFDocumentFromBuffer(Reference<GView::Type::PDF::PDFFile> pdf, 
 Panels::Information::Information(Reference<GView::Type::PDF::PDFFile> _pdf) : TabPage("&Information")
 {
     pdf     = _pdf;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:15", "n:Value,w:100" }, ListViewFlags::None);
 
     issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
@@ -171,6 +171,43 @@ void Panels::Information::UpdateGeneralInformation()
     } else {
         general->AddItem({ "Format", "Unknown" });
         general->AddItem({ "Orientation", "Unknown" });
+    }
+    // Metadata part
+    // Title
+    if (pdf->pdfMetadata.title.empty()) {
+        general->AddItem({ "Title", "Unknown" });
+    } else {
+        general->AddItem({ "Title", pdf->pdfMetadata.title });
+    }
+    // Author
+    if (pdf->pdfMetadata.author.empty()) {
+        general->AddItem({ "Author", "Unknown" });
+    } else {
+        general->AddItem({ "Author", pdf->pdfMetadata.author });
+    }
+    // Creator
+    if (pdf->pdfMetadata.creator.empty()) {
+        general->AddItem({ "Creator", "Unknown" });
+    } else {
+        general->AddItem({ "Creator", pdf->pdfMetadata.creator });
+    }
+    // Producer
+    if (pdf->pdfMetadata.producer.empty()) {
+        general->AddItem({ "Producer", "Unknown" });
+    } else {
+        general->AddItem({ "Producer", pdf->pdfMetadata.producer });
+    }
+    // Creation Date
+    if (pdf->pdfMetadata.creationDate.empty()) {
+        general->AddItem({ "Creation Date", "Unknown" });
+    } else {
+        general->AddItem({ "Creation Date", pdf->pdfMetadata.creationDate });
+    }
+    // Modify Date
+    if (pdf->pdfMetadata.modifyDate.empty()) {
+        general->AddItem({ "Modify Date", "Unknown" });
+    } else {
+        general->AddItem({ "Modify Date", pdf->pdfMetadata.modifyDate });
     }
 }
 

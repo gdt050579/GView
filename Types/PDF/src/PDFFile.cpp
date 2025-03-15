@@ -99,7 +99,7 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 
     LocalUnicodeStringBuilder<512> ub;
     bool first = true;
-    for (auto& filter : childNode->metadata.filters) {
+    for (auto& filter : childNode->decodeObj.filters) {
         if (!first) {
             ub.Add(u", ");
         }
@@ -158,6 +158,93 @@ static bool IsValidJavaScript(const std::string& data)
     return std::regex_search(data, jsPattern);
 }
 
+void PDFFile::DecodeStream(ObjectNode* node, Buffer& buffer, const size_t size)
+{
+    // decompress the stream
+    // /DCTDecode -> LoadJPGToImage from JPG
+    if (!node->decodeObj.filters.empty()) {
+        for (auto& filter : node->decodeObj.filters) {
+            if (filter == PDF::FILTER::FLATE) {
+                Buffer decompressedData;
+                uint64 decompressDataSize = size;
+                String message;
+                if (GView::Decoding::ZLIB::DecompressStream(buffer, decompressedData, message, decompressDataSize)) {
+                    if (node->decodeObj.decodeParams.predictor != 1) {
+                        ApplyPNGFilter(
+                              decompressedData,
+                              node->decodeObj.decodeParams.column,
+                              node->decodeObj.decodeParams.predictor,
+                              node->decodeObj.decodeParams.bitsPerComponent);
+                        decompressDataSize = decompressedData.GetLength();
+                    }
+                    buffer = decompressedData;
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", message);
+                }
+            } else if (filter == PDF::FILTER::RUNLENGTH) {
+                Buffer runLengthDecompressed;
+                String message;
+                if (RunLengthDecode(buffer, runLengthDecompressed, message)) {
+                    buffer = runLengthDecompressed;
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", message);
+                }
+            } else if (filter == PDF::FILTER::ASCIIHEX) {
+                String message;
+                Buffer asciiHexDecompressed;
+                if (ASCIIHexDecode(buffer, asciiHexDecompressed, message)) {
+                    buffer = asciiHexDecompressed;
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", message);
+                }
+            } else if (filter == PDF::FILTER::ASCII85) {
+                String message;
+                Buffer ascii85Decompressed;
+                if (ASCII85Decode(buffer, ascii85Decompressed, message)) {
+                    buffer = ascii85Decompressed;
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", message);
+                }
+            } else if (filter == PDF::FILTER::JPX) {
+                // this one has to be a separate plugin for JPEG2000
+                // for the moment being you can only see the decompressed data
+                Buffer jpxDecompressed;
+                uint32_t width = 0, height = 0;
+                uint8_t components = 0;
+                String message;
+                if (JPXDecode(buffer, jpxDecompressed, width, height, components, message)) {
+                    buffer = jpxDecompressed;
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", message);
+                }
+            } else if (filter == PDF::FILTER::LZW) {
+                Buffer lzwDecompressed;
+                String message;
+                if (LZWDecodeStream(buffer, lzwDecompressed, node->decodeObj.decodeParams.earlyChange, message)) {
+                    if (node->decodeObj.decodeParams.predictor != 1) {
+                        ApplyPNGFilter(
+                              lzwDecompressed,
+                              node->decodeObj.decodeParams.column,
+                              node->decodeObj.decodeParams.predictor,
+                              node->decodeObj.decodeParams.bitsPerComponent);
+                    }
+                    buffer = std::move(lzwDecompressed);
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", message);
+                }
+            } else if (filter == PDF::FILTER::JBIG2) {
+                Buffer jbig2Decompressed;
+                String message;
+                if (JBIG2Decode(buffer, jbig2Decompressed, message)) {
+                    buffer = std::move(jbig2Decompressed);
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", message);
+                }
+            }
+        }
+    }
+}
+
 void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
     const auto objectNumber = static_cast<uint32_t>(item.GetData(-1));
@@ -176,8 +263,8 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     }
 
     if (node->pdfObject.hasStream) {
-        const uint64 offset = node->metadata.streamOffsetStart;
-        const uint64 end    = node->metadata.streamOffsetEnd;
+        const uint64 offset = node->decodeObj.streamOffsetStart;
+        const uint64 end    = node->decodeObj.streamOffsetEnd;
         if (end <= offset || end > entireFile.GetLength()) {
             return;
         }
@@ -199,90 +286,9 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
             return;
         }
+        // Decode the content of the stream based on the filters
+        DecodeStream(node, buffer, size);
 
-        // decompress the stream
-        // /DCTDecode -> LoadJPGToImage from JPG
-        if (!node->metadata.filters.empty()) {
-            for (auto& filter : node->metadata.filters) {
-                if (filter == PDF::FILTER::FLATE) {
-                    Buffer decompressedData;
-                    uint64 decompressDataSize = size;
-                    String message;
-                    if (GView::Decoding::ZLIB::DecompressStream(buffer, decompressedData, message, decompressDataSize)) {
-                        if (node->metadata.decodeParams.predictor != 1) {
-                            ApplyPNGFilter(
-                                  decompressedData,
-                                  node->metadata.decodeParams.column,
-                                  node->metadata.decodeParams.predictor,
-                                  node->metadata.decodeParams.bitsPerComponent);
-                            decompressDataSize = decompressedData.GetLength();
-                        }
-                        buffer = decompressedData;
-                    } else {
-                        Dialogs::MessageBox::ShowError("Error!", message);
-                    }
-                } else if (filter == PDF::FILTER::RUNLENGTH) {
-                    Buffer runLengthDecompressed;
-                    String message;
-                    if (RunLengthDecode(buffer, runLengthDecompressed, message)) {
-                        buffer = runLengthDecompressed;
-                    } else {
-                        Dialogs::MessageBox::ShowError("Error!", message);
-                    }
-                } else if (filter == PDF::FILTER::ASCIIHEX) {
-                    String message;
-                    Buffer asciiHexDecompressed;
-                    if (ASCIIHexDecode(buffer, asciiHexDecompressed, message)) {
-                        buffer = asciiHexDecompressed;
-                    } else {
-                        Dialogs::MessageBox::ShowError("Error!", message);
-                    }
-                } else if (filter == PDF::FILTER::ASCII85) {
-                    String message;
-                    Buffer ascii85Decompressed;
-                    if (ASCII85Decode(buffer, ascii85Decompressed, message)) {
-                        buffer = ascii85Decompressed;
-                    } else {
-                        Dialogs::MessageBox::ShowError("Error!", message);
-                    }
-                } else if (filter == PDF::FILTER::JPX) {
-                    // this one has to be a separate plugin for JPEG2000
-                    // for the moment being you can only see the decompressed data
-                    Buffer jpxDecompressed;
-                    uint32_t width = 0, height = 0;
-                    uint8_t components = 0;
-                    String message;
-                    if (JPXDecode(buffer, jpxDecompressed, width, height, components, message)) {
-                        buffer = jpxDecompressed;
-                    } else {
-                        Dialogs::MessageBox::ShowError("Error!", message);
-                    }
-                } else if (filter == PDF::FILTER::LZW) {
-                    Buffer lzwDecompressed;
-                    String message;
-                    if (LZWDecodeStream(buffer, lzwDecompressed, node->metadata.decodeParams.earlyChange, message)) {
-                        if (node->metadata.decodeParams.predictor != 1) {
-                            ApplyPNGFilter(
-                                  lzwDecompressed,
-                                  node->metadata.decodeParams.column,
-                                  node->metadata.decodeParams.predictor,
-                                  node->metadata.decodeParams.bitsPerComponent);
-                        }
-                        buffer = std::move(lzwDecompressed);
-                    } else {
-                        Dialogs::MessageBox::ShowError("Error!", message);
-                    }
-                } else if (filter == PDF::FILTER::JBIG2) {
-                    Buffer jbig2Decompressed;
-                    String message;
-                    if (JBIG2Decode(buffer, jbig2Decompressed, message)) {
-                        buffer = std::move(jbig2Decompressed);
-                    } else {
-                        Dialogs::MessageBox::ShowError("Error!", message);
-                    }
-                }
-            }
-        }
         // json
         std::string newData(buffer.GetData(), buffer.GetData() + buffer.GetLength());
         if (IsValidJSON(newData)) {

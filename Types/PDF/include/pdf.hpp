@@ -149,21 +149,43 @@ namespace Type
             constexpr uint8_t PDF_ENCRYPT[] = "/Encrypt";
             constexpr uint8_t PDF_ENCRYPT_SIZE = 8;
 
-            // Metadata
-            constexpr uint8_t PDF_TITLE[]    = "/Title";
-            constexpr uint8_t PDF_TITLE_SIZE = 6;
+            // Keys for metadata objects
+            constexpr uint8_t PDF_INFO[]    = "/Info";
+            constexpr uint8_t PDF_INFO_SIZE = 5;
 
-            constexpr uint8_t PDF_AUTHOR[]    = "/Author";
-            constexpr uint8_t PDF_AUTHOR_SIZE = 7;
+            constexpr uint8_t PDF_METADATA_OBJ[]    = "/Metadata";
+            constexpr uint8_t PDF_METADATA_OBJ_SIZE = 9;
 
-            constexpr uint8_t PDF_CREATOR[]    = "/Creator";
-            constexpr uint8_t PDF_CREATOR_SIZE = 8;
+            // Metadata Object + XML
+            constexpr uint8_t PDF_TITLE[]                = "/Title";
+            constexpr uint8_t PDF_TITLE_SIZE             = 6;
+            constexpr std::string_view PDF_TITLE_XML     = "<dc:title>";
+            constexpr std::string_view PDF_TITLE_END_XML = "</dc:title>";
 
-            constexpr uint8_t PDF_PRODUCER[]    = "/Producer";
-            constexpr uint8_t PDF_PRODUCER_SIZE = 9;
+            constexpr uint8_t PDF_AUTHOR[]                = "/Author";
+            constexpr uint8_t PDF_AUTHOR_SIZE             = 7;
+            constexpr std::string_view PDF_AUTHOR_XML     = "<dc:author>";
+            constexpr std::string_view PDF_AUTHOR_END_XML = "</dc:author>";
 
-            constexpr uint8_t PDF_CREATIONDATE[]    = "/CreationDate";
-            constexpr uint8_t PDF_CREATIONDATE_SIZE = 13;
+            constexpr uint8_t PDF_CREATOR[]                = "/Creator";
+            constexpr uint8_t PDF_CREATOR_SIZE             = 8;
+            constexpr std::string_view PDF_CREATOR_XML     = "<xmp:CreatorTool>";
+            constexpr std::string_view PDF_CREATOR_END_XML = "</xmp:CreatorTool>";
+
+            constexpr uint8_t PDF_PRODUCER[]                = "/Producer";
+            constexpr uint8_t PDF_PRODUCER_SIZE             = 9;
+            constexpr std::string_view PDF_PRODUCER_XML     = "<pdf:Producer>";
+            constexpr std::string_view PDF_PRODUCER_END_XML = "</pdf:Producer>";
+
+            constexpr uint8_t PDF_CREATIONDATE[]                = "/CreationDate";
+            constexpr uint8_t PDF_CREATIONDATE_SIZE             = 13;
+            constexpr std::string_view PDF_CREATIONDATE_XML     = "<xmp:CreateDate>";
+            constexpr std::string_view PDF_CREATIONDATE_END_XML = "</xmp:CreateDate>";
+
+            constexpr uint8_t PDF_MODDATE[]                = "/ModDate";
+            constexpr uint8_t PDF_MODDATE_SIZE             = 8;
+            constexpr std::string_view PDF_MODDATE_XML     = "<xmp:ModifyDate>";
+            constexpr std::string_view PDF_MODDATE_END_XML = "</xmp:ModifyDate>";
 
             // Warnings
             constexpr uint8_t PDF_JAVASCRIPT[]    = "/JavaScript";
@@ -270,7 +292,7 @@ namespace Type
             Trailer = 11,
         };
         // data needed for decoding the stream 
-        struct Metadata {
+        struct DecodeObjects {
             uint64 streamOffsetStart;
             uint64 streamOffsetEnd;
             std::vector<std::string> filters;
@@ -280,7 +302,7 @@ namespace Type
 
         struct ObjectNode {
             PDFObject pdfObject;
-            Metadata metadata;
+            DecodeObjects decodeObj;
             std::vector<ObjectNode> children;                                                       
         };
 
@@ -291,6 +313,15 @@ namespace Type
             std::vector<std::string> dictionaryTypes;
             std::vector<std::string> dictionarySubtypes;
             bool isEncrypted = false;
+        };
+
+        struct Metadata {
+            std::string title;
+            std::string author;
+            std::string creator;
+            std::string producer;
+            std::string creationDate;
+            std::string modifyDate;
         };
 
 #pragma pack(pop) // Back to default packing
@@ -309,6 +340,9 @@ namespace Type
             vector<uint64> processedObjects; 
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
             PDFStats pdfStats;
+            // metadata related
+            Metadata pdfMetadata;
+            vector<uint64> metadataObjectNumbers;
 
           public:
             PDFFile();
@@ -333,6 +367,7 @@ namespace Type
 
             // View::ContainerViewer::OpenItemInterface
             virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+            void DecodeStream(ObjectNode* node, Buffer& buffer, const size_t size);
 
             uint32 GetSelectionZonesCount() override
             {
