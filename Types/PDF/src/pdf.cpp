@@ -1,6 +1,9 @@
 #include "pdf.hpp"
 #include <deque>
 #include <codecvt>
+#include <sstream>
+#include <iomanip>
+#include <cctype>
 #include <podofo/podofo.h>
 
 using namespace AppCUI;
@@ -1032,6 +1035,61 @@ static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObject
     return nullptr;
 }
 
+static std::string MakeXMPDateReadable(const std::string& xmpDate)
+{
+
+    if (xmpDate.size() < 19) {
+        return xmpDate;
+    }
+
+    if (xmpDate[4] != '-' || xmpDate[7] != '-' || xmpDate[10] != 'T' || xmpDate[13] != ':' || xmpDate[16] != ':') {
+        return xmpDate;
+    }
+
+    auto isAllDigits = [&](int from, int to) {
+        for (int i = from; i <= to; i++) {
+            if (i < 0 || static_cast<size_t>(i) >= xmpDate.size() || !std::isdigit((unsigned char) xmpDate[i]))
+                return false;
+        }
+        return true;
+    };
+
+    if (!isAllDigits(0, 3) || !isAllDigits(5, 6) || !isAllDigits(8, 9) || !isAllDigits(11, 12) || !isAllDigits(14, 15) || !isAllDigits(17, 18)) {
+        return xmpDate;
+    }
+
+    std::string year   = xmpDate.substr(0, 4);
+    std::string month  = xmpDate.substr(5, 2);
+    std::string day    = xmpDate.substr(8, 2);
+    std::string hour   = xmpDate.substr(11, 2);
+    std::string minute = xmpDate.substr(14, 2);
+    std::string second = xmpDate.substr(17, 2);
+
+    std::string offsetStr;
+    if (xmpDate.size() > 19) {
+        char c = xmpDate[19];
+        if (c == 'Z') {
+            offsetStr = "Z";
+        } else if (c == '+' || c == '-') {
+            if (xmpDate.size() >= 25 && xmpDate[22] == ':') {
+                offsetStr = xmpDate.substr(19, 6);
+            } else {
+                offsetStr = xmpDate.substr(19);
+            }
+        } else {
+            // could be a fraction of second or something else; ignore
+        }
+    }
+
+    std::ostringstream out;
+    out << year << "-" << month << "-" << day << " " << hour << ":" << minute << ":" << second;
+
+    if (!offsetStr.empty()) {
+        out << " " << offsetStr;
+    }
+    return out.str();
+}
+
 static std::string ExtractBetweenTags(const std::string& src, std::string_view openTag, std::string_view closeTag)
 {
     size_t start = src.find(openTag);
@@ -1136,12 +1194,12 @@ void ExtractXMPMetadata(const Buffer& buffer, PDF::Metadata& pdfMetadata)
 
     std::string createDate = ExtractXMPValue(xmlContent, PDF::KEY::PDF_CREATIONDATE_XML, PDF::KEY::PDF_CREATIONDATE_END_XML);
     if (!createDate.empty() && pdfMetadata.creationDate.empty()) {
-        pdfMetadata.creationDate = createDate;
+        pdfMetadata.creationDate = MakeXMPDateReadable(createDate);
     }
 
     std::string modifyDate = ExtractXMPValue(xmlContent, PDF::KEY::PDF_MODDATE_XML, PDF::KEY::PDF_MODDATE_END_XML);
     if (!modifyDate.empty() && pdfMetadata.modifyDate.empty()) {
-        pdfMetadata.modifyDate = modifyDate;
+        pdfMetadata.modifyDate = MakeXMPDateReadable(modifyDate);
     }
 }
 
@@ -1169,6 +1227,140 @@ void ProcessMetadataStream(Reference<GView::Type::PDF::PDFFile> pdf, GView::Util
         pdf->DecodeStream(objectNode, buffer, size);
         ExtractXMPMetadata(buffer, pdfMetadata);
     }
+}
+
+static int SafeParseInt(const std::string& s, size_t pos, size_t length)
+{
+    if (pos + length > s.size()) {
+        return -1;
+    }
+    int val = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (!std::isdigit(static_cast<unsigned char>(s[pos + i]))) {
+            return -1;
+        }
+        val = val * 10 + (s[pos + i] - '0');
+    }
+    return val;
+}
+
+static std::string MakeDateReadable(const std::string& pdfDate)
+{
+    // Typical PDF date format: D:YYYYMMDDHHmmSSOHH'mm (with some fields optional).
+    std::string date = pdfDate;
+    if (date.size() >= 2 && date[0] == 'D' && date[1] == ':') {
+        date.erase(0, 2);
+    }
+
+    // Extract YYYY, MM, DD, HH, mm, SS in sequence (some may be missing)
+    size_t idx = 0;
+    int year   = SafeParseInt(date, idx, 4);
+    if (year < 0) {
+        return pdfDate;
+    }
+    idx += 4;
+    int month = -1, day = -1, hour = -1, min_ = -1, sec_ = -1;
+
+    if (idx + 2 <= date.size()) {
+        month = SafeParseInt(date, idx, 2);
+        if (month >= 1) {
+            idx += 2;
+        } else {
+            month = -1;
+        }
+    }
+    if (month != -1 && idx + 2 <= date.size()) {
+        day = SafeParseInt(date, idx, 2);
+        if (day >= 1) {
+            idx += 2;
+        } else {
+            day = -1;
+        }
+    }
+    if (day != -1 && idx + 2 <= date.size()) {
+        hour = SafeParseInt(date, idx, 2);
+        if (hour >= 0) {
+            idx += 2;
+        } else {
+            hour = -1;
+        }
+    }
+    if (hour != -1 && idx + 2 <= date.size()) {
+        min_ = SafeParseInt(date, idx, 2);
+        if (min_ >= 0) {
+            idx += 2;
+        } else {
+            min_ = -1;
+        }
+    }
+    if (min_ != -1 && idx + 2 <= date.size()) {
+        sec_ = SafeParseInt(date, idx, 2);
+        if (sec_ >= 0) {
+            idx += 2;
+        } else {
+            sec_ = -1;
+        }
+    }
+
+    // Check for offset (e.g. +01'00, -08'30, Z)
+    std::string offsetStr;
+    if (idx < date.size()) {
+        char c = date[idx];
+        if (c == '+' || c == '-') {
+            idx++;
+            int offsetH = SafeParseInt(date, idx, 2);
+            if (offsetH < 0) {
+                offsetH = 0;
+            }
+            idx += 2;
+
+            // skip apostrophe if present
+            if (idx < date.size() && date[idx] == '\'') {
+                idx++;
+            }
+
+            int offsetM = SafeParseInt(date, idx, 2);
+            if (offsetM < 0) {
+                offsetM = 0;
+            }
+            idx += 2;
+
+            std::ostringstream off;
+            off << c << std::setw(2) << std::setfill('0') << offsetH << ":" << std::setw(2) << std::setfill('0') << offsetM;
+            offsetStr = off.str();
+        } else if (c == 'Z') {
+            // local time = UTC
+            offsetStr = "Z";
+        }
+    }
+
+    // Build final string
+    if (month < 1) {
+        month = 1;
+    }
+    if (day < 1) {
+        day = 1;
+    }
+    if (hour < 0) {
+        hour = 0;
+    }
+    if (min_ < 0) {
+        min_ = 0;
+    }
+    if (sec_ < 0) {
+        sec_ = 0;
+    }
+
+    // Format: YYYY-MM-DD HH:MM:SS ±HH:MM
+    std::ostringstream out;
+    out << std::setw(4) << std::setfill('0') << year << "-" << std::setw(2) << std::setfill('0') << month << "-" << std::setw(2) << std::setfill('0') << day
+        << " " << std::setw(2) << std::setfill('0') << hour << ":" << std::setw(2) << std::setfill('0') << min_ << ":" << std::setw(2) << std::setfill('0')
+        << sec_;
+
+    if (!offsetStr.empty()) {
+        out << " " << offsetStr;
+    }
+    return out.str();
 }
 
 static std::string ParseLiteralString(GView::Utils::DataCache& data, uint64& offset, uint64 endOffset)
@@ -1287,9 +1479,9 @@ static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::Obje
                     } else if (IsEqualType(decodedName, PDF::KEY::PDF_PRODUCER_SIZE, PDF::KEY::PDF_PRODUCER) && pdfMetadata.producer.empty()) {
                         pdfMetadata.producer = value;
                     } else if (IsEqualType(decodedName, PDF::KEY::PDF_CREATIONDATE_SIZE, PDF::KEY::PDF_CREATIONDATE) && pdfMetadata.creationDate.empty()) {
-                        pdfMetadata.creationDate = value;
+                        pdfMetadata.creationDate = MakeDateReadable(value);
                     } else if (IsEqualType(decodedName, PDF::KEY::PDF_MODDATE_SIZE, PDF::KEY::PDF_MODDATE) && pdfMetadata.modifyDate.empty()) {
-                        pdfMetadata.modifyDate = value;
+                        pdfMetadata.modifyDate = MakeDateReadable(value);
                     }
                 }
             }
