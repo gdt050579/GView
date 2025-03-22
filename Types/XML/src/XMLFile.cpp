@@ -18,7 +18,7 @@ namespace CharType
     constexpr uint8 Invalid  = 7;
     constexpr uint8 String   = 8;
 
-uint8 XML_Groups_IDs[] = { Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid,  Space,   Space,   Invalid, Invalid,
+    uint8 XML_Groups_IDs[] = { Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid,  Space,   Space,   Invalid, Invalid,
                                Space,   Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Invalid,  Invalid, Invalid, Invalid, Invalid,
                                Invalid, Invalid, Invalid, Invalid, Invalid, Invalid, Space,   Text,    String,   Invalid, Invalid, Text,    Text,
                                Text,    Invalid, Invalid, Text,    Text,    Invalid, Text,    Text,    Slash,    Text,    Text,    Text,    Text,
@@ -28,7 +28,6 @@ uint8 XML_Groups_IDs[] = { Invalid, Invalid, Invalid, Invalid, Invalid, Invalid,
                                Invalid, Invalid, Invalid, Text,    Text,    Invalid, Text,    Text,    Text,     Text,    Text,    Text,    Text,
                                Text,    Text,    Text,    Text,    Text,    Text,    Text,    Text,    Text,     Text,    Text,    Text,    Text,
                                Text,    Text,    Text,    Text,    Text,    Text,    Invalid, Text,    Invalid,  Text,    Invalid };
-
 
     inline uint32 GetCharType(char16 c)
     {
@@ -43,37 +42,40 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
 {
     auto idx = start;
 
-    bool insideText = false;
-    auto startText  = 0U;
+    auto next = 0U;
 
     while (idx < end) {
         const auto ch   = text[idx];
         const auto type = CharType::GetCharType(ch);
 
-        if (insideText && type != CharType::Text) {
-            insideText = false;
-
-            auto tokenColor = TokenColor::Word;
-            auto tokenToUse = TokenType::Text;
-            if (type == CharType::Colon) {
-                tokenToUse = TokenType::AttributeClass;
-                tokenColor = TokenColor::Constant;
-            }
-
-            tokenList.Add(tokenToUse, startText, idx, tokenColor, TokenDataType::String);
-        }
-
         switch (type) {
         case CharType::Space:
             idx = text.ParseSpace(idx, SpaceType::All);
             break;
-        case CharType::Text:
-            // text.ParseSameGroupID -- TODO cu GetCharType
-            if (!insideText)
-                startText = idx;
-            insideText = true;
-            idx++;
+        case CharType::Text: {
+            auto alignMode = TokenAlignament::None;
+            auto lastToken = tokenList.GetLastToken();
+            if (lastToken.IsValid()) {
+                const auto tokenID = lastToken.GetTypeID(TokenType::None);
+                if (tokenID == TokenType::StartTag || tokenID == TokenType::Slash) {
+                    alignMode = TokenAlignament::AddSpaceAfter;
+                }
+            }
+
+            //auto alignMode = TokenAlignament::None;
+            //auto lastToken = tokenList.GetLastToken();
+            //if (lastToken.IsValid()) {
+            //    const auto tokenID = lastToken.GetTypeID(TokenType::None);
+            //    if (tokenID != TokenType::StartTag && tokenID != TokenType::Slash && tokenID != TokenType::None) {
+            //        alignMode = TokenAlignament::AddSpaceBefore;
+            //    }
+            //}
+
+            next = text.ParseSameGroupID(idx, CharType::GetCharType);
+            tokenList.Add(TokenType::Text, idx, next, TokenColor::Word, TokenDataType::String, alignMode);
+            idx = next;
             break;
+        }
         case CharType::StartTag:
             tokenList.Add(
                   TokenType::StartTag, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
@@ -84,23 +86,33 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
                   TokenType::EndTag, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
-        case CharType::Colon:
+        case CharType::Colon: {
+            auto lastToken = tokenList.GetLastToken();
+            if (lastToken.IsValid()) {
+                lastToken.SetAlignament(TokenAlignament::AddSpaceBefore);
+                lastToken.SetTypeID(TokenType::AttributeClass);
+                lastToken.SetTokenColor(TokenColor::Constant);
+            }
             tokenList.Add(
                   TokenType::Colon, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
-        case CharType::Equals:
+        }
+        case CharType::Equals: {
+            auto lastToken = tokenList.GetLastToken();
+            lastToken.SetAlignament(TokenAlignament::AddSpaceAfter);
             tokenList.Add(
                   TokenType::Equals, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
+        }
         case CharType::Slash:
             tokenList.Add(
                   TokenType::Slash, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
-        case CharType::String: {
-            const auto next = text.ParseString(idx, StringFormat::DoubleQuotes);
+        case CharType::String:
+            next = text.ParseString(idx, StringFormat::DoubleQuotes);
             tokenList.Add(
                   TokenType::String,
                   idx,
@@ -111,17 +123,12 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
                   TokenFlags::None);
             idx = next;
             break;
-        }
         default:
-            const auto next = text.ParseSameGroupID(idx, CharType::GetCharType);
-            tokenList.Add(TokenType::ErrorValue, idx, next, TokenColor::Word).SetError("Invalid character sequence");
+            next = text.ParseSameGroupID(idx, CharType::GetCharType);
+            tokenList.Add(TokenType::ErrorValue, idx, next, TokenColor::Error).SetError("Invalid character sequence");
             idx = next;
             break;
         }
-    }
-
-    if (insideText) {
-        tokenList.Add(TokenType::Text, startText, idx, TokenColor::String, TokenDataType::String);
     }
 }
 
@@ -152,7 +159,7 @@ void XMLFile::BuildBlocks(SyntaxManager& syntax)
             if (wasStartTag) {
                 wasStartTag = false;
                 wasSlash    = true;
-            }else {
+            } else {
                 blocks.Pop();
                 auto token = syntax.tokens[index].Next();
                 if (token.IsValid())
@@ -174,15 +181,29 @@ void XMLFile::BuildBlocks(SyntaxManager& syntax)
 void XMLFile::IndentSimpleInstructions(TokensList& list, BlocksList& blocks)
 {
     auto len = list.Len();
-    for (uint32 i = 0; i < len; i++) {
-        const auto typeID = list[i].GetTypeID(TokenType::None);
-        if (typeID == TokenType::Text && i + 1 < len) {
-            const auto nextTokenId = list[i + 1].GetTypeID(TokenType::None);
-            if (nextTokenId != TokenType::StartTag && nextTokenId != TokenType::EndTag)
-                list[i].UpdateAlignament(TokenAlignament::AddSpaceAfter);
-        } else if (typeID == TokenType::Equals)
-            list[i].UpdateAlignament(TokenAlignament::AddSpaceAfter);
-    }
+    //for (uint32 i = 0; i < len; i++) {
+    //    auto token        = list[i];
+    //    if (!token.IsValid())
+    //        continue;
+    //    const auto typeID = token.GetTypeID(TokenType::None);
+    //    if (typeID == TokenType::Colon) {
+    //        auto prevToken = token.Precedent();
+    //        auto nextToken = token.Next();
+    //        if (prevToken.IsValid() && nextToken.IsValid() && prevToken.GetTypeID(TokenType::None) == TokenType::Text &&
+    //            nextToken.GetTypeID(TokenType::None) == TokenType::Text) {
+
+    //        }
+    //    }
+
+
+
+    //    if (typeID == TokenType::Text && i + 1 < len) {
+    //        const auto nextTokenId = list[i + 1].GetTypeID(TokenType::None);
+    //        if (nextTokenId != TokenType::StartTag && nextTokenId != TokenType::EndTag)
+    //            list[i].UpdateAlignament(TokenAlignament::AddSpaceAfter);
+    //    } else if (typeID == TokenType::Equals)
+    //        list[i].UpdateAlignament(TokenAlignament::AddSpaceAfter);
+    //}
 
     len = blocks.Len();
     for (uint32 i = 0; i < len; i++) {

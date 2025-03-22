@@ -1303,6 +1303,7 @@ namespace View
             bool SetTokenColor(TokenColor col);
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
+            bool SetTypeID(uint32 typeID);
             bool DisableSimilartyHighlight();
             bool SetText(const ConstString& text);
             bool SetError(const ConstString& error);
