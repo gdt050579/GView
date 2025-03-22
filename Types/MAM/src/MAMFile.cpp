@@ -1,6 +1,8 @@
+#include <nlohmann/json.hpp>
 #include "MAM.hpp"
 
 using namespace GView::Type::MAM;
+using nlohmann::json;
 
 bool MAMFile::Update()
 {
@@ -26,6 +28,17 @@ bool MAMFile::UpdateKeys(KeyboardControlsInterface* interface)
     for (auto& entry : MAM_COMMANDS)
         interface->RegisterKey(&entry);
     return true;
+}
+
+std::string MAMFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]             = obj->GetName();
+    context["ContentSize"]      = obj->GetData().GetSize();
+    context["Signature"]        = signature;
+    context["UncompressedSize"] = uncompressedSize;
+    context["CompressedSize"]   = compressedSize;
+    return context.dump();
 }
 
 bool MAMFile::Decompress()

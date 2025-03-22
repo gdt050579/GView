@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.353.0"
+#define GVIEW_VERSION "0.363.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -45,6 +45,13 @@ struct CORE_EXPORT TypeInterface {
     virtual std::string_view GetTypeName()                        = 0;
     virtual void RunCommand(std::string_view commandName)         = 0;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) = 0;
+    /**
+     * \brief Function to retrieve the context of the smart assistant for user's prompt based on the current type plugin
+     * \param prompt The actual prompt (question) that the smart assistant will be asked
+     * \param displayPrompt The information that will be seen by the user (summarised version)
+     * \return string that has a json textual format with minimal information: {"Name": obj->GetName(), "ContentSize": obj->GetData().GetSize()} 
+     */
+    virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
 
     virtual ~TypeInterface()
     {
@@ -207,6 +214,32 @@ namespace Utils
         virtual bool SetZones(const ZonesList& zones)                  = 0;
     };
 } // namespace Utils
+
+namespace CommonInterfaces
+{
+    namespace SmartAssistants
+    {
+        struct CORE_EXPORT SmartAssistantPromptInterface
+        {
+            virtual std::string AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess) = 0;
+            virtual ~SmartAssistantPromptInterface()                                                                        = default;
+        };
+        struct CORE_EXPORT SmartAssistantRegisterInterface : SmartAssistantPromptInterface
+        {
+            virtual std::string_view GetSmartAssistantName() const                                = 0;
+            virtual std::string_view GetSmartAssistantDescription() const                         = 0;
+            virtual void ReceiveConfigToken(std::string_view config_data)                         = 0;
+            virtual uint32 GetCharacterLimit()                                                    = 0;
+        };
+    }// namespace SmartAssistants
+
+    struct CORE_EXPORT QueryInterface
+    {
+        virtual bool RegisterSmartAssistantInterface(Pointer<SmartAssistants::SmartAssistantRegisterInterface> smartAssistantInterface) = 0;
+        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                    = 0;
+        virtual ~QueryInterface()                                                                                               = default;
+    };
+} // namespace CommonInterfaces
 
 namespace Hashes
 {
@@ -386,7 +419,7 @@ namespace DigitalSignature
     };
 
     struct CORE_EXPORT Certificate {
-        int32 version;
+        int32 version{ 0 };
         String serialNumber;
         String signatureAlgorithm;
         String publicKeyAlgorithm;
@@ -394,7 +427,7 @@ namespace DigitalSignature
         String validityNotAfter;
         String issuer;
         String subject;
-        int32 verify;
+        int32 verify{ 0 };
         String errorVerify{};
 
         int32 signerVerify{ 0 }; //  compares the certificate cert against the signer identifier si
@@ -1487,6 +1520,7 @@ namespace View
         virtual uint32 GetViewsCount()                                 = 0;
         virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
         virtual bool SetViewByIndex(uint32 index)                      = 0;
+        virtual CommonInterfaces::QueryInterface* GetQueryInterface()  = 0;
 
         template <typename T>
         inline bool CreateViewer(const std::optional<std::string_view> name = {})
@@ -1504,8 +1538,8 @@ namespace View
 namespace App
 {
     enum class OpenMethod { FirstMatch, BestMatch, Select, ForceType };
-    bool CORE_EXPORT Init();
-    void CORE_EXPORT Run();
+    bool CORE_EXPORT Init(bool isTestingEnabled);
+    void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);

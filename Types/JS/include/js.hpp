@@ -478,6 +478,7 @@ namespace Type
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
             virtual bool StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result) override;
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
+            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
         };
         namespace Panels
         {

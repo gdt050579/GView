@@ -12,8 +12,8 @@ void DissasmCache::ClearCache(bool forceClear)
     if (!hasCache && !forceClear)
         return;
     zonesData.clear();
-    if (cacheFile.is_open())
-        cacheFile.close();
+
+    cacheFile.Close();
     zonesData.clear();
 }
 
@@ -36,48 +36,46 @@ std::filesystem::path DissasmCache::GetCacheFilePath(std::u16string_view fileLoc
     path += ".dissasm.cache";
     return path;
 }
-
+    
 bool DissasmCache::SaveCacheFile(std::u16string_view location)
 {
     if (zonesData.empty())
         return false;
     const std::filesystem::path filePath(location.begin(), location.end());
-    cacheFile.open(filePath, std::ios::out | std::ios::binary);
-    if (!cacheFile.is_open())
+    bool created = cacheFile.Create(filePath, true);
+    if (!created)
         return false;
     const uint32 zonesCount = (uint32) zonesData.size();
     uint32 entrySize;
-    cacheFile.write((const char*) &zonesCount, sizeof(zonesCount));
+    cacheFile.Write((const char*) &zonesCount, sizeof(zonesCount));
     for (auto& [name, entry] : zonesData) {
         entrySize = (uint32) name.size();
-        cacheFile.write((const char*) &entrySize, sizeof(entrySize));
-        cacheFile.write(name.data(), entrySize);
+        cacheFile.Write((const char*) &entrySize, sizeof(entrySize));
+        cacheFile.Write(name.data(), entrySize);
 
         entrySize = entry.size;
-        cacheFile.write((const char*) &entrySize, sizeof(entrySize));
-        cacheFile.write(reinterpret_cast<const char*>(entry.data.get()), entry.size);
+        cacheFile.Write((const char*) &entrySize, sizeof(entrySize));
+        cacheFile.Write(reinterpret_cast<const char*>(entry.data.get()), entry.size);
     }
-    cacheFile.close();
+    cacheFile.Close();
     return true;
 }
 
 bool DissasmCache::LoadCacheFile(std::u16string_view location)
 {
     const std::filesystem::path filePath(location.begin(), location.end());
-    cacheFile.open(filePath, std::ios::in | std::ios::binary);
-    if (!cacheFile.is_open())
+    const bool opened = cacheFile.OpenRead(filePath);
+    if (!opened)
         return false;
-    cacheFile.seekg(0, std::ios::end);
-    const auto fileSize = cacheFile.tellg();
-    cacheFile.seekg(0, std::ios::beg);
-    if (fileSize == -1)
+    const auto fileSize = cacheFile.GetSize();
+    if (fileSize == (uint64)-1)
         return false;
     if (fileSize == 0)
         return true;
     std::vector<uint8> buffer;
     buffer.resize((uint32) fileSize);
-    cacheFile.read(reinterpret_cast<char*>(buffer.data()), fileSize);
-    cacheFile.close();
+    cacheFile.Read(reinterpret_cast<char*>(buffer.data()), fileSize);
+    cacheFile.Close();
 
     if (fileSize < sizeof(uint32))
         return false;
@@ -218,7 +216,7 @@ bool DissasmCodeZone::ToBuffer(std::vector<uint8>& buffer) const
         reserveSize += sizeof(comment.first) + sizeof(uint32) + comment.second.size();
     }
     for (const auto& annotation : dissasmType.annotations) {
-        reserveSize += sizeof(annotation.first) + sizeof(uint32) + annotation.second.first.size() + sizeof(annotation.second.second);
+        reserveSize += sizeof(annotation.first) + sizeof(uint32) + (uint32)annotation.second.first.size() + sizeof(annotation.second.second);
     }
     buffer.reserve(reserveSize);
 

@@ -63,7 +63,7 @@ Plugin::Plugin()
     this->fnCreateInstance = nullptr;
     this->fnPopulateWindow = nullptr;
 }
-void Plugin::Init()
+void Plugin::InitDefaultPlugin()
 {
     // default initialization
     this->fnValidate       = DefaultTypePlugin::Validate;

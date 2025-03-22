@@ -799,7 +799,7 @@ namespace Type
 
           public:
             PEFile();
-            virtual ~PEFile() = default;
+            ~PEFile() override = default;
 
             bool Update();
 
@@ -878,6 +878,7 @@ namespace Type
             }
 
             bool UpdateKeys(KeyboardControlsInterface* interface) override;
+            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
         };
 
         namespace Panels

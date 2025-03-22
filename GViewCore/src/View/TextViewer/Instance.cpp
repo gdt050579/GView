@@ -267,7 +267,7 @@ class DataCharacterStream
     }
 };
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
     : settings(nullptr), ViewControl("Text View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj = _obj;

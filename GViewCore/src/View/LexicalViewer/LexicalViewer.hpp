@@ -380,7 +380,7 @@ namespace View
             std::vector<BlockObject> blocks;
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
 
             inline uint32 GetUnicodeTextLen() const
             {

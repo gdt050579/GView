@@ -1,6 +1,8 @@
+#include <nlohmann/json.hpp>
 #include "doc.hpp"
 #include <math.h>
 
+using nlohmann::json;
 namespace GView::Type::DOC
 {
 using namespace GView::View::LexicalViewer;
@@ -501,6 +503,16 @@ bool DOCFile::FindModulesPath(const CFDirEntry& entry, UnicodeStringBuilder& pat
     }
 
     return false;
+}
+
+std::string DOCFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    if (projectName.Len() > 0)
+        context["ProjectName"] = projectName.GetText();
+    return context.dump();
 }
 
 

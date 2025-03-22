@@ -1,4 +1,7 @@
+#include <nlohmann/json.hpp>
 #include "ini.hpp"
+
+using nlohmann::json;
 
 namespace GView::Type::INI
 {
@@ -609,5 +612,13 @@ bool INIFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicod
     // else it means it contains either a " or '
     // swicth to multi-line format
     return CreateIniFileString(result, content, u"\"\"\"");
+}
+
+std::string INIFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]        = obj->GetName();
+    context["ContentSize"] = obj->GetData().GetSize();
+    return context.dump();
 }
 } // namespace GView::Type::INI

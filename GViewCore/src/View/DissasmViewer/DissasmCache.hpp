@@ -14,7 +14,7 @@ struct DissasmCacheEntry
 
 struct DissasmCache {
     bool hasCache;
-    std::fstream cacheFile;
+    AppCUI::OS::File cacheFile;
     std::unordered_map<std::string, DissasmCacheEntry> zonesData;
 
     void ClearCache(bool forceClear = false);

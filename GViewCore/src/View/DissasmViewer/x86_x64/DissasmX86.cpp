@@ -8,6 +8,14 @@
 #include <utility>
 #include <list>
 #include <algorithm>
+#include <sstream>
+
+// #define DISSASM_DISABLE_STRING_PREVIEW
+
+constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 100;
+constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 150;
+constexpr uint32 DISSASM_ASSISTANT_MAX_API_CALLS              = 10;
+constexpr uint32 DISSASM_ASSISTANT_MAX_BYTE_TO_SEND           = 640;
 
 #pragma warning(disable : 4996) // The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name
 
@@ -212,7 +220,7 @@ inline void DissasmAddColorsToInstruction(
             const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? colors.AsmLocationInstruction : colors.AsmFunctionColor;
             cb.Add(string, mapColor);
         }
-        assert(mappingPtr);
+        // assert(mappingPtr);
     }
 
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
@@ -419,8 +427,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternal
     // strncpy((char*) bytes, "------", sizeof(bytes));
     // size        = static_cast<uint32>(strlen((char*) bytes));
 
-    op_str      = strdup("<--");
-    op_str_size = static_cast<uint32>(strlen(op_str));
+    // op_str      = strdup("<--");
+    // op_str_size = static_cast<uint32>(strlen(op_str));
+    op_str      = nullptr;
+    op_str_size = 0;
     return true;
 }
 
@@ -485,7 +495,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                                                               params.zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
     auto& lastZone          = params.zone->types.back().get();
     bool shouldConsiderCall = false;
-    if (flags == DissasmAsmPreCacheLine::InstructionFlag::CallFlag) {
+    if (flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) {
         const MemoryMappingEntry* mappingPtr = nullptr; // TryExtractMemoryMapping(params.settings, hexVal, finalIndex);
 
         const auto& mapping_ptr = params.settings->memoryMappings.find(hexVal);
@@ -500,25 +510,31 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         if (mappingPtr) {
             mapping     = mappingPtr;
             op_str_size = (uint32) mappingPtr->name.size();
-            if (mappingPtr->type == MemoryMappingType::FunctionMapping && !alreadyInitComment) {
-                // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
-                GView::Hashes::CRC32 crc32{};
-                uint32 hash    = 0;
-                const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
-                                 crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
-                                 crc32.Final(hash);
-                if (res) {
-                    const auto it = params.asmData->functions.find(hash);
-                    if (it != params.asmData->functions.end()) {
-                        params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.commentsData);
-                        params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::CallFlag);
+            if (mappingPtr->type == MemoryMappingType::FunctionMapping) {
+                if (!alreadyInitComment) {
+                    // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
+                    GView::Hashes::CRC32 crc32{};
+                    uint32 hash    = 0;
+                    const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
+                                     crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
+                                     crc32.Final(hash);
+                    if (res) {
+                        const auto it = params.asmData->functions.find(hash);
+                        if (it != params.asmData->functions.end()) {
+                            params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.commentsData);
+                            params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::CallFlag);
+                        }
                     }
+                } else {
+                    op_str      = strdup(mappingPtr->name.data());
+                    op_str_size = (uint32) mappingPtr->name.size();
                 }
             }
         } else {
             shouldConsiderCall = true;
         }
-    } else if (flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+    } else if (flags & DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+#ifndef DISSASM_DISABLE_STRING_PREVIEW
         if (!alreadyInitComment && !lastZone.commentsData.comments.contains(params.actualLine)) {
             const auto offset = params.settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
             if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < params.obj->GetData().GetSize()) {
@@ -532,9 +548,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 }
             }
         }
+#endif
     }
 
-    if (flags == DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
+    if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
         if (!hexValue.has_value()) {
             flags       = 0;
             op_str      = strdup(insn->op_str);
@@ -544,13 +561,13 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             return true;
         }
 
-        const char* prefix = !shouldConsiderCall ? "jmp_0x" : "sub_0x";
+        const char* prefix = !shouldConsiderCall ? "offset_0x" : "sub_0x";
 
         NumericFormatter n;
         const auto res = n.ToString(hexValue.value(), { NumericFormatFlags::HexPrefix, 16 });
 
         auto fnName = FormatFunctionName(hexValue.value(), prefix);
-        fnName.AddFormat(" (%s)", res.data());
+        // fnName.AddFormat(" (%s)", res.data());
 
         op_str      = strdup(fnName.GetText());
         op_str_size = static_cast<uint32>(fnName.Len());
@@ -715,10 +732,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
                 if (initData.hasAdjustedSize)
                     AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
                 if (!zone->TryLoadDataFromCache(cacheData)) {
-                    //TODO: will enable errors in the next version
-                    //dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
-                    //return false;
-                
+                    // TODO: will enable errors in the next version
+                    // dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
+                    // return false;
                 }
             }
         }
@@ -849,7 +865,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     /*if (isCursorLine)
         chars.SetColor(Layout.startingTextLineOffset, chars.Len(), config.Colors.HighlightCursorLine);*/
 
-    HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
+    HighlightSelectionAndDrawCursorText(
+          dli, static_cast<uint32>(bufferToDraw.length() - Layout.startingTextLineOffset), static_cast<uint32>(bufferToDraw.length()));
 
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
     // poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
@@ -1015,7 +1032,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     const auto annotations = zone->types.back().get().annotations;
     for (const auto& entry : annotations) // no std::views::keys on mac
     {
-        if (entry.first >= diffLines)
+        if (entry.first > diffLines + 1)
             break;
         actualLine++;
     }
@@ -1167,12 +1184,16 @@ DissasmCodeInternalType* GView::View::DissasmViewer::GetRecursiveCollpasedZoneBy
     return GetRecursiveCollpasedZoneByLineRecursive(parent, line);
 }
 
-bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
+bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line, std::string_view* newName)
 {
     // TODO: improve, add searching function to search inside types for the current annotation
     auto& annotations = dissasmType.annotations;
     auto it           = annotations.find(line);
     if (it != annotations.end()) {
+        if (newName) {
+            it->second.first = newName->data();
+            return true;
+        }
         SingleLineEditWindow dlg(it->second.first, "Edit label");
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
@@ -1620,3 +1641,489 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
 }
 
 #pragma endregion
+
+constexpr uint32 BTN_CLOSE_ID   = 0;
+constexpr uint32 BTN_APPLY_ID   = 1;
+constexpr uint32 RADIO_GROUP_ID = 2;
+
+class QueryFunctionNameDialog : public AppCUI::Controls::Window, Handlers::OnCheckInterface
+{
+    uint32 selectedIndex;
+
+  public:
+    QueryFunctionNameDialog(const std::vector<std::string>& names) : Window("Name selector", "d:c,w:30%,h:40%", WindowFlags::Sizeable)
+    {
+        selectedIndex    = UINT32_MAX;
+        uint32 yLocation = 1;
+        LocalString<32> location;
+
+        int32 radioBoxIndex = 0;
+        for (auto& name : names) {
+            location.SetFormat("x:5,y:%d,w:50,h:1", yLocation);
+            auto radioBox                 = Factory::RadioBox::Create(this, name, location.GetText(), RADIO_GROUP_ID, radioBoxIndex++);
+            radioBox->Handlers()->OnCheck = this;
+            yLocation += 2;
+        }
+
+        location.SetFormat("x:15%,y:%d,w:10,h:1", yLocation);
+        Factory::Button::Create(this, "Apply", location.GetText(), BTN_APPLY_ID);
+
+        location.SetFormat("x:25%,y:%d,w:10,h:1", yLocation);
+        Factory::Button::Create(this, "Close", location.GetText(), BTN_CLOSE_ID);
+    }
+
+    virtual void OnCheck(Reference<Controls::Control> control, bool value) override
+    {
+        selectedIndex = control->GetControlID();
+    }
+
+    bool IsValidApply() const
+    {
+        if (selectedIndex == UINT32_MAX) {
+            AppCUI::Dialogs::MessageBox::ShowWarning("Make selection", "Please select a name before applying it");
+            return false;
+        }
+        return true;
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ButtonClicked) {
+            if (ID == BTN_CLOSE_ID) {
+                selectedIndex = UINT32_MAX;
+                Exit(Dialogs::Result::Ok);
+                return true;
+            }
+            // BTN_APPLY_ID
+            if (IsValidApply())
+                Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        return false;
+    }
+    std::optional<uint32> GetSelectedIndex() const
+    {
+        if (selectedIndex == UINT32_MAX)
+            return {};
+        return selectedIndex;
+    }
+};
+
+constexpr uint32 QueryShowCodeDialog_BTN_CLOSE                  = 0;
+constexpr uint32 QueryShowCodeDialog_BTN_OPEN_OR_APPLY_COMMENTS = 0;
+
+inline void ltrim(std::string& s)
+{
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+}
+
+// trim from end (in place)
+inline void rtrim(std::string& s)
+{
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+inline void trim(std::string& s)
+{
+    rtrim(s);
+    ltrim(s);
+}
+
+std::string wrapText(const std::string& code, size_t windowWidth)
+{
+    String wrappedLines;
+    if (!wrappedLines.Realloc((uint32) code.length()))
+        return {};
+    std::istringstream codeStream(code);
+    std::string line;
+    std::string word;
+    LocalString<2048> currentLine;
+
+    bool lastLineWasEmpty = false;
+    while (std::getline(codeStream, line)) {
+        if (line.empty()) {
+            if (currentLine.Len()) {
+                wrappedLines.AddFormat("%s\n\n", currentLine.GetText());
+                currentLine.Clear();
+            } else {
+                wrappedLines.AddFormat("\n");
+            }
+            lastLineWasEmpty = true;
+            continue;
+        }
+        lastLineWasEmpty = false;
+        std::istringstream lineStream(line);
+        while (lineStream >> word) {
+            if (currentLine.Len() + word.length() + 1 > windowWidth) {
+                wrappedLines.AddFormat("%s\n", currentLine.GetText());
+                currentLine.SetFormat("%s", word.data());
+            } else {
+                if (currentLine.Len() && currentLine[currentLine.Len() - 1u] != '\n') {
+                    currentLine.AddChar(' ');
+                }
+                currentLine.AddFormat("%s", word.data());
+            }
+        }
+    }
+    if (currentLine.Len()) {
+        wrappedLines.AddFormat("%s\n", currentLine.GetText());
+    }
+    std::string result = wrappedLines.GetText();
+    return result;
+}
+
+void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
+{
+    Graphics::Character* end   = chars + charsCount;
+    Graphics::Character* start = nullptr;
+    ColorPair col;
+    while (chars < end) {
+        if (chars->Code == '*') // Check for '**'
+        {
+            start = chars;
+            chars++;
+            if ((chars < end) && (chars->Code == '*')) // Confirm second '*'
+            {
+                chars++;
+                start += 2; // Move past '**'
+                while ((chars < end) && !(chars->Code == '*' && (chars + 1 < end) && (chars + 1)->Code == '*')) {
+                    chars->Color = ColorPair{ Color::Yellow, Color::Transparent }; // Color for '**...**'
+                    chars++;
+                }
+                if (chars < end && (chars + 1 < end) && (chars + 1)->Code == '*') {
+                    chars += 2; // Move past closing '**'
+                }
+            }
+        } else if (chars->Code == '`') // Check for backticks '`'
+        {
+            start = chars;
+            chars++;
+            while ((chars < end) && (chars->Code != '`')) {
+                chars->Color = ColorPair{ Color::Green, Color::Transparent }; // Color for `...`
+                chars++;
+            }
+            if (chars < end && chars->Code == '`') {
+                chars++; // Move past closing backtick
+            }
+        } else if (chars->Code == '"') // Check for double quotes '"'
+        {
+            start = chars;
+            chars++;
+            while ((chars < end) && (chars->Code != '"')) {
+                chars->Color = ColorPair{ Color::DarkRed, Color::Transparent }; // Color for "..."
+                chars++;
+            }
+            if (chars < end && chars->Code == '"') {
+                chars++; // Move past closing double quote
+            }
+        } else {
+            chars++; // Move to the next character for non-matching cases
+        }
+    }
+}
+
+class QueryShowCodeDialog : public AppCUI::Controls::Window
+{
+    Reference<AppCUI::Controls::TextArea> codeArea;
+    std::vector<std::pair<std::string, std::string>> result;
+    bool OpenOrApply = false;
+    bool isDecompilation;
+    std::string codeString;
+
+  public:
+    QueryShowCodeDialog(const std::string& code, std::string_view windowName, bool decompile, bool needComments)
+        : Window(windowName, "d:c,w:80%,h:80%", WindowFlags::Sizeable)
+    {
+        codeArea = Factory::TextArea::Create(this, "", "l:1,t:2,r:1,b:5", TextAreaFlags::SyntaxHighlighting | TextAreaFlags::ScrollBars);
+        codeArea->Handlers()->OnTextColor = TextHighligh;
+
+        std::string wrappedCode = wrapText(code, codeArea->GetWidth() - 2);
+        codeArea->SetText(wrappedCode);
+        isDecompilation = decompile;
+
+        if (!decompile) {
+            result.reserve(16);
+
+            std::istringstream stream(code);
+            std::string line;
+            bool foundCommentsZone = false;
+
+            while (std::getline(stream, line)) {
+                if (!foundCommentsZone) {
+                    if (line.find("CommentsZoneExplained") != std::string::npos) {
+                        foundCommentsZone = true;
+                    }
+                    continue;
+                }
+                const size_t pos = line.rfind('#');
+                if (pos != std::string::npos) {
+                    std::string codePart = line.substr(0, pos);
+                    rtrim(codePart);
+
+                    std::string commentPart = line.substr(pos + 1);
+                    trim(commentPart);
+                    result.emplace_back(codePart, commentPart);
+                }
+            }
+        }
+
+        Factory::Button::Create(this, "Close", "l:45%,b:1,w:10", QueryShowCodeDialog_BTN_CLOSE);
+
+        if (!decompile && result.empty()) {
+            if (needComments)
+                Factory::Label::Create(this, "No comments found", "l:10,b:3,w:25");
+            return;
+        }
+        const char* labelText = decompile ? "Open in new tab" : "Apply comments found";
+        Factory::Label::Create(this, labelText, "l:10,b:3,w:25");
+
+        const char* buttonText = decompile ? "Open" : "Apply";
+        auto btn               = Factory::Button::Create(this, buttonText, "l:35,b:2,w:10", QueryShowCodeDialog_BTN_OPEN_OR_APPLY_COMMENTS);
+
+        if (decompile) {
+            auto codeStart = code.find("```");
+            if (codeStart == std::string::npos) {
+                btn->SetEnabled(false);
+                return;
+            }
+            codeStart += 3;
+            if (codeStart + 4 >= code.size()) {
+                btn->SetEnabled(false);
+                return;
+            }
+            if (code[codeStart] == 'c')
+                codeStart++;
+            if (code[codeStart] == '+')
+                codeStart++;
+            if (code[codeStart] == '+')
+                codeStart++;
+            auto codeEnd = code.find("```", codeStart + 3);
+            if (codeEnd == std::string::npos) {
+                btn->SetEnabled(false);
+                return;
+            }
+            codeString = code.substr(codeStart, codeEnd - codeStart - 3);
+        }
+    }
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ButtonClicked) {
+            if (ID == QueryShowCodeDialog_BTN_OPEN_OR_APPLY_COMMENTS)
+                OpenOrApply = true;
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        return false;
+    }
+
+    const std::vector<std::pair<std::string, std::string>>& GetAppliedComments() const
+    {
+        return result;
+    }
+
+    std::string GetDecompiledCode() const
+    {
+        return codeString;
+    }
+
+    bool GetOpenOrApply() const
+    {
+        return OpenOrApply;
+    }
+};
+
+void Instance::QuerySmartAssistantX86X64(
+      DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType)
+{
+    assert(line >= 2); // 2 for title and menu
+    line -= 2;
+
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    params.dli      = nullptr;
+    params.zone     = codeZone;
+
+    LocalString<128> displayPrompt;
+
+    displayPrompt.SetFormat(queryParams.displayPrompt.data());
+    if (!queryParams.mnemonicStarsWith.empty()) {
+        auto data = codeZone->GetCurrentAsmLine(line, obj, &params);
+        if (memcmp(data.mnemonic, queryParams.mnemonicStarsWith.data(), queryParams.mnemonicStarsWith.size()) != 0) {
+            Dialogs::MessageBox::ShowNotification("Warning", queryParams.mnemonicStartsWithError);
+            return;
+        }
+        if (queryParams.displayPromptUsesMnemonicParam)
+            displayPrompt.AddFormat("%s", data.mnemonic);
+    }
+
+    const auto assistantInterface = queryInterface->GetSmartAssistantInterface();
+    if (!assistantInterface) {
+        return;
+    }
+
+    uint32 actualLineInDocument = line + codeZone->startLineIndex + 1; // +1 for the function
+    uint32 lineIndex            = 0;
+    uint32 currentDissasmLine   = line + 1; // +1 for the function
+
+    std::vector<std::string> apisInstructions;
+    apisInstructions.reserve(DISSASM_ASSISTANT_MAX_API_CALLS / 2);
+
+    std::vector<std::string> assemblyLines;
+    apisInstructions.reserve(DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT);
+
+    LocalString<64> currentBuffer;
+    std::string comment;
+    while (actualLineInDocument < codeZone->endingLineIndex && lineIndex < DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED) {
+        auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
+        if (currentLine.size > 0) {
+            currentBuffer.SetFormat("   %s %s", currentLine.mnemonic, currentLine.op_str);
+            if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
+                if (queryParams.includeComments) {
+                    if (codeZone->GetComment(currentDissasmLine, comment)) {
+                        currentBuffer.AddFormat(" ; %s", comment.data());
+                    }
+                }
+                assemblyLines.emplace_back(currentBuffer.GetText());
+            } else if (currentLine.mnemonic[0] == 'c' && memcmp(currentLine.mnemonic, "call", 4) == 0) {
+                if (apisInstructions.size() < DISSASM_ASSISTANT_MAX_API_CALLS)
+                    apisInstructions.emplace_back(currentBuffer.GetText());
+            }
+        } else {
+            if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
+                assemblyLines.emplace_back(currentLine.mnemonic);
+            }
+        }
+        if (queryParams.stopAtTheEndOfTheFunction && *(uint32*) currentLine.mnemonic == retOP)
+            break;
+        actualLineInDocument++;
+        lineIndex++;
+        currentDissasmLine++;
+    }
+    if (assemblyLines.empty()) {
+        Dialogs::MessageBox::ShowNotification("Warning", "No instructions found!");
+        return;
+    }
+
+    LocalString<DISSASM_ASSISTANT_MAX_BYTE_TO_SEND> bufferToSendToAssistant;
+    bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
+    bufferToSendToAssistant.AddFormat("Here is x86 assembly code: \n");
+    // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
+    // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
+    for (const auto& asmLine : assemblyLines) {
+        bufferToSendToAssistant.AddFormat("%s\n", asmLine.data());
+    }
+    if (!apisInstructions.empty()) {
+        bufferToSendToAssistant.AddFormat("The function also makes these API calls: ");
+        for (const auto& apiCall : apisInstructions) {
+            bufferToSendToAssistant.AddFormat("%s\n", apiCall.data());
+        }
+    }
+
+    // bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
+    auto textData = bufferToSendToAssistant.GetText();
+
+    bool isSuccess = false;
+    auto result    = assistantInterface->AskSmartAssistant(textData, displayPrompt, isSuccess);
+    if (!isSuccess) {
+        bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
+        Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());
+        return;
+    }
+
+    // std::string_view sv = result;
+    if (queryType == QueryTypeSmartAssistant::FunctionName) {
+        std::vector<std::string> names;
+        names.reserve(DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
+
+        std::stringstream ss(result);
+        std::string name;
+
+        while (std::getline(ss, name, ',')) {
+            trim(name);
+            names.push_back(name);
+        }
+
+        // if (name.size() != DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST) {
+        //     Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected number of names!");
+        //     return;
+        // }
+
+        QueryFunctionNameDialog dlg(names);
+        dlg.Show();
+
+        auto indexResult = dlg.GetSelectedIndex();
+        if (indexResult.has_value()) {
+            auto sv = std::string_view(names[indexResult.value()]);
+            codeZone->TryRenameLine(line, &sv);
+        }
+    } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
+        QueryShowCodeDialog dlg(result, "Code explanation", false, true);
+        dlg.Show();
+
+        if (dlg.GetOpenOrApply()) {
+            const auto& resultValue = dlg.GetAppliedComments();
+            if (resultValue.empty()) {
+                Dialogs::MessageBox::ShowNotification("Warning", "No comments found!");
+                return;
+            }
+            currentDissasmLine = line + 1;
+            auto initialLine   = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
+            if (initialLine.size == 0) {
+                Dialogs::MessageBox::ShowNotification("Warning", "No instructions found!");
+                return;
+            }
+            currentBuffer.SetFormat("%s %s", initialLine.mnemonic, initialLine.op_str);
+            if (resultValue[0].first != currentBuffer.GetText()) {
+                Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected comments!");
+            }
+            for (const auto& [asmLine, comment] : resultValue) {
+                do {
+                    auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
+                    if (currentLine.op_str)
+                        break;
+                    if (++currentDissasmLine >= codeZone->endingLineIndex)
+                        return; // todo: check in the future
+                } while (true);
+
+                std::string initialComment;
+                if (codeZone->GetComment(currentDissasmLine, initialComment)) {
+                    bufferToSendToAssistant.SetFormat("%s; %s", comment.data(), initialComment.data());
+                    initialComment = bufferToSendToAssistant.GetText();
+                } else {
+                    initialComment = comment;
+                }
+                codeZone->AddOrUpdateComment(currentDissasmLine, initialComment, false);
+                currentDissasmLine++;
+            }
+            selection.Clear();
+        }
+    } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
+        QueryShowCodeDialog dlg(result, "Code explanation", true, false);
+        dlg.Show();
+
+        if (dlg.GetOpenOrApply()) {
+            LocalUnicodeStringBuilder<512> fullPath;
+            fullPath.Add(this->obj->GetPath());
+            fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+            fullPath.Add("temp_dissasm");
+
+            auto code         = dlg.GetDecompiledCode();
+            BufferView buffer = { code.data(), code.size() };
+            GView::App::OpenBuffer(buffer, "temp_decompile.cpp", fullPath, GView::App::OpenMethod::Select, "CPP");
+        }
+    } else if (queryType == QueryTypeSmartAssistant::MitreTechiques) {
+        QueryShowCodeDialog dlg(result, "MITRE techniques", false, false);
+        dlg.Show();
+    } else if (queryType == QueryTypeSmartAssistant::FunctionNameAndExplanation) {
+        QueryShowCodeDialog dlg(result, "Code explanation", false, true);
+        dlg.Show();
+    }
+
+    codeZone->asmPreCacheData.Clear();
+}

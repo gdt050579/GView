@@ -12,7 +12,7 @@ const std::string_view PNG::GetName() const
 
 Category PNG::GetCategory() const
 {
-    return Category::Multimedia;
+    return Category::Image;
 }
 
 Subcategory PNG::GetSubcategory() const

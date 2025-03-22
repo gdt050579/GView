@@ -492,7 +492,7 @@ struct Header
     uint64 creationDate;
     uint64 lastAccessDate;
     uint64 lastModificationDate;
-    uint32 filesize;
+    uint32 fileSize;
     int32 iconIndex;
     ShowWindow showCommand;
     HotKey hotKey;

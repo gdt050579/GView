@@ -1,4 +1,7 @@
+#include <nlohmann/json.hpp>
 #include "pyextractor.hpp"
+
+using nlohmann::json;
 
 namespace GView::Type::PYEXTRACTOR
 {
@@ -138,6 +141,21 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
     }
 
     return true;
+}
+
+std::string PYEXTRACTORFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+{
+    json context;
+    context["Name"]                   = obj->GetName();
+    context["ContentSize"]            = obj->GetData().GetSize();
+    context["CookiePosition"]         = archive.cookiePosition;
+    context["PyInstallerVersion"]     = (archive.version == PyInstallerVersion::V20 ? "2.0" : "2.1+");
+    context["TableOfContentPosition"] = archive.info.tableOfContentPosition;
+    context["TableOfContentSize"]     = archive.info.tableOfContentSize;
+    context["PyVersion"]              = archive.info.pyver;
+    if (strlen(archive.info.pylibname) > 0)
+        context["PyLibName"] = archive.info.pylibname;
+    return context.dump();
 }
 
 bool PYEXTRACTORFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
