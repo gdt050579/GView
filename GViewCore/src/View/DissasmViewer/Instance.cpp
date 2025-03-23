@@ -1706,7 +1706,7 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         params.displayPromptUsesMnemonicParam = true;
         params.stopAtTheEndOfTheFunction      = true;
         params.includeComments                = true;
-        params.prompt = "What is the MITRE techniques associated with the following assembly code? Use the MITRE format: T<techniqueID>.<sub-techniqueID>.";
+        params.prompt = "What is the MITRE techniques associated with the following assembly code (if any)? Only provide MITRE techniques where they can be inferred from the assembly code. Do not consider a MITRE technique if the file can potentially be part of an attack chain where you need further context to evaluate. If any technique is found, use the MITRE format: T<techniqueID>.<sub-techniqueID>.";
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     }
 }
