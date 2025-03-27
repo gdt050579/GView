@@ -213,6 +213,35 @@ namespace Utils
         virtual std::optional<Zone> GetObjectsZone(uint32 index) const = 0;
         virtual bool SetZones(const ZonesList& zones)                  = 0;
     };
+
+    template <typename ListType, typename ValueType>
+    class ListIterator
+    {
+        const ListType& iteratorList;
+        uint32_t index;
+
+      public:
+        ListIterator(const ListType& listParam, uint32_t index = 0) : iteratorList(listParam), index(index)
+        {
+        }
+
+        ValueType operator*() const
+        {
+            return iteratorList[index];
+        }
+
+        ListIterator& operator++()
+        {
+            ++index;
+            return *this;
+        }
+
+        bool operator!=(const ListIterator& other) const
+        {
+            return index != other.index;
+        }
+    };
+
 } // namespace Utils
 
 namespace CommonInterfaces
@@ -1353,6 +1382,15 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, TokenFlags flags);
             // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+
+            Utils::ListIterator<TokensList, Token> begin() const
+            {
+                return { *this, 0 };
+            }
+            Utils::ListIterator<TokensList, Token> end() const
+            {
+                return { *this, Len() };
+            }
         };
         class CORE_EXPORT BlocksList
         {
@@ -1368,6 +1406,15 @@ namespace View
             Block operator[](uint32 index) const;
             Block Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
             Block Add(Token start, Token end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
+
+            Utils::ListIterator<BlocksList, Block> begin() const
+            {
+                return { *this, 0 };
+            }
+            Utils::ListIterator<BlocksList, Block> end() const
+            {
+                return { *this, Len() };
+            }
         };
         struct SyntaxManager {
             const TextParser& text;

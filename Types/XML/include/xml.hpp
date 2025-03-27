@@ -10,20 +10,20 @@ namespace Type
     {
         namespace TokenType
         {
-            constexpr uint32 None           = 0xFFFFFFFF;
-            constexpr uint32 StartTag       = 0;
-            constexpr uint32 EndTag         = 1;
-            constexpr uint32 TagName        = 2;
-            constexpr uint32 Colon          = 3;
-            constexpr uint32 Equals         = 4;
-            constexpr uint32 AttributeClass = 5;
-            constexpr uint32 Text           = 6;
-            constexpr uint32 Slash          = 7;
-            constexpr uint32 ErrorValue     = 8;
-            constexpr uint32 String         = 9;
-            constexpr uint32 AttributeName  = 10;
-            constexpr uint32 AttributeValue = 11;
-            constexpr uint32 TagClass       = 12;
+            constexpr uint32 None               = 0xFFFFFFFF;
+            constexpr uint32 StartTag           = 0;
+            constexpr uint32 EndTag             = 1;
+            constexpr uint32 TagName            = 2;
+            constexpr uint32 Colon              = 3;
+            constexpr uint32 Equals             = 4;
+            constexpr uint32 AttributeNamespace = 5;
+            constexpr uint32 Text               = 6;
+            constexpr uint32 Slash              = 7;
+            constexpr uint32 ErrorValue         = 8;
+            constexpr uint32 String             = 9;
+            constexpr uint32 AttributeName      = 10;
+            constexpr uint32 AttributeValue     = 11;
+            constexpr uint32 TagNamespace       = 12;
 
         } // namespace TokenType
 
