@@ -21,6 +21,9 @@ namespace Type
             constexpr uint32 Slash          = 7;
             constexpr uint32 ErrorValue     = 8;
             constexpr uint32 String         = 9;
+            constexpr uint32 AttributeName  = 10;
+            constexpr uint32 AttributeValue = 11;
+            constexpr uint32 TagClass       = 12;
 
         } // namespace TokenType
 

@@ -54,25 +54,35 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
             break;
         case CharType::Text: {
             auto alignMode = TokenAlignament::None;
+            auto color     = TokenColor::Word;
+            auto tokenType = TokenType::Text;
             auto lastToken = tokenList.GetLastToken();
             if (lastToken.IsValid()) {
                 const auto tokenID = lastToken.GetTypeID(TokenType::None);
                 if (tokenID == TokenType::StartTag || tokenID == TokenType::Slash) {
                     alignMode = TokenAlignament::AddSpaceAfter;
+                    tokenType = TokenType::TagName;
+                    color     = TokenColor::Keyword;
+                } else if (tokenID == TokenType::Colon) {
+                    auto beforeLast = lastToken.Precedent();
+                    if (beforeLast.IsValid() && beforeLast.GetTypeID(TokenType::None) == TokenType::AttributeClass) {
+                        auto beforeBeforeLast = beforeLast.Precedent();
+                        if (beforeBeforeLast.IsValid()) {
+                            const auto beforeBeforeLastTokenType = beforeBeforeLast.GetTypeID(TokenType::None);
+                            if (beforeBeforeLastTokenType == TokenType::StartTag || beforeBeforeLastTokenType == TokenType::Slash) {
+                                beforeLast.SetTypeID(TokenType::TagClass);
+                                beforeLast.SetTokenColor(TokenColor::Constant);
+
+                                tokenType = TokenType::TagName;
+                                color     = TokenColor::Keyword;
+                            }
+                        }
+                    }
                 }
             }
 
-            //auto alignMode = TokenAlignament::None;
-            //auto lastToken = tokenList.GetLastToken();
-            //if (lastToken.IsValid()) {
-            //    const auto tokenID = lastToken.GetTypeID(TokenType::None);
-            //    if (tokenID != TokenType::StartTag && tokenID != TokenType::Slash && tokenID != TokenType::None) {
-            //        alignMode = TokenAlignament::AddSpaceBefore;
-            //    }
-            //}
-
             next = text.ParseSameGroupID(idx, CharType::GetCharType);
-            tokenList.Add(TokenType::Text, idx, next, TokenColor::Word, TokenDataType::String, alignMode);
+            tokenList.Add(tokenType, idx, next, color, TokenDataType::String, alignMode);
             idx = next;
             break;
         }
@@ -100,7 +110,9 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
         }
         case CharType::Equals: {
             auto lastToken = tokenList.GetLastToken();
-            lastToken.SetAlignament(TokenAlignament::AddSpaceAfter);
+            if (lastToken.IsValid()) {
+                lastToken.SetAlignament(TokenAlignament::AddSpaceAfter);
+            }
             tokenList.Add(
                   TokenType::Equals, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
             idx++;
@@ -111,10 +123,23 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
                   TokenType::Slash, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
-        case CharType::String:
-            next = text.ParseString(idx, StringFormat::DoubleQuotes);
+        case CharType::String: {
+            next           = text.ParseString(idx, StringFormat::DoubleQuotes);
+            auto tokenType = TokenType::String;
+            auto lastToken = tokenList.GetLastToken();
+            if (lastToken.IsValid()) {
+                const auto tokenID = lastToken.GetTypeID(TokenType::None);
+                if (tokenID == TokenType::Equals) {
+                    auto beforeLast = lastToken.Precedent();
+                    if (beforeLast.IsValid() && beforeLast.GetTypeID(TokenType::None) == TokenType::Text) {
+                        beforeLast.SetTypeID(TokenType::AttributeName);
+                        tokenType = TokenType::AttributeValue;
+                    }
+                }
+            }
+
             tokenList.Add(
-                  TokenType::String,
+                  tokenType,
                   idx,
                   next,
                   TokenColor::String,
@@ -123,6 +148,7 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
                   TokenFlags::None);
             idx = next;
             break;
+        }
         default:
             next = text.ParseSameGroupID(idx, CharType::GetCharType);
             tokenList.Add(TokenType::ErrorValue, idx, next, TokenColor::Error).SetError("Invalid character sequence");
@@ -181,21 +207,19 @@ void XMLFile::BuildBlocks(SyntaxManager& syntax)
 void XMLFile::IndentSimpleInstructions(TokensList& list, BlocksList& blocks)
 {
     auto len = list.Len();
-    //for (uint32 i = 0; i < len; i++) {
-    //    auto token        = list[i];
-    //    if (!token.IsValid())
-    //        continue;
-    //    const auto typeID = token.GetTypeID(TokenType::None);
-    //    if (typeID == TokenType::Colon) {
-    //        auto prevToken = token.Precedent();
-    //        auto nextToken = token.Next();
-    //        if (prevToken.IsValid() && nextToken.IsValid() && prevToken.GetTypeID(TokenType::None) == TokenType::Text &&
-    //            nextToken.GetTypeID(TokenType::None) == TokenType::Text) {
+    // for (uint32 i = 0; i < len; i++) {
+    //     auto token        = list[i];
+    //     if (!token.IsValid())
+    //         continue;
+    //     const auto typeID = token.GetTypeID(TokenType::None);
+    //     if (typeID == TokenType::Colon) {
+    //         auto prevToken = token.Precedent();
+    //         auto nextToken = token.Next();
+    //         if (prevToken.IsValid() && nextToken.IsValid() && prevToken.GetTypeID(TokenType::None) == TokenType::Text &&
+    //             nextToken.GetTypeID(TokenType::None) == TokenType::Text) {
 
     //        }
     //    }
-
-
 
     //    if (typeID == TokenType::Text && i + 1 < len) {
     //        const auto nextTokenId = list[i + 1].GetTypeID(TokenType::None);
@@ -278,7 +302,19 @@ void XMLFile::GetTokenIDStringRepresentation(uint32 id, String& str)
         str.Set("ErrorValue");
         break;
     case TokenType::AttributeClass:
-        str.Set("Namespace");
+        str.Set("Attribute Class");
+        break;
+    case TokenType::String:
+        str.Set("String");
+        break;
+    case TokenType::AttributeName:
+        str.Set("Attribute Name");
+        break;
+    case TokenType::AttributeValue:
+        str.Set("Attribute Value");
+        break;
+    case TokenType::TagClass:
+        str.Set("Tag Class");
         break;
     default:
         str.Set("UNSET VALUE");
