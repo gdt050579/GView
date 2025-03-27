@@ -32,7 +32,7 @@ std::string callGeminiAPI(const std::string& apiKey, std::string_view prompt, bo
 
     CURL* curl = curl_easy_init();
     if (curl) {
-        const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=" + apiKey;
+        const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" + apiKey;
 
         struct curl_slist* headers = nullptr;
         headers                    = curl_slist_append(headers, "Content-Type: application/json");
