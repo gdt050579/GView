@@ -65,12 +65,12 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
                     color     = TokenColor::Keyword;
                 } else if (tokenID == TokenType::Colon) {
                     auto beforeLast = lastToken.Precedent();
-                    if (beforeLast.IsValid() && beforeLast.GetTypeID(TokenType::None) == TokenType::AttributeClass) {
+                    if (beforeLast.IsValid() && beforeLast.GetTypeID(TokenType::None) == TokenType::AttributeNamespace) {
                         auto beforeBeforeLast = beforeLast.Precedent();
                         if (beforeBeforeLast.IsValid()) {
                             const auto beforeBeforeLastTokenType = beforeBeforeLast.GetTypeID(TokenType::None);
                             if (beforeBeforeLastTokenType == TokenType::StartTag || beforeBeforeLastTokenType == TokenType::Slash) {
-                                beforeLast.SetTypeID(TokenType::TagClass);
+                                beforeLast.SetTypeID(TokenType::TagNamespace);
                                 beforeLast.SetTokenColor(TokenColor::Constant);
 
                                 tokenType = TokenType::TagName;
@@ -78,6 +78,8 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
                             }
                         }
                     }
+                } else if (tokenID == TokenType::Text) {
+                    lastToken.SetAlignament(TokenAlignament::AddSpaceAfter);
                 }
             }
 
@@ -100,7 +102,7 @@ void XMLFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensL
             auto lastToken = tokenList.GetLastToken();
             if (lastToken.IsValid()) {
                 lastToken.SetAlignament(TokenAlignament::AddSpaceBefore);
-                lastToken.SetTypeID(TokenType::AttributeClass);
+                lastToken.SetTypeID(TokenType::AttributeNamespace);
                 lastToken.SetTokenColor(TokenColor::Constant);
             }
             tokenList.Add(
@@ -301,8 +303,8 @@ void XMLFile::GetTokenIDStringRepresentation(uint32 id, String& str)
     case TokenType::ErrorValue:
         str.Set("ErrorValue");
         break;
-    case TokenType::AttributeClass:
-        str.Set("Attribute Class");
+    case TokenType::AttributeNamespace:
+        str.Set("Attribute Namespace");
         break;
     case TokenType::String:
         str.Set("String");
@@ -313,8 +315,8 @@ void XMLFile::GetTokenIDStringRepresentation(uint32 id, String& str)
     case TokenType::AttributeValue:
         str.Set("Attribute Value");
         break;
-    case TokenType::TagClass:
-        str.Set("Tag Class");
+    case TokenType::TagNamespace:
+        str.Set("Tag Namespace");
         break;
     default:
         str.Set("UNSET VALUE");

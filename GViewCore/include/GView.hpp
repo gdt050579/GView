@@ -215,7 +215,7 @@ namespace Utils
     };
 
     template <typename ListType, typename ValueType>
-    class ListIterator
+    class CORE_EXPORT ListIterator
     {
         const ListType& iteratorList;
         uint32_t index;
