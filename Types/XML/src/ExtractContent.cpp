@@ -1,6 +1,7 @@
 #include "xml.hpp"
 #include <string>
 #include <set>
+#include <codecvt>
 
 // Extract from key:
 //     w:name sau w:var
@@ -10,6 +11,11 @@ using std::string;
 using std::u16string;
 struct AttributeData {
     u16string attName, attNamespace;
+};
+
+enum class ExtractMethodology {
+    AfterEachOther,
+    OnNewLine
 };
 
 namespace GView::Type::XML::Plugins
@@ -33,7 +39,7 @@ class XMLExtractContentWindow : public Window
             Dialogs::MessageBox::ShowError("Error", "Please enter a value to extract!");
             return;
         }
-        result = comboAttributes->GetText();
+        result = comboAttributes->GetCurrentItemText();
         Exit(Dialogs::Result::Ok);
     }
 
@@ -115,6 +121,11 @@ class XMLExtractContentWindow : public Window
     {
         return result;
     }
+
+    inline ExtractMethodology GetMethodology()
+    {
+        return appendMethodology->GetCurrentItemIndex() == 0 ? ExtractMethodology::AfterEachOther : ExtractMethodology::OnNewLine;
+    }
 };
 
 vector<string> split(const string& str, char delimiter)
@@ -142,6 +153,12 @@ std::string_view ExtractContent::GetDescription()
 bool ExtractContent::CanBeAppliedOn(const PluginData& data)
 {
     return true;
+}
+
+std::string u16stringToString(const std::u16string& u16str)
+{
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+    return converter.to_bytes(u16str);
 }
 
 PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
@@ -179,6 +196,78 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
     if (result != Dialogs::Result::Ok) {
         return PluginAfterActionRequest::None;
     }
+
+    UnicodeStringBuilder dataFound;
+    const auto methodology = win.GetMethodology();
+
+    bool foundSearchedTag   = false;
+    const auto tagToSearch = win.GetResult();
+    if (tagToSearch.find(':') != u16string::npos) {
+        for (auto token : data.tokens) {
+            const auto tokenType = token.GetTypeID(TokenType::None);
+            if (foundSearchedTag && tokenType == TokenType::AttributeValue) {
+                foundSearchedTag = false;
+                auto tokenText   = token.GetText();
+                dataFound.Add(tokenText.substr(1, tokenText.length() - 2));
+                if (methodology == ExtractMethodology::OnNewLine)
+                    dataFound.AddChar('\n');
+                continue;
+            }
+
+            if (tokenType == TokenType::AttributeNamespace) {
+                if (token.GetText().empty())
+                    continue;
+                att.attNamespace = token.GetText();
+            } else if (tokenType == TokenType::AttributeName) {
+                if (att.attNamespace.empty()) {
+                    continue;
+                } 
+                att.attName = token.GetText();
+                LocalUnicodeStringBuilder<128> sb;
+                sb.Add(att.attNamespace);
+                sb.AddChar(':');
+                sb.Add(att.attName);
+                if (tagToSearch == (u16string_view) sb) {
+                    foundSearchedTag = true;
+                }
+            }
+        }
+    }else {
+        for (auto token : data.tokens) {
+            const auto tokenType = token.GetTypeID(TokenType::None);
+            if (foundSearchedTag && tokenType == TokenType::AttributeValue) {
+                foundSearchedTag = false;
+                auto tokenText   = token.GetText();
+                dataFound.Add(tokenText.substr(1, tokenText.length() - 2));
+                if (methodology == ExtractMethodology::OnNewLine)
+                    dataFound.AddChar('\n');
+                continue;
+            }
+            if (tokenType == TokenType::AttributeNamespace) {
+                if (token.GetText().empty())
+                    continue;
+                att.attNamespace = token.GetText();
+            }else if (tokenType == TokenType::AttributeName) {
+                if (!att.attNamespace.empty()) {
+                    continue;
+                } 
+                att.attName = token.GetText();
+                if (att.attName == (u16string_view) tagToSearch) {
+                    foundSearchedTag = true;
+                }
+            }
+        }
+    }
+
+    auto asciiCode = u16stringToString({ dataFound.GetString(), dataFound.Len() });
+
+    LocalUnicodeStringBuilder<512> fullPath;
+    fullPath.Add(".");
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add(tagToSearch);
+
+    BufferView buffer = { asciiCode.data(), asciiCode.length() };
+    GView::App::OpenBuffer(buffer, tagToSearch, fullPath, GView::App::OpenMethod::BestMatch);
 
     return PluginAfterActionRequest::None;
 }
