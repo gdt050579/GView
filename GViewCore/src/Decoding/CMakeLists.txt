@@ -4,4 +4,5 @@ target_sources(GViewCore PRIVATE
         QuotedPrintable.cpp
         zip.cpp
         zlib.cpp
+        HexCharactersToAscii.cpp
 )

@@ -688,6 +688,12 @@ namespace Decoding
         CORE_EXPORT bool Decode(BufferView view, Buffer& output);
     } // namespace QuotedPrintable
 
+    namespace HexCharactersToAscii
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace Base64
+
     namespace ZLIB
     {
         CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
