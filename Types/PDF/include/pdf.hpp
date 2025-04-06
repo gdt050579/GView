@@ -36,7 +36,7 @@ namespace Type
             constexpr uint8 RIGHT_SQUARE_BRACKET = 0x5D;   // ]
             constexpr uint8 LEFT_CURLY_BRACKET   = 0x7B;   // {
             constexpr uint8 RIGHT_CURLY_BRACKET  = 0x7D;   // }
-            constexpr uint8 SOLIUDS              = 0x2F;   // /
+            constexpr uint8 SOLIDUS              = 0x2F;   // /
             constexpr uint8 PERCENT              = 0x25;   // %
             constexpr uint8 REVERSE_SOLIDUS      = 0x5C;   // '\'
         }                                                  // namespace DC
@@ -187,12 +187,18 @@ namespace Type
             constexpr std::string_view PDF_MODDATE_XML     = "<xmp:ModifyDate>";
             constexpr std::string_view PDF_MODDATE_END_XML = "</xmp:ModifyDate>";
 
-            // Warnings
+            // IOC
             constexpr uint8_t PDF_JAVASCRIPT[]    = "/JavaScript";
             constexpr uint8_t PDF_JAVASCRIPT_SIZE = 11;
 
             constexpr uint8_t PDF_JS[]    = "/JS";
             constexpr uint8_t PDF_JS_SIZE = 3;
+
+            constexpr uint8_t PDF_EMBEDDEDFILES[]    = "/EmbeddedFiles";
+            constexpr uint8_t PDF_EMBEDDEDFILES_SIZE = 14;
+
+            constexpr uint8_t PDF_EMBEDDEDFILE[]    = "/EmbeddedFile";
+            constexpr uint8_t PDF_EMBEDDEDFILE_SIZE = 13;
         } // namespace KEY
 
         namespace PREDICTOR
@@ -331,6 +337,7 @@ namespace Type
           public:
             Header header{};
             bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
+            bool hashEscaping = false;
             uint64 index         = 0;
             PDF::ObjectNode objectNodeRoot;
             std::u16string currentPath;
@@ -343,6 +350,7 @@ namespace Type
             // metadata related
             Metadata pdfMetadata;
             vector<uint64> metadataObjectNumbers;
+            GView::Utils::ErrorList errList;
 
           public:
             PDFFile();

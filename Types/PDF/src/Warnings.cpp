@@ -6,20 +6,24 @@ using namespace AppCUI::Controls;
 Panels::Warnings::Warnings(Reference<GView::Type::PDF::PDFFile> _pdf) : TabPage("Wa&rnings")
 {
     pdf     = _pdf;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:15", "n:Value,w:100" }, ListViewFlags::None);
-
-    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
+    issues = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:20", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
     this->Update();
 }
 
 void Panels::Warnings::UpdateIssues()
 {
-}
+    pdf->errList.PopulateListView(this->issues);
+    for (uint32 i = 0; i < issues->GetItemsCount(); i++) {
+        auto item = issues->GetItem(i);
+        auto text = item.GetText(0);
 
-void Panels::Warnings::UpdateGeneralInformation()
-{
+        if ((std::string) text == "Warnings") {
+            item.SetText(0, "IOC");
+        }
+    }
 
+    issues->SetVisible(!pdf->errList.Empty());
 }
 
 void Panels::Warnings::RecomputePanelsPositions()
@@ -38,7 +42,6 @@ void Panels::Warnings::RecomputePanelsPositions()
 
 void Panels::Warnings::Update()
 {
-    UpdateGeneralInformation();
     UpdateIssues();
     RecomputePanelsPositions();
 }

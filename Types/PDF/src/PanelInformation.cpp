@@ -41,7 +41,7 @@ static std::string GuessPageFormat(double widthMm, double heightMm)
     return "Unknown";
 }
 
-static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::PdfMemDocument& doc)
+static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::PdfMemDocument& doc, GView::Utils::ErrorList &errList)
 {
     try {
         PoDoFo::PdfIndirectObjectList& objects = doc.GetObjects();
@@ -59,12 +59,14 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
                 PoDoFo::PdfObject* mediaBoxObj = dict.GetKey(PoDoFo::PdfName("MediaBox"));
                 if (!mediaBoxObj || !mediaBoxObj->IsArray()) {
                     Dialogs::MessageBox::ShowError("Error!", "Page has no /MediaBox array.");
+                    errList.AddError("Page has no /MediaBox array");
                     return { "Unknown", "Unknown" };
                 }
 
                 PoDoFo::PdfArray& mediaBoxArr = mediaBoxObj->GetArray();
                 if (mediaBoxArr.size() < 4) {
                     Dialogs::MessageBox::ShowError("Error!", "MediaBox array has fewer than 4 numbers.");
+                    errList.AddError("MediaBox array has fewer than 4 numbers");
                     return { "Unknown", "Unknown" };
                 }
 
@@ -78,6 +80,7 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
                 double heightPoints = top - bottom;
                 if (widthPoints <= 0.0 || heightPoints <= 0.0) {
                     Dialogs::MessageBox::ShowError("Error!", "Invalid MediaBox coordinates.");
+                    errList.AddError("Invalid MediaBox coordinates");
                     return { "Unknown", "Unknown" };
                 }
 
@@ -93,9 +96,11 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
             }
         }
         Dialogs::MessageBox::ShowError("Error!", "No /Page object found in PDF.");
+        errList.AddError("No /Page object found in PDF");
         return { "Unknown", "Unknown" };
     } catch (const std::exception& e) {
         Dialogs::MessageBox::ShowError("Error!", "Failed to process the file while loading the buffer.");
+        errList.AddError("Failed to process the file while loading the buffer");
         return { "Unknown", "Unknown" };
     }
 }
@@ -165,7 +170,7 @@ void Panels::Information::UpdateGeneralInformation()
 
     // Format and Orientation of the file
     if (validFile) {
-        auto [format, orientation] = GetPageFormatAndOrientation(doc);
+        auto [format, orientation] = GetPageFormatAndOrientation(doc, pdf->errList);
         general->AddItem({ "Format", format });
         general->AddItem({ "Orientation", orientation });
     } else {
