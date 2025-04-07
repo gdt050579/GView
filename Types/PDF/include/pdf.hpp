@@ -199,6 +199,18 @@ namespace Type
 
             constexpr uint8_t PDF_EMBEDDEDFILE[]    = "/EmbeddedFile";
             constexpr uint8_t PDF_EMBEDDEDFILE_SIZE = 13;
+
+            constexpr uint8_t PDF_OPENACTION[]    = "/OpenAction";
+            constexpr uint8_t PDF_OPENACTION_SIZE = 11;
+
+            constexpr uint8_t PDF_LAUNCH[]    = "/Launch";
+            constexpr uint8_t PDF_LAUNCH_SIZE = 7;
+
+            constexpr uint8_t PDF_ADDITIONALACTIONS[]    = "/AA";
+            constexpr uint8_t PDF_ADDITIONALACTIONS_SIZE = 3;
+
+            constexpr uint8_t PDF_URI[]    = "/URI";
+            constexpr uint8_t PDF_URI_SIZE = 4;
         } // namespace KEY
 
         namespace PREDICTOR

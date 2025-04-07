@@ -121,7 +121,6 @@ static int HexVal(uint8_t c)
 static bool HasHashEscaping(GView::Utils::DataCache& data, uint64_t offset, const uint64_t endBuffer)
 {
     offset++;
-    offset++;
     while (offset < endBuffer) {
         uint8 c;
         if (!data.Copy(offset, c)) {
@@ -227,8 +226,10 @@ uint8 GetWValue(GView::Utils::DataCache& data, uint64& offset)
     return value;
 }
 
-void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize, std::vector<std::string>& filters)
+void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize, std::vector<std::string>& filters, GView::Utils::ErrorList &errList)
 {
+    const std::unordered_set<std::string> STANDARD_FILTERS = { "/ASCIIHexDecode", "/ASCII85Decode", "/LZWDecode", "/FlateDecode", "/RunLengthDecode",
+                                                                      "/CCITTFaxDecode", "/JBIG2Decode",   "/DCTDecode", "/JPXDecode",   "/Crypt" };
     uint8_t buffer;
     while (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE && offset < dataSize) {
         offset++;
@@ -260,9 +261,13 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
 
         if (buffer == PDF::DC::SOLIDUS) // '/'
         {
+            const uint64 copyOffset = offset;
             std::string filterValue = DecodeName(data, offset, dataSize);
             if (filterValue.length() > 1) {
                 filters.push_back(filterValue);
+                if (STANDARD_FILTERS.find(filterValue) == STANDARD_FILTERS.end()) {
+                    errList.AddWarning("Detected non-standard filter '%s' (0x%llX)", filterValue.c_str(), copyOffset);
+                }
             }
         } else {
             offset++;
@@ -609,7 +614,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     // data after the %%EOF segment -> IOC
     if (dataSize - offset >= 10) {
         pdf->errList.AddWarning(
-              "Suspicious data found after %%EOF (offset 0x%llX): potential hidden payload or obfuscation", (uint64_t) (offset + PDF::KEY::PDF_EOF_SIZE));
+              "Suspicious data found after %%EOF (0x%llX): potential hidden payload or obfuscation", (uint64_t) (offset + PDF::KEY::PDF_EOF_SIZE));
     }
 
     // offset of the cross-reference
@@ -772,7 +777,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         lengthVal           = GetTypeValue(data, offset, dataSize);
                         typeFlags.hasLength = true;
                     } else if (!typeFlags.hasFilter && IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) { // /Filter
-                        GetFilters(data, offset, dataSize, filters);
+                        GetFilters(data, offset, dataSize, filters, pdf->errList);
                         typeFlags.hasFilter = true;
                     } else if (!typeFlags.hasPrev && IsEqualType(decodedName, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) { // /Prev
                         offset += 1;
@@ -1638,7 +1643,7 @@ void ProcessPDFTree(
         }
         if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIDUS) {
             // this is for name what use #xx in their component
-            uint64 copyOffset = objectOffset;
+            const uint64 copyOffset = objectOffset;
             std::string decodedName = DecodeName(data, objectOffset, objectNode.pdfObject.endBuffer);
             // /Length
             if (IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
@@ -1667,7 +1672,7 @@ void ProcessPDFTree(
             }
             // /Filter
             else if (IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
-                GetFilters(data, objectOffset, dataSize, objectNode.decodeObj.filters);
+                GetFilters(data, objectOffset, dataSize, objectNode.decodeObj.filters, errList);
                 InsertValuesIntoStats(pdfStats.filtersTypes, objectNode.decodeObj.filters);
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_DECODEPARMS_SIZE, PDF::KEY::PDF_DECODEPARMS)) {
                 objectNode.decodeObj.decodeParams.hasDecodeParms = true;
@@ -1755,7 +1760,7 @@ void ProcessPDFTree(
                 std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionaryTypes);
                 if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                     errList.AddWarning(
-                          "Contains an embedded file payload (/EmbeddedFile) in the Object %X (0x%llX)",
+                          "Contains an embedded file payload (/EmbeddedFile) in the Object %llX (0x%llX)",
                           (uint64_t) objectNode.pdfObject.number,
                           (uint64_t) (copyTypeOffset));
                 }
@@ -1767,7 +1772,6 @@ void ProcessPDFTree(
                 objectOffset--;
             } else if (
                   IsEqualType(decodedName, PDF::KEY::PDF_JS_SIZE, PDF::KEY::PDF_JS)) {
-                uint64 copyNameOffset = objectOffset;
                 objectOffset++;
                 if (!data.Copy(objectOffset, buffer)) {
                     break;
@@ -1775,7 +1779,7 @@ void ProcessPDFTree(
                 if (buffer >= '0' && buffer <= '9')
                 {
                     const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
-                    errList.AddWarning("Contains a JavaScript block (/JS) in the Object %X", (uint64_t) number);
+                    errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llX", (uint64_t) number);
                 } else {
                     errList.AddWarning("Contains a JavaScript block (/JS) (0x%llX)", (uint64_t) objectOffset);
                 }
@@ -1787,6 +1791,37 @@ void ProcessPDFTree(
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_EMBEDDEDFILES_SIZE, PDF::KEY::PDF_EMBEDDEDFILES)) {
                 errList.AddWarning("Contains an embedded file index (/EmbeddedFiles) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_OPENACTION_SIZE, PDF::KEY::PDF_OPENACTION)) {
+                errList.AddWarning("Contains an open action (/OpenAction) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_LAUNCH_SIZE, PDF::KEY::PDF_LAUNCH)) {
+                errList.AddWarning("Contains a launch action (/Launch) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ADDITIONALACTIONS_SIZE, PDF::KEY::PDF_ADDITIONALACTIONS)) {
+                errList.AddWarning("Contains additional actions (/AA) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_URI_SIZE, PDF::KEY::PDF_URI)) {
+                bool correctURI = false;
+                uint64 copyobjectOffset = objectOffset;
+                if (!data.Copy(copyobjectOffset, buffer)) {
+                    break;
+                }
+                if (buffer == PDF::DC::LEFT_PARETHESIS) {
+                    correctURI = true;
+                }
+                if (!correctURI) {
+                    copyobjectOffset++;
+                    if (!data.Copy(copyobjectOffset, buffer)) {
+                        break;
+                    }
+                    if (buffer == PDF::DC::LEFT_PARETHESIS) {
+                        correctURI = true;
+                    }
+                }
+                if (correctURI) {
+                    errList.AddWarning("Contains an external link (/URI) (0x%llX)", (uint64_t) (copyOffset));
+                }
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_METADATA_OBJ_SIZE, PDF::KEY::PDF_METADATA_OBJ)) {
                 objectOffset++;
@@ -1985,9 +2020,10 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                     } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
                         GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     } else if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIDUS) {
+                        const uint64 copyOffset       = objectOffset;
                         std::string decodedName = DecodeName(data, objectOffset, object.endBuffer);
                         if (IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
-                            GetFilters(data, objectOffset, dataSize, pdf->objectNodeRoot.decodeObj.filters);
+                            GetFilters(data, objectOffset, dataSize, pdf->objectNodeRoot.decodeObj.filters, pdf->errList);
                             InsertValuesIntoStats(pdf->pdfStats.filtersTypes, pdf->objectNodeRoot.decodeObj.filters);
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
                             streamLength = GetLengthNumber(data, objectOffset, dataSize, pdf->pdfObjects);
@@ -2010,7 +2046,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
                             if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                                 pdf->errList.AddWarning(
-                                      "Contains an embedded file payload (/EmbeddedFile) in the Object %X (0x%llX)",
+                                      "Contains an embedded file payload (/EmbeddedFile) in the Object %llX (0x%llX)",
                                       (uint64_t) pdf->objectNodeRoot.pdfObject.number,
                                       copyObjectOffset);
                             }
@@ -2018,6 +2054,50 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_SUBTYPE_SIZE, PDF::KEY::PDF_SUBTYPE)) {
                             GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionarySubtypes);
                             InsertValuesIntoStats(pdf->pdfStats.dictionarySubtypes, pdf->objectNodeRoot.pdfObject.dictionarySubtypes);
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_JS_SIZE, PDF::KEY::PDF_JS)) {
+                            objectOffset++;
+                            if (!data.Copy(objectOffset, buffer)) {
+                                break;
+                            }
+                            if (buffer >= '0' && buffer <= '9') {
+                                const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
+                                pdf->errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llX", (uint64_t) number);
+                            } else {
+                                pdf->errList.AddWarning("Contains a JavaScript block (/JS) (0x%llX)", (uint64_t) objectOffset);
+                            }
+                            pdf->objectNodeRoot.pdfObject.hasJS = true;
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_JAVASCRIPT_SIZE, PDF::KEY::PDF_JAVASCRIPT)) {
+                            pdf->errList.AddWarning("Contains a JavaScript action (/JavaScript) (0x%llX)", (uint64_t) (copyOffset));
+                            pdf->objectNodeRoot.pdfObject.hasJS = true;
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_EMBEDDEDFILES_SIZE, PDF::KEY::PDF_EMBEDDEDFILES)) {
+                            pdf->errList.AddWarning("Contains an embedded file index (/EmbeddedFiles) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_OPENACTION_SIZE, PDF::KEY::PDF_OPENACTION)) {
+                            pdf->errList.AddWarning("Contains an open action (/OpenAction) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_LAUNCH_SIZE, PDF::KEY::PDF_LAUNCH)) {
+                            pdf->errList.AddWarning("Contains a launch action (/Launch) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_ADDITIONALACTIONS_SIZE, PDF::KEY::PDF_ADDITIONALACTIONS)) {
+                            pdf->errList.AddWarning("Contains additional actions (/AA) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_URI_SIZE, PDF::KEY::PDF_URI)) {
+                            bool correctURI = false;
+                            uint64 copyObjectOffset = objectOffset;
+                            if (!data.Copy(copyObjectOffset, buffer)) {
+                                break;
+                            }
+                            if (buffer == PDF::DC::LEFT_PARETHESIS) {
+                                correctURI = true;
+                            }
+                            if (!correctURI) {
+                                copyObjectOffset++;
+                                if (!data.Copy(copyObjectOffset, buffer)) {
+                                    break;
+                                }
+                                if (buffer == PDF::DC::LEFT_PARETHESIS) {
+                                    correctURI = true;
+                                }
+                            }
+                            if (correctURI) {
+                                pdf->errList.AddWarning("Contains an external link (/URI) (0x%llX)", (uint64_t) (copyOffset));
+                            }
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_INFO_SIZE, PDF::KEY::PDF_INFO)) {
                             objectOffset++;
                             const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
