@@ -325,7 +325,7 @@ void GetObjectsOffsets(
             }
         } else {
             Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
-            errList.AddError("Invalid Cross-Reference Table sequence. It has to be 20 bytes (0x%X)", (uint64_t) offset);
+            errList.AddError("Invalid Cross-Reference Table sequence. It has to be 20 bytes (0x%llX)", (uint64_t) offset);
             break;
         }
         offset += PDF::KEY::PDF_XREF_ENTRY;
@@ -602,8 +602,14 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
 
     if (!foundEOF) {
         Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End of file segment (%%EOF) is missing!");
-        pdf->errList.AddError("End of file segment (%%EOF) is missing (0x%X)", (uint64_t) offset);
+        pdf->errList.AddError("End of file segment (%%EOF) is missing (0x%llX)", (uint64_t) offset);
         return;
+    }
+    
+    // data after the %%EOF segment -> IOC
+    if (dataSize - offset >= 10) {
+        pdf->errList.AddWarning(
+              "Suspicious data found after %%EOF (offset 0x%llX): potential hidden payload or obfuscation", (uint64_t) (offset + PDF::KEY::PDF_EOF_SIZE));
     }
 
     // offset of the cross-reference
@@ -633,7 +639,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     crossRefOffset = std::stoull(xrefOffsetStr);
                 } else {
                     Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find the xref offset!");
-                    pdf->errList.AddError("Couldn't find the xref offset (0x%X)", (uint64_t) offset);
+                    pdf->errList.AddError("Couldn't find the xref offset (0x%llX)", (uint64_t) offset);
                     return;
                 }
                 break;
@@ -656,7 +662,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             const uint64 numEntries = GetNumberOfEntries(crossRefOffset, offset, dataSize, data);
             if (numEntries == 0) {
                 Dialogs::MessageBox::ShowError("Error!", "Anomaly found: 0 entries in the Cross-Reference Table!");
-                pdf->errList.AddError("There are 0 entries in the Cross-Reference Table (0x%X)", (uint64_t) offset);
+                pdf->errList.AddError("There are 0 entries in the Cross-Reference Table (0x%llX)", (uint64_t) offset);
             }
             while (offset < dataSize) {
                 if (!data.Copy(offset, buffer)) {
@@ -701,7 +707,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                                 found_prev = true;
                             } else {
                                 Dialogs::MessageBox::ShowError("Error!", "Anomaly found: /Prev in the trailer has the value equal to zero!");
-                                pdf->errList.AddError("/Prev in the trailer has the value equal to zero (0x%X)", (uint64_t) offset);
+                                pdf->errList.AddError("/Prev in the trailer has the value equal to zero (0x%llX)", (uint64_t) offset);
                             }
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
                             pdf->pdfStats.isEncrypted = true;
@@ -720,7 +726,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 }
             } else {
                 Dialogs::MessageBox::ShowError("Error!", "Anomaly found: The trailer is missing!");
-                pdf->errList.AddError("The trailer is missing (0x%X)", (uint64_t) offset);
+                pdf->errList.AddError("The trailer is missing (0x%llX)", (uint64_t) offset);
             }
 
             pdfObject.endBuffer = offset;
@@ -864,7 +870,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     }
                     if (!found_eof) {
                         Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End of file segment (%%EOF) is missing for Cross-Reference Stream!");
-                        pdf->errList.AddError("End of file segment (%%EOF) is missing for Cross-Reference Stream (0x%X)", (uint64_t) offset);
+                        pdf->errList.AddError("End of file segment (%%EOF) is missing for Cross-Reference Stream (0x%llX)", (uint64_t) offset);
                     }
                 }
 
@@ -882,7 +888,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                             if (!typeFlags.hasW) {
                                 Dialogs::MessageBox::ShowError(
                                       "Error!", "Anomaly found: W values missing for objects offset references from the Cross-Reference Stream!");
-                                pdf->errList.AddError("W values missing for objects offset references from the Cross-Reference Stream (0x%X)", (uint64_t) offset);
+                                pdf->errList.AddError("W values missing for objects offset references from the Cross-Reference Stream (0x%llX)", (uint64_t) offset);
                                 break;
                             }
                             while (offset < decompressDataSize) {
@@ -914,7 +920,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     } else {
                         Dialogs::MessageBox::ShowError(
                               "Error!", "Unknown Filter for the Cross-Reference Stream!");
-                        pdf->errList.AddError("Unknown Filter for the Cross-Reference Stream (0x%X)", (uint64_t) offset);
+                        pdf->errList.AddError("Unknown Filter for the Cross-Reference Stream (0x%llX)", (uint64_t) offset);
                     }
                 }
 
@@ -925,12 +931,12 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 }
             } else {
                 Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Cross-Reference Stream is missing!");
-                pdf->errList.AddError("Cross-Reference Stream is missing (0x%X)", (uint64_t) offset);
+                pdf->errList.AddError("Cross-Reference Stream is missing (0x%llX)", (uint64_t) offset);
             }
         }
     } else {
         Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find a Cross-Reference Table or Cross-Reference Stream!");
-        pdf->errList.AddError("Couldn't find a Cross-Reference Table or Cross-Reference Stream (0x%X)", (uint64_t) offset);
+        pdf->errList.AddError("Couldn't find a Cross-Reference Table or Cross-Reference Stream (0x%llX)", (uint64_t) offset);
     }
 
     std::sort(objectOffsets.begin(), objectOffsets.end());
@@ -1272,7 +1278,7 @@ void ProcessMetadataStream(Reference<GView::Type::PDF::PDFFile> pdf, GView::Util
         // encrypted -> can't open the stream, for now
         if (pdf->pdfStats.isEncrypted) {
             Dialogs::MessageBox::ShowWarning("Warning!", "Unable to decompress the stream because the PDF is encrypted! Raw data will be displayed instead.");
-            pdf->errList.AddError("Unable to decompress the stream because the PDF is encrypted (0x%X)", (uint64_t) offset);
+            pdf->errList.AddError("Unable to decompress the stream because the PDF is encrypted (0x%llX)", (uint64_t) offset);
             return;
         }
         // Decode the content of the stream based on the filters
@@ -1749,7 +1755,7 @@ void ProcessPDFTree(
                 std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionaryTypes);
                 if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                     errList.AddWarning(
-                          "Contains an embedded file payload (/EmbeddedFile) in the Object %X (0x%X)",
+                          "Contains an embedded file payload (/EmbeddedFile) in the Object %X (0x%llX)",
                           (uint64_t) objectNode.pdfObject.number,
                           (uint64_t) (copyTypeOffset));
                 }
@@ -1771,16 +1777,16 @@ void ProcessPDFTree(
                     const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     errList.AddWarning("Contains a JavaScript block (/JS) in the Object %X", (uint64_t) number);
                 } else {
-                    errList.AddWarning("Contains a JavaScript block (/JS) (0x%X)", (uint64_t) objectOffset);
+                    errList.AddWarning("Contains a JavaScript block (/JS) (0x%llX)", (uint64_t) objectOffset);
                 }
                 objectNode.pdfObject.hasJS = true;
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_JAVASCRIPT_SIZE, PDF::KEY::PDF_JAVASCRIPT)) {
-                errList.AddWarning("Contains a JavaScript action (/JavaScript) (0x%X)", (uint64_t) (copyOffset));
+                errList.AddWarning("Contains a JavaScript action (/JavaScript) (0x%llX)", (uint64_t) (copyOffset));
                 objectNode.pdfObject.hasJS = true;
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_EMBEDDEDFILES_SIZE, PDF::KEY::PDF_EMBEDDEDFILES)) {
-                errList.AddWarning("Contains an embedded file index (/EmbeddedFiles) (0x%X)", (uint64_t) (copyOffset));
+                errList.AddWarning("Contains an embedded file index (/EmbeddedFiles) (0x%llX)", (uint64_t) (copyOffset));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_METADATA_OBJ_SIZE, PDF::KEY::PDF_METADATA_OBJ)) {
                 objectOffset++;
@@ -1814,7 +1820,7 @@ void ProcessPDFTree(
             }
             if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM) && !issueFound) {
                 Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token! Object number: " + std::to_string(objectNode.pdfObject.number));
-                errList.AddError("Wrong end stream token! Object %X (0x%X)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
+                errList.AddError("Wrong end stream token! Object %llX (0x%llX)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
                 issueFound = true;
             } else {
                 PDF::ObjectNode streamChild;
@@ -1864,7 +1870,7 @@ void ProcessPDFTree(
 
     if (!foundLength && objectNode.pdfObject.hasStream && !issueFound) {
         Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Missing /Length for an object which has a stream!");
-        errList.AddError("Missing /Length for an object which has a stream (0x%X)", (uint64_t) objectOffset);
+        errList.AddError("Missing /Length for an object which has a stream (0x%llX)", (uint64_t) objectOffset);
         issueFound = true;
     }
 
@@ -2004,7 +2010,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
                             if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                                 pdf->errList.AddWarning(
-                                      "Contains an embedded file payload (/EmbeddedFile) in the Object %X (0x%X)",
+                                      "Contains an embedded file payload (/EmbeddedFile) in the Object %X (0x%llX)",
                                       (uint64_t) pdf->objectNodeRoot.pdfObject.number,
                                       copyObjectOffset);
                             }
@@ -2038,7 +2044,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                         }
                         if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
                             Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token!");
-                            pdf->errList.AddError("Wrong end stream token (0x%X)", (uint64_t) objectOffset);
+                            pdf->errList.AddError("Wrong end stream token (0x%llX)", (uint64_t) objectOffset);
                         } else {
                             PDF::ObjectNode streamChild;
                             streamChild.pdfObject.type = PDF::SectionPDFObjectType::Stream;

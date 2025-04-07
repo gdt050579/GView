@@ -462,7 +462,6 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
 
-                void UpdateGeneralInformation();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
 
