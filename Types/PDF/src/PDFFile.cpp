@@ -39,7 +39,7 @@ bool PDFFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
     }
 
     Reference<GView::Type::PDF::PDFFile> pdfRef = this;
-    auto node                                   = FindNodeByPath(pdfRef, path);
+    const auto node                             = FindNodeByPath(pdfRef, path);
     if (!node) {
         return false;
     }
@@ -99,7 +99,7 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 
     LocalUnicodeStringBuilder<512> ub;
     bool first = true;
-    for (auto& filter : childNode->decodeObj.filters) {
+    for (const auto& filter : childNode->decodeObj.filters) {
         if (!first) {
             ub.Add(u", ");
         }
@@ -110,7 +110,7 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 
     ub.Clear();
     first = true;
-    for (auto& type : childNode->pdfObject.dictionaryTypes) {
+    for (const auto& type : childNode->pdfObject.dictionaryTypes) {
         if (!first) {
             ub.Add(u", ");
         }
@@ -121,7 +121,7 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 
     ub.Clear();
     first = true;
-    for (auto& subtype : childNode->pdfObject.dictionarySubtypes) {
+    for (const auto& subtype : childNode->pdfObject.dictionarySubtypes) {
         if (!first) {
             ub.Add(u", ");
         }
@@ -145,7 +145,7 @@ bool PDFFile::PopulateItem(TreeViewItem item)
 static bool IsValidJSON(const std::string& data)
 {
     try {
-        auto json = nlohmann::json::parse(data);
+        const auto json = nlohmann::json::parse(data);
         return true;
     } catch (...) {
         return false;
@@ -154,7 +154,7 @@ static bool IsValidJSON(const std::string& data)
 
 static bool IsValidJavaScript(const std::string& data)
 {
-    std::regex jsPattern(R"(\b(function|var|let|const|=>|console\.log|document\.)\b)");
+    const std::regex jsPattern(R"(\b(function|var|let|const|=>|console\.log|document\.)\b)");
     return std::regex_search(data, jsPattern);
 }
 
@@ -163,7 +163,7 @@ void PDFFile::DecodeStream(ObjectNode* node, Buffer& buffer, const size_t size)
     // decompress the stream
     // /DCTDecode -> LoadJPGToImage from JPG
     if (!node->decodeObj.filters.empty()) {
-        for (auto& filter : node->decodeObj.filters) {
+        for (const auto& filter : node->decodeObj.filters) {
             if (filter == PDF::FILTER::FLATE) {
                 Buffer decompressedData;
                 uint64 decompressDataSize = size;
@@ -252,12 +252,12 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         return;
     }
 
-    auto node = FindNodeByObjectNumber(objectNumber);
+    const auto node = FindNodeByObjectNumber(objectNumber);
     if (!node) {
         return;
     }
 
-    auto entireFile = this->obj->GetData().GetEntireFile();
+    const auto entireFile = this->obj->GetData().GetEntireFile();
     if (!entireFile.IsValid()) {
         return;
     }

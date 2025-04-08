@@ -102,7 +102,7 @@ bool PDF::PDFFile::RunLengthDecode(const BufferView& input, Buffer& output, Stri
             message.Set("Not enough data to read the length byte!");
             return false;
         }
-        uint8_t lengthByte = input[inPos++];
+        const uint8_t lengthByte = input[inPos++];
         if (lengthByte == 128) {
             break;
         }
@@ -139,7 +139,7 @@ bool PDF::PDFFile::ASCIIHexDecode(const BufferView& input, Buffer& output, AppCU
     bool foundEndMarker = false;
 
     for (uint64_t i = 0; i < n; i++) {
-        uint8 c = input[i];
+        const uint8 c = input[i];
 
         if (c == PDF::DC::GREATER_THAN) {
             foundEndMarker = true;
@@ -165,16 +165,16 @@ bool PDF::PDFFile::ASCIIHexDecode(const BufferView& input, Buffer& output, AppCU
         if (halfNibble == -1) {
             halfNibble = nibble;
         } else {
-            int fullByte = (halfNibble << 4) | nibble;
+            const int fullByte = (halfNibble << 4) | nibble;
             halfNibble   = -1;
-            uint8 oneByte = static_cast<uint8>(fullByte);
+            const uint8 oneByte = static_cast<uint8>(fullByte);
             BufferView singleByte(&oneByte, 1);
             output.Add(singleByte);
         }
     }
 
     if (halfNibble != -1) {
-        uint8 oneByte = static_cast<uint8>(halfNibble << 4);
+        const uint8 oneByte = static_cast<uint8>(halfNibble << 4);
         BufferView singleByte(&oneByte, 1);
         output.Add(singleByte);
         halfNibble = -1;
@@ -202,7 +202,7 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
 
         uint64_t value = 0;
         for (int i = 0; i < 5; i++) {
-            uint8_t c = static_cast<uint8_t>(group[i]);
+            const uint8_t c = static_cast<uint8_t>(group[i]);
             if (c < '!' || c > 'u') {
                 message.Set("Invalid ASCII85 character (not in '!'..'u').");
                 return false;
@@ -241,7 +241,7 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
     };
 
     for (size_t i = 0; i < len; i++) {
-        uint8_t c = input[i];
+        const uint8_t c = input[i];
 
         // check for EOD marker "~>"
         if (c == '~') {
@@ -267,7 +267,7 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
                 message.Set("ASCII85Decode: 'z' found in the middle of a group => invalid.");
                 return false;
             }
-            uint8_t zeros[4] = { 0, 0, 0, 0 };
+            const uint8_t zeros[4] = { 0, 0, 0, 0 };
             BufferView chunk(zeros, 4);
             output.Add(chunk);
             continue;
@@ -703,7 +703,7 @@ bool PDF::PDFFile::JBIG2Decode(const BufferView& input, Buffer& output, String& 
         return false;
     }
 
-    int parse_result = jbig2_data_in(ctx, (unsigned char*) input.GetData(), (size_t) input.GetLength());
+    const int parse_result = jbig2_data_in(ctx, (unsigned char*) input.GetData(), (size_t) input.GetLength());
     if (parse_result < 0) {
         jbig2_ctx_free(ctx);
         message.Set("JBIG2Decode: parse error from jbig2_data_in!");

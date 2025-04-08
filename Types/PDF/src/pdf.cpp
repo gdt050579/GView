@@ -104,7 +104,7 @@ static bool TerminateProcessing(const int8 buffer)
     }
 }
 
-static int HexVal(uint8_t c)
+static int HexVal(const uint8_t c)
 {
     if (c >= '0' && c <= '9') {
         return c - '0';
@@ -136,8 +136,8 @@ static bool HasHashEscaping(GView::Utils::DataCache& data, uint64_t offset, cons
                     break;
                 }
 
-                int v1 = HexVal(c1);
-                int v2 = HexVal(c2);
+                const int v1 = HexVal(c1);
+                const int v2 = HexVal(c2);
                 if (v1 >= 0 && v2 >= 0) {
                     return true;
                 }
@@ -170,8 +170,8 @@ static std::string DecodeName(GView::Utils::DataCache& data, uint64_t& offset, c
                     break;
                 }
 
-                int v1 = HexVal(c1);
-                int v2 = HexVal(c2);
+                const int v1 = HexVal(c1);
+                const int v2 = HexVal(c2);
                 if (v1 >= 0 && v2 >= 0) {
                     uint8_t decoded = static_cast<uint8_t>(v1 * 16 + v2);
                     result.push_back((char) decoded);
@@ -262,7 +262,7 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
         if (buffer == PDF::DC::SOLIDUS) // '/'
         {
             const uint64 copyOffset = offset;
-            std::string filterValue = DecodeName(data, offset, dataSize);
+            const std::string filterValue = DecodeName(data, offset, dataSize);
             if (filterValue.length() > 1) {
                 filters.push_back(filterValue);
                 if (STANDARD_FILTERS.find(filterValue) == STANDARD_FILTERS.end()) {
@@ -612,7 +612,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     }
     
     // data after the %%EOF segment -> IOC
-    if (dataSize - offset >= 10) {
+    if (dataSize - offset - PDF::KEY::PDF_EOF_SIZE >= 5) {
         pdf->errList.AddWarning(
               "Suspicious data found after %%EOF (0x%llX): potential hidden payload or obfuscation", (uint64_t) (offset + PDF::KEY::PDF_EOF_SIZE));
     }
@@ -1078,7 +1078,7 @@ uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, cons
     return numberLength;
 }
 
-void InsertValuesIntoStats(std::vector<std::string> &stats, std::vector<std::string> values)
+void InsertValuesIntoStats(std::vector<std::string> &stats, const std::vector<std::string> values)
 {
     std::set<std::string> uniqueFilters(stats.begin(), stats.end());
     for (const auto& value : values) {
@@ -1087,7 +1087,7 @@ void InsertValuesIntoStats(std::vector<std::string> &stats, std::vector<std::str
     stats.assign(uniqueFilters.begin(), uniqueFilters.end());
 }
 
-static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObjects, uint64 number, uint64 start)
+static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObjects, const uint64 number, const uint64 start)
 {
     for (auto& obj : pdfObjects) {
         if (obj.number == number && obj.startBuffer == start) {
@@ -1120,12 +1120,12 @@ static std::string MakeXMPDateReadable(const std::string& xmpDate)
         return xmpDate;
     }
 
-    std::string year   = xmpDate.substr(0, 4);
-    std::string month  = xmpDate.substr(5, 2);
-    std::string day    = xmpDate.substr(8, 2);
-    std::string hour   = xmpDate.substr(11, 2);
-    std::string minute = xmpDate.substr(14, 2);
-    std::string second = xmpDate.substr(17, 2);
+    const std::string year   = xmpDate.substr(0, 4);
+    const std::string month = xmpDate.substr(5, 2);
+    const std::string day    = xmpDate.substr(8, 2);
+    const std::string hour   = xmpDate.substr(11, 2);
+    const std::string minute = xmpDate.substr(14, 2);
+    const std::string second = xmpDate.substr(17, 2);
 
     std::string offsetStr;
     if (xmpDate.size() > 19) {
@@ -1162,7 +1162,7 @@ static std::string ExtractBetweenTags(const std::string& src, std::string_view o
     if (start >= src.size()) {
         return {};
     }
-    size_t end = src.find(closeTag, start);
+    const size_t end = src.find(closeTag, start);
     if (end == std::string::npos) {
         return {};
     }
@@ -1170,9 +1170,9 @@ static std::string ExtractBetweenTags(const std::string& src, std::string_view o
 }
 
 
-static std::string ExtractXMPValue(const std::string& content, std::string_view mainStartTag, std::string_view mainEndTag)
+static std::string ExtractXMPValue(const std::string& content, const std::string_view mainStartTag, const std::string_view mainEndTag)
 {
-    std::string block = ExtractBetweenTags(content, mainStartTag, mainEndTag);
+    const std::string block = ExtractBetweenTags(content, mainStartTag, mainEndTag);
     if (block.empty()) {
         return {};
     }
@@ -1185,19 +1185,19 @@ static std::string ExtractXMPValue(const std::string& content, std::string_view 
     const std::string_view liEndTag   = "</rdf:li>";
 
     while (true) {
-        size_t liOpenPos = block.find(liStartTag, pos);
+        const size_t liOpenPos = block.find(liStartTag, pos);
         if (liOpenPos == std::string::npos) {
             break;
         }
 
-        size_t tagClosePos = block.find(PDF::DC::GREATER_THAN, liOpenPos);
+        const size_t tagClosePos = block.find(PDF::DC::GREATER_THAN, liOpenPos);
         if (tagClosePos == std::string::npos) {
             break;
         }
 
         bool isSelfClosing = false;
         {
-            std::string_view maybeSelfClosingBlock(block.c_str() + liOpenPos, (tagClosePos + 1) - liOpenPos);
+            const std::string_view maybeSelfClosingBlock(block.c_str() + liOpenPos, (tagClosePos + 1) - liOpenPos);
             if (maybeSelfClosingBlock.find("/>") != std::string::npos) {
                 isSelfClosing = true;
             }
@@ -1207,12 +1207,12 @@ static std::string ExtractXMPValue(const std::string& content, std::string_view 
         if (isSelfClosing) {
             pos = tagClosePos + 1;
         } else {
-            size_t liContentStart = tagClosePos + 1;
-            size_t liClosePos     = block.find(liEndTag, liContentStart);
+            const size_t liContentStart = tagClosePos + 1;
+            const size_t liClosePos     = block.find(liEndTag, liContentStart);
             if (liClosePos == std::string::npos) {
                 break;
             }
-            std::string liContent = block.substr(liContentStart, liClosePos - liContentStart);
+            const std::string liContent = block.substr(liContentStart, liClosePos - liContentStart);
             if (!liContent.empty()) {
                 if (!result.empty()) {
                     result += "; ";
@@ -1232,34 +1232,34 @@ void ExtractXMPMetadata(const Buffer& buffer, PDF::Metadata& pdfMetadata)
 {
     const char* dataPtr  = reinterpret_cast<const char*>(buffer.GetData());
     const size_t dataLen = buffer.GetLength();
-    std::string xmlContent(dataPtr, dataLen);
+    const std::string xmlContent(dataPtr, dataLen);
 
-    std::string title = ExtractXMPValue(xmlContent, PDF::KEY::PDF_TITLE_XML, PDF::KEY::PDF_TITLE_END_XML);
+    const std::string title = ExtractXMPValue(xmlContent, PDF::KEY::PDF_TITLE_XML, PDF::KEY::PDF_TITLE_END_XML);
     if (!title.empty() && pdfMetadata.title.empty()) {
         pdfMetadata.title = title;
     }
 
-    std::string author = ExtractXMPValue(xmlContent, PDF::KEY::PDF_AUTHOR_XML, PDF::KEY::PDF_AUTHOR_END_XML);
+    const std::string author = ExtractXMPValue(xmlContent, PDF::KEY::PDF_AUTHOR_XML, PDF::KEY::PDF_AUTHOR_END_XML);
     if (!author.empty() && pdfMetadata.author.empty()) {
         pdfMetadata.author = author;
     }
 
-    std::string creatorTool = ExtractXMPValue(xmlContent, PDF::KEY::PDF_CREATOR_XML, PDF::KEY::PDF_CREATOR_END_XML);
+    const std::string creatorTool = ExtractXMPValue(xmlContent, PDF::KEY::PDF_CREATOR_XML, PDF::KEY::PDF_CREATOR_END_XML);
     if (!creatorTool.empty() && pdfMetadata.creator.empty()) {
         pdfMetadata.creator = creatorTool;
     }
 
-    std::string producer = ExtractXMPValue(xmlContent, PDF::KEY::PDF_PRODUCER_XML, PDF::KEY::PDF_PRODUCER_END_XML);
+    const std::string producer = ExtractXMPValue(xmlContent, PDF::KEY::PDF_PRODUCER_XML, PDF::KEY::PDF_PRODUCER_END_XML);
     if (!producer.empty() && pdfMetadata.producer.empty()) {
         pdfMetadata.producer = producer;
     }
 
-    std::string createDate = ExtractXMPValue(xmlContent, PDF::KEY::PDF_CREATIONDATE_XML, PDF::KEY::PDF_CREATIONDATE_END_XML);
+    const std::string createDate = ExtractXMPValue(xmlContent, PDF::KEY::PDF_CREATIONDATE_XML, PDF::KEY::PDF_CREATIONDATE_END_XML);
     if (!createDate.empty() && pdfMetadata.creationDate.empty()) {
         pdfMetadata.creationDate = MakeXMPDateReadable(createDate);
     }
 
-    std::string modifyDate = ExtractXMPValue(xmlContent, PDF::KEY::PDF_MODDATE_XML, PDF::KEY::PDF_MODDATE_END_XML);
+    const std::string modifyDate = ExtractXMPValue(xmlContent, PDF::KEY::PDF_MODDATE_XML, PDF::KEY::PDF_MODDATE_END_XML);
     if (!modifyDate.empty() && pdfMetadata.modifyDate.empty()) {
         pdfMetadata.modifyDate = MakeXMPDateReadable(modifyDate);
     }
@@ -1292,7 +1292,7 @@ void ProcessMetadataStream(Reference<GView::Type::PDF::PDFFile> pdf, GView::Util
     }
 }
 
-static int SafeParseInt(const std::string& s, size_t pos, size_t length)
+static int SafeParseInt(const std::string& s, const size_t pos, const size_t length)
 {
     if (pos + length > s.size()) {
         return -1;
@@ -1317,7 +1317,7 @@ static std::string MakeDateReadable(const std::string& pdfDate)
 
     // Extract YYYY, MM, DD, HH, mm, SS in sequence (some may be missing)
     size_t idx = 0;
-    int year   = SafeParseInt(date, idx, 4);
+    const int year = SafeParseInt(date, idx, 4);
     if (year < 0) {
         return pdfDate;
     }
@@ -1801,6 +1801,12 @@ void ProcessPDFTree(
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_ADDITIONALACTIONS_SIZE, PDF::KEY::PDF_ADDITIONALACTIONS)) {
                 errList.AddWarning("Contains additional actions (/AA) (0x%llX)", (uint64_t) (copyOffset));
                 objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_GOTO_SIZE, PDF::KEY::PDF_GOTOR)) {
+                errList.AddWarning("Contains a Go-To Remote action (/GoToR) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_GOTO_SIZE, PDF::KEY::PDF_GOTOE)) {
+                errList.AddWarning("Contains a Go-To Embedded action (/GoToE) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_URI_SIZE, PDF::KEY::PDF_URI)) {
                 bool correctURI = false;
                 uint64 copyobjectOffset = objectOffset;
@@ -1917,8 +1923,8 @@ void ProcessPDFTree(
         found->hasJS              = objectNode.pdfObject.hasJS;
     }
 
-    for (auto& objectNumber : objectsNumber) {
-        for (auto& object : pdfObjects) {
+    for (const auto& objectNumber : objectsNumber) {
+        for (const auto& object : pdfObjects) {
             if (objectNumber == object.number) {
                 PDF::ObjectNode newObject;
                 newObject.pdfObject = object;
@@ -1941,7 +1947,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
 
     if (pdf->hasXrefTable) {
         bool firstTrailer = false;
-        for (auto& object : pdf->pdfObjects) {
+        for (const auto& object : pdf->pdfObjects) {
             if (object.type == PDF::SectionPDFObjectType::Trailer && !firstTrailer) {
                 uint64 objectOffset           = object.startBuffer;
                 pdf->objectNodeRoot.pdfObject = object;
@@ -2008,7 +2014,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
         bool crossStreamCnt = false;
         bool foundLength    = false;
         uint64 streamLength = 0;
-        for (auto& object : pdf->pdfObjects) {
+        for (const auto& object : pdf->pdfObjects) {
             if (object.type == PDF::SectionPDFObjectType::CrossRefStream && !crossStreamCnt) {
                 uint64 objectOffset           = object.startBuffer;
                 pdf->objectNodeRoot.pdfObject = object;
@@ -2098,6 +2104,10 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             if (correctURI) {
                                 pdf->errList.AddWarning("Contains an external link (/URI) (0x%llX)", (uint64_t) (copyOffset));
                             }
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_GOTO_SIZE, PDF::KEY::PDF_GOTOR)) {
+                            pdf->errList.AddWarning("Contains a Go-To Remote action (/GoToR) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_GOTO_SIZE, PDF::KEY::PDF_GOTOE)) {
+                            pdf->errList.AddWarning("Contains a Go-To Embedded action (/GoToE) (0x%llX)", (uint64_t) (copyOffset));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_INFO_SIZE, PDF::KEY::PDF_INFO)) {
                             objectOffset++;
                             const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
@@ -2154,8 +2164,8 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
         found->hasJS              = pdf->objectNodeRoot.pdfObject.hasJS;
     }
 
-    for (auto& objectNumber : objectsNumber) {
-        for (auto& object : pdf->pdfObjects) {
+    for (const auto& objectNumber : objectsNumber) {
+        for (const auto& object : pdf->pdfObjects) {
             if (objectNumber == object.number) {
                 PDF::ObjectNode newObject;
                 newObject.pdfObject = object;
@@ -2170,7 +2180,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
 
     // process the rest of the objects that don't have references
 
-    for (auto& object : pdf->pdfObjects) {
+    for (const auto& object : pdf->pdfObjects) {
         if ((std::count(pdf->processedObjects.begin(), pdf->processedObjects.end(), object.number) == 0) && (object.number != 0) &&
             (object.type != PDF::SectionPDFObjectType::CrossRefStream)) {
             pdf->objectNodeRoot.children.emplace_back();
@@ -2185,7 +2195,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
 
 }
 
-std::u16string PDF::PDFFile::to_u16string(uint32_t value)
+std::u16string PDF::PDFFile::to_u16string(const uint32_t value)
 {
     std::wstring wstr = std::to_wstring(value);
     return std::u16string(wstr.begin(), wstr.end());
@@ -2240,7 +2250,7 @@ PDF::ObjectNode* PDF::PDFFile::FindNodeByPath(Reference<GView::Type::PDF::PDFFil
         tokens.erase(tokens.begin());
     }
 
-    for (auto &tk : tokens) {
+    for (const auto &tk : tokens) {
         PDF::ObjectNode* found = nullptr;
         for (auto &child : currentNode->children) {
             std::u16string childName;
@@ -2278,7 +2288,7 @@ PDF::ObjectNode* PDF::PDFFile::FindNodeByPath(Reference<GView::Type::PDF::PDFFil
     return currentNode;
 }
 
-PDF::ObjectNode* PDF::PDFFile::FindNodeByObjectNumber(uint32_t number)
+PDF::ObjectNode* PDF::PDFFile::FindNodeByObjectNumber(const uint32_t number)
 {
     std::deque<PDF::ObjectNode*> queue;
     queue.push_back(&this->objectNodeRoot);
@@ -2305,7 +2315,7 @@ void PDF::PDFFile::PopulateHeader(View::ContainerViewer::Settings &settings, con
 
     bool first = true;
     LocalUnicodeStringBuilder<512> ub;
-    for (auto& filter : pdfStats.filtersTypes) {
+    for (const auto& filter : pdfStats.filtersTypes) {
         if (!first) {
             ub.Add(u", ");
         }
@@ -2316,7 +2326,7 @@ void PDF::PDFFile::PopulateHeader(View::ContainerViewer::Settings &settings, con
 
     first = true;
     ub.Clear();
-    for (auto& type : pdfStats.dictionaryTypes) {
+    for (const auto& type : pdfStats.dictionaryTypes) {
         if (!first) {
             ub.Add(u", ");
         }
@@ -2327,7 +2337,7 @@ void PDF::PDFFile::PopulateHeader(View::ContainerViewer::Settings &settings, con
 
     first = true;
     ub.Clear();
-    for (auto& subtype : pdfStats.dictionarySubtypes) {
+    for (const auto& subtype : pdfStats.dictionarySubtypes) {
         if (!first) {
             ub.Add(u", ");
         }
@@ -2366,7 +2376,7 @@ std::u16string GetTxtFileName(const std::u16string_view pdfPath)
 {
     std::u16string result{ pdfPath };
 
-    auto lastDot = result.rfind(u'.');
+    const auto lastDot = result.rfind(u'.');
     if (lastDot != std::u16string::npos) {
         result.erase(lastDot);
     }
@@ -2400,7 +2410,7 @@ std::string ExtractTextFromPDF(Reference<GView::Type::PDF::PDFFile> pdf)
         std::vector<PoDoFo::PdfTextEntry> entries;
         page.ExtractTextTo(entries);
 
-        for (auto& entry : entries) {
+        for (const auto& entry : entries) {
             extractedText.append(entry.Text.data());
             extractedText.append("\n");
         }

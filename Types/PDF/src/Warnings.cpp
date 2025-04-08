@@ -16,10 +16,10 @@ void Panels::Warnings::UpdateIssues()
     pdf->errList.PopulateListView(this->issues);
     for (uint32 i = 0; i < issues->GetItemsCount(); i++) {
         auto item = issues->GetItem(i);
-        auto text = item.GetText(0);
+        const AppCUI::Graphics::CharacterBuffer text = item.GetText(0);
 
         if ((std::string) text == "Warnings") {
-            item.SetText(0, "IOC");
+            item.SetText(0, "IOCs");
         }
     }
 

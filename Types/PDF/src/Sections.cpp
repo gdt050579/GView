@@ -84,7 +84,7 @@ void Panels::Sections::Update()
         // Filters
         LocalUnicodeStringBuilder<512> ub;
         bool first = true;
-        for (auto& filter : object.filters) {
+        for (const auto& filter : object.filters) {
             if (!first) {
                 ub.Add(u", ");
             }
@@ -95,7 +95,7 @@ void Panels::Sections::Update()
         // Types
         ub.Clear();
         first = true;
-        for (auto& type : object.dictionaryTypes) {
+        for (const auto& type : object.dictionaryTypes) {
             if (!first) {
                 ub.Add(u", ");
             }
@@ -106,7 +106,7 @@ void Panels::Sections::Update()
         // Subtypes
         ub.Clear();
         first = true;
-        for (auto& subtypes : object.dictionarySubtypes) {
+        for (const auto& subtypes : object.dictionarySubtypes) {
             if (!first) {
                 ub.Add(u", ");
             }

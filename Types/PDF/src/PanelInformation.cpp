@@ -7,12 +7,12 @@ using namespace GView::Type::PDF;
 using namespace AppCUI::Controls;
 using namespace PoDoFo;
 
-static bool Approximately(double value, double standard, double tolerance = 2.0)
+static bool Approximately(const double value, const double standard, const double tolerance = 2.0)
 {
     return (fabs(value - standard) <= tolerance);
 }
 
-static std::string GuessPageFormat(double widthMm, double heightMm)
+static std::string GuessPageFormat(const double widthMm, const double heightMm)
 {
     static const struct {
         const char* name;
@@ -31,9 +31,9 @@ static std::string GuessPageFormat(double widthMm, double heightMm)
         { "Tabloid", 279.4, 431.8 } // 11 x 17 inches
     };
 
-    for (auto& fmt : Formats) {
-        bool direct  = Approximately(widthMm, fmt.w) && Approximately(heightMm, fmt.h);
-        bool swapped = Approximately(widthMm, fmt.h) && Approximately(heightMm, fmt.w);
+    for (const auto& fmt : Formats) {
+        const bool direct  = Approximately(widthMm, fmt.w) && Approximately(heightMm, fmt.h);
+        const bool swapped = Approximately(widthMm, fmt.h) && Approximately(heightMm, fmt.w);
         if (direct || swapped) {
             return fmt.name;
         }
@@ -51,7 +51,7 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
             }
             // Check if this object has Type = Page
             PoDoFo::PdfDictionary& dict = obj->GetDictionary();
-            PoDoFo::PdfObject* typeItem = dict.GetKey(PoDoFo::PdfName("Type"));
+            const PoDoFo::PdfObject* typeItem = dict.GetKey(PoDoFo::PdfName("Type"));
             if (!typeItem || !typeItem->IsName()) {
                 continue;
             }
@@ -63,7 +63,7 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
                     return { "Unknown", "Unknown" };
                 }
 
-                PoDoFo::PdfArray& mediaBoxArr = mediaBoxObj->GetArray();
+                const PoDoFo::PdfArray& mediaBoxArr = mediaBoxObj->GetArray();
                 if (mediaBoxArr.size() < 4) {
                     Dialogs::MessageBox::ShowError("Error!", "MediaBox array has fewer than 4 numbers.");
                     errList.AddError("MediaBox array has fewer than 4 numbers");
@@ -71,13 +71,13 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
                 }
 
                 // [ left, bottom, right, top ] in PDF points
-                double left   = mediaBoxArr[0].GetReal();
-                double bottom = mediaBoxArr[1].GetReal();
-                double right  = mediaBoxArr[2].GetReal();
-                double top    = mediaBoxArr[3].GetReal();
+                const double left   = mediaBoxArr[0].GetReal();
+                const double bottom = mediaBoxArr[1].GetReal();
+                const double right  = mediaBoxArr[2].GetReal();
+                const double top    = mediaBoxArr[3].GetReal();
 
-                double widthPoints  = right - left;
-                double heightPoints = top - bottom;
+                const double widthPoints  = right - left;
+                const double heightPoints = top - bottom;
                 if (widthPoints <= 0.0 || heightPoints <= 0.0) {
                     Dialogs::MessageBox::ShowError("Error!", "Invalid MediaBox coordinates.");
                     errList.AddError("Invalid MediaBox coordinates");
@@ -85,13 +85,13 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
                 }
 
                 // Convert from points -> millimeters
-                double widthMm  = widthPoints * 25.4 / 72.0;
-                double heightMm = heightPoints * 25.4 / 72.0;
+                const double widthMm  = widthPoints * 25.4 / 72.0;
+                const double heightMm = heightPoints * 25.4 / 72.0;
 
                 // Determine orientation
-                bool isLandscape = (widthPoints > heightPoints);
-                std::string format      = GuessPageFormat(widthMm, heightMm);
-                std::string orientation = isLandscape ? "Landscape" : "Portrait";
+                const bool isLandscape = (widthPoints > heightPoints);
+                const std::string format      = GuessPageFormat(widthMm, heightMm);
+                const std::string orientation = isLandscape ? "Landscape" : "Portrait";
                 return { format, orientation };
             }
         }
@@ -131,10 +131,7 @@ static bool LoadPDFDocumentFromBuffer(Reference<GView::Type::PDF::PDFFile> pdf, 
 Panels::Information::Information(Reference<GView::Type::PDF::PDFFile> _pdf) : TabPage("&Information")
 {
     pdf     = _pdf;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:15", "n:Value,w:100" }, ListViewFlags::None);
-
-    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
-
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:20", { "n:Field,w:15", "n:Value,w:100" }, ListViewFlags::None);
     this->Update();
 }
 
@@ -216,10 +213,6 @@ void Panels::Information::UpdateGeneralInformation()
     }
 }
 
-void Panels::Information::UpdateIssues()
-{
-}
-
 void Panels::Information::RecomputePanelsPositions()
 {
     int py   = 0;
@@ -233,9 +226,9 @@ void Panels::Information::RecomputePanelsPositions()
     issues->SetVisible(false);
     this->general->Resize(w, h);
 }
+
 void Panels::Information::Update()
 {
     UpdateGeneralInformation();
-    UpdateIssues();
     RecomputePanelsPositions();
 }

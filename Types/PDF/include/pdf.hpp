@@ -211,6 +211,10 @@ namespace Type
 
             constexpr uint8_t PDF_URI[]    = "/URI";
             constexpr uint8_t PDF_URI_SIZE = 4;
+
+            constexpr uint8_t PDF_GOTOR[]    = "/GoToR";
+            constexpr uint8_t PDF_GOTOE[]   = "/GoToE";
+            constexpr uint8_t PDF_GOTO_SIZE = 6;
         } // namespace KEY
 
         namespace PREDICTOR
@@ -456,7 +460,6 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> issues;
 
                 void UpdateGeneralInformation();
-                void UpdateIssues();
                 void RecomputePanelsPositions();
 
               public:
