@@ -31,6 +31,7 @@ class XMLExtractContentWindow : public Window
     const std::vector<AttributeData>& attributes;
     Reference<ComboBox> comboAttributes, appendMethodology;
     Reference<CheckBox> includeNamespaces;
+    Reference<Button> extractButton;
 
     void Validate()
     {
@@ -47,6 +48,7 @@ class XMLExtractContentWindow : public Window
     {
         comboAttributes->DeleteAllItems();
         const bool isIncludeNamespacesChecked = includeNamespaces->IsChecked();
+        extractButton->SetEnabled(true);
 
         LocalUnicodeStringBuilder<128> sb;
         for (const auto& att : attributes) {
@@ -60,6 +62,11 @@ class XMLExtractContentWindow : public Window
             sb.Add(att.attName);
             comboAttributes->AddItem(u16string_view{ sb.GetString(), sb.Len() });
             sb.Clear();
+        }
+
+        if (!comboAttributes->GetItemsCount()) {
+            comboAttributes->AddItem("No result, try (un)checking");
+            extractButton->SetEnabled(false);
         }
     }
 
@@ -78,7 +85,7 @@ class XMLExtractContentWindow : public Window
         appendMethodology = Factory::ComboBox::Create(this, "x:17,y:5,w:35", "After each other");
         appendMethodology->AddItem("On new line");
 
-        Factory::Button::Create(this, "&Extract", "l:16,b:0,w:13", BTN_ID_EXTRACT);
+        extractButton = Factory::Button::Create(this, "&Extract", "l:16,b:0,w:13", BTN_ID_EXTRACT);
         Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
 
         // textField->SetFocus();
@@ -167,7 +174,8 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
     AttributeData att;
     std::set<u16string> untaggedAttributes, taggedAttributes;
 
-    for (auto token : data.tokens) {
+    for (uint32 i = data.startIndex; i < data.endIndex; i++) {
+        auto token          = data.tokens[i];
         const auto tokenType = token.GetTypeID(TokenType::None);
         if (tokenType == TokenType::AttributeNamespace) {
             att.attNamespace = token.GetText();
