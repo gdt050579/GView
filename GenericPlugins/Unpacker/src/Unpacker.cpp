@@ -260,7 +260,7 @@ bool Plugin::DecodeHexCharacters(BufferView input, uint64 start, uint64 end)
     Buffer output;
     if (GView::Decoding::HexCharactersToAscii::Decode(input, output)) {
         LocalString<128> name;
-        name.Format("Buffer_qp_%llx_%llx", start, end);
+        name.Format("Buffer_DecodedHex_%llx_%llx", start, end);
 
         LocalUnicodeStringBuilder<2048> fullPath;
         fullPath.Add(this->object->GetPath());

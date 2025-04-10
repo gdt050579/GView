@@ -13,18 +13,15 @@ struct AttributeData {
     u16string attName, attNamespace;
 };
 
-enum class ExtractMethodology {
-    AfterEachOther,
-    OnNewLine
-};
+enum class ExtractMethodology { AfterEachOther, OnNewLine };
 
 namespace GView::Type::XML::Plugins
 {
 
 using namespace GView::View::LexicalViewer;
 
-constexpr int32 BTN_ID_EXTRACT     = 1;
-constexpr int32 BTN_ID_CANCEL = 2;
+constexpr int32 BTN_ID_EXTRACT = 1;
+constexpr int32 BTN_ID_CANCEL  = 2;
 class XMLExtractContentWindow : public Window
 {
     u16string result;
@@ -175,7 +172,7 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
     std::set<u16string> untaggedAttributes, taggedAttributes;
 
     for (uint32 i = data.startIndex; i < data.endIndex; i++) {
-        auto token          = data.tokens[i];
+        auto token           = data.tokens[i];
         const auto tokenType = token.GetTypeID(TokenType::None);
         if (tokenType == TokenType::AttributeNamespace) {
             att.attNamespace = token.GetText();
@@ -208,10 +205,11 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
     UnicodeStringBuilder dataFound;
     const auto methodology = win.GetMethodology();
 
-    bool foundSearchedTag   = false;
+    bool foundSearchedTag  = false;
     const auto tagToSearch = win.GetResult();
     if (tagToSearch.find(':') != u16string::npos) {
-        for (auto token : data.tokens) {
+        for (uint32 i = data.startIndex; i < data.endIndex; i++) {
+            auto token           = data.tokens[i];
             const auto tokenType = token.GetTypeID(TokenType::None);
             if (foundSearchedTag && tokenType == TokenType::AttributeValue) {
                 foundSearchedTag = false;
@@ -229,7 +227,7 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
             } else if (tokenType == TokenType::AttributeName) {
                 if (att.attNamespace.empty()) {
                     continue;
-                } 
+                }
                 att.attName = token.GetText();
                 LocalUnicodeStringBuilder<128> sb;
                 sb.Add(att.attNamespace);
@@ -240,8 +238,9 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
                 }
             }
         }
-    }else {
-        for (auto token : data.tokens) {
+    } else {
+        for (uint32 i = data.startIndex; i < data.endIndex; i++) {
+            auto token           = data.tokens[i];
             const auto tokenType = token.GetTypeID(TokenType::None);
             if (foundSearchedTag && tokenType == TokenType::AttributeValue) {
                 foundSearchedTag = false;
@@ -255,10 +254,10 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
                 if (token.GetText().empty())
                     continue;
                 att.attNamespace = token.GetText();
-            }else if (tokenType == TokenType::AttributeName) {
+            } else if (tokenType == TokenType::AttributeName) {
                 if (!att.attNamespace.empty()) {
                     continue;
-                } 
+                }
                 att.attName = token.GetText();
                 if (att.attName == (u16string_view) tagToSearch) {
                     foundSearchedTag = true;
