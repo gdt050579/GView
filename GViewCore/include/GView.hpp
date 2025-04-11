@@ -692,7 +692,19 @@ namespace Decoding
     {
         CORE_EXPORT void Encode(BufferView view, Buffer& output);
         CORE_EXPORT bool Decode(BufferView view, Buffer& output);
-    } // namespace Base64
+    } // namespace HexCharactersToAscii
+
+    namespace VBSEncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace VBSEncoding
+
+    namespace XOREncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace XOREncoding
 
     namespace ZLIB
     {

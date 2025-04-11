@@ -5,4 +5,6 @@ target_sources(GViewCore PRIVATE
         zip.cpp
         zlib.cpp
         HexCharactersToAscii.cpp
+        VBSEncoding.cpp
+        XOREncoding.cpp
 )

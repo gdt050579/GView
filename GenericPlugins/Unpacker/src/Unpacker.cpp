@@ -18,6 +18,8 @@ constexpr uint64 ITEM_BASE64           = 1;
 constexpr uint64 ITEM_QUOTED_PRINTABLE = 2;
 constexpr uint64 ITEM_ZLIB             = 3;
 constexpr uint64 ITEM_HEX_CHARACTERS   = 4;
+constexpr uint64 ITEM_VBS_ENCODED      = 5;
+constexpr uint64 ITEM_XOR_ENCODED      = 6;
 
 namespace GView::GenericPlugins::Unpacker
 {
@@ -41,6 +43,8 @@ Plugin::Plugin(Reference<GView::Object> object, Reference<Window> parent) : Wind
     list->AddItem({ "QuotedPrintable" }).SetData(ITEM_QUOTED_PRINTABLE);
     list->AddItem({ "ZLib" }).SetData(ITEM_ZLIB);
     list->AddItem({ "HexCharacters" }).SetData(ITEM_HEX_CHARACTERS);
+    list->AddItem({ "VBSEncoded" }).SetData(ITEM_VBS_ENCODED);
+    list->AddItem({ "XOREncoded" }).SetData(ITEM_XOR_ENCODED);
 
     list->SetCurrentItem(list->GetItem(0));
     list->RaiseEvent(Event::ListViewCurrentItemChanged);
@@ -81,6 +85,15 @@ void Plugin::OnButtonPressed(Reference<Button> button)
         case ITEM_HEX_CHARACTERS:
             SetAreaToDecode(b, bv, start, end);
             DecodeHexCharacters(bv, start, end);
+            break;
+        case ITEM_VBS_ENCODED:
+            SetAreaToDecode(b, bv, start, end);
+            DecodeVBSEncoding(bv, start, end);
+            break;
+        case ITEM_XOR_ENCODED:
+            SetAreaToDecode(b, bv, start, end);
+            DecodeXOREncoding(bv, start, end);
+            break;
         case ITEM_INVALID:
         default:
             break;
@@ -273,6 +286,48 @@ bool Plugin::DecodeHexCharacters(BufferView input, uint64 start, uint64 end)
 
     AppCUI::Dialogs::MessageBox::ShowError("Error!", input);
 
+    return false;
+}
+
+bool Plugin::DecodeVBSEncoding(BufferView input, uint64 start, uint64 end)
+{
+    String message;
+    Buffer output;
+    if (GView::Decoding::VBSEncoding::Decode(input, output)) {
+        LocalString<128> name;
+        name.Format("Buffer_VBSDecoded_%llx_%llx", start, end);
+
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(this->object->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(name);
+
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        return true;
+    }
+
+    AppCUI::Dialogs::MessageBox::ShowError("Error! Could not decode", input);
+    return false;
+}
+
+bool Plugin::DecodeXOREncoding(BufferView input, uint64 start, uint64 end)
+{
+    String message;
+    Buffer output;
+    if (GView::Decoding::XOREncoding::Decode(input, output)) {
+        LocalString<128> name;
+        name.Format("Buffer_XORDecoded_%llx_%llx", start, end);
+
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(this->object->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(name);
+
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        return true;
+    }
+
+    AppCUI::Dialogs::MessageBox::ShowError("Error! Could not decode", input);
     return false;
 }
 

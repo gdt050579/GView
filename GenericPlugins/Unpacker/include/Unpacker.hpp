@@ -29,6 +29,8 @@ class Plugin : public Window, public Handlers::OnButtonPressedInterface
     bool DecodeQuotedPrintable(BufferView input, uint64 start, uint64 end);
     bool DecodeZLib(BufferView input, uint64 start, uint64 end);
     bool DecodeHexCharacters(BufferView input, uint64 start, uint64 end);
+    bool DecodeVBSEncoding(BufferView input, uint64 start, uint64 end);
+    bool DecodeXOREncoding(BufferView input, uint64 start, uint64 end);
 
     void OnButtonPressed(Reference<Button> button) override;
     bool OnEvent(Reference<Control> control, Event eventType, int32 id) override;
