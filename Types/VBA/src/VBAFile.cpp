@@ -40,8 +40,8 @@ const char operators[] = "=(),._&$+-*/<>#\\:";
 
 void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
-    uint32 start = 0;
-    uint32 end   = 0;
+    uint32 start             = 0;
+    uint32 end               = 0;
 
     TokenAlignament presetAlignament = TokenAlignament::None;
 
@@ -117,6 +117,12 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
         if (c == '\r' || c == '\n') {
             end = syntax.text.ParseUntilStartOfNextLine(start);
             presetAlignament = TokenAlignament::StartsOnNewLine;
+            start = end;
+            continue;
+        }
+
+        if (c == '\t') {
+            end = syntax.text.ParseSpace(end, SpaceType::Tabs);
             start = end;
             continue;
         }
