@@ -165,7 +165,7 @@ std::string u16stringToString(const std::u16string& u16str)
     return converter.to_bytes(u16str);
 }
 
-PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
+PluginAfterActionRequest ExtractContent::Execute(PluginData& data, Reference<Window> parent)
 {
     std::vector<AttributeData> attributes;
     AttributeData att;
@@ -274,7 +274,7 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data)
     fullPath.Add(tagToSearch);
 
     BufferView buffer = { asciiCode.data(), asciiCode.length() };
-    GView::App::OpenBuffer(buffer, tagToSearch, fullPath, GView::App::OpenMethod::BestMatch);
+    GView::App::OpenBuffer(buffer, tagToSearch, fullPath, GView::App::OpenMethod::BestMatch, "", parent);
 
     return PluginAfterActionRequest::None;
 }

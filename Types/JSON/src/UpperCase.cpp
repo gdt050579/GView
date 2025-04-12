@@ -13,7 +13,7 @@ bool UpperCase::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& dat
 {
     return true;
 }
-GView::View::LexicalViewer::PluginAfterActionRequest UpperCase::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest UpperCase::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     std::u16string tmp;
     for (auto index = data.startIndex; index < data.endIndex; index++)

@@ -25,7 +25,7 @@ namespace GView::Type::JS::Plugins
         }
         return false;
     }
-    GView::View::LexicalViewer::PluginAfterActionRequest AddStrings::Execute(GView::View::LexicalViewer::PluginData& data)
+    GView::View::LexicalViewer::PluginAfterActionRequest AddStrings::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
     {
         int32 index = (int32) data.endIndex - 1;
         LocalUnicodeStringBuilder<256> temp; 

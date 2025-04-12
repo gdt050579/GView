@@ -1484,10 +1484,10 @@ namespace View
             Rescan,
         };
         struct CORE_EXPORT Plugin {
-            virtual std::string_view GetName()                         = 0;
-            virtual std::string_view GetDescription()                  = 0;
-            virtual bool CanBeAppliedOn(const PluginData& data)        = 0;
-            virtual PluginAfterActionRequest Execute(PluginData& data) = 0;
+            virtual std::string_view GetName()                                                   = 0;
+            virtual std::string_view GetDescription()                                            = 0;
+            virtual bool CanBeAppliedOn(const PluginData& data)                                  = 0;
+            virtual PluginAfterActionRequest Execute(PluginData& data, Reference<Window> parent) = 0;
         };
         struct CORE_EXPORT Settings {
             void* data;

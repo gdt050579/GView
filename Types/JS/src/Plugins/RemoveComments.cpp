@@ -26,7 +26,7 @@ bool RemoveComments::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData
     }
     return false;
 }
-GView::View::LexicalViewer::PluginAfterActionRequest RemoveComments::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest RemoveComments::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     auto end   = std::min<>(data.tokens.Len(), data.endIndex);
     auto index = static_cast<int32>(end) - 1;

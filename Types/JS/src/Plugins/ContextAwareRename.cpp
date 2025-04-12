@@ -23,7 +23,7 @@ bool ContextAwareRename::CanBeAppliedOn(const GView::View::LexicalViewer::Plugin
     return true;
 }
 
-GView::View::LexicalViewer::PluginAfterActionRequest ContextAwareRename::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest ContextAwareRename::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     AST::Instance i;
     i.Create(data.tokens);

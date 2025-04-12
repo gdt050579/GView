@@ -66,7 +66,7 @@ uint32 LookForClosestValue(uint32 index, std::map<uint32, uint32>& spaceForSearc
     return spaceForSearch[lastInitialization];
 }
 
-GView::View::LexicalViewer::PluginAfterActionRequest ReplaceConstants::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest ReplaceConstants::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
 
     std::map<std::u16string_view, std::map<uint32, uint32> /* Key - last initializaton / modification, value->ValueTokenPosition*/> variables;

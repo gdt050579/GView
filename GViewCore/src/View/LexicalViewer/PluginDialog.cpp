@@ -106,7 +106,21 @@ void PluginDialog::RunPlugin()
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Internal error -> invalid plugin index");
         return;
     }
-    this->afterActionRequest = this->settings->plugins[idx]->Execute(this->pluginData);
+
+    Reference<Window> parent = nullptr;
+    auto desktop             = AppCUI::Application::GetDesktop();
+    const auto windowsNo     = desktop->GetChildrenCount();
+    for (uint32 i = 0; i < windowsNo; i++) {
+        auto window = desktop->GetChild(i);
+        if (!window->HasFocus())
+            continue;
+        parent = window.ToObjectRef<Window>();
+        if (!parent.IsValid())
+            parent = nullptr;
+        break;
+    }
+
+    this->afterActionRequest = this->settings->plugins[idx]->Execute(this->pluginData, parent);
     Exit(Dialogs::Result::Ok);
 }
 bool PluginDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
