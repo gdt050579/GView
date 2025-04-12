@@ -108,7 +108,11 @@ static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::P
 
 static int GetPDFPageCount(const PoDoFo::PdfMemDocument& doc)
 {
-    return static_cast<int>(doc.GetPages().GetCount());
+    try {
+        return static_cast<int>(doc.GetPages().GetCount());
+    } catch (const PoDoFo::PdfError& e) {
+        return 0;
+    }
 }
 
 static bool LoadPDFDocumentFromBuffer(Reference<GView::Type::PDF::PDFFile> pdf, PoDoFo::PdfMemDocument& doc)

@@ -1807,6 +1807,15 @@ void ProcessPDFTree(
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_GOTO_SIZE, PDF::KEY::PDF_GOTOE)) {
                 errList.AddWarning("Contains a Go-To Embedded action (/GoToE) (0x%llX)", (uint64_t) (copyOffset));
                 objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_XFA_SIZE, PDF::KEY::PDF_XFA)) {
+                errList.AddWarning("Contains an XML Forms Architecture (/XFA) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ACROFORM_SIZE, PDF::KEY::PDF_ACROFORM)) {
+                errList.AddWarning("Contains an AcroForm entry (/AcroForm) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_SUBMITFORM_SIZE, PDF::KEY::PDF_SUBMITFORM)) {
+                errList.AddWarning("Contains a form submission action (/SubmitForm) (0x%llX)", (uint64_t) (copyOffset));
+                objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_URI_SIZE, PDF::KEY::PDF_URI)) {
                 bool correctURI = false;
                 uint64 copyobjectOffset = objectOffset;
@@ -2108,6 +2117,12 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             pdf->errList.AddWarning("Contains a Go-To Remote action (/GoToR) (0x%llX)", (uint64_t) (copyOffset));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_GOTO_SIZE, PDF::KEY::PDF_GOTOE)) {
                             pdf->errList.AddWarning("Contains a Go-To Embedded action (/GoToE) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_XFA_SIZE, PDF::KEY::PDF_XFA)) {
+                            pdf->errList.AddWarning("Contains an XML Forms Architecture (/XFA) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_ACROFORM_SIZE, PDF::KEY::PDF_ACROFORM)) {
+                            pdf->errList.AddWarning("Contains an AcroForm entry (/AcroForm) (0x%llX)", (uint64_t) (copyOffset));
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_SUBMITFORM_SIZE, PDF::KEY::PDF_SUBMITFORM)) {
+                            pdf->errList.AddWarning("Contains a form submission action (/SubmitForm) (0x%llX)", (uint64_t) (copyOffset));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_INFO_SIZE, PDF::KEY::PDF_INFO)) {
                             objectOffset++;
                             const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);

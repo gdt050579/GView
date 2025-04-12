@@ -212,9 +212,18 @@ namespace Type
             constexpr uint8_t PDF_URI[]    = "/URI";
             constexpr uint8_t PDF_URI_SIZE = 4;
 
-            constexpr uint8_t PDF_GOTOR[]    = "/GoToR";
+            constexpr uint8_t PDF_GOTOR[]   = "/GoToR";
             constexpr uint8_t PDF_GOTOE[]   = "/GoToE";
             constexpr uint8_t PDF_GOTO_SIZE = 6;
+            
+            constexpr uint8_t PDF_XFA[]    = "/XFA";
+            constexpr uint8_t PDF_XFA_SIZE = 4;
+
+            constexpr uint8_t PDF_ACROFORM[]    = "/AcroForm";
+            constexpr uint8_t PDF_ACROFORM_SIZE = 9;
+
+            constexpr uint8_t PDF_SUBMITFORM[]    = "/SubmitForm";
+            constexpr uint8_t PDF_SUBMITFORM_SIZE = 11;
         } // namespace KEY
 
         namespace PREDICTOR

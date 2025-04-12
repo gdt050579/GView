@@ -289,6 +289,13 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         // Decode the content of the stream based on the filters
         DecodeStream(node, buffer, size);
 
+        // pdf inside pdf
+        constexpr const char pdfSig[] = "%PDF-";
+        if (buffer.GetLength() >= 5 && std::equal(std::begin(pdfSig), std::end(pdfSig) - 1, reinterpret_cast<const char*>(buffer.GetData()))) {
+            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "pdf");
+            return;
+        }
+
         // json
         std::string newData(buffer.GetData(), buffer.GetData() + buffer.GetLength());
         if (IsValidJSON(newData)) {
