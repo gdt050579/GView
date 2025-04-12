@@ -18,7 +18,83 @@ void VBAFile::PreprocessText(GView::View::LexicalViewer::TextEditor&)
 
 void VBAFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
 {
-    CHECKRET(str.SetFormat("Unknown: 0x%08X", id), "");
+    switch (id) {
+    case TokenType::None:
+        str.Set("Unknown/Error");
+        break;
+    case TokenType::Unknown:
+        str.Set("Unknown");
+        break;
+    case TokenType::Equal:
+        str.Set("Equal Sign ('=')");
+        break;
+    case TokenType::LeftParen:
+        str.Set("Left Parenthesis ('(')");
+        break;
+    case TokenType::RightParen:
+        str.Set("Right Parenthesis (')')");
+        break;
+    case TokenType::Comma:
+        str.Set("Comma (',')");
+        break;
+    case TokenType::Dot:
+        str.Set("Dot ('.')");
+        break;
+    case TokenType::Underscore:
+        str.Set("Underscore ('_')");
+        break;
+    case TokenType::Ampersand:
+        str.Set("Ampersand ('&')");
+        break;
+    case TokenType::Dollar:
+        str.Set("Dollar Sign ('$')");
+        break;
+    case TokenType::Plus:
+        str.Set("Plus Sign ('+')");
+        break;
+    case TokenType::Minus:
+        str.Set("Minus Sign ('-')");
+        break;
+    case TokenType::Asterisk:
+        str.Set("Asterisk ('*')");
+        break;
+    case TokenType::Slash:
+        str.Set("Slash ('/')");
+        break;
+    case TokenType::LessThan:
+        str.Set("Less Than ('<')");
+        break;
+    case TokenType::GreaterThan:
+        str.Set("Greater Than ('>')");
+        break;
+    case TokenType::Hash:
+        str.Set("Hash ('#')");
+        break;
+    case TokenType::Backslash:
+        str.Set("Backslash ('\\')");
+        break;
+    case TokenType::Colon:
+        str.Set("Colon (':')");
+        break;
+    case TokenType::String:
+        str.Set("String");
+        break;
+    case TokenType::Variable:
+        str.Set("Variable");
+        break;
+    case TokenType::Keyword:
+        str.Set("Keyword");
+        break;
+    case TokenType::Comment:
+        str.Set("Comment");
+        break;
+    case TokenType::AplhaNum:
+        str.Set("AplhaNum");
+        break;
+    default:
+        str.SetFormat("Unknown Token: 0x%08X", id);
+        break;
+    }
 }
 
 
@@ -29,30 +105,48 @@ uint32 ParseString(GView::View::LexicalViewer::TextParser text, uint32 index)
 }
 
 UnicodeStringBuilder KEYWORDS[] = { UnicodeStringBuilder("Attribute"), UnicodeStringBuilder("Sub"),   UnicodeStringBuilder("Private"),
-                                    UnicodeStringBuilder("Public"),   UnicodeStringBuilder("As"),    UnicodeStringBuilder("Dim"),
-                                    UnicodeStringBuilder("End"),       UnicodeStringBuilder("Const"),
-                                    UnicodeStringBuilder("ByVal"),     UnicodeStringBuilder("Set"), UnicodeStringBuilder("While"),
-                                    UnicodeStringBuilder("Wend"),      UnicodeStringBuilder("If"),  UnicodeStringBuilder("Then") };
+                                    UnicodeStringBuilder("Public"),    UnicodeStringBuilder("As"),    UnicodeStringBuilder("Dim"),
+                                    UnicodeStringBuilder("End"),       UnicodeStringBuilder("Const"), UnicodeStringBuilder("ByVal"),
+                                    UnicodeStringBuilder("Set"),       UnicodeStringBuilder("While"), UnicodeStringBuilder("Wend"),
+                                    UnicodeStringBuilder("If"),        UnicodeStringBuilder("Then") };
 
 UnicodeStringBuilder KEYWORDS2[] = { UnicodeStringBuilder("True"), UnicodeStringBuilder("False") };
 
-const char operators[] = "=(),._&$+-*/<>#\\:";
+const char operators[]                = "=(),._&$+-*/<>#\\:";
+constexpr uint32 TokenTypeOperators[] = {
+    TokenType::Equal,       // '='
+    TokenType::LeftParen,   // '('
+    TokenType::RightParen,  // ')'
+    TokenType::Comma,       // ','
+    TokenType::Dot,         // '.'
+    TokenType::Underscore,  // '_'
+    TokenType::Ampersand,   // '&'
+    TokenType::Dollar,      // '$'
+    TokenType::Plus,        // '+'
+    TokenType::Minus,       // '-'
+    TokenType::Asterisk,    // '*'
+    TokenType::Slash,       // '/'
+    TokenType::LessThan,    // '<'
+    TokenType::GreaterThan, // '>'
+    TokenType::Hash,        // '#'
+    TokenType::Backslash,   // '\\'
+    TokenType::Colon        // ':'
+};
 
 void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
-    uint32 start             = 0;
-    uint32 end               = 0;
+    uint32 start = 0;
+    uint32 end   = 0;
 
     TokenAlignament presetAlignament = TokenAlignament::None;
 
     while (start < syntax.text.Len()) {
-
         auto c = syntax.text[start];
 
         if (c == ' ') {
             end = syntax.text.ParseSpace(end, SpaceType::Space);
             if ((uint32) presetAlignament & (uint32) TokenAlignament::StartsOnNewLine) {
-                syntax.tokens.Add(1, start, end, TokenColor::Word, presetAlignament);
+                syntax.tokens.Add(TokenType::Unknown, start, end, TokenColor::Word, presetAlignament);
                 presetAlignament = TokenAlignament::None;
             }
             start = end;
@@ -61,12 +155,14 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 
         bool parseSpace = false;
         if (isalpha(c)) {
+            uint32 tokenType = TokenType::AplhaNum;
             end = syntax.text.Parse(start, [](char16 c) { return (bool) isalnum(c) || c == '_'; });
 
             TokenColor color = TokenColor::Word;
             for (auto keyword : KEYWORDS) {
                 if (syntax.text.GetSubString(start, end) == keyword) {
                     color = TokenColor::Keyword;
+                    tokenType = TokenType::Keyword;
                     break;
                 }
             }
@@ -74,32 +170,43 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
             for (auto keyword : KEYWORDS2) {
                 if (syntax.text.GetSubString(start, end) == keyword) {
                     color = TokenColor::Keyword2;
+                    tokenType = TokenType::Keyword;
                     break;
                 }
             }
 
-            syntax.tokens.Add(1, start, end, color, presetAlignament);
+            syntax.tokens.Add(tokenType, start, end, color, presetAlignament);
             parseSpace = true;
         }
 
         if (isdigit(c)) {
             end = syntax.text.Parse(start, [](char16 c) { return (bool) isdigit(c); });
-            syntax.tokens.Add(1, start, end, TokenColor::Number, presetAlignament);
+            syntax.tokens.Add(TokenType::Unknown, start, end, TokenColor::Number, presetAlignament);
             parseSpace = true;
         }
 
-        for (char op : operators) {
-            if (c == op) {
+        for (size_t i = 0; i < sizeof(operators) - 1; ++i) {
+            if (c == operators[i]) {
                 end = start + 1;
-                syntax.tokens.Add(1, start, end, TokenColor::Operator, presetAlignament);
+                syntax.tokens.Add(TokenTypeOperators[i], start, end, TokenColor::Operator, presetAlignament);
                 parseSpace = true;
-                break;
             }
         }
 
         if (c == '"') {
             end = ParseString(syntax.text, start);
-            syntax.tokens.Add(1, start, end, TokenColor::String, presetAlignament);
+
+            if (syntax.tokens.GetLastToken().IsValid()) {
+                const auto tokenID = syntax.tokens.GetLastToken().GetTypeID(TokenType::None);
+                if (tokenID == TokenType::Equal) {
+                    auto beforeLast = syntax.tokens.GetLastToken().Precedent();
+                    if (beforeLast.IsValid() && beforeLast.GetTypeID(TokenType::None) == TokenType::AplhaNum) {
+                        beforeLast.SetTypeID(TokenType::Variable);
+                    }
+                }
+            }
+
+            syntax.tokens.Add(TokenType::String, start, end, TokenColor::String, presetAlignament);
             parseSpace = true;
         }
 
@@ -115,21 +222,21 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
         }
 
         if (c == '\r' || c == '\n') {
-            end = syntax.text.ParseUntilStartOfNextLine(start);
+            end              = syntax.text.ParseUntilStartOfNextLine(start);
             presetAlignament = TokenAlignament::StartsOnNewLine;
-            start = end;
+            start            = end;
             continue;
         }
 
         if (c == '\t') {
-            end = syntax.text.ParseSpace(end, SpaceType::Tabs);
+            end   = syntax.text.ParseSpace(end, SpaceType::Tabs);
             start = end;
             continue;
         }
 
         if (c == '\'') {
             end = syntax.text.ParseUntilEndOfLine(start);
-            syntax.tokens.Add(1, start, end, TokenColor::Comment, presetAlignament | TokenAlignament::NewLineAfter);
+            syntax.tokens.Add(TokenType::Comment, start, end, TokenColor::Comment, presetAlignament | TokenAlignament::NewLineAfter);
             start = syntax.text.ParseUntilStartOfNextLine(end);
             continue;
         }
