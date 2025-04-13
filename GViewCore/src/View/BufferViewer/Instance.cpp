@@ -1260,9 +1260,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Alt | Key::N4:
         MoveToSelection(3);
         return true;
-    case Key::Alt | Key::N0:
+    /*case Key::Alt | Key::N0:// removed due to key duplication
         MoveToSelection(4);
-        return true;
+        return true;*/
 
     case Key::E:
         MoveTillEndBlock(select);
