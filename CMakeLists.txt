@@ -203,13 +203,8 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/XML)
 
     # Generic plugins supported by GView
-    add_subdirectory(GenericPlugins/CharacterTable)
-    add_subdirectory(GenericPlugins/Hashes)
-    add_subdirectory(GenericPlugins/SyncCompare)
-    add_subdirectory(GenericPlugins/EntropyVisualizer)
-    add_subdirectory(GenericPlugins/Dropper)
-    add_subdirectory(GenericPlugins/Unpacker)
-                                                                    
+    add_subdirectory(GenericPlugins)
+                                    
     if (APPLE)
             set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
     elseif (UNIX)
