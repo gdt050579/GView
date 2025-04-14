@@ -1804,7 +1804,20 @@ void Instance::ShowPlugins()
         }
     }
 
-    PluginDialog dlg(pd, this->settings.ToReference(), selectionStart, selectionEnd, blockStart, blockEnd);
+    Reference<Window> parent = nullptr;
+    auto desktop             = AppCUI::Application::GetDesktop();
+    const auto windowsNo     = desktop->GetChildrenCount();
+    for (uint32 i = 0; i < windowsNo; i++) {
+        auto window = desktop->GetChild(i);
+        if (!window->HasFocus())
+            continue;
+        parent = window.ToObjectRef<Window>();
+        if (!parent.IsValid())
+            parent = nullptr;
+        break;
+    }
+
+    PluginDialog dlg(pd, this->settings.ToReference(), parent, selectionStart, selectionEnd, blockStart, blockEnd);
     auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());
     textClone   = ted.Release();
     if (result == Dialogs::Result::Cancel)

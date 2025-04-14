@@ -13,13 +13,14 @@ constexpr uint64 INVALID_PLUGIN = 0xFFFFFFFFFFFFFFFFULL;
 PluginDialog::PluginDialog(
       PluginData& data,
       Reference<SettingsData> _settings,
+      Reference<Window> parent,
       uint32 _selectionStart,
       uint32 _selectionEnd,
       uint32 _blockStart,
       uint32 _blockEnd)
-    : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), settings(_settings),
-      afterActionRequest(PluginAfterActionRequest::None), selectionStart(_selectionStart), selectionEnd(_selectionEnd),
-      blockStart(_blockStart), blockEnd(_blockEnd)
+    : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), settings(_settings), parent(parent),
+      afterActionRequest(PluginAfterActionRequest::None), selectionStart(_selectionStart), selectionEnd(_selectionEnd), blockStart(_blockStart),
+      blockEnd(_blockEnd)
 {
     this->lstPlugins          = Factory::ListView::Create(this, "l:1,t:1,r:1,b:9", { "w:25,a:l,n:Name","w:3,a:c,n:#", "w:200,a:l,n:Descrition" });
     this->rbRunOnEntireFile   = Factory::RadioBox::Create(this, "Run the plugin for the entire &program", "l:1,b:7,w:60", APPLY_GROUP_ID);
@@ -105,19 +106,6 @@ void PluginDialog::RunPlugin()
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Internal error -> invalid plugin index");
         return;
-    }
-
-    Reference<Window> parent = nullptr;
-    auto desktop             = AppCUI::Application::GetDesktop();
-    const auto windowsNo     = desktop->GetChildrenCount();
-    for (uint32 i = 0; i < windowsNo; i++) {
-        auto window = desktop->GetChild(i);
-        if (!window->HasFocus())
-            continue;
-        parent = window.ToObjectRef<Window>();
-        if (!parent.IsValid())
-            parent = nullptr;
-        break;
     }
 
     this->afterActionRequest = this->settings->plugins[idx]->Execute(this->pluginData, parent);

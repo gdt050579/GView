@@ -93,16 +93,6 @@ PluginAfterActionRequest ReplaceVariables::Execute(PluginData& data, Reference<W
         data.editor.Replace(offsetToUse, size, change.second.second);
     }
 
-    // for (const auto& entry : variablesToReplace) {
-    //     auto tokenToReplace = data.tokens[entry.second.tokenIndex];
-    //     auto startOffset    = tokenToReplace.GetTokenStartOffset();
-    //     auto endOffset      = tokenToReplace.GetTokenEndOffset();
-    //     if (!startOffset.has_value() || !endOffset.has_value())
-    //         return GView::View::LexicalViewer::PluginAfterActionRequest::None;
-    //     auto size = endOffset.value() - startOffset.value();
-    //     data.editor.Replace(startOffset.value(), size, entry.second.value);
-    // }
-
     return PluginAfterActionRequest::Rescan;
 }
 
