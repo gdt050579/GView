@@ -91,6 +91,9 @@ void VBAFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& s
     case TokenType::AplhaNum:
         str.Set("AplhaNum");
         break;
+    case TokenType::VariableRef:
+        str.Set("Variable reference");
+        break;
     default:
         str.SetFormat("Unknown Token: 0x%08X", id);
         break;
@@ -137,6 +140,7 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     uint32 start = 0;
     uint32 end   = 0;
+    variables.clear();
 
     TokenAlignament presetAlignament = TokenAlignament::None;
 
@@ -158,21 +162,28 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
             uint32 tokenType = TokenType::AplhaNum;
             end = syntax.text.Parse(start, [](char16 c) { return (bool) isalnum(c) || c == '_'; });
 
+            const auto currentTextValue = syntax.text.GetSubString(start, end);
             TokenColor color = TokenColor::Word;
-            for (auto keyword : KEYWORDS) {
-                if (syntax.text.GetSubString(start, end) == keyword) {
+            for (auto& keyword : KEYWORDS) {
+                if (currentTextValue == keyword) {
                     color = TokenColor::Keyword;
                     tokenType = TokenType::Keyword;
                     break;
                 }
             }
 
-            for (auto keyword : KEYWORDS2) {
-                if (syntax.text.GetSubString(start, end) == keyword) {
+            for (auto& keyword : KEYWORDS2) {
+                if (currentTextValue == keyword) {
                     color = TokenColor::Keyword2;
                     tokenType = TokenType::Keyword;
                     break;
                 }
+            }
+
+            if (tokenType == TokenType::AplhaNum) {
+                auto it = variables.find(std::u16string(currentTextValue));
+                if (it != variables.end())
+                    tokenType = TokenType::VariableRef;
             }
 
             syntax.tokens.Add(tokenType, start, end, color, presetAlignament);
@@ -196,17 +207,25 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
         if (c == '"') {
             end = ParseString(syntax.text, start);
 
+            bool isVariable = false;
             if (syntax.tokens.GetLastToken().IsValid()) {
                 const auto tokenID = syntax.tokens.GetLastToken().GetTypeID(TokenType::None);
                 if (tokenID == TokenType::Equal) {
                     auto beforeLast = syntax.tokens.GetLastToken().Precedent();
                     if (beforeLast.IsValid() && beforeLast.GetTypeID(TokenType::None) == TokenType::AplhaNum) {
                         beforeLast.SetTypeID(TokenType::Variable);
+                        isVariable = true;
                     }
                 }
             }
 
             syntax.tokens.Add(TokenType::String, start, end, TokenColor::String, presetAlignament);
+            if (isVariable) {
+                auto lastToken = syntax.tokens.GetLastToken();
+                auto variableName = lastToken.Precedent().Precedent().GetText();
+                auto variableValue = lastToken.GetText();
+                variables[std::u16string(variableName)] = std::u16string(variableValue);
+            }
             parseSpace = true;
         }
 

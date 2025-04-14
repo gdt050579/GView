@@ -27,6 +27,8 @@ extern "C"
 
         LexicalViewer::Settings settings;
         settings.SetParser(vba.ToObjectRef<LexicalViewer::ParseInterface>());
+        settings.AddPlugin(&vba->plugins.concatenateConstantStrings);
+        settings.AddPlugin(&vba->plugins.replaceVariables);
 
         win->CreateViewer(settings);
 

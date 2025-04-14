@@ -34,16 +34,45 @@ namespace Type
             constexpr uint32 Keyword     = 21;
             constexpr uint32 Comment     = 22;
             constexpr uint32 AplhaNum    = 23;
+            constexpr uint32 VariableRef = 24;
 
         } // namespace TokenType
 
+        namespace Plugins
+        {
+            class ReplaceVariables : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
+            };
+            class ConcatenateConstantStrings : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
+            };
+        } // namespace Plugins
+
         class VBAFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
+            std::unordered_map<std::u16string, std::u16string> variables;
           public:
             VBAFile();
             virtual ~VBAFile()
             {
             }
+
+            struct {
+                Plugins::ReplaceVariables replaceVariables;
+                Plugins::ConcatenateConstantStrings concatenateConstantStrings;
+            } plugins;
 
             std::string_view GetTypeName() override
             {
