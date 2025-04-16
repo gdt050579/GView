@@ -48,7 +48,7 @@ PluginAfterActionRequest ReplaceVariables::Execute(PluginData& data, Reference<W
     std::unordered_map<std::u16string, VariableData> variablesToReplace;
     std::map<uint32, std::pair<uint32, std::u16string>> changes;
 
-    for (uint32 i = data.startIndex; i < data.endIndex; i++) {
+    for (uint32 i = data.startIndex; i <= data.endIndex; i++) {
         auto token = data.tokens[i];
         if (!token.IsValid())
             continue;
