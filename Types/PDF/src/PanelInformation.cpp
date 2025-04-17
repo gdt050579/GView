@@ -135,7 +135,7 @@ static bool LoadPDFDocumentFromBuffer(Reference<GView::Type::PDF::PDFFile> pdf, 
 Panels::Information::Information(Reference<GView::Type::PDF::PDFFile> _pdf) : TabPage("&Information")
 {
     pdf     = _pdf;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:20", { "n:Field,w:15", "n:Value,w:100" }, ListViewFlags::None);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:100%", { "n:Field,w:15", "n:Value,w:100" }, ListViewFlags::None);
     this->Update();
 }
 

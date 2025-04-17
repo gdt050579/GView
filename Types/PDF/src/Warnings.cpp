@@ -6,7 +6,7 @@ using namespace AppCUI::Controls;
 Panels::Warnings::Warnings(Reference<GView::Type::PDF::PDFFile> _pdf) : TabPage("Wa&rnings")
 {
     pdf     = _pdf;
-    issues = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:20", { "n:Info,w:200" }, ListViewFlags::HideColumns);
+    issues = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:100%", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
     this->Update();
 }
