@@ -337,12 +337,11 @@ void GetObjectsOffsets(
     }
 }
 
-uint64 GetNumberOfEntries(const uint64& crossRefOffset, uint64& offset, const uint64& dataSize, GView::Utils::DataCache& data)
+uint64 GetNumberOfEntries(uint64& offset, const uint64& dataSize, GView::Utils::DataCache& data)
 {
     uint8_t buffer;
     uint16_t numEntries = 0;
-    if (crossRefOffset > 0) {
-        offset = crossRefOffset + 4; // Skip "xref" keyword
+    if (offset > 0) {
 
         while (offset < dataSize) {
             if (!data.Copy(offset, buffer)) {
@@ -385,7 +384,7 @@ uint64 GetNumberOfEntries(const uint64& crossRefOffset, uint64& offset, const ui
     return numEntries;
 }
 
-bool GetTrailerOffset(uint64& offset, const uint64& dataSize, GView::Utils::DataCache& data, uint64& trailerOffset)
+bool GetTrailerOffset(uint64 offset, const uint64& dataSize, GView::Utils::DataCache& data, uint64& trailerOffset)
 {
     // trailer segment
     bool foundTrailer = false;
@@ -663,29 +662,31 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.startBuffer = crossRefOffset;
             pdfObject.type        = PDF::SectionPDFObjectType::CrossRefTable;
             pdfObject.number      = 0;
-            // get the offsets from the Cross-Reference Table
-            const uint64 numEntries = GetNumberOfEntries(crossRefOffset, offset, dataSize, data);
-            if (numEntries == 0) {
-                Dialogs::MessageBox::ShowError("Error!", "Anomaly found: 0 entries in the Cross-Reference Table!");
-                pdf->errList.AddError("There are 0 entries in the Cross-Reference Table (0x%llX)", (uint64_t) offset);
-            }
-            while (offset < dataSize) {
-                if (!data.Copy(offset, buffer)) {
-                    break;
-                }
-                if (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN && buffer != PDF::WSC::SPACE) {
-                    break;
-                }
-                offset++;
-            }
 
-            GetObjectsOffsets(numEntries, offset, data, objectOffsets, pdf->errList);
+            uint64 trailerOffset    = 0;
+            offset = crossRefOffset + 4; // skip the xref token
+            const bool foundTrailer = GetTrailerOffset(offset, dataSize, data, trailerOffset);
+            // if we have multiple sections in the table, we check for the minimal case
+            while (trailerOffset - offset > 20) {
+                const uint64 numEntries = GetNumberOfEntries(offset, dataSize, data); // <start> <number_of_entries>
+                if (numEntries == 0) {
+                    Dialogs::MessageBox::ShowError("Error!", "Anomaly found: 0 entries in the Cross-Reference Table!");
+                    pdf->errList.AddError("There are 0 entries in the Cross-Reference Table (0x%llX)", (uint64_t) offset);
+                }
+                while (offset < dataSize) {
+                    if (!data.Copy(offset, buffer)) {
+                        break;
+                    }
+                    if (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN && buffer != PDF::WSC::SPACE) {
+                        break;
+                    }
+                    offset++;
+                }
+                GetObjectsOffsets(numEntries, offset, data, objectOffsets, pdf->errList);
+            }
 
             pdfObject.endBuffer = offset;
             pdf->AddPDFObject(pdf, pdfObject);
-
-            uint64 trailerOffset    = 0;
-            const bool foundTrailer = GetTrailerOffset(offset, dataSize, data, trailerOffset);
 
             pdfObject.startBuffer = trailerOffset;
             pdfObject.type        = PDF::SectionPDFObjectType::Trailer;
