@@ -361,21 +361,6 @@ bool Instance::Add(
       std::string_view typeName,
       Reference<Window> parent)
 {
-    Reference<Window> parentWindow{ parent }; // reference for window manager // TODO: a more generic way
-    if (parentWindow == nullptr) {
-        auto desktop         = AppCUI::Application::GetDesktop();
-        auto focusedChild    = desktop->GetFocusedChild();
-        const auto windowsNo = desktop->GetChildrenCount();
-        for (uint32 i = 0; i < windowsNo; i++) {
-            auto window = desktop->GetChild(i);
-
-            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window))) {
-                parentWindow = window.ToObjectRef<Window>();
-                break;
-            }
-        }
-    }
-
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
@@ -404,7 +389,7 @@ bool Instance::Add(
         CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
 
-        auto res = AppCUI::Application::AddWindow(std::move(win), parentWindow);
+        auto res = AppCUI::Application::AddWindow(std::move(win), GetCurrentWindow());
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
