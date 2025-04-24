@@ -117,12 +117,13 @@ bool GView::App::ResetConfiguration()
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
 
-void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent)
+void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent, const ConstString& creationProcess)
 {
-    OpenFile(path, OpenMethod::ForceType, typeName, parent);
+    OpenFile(path, OpenMethod::ForceType, typeName, parent, creationProcess);
 }
 
-void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName, Reference<Window> parent)
+void GView::App::OpenFile(
+      const std::filesystem::path& path, OpenMethod method, std::string_view typeName, Reference<Window> parent, const ConstString& creationProcess)
 {
     if (gviewAppInstance)
     {
@@ -130,25 +131,31 @@ void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, 
         {
             if (path.is_absolute())
             {
-                gviewAppInstance->AddFileWindow(path, method, typeName, parent);
+                gviewAppInstance->AddFileWindow(path, method, typeName, parent, creationProcess);
             }
             else
             {
                 const auto absPath = std::filesystem::canonical(path);
-                gviewAppInstance->AddFileWindow(absPath, method, typeName, parent);
+                gviewAppInstance->AddFileWindow(absPath, method, typeName, parent, creationProcess);
             }
         }
         catch (std::filesystem::filesystem_error /* e */)
         {
-            gviewAppInstance->AddFileWindow(path, method, typeName, parent);
+            gviewAppInstance->AddFileWindow(path, method, typeName, parent, creationProcess);
         }
     }
 }
 void GView::App::OpenBuffer(
-      BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName, Reference<Window> parent)
+      BufferView buf,
+      const ConstString& name,
+      const ConstString& path,
+      OpenMethod method,
+      std::string_view typeName,
+      Reference<Window> parent,
+      const ConstString& creationProcess)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName, parent);
+        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName, parent, creationProcess);
 }
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)

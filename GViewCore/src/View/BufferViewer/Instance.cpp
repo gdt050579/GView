@@ -136,7 +136,7 @@ void Instance::OpenCurrentSelection()
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(temp);
 
-        GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select);
+        GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select,"",Application::GetCurrentWindow(),"buffer extraction");
     }
 }
 void Instance::UpdateCurrentSelection()

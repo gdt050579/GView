@@ -194,7 +194,7 @@ bool Plugin::DecodeBase64(BufferView input, uint64 start, uint64 end)
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(name);
 
-        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent,"base64 decoding");
         return true;
     }
 
@@ -216,7 +216,7 @@ bool Plugin::DecodeQuotedPrintable(BufferView input, uint64 start, uint64 end)
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(name);
 
-        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent, "quoted printable decoding");
         return true;
     }
 
@@ -266,7 +266,7 @@ bool Plugin::DecodeZLib(BufferView input, uint64 start, uint64 end)
     } while (sizeConsumed < input.GetLength() && sizeConsumed > 0);
 
     for (const auto& output : outputs) {
-        GView::App::OpenBuffer(output.buffer, output.name, output.path, GView::App::OpenMethod::BestMatch, "", this->parent);
+        GView::App::OpenBuffer(output.buffer, output.name, output.path, GView::App::OpenMethod::BestMatch, "", this->parent, "ZLIB decompression");
     }
 
     return !outputs.empty();
@@ -285,7 +285,7 @@ bool Plugin::DecodeHexCharacters(BufferView input, uint64 start, uint64 end)
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(name);
 
-        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent, "hex characters decoded");
         return true;
     }
 
@@ -307,7 +307,7 @@ bool Plugin::DecodeVBSEncoding(BufferView input, uint64 start, uint64 end)
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(name);
 
-        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent, "VBS decoding");
         return true;
     }
 
@@ -328,7 +328,7 @@ bool Plugin::DecodeXOREncoding(BufferView input, uint64 start, uint64 end)
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(name);
 
-        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent, "XOR decoding");
         return true;
     }
 
@@ -349,7 +349,7 @@ bool Plugin::DecodeHTMLCharacters(BufferView input, uint64 start, uint64 end)
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(name);
 
-        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent);
+        GView::App::OpenBuffer(output, name, fullPath, GView::App::OpenMethod::BestMatch, "", this->parent, "HTML characters decoding");
         return true;
     }
 

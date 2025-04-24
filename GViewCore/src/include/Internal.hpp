@@ -540,15 +540,28 @@ namespace App
               uint32 PID,
               OpenMethod method,
               std::string_view typeName,
-              Reference<Window> parent = nullptr);
-        bool AddFolder(const std::filesystem::path& path);
+              Reference<Window> parent = nullptr,
+              const ConstString& creationProcess = "");
+        bool AddFolder(const std::filesystem::path& path, const ConstString& creationProcess = "");
 
       public:
         Instance();
         virtual ~Instance() {}
         bool Init(bool isTestingEnabled);
-        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
-        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);
+        bool AddFileWindow(
+              const std::filesystem::path& path,
+              OpenMethod method,
+              string_view typeName,
+              Reference<Window> parent           = nullptr,
+              const ConstString& creationProcess = "");
+        bool AddBufferWindow(
+              BufferView buf,
+              const ConstString& name,
+              const ConstString& path,
+              OpenMethod method,
+              string_view typeName,
+              Reference<Window> parent,
+              const ConstString& creationProcess = "");
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters

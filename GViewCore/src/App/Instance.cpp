@@ -359,7 +359,8 @@ bool Instance::Add(
       uint32 PID,
       OpenMethod method,
       std::string_view typeName,
-      Reference<Window> parent)
+      Reference<Window> parent,
+      const ConstString& creationProcess)
 {
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
@@ -389,7 +390,7 @@ bool Instance::Add(
         CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
 
-        auto res = AppCUI::Application::AddWindow(std::move(win), GetCurrentWindow());
+        auto res = AppCUI::Application::AddWindow(std::move(win), GetCurrentWindow(), creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
@@ -397,7 +398,7 @@ bool Instance::Add(
     // error case
     return false;
 }
-bool Instance::AddFolder(const std::filesystem::path& path)
+bool Instance::AddFolder(const std::filesystem::path& path, const ConstString& creationProcess)
 {
     auto contentType = GView::Type::FolderViewPlugin::CreateInstance(path);
     CHECK(contentType, false, "`CreateInstance` returned a null pointer to a type object !");
@@ -412,7 +413,7 @@ bool Instance::AddFolder(const std::filesystem::path& path)
     while (true) {
         GView::Type::FolderViewPlugin::PopulateWindow(win.get());
         win->Start(); // starts the window and set focus
-        auto res = AppCUI::Application::AddWindow(std::move(win));
+        auto res = AppCUI::Application::AddWindow(std::move(win), nullptr, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
@@ -428,7 +429,8 @@ void Instance::ShowErrors()
     err.Show();
     errList.Clear();
 }
-bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent)
+bool Instance::AddFileWindow(
+      const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent, const ConstString& creationProcess)
 {
     try {
         if (std::filesystem::is_directory(path)) {
@@ -439,7 +441,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod metho
                 errList.AddError("Fail to open file: %s", path.u8string().c_str());
                 RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
             }
-            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName, parent);
+            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName, parent, creationProcess);
         }
     } catch (std::filesystem::filesystem_error /* e */) {
         errList.AddError("Fail to open file: %s", path.u8string().c_str());
@@ -447,14 +449,20 @@ bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod metho
     }
 }
 bool Instance::AddBufferWindow(
-      BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent)
+      BufferView buf,
+      const ConstString& name,
+      const ConstString& path,
+      OpenMethod method,
+      string_view typeName,
+      Reference<Window> parent,
+      const ConstString& creationProcess)
 {
     auto f = std::make_unique<AppCUI::OS::MemoryFile>();
     if (f->Create(buf.GetData(), buf.GetLength()) == false) {
         errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
         RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());
     }
-    return Add(Object::Type::MemoryBuffer, std::move(f), name, path, 0, method, typeName, parent);
+    return Add(Object::Type::MemoryBuffer, std::move(f), name, path, 0, method, typeName, parent, creationProcess);
 }
 void Instance::OpenFile()
 {

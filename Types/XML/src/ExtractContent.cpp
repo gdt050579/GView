@@ -273,8 +273,18 @@ PluginAfterActionRequest ExtractContent::Execute(PluginData& data, Reference<Win
     fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
     fullPath.Add(tagToSearch);
 
+    LocalString<64> indexToAdd;
+    indexToAdd.SetFormat(" %u", data.startIndex);
+
+    UnicodeStringBuilder sb;
+    sb.Add("Attribute ");
+    sb.Add(tagToSearch);
+    sb.Add(indexToAdd.GetText());
+
+    std::u16string_view bufferName = { sb.GetString(), sb.Len() };
+
     BufferView buffer = { asciiCode.data(), asciiCode.length() };
-    GView::App::OpenBuffer(buffer, tagToSearch, fullPath, GView::App::OpenMethod::BestMatch, "", parent);
+    GView::App::OpenBuffer(buffer, bufferName, fullPath, GView::App::OpenMethod::BestMatch, "", parent,"attribute extraction");
 
     return PluginAfterActionRequest::None;
 }
