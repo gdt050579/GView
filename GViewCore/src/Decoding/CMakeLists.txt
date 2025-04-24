@@ -7,4 +7,5 @@ target_sources(GViewCore PRIVATE
         HexCharactersToAscii.cpp
         VBSEncoding.cpp
         XOREncoding.cpp
+        HTMLCharactersEncoding.cpp
 )
