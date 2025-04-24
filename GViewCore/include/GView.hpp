@@ -1634,6 +1634,7 @@ namespace App
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
     std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
     uint32 CORE_EXPORT GetTypePluginsCount();
+    bool CORE_EXPORT ShowAddNoteDialog();
 
 }; // namespace App
 }; // namespace GView

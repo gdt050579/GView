@@ -252,6 +252,9 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         case CMD_SHOW_KEY_CONFIGURATOR:
             ShowKeyConfiguratorWindow();
             return true;
+        case CMD_OPEN_ADD_NOTE:
+            GView::App::ShowAddNoteDialog();
+            return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
@@ -280,10 +283,11 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
-    commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, "GoTo", CMD_GOTO);
-    commandBar.SetCommand(INSTANCE_COMMAND_FIND.Key, "Find", CMD_FIND);
-    commandBar.SetCommand(INSTANCE_CHOOSE_TYPE.Key, "SelectType", CMD_CHOSE_NEW_TYPE);
-    commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "ShowKeys", CMD_SHOW_KEY_CONFIGURATOR);
+    commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, INSTANCE_COMMAND_GOTO.Caption, CMD_GOTO);
+    commandBar.SetCommand(INSTANCE_COMMAND_FIND.Key, INSTANCE_COMMAND_FIND.Caption, CMD_FIND);
+    commandBar.SetCommand(INSTANCE_CHOOSE_TYPE.Key, INSTANCE_CHOOSE_TYPE.Caption, CMD_CHOSE_NEW_TYPE);
+    commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, INSTANCE_KEY_CONFIGURATOR.Caption, CMD_SHOW_KEY_CONFIGURATOR);
+    commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE.Key, INSTANCE_OPEN_ADD_NOTE.Caption, CMD_OPEN_ADD_NOTE);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {
@@ -318,5 +322,6 @@ bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
     impl->RegisterKey(&INSTANCE_SWITCH_TO_VIEW);
     impl->RegisterKey(&INSTANCE_CHOOSE_TYPE);
     impl->RegisterKey(&INSTANCE_KEY_CONFIGURATOR);
+    impl->RegisterKey(&INSTANCE_OPEN_ADD_NOTE);
     return true;
 }
