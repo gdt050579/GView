@@ -436,8 +436,10 @@ std::string SmartAssistantPromptInterfaceProxy::BuildChatContext(std::string_vie
 void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
 {
     if (smartAssistants.empty()) {
+        promptRetriesCount = 0;
         return;
     }
+    promptRetriesCount = 1;
 
     bool hasSmartAssistantConfigDat = false;
     auto SmartAssistants            = IniSection();
@@ -445,6 +447,14 @@ void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
     if (settings->HasSection(SMART_ASSISTANTS_CONFIGURATION_NAME)) {
         SmartAssistants            = settings->GetSection(SMART_ASSISTANTS_CONFIGURATION_NAME);
         hasSmartAssistantConfigDat = true;
+
+        const auto promptRetriesValue = SmartAssistants.GetValue("PromptRetries");
+        if (promptRetriesValue.HasValue()) {
+            const auto promptRetries = promptRetriesValue.AsUInt32();
+            if (promptRetries.has_value()) {
+                promptRetriesCount = promptRetries.value();
+            }
+        }
     }
 
     auto ptrSmartAssistantsTab = Pointer<TabPage>(new SmartAssistantsTab());
@@ -490,6 +500,11 @@ bool GViewQueryInterface::RegisterSmartAssistantInterface(Pointer<SmartAssistant
 SmartAssistantPromptInterface* GViewQueryInterface::GetSmartAssistantInterface()
 {
     return smartAssistantProxy.GetSmartAssistantInterface();
+}
+
+unsigned int GViewQueryInterface::GetPromptRetriesCount() const
+{
+    return smartAssistantProxy.promptRetriesCount;
 }
 
 void GViewQueryInterface::Start()

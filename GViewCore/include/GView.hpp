@@ -236,8 +236,9 @@ namespace CommonInterfaces
     struct CORE_EXPORT QueryInterface
     {
         virtual bool RegisterSmartAssistantInterface(Pointer<SmartAssistants::SmartAssistantRegisterInterface> smartAssistantInterface) = 0;
-        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                    = 0;
-        virtual ~QueryInterface()                                                                                               = default;
+        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                            = 0;
+        virtual uint32 GetPromptRetriesCount() const                                                                                    = 0;
+        virtual ~QueryInterface()                                                                                                       = default;
     };
 } // namespace CommonInterfaces
 
