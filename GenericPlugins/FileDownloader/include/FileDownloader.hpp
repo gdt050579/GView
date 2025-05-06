@@ -3,6 +3,7 @@
 #include "GView.hpp"
 #include <curl/curl.h>
 #include <unordered_map>
+#include <sstream>
 
 namespace GView::GenericPlugins::FileDownloader
 {
