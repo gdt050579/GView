@@ -657,6 +657,7 @@ namespace App
 
         struct SmartAssistantPromptInterfaceProxy : SmartAssistantPromptInterface
         {
+            uint32 promptRetriesCount;
             std::vector<Pointer<SmartAssistantRegisterInterface>> smartAssistants;
             std::vector<bool> validSmartAssistants;
             std::vector<void*> smartAssistantEntryTabUIPointers;
@@ -678,6 +679,7 @@ namespace App
 
             bool RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface> registerInterface) override;
             SmartAssistantPromptInterface* GetSmartAssistantInterface() override;
+            uint32 GetPromptRetriesCount() const override;
 
             void Start();
         };   

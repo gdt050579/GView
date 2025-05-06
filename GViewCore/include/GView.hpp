@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.365.0"
+#define GVIEW_VERSION "0.367.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -265,8 +265,9 @@ namespace CommonInterfaces
     struct CORE_EXPORT QueryInterface
     {
         virtual bool RegisterSmartAssistantInterface(Pointer<SmartAssistants::SmartAssistantRegisterInterface> smartAssistantInterface) = 0;
-        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                    = 0;
-        virtual ~QueryInterface()                                                                                               = default;
+        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                            = 0;
+        virtual uint32 GetPromptRetriesCount() const                                                                                    = 0;
+        virtual ~QueryInterface()                                                                                                       = default;
     };
 } // namespace CommonInterfaces
 
