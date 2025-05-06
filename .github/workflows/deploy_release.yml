@@ -129,7 +129,7 @@ jobs:
         subject-path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         
   build-ubuntu:
-    runs-on: [ubuntu-20.04]
+    runs-on: [ubuntu-22.04]
     env:
       CC: gcc-10
       CXX: g++-10
