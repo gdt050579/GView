@@ -512,6 +512,7 @@ namespace View
         };
         class PluginDialog : public Window
         {
+            Reference<Window> parent;
             PluginData& pluginData;
             Reference<ListView> lstPlugins;
             Reference<RadioBox> rbRunOnSelection, rbRunOnCurrentBlock, rbRunOnEntireFile;
@@ -527,6 +528,7 @@ namespace View
             PluginDialog(
                   PluginData& data,
                   Reference<SettingsData> settings,
+                  Reference<Window> parent,
                   uint32 selectionStart,
                   uint32 selectionEnd,
                   uint32 blockStart,

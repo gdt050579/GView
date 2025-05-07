@@ -24,7 +24,7 @@ bool InlineFunctions::CanBeAppliedOn(const GView::View::LexicalViewer::PluginDat
     return true;
 }
 
-GView::View::LexicalViewer::PluginAfterActionRequest InlineFunctions::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest InlineFunctions::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     AST::Instance i;
     i.Create(data.tokens);

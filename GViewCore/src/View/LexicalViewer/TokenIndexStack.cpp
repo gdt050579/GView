@@ -3,6 +3,7 @@
 namespace GView::View::LexicalViewer
 {
 constexpr uint32 MAX_ITEMS = 0x10000;
+
 TokenIndexStack::TokenIndexStack()
 {
     this->stack     = nullptr;

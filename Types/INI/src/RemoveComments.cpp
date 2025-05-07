@@ -22,7 +22,7 @@ bool RemoveComments::CanBeAppliedOn(const PluginData& data)
     }
     return false;
 }
-PluginAfterActionRequest RemoveComments::Execute(PluginData& data)
+PluginAfterActionRequest RemoveComments::Execute(PluginData& data, Reference<Window> parent)
 {
     auto len    = std::min<>(data.tokens.Len(), data.endIndex);    
     int32 index = static_cast<int32>(len) - 1;

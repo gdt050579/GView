@@ -218,21 +218,6 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     GView::Decoding::ZIP::Entry entry{ 0 };
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
-    Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
-    {
-        auto desktop         = AppCUI::Application::GetDesktop();
-        auto focusedChild    = desktop->GetFocusedChild();
-        const auto windowsNo = desktop->GetChildrenCount();
-        for (uint32 i = 0; i < windowsNo; i++) {
-            auto window = desktop->GetChild(i);
-
-            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window))) {
-                parentWindow = window.ToObjectRef<Window>();
-                break;
-            }
-        }
-    }
-
     Buffer buffer{};
     bool decompressed{ false };
 
@@ -261,7 +246,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             {
                 std::replace(path.begin(), path.end(), u'/', u'\\');
             }
-            GView::App::OpenBuffer(buffer, name, path, GView::App::OpenMethod::BestMatch);
+            GView::App::OpenBuffer(buffer, name, path, GView::App::OpenMethod::BestMatch,"",Application::GetCurrentWindow(),"extraction and decompression");
 
             return;
         }
@@ -291,7 +276,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             }
 
             const auto name = entry.GetFilename();
-            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch, "", parentWindow);
+            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch, "", Application::GetCurrentWindow(), "extraction");
             return;
         }
 

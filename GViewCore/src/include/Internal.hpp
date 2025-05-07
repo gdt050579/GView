@@ -459,6 +459,7 @@ namespace App
         constexpr int CMD_SHOW_KEY_CONFIGURATOR = 30012349;
         constexpr int CMD_COPY_DIALOG           = 30012350;
         constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
+        constexpr int CMD_OPEN_ADD_NOTE         = 30012352;
 
         static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
         static GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
@@ -470,6 +471,7 @@ namespace App
         static GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW        = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Set focus on viewer", CMD_SWITCH_TO_VIEW };
         static GView::KeyboardControl INSTANCE_CHOOSE_TYPE         = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
         static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
+        static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE       = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
     }
 
     class Instance : public AppCUI::Utils::PropertiesInterface,
@@ -540,15 +542,28 @@ namespace App
               uint32 PID,
               OpenMethod method,
               std::string_view typeName,
-              Reference<Window> parent = nullptr);
-        bool AddFolder(const std::filesystem::path& path);
+              Reference<Window> parent = nullptr,
+              const ConstString& creationProcess = "");
+        bool AddFolder(const std::filesystem::path& path, const ConstString& creationProcess = "");
 
       public:
         Instance();
         virtual ~Instance() {}
         bool Init(bool isTestingEnabled);
-        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
-        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);
+        bool AddFileWindow(
+              const std::filesystem::path& path,
+              OpenMethod method,
+              string_view typeName,
+              Reference<Window> parent           = nullptr,
+              const ConstString& creationProcess = "");
+        bool AddBufferWindow(
+              BufferView buf,
+              const ConstString& name,
+              const ConstString& path,
+              OpenMethod method,
+              string_view typeName,
+              Reference<Window> parent,
+              const ConstString& creationProcess = "");
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters

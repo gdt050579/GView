@@ -23,7 +23,7 @@ bool ReverseStrings::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData
     }
     return false;
 }
-GView::View::LexicalViewer::PluginAfterActionRequest ReverseStrings::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest ReverseStrings::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     for (int32 index = (int32) data.startIndex; index < data.endIndex; index++)
     {

@@ -213,6 +213,35 @@ namespace Utils
         virtual std::optional<Zone> GetObjectsZone(uint32 index) const = 0;
         virtual bool SetZones(const ZonesList& zones)                  = 0;
     };
+
+    template <typename ListType, typename ValueType>
+    class CORE_EXPORT ListIterator
+    {
+        const ListType& iteratorList;
+        uint32_t index;
+
+      public:
+        ListIterator(const ListType& listParam, uint32_t index = 0) : iteratorList(listParam), index(index)
+        {
+        }
+
+        ValueType operator*() const
+        {
+            return iteratorList[index];
+        }
+
+        ListIterator& operator++()
+        {
+            ++index;
+            return *this;
+        }
+
+        bool operator!=(const ListIterator& other) const
+        {
+            return index != other.index;
+        }
+    };
+
 } // namespace Utils
 
 namespace CommonInterfaces
@@ -659,6 +688,30 @@ namespace Decoding
         CORE_EXPORT void Encode(BufferView view, Buffer& output);
         CORE_EXPORT bool Decode(BufferView view, Buffer& output);
     } // namespace QuotedPrintable
+
+    namespace HexCharactersToAscii
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace HexCharactersToAscii
+
+    namespace VBSEncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace VBSEncoding
+
+    namespace XOREncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace XOREncoding
+
+    namespace HTMLCharactersEncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace HTMLCharactersEncoding
 
     namespace ZLIB
     {
@@ -1304,6 +1357,7 @@ namespace View
             bool SetTokenColor(TokenColor col);
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
+            bool SetTypeID(uint32 typeID);
             bool DisableSimilartyHighlight();
             bool SetText(const ConstString& text);
             bool SetError(const ConstString& error);
@@ -1353,6 +1407,15 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, TokenFlags flags);
             // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+
+            Utils::ListIterator<TokensList, Token> begin() const
+            {
+                return { *this, 0 };
+            }
+            Utils::ListIterator<TokensList, Token> end() const
+            {
+                return { *this, Len() };
+            }
         };
         class CORE_EXPORT BlocksList
         {
@@ -1368,6 +1431,15 @@ namespace View
             Block operator[](uint32 index) const;
             Block Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
             Block Add(Token start, Token end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
+
+            Utils::ListIterator<BlocksList, Block> begin() const
+            {
+                return { *this, 0 };
+            }
+            Utils::ListIterator<BlocksList, Block> end() const
+            {
+                return { *this, Len() };
+            }
         };
         struct SyntaxManager {
             const TextParser& text;
@@ -1419,10 +1491,10 @@ namespace View
             Rescan,
         };
         struct CORE_EXPORT Plugin {
-            virtual std::string_view GetName()                         = 0;
-            virtual std::string_view GetDescription()                  = 0;
-            virtual bool CanBeAppliedOn(const PluginData& data)        = 0;
-            virtual PluginAfterActionRequest Execute(PluginData& data) = 0;
+            virtual std::string_view GetName()                                                   = 0;
+            virtual std::string_view GetDescription()                                            = 0;
+            virtual bool CanBeAppliedOn(const PluginData& data)                                  = 0;
+            virtual PluginAfterActionRequest Execute(PluginData& data, Reference<Window> parent) = 0;
         };
         struct CORE_EXPORT Settings {
             void* data;
@@ -1542,20 +1614,28 @@ namespace App
     bool CORE_EXPORT Init(bool isTestingEnabled);
     void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenFile(
+          const std::filesystem::path& path,
+          OpenMethod method,
+          std::string_view typeName          = "",
+          Reference<Window> parent           = nullptr,
+          const ConstString& creationProcess = "");
+    void CORE_EXPORT
+    OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr, const ConstString& creationProcess = "");
     void CORE_EXPORT OpenBuffer(
           BufferView buf,
           const ConstString& name,
           const ConstString& path,
           OpenMethod method,
           std::string_view typeName = "",
-          Reference<Window> parent  = nullptr);
+          Reference<Window> parent  = nullptr,
+          const ConstString& creationProcess = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
     std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
     uint32 CORE_EXPORT GetTypePluginsCount();
+    bool CORE_EXPORT ShowAddNoteDialog();
 
 }; // namespace App
 }; // namespace GView

@@ -27,6 +27,8 @@ extern "C"
 
         LexicalViewer::Settings settings;
         settings.SetParser(vba.ToObjectRef<LexicalViewer::ParseInterface>());
+        settings.AddPlugin(&vba->plugins.concatenateConstantStrings);
+        settings.AddPlugin(&vba->plugins.replaceVariables);
 
         win->CreateViewer(settings);
 
@@ -44,6 +46,7 @@ extern "C"
     {
         sect["Extension"]   = { "vba", "vbs" };
         sect["Priority"]    = 1;
+        sect["Pattern"]     = { "linestartswith:Sub", "linestartswith:On Error"};
         sect["Description"] = "Visual basic language file format (*.vba, *.vbs)";
     }
 }
