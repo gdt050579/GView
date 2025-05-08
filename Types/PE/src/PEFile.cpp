@@ -1,9 +1,8 @@
+#include <codecvt>
 #include "pe.hpp"
 #include "DigitalSignature.hpp"
-#include <nlohmann/json.hpp>
 
 using namespace GView::Type::PE;
-using nlohmann::json;
 
 struct CV_INFO_PDB20 {
     uint32 CvSignature;   // NBxx
@@ -764,36 +763,61 @@ bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
 
 std::string PEFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]            = obj->GetName();
-    context["ContentType"]     = "PE";
-    context["ContentSize"]     = obj->GetData().GetSize();
-    context["Image Base"]      = imageBase;
-    context["Machine"]         = GetMachine();
-    context["Subsystem"]       = GetSubsystem();
-    context["Number Sections"] = nrSections;
+    bool isValidName = true;
+    std::string name;
+    try {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        name = converter.to_bytes(std::u16string(obj->GetName()));
+    } catch (const std::exception&) {
+        isValidName = false;
+    }
+
+     std::stringstream context;
+    context << "{";
+    if (isValidName)
+        context << "\"Name\": \"" << name << "\",";
+    context << "\"ContentType\": \"PE\",";
+    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
+    context << "\"Image Base\": " << imageBase << ",";
+    context << "\"Machine\": \"" << GetMachine() << "\",";
+    context << "\"Subsystem\": \"" << GetSubsystem() << "\",";
+    context << "\"Number Sections\": " << nrSections;
+
+    // Handle exports array
     if (!exp.empty()) {
-        std::vector<std::string> exports;
-        exports.reserve(exp.size());
-        for (const auto& e : exp)
-            exports.emplace_back(e.Name.GetText());
-        context["Exports"] = exports;
+        context << ",\"Exports\": [";
+        for (size_t i = 0; i < exp.size(); ++i) {
+            context << "\"" << exp[i].Name.GetText() << "\"";
+            if (i < exp.size() - 1)
+                context << ",";
+        }
+        context << "]";
     }
+
+    // Handle imports array
     if (!impDLL.empty()) {
-        std::vector<std::string> imports;
-        imports.reserve(impDLL.size());
-        for (const auto& i : impDLL)
-            imports.emplace_back(i.Name.GetText());
-        context["Imports"] = imports;
+        context << ",\"Imports\": [";
+        for (size_t i = 0; i < impDLL.size(); ++i) {
+            context << "\"" << impDLL[i].Name.GetText() << "\"";
+            if (i < impDLL.size() - 1)
+                context << ",";
+        }
+        context << "]";
     }
+
+    // Handle resources array
     if (!res.empty()) {
-        std::vector<std::string> resources;
-        resources.reserve(res.size());
-        for (const auto& r : res)
-            resources.emplace_back(ResourceIDToName(r.Type).data());
-        context["Resources"] = resources;
+        context << ",\"Resources\": [";
+        for (size_t i = 0; i < res.size(); ++i) {
+            context << "\"" << ResourceIDToName(res[i].Type).data() << "\"";
+            if (i < res.size() - 1)
+                context << ",";
+        }
+        context << "]";
     }
-    return context.dump();
+
+    context << "}";
+    return context.str();
 }
 
 bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)

@@ -1,10 +1,9 @@
-#include <nlohmann/json.hpp>
+#include <codecvt>
 #include "bmp.hpp"
 
 using namespace GView::Type::BMP;
 
 constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
-using nlohmann::json;
 
 BMPFile::BMPFile()
 {
@@ -24,8 +23,7 @@ bool BMPFile::LoadImageToObject(Image& img, uint32 index)
 {
     Buffer buf;
     auto bf = obj->GetData().GetEntireFile();
-    if (bf.IsValid() == false)
-    {
+    if (bf.IsValid() == false) {
         // unable to use the cache --> need to make a copy of the entire buffer
         buf = this->obj->GetData().CopyEntireFile();
         CHECK(buf.IsValid(), false, "Fail to copy Entire file");
@@ -38,15 +36,27 @@ bool BMPFile::LoadImageToObject(Image& img, uint32 index)
 
 std::string BMPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]                    = obj->GetName();
-    context["ContentSize"]             = obj->GetData().GetSize();
-    context["ImageSize"]               = infoHeader.imageSize;
-    context["Width"]                   = infoHeader.width;
-    context["Height"]                  = infoHeader.height;
-    context["BitsPerPixel"]            = infoHeader.bitsPerPixel;
-    context["CompressionMethod"]       = infoHeader.comppresionMethod;
-    context["NumberOfColors"]          = infoHeader.numberOfColors;
-    context["NumberOfImportantColors"] = infoHeader.numberOfImportantColors;
-    return context.dump();
+    bool isValidName = true;
+    std::string name;
+    try {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        name = converter.to_bytes(std::u16string(obj->GetName()));
+    } catch (const std::exception&) {
+        isValidName = false;
+    }
+
+    std::stringstream context;
+    context << "{";
+    if (isValidName)
+        context << "\"Name\": \"" << name << "\",";
+    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
+    context << "\"ImageSize\": " << infoHeader.imageSize << ",";
+    context << "\"Width\": " << infoHeader.width << ",";
+    context << "\"Height\": " << infoHeader.height << ",";
+    context << "\"BitsPerPixel\": " << infoHeader.bitsPerPixel << ",";
+    context << "\"CompressionMethod\": " << infoHeader.comppresionMethod << ",";
+    context << "\"NumberOfColors\": " << infoHeader.numberOfColors << ",";
+    context << "\"NumberOfImportantColors\": " << infoHeader.numberOfImportantColors;
+    context << "\n}";
+    return context.str();
 }

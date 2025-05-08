@@ -1,10 +1,8 @@
-#include "zip.hpp"
-
+#include <codecvt>
 #include <map>
 #include <queue>
-#include <nlohmann/json.hpp>
 
-using nlohmann::json;
+#include "zip.hpp"
 
 namespace GView::Type::ZIP
 {
@@ -288,10 +286,22 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 
 std::string ZIPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"] = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    context["EntriesCount"] = this->info.GetCount();
-    return context.dump();
+        bool isValidName = true;
+    std::string name;
+    try {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        name = converter.to_bytes(std::u16string(obj->GetName()));
+    } catch (const std::exception&) {
+        isValidName = false;
+    }
+
+    std::stringstream context;
+    context << "{";
+    if (isValidName)
+        context << "\"Name\": \"" << name << "\",";
+    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
+    context << "\"EntriesCount\": " << this->info.GetCount();
+    context << "\n}";
+    return context.str();
 }
 } // namespace GView::Type::ZIP

@@ -1,8 +1,7 @@
-#include <nlohmann/json.hpp>
+#include <codecvt>
 #include "PCAP.hpp"
 
 using namespace GView::Type::PCAP;
-using nlohmann::json;
 
 PCAPFile::PCAPFile()
 {
@@ -191,11 +190,33 @@ std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForConta
 
 std::string PCAPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"] = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    context["TotalPackets"] = packetHeaders.size();
-    context["TotalStreams"] = streamManager.size();
-    context["Protocols"] = streamManager.GetProtocolsFound();
-    return context.dump();
+    bool isValidName = true;
+    std::string name;
+    try {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        name = converter.to_bytes(std::u16string(obj->GetName()));
+    } catch (const std::exception&) {
+        isValidName = false;
+    }
+
+    std::stringstream context;
+    context << "{";
+    if (isValidName)
+        context << "\"Name\": \"" << name << "\",";
+    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
+    context << "\"TotalPackets\": " << packetHeaders.size() << ",";
+    context << "\"TotalStreams\": " << streamManager.size() << ",";
+
+    // Handle the protocols array
+    context << "\"Protocols\": [";
+    const auto& protocols = streamManager.GetProtocolsFound();
+    for (size_t i = 0; i < protocols.size(); ++i) {
+        context << "\"" << protocols[i] << "\"";
+        if (i < protocols.size() - 1)
+            context << ",";
+    }
+    context << "]";
+
+    context << "}";
+    return context.str();
 }

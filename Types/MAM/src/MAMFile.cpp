@@ -1,8 +1,7 @@
-#include <nlohmann/json.hpp>
+#include <codecvt>
 #include "MAM.hpp"
 
 using namespace GView::Type::MAM;
-using nlohmann::json;
 
 bool MAMFile::Update()
 {
@@ -17,8 +16,7 @@ bool MAMFile::Update()
 
 void MAMFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "Decompress")
-    {
+    if (commandName == "Decompress") {
         CHECKRET(Decompress(), "");
     }
 }
@@ -32,13 +30,24 @@ bool MAMFile::UpdateKeys(KeyboardControlsInterface* interface)
 
 std::string MAMFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]             = obj->GetName();
-    context["ContentSize"]      = obj->GetData().GetSize();
-    context["Signature"]        = signature;
-    context["UncompressedSize"] = uncompressedSize;
-    context["CompressedSize"]   = compressedSize;
-    return context.dump();
+    bool isValidName = true;
+    std::string name;
+    try {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        name = converter.to_bytes(std::u16string(obj->GetName()));
+    } catch (const std::exception&) {
+        isValidName = false;
+    }
+
+    std::stringstream context;
+    context << "{";
+    if (isValidName)
+        context << "\"Name\": \"" << name << "\",";
+    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
+    context << "\"Signature\": \"" << signature << "\",";
+    context << "\"UncompressedSize\": " << uncompressedSize << ",";
+    context << "\"CompressedSize\": " << compressedSize;
+    context << "}";
 }
 
 bool MAMFile::Decompress()
@@ -53,8 +62,7 @@ bool MAMFile::Decompress()
     Buffer compressed;
     compressed.Resize(size);
 
-    while (pos < obj->GetData().GetSize())
-    {
+    while (pos < obj->GetData().GetSize()) {
         auto toRead    = std::min<uint64>((uint64) chunk, obj->GetData().GetSize() - pos);
         const Buffer b = obj->GetData().CopyToBuffer(pos, chunk, false);
         memcpy(compressed.GetData() + pos - 8ULL, b.GetData(), toRead);

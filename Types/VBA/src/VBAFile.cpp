@@ -1,7 +1,5 @@
-#include <nlohmann/json.hpp>
+#include <codecvt>
 #include "vba.hpp"
-
-using nlohmann::json;
 
 namespace GView::Type::VBA
 {
@@ -275,9 +273,21 @@ bool VBAFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicod
 
 std::string VBAFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    bool isValidName = true;
+    std::string name;
+    try {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        name = converter.to_bytes(std::u16string(obj->GetName()));
+    } catch (const std::exception&) {
+        isValidName = false;
+    }
+
+    std::stringstream context;
+    context << "{";
+    if (isValidName)
+        context << "\"Name\": \"" << name << "\",";
+    context << "\"ContentSize\": " << obj->GetData().GetSize();
+    context << "\n}";
+    return context.str();
 }
 } // namespace GView::Type::VBA

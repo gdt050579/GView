@@ -1,6 +1,5 @@
+#include <codecvt>
 #include "xml.hpp"
-#include <nlohmann/json.hpp>
-using nlohmann::json;
 
 namespace GView::Type::XML
 {
@@ -358,9 +357,22 @@ bool XMLFile::ContentToString(std::u16string_view content, UnicodeStringBuilder&
 
 std::string XMLFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    bool isValidName = true;
+    std::string name;
+    try {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        name = converter.to_bytes(std::u16string(obj->GetName()));
+    } catch (const std::exception&) {
+        isValidName = false;
+    }
+
+    std::stringstream context;
+    context << "{";
+    if (isValidName)
+        context << "\"Name\": \"" << name << "\",";
+    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
+
+    context << "}";
+    return context.str();
 }
 } // namespace GView::Type::XML
