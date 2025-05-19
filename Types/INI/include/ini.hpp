@@ -29,7 +29,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
             enum CaseFormat : uint32
             {
@@ -47,7 +48,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
             class ValueToString : public GView::View::LexicalViewer::Plugin
             {
@@ -57,7 +59,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
         } // namespace Plugins
         class INIFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface

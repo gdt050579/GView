@@ -91,6 +91,12 @@ bool Token::SetBlock(uint32 blockIndex)
     tok.blockID = blockIndex;
     return true;
 }
+bool Token::SetTypeID(uint32 typeID)
+{
+    CREATE_TOKENREF(false);
+    tok.type = typeID;
+    return true;
+}
 Token Token::Next() const
 {
     if (this->data == nullptr)

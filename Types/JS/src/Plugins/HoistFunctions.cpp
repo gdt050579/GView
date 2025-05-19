@@ -23,7 +23,7 @@ bool HoistFunctions::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData
     return true;
 }
 
-GView::View::LexicalViewer::PluginAfterActionRequest HoistFunctions::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest HoistFunctions::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     AST::Instance i;
     i.Create(data.tokens);

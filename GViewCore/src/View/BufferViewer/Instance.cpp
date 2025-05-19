@@ -136,7 +136,7 @@ void Instance::OpenCurrentSelection()
         fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
         fullPath.Add(temp);
 
-        GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select);
+        GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select,"",Application::GetCurrentWindow(),"buffer extraction");
     }
 }
 void Instance::UpdateCurrentSelection()
@@ -1260,9 +1260,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Alt | Key::N4:
         MoveToSelection(3);
         return true;
-    case Key::Alt | Key::N0:
+    /*case Key::Alt | Key::N0:// removed due to key duplication
         MoveToSelection(4);
-        return true;
+        return true;*/
 
     case Key::E:
         MoveTillEndBlock(select);

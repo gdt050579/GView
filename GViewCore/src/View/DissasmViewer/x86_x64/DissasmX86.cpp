@@ -1936,6 +1936,48 @@ class QueryShowCodeDialog : public AppCUI::Controls::Window
     }
 };
 
+std::vector<std::string> findMostCommonNames(const std::vector<std::string>& names, size_t numToReturn)
+{
+    if (names.empty() || numToReturn == 0) {
+        return {};
+    }
+
+    std::unordered_map<std::string, int> nameFrequency;
+    for (const auto& name : names) {
+        nameFrequency[name]++;
+    }
+
+    std::vector<std::pair<std::string, int>> nameFreqPairs;
+    for (const auto& entry : nameFrequency) {
+        nameFreqPairs.emplace_back(entry);
+    }
+
+    std::sort(nameFreqPairs.begin(), nameFreqPairs.end(), [](const auto& a, const auto& b) {
+        if (a.second != b.second) {
+            return a.second > b.second;
+        }
+        return a.first < b.first;
+    });
+
+    std::vector<std::string> result;
+    for (size_t i = 0; i < std::min(numToReturn, nameFreqPairs.size()); ++i) {
+        result.push_back(nameFreqPairs[i].first);
+    }
+
+    if (result.size() < numToReturn) {
+        for (const auto& name : names) {
+            if (std::find(result.begin(), result.end(), name) == result.end()) {
+                result.push_back(name);
+                if (result.size() == numToReturn) {
+                    break;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 void Instance::QuerySmartAssistantX86X64(
       DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType)
 {
@@ -2038,15 +2080,39 @@ void Instance::QuerySmartAssistantX86X64(
 
     // std::string_view sv = result;
     if (queryType == QueryTypeSmartAssistant::FunctionName) {
+        uint32 retriesNumber            = queryInterface->GetPromptRetriesCount();
+        bool isSingleRetry              = retriesNumber == 1;
+        const uint32 namesToShowReserve = DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST * retriesNumber;
+        std::vector<std::string> namesToShow;
+        namesToShow.reserve(namesToShowReserve);
+
         std::vector<std::string> names;
         names.reserve(DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
 
-        std::stringstream ss(result);
-        std::string name;
+        while (retriesNumber) {
+            std::stringstream ss(result);
+            std::string name;
 
-        while (std::getline(ss, name, ',')) {
-            trim(name);
-            names.push_back(name);
+            while (std::getline(ss, name, ',')) {
+                trim(name);
+                names.push_back(name);
+            }
+
+            namesToShow.insert(namesToShow.end(), names.begin(), names.end());
+
+            if (--retriesNumber == 0)
+                break;
+            names.clear();
+            result = assistantInterface->AskSmartAssistant(textData, displayPrompt, isSuccess);
+            if (!isSuccess) {
+                bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
+                Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());
+                return;
+            }
+        }
+
+        if (!isSingleRetry) {
+            namesToShow = findMostCommonNames(namesToShow, DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
         }
 
         // if (name.size() != DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST) {
@@ -2054,7 +2120,7 @@ void Instance::QuerySmartAssistantX86X64(
         //     return;
         // }
 
-        QueryFunctionNameDialog dlg(names);
+        QueryFunctionNameDialog dlg(namesToShow);
         dlg.Show();
 
         auto indexResult = dlg.GetSelectedIndex();

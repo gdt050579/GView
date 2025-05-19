@@ -24,7 +24,7 @@ bool ConstPropagation::CanBeAppliedOn(const GView::View::LexicalViewer::PluginDa
     return true;
 }
 
-GView::View::LexicalViewer::PluginAfterActionRequest ConstPropagation::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest ConstPropagation::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     AST::Instance i;
     i.Create(data.tokens);

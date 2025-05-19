@@ -19,7 +19,7 @@ bool MarkAlwaysTrue::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData
 
     return (end - data.startIndex >= 1 && data.tokens[data.startIndex].GetTypeID(TokenType::None) == TokenType::Keyword_If);
 }
-GView::View::LexicalViewer::PluginAfterActionRequest MarkAlwaysTrue::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest MarkAlwaysTrue::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     auto start = data.startIndex + 2; // if ( ...
                                       // 0  1 2
