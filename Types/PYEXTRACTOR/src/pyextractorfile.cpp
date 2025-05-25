@@ -1,4 +1,5 @@
 #include "pyextractor.hpp"
+#include <cstring>
 
 namespace GView::Type::PYEXTRACTOR
 {
