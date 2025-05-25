@@ -1,4 +1,3 @@
-#include <codecvt>
 #include <array>
 
 #include "LNK.hpp"
@@ -140,88 +139,36 @@ bool LNKFile::Update()
     return true;
 }
 
-std::string LNKFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* LNKFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    bool isValidName = true;
-    std::string name;
-    try {
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-        name = converter.to_bytes(std::u16string(obj->GetName()));
-    } catch (const std::exception&) {
-        isValidName = false;
-    }
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("LinkFlags", header.linkFlags);
+    builder->AddUInt("FileAttributes", header.fileAttributeFlags);
+    builder->AddUInt("CreationTime", header.creationDate);
+    builder->AddUInt("AccessTime", header.lastAccessDate);
+    builder->AddUInt("FileSize", header.fileSize);
+    builder->AddUInt("IconIndex", header.iconIndex);
 
-    auto jsonEscape = [](const std::string& input) {
-        std::string output;
-        output.reserve(input.size());
+    if (header.linkFlags & static_cast<uint32>(LNK::LinkFlags::HasLinkInfo)) {
+        builder->AddUInt("CommonNetworkRelativeLinkOffset", locationInformation.commonPathOffset);
+        builder->AddUInt("VolumeInformationOffset", locationInformation.volumeInformationOffset);
 
-        for (unsigned char c : input) {
-            switch (c) {
-            case '\"':
-                output += "\\\"";
-                break;
-            case '\\':
-                output += "\\\\";
-                break;
-            case '\b':
-                output += "\\b";
-                break;
-            case '\f':
-                output += "\\f";
-                break;
-            case '\n':
-                output += "\\n";
-                break;
-            case '\r':
-                output += "\\r";
-                break;
-            case '\t':
-                output += "\\t";
-                break;
-            default:
-                if (c < 0x20) {
-                    char buf[7];
-                    snprintf(buf, sizeof(buf), "\\u%04x", c);
-                    output += buf;
-                } else {
-                    output += c;
-                }
-            }
-        }
-        return output;
-    };
-
-    std::stringstream context;
-    context << "{";
-    if (isValidName)
-        context << "\"Name\": \"" << jsonEscape(name) << "\",";
-    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
-    context << "\"LinkFlags\": " << header.linkFlags << ",";
-    context << "\"FileAttributes\": " << header.fileAttributeFlags << ",";
-    context << "\"CreationTime\": \"" << header.creationDate << "\",";
-    context << "\"AccessTime\": \"" << header.lastAccessDate << "\",";
-    context << "\"FileSize\": " << header.fileSize << ",";
-    context << "\"IconIndex\": " << header.iconIndex;
-
-    if (header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo) {
-        context << ",\"CommonNetworkRelativeLinkOffset\": " << locationInformation.commonPathOffset;
-        context << ",\"VolumeInformationOffset\": " << locationInformation.volumeInformationOffset;
-
-        if (locationInformation.volumeInformationOffset > 0) {
-            context << ",\"VolumeSize\": " << volumeInformation->size;
-            context << ",\"DriveSerialNumber\": " << volumeInformation->driveSerialNumber;
-            context << ",\"VolumeLabelOffset\": " << volumeInformation->volumeLabelOffset;
+        if (locationInformation.volumeInformationOffset > 0 && volumeInformation != nullptr) {
+            builder->AddUInt("VolumeSize", volumeInformation->size);
+            builder->AddUInt("DriveSerialNumber", volumeInformation->driveSerialNumber);
+            builder->AddUInt("VolumeLabelOffset", volumeInformation->volumeLabelOffset);
         }
 
-        if (locationInformation.networkShareOffset > 0) {
-            context << ",\"NetworkShareSize\": " << networkShareInformation->size;
-            context << ",\"NetworkShareFlags\": " << networkShareInformation->flags;
-            context << ",\"NetworkShareNameOffset\": " << networkShareInformation->networkShareNameOffset;
+        if (locationInformation.networkShareOffset > 0 && networkShareInformation != nullptr) {
+            builder->AddUInt("NetworkShareSize", networkShareInformation->size);
+            builder->AddUInt("NetworkShareFlags", networkShareInformation->flags);
+            builder->AddUInt("NetworkShareNameOffset", networkShareInformation->networkShareNameOffset);
         }
     }
 
-    context << "}";
-    return context.str();
+    return builder;
 }
 
 namespace GView::Type::LNK::Panels

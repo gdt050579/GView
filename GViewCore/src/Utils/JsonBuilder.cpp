@@ -50,6 +50,20 @@ void JsonBuilderImpl::AddU16String(std::string_view key, std::u16string_view val
     (*node)[std::string(key)] = std::u16string(value);
 }
 
+void JsonBuilderImpl::AddStringArray(std::string_view key, const std::vector<std::string>& values, JsonNode parent)
+{
+    ValidateKey(key);
+    json* node      = parent ? static_cast<json*>(parent) : static_cast<json*>(data);
+    (*node)[std::string(key)] = values;
+}
+
+void JsonBuilderImpl::AddU16StringArray(std::string_view key, const std::vector<std::u16string>& values, JsonNode parent)
+{
+    ValidateKey(key);
+    json* node      = parent ? static_cast<json*>(parent) : static_cast<json*>(data);
+    (*node)[std::string(key)] = values;
+}
+
 void JsonBuilderImpl::AddInt(std::string_view key, int64_t value, JsonNode parent)
 {
     ValidateKey(key);
@@ -84,7 +98,7 @@ JsonBuilderInterface::JsonNode JsonBuilderImpl::StartArray(std::string_view key,
     ValidateKey(key);
     json* node = parent ? static_cast<json*>(parent) : static_cast<json*>(data);
     (*node)[std::string(key)] = json::array();
-    return JsonNode();
+    return &(*node)[std::string(key)];
 }
 
 void JsonBuilderImpl::AddStringToArray(std::string_view value, JsonNode arrayNode)

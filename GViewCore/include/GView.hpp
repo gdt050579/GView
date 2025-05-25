@@ -28,6 +28,12 @@ using namespace AppCUI;
 
 namespace GView
 {
+
+namespace Utils
+{
+    class JsonBuilderInterface;
+}
+
 struct CORE_EXPORT KeyboardControl {
     Input::Key Key;
     const char* Caption;
@@ -47,11 +53,12 @@ struct CORE_EXPORT TypeInterface {
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) = 0;
     /**
      * \brief Function to retrieve the context of the smart assistant for user's prompt based on the current type plugin
+     * To return the object use the Create function from GView::Utils::JsonBuilderInterface
      * \param prompt The actual prompt (question) that the smart assistant will be asked
      * \param displayPrompt The information that will be seen by the user (summarised version)
-     * \return string that has a json textual format with minimal information: {"Name": obj->GetName(), "ContentSize": obj->GetData().GetSize()} 
+     * \return JsonBuilderInterface that has a json textual information with minimal information: {"Name": obj->GetName(), "ContentSize": obj->GetData().GetSize()} 
      */
-    virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
+    virtual Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
 
     virtual ~TypeInterface()
     {
@@ -254,11 +261,13 @@ namespace Utils
 
         virtual ~JsonBuilderInterface() = default;
 
-        virtual void AddString(std::string_view key, std::string_view value, JsonNode parent = nullptr)        = 0;
-        virtual void AddU16String(std::string_view key, std::u16string_view value, JsonNode parent = nullptr) = 0;
-        virtual void AddInt(std::string_view key, int64_t value, JsonNode parent = nullptr)                    = 0;
-        virtual void AddUInt(std::string_view key, uint64_t value, JsonNode parent = nullptr)                  = 0;
-        virtual void AddBool(std::string_view key, bool value, JsonNode parent = nullptr)                      = 0;
+        virtual void AddInt(std::string_view key, int64_t value, JsonNode parent = nullptr)                                        = 0;
+        virtual void AddUInt(std::string_view key, uint64_t value, JsonNode parent = nullptr)                                      = 0;
+        virtual void AddBool(std::string_view key, bool value, JsonNode parent = nullptr)                                          = 0;
+        virtual void AddString(std::string_view key, std::string_view value, JsonNode parent = nullptr)                            = 0;
+        virtual void AddU16String(std::string_view key, std::u16string_view value, JsonNode parent = nullptr)                      = 0;
+        virtual void AddStringArray(std::string_view key, const std::vector<std::string>& values, JsonNode parent = nullptr)       = 0;
+        virtual void AddU16StringArray(std::string_view key, const std::vector<std::u16string>& values, JsonNode parent = nullptr) = 0;
 
         virtual JsonNode StartObject(std::string_view key, JsonNode parent = nullptr) = 0;
 

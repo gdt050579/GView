@@ -48,7 +48,7 @@ class ByteStream
     }
 };
 
-#pragma pack(1)
+#pragma pack(push, 1)
 struct CFDirEntry_Data {
     uint8 nameUnicode[64];
     uint16 nameLength;
@@ -124,6 +124,8 @@ struct MODULE_Record {
     uint32 textOffset;
     uint32 helpContext;
 };
+
+#pragma pack(pop)
 
 enum SysKind { Win16Bit = 0, Win32Bit, Macintosh, Win64Bit };
 
@@ -236,7 +238,7 @@ class DOCFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
         return true;
     }
 
-    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+    GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

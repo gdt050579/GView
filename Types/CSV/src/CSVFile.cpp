@@ -1,8 +1,6 @@
 #include "csv.hpp"
-#include <nlohmann/json.hpp>
 
 using namespace GView::Type::CSV;
-using nlohmann::json;
 
 CSVFile::CSVFile() : panelsMask(0)
 {
@@ -99,12 +97,12 @@ void GView::Type::CSV::CSVFile::UpdateGrid(GView::View::GridViewer::Settings& se
     settings.SetSeparator(separator);
 }
 
-std::string CSVFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* CSVFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    context["ColumnsNumber"] =columnsNo;
-    context["RowsNumber"]    = rowsNo;
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("ColumnsNumber", columnsNo);
+    builder->AddUInt("ContentSize", rowsNo);
+    return builder;
 }

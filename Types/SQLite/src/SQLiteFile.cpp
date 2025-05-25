@@ -1,4 +1,3 @@
-#include <codecvt>
 #include "sqlite.hpp"
 
 using namespace GView::Type::SQLite;
@@ -82,22 +81,10 @@ void SQLiteFile::RunCommand(std::string_view commandName)
     }
 }
 
-std::string SQLiteFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* SQLiteFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    bool isValidName = true;
-    std::string name;
-    try {
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-        name = converter.to_bytes(std::u16string(obj->GetName()));
-    } catch (const std::exception&) {
-        isValidName = false;
-    }
-
-    std::stringstream context;
-    context << "{";
-    if (isValidName)
-        context << "\"Name\": \"" << name << "\",";
-    context << "\"ContentSize\": " << obj->GetData().GetSize();
-    context << "\n}";
-    return context.str();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }

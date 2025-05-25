@@ -1,4 +1,3 @@
-#include <codecvt>
 #include "xml.hpp"
 
 namespace GView::Type::XML
@@ -355,24 +354,11 @@ bool XMLFile::ContentToString(std::u16string_view content, UnicodeStringBuilder&
     return true;
 }
 
-std::string XMLFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* XMLFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    bool isValidName = true;
-    std::string name;
-    try {
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-        name = converter.to_bytes(std::u16string(obj->GetName()));
-    } catch (const std::exception&) {
-        isValidName = false;
-    }
-
-    std::stringstream context;
-    context << "{";
-    if (isValidName)
-        context << "\"Name\": \"" << name << "\",";
-    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
-
-    context << "}";
-    return context.str();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }
 } // namespace GView::Type::XML

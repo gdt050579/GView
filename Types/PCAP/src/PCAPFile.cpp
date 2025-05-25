@@ -1,4 +1,3 @@
-#include <codecvt>
 #include "PCAP.hpp"
 
 using namespace GView::Type::PCAP;
@@ -188,35 +187,12 @@ std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForConta
     return result;
 }
 
-std::string PCAPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* PCAPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    bool isValidName = true;
-    std::string name;
-    try {
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-        name = converter.to_bytes(std::u16string(obj->GetName()));
-    } catch (const std::exception&) {
-        isValidName = false;
-    }
-
-    std::stringstream context;
-    context << "{";
-    if (isValidName)
-        context << "\"Name\": \"" << name << "\",";
-    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
-    context << "\"TotalPackets\": " << packetHeaders.size() << ",";
-    context << "\"TotalStreams\": " << streamManager.size() << ",";
-
-    // Handle the protocols array
-    context << "\"Protocols\": [";
-    const auto& protocols = streamManager.GetProtocolsFound();
-    for (size_t i = 0; i < protocols.size(); ++i) {
-        context << "\"" << protocols[i] << "\"";
-        if (i < protocols.size() - 1)
-            context << ",";
-    }
-    context << "]";
-
-    context << "}";
-    return context.str();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("TotalPackets", packetHeaders.size());
+    builder->AddUInt("TotalStreams", streamManager.size());
+    return builder;
 }

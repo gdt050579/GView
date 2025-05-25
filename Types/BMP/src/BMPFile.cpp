@@ -1,4 +1,3 @@
-#include <codecvt>
 #include "bmp.hpp"
 
 using namespace GView::Type::BMP;
@@ -34,29 +33,17 @@ bool BMPFile::LoadImageToObject(Image& img, uint32 index)
     return true;
 }
 
-std::string BMPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* BMPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    bool isValidName = true;
-    std::string name;
-    try {
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-        name = converter.to_bytes(std::u16string(obj->GetName()));
-    } catch (const std::exception&) {
-        isValidName = false;
-    }
-
-    std::stringstream context;
-    context << "{";
-    if (isValidName)
-        context << "\"Name\": \"" << name << "\",";
-    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
-    context << "\"ImageSize\": " << infoHeader.imageSize << ",";
-    context << "\"Width\": " << infoHeader.width << ",";
-    context << "\"Height\": " << infoHeader.height << ",";
-    context << "\"BitsPerPixel\": " << infoHeader.bitsPerPixel << ",";
-    context << "\"CompressionMethod\": " << infoHeader.comppresionMethod << ",";
-    context << "\"NumberOfColors\": " << infoHeader.numberOfColors << ",";
-    context << "\"NumberOfImportantColors\": " << infoHeader.numberOfImportantColors;
-    context << "\n}";
-    return context.str();
+    auto builder     = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("ImageSize", infoHeader.imageSize);
+    builder->AddUInt("Width", infoHeader.width);
+    builder->AddUInt("Height", infoHeader.height);
+    builder->AddUInt("BitsPerPixel", infoHeader.bitsPerPixel);
+    builder->AddUInt("CompressionMethod", infoHeader.comppresionMethod);
+    builder->AddUInt("NumberOfColors", infoHeader.numberOfColors);
+    builder->AddUInt("NumberOfImportantColors", infoHeader.numberOfImportantColors);
+    return builder;
 }

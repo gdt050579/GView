@@ -255,11 +255,13 @@ namespace Utils
         JsonBuilderImpl();
         ~JsonBuilderImpl() override;
 
-        virtual void AddString(std::string_view key, std::string_view value, JsonNode parent = nullptr) override;
-        virtual void AddU16String(std::string_view key, std::u16string_view value, JsonNode parent = nullptr) override;
         virtual void AddInt(std::string_view key, int64_t value, JsonNode parent = nullptr) override;
         virtual void AddUInt(std::string_view key, uint64_t value, JsonNode parent = nullptr) override;
         virtual void AddBool(std::string_view key, bool value, JsonNode parent = nullptr) override;
+        virtual void AddString(std::string_view key, std::string_view value, JsonNode parent = nullptr) override;
+        virtual void AddU16String(std::string_view key, std::u16string_view value, JsonNode parent = nullptr) override;
+        virtual void AddStringArray(std::string_view key, const std::vector<std::string>& values, JsonNode parent = nullptr) override;
+        virtual void AddU16StringArray(std::string_view key, const std::vector<std::u16string>& values, JsonNode parent = nullptr) override;
 
         virtual JsonNode StartObject(std::string_view key, JsonNode parent = nullptr) override;
 

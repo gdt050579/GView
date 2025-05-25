@@ -1,4 +1,3 @@
-#include <codecvt>
 #include "pe.hpp"
 #include "DigitalSignature.hpp"
 
@@ -761,63 +760,42 @@ bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
     return true;
 }
 
-std::string PEFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* PEFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    bool isValidName = true;
-    std::string name;
-    try {
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-        name = converter.to_bytes(std::u16string(obj->GetName()));
-    } catch (const std::exception&) {
-        isValidName = false;
-    }
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
 
-     std::stringstream context;
-    context << "{";
-    if (isValidName)
-        context << "\"Name\": \"" << name << "\",";
-    context << "\"ContentType\": \"PE\",";
-    context << "\"ContentSize\": " << obj->GetData().GetSize() << ",";
-    context << "\"Image Base\": " << imageBase << ",";
-    context << "\"Machine\": \"" << GetMachine() << "\",";
-    context << "\"Subsystem\": \"" << GetSubsystem() << "\",";
-    context << "\"Number Sections\": " << nrSections;
+    // Add Name (no try-catch needed if AddU16String supports u16string_view safely)
+    builder->AddU16String("Name", obj->GetName());
 
-    // Handle exports array
+    // Add basic fields
+    builder->AddString("ContentType", "PE");
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("Image Base", imageBase);
+    builder->AddString("Machine", GetMachine());
+    builder->AddString("Subsystem", GetSubsystem());
+    builder->AddUInt("Number Sections", nrSections);
+
+    // Add exports array
     if (!exp.empty()) {
-        context << ",\"Exports\": [";
-        for (size_t i = 0; i < exp.size(); ++i) {
-            context << "\"" << exp[i].Name.GetText() << "\"";
-            if (i < exp.size() - 1)
-                context << ",";
-        }
-        context << "]";
+        auto expArray = builder->StartArray("Exports");
+        for (const auto& e : exp)
+            builder->AddStringToArray(e.Name.GetText(), expArray);
     }
 
-    // Handle imports array
+    // Add imports array
     if (!impDLL.empty()) {
-        context << ",\"Imports\": [";
-        for (size_t i = 0; i < impDLL.size(); ++i) {
-            context << "\"" << impDLL[i].Name.GetText() << "\"";
-            if (i < impDLL.size() - 1)
-                context << ",";
-        }
-        context << "]";
+        auto impArray = builder->StartArray("Imports");
+        for (const auto& imp : impDLL)
+            builder->AddStringToArray(imp.Name.GetText(), impArray);
     }
 
-    // Handle resources array
+    // Add resources array
     if (!res.empty()) {
-        context << ",\"Resources\": [";
-        for (size_t i = 0; i < res.size(); ++i) {
-            context << "\"" << ResourceIDToName(res[i].Type).data() << "\"";
-            if (i < res.size() - 1)
-                context << ",";
-        }
-        context << "]";
+        auto resArray = builder->StartArray("Resources");
+        for (const auto& r : res)
+            builder->AddStringToArray(ResourceIDToName(r.Type).data(), resArray);
     }
-
-    context << "}";
-    return context.str();
+    return builder;
 }
 
 bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)

@@ -1,4 +1,3 @@
-#include <codecvt>
 #include "pyextractor.hpp"
 
 namespace GView::Type::PYEXTRACTOR
@@ -141,31 +140,20 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
     return true;
 }
 
-std::string PYEXTRACTORFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* PYEXTRACTORFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    bool isValidName = true;
-    std::string name;
-    try {
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-        name = converter.to_bytes(std::u16string(obj->GetName()));
-    } catch (const std::exception&) {
-        isValidName = false;
-    }
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("CookiePosition", archive.cookiePosition);
+    builder->AddString("PyInstallerVersion", archive.version == PyInstallerVersion::V20 ? "2.0" : "2.1+");
+    builder->AddUInt("TableOfContentPosition", archive.info.tableOfContentPosition);
+    builder->AddUInt("TableOfContentSize", archive.info.tableOfContentSize);
+    builder->AddUInt("PyVersion", archive.info.pyver);
+    if (std::strlen(archive.info.pylibname) > 0)
+        builder->AddString("PylibName", archive.info.pylibname);
 
-    std::stringstream context;
-    context << "{";
-    if (isValidName)
-        context << "\"Name\": \"" << name << "\",";
-    context << "\"ContentSize\": " << obj->GetData().GetSize()<<",\n";
-    context << "\"CookiePosition\": " << archive.cookiePosition << ",\n";
-    context << "\"PyInstallerVersion\": \"" << (archive.version == PyInstallerVersion::V20 ? "2.0" : "2.1+") << "\",\n";
-    context << "\"TableOfContentPosition\": " << archive.info.tableOfContentPosition << ",\n";
-    context << "\"TableOfContentSize\": " << archive.info.tableOfContentSize << ",\n";
-    context << "\"PyVersion\": " << archive.info.pyver << ",\n";
-    if (strlen(archive.info.pylibname) > 0)
-        context << "\"ContentSize\": \"" << archive.info.pylibname << "\"";
-    context << "\n}";
-    return context.str();
+    return builder;
 }
 
 bool PYEXTRACTORFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
