@@ -248,6 +248,34 @@ namespace Utils
         UnicodeString ConvertToUnicode16(BufferView buf);
         BufferView GetBOMForEncoding(Encoding encoding);
     }; // namespace CharacterEncoding
+
+    class JsonBuilderImpl : public JsonBuilderInterface
+    {
+    public:
+        JsonBuilderImpl();
+        ~JsonBuilderImpl() override;
+
+        virtual void AddString(std::string_view key, std::string_view value, JsonNode parent = nullptr) override;
+        virtual void AddU16String(std::string_view key, std::u16string_view value, JsonNode parent = nullptr) override;
+        virtual void AddInt(std::string_view key, int64_t value, JsonNode parent = nullptr) override;
+        virtual void AddUInt(std::string_view key, uint64_t value, JsonNode parent = nullptr) override;
+        virtual void AddBool(std::string_view key, bool value, JsonNode parent = nullptr) override;
+
+        virtual JsonNode StartObject(std::string_view key, JsonNode parent = nullptr) override;
+
+        virtual JsonNode StartArray(std::string_view key, JsonNode parent = nullptr) override;
+        virtual void AddStringToArray(std::string_view value, JsonNode arrayNode) override;
+        virtual void AddU16StringToArray(std::u16string_view value, JsonNode arrayNode) override;
+        virtual void AddBoolToArray(bool value, JsonNode arrayNode) override;
+        virtual void AddIntToArray(int64_t value, JsonNode arrayNode) override;
+        virtual void AddUIntToArray(uint64_t value, JsonNode arrayNode) override;
+
+        void* GetData() const
+        {
+            return data;
+        }
+        virtual std::string ToString() const override;
+    };
 } // namespace Utils
 
 namespace Generic

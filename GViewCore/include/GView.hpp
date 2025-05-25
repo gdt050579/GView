@@ -242,6 +242,35 @@ namespace Utils
         }
     };
 
+    class CORE_EXPORT JsonBuilderInterface
+    {
+    protected:
+        void* data;
+        JsonBuilderInterface() = default;
+      public:
+        using JsonNode = void*;
+        static JsonBuilderInterface* Create();
+        static void Destroy(JsonBuilderInterface* instance);
+
+        virtual ~JsonBuilderInterface() = default;
+
+        virtual void AddString(std::string_view key, std::string_view value, JsonNode parent = nullptr)        = 0;
+        virtual void AddU16String(std::string_view key, std::u16string_view value, JsonNode parent = nullptr) = 0;
+        virtual void AddInt(std::string_view key, int64_t value, JsonNode parent = nullptr)                    = 0;
+        virtual void AddUInt(std::string_view key, uint64_t value, JsonNode parent = nullptr)                  = 0;
+        virtual void AddBool(std::string_view key, bool value, JsonNode parent = nullptr)                      = 0;
+
+        virtual JsonNode StartObject(std::string_view key, JsonNode parent = nullptr) = 0;
+
+        virtual JsonNode StartArray(std::string_view key, JsonNode parent = nullptr) = 0;
+        virtual void AddStringToArray(std::string_view value, JsonNode arrayNode)    = 0;
+        virtual void AddU16StringToArray(std::u16string_view value, JsonNode arrayNode) = 0;
+        virtual void AddBoolToArray(bool value, JsonNode arrayNode)                  = 0;
+        virtual void AddIntToArray(int64_t value, JsonNode arrayNode)                = 0;
+        virtual void AddUIntToArray(uint64_t value, JsonNode arrayNode)              = 0;
+
+        virtual std::string ToString() const = 0;
+    };
 } // namespace Utils
 
 namespace CommonInterfaces
