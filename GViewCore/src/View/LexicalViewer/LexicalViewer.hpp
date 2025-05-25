@@ -3,8 +3,6 @@
 #include "Internal.hpp"
 #include <array>
 
-#include "ImageViewer.hpp"
-
 namespace GView
 {
 namespace View

@@ -272,11 +272,11 @@ namespace Utils
         virtual void AddIntToArray(int64_t value, JsonNode arrayNode) override;
         virtual void AddUIntToArray(uint64_t value, JsonNode arrayNode) override;
 
-        void* GetData() const
+        virtual std::string ToString() const override;
+        void* GetData() const override
         {
             return data;
         }
-        virtual std::string ToString() const override;
     };
 } // namespace Utils
 

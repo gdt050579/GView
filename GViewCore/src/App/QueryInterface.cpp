@@ -437,8 +437,7 @@ std::string SmartAssistantPromptInterfaceProxy::BuildChatContext(std::string_vie
         pluginTypeContextJsonInterface->AddString("ERR", "failed to get data");
     }
 
-    auto jsonBuilderImpl = static_cast<GView::Utils::JsonBuilderImpl*>(pluginTypeContextJsonInterface);
-    json* jsonData       = static_cast<json*>(jsonBuilderImpl->GetData());;
+    json* jsonData = static_cast<json*>(pluginTypeContextJsonInterface->GetData());
     const uint32 maxSize = smartAssistants[assistantIndex]->GetCharacterLimit();
     auto finalContext    = GetFinalContext(*jsonData, prompt, maxSize);
     Utils::JsonBuilderInterface::Destroy(pluginTypeContextJsonInterface);

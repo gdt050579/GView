@@ -279,6 +279,7 @@ namespace Utils
         virtual void AddUIntToArray(uint64_t value, JsonNode arrayNode)              = 0;
 
         virtual std::string ToString() const = 0;
+        virtual void* GetData() const        = 0;
     };
 } // namespace Utils
 
