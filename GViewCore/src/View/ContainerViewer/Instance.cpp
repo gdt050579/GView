@@ -10,7 +10,7 @@ constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
 constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
 constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl("Container View")
 {
     this->obj                     = _obj;
