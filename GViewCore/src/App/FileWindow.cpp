@@ -127,39 +127,39 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 
 bool FileWindow::CreateViewer(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 
 Reference<GView::Utils::SelectionZoneInterface> FileWindow::GetSelectionZoneInterfaceFromViewerCreation(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface)
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings)
           .ToBase<GView::Utils::SelectionZoneInterface>();
 }
 
 bool FileWindow::CreateViewer(GView::View::TextViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
+    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(GView::View::ImageViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(View::GridViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(View::ContainerViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface)
+    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 bool FileWindow::CreateViewer(GView::View::DissasmViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface).IsValid();
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(GView::View::LexicalViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings, &queryInterface)
+    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 

@@ -1,9 +1,7 @@
 #include "pe.hpp"
 #include "DigitalSignature.hpp"
-#include <nlohmann/json.hpp>
 
 using namespace GView::Type::PE;
-using nlohmann::json;
 
 struct CV_INFO_PDB20 {
     uint32 CvSignature;   // NBxx
@@ -762,38 +760,42 @@ bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
     return true;
 }
 
-std::string PEFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* PEFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]            = obj->GetName();
-    context["ContentType"]     = "PE";
-    context["ContentSize"]     = obj->GetData().GetSize();
-    context["Image Base"]      = imageBase;
-    context["Machine"]         = GetMachine();
-    context["Subsystem"]       = GetSubsystem();
-    context["Number Sections"] = nrSections;
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+
+    // Add Name (no try-catch needed if AddU16String supports u16string_view safely)
+    builder->AddU16String("Name", obj->GetName());
+
+    // Add basic fields
+    builder->AddString("ContentType", "PE");
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("Image Base", imageBase);
+    builder->AddString("Machine", GetMachine());
+    builder->AddString("Subsystem", GetSubsystem());
+    builder->AddUInt("Number Sections", nrSections);
+
+    // Add exports array
     if (!exp.empty()) {
-        std::vector<std::string> exports;
-        exports.reserve(exp.size());
+        auto expArray = builder->StartArray("Exports");
         for (const auto& e : exp)
-            exports.emplace_back(e.Name.GetText());
-        context["Exports"] = exports;
+            builder->AddStringToArray(e.Name.GetText(), expArray);
     }
+
+    // Add imports array
     if (!impDLL.empty()) {
-        std::vector<std::string> imports;
-        imports.reserve(impDLL.size());
-        for (const auto& i : impDLL)
-            imports.emplace_back(i.Name.GetText());
-        context["Imports"] = imports;
+        auto impArray = builder->StartArray("Imports");
+        for (const auto& imp : impDLL)
+            builder->AddStringToArray(imp.Name.GetText(), impArray);
     }
+
+    // Add resources array
     if (!res.empty()) {
-        std::vector<std::string> resources;
-        resources.reserve(res.size());
+        auto resArray = builder->StartArray("Resources");
         for (const auto& r : res)
-            resources.emplace_back(ResourceIDToName(r.Type).data());
-        context["Resources"] = resources;
+            builder->AddStringToArray(ResourceIDToName(r.Type).data(), resArray);
     }
-    return context.dump();
+    return builder;
 }
 
 bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)

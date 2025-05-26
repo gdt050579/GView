@@ -1,8 +1,6 @@
 #include "elf.hpp"
-#include <nlohmann/json.hpp>
 
 using namespace GView::Type::ELF;
-using nlohmann::json;
 
 ELFFile::ELFFile()
 {
@@ -511,14 +509,14 @@ uint64 ELFFile::GetVirtualSize() const
     return vSize;
 }
 
-std::string ELFFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* ELFFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    if (!sectionNames.empty()) 
-        context["SectionNames"] = sectionNames;    
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    if (!sectionNames.empty())
+        builder->AddStringArray("SectionNames", sectionNames);
+    return builder;
 }
 
 bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)

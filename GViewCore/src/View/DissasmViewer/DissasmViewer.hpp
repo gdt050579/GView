@@ -639,7 +639,7 @@ namespace View
             void SaveCacheData();
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
+            Instance(Reference<GView::Object> obj, Settings* settings);
             virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;

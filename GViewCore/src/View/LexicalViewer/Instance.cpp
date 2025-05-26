@@ -70,7 +70,7 @@ inline std::string_view TokenDataTypeToString(TokenDataType dataType)
     }
 }
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj = _obj;

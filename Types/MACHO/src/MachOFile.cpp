@@ -1,7 +1,4 @@
-#include <nlohmann/json.hpp>
 #include "MachO.hpp"
-
-using nlohmann::json;
 
 namespace GView::Type::MachO
 {
@@ -1242,12 +1239,12 @@ bool MachOFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::Vie
     return false;
 }
 
-std::string MachOFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* MachOFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }
 
 bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
