@@ -50,7 +50,7 @@ class MAMFile : public TypeInterface
         return selectionZoneInterface->GetSelectionZone(index);
     }
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
-    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+    GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
 namespace Panels

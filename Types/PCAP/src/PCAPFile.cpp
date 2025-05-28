@@ -1,8 +1,6 @@
-#include <nlohmann/json.hpp>
 #include "PCAP.hpp"
 
 using namespace GView::Type::PCAP;
-using nlohmann::json;
 
 PCAPFile::PCAPFile()
 {
@@ -189,13 +187,12 @@ std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForConta
     return result;
 }
 
-std::string PCAPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* PCAPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"] = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    context["TotalPackets"] = packetHeaders.size();
-    context["TotalStreams"] = streamManager.size();
-    context["Protocols"] = streamManager.GetProtocolsFound();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("TotalPackets", packetHeaders.size());
+    builder->AddUInt("TotalStreams", streamManager.size());
+    return builder;
 }

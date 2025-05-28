@@ -165,7 +165,7 @@ namespace View
             void MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex);
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             virtual void Paint(Graphics::Renderer& renderer) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

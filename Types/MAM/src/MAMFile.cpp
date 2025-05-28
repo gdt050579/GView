@@ -1,8 +1,7 @@
-#include <nlohmann/json.hpp>
+#include <codecvt>
 #include "MAM.hpp"
 
 using namespace GView::Type::MAM;
-using nlohmann::json;
 
 bool MAMFile::Update()
 {
@@ -17,8 +16,7 @@ bool MAMFile::Update()
 
 void MAMFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "Decompress")
-    {
+    if (commandName == "Decompress") {
         CHECKRET(Decompress(), "");
     }
 }
@@ -30,15 +28,15 @@ bool MAMFile::UpdateKeys(KeyboardControlsInterface* interface)
     return true;
 }
 
-std::string MAMFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* MAMFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]             = obj->GetName();
-    context["ContentSize"]      = obj->GetData().GetSize();
-    context["Signature"]        = signature;
-    context["UncompressedSize"] = uncompressedSize;
-    context["CompressedSize"]   = compressedSize;
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("Signature", signature);
+    builder->AddUInt("UncompressedSize", uncompressedSize);
+    builder->AddUInt("CompressedSize", compressedSize);
+    return builder;
 }
 
 bool MAMFile::Decompress()
@@ -53,8 +51,7 @@ bool MAMFile::Decompress()
     Buffer compressed;
     compressed.Resize(size);
 
-    while (pos < obj->GetData().GetSize())
-    {
+    while (pos < obj->GetData().GetSize()) {
         auto toRead    = std::min<uint64>((uint64) chunk, obj->GetData().GetSize() - pos);
         const Buffer b = obj->GetData().CopyToBuffer(pos, chunk, false);
         memcpy(compressed.GetData() + pos - 8ULL, b.GetData(), toRead);

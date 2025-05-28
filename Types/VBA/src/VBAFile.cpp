@@ -1,7 +1,4 @@
-#include <nlohmann/json.hpp>
 #include "vba.hpp"
-
-using nlohmann::json;
 
 namespace GView::Type::VBA
 {
@@ -273,11 +270,11 @@ bool VBAFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicod
     NOT_IMPLEMENTED(false);
 }
 
-std::string VBAFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* VBAFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }
 } // namespace GView::Type::VBA
