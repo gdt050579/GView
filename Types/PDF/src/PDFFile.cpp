@@ -312,10 +312,10 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     }
 }
 
-std::string PDFFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* PDFFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    auto builder           = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }

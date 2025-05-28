@@ -420,7 +420,7 @@ namespace Type
             {
                 return true;
             }
-            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+            GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 
             ObjectNode* FindNodeByPath(Reference<GView::Type::PDF::PDFFile> pdf, std::u16string_view path);
             ObjectNode* FindNodeByObjectNumber(uint32_t number);
