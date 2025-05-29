@@ -157,6 +157,8 @@ namespace Type
             constexpr uint8_t PDF_METADATA_OBJ_SIZE = 9;
 
             // Metadata Object + XML
+            constexpr std::string_view PDF_XML = "/XML";
+
             constexpr uint8_t PDF_TITLE[]                = "/Title";
             constexpr uint8_t PDF_TITLE_SIZE             = 6;
             constexpr std::string_view PDF_TITLE_XML     = "<dc:title>";

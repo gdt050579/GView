@@ -1,6 +1,7 @@
 #include "pdf.hpp"
 #include <nlohmann/json.hpp>
 #include <regex>
+#include <algorithm>
 using nlohmann::json;
 
 using namespace GView::Type::PDF;
@@ -158,6 +159,11 @@ static bool IsValidJavaScript(const std::string& data)
     return std::regex_search(data, jsPattern);
 }
 
+static bool IsValidXML(const std::vector<std::string>& dictionarySubtypes)
+{
+    return std::find(dictionarySubtypes.begin(), dictionarySubtypes.end(), KEY::PDF_XML) != dictionarySubtypes.end();
+}
+
 void PDFFile::DecodeStream(ObjectNode* node, Buffer& buffer, const size_t size)
 {
     // decompress the stream
@@ -305,6 +311,11 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         // js
         if (IsValidJavaScript(newData)) {
             GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "js");
+            return;
+        }
+        // xml
+        if (IsValidXML(node->pdfObject.dictionarySubtypes)) {
+            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "xml");
             return;
         }
 
