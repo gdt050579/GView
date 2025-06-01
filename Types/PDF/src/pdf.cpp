@@ -294,7 +294,7 @@ void GetObjectsOffsets(
       GView::Utils::DataCache& data,
       std::vector<uint64_t>& objectOffsets,
       GView::Utils::ErrorList& errList,
-      bool &malformedCrossRefernce)
+      bool &enableFaultTolerance)
 {
     std::unordered_set<uint64_t> seenOffsets; // Store seen offsets
 
@@ -305,7 +305,7 @@ void GetObjectsOffsets(
     };
 
     // Read each 20-byte entry
-    for (uint64 i = 0; i < numEntries && !malformedCrossRefernce; ++i) {
+    for (uint64 i = 0; i < numEntries && !enableFaultTolerance; ++i) {
         PDF::TableEntry entry;
         if (!data.Copy<PDF::TableEntry>(offset, entry)) {
             break;
@@ -336,7 +336,7 @@ void GetObjectsOffsets(
         } else {
             //Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
             errList.AddError("Invalid Cross-Reference Table sequence. It has to be 20 bytes (0x%llX)", (uint64_t) offset);
-            malformedCrossRefernce = false;
+            enableFaultTolerance = false;
             break;
         }
         offset += PDF::KEY::PDF_XREF_ENTRY;
@@ -653,7 +653,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     // HEADER
     settings.AddZone(0, sizeof(PDF::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
 
-    // EOF segment
+    // EOF marker
     while (offset >= (PDF::KEY::PDF_EOF_SIZE + sizeof(PDF::Header)) && !foundEOF) {
         offset--;
 
@@ -684,13 +684,13 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     }
 
     if (!foundEOF) {
-        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End of file segment (%%EOF) is missing!");
-        pdf->errList.AddError("End of file segment (%%EOF) is missing (0x%llX)", (uint64_t) offset);
-        pdf->malformedCrossRefernce = true;
+        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End-of-file marker (%%EOF) is missing!");
+        pdf->errList.AddError("End-of-file marker (%%EOF) is missing (0x%llX)", (uint64_t) offset);
+        pdf->enableFaultTolerance = true;
     }
     
-    // data after the %%EOF segment -> IOC
-    if (dataSize - offset - PDF::KEY::PDF_EOF_SIZE >= 5 && !pdf->malformedCrossRefernce) {
+    // data after the %%EOF marker -> IOC
+    if (dataSize - offset - PDF::KEY::PDF_EOF_SIZE >= 5 && !pdf->enableFaultTolerance) {
         pdf->errList.AddWarning(
               "Suspicious data found after %%EOF (0x%llX): potential hidden payload or obfuscation", (uint64_t) (offset + PDF::KEY::PDF_EOF_SIZE));
     }
@@ -723,7 +723,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 } else {
                     Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find the xref offset!");
                     pdf->errList.AddError("Couldn't find the xref offset (0x%llX)", (uint64_t) offset);
-                    pdf->malformedCrossRefernce = true;
+                    pdf->enableFaultTolerance = true;
                 }
                 break;
             }
@@ -731,12 +731,12 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     }
 
     // cross-reference table or cross-reference stream
-    if (!pdf->malformedCrossRefernce) {
+    if (!pdf->enableFaultTolerance) {
         pdf->hasXrefTable = CheckType(data, crossRefOffset, PDF::KEY::PDF_XREF_SIZE, PDF::KEY::PDF_XREF);
     }
 
     // cross-reference table
-    if (pdf->hasXrefTable && !pdf->malformedCrossRefernce) {
+    if (pdf->hasXrefTable && !pdf->enableFaultTolerance) {
         bool next_table = true;
         while (next_table) {
             PDF::PDFObject pdfObject;
@@ -745,17 +745,17 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.number      = 0;
 
             uint64 trailerOffset    = 0;
-            offset = crossRefOffset + 4; // skip the xref token
+            offset = crossRefOffset + 4; // skip the xref marker
             const bool foundTrailer = GetTrailerOffset(offset, dataSize, data, trailerOffset);
             // if we have multiple sections in the table, we check for the minimal case
-            while (trailerOffset - offset > 20 && !pdf->malformedCrossRefernce) {
+            while (trailerOffset - offset > 20 && !pdf->enableFaultTolerance) {
                 const uint64 numEntries = GetNumberOfEntries(offset, dataSize, data); // <start> <number_of_entries>
-                if (numEntries == 0 && !pdf->malformedCrossRefernce) {
+                if (numEntries == 0 && !pdf->enableFaultTolerance) {
                     Dialogs::MessageBox::ShowError("Error!", "Anomaly found: 0 entries in the Cross-Reference Table!");
                     pdf->errList.AddError("There are 0 entries in the Cross-Reference Table (0x%llX)", (uint64_t) offset);
-                    pdf->malformedCrossRefernce = true;
+                    pdf->enableFaultTolerance = true;
                 }
-                while (offset < dataSize && !pdf->malformedCrossRefernce) {
+                while (offset < dataSize && !pdf->enableFaultTolerance) {
                     if (!data.Copy(offset, buffer)) {
                         break;
                     }
@@ -764,17 +764,17 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     }
                     offset++;
                 }
-                GetObjectsOffsets(numEntries, offset, data, objectOffsets, pdf->errList, pdf->malformedCrossRefernce);
+                GetObjectsOffsets(numEntries, offset, data, objectOffsets, pdf->errList, pdf->enableFaultTolerance);
             }
 
-            if (!pdf->malformedCrossRefernce) {
+            if (!pdf->enableFaultTolerance) {
                 pdfObject.endBuffer = offset;
                 pdf->AddPDFObject(pdf, pdfObject);
 
                 pdfObject.startBuffer = trailerOffset;
                 pdfObject.type        = PDF::SectionPDFObjectType::Trailer;
                 pdfObject.number      = 0;
-                // Find /Prev in the trailer segment
+                // looking for /Prev entry in the trailer dictionary
                 bool found_prev = false;
                 if (foundTrailer) {
                     offset = trailerOffset;
@@ -829,7 +829,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 break;
             }
         }
-    } else if (IsCrossRefStream(crossRefOffset, data, dataSize) && !pdf->malformedCrossRefernce) { // cross-reference stream
+    } else if (IsCrossRefStream(crossRefOffset, data, dataSize) && !pdf->enableFaultTolerance) { // cross-reference stream
         bool next_CR_stream = true;
         std::unordered_set<uint64_t> seenOffsets;
         while (next_CR_stream) {
@@ -960,8 +960,8 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         }
                     }
                     if (!found_eof) {
-                        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End of file segment (%%EOF) is missing for Cross-Reference Stream!");
-                        pdf->errList.AddError("End of file segment (%%EOF) is missing for Cross-Reference Stream (0x%llX)", (uint64_t) offset);
+                        // Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End-of-file marker (%%EOF) is missing for Cross-Reference Stream!");
+                        pdf->errList.AddError("End-of-file marker (%%EOF) is missing for Cross-Reference Stream (0x%llX)", (uint64_t) offset);
                     }
                 }
 
@@ -1028,11 +1028,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     } else {
         Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find a Cross-Reference Table or Cross-Reference Stream based on the startxref offset!");
         pdf->errList.AddError("Couldn't find a Cross-Reference Table or Cross-Reference Stream based on the startxref offset (0x%llX)", (uint64_t) offset);
-        pdf->malformedCrossRefernce = true;
+        pdf->enableFaultTolerance = true;
     }
 
-    // since the table are most likely broken, we will find all the object manually
-    if (pdf->malformedCrossRefernce) {
+    // since the tables are most likely broken, we will find all the objects manually
+    if (pdf->enableFaultTolerance) {
         offset = sizeof(PDF::Header);
         while (offset < dataSize) {
             if (CheckType(data, offset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ)) {
@@ -1073,6 +1073,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             }
 
             if (CheckType(data, offset, PDF::KEY::PDF_XREF_SIZE, PDF::KEY::PDF_XREF)) {
+                pdf->malformedStats.xrefCount++;
                 pdf->hasXrefTable     = true;
                 uint64 crossRefOffset = offset;
                 uint64 trailerOffset  = 0;
@@ -1102,6 +1103,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             }
 
             if (CheckType(data, offset, PDF::KEY::PDF_TRAILER_SIZE, PDF::KEY::PDF_TRAILER_KEY)) {
+                pdf->malformedStats.trailerCount++;
                 uint64 trailerOffset    = offset;
                 pdf->hasXrefTable       = true;
                 uint64 copyOffset       = offset;
@@ -1171,7 +1173,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     endTrailerOffset = eofOffset + PDF::KEY::PDF_EOF_SIZE;
                     settings.AddZone(eofOffset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
                 } else {
-                    pdf->errList.AddWarning("End of file segment (%%EOF) is missing for the trailer (0x%llX)", (uint64_t) copyOffset);
+                    pdf->errList.AddWarning("End-of-file marker (%%EOF) is missing for the trailer (0x%llX)", (uint64_t) copyOffset);
                 }
 
                 settings.AddZone(trailerOffset, endTrailerOffset - 1, { Color::Red, Color::DarkBlue }, "Trailer");
@@ -1186,6 +1188,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 continue;
             }
             offset++;
+        }
+        if (pdf->malformedStats.trailerCount != pdf->malformedStats.xrefCount) {
+            pdf->errList.AddWarning("Mismatch between trailer and xref counts: possible malformed structure");
         }
     } else {
         std::sort(objectOffsets.begin(), objectOffsets.end());
@@ -2122,8 +2127,8 @@ void ProcessPDFTree(
                 objectOffset++;
             }
             if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM) && !issueFound) {
-                // Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token! Object number: " + std::to_string(objectNode.pdfObject.number));
-                errList.AddError("Wrong end stream token! Object %llu (0x%llX)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
+                // Dialogs::MessageBox::ShowError("Error!", "Invalid endstream marker! Object number: " + std::to_string(objectNode.pdfObject.number));
+                errList.AddError("Invalid endstream marker! Object %llu (0x%llX)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
                 errList.AddWarning("Object %llu contains an invalid stream length", (uint64_t) objectNode.pdfObject.number);
                 issueFound = true;
                 uint64 correctOffset = objectNode.decodeObj.streamOffsetStart;
@@ -2412,8 +2417,8 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             objectOffset++;
                         }
                         if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
-                            //Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token!");
-                            pdf->errList.AddError("Wrong end stream token (0x%llX)", (uint64_t) objectOffset);
+                            //Dialogs::MessageBox::ShowError("Error!", "Invalid endstream marker!");
+                            pdf->errList.AddError("Invalid endstream marker (0x%llX)", (uint64_t) objectOffset);
                         } else {
                             PDF::ObjectNode streamChild;
                             streamChild.pdfObject.type = PDF::SectionPDFObjectType::Stream;

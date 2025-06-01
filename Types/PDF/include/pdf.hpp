@@ -357,6 +357,11 @@ namespace Type
             std::string modifyDate;
         };
 
+        struct MalformedStats {
+            uint16 trailerCount = 0;
+            uint16 xrefCount    = 0;
+        };
+
 #pragma pack(pop) // Back to default packing
 
         class PDFFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
@@ -365,7 +370,7 @@ namespace Type
             Header header{};
             bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
             bool hashEscaping = false;
-            bool malformedCrossRefernce = false;
+            bool enableFaultTolerance = false;
             uint64 index         = 0;
             PDF::ObjectNode objectNodeRoot;
             std::u16string currentPath;
@@ -375,6 +380,7 @@ namespace Type
             vector<uint64> processedObjects; 
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
             PDFStats pdfStats;
+            MalformedStats malformedStats;
             // metadata related
             Metadata pdfMetadata;
             vector<uint64> metadataObjectNumbers;
