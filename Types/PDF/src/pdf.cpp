@@ -289,7 +289,12 @@ void GetDecompressDataValue(Buffer& decompressedData, uint64& offset, const uint
 }
 
 void GetObjectsOffsets(
-      const uint64& numEntries, uint64& offset, GView::Utils::DataCache& data, std::vector<uint64_t>& objectOffsets, GView::Utils::ErrorList &errList)
+      const uint64& numEntries,
+      uint64& offset,
+      GView::Utils::DataCache& data,
+      std::vector<uint64_t>& objectOffsets,
+      GView::Utils::ErrorList& errList,
+      bool &malformedCrossRefernce)
 {
     std::unordered_set<uint64_t> seenOffsets; // Store seen offsets
 
@@ -300,7 +305,7 @@ void GetObjectsOffsets(
     };
 
     // Read each 20-byte entry
-    for (uint64 i = 0; i < numEntries; ++i) {
+    for (uint64 i = 0; i < numEntries && !malformedCrossRefernce; ++i) {
         PDF::TableEntry entry;
         if (!data.Copy<PDF::TableEntry>(offset, entry)) {
             break;
@@ -329,8 +334,9 @@ void GetObjectsOffsets(
                 }
             }
         } else {
-            Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
+            //Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
             errList.AddError("Invalid Cross-Reference Table sequence. It has to be 20 bytes (0x%llX)", (uint64_t) offset);
+            malformedCrossRefernce = false;
             break;
         }
         offset += PDF::KEY::PDF_XREF_ENTRY;
@@ -470,13 +476,37 @@ void HighlightObjectTypes(
             if (foundLength) {
                 const uint64_t start_segment = objectOffset;
                 objectOffset += PDF::KEY::PDF_STREAM_SIZE + lengthVal;
-                while (objectOffset < dataSize && !CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+
+                while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
                     objectOffset++;
+                }
+
+                if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM) && objectOffset < dataSize) {
+                    objectOffset -= lengthVal;
+                    while (objectOffset < dataSize) {
+                        if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                            break;
+                        } else {
+                            objectOffset++;
+                        }
+                    }
                 }
                 objectOffset += PDF::KEY::PDF_ENDSTREAM_SIZE;
                 settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Aqua, Color::DarkBlue }, "Stream");
                 pdf->pdfStats.streamsCount++;
             } else {
+                const uint64_t start_segment = objectOffset;
+                objectOffset += PDF::KEY::PDF_STREAM_SIZE;
+                while (objectOffset < dataSize) {
+                    if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                        break;
+                    } else {
+                        objectOffset++;
+                    }
+                }
+                objectOffset += PDF::KEY::PDF_ENDSTREAM_SIZE;
+                settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Aqua, Color::DarkBlue }, "Stream");
+                pdf->pdfStats.streamsCount++;
                 break;
             }
         } else if (buffer == PDF::DC::LEFT_SQUARE_BRACKET || buffer == PDF::DC::RIGHT_SQUARE_BRACKET) {
@@ -556,6 +586,55 @@ bool IsCrossRefStream(uint64 offset, GView::Utils::DataCache& data, const uint64
     return true;
 }
 
+bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& objectNumber)
+{
+    std::string numberStr;
+    uint8_t buffer;
+
+    while (offset > 0) {
+        offset--;
+        if (!data.Copy(offset, buffer)) {
+            return false;
+        }
+        if (buffer != PDF::WSC::SPACE && buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN) {
+            break;
+        }
+    }
+
+    while (offset > 0 && buffer >= '0' && buffer <= '9') {
+        offset--;
+        if (!data.Copy(offset, buffer)) {
+            return false;
+        }
+    }
+
+    while (offset > 0) {
+        if (!data.Copy(offset, buffer))
+            return false;
+        if (buffer != PDF::WSC::SPACE && buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN) {
+            break;
+        }
+        offset--;
+    }
+
+    while (offset > 0 && buffer >= '0' && buffer <= '9') {
+        numberStr.insert(numberStr.begin(), buffer);
+        offset--;
+        if (!data.Copy(offset, buffer)) {
+            break;
+        }
+    }
+    // start position of the object
+    offset++;
+
+    if (numberStr.empty()) {
+        return false;
+    }
+
+    objectNumber = std::stoull(numberStr);
+    return true;
+}
+
 void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF::PDFFile> pdf)
 {
     BufferViewer::Settings settings;
@@ -607,11 +686,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     if (!foundEOF) {
         Dialogs::MessageBox::ShowError("Error!", "Anomaly found: End of file segment (%%EOF) is missing!");
         pdf->errList.AddError("End of file segment (%%EOF) is missing (0x%llX)", (uint64_t) offset);
-        return;
+        pdf->malformedCrossRefernce = true;
     }
     
     // data after the %%EOF segment -> IOC
-    if (dataSize - offset - PDF::KEY::PDF_EOF_SIZE >= 5) {
+    if (dataSize - offset - PDF::KEY::PDF_EOF_SIZE >= 5 && !pdf->malformedCrossRefernce) {
         pdf->errList.AddWarning(
               "Suspicious data found after %%EOF (0x%llX): potential hidden payload or obfuscation", (uint64_t) (offset + PDF::KEY::PDF_EOF_SIZE));
     }
@@ -644,7 +723,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 } else {
                     Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find the xref offset!");
                     pdf->errList.AddError("Couldn't find the xref offset (0x%llX)", (uint64_t) offset);
-                    return;
+                    pdf->malformedCrossRefernce = true;
                 }
                 break;
             }
@@ -652,10 +731,12 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     }
 
     // cross-reference table or cross-reference stream
-    pdf->hasXrefTable = CheckType(data, crossRefOffset, PDF::KEY::PDF_XREF_SIZE, PDF::KEY::PDF_XREF);
+    if (!pdf->malformedCrossRefernce) {
+        pdf->hasXrefTable = CheckType(data, crossRefOffset, PDF::KEY::PDF_XREF_SIZE, PDF::KEY::PDF_XREF);
+    }
 
     // cross-reference table
-    if (pdf->hasXrefTable) {
+    if (pdf->hasXrefTable && !pdf->malformedCrossRefernce) {
         bool next_table = true;
         while (next_table) {
             PDF::PDFObject pdfObject;
@@ -667,13 +748,14 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             offset = crossRefOffset + 4; // skip the xref token
             const bool foundTrailer = GetTrailerOffset(offset, dataSize, data, trailerOffset);
             // if we have multiple sections in the table, we check for the minimal case
-            while (trailerOffset - offset > 20) {
+            while (trailerOffset - offset > 20 && !pdf->malformedCrossRefernce) {
                 const uint64 numEntries = GetNumberOfEntries(offset, dataSize, data); // <start> <number_of_entries>
-                if (numEntries == 0) {
+                if (numEntries == 0 && !pdf->malformedCrossRefernce) {
                     Dialogs::MessageBox::ShowError("Error!", "Anomaly found: 0 entries in the Cross-Reference Table!");
                     pdf->errList.AddError("There are 0 entries in the Cross-Reference Table (0x%llX)", (uint64_t) offset);
+                    pdf->malformedCrossRefernce = true;
                 }
-                while (offset < dataSize) {
+                while (offset < dataSize && !pdf->malformedCrossRefernce) {
                     if (!data.Copy(offset, buffer)) {
                         break;
                     }
@@ -682,69 +764,72 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     }
                     offset++;
                 }
-                GetObjectsOffsets(numEntries, offset, data, objectOffsets, pdf->errList);
+                GetObjectsOffsets(numEntries, offset, data, objectOffsets, pdf->errList, pdf->malformedCrossRefernce);
             }
 
-            pdfObject.endBuffer = offset;
-            pdf->AddPDFObject(pdf, pdfObject);
+            if (!pdf->malformedCrossRefernce) {
+                pdfObject.endBuffer = offset;
+                pdf->AddPDFObject(pdf, pdfObject);
 
-            pdfObject.startBuffer = trailerOffset;
-            pdfObject.type        = PDF::SectionPDFObjectType::Trailer;
-            pdfObject.number      = 0;
-            // Find /Prev in the trailer segment
-            bool found_prev = false;
-            if (foundTrailer) {
-                offset = trailerOffset;
-                while (offset < dataSize) {
-                    if (!data.Copy(offset, buffer)) {
-                        break;
-                    }
-                    if (buffer == PDF::DC::SOLIDUS) {
-                        std::string decodedName = DecodeName(data, offset, dataSize);
-                        if (IsEqualType(decodedName, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) {
+                pdfObject.startBuffer = trailerOffset;
+                pdfObject.type        = PDF::SectionPDFObjectType::Trailer;
+                pdfObject.number      = 0;
+                // Find /Prev in the trailer segment
+                bool found_prev = false;
+                if (foundTrailer) {
+                    offset = trailerOffset;
+                    while (offset < dataSize) {
+                        if (!data.Copy(offset, buffer)) {
+                            break;
+                        }
+                        if (buffer == PDF::DC::SOLIDUS) {
+                            std::string decodedName = DecodeName(data, offset, dataSize);
+                            if (IsEqualType(decodedName, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) {
+                                while (offset < dataSize && (data.Copy(offset, buffer) && (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED ||
+                                                                                           buffer == PDF::WSC::CARRIAGE_RETURN))) {
+                                    offset++;
+                                }
 
-                            while (offset < dataSize && (data.Copy(offset, buffer) &&
-                                                         (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN))) {
-                                offset++;
+                                prevOffset = GetTypeValue(data, offset, dataSize);
+                                if (prevOffset != 0) {
+                                    found_prev = true;
+                                } else {
+                                    Dialogs::MessageBox::ShowError("Error!", "Anomaly found: /Prev in the trailer has the value equal to zero!");
+                                    pdf->errList.AddError("/Prev in the trailer has the value equal to zero (0x%llX)", (uint64_t) offset);
+                                }
+                            } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
+                                pdf->pdfStats.isEncrypted = true;
                             }
-
-                            prevOffset = GetTypeValue(data, offset, dataSize);
-                            if (prevOffset != 0) {
-                                found_prev = true;
-                            } else {
-                                Dialogs::MessageBox::ShowError("Error!", "Anomaly found: /Prev in the trailer has the value equal to zero!");
-                                pdf->errList.AddError("/Prev in the trailer has the value equal to zero (0x%llX)", (uint64_t) offset);
-                            }
-                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENCRYPT_SIZE, PDF::KEY::PDF_ENCRYPT)) {
-                            pdf->pdfStats.isEncrypted = true;
+                        }
+                        if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
+                            settings.AddZone(offset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
+                            offset += PDF::KEY::PDF_EOF_SIZE;
+                            break;
+                        } else {
+                            offset++;
                         }
                     }
-                    if (CheckType(data, offset, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
-                        settings.AddZone(offset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
-                        offset += PDF::KEY::PDF_EOF_SIZE;
-                        break;
-                    } else {
-                        offset++;
+                    if (!found_prev) {
+                        next_table = false;
                     }
+                } else {
+                    Dialogs::MessageBox::ShowError("Error!", "Anomaly found: The trailer is missing!");
+                    pdf->errList.AddError("The trailer is missing (0x%llX)", (uint64_t) offset);
                 }
-                if (!found_prev) {
-                    next_table = false;
+
+                pdfObject.endBuffer = offset;
+                pdf->AddPDFObject(pdf, pdfObject);
+
+                if (foundTrailer) {
+                    settings.AddZone(crossRefOffset, trailerOffset - crossRefOffset, ColorPair{ Color::Green, Color::DarkBlue }, "Cross-Reference Table");
+                    settings.AddZone(trailerOffset, offset - trailerOffset, ColorPair{ Color::Red, Color::DarkBlue }, "Trailer");
                 }
+                crossRefOffset = prevOffset;
             } else {
-                Dialogs::MessageBox::ShowError("Error!", "Anomaly found: The trailer is missing!");
-                pdf->errList.AddError("The trailer is missing (0x%llX)", (uint64_t) offset);
+                break;
             }
-
-            pdfObject.endBuffer = offset;
-            pdf->AddPDFObject(pdf, pdfObject);
-
-            if (foundTrailer) {
-                settings.AddZone(crossRefOffset, trailerOffset - crossRefOffset, ColorPair{ Color::Green, Color::DarkBlue }, "Cross-Reference Table");
-                settings.AddZone(trailerOffset, offset - trailerOffset, ColorPair{ Color::Red, Color::DarkBlue }, "Trailer");
-            }
-            crossRefOffset = prevOffset;
         }
-    } else if (IsCrossRefStream(crossRefOffset, data, dataSize)) { // cross-reference stream
+    } else if (IsCrossRefStream(crossRefOffset, data, dataSize) && !pdf->malformedCrossRefernce) { // cross-reference stream
         bool next_CR_stream = true;
         std::unordered_set<uint64_t> seenOffsets;
         while (next_CR_stream) {
@@ -941,39 +1026,198 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             }
         }
     } else {
-        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find a Cross-Reference Table or Cross-Reference Stream!");
-        pdf->errList.AddError("Couldn't find a Cross-Reference Table or Cross-Reference Stream (0x%llX)", (uint64_t) offset);
+        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find a Cross-Reference Table or Cross-Reference Stream based on the startxref offset!");
+        pdf->errList.AddError("Couldn't find a Cross-Reference Table or Cross-Reference Stream based on the startxref offset (0x%llX)", (uint64_t) offset);
+        pdf->malformedCrossRefernce = true;
     }
 
-    std::sort(objectOffsets.begin(), objectOffsets.end());
+    // since the table are most likely broken, we will find all the object manually
+    if (pdf->malformedCrossRefernce) {
+        offset = sizeof(PDF::Header);
+        while (offset < dataSize) {
+            if (CheckType(data, offset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ)) {
+                uint64 objectNumber   = 0;
+                uint64 objectPosition = offset;
 
-    for (size_t i = 0; i < objectOffsets.size(); ++i) {
-        if (std::find(streamOffsets.begin(), streamOffsets.end(), objectOffsets[i]) != streamOffsets.end()) {
-            if (i + 1 < objectOffsets.size()) {
-                ++i;
-            } else if (i + 1 == objectOffsets.size()) {
+                if (ExtractObjectNumber(data, objectPosition, objectNumber)) {
+                    uint64 endobjOffset = offset;
+
+                    while (endobjOffset + PDF::KEY::PDF_ENDOBJ_SIZE < dataSize &&
+                           !CheckType(data, endobjOffset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ)) {
+                        endobjOffset++;
+                    }
+
+                    if (endobjOffset + PDF::KEY::PDF_ENDOBJ_SIZE >= dataSize) {
+                        pdf->errList.AddError("Couldn't find endobj marker for Object %llu", (uint64_t) objectNumber);
+                        pdf->errList.AddWarning("Object %llu is malformed", (uint64_t) objectNumber);
+                        break;
+                    }
+
+                    endobjOffset += PDF::KEY::PDF_ENDOBJ_SIZE;
+
+                    PDF::PDFObject pdfObject;
+                    pdfObject.startBuffer = objectPosition;
+                    pdfObject.endBuffer   = endobjOffset;
+                    pdfObject.type        = PDF::SectionPDFObjectType::Object;
+                    pdfObject.number      = objectNumber;
+
+                    const uint64_t length = pdfObject.endBuffer - pdfObject.startBuffer;
+
+                    settings.AddZone(pdfObject.startBuffer, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(pdfObject.number));
+
+                    pdf->AddPDFObject(pdf, pdfObject);
+                    HighlightObjectTypes(data, pdf, settings, dataSize, pdfObject);
+                    offset = endobjOffset;
+                    continue;
+                }
+            }
+
+            if (CheckType(data, offset, PDF::KEY::PDF_XREF_SIZE, PDF::KEY::PDF_XREF)) {
+                pdf->hasXrefTable     = true;
+                uint64 crossRefOffset = offset;
+                uint64 trailerOffset  = 0;
+
+                offset += PDF::KEY::PDF_XREF_SIZE;
+
+                for (uint64 i = offset; i < dataSize - PDF::KEY::PDF_TRAILER_SIZE; ++i) {
+                    if (CheckType(data, i, PDF::KEY::PDF_TRAILER_SIZE, PDF::KEY::PDF_TRAILER_KEY)) {
+                        trailerOffset = i;
+                        break;
+                    }
+                }
+
+                if (trailerOffset > crossRefOffset) {
+                    settings.AddZone(crossRefOffset, trailerOffset - crossRefOffset, { Color::Green, Color::DarkBlue }, "Cross-Reference Table");
+
+                    PDF::PDFObject xrefObject;
+                    xrefObject.startBuffer = crossRefOffset;
+                    xrefObject.endBuffer   = trailerOffset;
+                    xrefObject.type        = PDF::SectionPDFObjectType::CrossRefTable;
+                    xrefObject.number      = 0;
+                    pdf->AddPDFObject(pdf, xrefObject);
+
+                    offset = trailerOffset - 1;
+                    continue;
+                }
+            }
+
+            if (CheckType(data, offset, PDF::KEY::PDF_TRAILER_SIZE, PDF::KEY::PDF_TRAILER_KEY)) {
+                uint64 trailerOffset    = offset;
+                pdf->hasXrefTable       = true;
+                uint64 copyOffset       = offset;
+                uint64 endTrailerOffset = 0;
+                uint64 startxrefOffset  = 0;
+                uint64 eofOffset  = 0;
+                uint16_t tag;
+                uint8_t buffer = 0;
+
+                // find ">>"
+                copyOffset += PDF::KEY::PDF_TRAILER_SIZE;
+                while (copyOffset < dataSize) {
+                    if (!data.Copy(copyOffset, tag)) {
+                        continue;
+                    }
+                    if (tag == PDF::DC::END_TAG) {
+                        copyOffset += 2;
+                        endTrailerOffset = copyOffset;
+                        break;
+                    } else {
+                        copyOffset++;
+                    }
+                }
+
+                // find startxref
+                for (uint64 i = copyOffset; i < endTrailerOffset + PDF::KEY::PDF_STARTXREF_SIZE + 4; ++i) {
+                    if (CheckType(data, i, PDF::KEY::PDF_STARTXREF_SIZE, PDF::KEY::PDF_STARTXREF)) {
+                        startxrefOffset = i;
+                        break;
+                    }
+                }
+
+                if (startxrefOffset) {
+                    endTrailerOffset = startxrefOffset + PDF::KEY::PDF_STARTXREF_SIZE;
+                    copyOffset       = endTrailerOffset;
+                    while (copyOffset < dataSize) {
+                        copyOffset++;
+                        if (!data.Copy(copyOffset, buffer)) {
+                            return;
+                        }
+                        if (buffer != PDF::WSC::SPACE && buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN &&
+                            buffer != PDF::WSC::FORM_FEED) {
+                            break;
+                        }
+                    }
+
+                    while (copyOffset < dataSize && buffer >= '0' && buffer <= '9') {
+                        copyOffset++;
+                        if (!data.Copy(copyOffset, buffer)) {
+                            return;
+                        }
+                    }
+                    endTrailerOffset = copyOffset;
+                } else {
+                    pdf->errList.AddWarning("The startxref is missing for the trailer (0x%llX)", (uint64_t) copyOffset);
+                }
+
+                // find EOF
+                for (uint64 i = copyOffset; i < endTrailerOffset + PDF::KEY::PDF_EOF_SIZE + 4; ++i) {
+                    if (CheckType(data, i, PDF::KEY::PDF_EOF_SIZE, PDF::KEY::PDF_EOF)) {
+                        eofOffset = i;
+                        break;
+                    }
+                }
+
+                if (eofOffset) {
+                    endTrailerOffset = eofOffset + PDF::KEY::PDF_EOF_SIZE;
+                    settings.AddZone(eofOffset, PDF::KEY::PDF_EOF_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, "EOF");
+                } else {
+                    pdf->errList.AddWarning("End of file segment (%%EOF) is missing for the trailer (0x%llX)", (uint64_t) copyOffset);
+                }
+
+                settings.AddZone(trailerOffset, endTrailerOffset - 1, { Color::Red, Color::DarkBlue }, "Trailer");
+                PDF::PDFObject trailerObject;
+                trailerObject.startBuffer = trailerOffset;
+                trailerObject.endBuffer   = endTrailerOffset;
+                trailerObject.type   = PDF::SectionPDFObjectType::Trailer;
+                trailerObject.number = 0;
+                pdf->AddPDFObject(pdf, trailerObject);
+
+                offset = endTrailerOffset;
                 continue;
             }
+            offset++;
         }
-        uint64_t objOffset = objectOffsets[i];
+    } else {
+        std::sort(objectOffsets.begin(), objectOffsets.end());
 
-        PDF::PDFObject pdfObject;
-        pdfObject.startBuffer = objOffset;
-        pdfObject.type        = PDF::SectionPDFObjectType::Object;
-        pdfObject.number      = GetTypeValue(data, objOffset, dataSize);
+        for (size_t i = 0; i < objectOffsets.size(); ++i) {
+            if (std::find(streamOffsets.begin(), streamOffsets.end(), objectOffsets[i]) != streamOffsets.end()) {
+                if (i + 1 < objectOffsets.size()) {
+                    ++i;
+                } else if (i + 1 == objectOffsets.size()) {
+                    continue;
+                }
+            }
+            uint64_t objOffset = objectOffsets[i];
 
-        uint64_t endobjOffset = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] : eofOffset;
+            PDF::PDFObject pdfObject;
+            pdfObject.startBuffer = objOffset;
+            pdfObject.type        = PDF::SectionPDFObjectType::Object;
+            pdfObject.number      = GetTypeValue(data, objOffset, dataSize);
 
-        while (!CheckType(data, endobjOffset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ) && endobjOffset > 0) {
-            endobjOffset--;
+            uint64_t endobjOffset = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] : eofOffset;
+
+            while (!CheckType(data, endobjOffset, PDF::KEY::PDF_ENDOBJ_SIZE, PDF::KEY::PDF_ENDOBJ) && endobjOffset > 0) {
+                endobjOffset--;
+            }
+            endobjOffset += PDF::KEY::PDF_ENDOBJ_SIZE;
+            pdfObject.endBuffer   = endobjOffset;
+            const uint64_t length = pdfObject.endBuffer - pdfObject.startBuffer;
+
+            settings.AddZone(pdfObject.startBuffer, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(pdfObject.number));
+            pdf->AddPDFObject(pdf, pdfObject);
+            HighlightObjectTypes(data, pdf, settings, dataSize, pdfObject);
         }
-        endobjOffset += PDF::KEY::PDF_ENDOBJ_SIZE;
-        pdfObject.endBuffer   = endobjOffset;
-        const uint64_t length = pdfObject.endBuffer - pdfObject.startBuffer;
-
-        settings.AddZone(pdfObject.startBuffer, length, { Color::Teal, Color::DarkBlue }, "Obj " + std::to_string(pdfObject.number));
-        pdf->AddPDFObject(pdf, pdfObject);
-        HighlightObjectTypes(data, pdf, settings, dataSize, pdfObject);
     }
 
     pdf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
@@ -1510,7 +1754,7 @@ static std::string ParseLiteralString(GView::Utils::DataCache& data, uint64& off
     return result;
 }
 
-static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::ObjectNode& objectNode, PDF::Metadata& pdfMetadata)
+static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::ObjectNode& objectNode, PDF::Metadata& pdfMetadata, GView::Utils::ErrorList &errList)
 {
     uint64 offset          = objectNode.pdfObject.startBuffer;
     const uint64 endOffset = objectNode.pdfObject.endBuffer;
@@ -1533,7 +1777,15 @@ static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::Obje
                     }
                 }
                 if (buffer == PDF::DC::LEFT_PARETHESIS) {
+                    uint64_t copyOffset = offset;
                     std::string value = ParseLiteralString(data, offset, endOffset);
+                    if (value.length() > 50) {
+                        errList.AddWarning(
+                              "Object %llu has a value too long for %s (0x%llX)",
+                              (uint64_t) objectNode.pdfObject.number,
+                              decodedName.c_str(),
+                              (uint64_t) copyOffset);
+                    }
                     if (IsEqualType(decodedName, PDF::KEY::PDF_TITLE_SIZE, PDF::KEY::PDF_TITLE) && pdfMetadata.title.empty()) {
                         pdfMetadata.title = value;
                     } else if (IsEqualType(decodedName, PDF::KEY::PDF_AUTHOR_SIZE, PDF::KEY::PDF_AUTHOR) && pdfMetadata.author.empty()) {
@@ -1574,7 +1826,7 @@ static void FindAndProcessMetadataObjects(
             }
             if (!isXML) {
                 // from "Name" objects like /Producer /Title
-                ProcessMetadataObject(data, node, pdf->pdfMetadata);
+                ProcessMetadataObject(data, node, pdf->pdfMetadata, pdf->errList);
             } else {
                 // stream <XML data> endstream
                 ProcessMetadataStream(pdf, data, &node, pdf->pdfMetadata);
@@ -1761,7 +2013,7 @@ void ProcessPDFTree(
                 std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionaryTypes);
                 if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                     errList.AddWarning(
-                          "Contains an embedded file payload (/EmbeddedFile) in the Object %llX (0x%llX)",
+                          "Contains an embedded file payload (/EmbeddedFile) in the Object %llu (0x%llX)",
                           (uint64_t) objectNode.pdfObject.number,
                           (uint64_t) (copyTypeOffset));
                 }
@@ -1780,7 +2032,7 @@ void ProcessPDFTree(
                 if (buffer >= '0' && buffer <= '9')
                 {
                     const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
-                    errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llX", (uint64_t) number);
+                    errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llu", (uint64_t) number);
                 } else {
                     errList.AddWarning("Contains a JavaScript block (/JS) (0x%llX)", (uint64_t) objectOffset);
                 }
@@ -1870,19 +2122,28 @@ void ProcessPDFTree(
                 objectOffset++;
             }
             if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM) && !issueFound) {
-                Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token! Object number: " + std::to_string(objectNode.pdfObject.number));
-                errList.AddError("Wrong end stream token! Object %llX (0x%llX)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
+                // Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token! Object number: " + std::to_string(objectNode.pdfObject.number));
+                errList.AddError("Wrong end stream token! Object %llu (0x%llX)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
+                errList.AddWarning("Object %llu contains an invalid stream length", (uint64_t) objectNode.pdfObject.number);
                 issueFound = true;
-            } else {
-                PDF::ObjectNode streamChild;
-                streamChild.pdfObject.type   = PDF::SectionPDFObjectType::Stream;
-                streamChild.pdfObject.number = objectNode.pdfObject.number;
-                streamChild.pdfObject.hasStream    = false;
-                streamChild.pdfObject.startBuffer = objectNode.decodeObj.streamOffsetStart;
-                streamChild.pdfObject.endBuffer    = objectNode.decodeObj.streamOffsetEnd;
-                objectNode.children.push_back(streamChild);
-                break;
+                uint64 correctOffset = objectNode.decodeObj.streamOffsetStart;
+                while (correctOffset < dataSize) {
+                    if (CheckType(data, correctOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                        break;
+                    } else {
+                        correctOffset++;
+                    }
+                }
+                objectNode.decodeObj.streamOffsetEnd = correctOffset;
             }
+            PDF::ObjectNode streamChild;
+            streamChild.pdfObject.type        = PDF::SectionPDFObjectType::Stream;
+            streamChild.pdfObject.number      = objectNode.pdfObject.number;
+            streamChild.pdfObject.hasStream   = false;
+            streamChild.pdfObject.startBuffer = objectNode.decodeObj.streamOffsetStart;
+            streamChild.pdfObject.endBuffer   = objectNode.decodeObj.streamOffsetEnd;
+            objectNode.children.push_back(streamChild);
+            break;
         }
         // get the next object (nr 0 R)
         if (buffer >= '0' && buffer <= '9') {
@@ -1958,10 +2219,12 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
     if (pdf->hasXrefTable) {
         bool firstTrailer = false;
         for (const auto& object : pdf->pdfObjects) {
-            if (object.type == PDF::SectionPDFObjectType::Trailer && !firstTrailer) {
+            if (object.type == PDF::SectionPDFObjectType::Trailer) {
                 uint64 objectOffset           = object.startBuffer;
-                pdf->objectNodeRoot.pdfObject = object;
-                pdf->objectNodeRoot.pdfObject.hasStream = false;
+                if (!firstTrailer) {
+                    pdf->objectNodeRoot.pdfObject           = object;
+                    pdf->objectNodeRoot.pdfObject.hasStream = false;
+                }
                 uint8 buffer;
 
                 while (objectOffset < object.endBuffer - PDF::KEY::PDF_STARTXREF_SIZE) {
@@ -2062,7 +2325,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
                             if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                                 pdf->errList.AddWarning(
-                                      "Contains an embedded file payload (/EmbeddedFile) in the Object %llX (0x%llX)",
+                                      "Contains an embedded file payload (/EmbeddedFile) in the Object %llu (0x%llX)",
                                       (uint64_t) pdf->objectNodeRoot.pdfObject.number,
                                       copyObjectOffset);
                             }
@@ -2077,7 +2340,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             }
                             if (buffer >= '0' && buffer <= '9') {
                                 const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
-                                pdf->errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llX", (uint64_t) number);
+                                pdf->errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llu", (uint64_t) number);
                             } else {
                                 pdf->errList.AddWarning("Contains a JavaScript block (/JS) (0x%llX)", (uint64_t) objectOffset);
                             }
@@ -2149,7 +2412,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             objectOffset++;
                         }
                         if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
-                            Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token!");
+                            //Dialogs::MessageBox::ShowError("Error!", "Wrong end stream token!");
                             pdf->errList.AddError("Wrong end stream token (0x%llX)", (uint64_t) objectOffset);
                         } else {
                             PDF::ObjectNode streamChild;
@@ -2180,9 +2443,11 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
         found->hasJS              = pdf->objectNodeRoot.pdfObject.hasJS;
     }
 
+    // make sure that the objects inserted as children are unique for the node
+    std::unordered_set<uint64_t> insertedObjectNumbers;
     for (const auto& objectNumber : objectsNumber) {
         for (const auto& object : pdf->pdfObjects) {
-            if (objectNumber == object.number) {
+            if (objectNumber == object.number && insertedObjectNumbers.insert(object.number).second) {
                 PDF::ObjectNode newObject;
                 newObject.pdfObject = object;
                 pdf->objectNodeRoot.children.push_back(newObject);

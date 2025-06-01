@@ -8,6 +8,18 @@ using namespace GView::Type::PDF;
 
 PDFFile::PDFFile()
 {
+    objectNodeRoot.pdfObject = { .startBuffer        = 0,
+                                 .endBuffer          = 0,
+                                 .type               = PDF::SectionPDFObjectType::Unknown,
+                                 .number             = 0,
+                                 .hasStream          = false,
+                                 .hasJS              = false,
+                                 .filters            = {},
+                                 .dictionaryTypes    = {},
+                                 .dictionarySubtypes = {} };
+
+    objectNodeRoot.decodeObj = {};
+    objectNodeRoot.children.clear();
 }
 
 bool PDFFile::Update()

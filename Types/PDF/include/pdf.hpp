@@ -365,6 +365,7 @@ namespace Type
             Header header{};
             bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
             bool hashEscaping = false;
+            bool malformedCrossRefernce = false;
             uint64 index         = 0;
             PDF::ObjectNode objectNodeRoot;
             std::u16string currentPath;

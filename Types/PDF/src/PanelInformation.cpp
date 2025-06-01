@@ -127,7 +127,7 @@ static bool LoadPDFDocumentFromBuffer(Reference<GView::Type::PDF::PDFFile> pdf, 
     } catch (const PoDoFo::PdfError& e) {
         std::string errorMessage = "Failed to process the file: ";
         errorMessage += e.what();
-        Dialogs::MessageBox::ShowError("Error!", errorMessage);
+        // Dialogs::MessageBox::ShowError("Error!", errorMessage);
         return false;
     }
 }
