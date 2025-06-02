@@ -913,6 +913,10 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                             offset++;
                         }
                         offset++; // skip "["
+                        while (offset < dataSize && (data.Copy(offset, buffer) && 
+                            (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN || buffer == PDF::WSC::FORM_FEED || buffer == PDF::WSC::SPACE || buffer == PDF::WSC::HORIZONAL_TAB))) {
+                            offset++;
+                        }
                         wValues.x = GetWValue(data, offset);
                         offset++;
                         wValues.y = GetWValue(data, offset);
@@ -1867,7 +1871,6 @@ void ProcessPDFTree(
     uint8 buffer;
     uint64 streamLength = 0;
     bool foundLength    = false;
-    bool issueFound = false;
     std::vector<uint64> objectsNumber;     
     processedObjects.push_back(objectNode.pdfObject.number);
     objectNode.pdfObject.hasStream = false;
@@ -2112,7 +2115,7 @@ void ProcessPDFTree(
             }
         }
         // object has a stream
-        if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM) && foundLength) {
+        if (CheckType(data, objectOffset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
             objectNode.pdfObject.hasStream = true;
             objectOffset += PDF::KEY::PDF_STREAM_SIZE;
             // skip some bytes
@@ -2120,26 +2123,39 @@ void ProcessPDFTree(
                 objectOffset++;
             }
             objectNode.decodeObj.streamOffsetStart = objectOffset;
-            objectOffset += streamLength;
-            objectNode.decodeObj.streamOffsetEnd = objectOffset;
-            // additional checking
-            while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
-                objectOffset++;
-            }
-            if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM) && !issueFound) {
-                // Dialogs::MessageBox::ShowError("Error!", "Invalid endstream marker! Object number: " + std::to_string(objectNode.pdfObject.number));
-                errList.AddError("Invalid endstream marker! Object %llu (0x%llX)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
-                errList.AddWarning("Object %llu contains an invalid stream length", (uint64_t) objectNode.pdfObject.number);
-                issueFound = true;
-                uint64 correctOffset = objectNode.decodeObj.streamOffsetStart;
-                while (correctOffset < dataSize) {
-                    if (CheckType(data, correctOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+            if (foundLength) {
+                objectOffset += streamLength;
+                objectNode.decodeObj.streamOffsetEnd = objectOffset;
+                // additional checking
+                while (data.Copy(objectOffset, buffer) && (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN)) {
+                    objectOffset++;
+                }
+                if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                    // Dialogs::MessageBox::ShowError("Error!", "Invalid endstream marker! Object number: " + std::to_string(objectNode.pdfObject.number));
+                    errList.AddError("Invalid endstream marker! Object %llu (0x%llX)", (uint64_t) objectNode.pdfObject.number, (uint64_t) objectOffset);
+                    errList.AddWarning("Object %llu contains an invalid stream length", (uint64_t) objectNode.pdfObject.number);
+                    uint64 correctOffset = objectNode.decodeObj.streamOffsetStart;
+                    while (correctOffset < dataSize) {
+                        if (CheckType(data, correctOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
+                            break;
+                        } else {
+                            correctOffset++;
+                        }
+                    }
+                    objectNode.decodeObj.streamOffsetEnd = correctOffset;
+                }
+            } else {
+                // missing /Length -> we search endstream byte by byte
+                // errList.AddError("Missing /Length for an object which has a stream (0x%llX)", (uint64_t) objectNode.decodeObj.streamOffsetStart);
+                errList.AddWarning("Object %llu is missing /Length for the stream", (uint64_t) objectNode.pdfObject.number);
+                while (objectOffset < dataSize) {
+                    if (CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
                         break;
                     } else {
-                        correctOffset++;
+                        objectOffset++;
                     }
                 }
-                objectNode.decodeObj.streamOffsetEnd = correctOffset;
+                objectNode.decodeObj.streamOffsetEnd = objectOffset;
             }
             PDF::ObjectNode streamChild;
             streamChild.pdfObject.type        = PDF::SectionPDFObjectType::Stream;
@@ -2183,12 +2199,6 @@ void ProcessPDFTree(
         } else {
             objectOffset++;
         }
-    }
-
-    if (!foundLength && objectNode.pdfObject.hasStream && !issueFound) {
-        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Missing /Length for an object which has a stream!");
-        errList.AddError("Missing /Length for an object which has a stream (0x%llX)", (uint64_t) objectOffset);
-        issueFound = true;
     }
 
     if (auto* found = FindObjectByNumber(pdfObjects, objectNode.pdfObject.number, objectNode.pdfObject.startBuffer)) {

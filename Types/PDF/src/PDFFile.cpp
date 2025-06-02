@@ -165,9 +165,25 @@ static bool IsValidJSON(const std::string& data)
     }
 }
 
+static bool IsLikelyText(const std::string& data)
+{
+    for (unsigned char c : data) {
+        if (c == 0) {
+            return false;
+        }
+        if (c < 0x09) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool IsValidJavaScript(const std::string& data)
 {
-    const std::regex jsPattern(R"(\b(function|var|let|const|=>|console\.log|document\.)\b)");
+    if (!IsLikelyText(data)) {
+        return false;
+    }
+    const std::regex jsPattern(R"(\b(function|var|let|const|=>|console\.log|document\.|eval|this\s*\[|replace\s*\(|Function\s*\())");
     return std::regex_search(data, jsPattern);
 }
 
