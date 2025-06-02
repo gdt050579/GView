@@ -201,6 +201,7 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/DOC)
     add_subdirectory(Types/JPG)
     add_subdirectory(Types/XML)
+    add_subdirectory(Types/PDF)
 
     # Generic plugins supported by GView
     add_subdirectory(GenericPlugins)
