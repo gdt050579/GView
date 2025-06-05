@@ -12,7 +12,7 @@ constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 
 Config Instance::config;
 
-Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     : settings(nullptr), ViewControl("Grid View")
 {
     this->obj = obj;

@@ -52,7 +52,7 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
-    virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+    virtual GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem)
 {
@@ -117,9 +117,12 @@ void FolderType::OnOpenItem(std::u16string_view relativePath, AppCUI::Controls::
     GView::App::OpenFile(path,GView::App::OpenMethod::BestMatch);
 }
 
-std::string FolderType::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* FolderType::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    NOT_IMPLEMENTED("FOLDER PLUGIN");
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }
 
 TypeInterface* CreateInstance(const std::filesystem::path& path)

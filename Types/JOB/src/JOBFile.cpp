@@ -1,8 +1,6 @@
 #include "JOB.hpp"
-#include <nlohmann/json.hpp>
 
 using namespace GView::Type::JOB;
-using nlohmann::json;
 
 JOBFile::JOBFile()
 {
@@ -110,19 +108,19 @@ bool JOBFile::Update()
     return true;
 }
 
-std::string JOBFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* JOBFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]                 = obj->GetName();
-    context["ContentSize"]          = obj->GetData().GetSize();
-    context["ApplicationNameSize"]  = applicationNameSize;
-    context["ParametersSize"]       = parametersSize;
-    context["WorkingDirectorySize"] = workingDirectorySize;
-    context["AuthorSize"]           = authorSize;
-    context["CommentSize"]          = commentSize;
-    context["UserDataSize"]         = variableSizeDataSection.userData.GetLength();
-    context["ReservedDataSize"]     = variableSizeDataSection.reservedData.size;
-    context["TriggersCount"]        = variableSizeDataSection.triggers.count;
-    context["HasJobSignature"]         = variableSizeDataSection.jobSignature.has_value();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("ApplicationNameSize", applicationNameSize);
+    builder->AddUInt("ParametersSize", parametersSize);
+    builder->AddUInt("WorkingDirectorySize", workingDirectorySize);
+    builder->AddUInt("AuthorSize", authorSize);
+    builder->AddUInt("CommentSize", commentSize);
+    builder->AddUInt("UserDataSize", variableSizeDataSection.userData.GetLength());
+    builder->AddUInt("ReservedDataSize", variableSizeDataSection.reservedData.size);
+    builder->AddUInt("TriggersCount", variableSizeDataSection.triggers.count);
+    builder->AddBool("HasJobSignature", variableSizeDataSection.jobSignature.has_value());
+    return builder;
 }

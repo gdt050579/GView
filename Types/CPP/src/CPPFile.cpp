@@ -1,6 +1,4 @@
 #include "cpp.hpp"
-#include <nlohmann/json.hpp>
-using nlohmann::json;
 
 namespace GView::Type::CPP
 {
@@ -1115,11 +1113,11 @@ bool CPPFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicod
     NOT_IMPLEMENTED(false);
 }
 
-std::string CPPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* CPPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }
 } // namespace GView::Type::CPP

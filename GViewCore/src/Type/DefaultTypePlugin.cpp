@@ -39,9 +39,12 @@ class DefaultType : public TypeInterface
         return selectionZoneInterface->GetSelectionZone(index);
     }
 
-    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override
+    GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override
     {
-        NOT_IMPLEMENTED("NOT IMPLEMENTED")
+        auto builder = GView::Utils::JsonBuilderInterface::Create();
+        builder->AddU16String("Name", obj->GetName());
+        builder->AddUInt("ContentSize", obj->GetData().GetSize());
+        return builder;
     }
 };
 

@@ -1,5 +1,4 @@
 #include "jclass.hpp"
-#include <nlohmann/json.hpp>
 
 using namespace AppCUI;
 using namespace AppCUI::OS;
@@ -7,7 +6,6 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Application;
 using namespace GView::Type;
 using namespace GView::View;
-using nlohmann::json;
 
 namespace GView::Type::JClass
 {
@@ -21,11 +19,11 @@ void ClassViewer::RunCommand(std::string_view)
 {
 }
 
-std::string ClassViewer::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* ClassViewer::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]        = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }
 } // namespace GView::Type::JClass

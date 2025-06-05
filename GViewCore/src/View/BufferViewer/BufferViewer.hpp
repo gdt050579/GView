@@ -333,7 +333,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual GView::Utils::ZonesList& GetObjectsHighlightingZonesList() override;
 
   public:
-    Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
+    Instance(Reference<GView::Object> obj, Settings* settings);
 
     virtual void Paint(Renderer& renderer) override;
     virtual void OnAfterResize(int newWidth, int newHeight) override;
