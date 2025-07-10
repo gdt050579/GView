@@ -104,6 +104,11 @@ static bool TerminateProcessing(const int8 buffer)
     }
 }
 
+bool IsWhitespace(const uint8 ch)
+{
+    return ch == PDF::WSC::SPACE || ch == PDF::WSC::LINE_FEED || ch == PDF::WSC::FORM_FEED || ch == PDF::WSC::HORIZONAL_TAB || ch == PDF::WSC::CARRIAGE_RETURN;
+}
+
 static int HexVal(const uint8_t c)
 {
     if (c >= '0' && c <= '9') {
@@ -231,7 +236,7 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
     const std::unordered_set<std::string> STANDARD_FILTERS = { "/ASCIIHexDecode", "/ASCII85Decode", "/LZWDecode", "/FlateDecode", "/RunLengthDecode",
                                                                       "/CCITTFaxDecode", "/JBIG2Decode",   "/DCTDecode", "/JPXDecode",   "/Crypt" };
     uint8_t buffer;
-    while (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE && offset < dataSize) {
+    while (data.Copy(offset, buffer) && IsWhitespace(buffer) && offset < dataSize) {
         offset++;
     }
     bool multipleFilters = false;
@@ -241,7 +246,7 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
         offset++; // skip '['
     }
     while (offset < dataSize) {
-        while (data.Copy(offset, buffer) && buffer == PDF::WSC::SPACE && offset < dataSize) {
+        while (data.Copy(offset, buffer) && IsWhitespace(buffer) && offset < dataSize) {
             offset++;
         }
 
@@ -353,7 +358,7 @@ uint64 GetNumberOfEntries(uint64& offset, const uint64& dataSize, GView::Utils::
             if (!data.Copy(offset, buffer)) {
                 break;
             }
-            if (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN && buffer != PDF::WSC::SPACE) {
+            if (!IsWhitespace(buffer)) {
                 break;
             }
             offset++;
@@ -596,7 +601,7 @@ bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& 
         if (!data.Copy(offset, buffer)) {
             return false;
         }
-        if (buffer != PDF::WSC::SPACE && buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN) {
+        if (!IsWhitespace(buffer)) {
             break;
         }
     }
@@ -609,9 +614,10 @@ bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& 
     }
 
     while (offset > 0) {
-        if (!data.Copy(offset, buffer))
+        if (!data.Copy(offset, buffer)) {
             return false;
-        if (buffer != PDF::WSC::SPACE && buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN) {
+        }
+        if (!IsWhitespace(buffer)) {
             break;
         }
         offset--;
@@ -759,7 +765,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     if (!data.Copy(offset, buffer)) {
                         break;
                     }
-                    if (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN && buffer != PDF::WSC::SPACE) {
+                    if (!IsWhitespace(buffer)) {
                         break;
                     }
                     offset++;
@@ -785,8 +791,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         if (buffer == PDF::DC::SOLIDUS) {
                             std::string decodedName = DecodeName(data, offset, dataSize);
                             if (IsEqualType(decodedName, PDF::KEY::PDF_PREV_SIZE, PDF::KEY::PDF_PREV)) {
-                                while (offset < dataSize && (data.Copy(offset, buffer) && (buffer == PDF::WSC::SPACE || buffer == PDF::WSC::LINE_FEED ||
-                                                                                           buffer == PDF::WSC::CARRIAGE_RETURN))) {
+                                while (offset < dataSize && (data.Copy(offset, buffer) && IsWhitespace(buffer))) {
                                     offset++;
                                 }
 
@@ -913,8 +918,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                             offset++;
                         }
                         offset++; // skip "["
-                        while (offset < dataSize && (data.Copy(offset, buffer) && 
-                            (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN || buffer == PDF::WSC::FORM_FEED || buffer == PDF::WSC::SPACE || buffer == PDF::WSC::HORIZONAL_TAB))) {
+                        while (offset < dataSize && (data.Copy(offset, buffer) && IsWhitespace(buffer))) {
                             offset++;
                         }
                         wValues.x = GetWValue(data, offset);
@@ -1148,8 +1152,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         if (!data.Copy(copyOffset, buffer)) {
                             return;
                         }
-                        if (buffer != PDF::WSC::SPACE && buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN &&
-                            buffer != PDF::WSC::FORM_FEED) {
+                        if (!IsWhitespace(buffer)) {
                             break;
                         }
                     }
@@ -1270,7 +1273,7 @@ std::string GetDictionaryType(GView::Utils::DataCache& data, uint64& objectOffse
 {
     uint8 buffer;
     std::string entry;
-    while (data.Copy(objectOffset, buffer) && buffer == PDF::WSC::SPACE && objectOffset < dataSize) {
+    while (data.Copy(objectOffset, buffer) && IsWhitespace(buffer) && objectOffset < dataSize) {
         objectOffset++;
     }
     if (buffer == PDF::DC::SOLIDUS) {
@@ -1779,7 +1782,7 @@ static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::Obje
                 if (!data.Copy(offset, buffer)) {
                     break;
                 }
-                while (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN || buffer == PDF::WSC::SPACE) {
+                while (IsWhitespace(buffer)) {
                     offset++;
                     if (data.Copy(offset, buffer)) {
                         break;
@@ -1912,7 +1915,7 @@ void ProcessPDFTree(
                 if (!data.Copy(copyObjectOffset, buffer)) {
                     break;
                 }
-                if (buffer == PDF::WSC::SPACE) {
+                if (IsWhitespace(buffer)) {
                     streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects);
                     foundLength  = true;
                 } else {
