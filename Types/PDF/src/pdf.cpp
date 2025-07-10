@@ -104,6 +104,11 @@ static bool TerminateProcessing(const int8 buffer)
     }
 }
 
+bool IsWhitespace(const uint8 ch)
+{
+    return ch == PDF::WSC::SPACE || ch == PDF::WSC::LINE_FEED || ch == PDF::WSC::FORM_FEED || ch == PDF::WSC::HORIZONAL_TAB || ch == PDF::WSC::CARRIAGE_RETURN;
+}
+
 static int HexVal(const uint8_t c)
 {
     if (c >= '0' && c <= '9') {
@@ -596,7 +601,7 @@ bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& 
         if (!data.Copy(offset, buffer)) {
             return false;
         }
-        if (buffer != PDF::WSC::SPACE && buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN) {
+        if (!IsWhitespace(buffer)) {
             break;
         }
     }
@@ -1912,7 +1917,7 @@ void ProcessPDFTree(
                 if (!data.Copy(copyObjectOffset, buffer)) {
                     break;
                 }
-                if (buffer == PDF::WSC::SPACE) {
+                if (IsWhitespace(buffer)) {
                     streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects);
                     foundLength  = true;
                 } else {

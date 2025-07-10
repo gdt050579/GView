@@ -287,68 +287,68 @@ void PDFFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     }
 
     const auto node = FindNodeByObjectNumber(objectNumber);
-    if (!node) {
+    if (!node || !node->pdfObject.hasStream) {
         return;
     }
 
-    const auto entireFile = this->obj->GetData().GetEntireFile();
-    if (!entireFile.IsValid()) {
+    const uint64 start = node->decodeObj.streamOffsetStart;
+    const uint64 end   = node->decodeObj.streamOffsetEnd;
+
+    if (end <= start) {
         return;
     }
 
-    if (node->pdfObject.hasStream) {
-        const uint64 offset = node->decodeObj.streamOffsetStart;
-        const uint64 end    = node->decodeObj.streamOffsetEnd;
-        if (end <= offset || end > entireFile.GetLength()) {
-            return;
-        }
+    const size_t size     = static_cast<size_t>(end - start);
+    const auto streamView = this->obj->GetData().Get(static_cast<uint32>(start), static_cast<uint32>(size), true);
 
-        const size_t size = static_cast<size_t>(end - offset);
+    if (!streamView.IsValid() || streamView.GetLength() < size) {
+        return;
+    }
 
-        Buffer buffer;
-        buffer.Resize(size);
-        memcpy(buffer.GetData(), entireFile.GetData() + offset, size);
+    Buffer buffer;
+    buffer = streamView;
 
-        std::u16string tmpName = u"Stream ";
-        tmpName += to_u16string((uint32_t) node->pdfObject.number);
-        LocalUnicodeStringBuilder<64> streamName;
-        CHECKRET(streamName.Set(tmpName), "")
+    std::u16string tmpName = u"Stream ";
+    tmpName += to_u16string((uint32_t) node->pdfObject.number);
 
-        // encrypted -> can't open the stream, for now
-        if (pdfStats.isEncrypted) {
-            Dialogs::MessageBox::ShowWarning("Warning!", "Unable to decompress the stream because the PDF is encrypted! Raw data will be displayed instead.");
-            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
-            return;
-        }
-        // Decode the content of the stream based on the filters
-        DecodeStream(node, buffer, size);
+    LocalUnicodeStringBuilder<64> streamName;
+    CHECKRET(streamName.Set(tmpName), "");
 
-        // pdf inside pdf
-        constexpr const char pdfSig[] = "%PDF-";
-        if (buffer.GetLength() >= 5 && std::equal(std::begin(pdfSig), std::end(pdfSig) - 1, reinterpret_cast<const char*>(buffer.GetData()))) {
-            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "pdf");
-            return;
-        }
-
-        // json
-        std::string newData(buffer.GetData(), buffer.GetData() + buffer.GetLength());
-        if (IsValidJSON(newData)) {
-            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "json");
-            return;
-        }
-        // js
-        if (IsValidJavaScript(newData)) {
-            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "js");
-            return;
-        }
-        // xml
-        if (IsValidXML(node->pdfObject.dictionarySubtypes)) {
-            GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "xml");
-            return;
-        }
-
+    // Encrypted fallback
+    if (pdfStats.isEncrypted) {
+        Dialogs::MessageBox::ShowWarning("Warning!", "Unable to decompress the stream because the PDF is encrypted! Raw data will be displayed instead.");
         GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
+        return;
     }
+
+    DecodeStream(node, buffer, size);
+
+    // PDF inside PDF
+    constexpr const char pdfSig[] = "%PDF-";
+    if (buffer.GetLength() >= 5 && std::equal(std::begin(pdfSig), std::end(pdfSig) - 1, reinterpret_cast<const char*>(buffer.GetData()))) {
+        GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "pdf");
+        return;
+    }
+
+    // JSON, JS, XML detection
+    std::string newData(reinterpret_cast<const char*>(buffer.GetData()), buffer.GetLength());
+
+    if (IsValidJSON(newData)) {
+        GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "json");
+        return;
+    }
+
+    if (IsValidJavaScript(newData)) {
+        GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "js");
+        return;
+    }
+
+    if (IsValidXML(node->pdfObject.dictionarySubtypes)) {
+        GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::ForceType, "xml");
+        return;
+    }
+
+    GView::App::OpenBuffer(buffer, streamName.ToStringView(), streamName.ToStringView(), GView::App::OpenMethod::BestMatch);
 }
 
 GView::Utils::JsonBuilderInterface* PDFFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
