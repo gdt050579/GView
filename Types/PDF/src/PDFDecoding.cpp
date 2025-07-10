@@ -182,7 +182,6 @@ bool PDF::PDFFile::ASCIIHexDecode(const BufferView& input, Buffer& output, AppCU
 
     if (!foundEndMarker) {
         message.Set("Missing '>' marker in ASCIIHexDecode data!");
-        return false;
     }
 
     return true;
@@ -199,7 +198,6 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
 
     // helper lambda to decode a full 5-char group into 4 bytes
     auto decodeGroup = [&](const char group[5], bool isPartial, size_t partialLen) -> bool {
-
         uint64_t value = 0;
         for (int i = 0; i < 5; i++) {
             const uint8_t c = static_cast<uint8_t>(group[i]);
@@ -245,15 +243,14 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
 
         // check for EOD marker "~>"
         if (c == '~') {
-            // must check if next char is '>' or if this is truncated
             if (i + 1 < len && input[i + 1] == PDF::DC::GREATER_THAN) {
                 endOfData = true;
                 i++; // skip '>' too
                 break;
             }
-            // if not '>'
-            message.Set("ASCII85Decode: '~' not followed by '>' => invalid EOD marker!");
-            return false;
+            // if not '>', just continue processing
+            message.Set("ASCII85Decode: '~' not followed by '>' => skipping.");
+            continue;
         }
 
         if (c == PDF::WSC::SPACE || c == PDF::WSC::HORIZONAL_TAB || c == PDF::WSC::CARRIAGE_RETURN || c == PDF::WSC::LINE_FEED || c == PDF::WSC::FORM_FEED) {
@@ -273,15 +270,14 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
             continue;
         }
 
-        // must be in range '!'..'u' or it's an error
         if (c < '!' || c > 'u') {
             message.Set("ASCII85Decode: Invalid character (not whitespace, not z, not ~>): out of '!'..'u' range.");
-            return false;
+            continue;
         }
 
         accum.push_back(static_cast<char>(c));
         if (accum.size() == 5) {
-            // decode
+            // decode the group of 5 characters
             if (!decodeGroup(accum.data(), false, 5)) {
                 return false;
             }
@@ -289,41 +285,27 @@ bool PDF::PDFFile::ASCII85Decode(const BufferView& input, Buffer& output, String
         }
     }
 
-    // if we never found "~>", check if that’s an error
     if (!endOfData) {
-        // the PDF spec says you must end with "~>" for correct EOD
-        message.Set("Missing '~>' EOD marker in ASCII85Decode data!");
-        return false;
+        message.Set("Missing '~>' EOD marker in ASCII85 data! Processing incomplete data.");
     }
 
     if (!accum.empty()) {
-        // If exactly 5 leftover chars, decode as a full group:
-        if (accum.size() == 5) {
-            // full decode
-            if (!decodeGroup(accum.data(), false /* isPartial */, 5 /* partialLen */)) {
+        if (accum.size() == 1) {
+            message.Set("ASCII85Decode: Partial group of only 1 char => invalid.");
+            accum.clear();
+            return true;
+        }
+
+        if (accum.size() >= 2 && accum.size() <= 4) {
+            if (!decodeGroup(accum.data(), true, accum.size())) {
                 return false;
             }
         } else {
-            // partial decode
-            if (accum.size() == 1) {
-                message.Set("ASCII85Decode: Partial group of only 1 char => invalid.");
-                return false;
-            }
-
-            // Fill up to 5 with 'u'
-            size_t realCount = accum.size();
-            while (accum.size() < 5) {
-                accum.push_back('u');
-            }
-
-            // Now decode as partial, passing the real character count
-            if (!decodeGroup(accum.data(), true, realCount)) {
-                return false;
-            }
+            message.Set("ASCII85Decode: Invalid partial group size.");
+            return false;
         }
-
-        accum.clear();
     }
+
     return true;
 }
 

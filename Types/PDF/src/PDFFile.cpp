@@ -227,6 +227,9 @@ void PDFFile::DecodeStream(ObjectNode* node, Buffer& buffer, const size_t size)
                 String message;
                 Buffer asciiHexDecompressed;
                 if (ASCIIHexDecode(buffer, asciiHexDecompressed, message)) {
+                    if (message.Len()) {
+                        Dialogs::MessageBox::ShowWarning("Warning!", message);
+                    }
                     buffer = asciiHexDecompressed;
                 } else {
                     Dialogs::MessageBox::ShowError("Error!", message);
@@ -235,6 +238,9 @@ void PDFFile::DecodeStream(ObjectNode* node, Buffer& buffer, const size_t size)
                 String message;
                 Buffer ascii85Decompressed;
                 if (ASCII85Decode(buffer, ascii85Decompressed, message)) {
+                    if (message.Len()) {
+                        Dialogs::MessageBox::ShowWarning("Warning!", message);
+                    }
                     buffer = ascii85Decompressed;
                 } else {
                     Dialogs::MessageBox::ShowError("Error!", message);
