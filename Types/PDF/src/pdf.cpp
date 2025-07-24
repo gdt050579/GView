@@ -109,9 +109,14 @@ bool IsWhitespace(const uint8 ch)
     return ch == PDF::WSC::SPACE || ch == PDF::WSC::LINE_FEED || ch == PDF::WSC::FORM_FEED || ch == PDF::WSC::HORIZONAL_TAB || ch == PDF::WSC::CARRIAGE_RETURN;
 }
 
+bool IsDigit(const char ch)
+{
+    return ch >= '0' && ch <= '9';
+}
+
 static int HexVal(const uint8_t c)
 {
-    if (c >= '0' && c <= '9') {
+    if (IsDigit(c)) {
         return c - '0';
     }
     if (c >= 'A' && c <= 'F') {
@@ -199,7 +204,7 @@ uint64 GetTypeValue(GView::Utils::DataCache& data, uint64& offset, const uint64&
     uint8_t buffer;
     uint64 value = 0;
     bool error   = false;
-    while (offset < dataSize && data.Copy(offset, buffer) && buffer >= '0' && buffer <= '9') {
+    while (offset < dataSize && data.Copy(offset, buffer) && IsDigit(buffer)) {
         lengthValStr.push_back(buffer);
         offset++;
         if (lengthValStr.size() > 20) {
@@ -234,7 +239,12 @@ uint8 GetWValue(GView::Utils::DataCache& data, uint64& offset)
 void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize, std::vector<std::string>& filters, GView::Utils::ErrorList &errList)
 {
     const std::unordered_set<std::string> STANDARD_FILTERS = { "/ASCIIHexDecode", "/ASCII85Decode", "/LZWDecode", "/FlateDecode", "/RunLengthDecode",
-                                                                      "/CCITTFaxDecode", "/JBIG2Decode",   "/DCTDecode", "/JPXDecode",   "/Crypt" };
+                                                               "/CCITTFaxDecode",
+                                                               "/JBIG2Decode",
+                                                               "/DCTDecode",
+                                                               "/JPXDecode",
+                                                               "/Crypt",
+                                                               "/Standard" };
     uint8_t buffer;
     while (data.Copy(offset, buffer) && IsWhitespace(buffer) && offset < dataSize) {
         offset++;
@@ -283,7 +293,6 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
         }
     }
 }
-
 
 void GetDecompressDataValue(Buffer& decompressedData, uint64& offset, const uint8& value, uint64& obj)
 {
@@ -380,7 +389,7 @@ uint64 GetNumberOfEntries(uint64& offset, const uint64& dataSize, GView::Utils::
             if (!data.Copy(offset, buffer)) {
                 break;
             }
-            if (buffer >= '0' && buffer <= '9') {
+            if (IsDigit(buffer)) {
                 numEntriesStr.push_back(buffer);
             } else {
                 break;
@@ -517,10 +526,10 @@ void HighlightObjectTypes(
         } else if (buffer == PDF::DC::LEFT_SQUARE_BRACKET || buffer == PDF::DC::RIGHT_SQUARE_BRACKET) {
             settings.AddZone(objectOffset, 1, ColorPair{ Color::Olive, Color::DarkBlue }, "Array");
             objectOffset++;
-        } else if (buffer == '-' || buffer == '+' || (buffer >= '0' && buffer <= '9')) {
+        } else if (buffer == '-' || buffer == '+' || IsDigit(buffer)) {
             const uint64_t start_segment = objectOffset;
             objectOffset++;
-            while (objectOffset < dataSize && data.Copy(objectOffset, buffer) && ((buffer >= '0' && buffer <= '9') || buffer == '.')) {
+            while (objectOffset < dataSize && data.Copy(objectOffset, buffer) && (IsDigit(buffer) || buffer == '.')) {
                 objectOffset++;
             }
             settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
@@ -560,34 +569,47 @@ void HighlightObjectTypes(
 
 bool IsCrossRefStream(uint64 offset, GView::Utils::DataCache& data, const uint64& dataSize)
 {
-    // number 0 obj
-    GetTypeValue(data, offset, dataSize);
     uint8_t buffer;
-    if (!data.Copy(offset, buffer)) {
-        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
+    if (!data.Copy(offset, buffer) || !IsDigit(buffer)) {
         return false;
     }
+
+    while (IsDigit(buffer)) {
+        offset++;
+        if (!data.Copy(offset, buffer)) {
+            return false;
+        }
+    }
+
     if (buffer != PDF::WSC::SPACE) {
         return false;
     }
+
     offset++;
     if (!data.Copy(offset, buffer)) {
-        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
-    }
-    if (buffer != '0') {
         return false;
     }
-    offset++;
-    if (!data.Copy(offset, buffer)) {
-        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
+
+    if (!IsDigit(buffer)) {
+        return false;
     }
+
+    while (IsDigit(buffer)) {
+        offset++;
+        if (!data.Copy(offset, buffer)) {
+            return false;
+        }
+    }
+
     if (buffer != PDF::WSC::SPACE) {
         return false;
     }
+
     offset++;
     if (!CheckType(data, offset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ)) {
         return false;
     }
+
     return true;
 }
 
@@ -606,7 +628,7 @@ bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& 
         }
     }
 
-    while (offset > 0 && buffer >= '0' && buffer <= '9') {
+    while (offset > 0 && IsDigit(buffer)) {
         offset--;
         if (!data.Copy(offset, buffer)) {
             return false;
@@ -623,7 +645,7 @@ bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& 
         offset--;
     }
 
-    while (offset > 0 && buffer >= '0' && buffer <= '9') {
+    while (offset > 0 && IsDigit(buffer)) {
         numberStr.insert(numberStr.begin(), buffer);
         offset--;
         if (!data.Copy(offset, buffer)) {
@@ -667,7 +689,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             continue;
         }
 
-        if (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN) {
+        if (IsWhitespace(buffer)) {
             continue;
         }
 
@@ -711,13 +733,13 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 break;
             }
 
-            if (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN) {
+            if (!IsWhitespace(buffer)) {
                 while (offset > 0) {
                     if (!data.Copy(offset, buffer)) {
                         break;
                     }
 
-                    if (buffer >= '0' && buffer <= '9') {
+                    if (IsDigit(buffer)) {
                         xrefOffsetStr.insert(xrefOffsetStr.begin(), buffer);
                     } else {
                         break;
@@ -1157,7 +1179,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         }
                     }
 
-                    while (copyOffset < dataSize && buffer >= '0' && buffer <= '9') {
+                    while (copyOffset < dataSize && IsDigit(buffer)) {
                         copyOffset++;
                         if (!data.Copy(copyOffset, buffer)) {
                             return;
@@ -2040,7 +2062,7 @@ void ProcessPDFTree(
                 if (!data.Copy(objectOffset, buffer)) {
                     break;
                 }
-                if (buffer >= '0' && buffer <= '9')
+                if (IsDigit(buffer))
                 {
                     const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llu", (uint64_t) number);
@@ -2170,7 +2192,7 @@ void ProcessPDFTree(
             break;
         }
         // get the next object (nr 0 R)
-        if (buffer >= '0' && buffer <= '9') {
+        if (IsDigit(buffer)) {
             bool foundObjRef    = false;
             const uint64 number = GetTypeValue(data, objectOffset, dataSize);
             uint64 copyOffset   = objectOffset;
@@ -2255,7 +2277,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                           CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
                           CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_END)) {
                         objectOffset += PDF::KEY::PDF_DIC_SIZE;
-                    } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
+                    } else if (IsDigit(buffer)) { // get the next object (nr 0 R)
                         GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     } else if (buffer == PDF::DC::SOLIDUS) {
                         // js case here?
@@ -2314,7 +2336,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                 while (objectOffset < object.endBuffer - PDF::KEY::PDF_STARTXREF_SIZE) {
                     if (!data.Copy(objectOffset, buffer)) {
                         break;
-                    } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
+                    } else if (IsDigit(buffer)) { // get the next object (nr 0 R)
                         GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                     } else if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIDUS) {
                         const uint64 copyOffset       = objectOffset;
@@ -2356,7 +2378,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             if (!data.Copy(objectOffset, buffer)) {
                                 break;
                             }
-                            if (buffer >= '0' && buffer <= '9') {
+                            if (IsDigit(buffer)) {
                                 const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
                                 pdf->errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llu", (uint64_t) number);
                             } else {
