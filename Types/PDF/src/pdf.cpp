@@ -109,9 +109,14 @@ bool IsWhitespace(const uint8 ch)
     return ch == PDF::WSC::SPACE || ch == PDF::WSC::LINE_FEED || ch == PDF::WSC::FORM_FEED || ch == PDF::WSC::HORIZONAL_TAB || ch == PDF::WSC::CARRIAGE_RETURN;
 }
 
+bool IsDigit(const char ch)
+{
+    return ch >= '0' && ch <= '9';
+}
+
 static int HexVal(const uint8_t c)
 {
-    if (c >= '0' && c <= '9') {
+    if (IsDigit(c)) {
         return c - '0';
     }
     if (c >= 'A' && c <= 'F') {
@@ -199,7 +204,7 @@ uint64 GetTypeValue(GView::Utils::DataCache& data, uint64& offset, const uint64&
     uint8_t buffer;
     uint64 value = 0;
     bool error   = false;
-    while (offset < dataSize && data.Copy(offset, buffer) && buffer >= '0' && buffer <= '9') {
+    while (offset < dataSize && data.Copy(offset, buffer) && IsDigit(buffer)) {
         lengthValStr.push_back(buffer);
         offset++;
         if (lengthValStr.size() > 20) {
@@ -231,10 +236,11 @@ uint8 GetWValue(GView::Utils::DataCache& data, uint64& offset)
     return value;
 }
 
-void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize, std::vector<std::string>& filters, GView::Utils::ErrorList &errList)
+void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize, std::vector<std::string>& filters, GView::Utils::ErrorList& errList)
 {
-    const std::unordered_set<std::string> STANDARD_FILTERS = { "/ASCIIHexDecode", "/ASCII85Decode", "/LZWDecode", "/FlateDecode", "/RunLengthDecode",
-                                                                      "/CCITTFaxDecode", "/JBIG2Decode",   "/DCTDecode", "/JPXDecode",   "/Crypt" };
+    const std::unordered_set<std::string> STANDARD_FILTERS = { "/ASCIIHexDecode",  "/ASCII85Decode",  "/LZWDecode",   "/FlateDecode",
+                                                               "/RunLengthDecode", "/CCITTFaxDecode", "/JBIG2Decode", "/DCTDecode",
+                                                               "/JPXDecode",       "/Crypt",          "/Standard" };
     uint8_t buffer;
     while (data.Copy(offset, buffer) && IsWhitespace(buffer) && offset < dataSize) {
         offset++;
@@ -266,7 +272,7 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
 
         if (buffer == PDF::DC::SOLIDUS) // '/'
         {
-            const uint64 copyOffset = offset;
+            const uint64 copyOffset       = offset;
             const std::string filterValue = DecodeName(data, offset, dataSize);
             if (filterValue.length() > 1) {
                 filters.push_back(filterValue);
@@ -284,7 +290,6 @@ void GetFilters(GView::Utils::DataCache& data, uint64& offset, const uint64& dat
     }
 }
 
-
 void GetDecompressDataValue(Buffer& decompressedData, uint64& offset, const uint8& value, uint64& obj)
 {
     for (uint8_t i = 0; i < value; ++i) {
@@ -299,7 +304,7 @@ void GetObjectsOffsets(
       GView::Utils::DataCache& data,
       std::vector<uint64_t>& objectOffsets,
       GView::Utils::ErrorList& errList,
-      bool &enableFaultTolerance)
+      bool& enableFaultTolerance)
 {
     std::unordered_set<uint64_t> seenOffsets; // Store seen offsets
 
@@ -339,7 +344,7 @@ void GetObjectsOffsets(
                 }
             }
         } else {
-            //Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
+            // Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Invalid Cross-Reference Table sequence. It has to be 20 bytes!");
             errList.AddError("Invalid Cross-Reference Table sequence. It has to be 20 bytes (0x%llX)", (uint64_t) offset);
             enableFaultTolerance = false;
             break;
@@ -353,7 +358,6 @@ uint64 GetNumberOfEntries(uint64& offset, const uint64& dataSize, GView::Utils::
     uint8_t buffer;
     uint16_t numEntries = 0;
     if (offset > 0) {
-
         while (offset < dataSize) {
             if (!data.Copy(offset, buffer)) {
                 break;
@@ -380,7 +384,7 @@ uint64 GetNumberOfEntries(uint64& offset, const uint64& dataSize, GView::Utils::
             if (!data.Copy(offset, buffer)) {
                 break;
             }
-            if (buffer >= '0' && buffer <= '9') {
+            if (IsDigit(buffer)) {
                 numEntriesStr.push_back(buffer);
             } else {
                 break;
@@ -433,15 +437,15 @@ void HighlightObjectTypes(
             settings.AddZone(objectOffset, PDF::KEY::PDF_DIC_SIZE, ColorPair{ Color::Yellow, Color::DarkBlue }, "Dictionary");
             objectOffset += PDF::KEY::PDF_DIC_SIZE;
         } else if (buffer == PDF::DC::SOLIDUS) {
-            uint64_t copyObjectOffset    = objectOffset;
+            uint64_t copyObjectOffset = objectOffset;
             if (!pdf->hashEscaping) {
                 pdf->hashEscaping = HasHashEscaping(data, copyObjectOffset, pdfObject.endBuffer);
             }
-            std::string decodedName      = DecodeName(data, copyObjectOffset, pdfObject.endBuffer);
+            std::string decodedName = DecodeName(data, copyObjectOffset, pdfObject.endBuffer);
             // get the length for the stream so that we don't have to go through all the bytes
             if (!foundLength && IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH)) { // /Length for the stream
                 settings.AddZone(objectOffset, copyObjectOffset - objectOffset, ColorPair{ Color::Red, Color::DarkBlue }, "Name");
-                objectOffset = copyObjectOffset + 1;
+                objectOffset                 = copyObjectOffset + 1;
                 const uint64_t start_segment = objectOffset;
                 lengthVal                    = GetTypeValue(data, objectOffset, dataSize);
                 settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
@@ -517,10 +521,10 @@ void HighlightObjectTypes(
         } else if (buffer == PDF::DC::LEFT_SQUARE_BRACKET || buffer == PDF::DC::RIGHT_SQUARE_BRACKET) {
             settings.AddZone(objectOffset, 1, ColorPair{ Color::Olive, Color::DarkBlue }, "Array");
             objectOffset++;
-        } else if (buffer == '-' || buffer == '+' || (buffer >= '0' && buffer <= '9')) {
+        } else if (buffer == '-' || buffer == '+' || IsDigit(buffer)) {
             const uint64_t start_segment = objectOffset;
             objectOffset++;
-            while (objectOffset < dataSize && data.Copy(objectOffset, buffer) && ((buffer >= '0' && buffer <= '9') || buffer == '.')) {
+            while (objectOffset < dataSize && data.Copy(objectOffset, buffer) && (IsDigit(buffer) || buffer == '.')) {
                 objectOffset++;
             }
             settings.AddZone(start_segment, objectOffset - start_segment, ColorPair{ Color::Green, Color::DarkBlue }, "Numeric");
@@ -560,40 +564,54 @@ void HighlightObjectTypes(
 
 bool IsCrossRefStream(uint64 offset, GView::Utils::DataCache& data, const uint64& dataSize)
 {
-    // number 0 obj
-    GetTypeValue(data, offset, dataSize);
     uint8_t buffer;
-    if (!data.Copy(offset, buffer)) {
-        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
+    if (!data.Copy(offset, buffer) || !IsDigit(buffer)) {
         return false;
     }
+
+    while (IsDigit(buffer)) {
+        offset++;
+        if (!data.Copy(offset, buffer)) {
+            return false;
+        }
+    }
+
     if (buffer != PDF::WSC::SPACE) {
         return false;
     }
+
     offset++;
     if (!data.Copy(offset, buffer)) {
-        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
-    }
-    if (buffer != '0') {
         return false;
     }
-    offset++;
-    if (!data.Copy(offset, buffer)) {
-        Dialogs::MessageBox::ShowError("Error!", "IsCrossRefStream - Copy buffer error");
+
+    if (!IsDigit(buffer)) {
+        return false;
     }
+
+    while (IsDigit(buffer)) {
+        offset++;
+        if (!data.Copy(offset, buffer)) {
+            return false;
+        }
+    }
+
     if (buffer != PDF::WSC::SPACE) {
         return false;
     }
+
     offset++;
     if (!CheckType(data, offset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ)) {
         return false;
     }
+
     return true;
 }
 
-bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& objectNumber)
+bool ExtractObjectNumbers(GView::Utils::DataCache& data, uint64& offset, uint64& objectNumber, uint16& generationNumber)
 {
     std::string numberStr;
+    std::string genStr;
     uint8_t buffer;
 
     while (offset > 0) {
@@ -606,12 +624,19 @@ bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& 
         }
     }
 
-    while (offset > 0 && buffer >= '0' && buffer <= '9') {
+    while (offset > 0 && IsDigit(buffer)) {
+        genStr.insert(genStr.begin(), static_cast<char>(buffer));
         offset--;
         if (!data.Copy(offset, buffer)) {
             return false;
         }
     }
+
+    if (genStr.empty()) {
+        return false;
+    }
+
+    generationNumber = std::stoull(genStr);
 
     while (offset > 0) {
         if (!data.Copy(offset, buffer)) {
@@ -623,7 +648,7 @@ bool ExtractObjectNumber(GView::Utils::DataCache& data, uint64 &offset, uint64& 
         offset--;
     }
 
-    while (offset > 0 && buffer >= '0' && buffer <= '9') {
+    while (offset > 0 && IsDigit(buffer)) {
         numberStr.insert(numberStr.begin(), buffer);
         offset--;
         if (!data.Copy(offset, buffer)) {
@@ -667,7 +692,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             continue;
         }
 
-        if (buffer == PDF::WSC::LINE_FEED || buffer == PDF::WSC::CARRIAGE_RETURN) {
+        if (IsWhitespace(buffer)) {
             continue;
         }
 
@@ -694,7 +719,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         pdf->errList.AddError("End-of-file marker (%%EOF) is missing (0x%llX)", (uint64_t) offset);
         pdf->enableFaultTolerance = true;
     }
-    
+
     // data after the %%EOF marker -> IOC
     if (dataSize - offset - PDF::KEY::PDF_EOF_SIZE >= 5 && !pdf->enableFaultTolerance) {
         pdf->errList.AddWarning(
@@ -711,13 +736,13 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 break;
             }
 
-            if (buffer != PDF::WSC::LINE_FEED && buffer != PDF::WSC::CARRIAGE_RETURN) {
+            if (!IsWhitespace(buffer)) {
                 while (offset > 0) {
                     if (!data.Copy(offset, buffer)) {
                         break;
                     }
 
-                    if (buffer >= '0' && buffer <= '9') {
+                    if (IsDigit(buffer)) {
                         xrefOffsetStr.insert(xrefOffsetStr.begin(), buffer);
                     } else {
                         break;
@@ -751,7 +776,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.number      = 0;
 
             uint64 trailerOffset    = 0;
-            offset = crossRefOffset + 4; // skip the xref marker
+            offset                  = crossRefOffset + 4; // skip the xref marker
             const bool foundTrailer = GetTrailerOffset(offset, dataSize, data, trailerOffset);
             // if we have multiple sections in the table, we check for the minimal case
             while (trailerOffset - offset > 20 && !pdf->enableFaultTolerance) {
@@ -780,6 +805,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 pdfObject.startBuffer = trailerOffset;
                 pdfObject.type        = PDF::SectionPDFObjectType::Trailer;
                 pdfObject.number      = 0;
+                pdfObject.generation  = 0;
                 // looking for /Prev entry in the trailer dictionary
                 bool found_prev = false;
                 if (foundTrailer) {
@@ -853,6 +879,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.startBuffer = crossRefOffset;
             pdfObject.type        = PDF::SectionPDFObjectType::CrossRefStream;
             pdfObject.number      = GetTypeValue(data, offset, dataSize);
+            pdfObject.generation  = GetTypeValue(data, offset, dataSize);
 
             while (!end_tag && offset < dataSize) {
                 if (CheckType(data, offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
@@ -907,8 +934,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                                     offset += 1;
                                     decodeParms.earlyChange = GetTypeValue(data, offset, dataSize);
                                 }
-                            }
-                            else {
+                            } else {
                                 offset++;
                             }
                         }
@@ -987,7 +1013,8 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                             if (!typeFlags.hasW) {
                                 Dialogs::MessageBox::ShowError(
                                       "Error!", "Anomaly found: W values missing for objects offset references from the Cross-Reference Stream!");
-                                pdf->errList.AddError("W values missing for objects offset references from the Cross-Reference Stream (0x%llX)", (uint64_t) offset);
+                                pdf->errList.AddError(
+                                      "W values missing for objects offset references from the Cross-Reference Stream (0x%llX)", (uint64_t) offset);
                                 break;
                             }
                             while (offset < decompressDataSize) {
@@ -1017,8 +1044,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                             pdf->errList.AddError(message);
                         }
                     } else {
-                        Dialogs::MessageBox::ShowError(
-                              "Error!", "Unknown Filter for the Cross-Reference Stream!");
+                        Dialogs::MessageBox::ShowError("Error!", "Unknown Filter for the Cross-Reference Stream!");
                         pdf->errList.AddError("Unknown Filter for the Cross-Reference Stream (0x%llX)", (uint64_t) offset);
                     }
                 }
@@ -1034,7 +1060,8 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             }
         }
     } else {
-        Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find a Cross-Reference Table or Cross-Reference Stream based on the startxref offset!");
+        Dialogs::MessageBox::ShowError(
+              "Error!", "Anomaly found: Couldn't find a Cross-Reference Table or Cross-Reference Stream based on the startxref offset!");
         pdf->errList.AddError("Couldn't find a Cross-Reference Table or Cross-Reference Stream based on the startxref offset (0x%llX)", (uint64_t) offset);
         pdf->enableFaultTolerance = true;
     }
@@ -1044,10 +1071,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
         offset = sizeof(PDF::Header);
         while (offset < dataSize) {
             if (CheckType(data, offset, PDF::KEY::PDF_OBJ_SIZE, PDF::KEY::PDF_OBJ)) {
-                uint64 objectNumber   = 0;
-                uint64 objectPosition = offset;
+                uint64 objectNumber     = 0;
+                uint16 objectGeneration = 0;
+                uint64 objectPosition   = offset;
 
-                if (ExtractObjectNumber(data, objectPosition, objectNumber)) {
+                if (ExtractObjectNumbers(data, objectPosition, objectNumber, objectGeneration)) {
                     uint64 endobjOffset = offset;
 
                     while (endobjOffset + PDF::KEY::PDF_ENDOBJ_SIZE < dataSize &&
@@ -1068,6 +1096,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     pdfObject.endBuffer   = endobjOffset;
                     pdfObject.type        = PDF::SectionPDFObjectType::Object;
                     pdfObject.number      = objectNumber;
+                    pdfObject.generation  = objectGeneration;
 
                     const uint64_t length = pdfObject.endBuffer - pdfObject.startBuffer;
 
@@ -1103,6 +1132,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     xrefObject.endBuffer   = trailerOffset;
                     xrefObject.type        = PDF::SectionPDFObjectType::CrossRefTable;
                     xrefObject.number      = 0;
+                    xrefObject.generation  = 0;
                     pdf->AddPDFObject(pdf, xrefObject);
 
                     offset = trailerOffset - 1;
@@ -1117,7 +1147,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 uint64 copyOffset       = offset;
                 uint64 endTrailerOffset = 0;
                 uint64 startxrefOffset  = 0;
-                uint64 eofOffset  = 0;
+                uint64 eofOffset        = 0;
                 uint16_t tag;
                 uint8_t buffer = 0;
 
@@ -1157,7 +1187,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                         }
                     }
 
-                    while (copyOffset < dataSize && buffer >= '0' && buffer <= '9') {
+                    while (copyOffset < dataSize && IsDigit(buffer)) {
                         copyOffset++;
                         if (!data.Copy(copyOffset, buffer)) {
                             return;
@@ -1187,8 +1217,9 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                 PDF::PDFObject trailerObject;
                 trailerObject.startBuffer = trailerOffset;
                 trailerObject.endBuffer   = endTrailerOffset;
-                trailerObject.type   = PDF::SectionPDFObjectType::Trailer;
-                trailerObject.number = 0;
+                trailerObject.type        = PDF::SectionPDFObjectType::Trailer;
+                trailerObject.number      = 0;
+                trailerObject.generation  = 0;
                 pdf->AddPDFObject(pdf, trailerObject);
 
                 offset = endTrailerOffset;
@@ -1216,6 +1247,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.startBuffer = objOffset;
             pdfObject.type        = PDF::SectionPDFObjectType::Object;
             pdfObject.number      = GetTypeValue(data, objOffset, dataSize);
+            pdfObject.generation  = GetTypeValue(data, objOffset, dataSize);
 
             uint64_t endobjOffset = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] : eofOffset;
 
@@ -1238,35 +1270,74 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
     }
 }
 
-uint64 GetObjectReference(const uint64& dataSize, GView::Utils::DataCache& data, uint64& objectOffset, uint8& buffer, std::vector<uint64> &objectsNumber)
+bool GetObjectReference(
+      const uint64& dataSize,
+      GView::Utils::DataCache& data,
+      uint64& objectOffset,
+      uint8& buffer,
+      std::vector<PDF::ObjectNums>& objectNums,
+      uint64& outObjectNumber,
+      uint16& outGeneration)
 {
-    bool foundObjRef    = false;
-    const uint64 number = GetTypeValue(data, objectOffset, dataSize);
-    uint64 copyobjectOffset = objectOffset;
-    if (!data.Copy(objectOffset, buffer)) {
+    uint64 pos            = objectOffset;
+    const uint64 objStart = pos;
+    uint64 obj            = GetTypeValue(data, pos, dataSize);
+
+    if (pos == objStart) {
+        return false;
+    }
+
+    if (obj == 0) {
+        return false;
+    }
+
+    while (pos < dataSize && data.Copy(pos, buffer) && IsWhitespace(buffer)) {
+        ++pos;
+    }
+
+    if (pos >= dataSize) {
+        return false;
+    }
+
+    const uint64 genStart = pos;
+    uint64 gen64          = GetTypeValue(data, pos, dataSize);
+    if (pos == genStart) {
+        return false;
+    }
+
+    if (gen64 > 65535) {
+        Dialogs::MessageBox::ShowError("Error!", "GetObjectReference - generation exceeds 65535");
+        return false;
+    }
+
+    uint16 gen = static_cast<uint16>(gen64);
+    while (pos < dataSize && data.Copy(pos, buffer) && IsWhitespace(buffer)) {
+        ++pos;
+    }
+    if (pos >= dataSize) {
+        return false;
+    }
+
+    if (!data.Copy(pos, buffer)) {
         Dialogs::MessageBox::ShowError("Error!", "GetObjectReference - Copy buffer error");
+        return false;
     }
-    copyobjectOffset++;
-    if (!data.Copy(copyobjectOffset, buffer)) {
-        Dialogs::MessageBox::ShowError("Error!", "GetObjectReference - Copy buffer error");
+
+    if (buffer != PDF::KEY::PDF_INDIRECTOBJ) {
+        return false;
     }
-    if (buffer == '0') {
-        copyobjectOffset += 2;
-        if (!data.Copy(copyobjectOffset, buffer)) {
-            Dialogs::MessageBox::ShowError("Error!", "GetObjectReference - Copy buffer error");
-        }
-        if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
-            foundObjRef = true;
-        }
+
+    ++pos;
+    outObjectNumber = obj;
+    outGeneration   = gen;
+
+    const PDF::ObjectNums ref{ obj, gen };
+    if (std::find(objectNums.begin(), objectNums.end(), ref) == objectNums.end()) {
+        objectNums.push_back(ref);
     }
-    if (foundObjRef) {
-        // check if the number already exists in the vector
-        if (std::find(objectsNumber.begin(), objectsNumber.end(), number) == objectsNumber.end()) {
-            objectsNumber.push_back(number);
-        }
-        objectOffset = copyobjectOffset;
-    }
-    return number;
+
+    objectOffset = pos;
+    return true;
 }
 
 std::string GetDictionaryType(GView::Utils::DataCache& data, uint64& objectOffset, const uint64& dataSize, std::vector<std::string>& entries)
@@ -1291,9 +1362,8 @@ uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, cons
     uint8 buffer;
     bool foundRef = false;
     objectOffset += 1;
-    numberLength = GetTypeValue(data, objectOffset, dataSize);
+    numberLength      = GetTypeValue(data, objectOffset, dataSize);
     uint64 copyOffset = objectOffset;
-
 
     if (!data.Copy(copyOffset, buffer)) {
         Dialogs::MessageBox::ShowError("Error!", "Buffer copy failed!");
@@ -1335,7 +1405,7 @@ uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, cons
     return numberLength;
 }
 
-void InsertValuesIntoStats(std::vector<std::string> &stats, const std::vector<std::string> values)
+void InsertValuesIntoStats(std::vector<std::string>& stats, const std::vector<std::string> values)
 {
     std::set<std::string> uniqueFilters(stats.begin(), stats.end());
     for (const auto& value : values) {
@@ -1344,10 +1414,10 @@ void InsertValuesIntoStats(std::vector<std::string> &stats, const std::vector<st
     stats.assign(uniqueFilters.begin(), uniqueFilters.end());
 }
 
-static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObjects, const uint64 number, const uint64 start)
+static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObjects, const uint64 number, const uint64 generation, const uint64 start)
 {
     for (auto& obj : pdfObjects) {
-        if (obj.number == number && obj.startBuffer == start) {
+        if (obj.number == number && obj.generation == generation && obj.startBuffer == start) {
             return &obj;
         }
     }
@@ -1356,7 +1426,6 @@ static PDF::PDFObject* FindObjectByNumber(std::vector<PDF::PDFObject>& pdfObject
 
 static std::string MakeXMPDateReadable(const std::string& xmpDate)
 {
-
     if (xmpDate.size() < 19) {
         return xmpDate;
     }
@@ -1378,7 +1447,7 @@ static std::string MakeXMPDateReadable(const std::string& xmpDate)
     }
 
     const std::string year   = xmpDate.substr(0, 4);
-    const std::string month = xmpDate.substr(5, 2);
+    const std::string month  = xmpDate.substr(5, 2);
     const std::string day    = xmpDate.substr(8, 2);
     const std::string hour   = xmpDate.substr(11, 2);
     const std::string minute = xmpDate.substr(14, 2);
@@ -1425,7 +1494,6 @@ static std::string ExtractBetweenTags(const std::string& src, std::string_view o
     }
     return src.substr(start, end - start);
 }
-
 
 static std::string ExtractXMPValue(const std::string& content, const std::string_view mainStartTag, const std::string_view mainEndTag)
 {
@@ -1573,7 +1641,7 @@ static std::string MakeDateReadable(const std::string& pdfDate)
     }
 
     // Extract YYYY, MM, DD, HH, mm, SS in sequence (some may be missing)
-    size_t idx = 0;
+    size_t idx     = 0;
     const int year = SafeParseInt(date, idx, 4);
     if (year < 0) {
         return pdfDate;
@@ -1691,7 +1759,7 @@ static std::string ParseLiteralString(GView::Utils::DataCache& data, uint64& off
     while (offset < endOffset && parenLevel > 0) {
         uint8 c;
         if (!data.Copy(offset, c)) {
-            break; 
+            break;
         }
         offset++;
 
@@ -1766,7 +1834,8 @@ static std::string ParseLiteralString(GView::Utils::DataCache& data, uint64& off
     return result;
 }
 
-static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::ObjectNode& objectNode, PDF::Metadata& pdfMetadata, GView::Utils::ErrorList &errList)
+static void ProcessMetadataObject(
+      GView::Utils::DataCache& data, const PDF::ObjectNode& objectNode, PDF::Metadata& pdfMetadata, GView::Utils::ErrorList& errList)
 {
     uint64 offset          = objectNode.pdfObject.startBuffer;
     const uint64 endOffset = objectNode.pdfObject.endBuffer;
@@ -1790,7 +1859,7 @@ static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::Obje
                 }
                 if (buffer == PDF::DC::LEFT_PARETHESIS) {
                     uint64_t copyOffset = offset;
-                    std::string value = ParseLiteralString(data, offset, endOffset);
+                    std::string value   = ParseLiteralString(data, offset, endOffset);
                     if (value.length() > 50) {
                         errList.AddWarning(
                               "Object %llu has a value too long for %s (0x%llX)",
@@ -1819,19 +1888,19 @@ static void ProcessMetadataObject(GView::Utils::DataCache& data, const PDF::Obje
     }
 }
 
-static void FindAndProcessMetadataObjects(
-      Reference<GView::Type::PDF::PDFFile> pdf)
+static void FindAndProcessMetadataObjects(Reference<GView::Type::PDF::PDFFile> pdf)
 {
     auto& data = pdf->obj->GetData();
-    std::unordered_set<uint64> toFind(pdf->metadataObjectNumbers.begin(), pdf->metadataObjectNumbers.end());
+    std::unordered_set<PDF::ObjectNums, PDF::ObjectNumsHash> toFind(pdf->metadataObjectNumbers.begin(), pdf->metadataObjectNumbers.end());
     std::function<void(PDF::ObjectNode&)> searchTree = [&](PDF::ObjectNode& node) {
         if (toFind.empty()) {
             return;
         }
-        auto it = toFind.find(node.pdfObject.number);
+        PDF::ObjectNums key{ node.pdfObject.number, static_cast<uint16_t>(node.pdfObject.generation) };
+        auto it = toFind.find(key);
         if (it != toFind.end()) {
             bool isXML = false;
-            for (const auto type : node.pdfObject.dictionaryTypes) {
+            for (const auto& type : node.pdfObject.dictionaryTypes) {
                 if (type == "/Metadata") {
                     isXML = true;
                 }
@@ -1846,7 +1915,7 @@ static void FindAndProcessMetadataObjects(
             toFind.erase(it);
             if (toFind.empty()) {
                 return;
-            };
+            }
         }
 
         for (auto& child : node.children) {
@@ -1864,18 +1933,19 @@ void ProcessPDFTree(
       GView::Utils::DataCache& data,
       PDF::ObjectNode& objectNode,
       vector<PDF::PDFObject>& pdfObjects,
-      vector<uint64>& processedObjects,
+      vector<PDF::ObjectNums>& processedObjects,
       PDF::PDFStats& pdfStats,
-      vector<uint64>& metadataObjectNumbers,
-      GView::Utils::ErrorList &errList)
+      vector<PDF::ObjectNums>& metadataObjectNumbers,
+      GView::Utils::ErrorList& errList)
 {
     // TODO: treat the other particular cases for getting the references of the objects
     uint64 objectOffset = objectNode.pdfObject.startBuffer;
     uint8 buffer;
     uint64 streamLength = 0;
     bool foundLength    = false;
-    std::vector<uint64> objectsNumber;     
-    processedObjects.push_back(objectNode.pdfObject.number);
+    std::vector<PDF::ObjectNums> objectNums;
+    PDF::ObjectNums key{ objectNode.pdfObject.number, objectNode.pdfObject.generation };
+    processedObjects.push_back(key);
     objectNode.pdfObject.hasStream = false;
 
     while (objectOffset < objectNode.pdfObject.endBuffer) {
@@ -2020,8 +2090,8 @@ void ProcessPDFTree(
                 objectNode.decodeObj.decodeParams.dmgRowsBefError = GetTypeValue(data, objectOffset, dataSize);
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
-                const uint64 copyTypeOffset      = objectOffset;
-                std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionaryTypes);
+                const uint64 copyTypeOffset = objectOffset;
+                std::string typeNameObject  = GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionaryTypes);
                 if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                     errList.AddWarning(
                           "Contains an embedded file payload (/EmbeddedFile) in the Object %llu (0x%llX)",
@@ -2034,15 +2104,15 @@ void ProcessPDFTree(
                 GetDictionaryType(data, objectOffset, dataSize, objectNode.pdfObject.dictionarySubtypes);
                 InsertValuesIntoStats(pdfStats.dictionarySubtypes, objectNode.pdfObject.dictionarySubtypes);
                 objectOffset--;
-            } else if (
-                  IsEqualType(decodedName, PDF::KEY::PDF_JS_SIZE, PDF::KEY::PDF_JS)) {
+            } else if (IsEqualType(decodedName, PDF::KEY::PDF_JS_SIZE, PDF::KEY::PDF_JS)) {
                 objectOffset++;
                 if (!data.Copy(objectOffset, buffer)) {
                     break;
                 }
-                if (buffer >= '0' && buffer <= '9')
-                {
-                    const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
+                if (IsDigit(buffer)) {
+                    uint64 number     = 0;
+                    uint16 generation = 0;
+                    GetObjectReference(dataSize, data, objectOffset, buffer, objectNums, number, generation);
                     errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llu", (uint64_t) number);
                 } else {
                     errList.AddWarning("Contains a JavaScript block (/JS) (0x%llX)", (uint64_t) objectOffset);
@@ -2081,7 +2151,7 @@ void ProcessPDFTree(
                 errList.AddWarning("Contains a form submission action (/SubmitForm) (0x%llX)", (uint64_t) (copyOffset));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_URI_SIZE, PDF::KEY::PDF_URI)) {
-                bool correctURI = false;
+                bool correctURI         = false;
                 uint64 copyobjectOffset = objectOffset;
                 if (!data.Copy(copyobjectOffset, buffer)) {
                     break;
@@ -2104,13 +2174,18 @@ void ProcessPDFTree(
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_METADATA_OBJ_SIZE, PDF::KEY::PDF_METADATA_OBJ)) {
                 objectOffset++;
-                const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
-                if (std::find(metadataObjectNumbers.begin(), metadataObjectNumbers.end(), number) == metadataObjectNumbers.end()) {
-                    metadataObjectNumbers.push_back(number);
+
+                uint64 number     = 0;
+                uint16 generation = 0;
+                GetObjectReference(dataSize, data, objectOffset, buffer, objectNums, number, generation);
+                PDF::ObjectNums ref{ number, generation };
+                if (std::find(metadataObjectNumbers.begin(), metadataObjectNumbers.end(), ref) == metadataObjectNumbers.end()) {
+                    metadataObjectNumbers.push_back(ref);
                 }
-                if (std::count(processedObjects.begin(), processedObjects.end(), number) == 0) {
-                    if (std::find(objectsNumber.begin(), objectsNumber.end(), number) == objectsNumber.end()) {
-                        objectsNumber.push_back(number);
+
+                if (std::count(processedObjects.begin(), processedObjects.end(), ref) == 0) {
+                    if (std::find(objectNums.begin(), objectNums.end(), ref) == objectNums.end()) {
+                        objectNums.push_back(ref);
                     }
                 }
             } else {
@@ -2170,41 +2245,48 @@ void ProcessPDFTree(
             break;
         }
         // get the next object (nr 0 R)
-        if (buffer >= '0' && buffer <= '9') {
+        if (IsDigit(buffer)) {
             bool foundObjRef    = false;
-            const uint64 number = GetTypeValue(data, objectOffset, dataSize);
-            uint64 copyOffset   = objectOffset;
-            if (!data.Copy(copyOffset, buffer)) {
-                break;
-            }
-            copyOffset++;
-            if (!data.Copy(copyOffset, buffer)) {
-                break;
-            }
-            if (buffer == '0') {
-                copyOffset += 2;
-                if (!data.Copy(copyOffset, buffer)) {
-                    break;
+            uint64 pos          = objectOffset;
+            const uint64 number = GetTypeValue(data, pos, dataSize);
+            uint16 generation   = 0;
+            if (number != 0 && pos != objectOffset) {
+                while (pos < dataSize && data.Copy(pos, buffer) && IsWhitespace(buffer)) {
+                    ++pos;
                 }
-                if (buffer == PDF::KEY::PDF_INDIRECTOBJ) {
-                    foundObjRef = true;
+                if (pos < dataSize && data.Copy(pos, buffer) && IsDigit(buffer)) {
+                    const uint64 gen64 = GetTypeValue(data, pos, dataSize);
+                    if (gen64 <= 65535) {
+                        generation = static_cast<uint16>(gen64);
+                        while (pos < dataSize && data.Copy(pos, buffer) && IsWhitespace(buffer)) {
+                            ++pos;
+                        }
+                        if (pos < dataSize && data.Copy(pos, buffer) && buffer == PDF::KEY::PDF_INDIRECTOBJ) {
+                            foundObjRef = true;
+                            ++pos;
+                            objectOffset = pos;
+                        }
+                    } else {
+                        // Dialogs::MessageBox::ShowError("Error!", "Generation exceeds 65535");
+                    }
                 }
             }
             if (foundObjRef) {
-                if (std::count(processedObjects.begin(), processedObjects.end(), number) == 0)
-                {
-                    if (std::find(objectsNumber.begin(), objectsNumber.end(), number) == objectsNumber.end()) {
-                        objectsNumber.push_back(number);
+                PDF::ObjectNums ref{ number, generation };
+                if (std::count(processedObjects.begin(), processedObjects.end(), ref) == 0) {
+                    if (std::find(objectNums.begin(), objectNums.end(), ref) == objectNums.end()) {
+                        objectNums.push_back(ref);
                     }
                 }
-                objectOffset = copyOffset;
+            } else {
+                objectOffset++;
             }
         } else {
             objectOffset++;
         }
     }
 
-    if (auto* found = FindObjectByNumber(pdfObjects, objectNode.pdfObject.number, objectNode.pdfObject.startBuffer)) {
+    if (auto* found = FindObjectByNumber(pdfObjects, objectNode.pdfObject.number, objectNode.pdfObject.generation, objectNode.pdfObject.startBuffer)) {
         found->hasStream          = objectNode.pdfObject.hasStream;
         found->filters            = objectNode.decodeObj.filters;
         found->dictionaryTypes    = objectNode.pdfObject.dictionaryTypes;
@@ -2212,18 +2294,19 @@ void ProcessPDFTree(
         found->hasJS              = objectNode.pdfObject.hasJS;
     }
 
-    for (const auto& objectNumber : objectsNumber) {
+    for (const auto& ref : objectNums) {
         for (const auto& object : pdfObjects) {
-            if (objectNumber == object.number) {
+            if (ref.obj == object.number && ref.gen == object.generation) {
                 PDF::ObjectNode newObject;
                 newObject.pdfObject = object;
                 objectNode.children.push_back(newObject);
             }
         }
     }
-    for (uint64 i = 0; i < objectNode.children.size(); i++) {
-        if (std::count(processedObjects.begin(), processedObjects.end(), objectNode.children[i].pdfObject.number) == 0) {
-            ProcessPDFTree(dataSize, data, objectNode.children[i], pdfObjects, processedObjects, pdfStats, metadataObjectNumbers, errList);
+    for (auto& child : objectNode.children) {
+        PDF::ObjectNums key{ child.pdfObject.number, child.pdfObject.generation };
+        if (std::count(processedObjects.begin(), processedObjects.end(), key) == 0) {
+            ProcessPDFTree(dataSize, data, child, pdfObjects, processedObjects, pdfStats, metadataObjectNumbers, errList);
         }
     }
 }
@@ -2232,13 +2315,13 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
 {
     auto& data            = pdf->obj->GetData();
     const uint64 dataSize = data.GetSize();
-    std::vector<uint64> objectsNumber;
+    std::vector<PDF::ObjectNums> objectNums;
 
     if (pdf->hasXrefTable) {
         bool firstTrailer = false;
         for (const auto& object : pdf->pdfObjects) {
             if (object.type == PDF::SectionPDFObjectType::Trailer) {
-                uint64 objectOffset           = object.startBuffer;
+                uint64 objectOffset = object.startBuffer;
                 if (!firstTrailer) {
                     pdf->objectNodeRoot.pdfObject           = object;
                     pdf->objectNodeRoot.pdfObject.hasStream = false;
@@ -2255,18 +2338,26 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                           CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_START) ||
                           CheckType(data, objectOffset, PDF::KEY::PDF_DIC_SIZE, PDF::KEY::PDF_DIC_END)) {
                         objectOffset += PDF::KEY::PDF_DIC_SIZE;
-                    } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
-                        GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
+                    } else if (IsDigit(buffer)) { // get the next object (nr 0 R)
+                        uint64 objNum = 0;
+                        uint16 genNum = 0;
+                        if (!GetObjectReference(dataSize, data, objectOffset, buffer, objectNums, objNum, genNum)) {
+                            objectOffset++;
+                        }
                     } else if (buffer == PDF::DC::SOLIDUS) {
                         // js case here?
                         uint64_t copyObjectOffset = objectOffset;
-                        std::string decodedName         = DecodeName(data, copyObjectOffset, object.endBuffer);
+                        std::string decodedName   = DecodeName(data, copyObjectOffset, object.endBuffer);
                         if (IsEqualType(decodedName, PDF::KEY::PDF_INFO_SIZE, PDF::KEY::PDF_INFO)) {
                             copyObjectOffset++;
-                            const uint64 number = GetObjectReference(dataSize, data, copyObjectOffset, buffer, objectsNumber);
-                            // only unique entries 
-                            if (std::find(pdf->metadataObjectNumbers.begin(), pdf->metadataObjectNumbers.end(), number) == pdf->metadataObjectNumbers.end()) {
-                                pdf->metadataObjectNumbers.push_back(number);
+                            uint64 number     = 0;
+                            uint16 generation = 0;
+                            if (GetObjectReference(dataSize, data, copyObjectOffset, buffer, objectNums, number, generation)) {
+                                // only unique entries
+                                PDF::ObjectNums ref{ number, generation };
+                                if (std::find(pdf->metadataObjectNumbers.begin(), pdf->metadataObjectNumbers.end(), ref) == pdf->metadataObjectNumbers.end()) {
+                                    pdf->metadataObjectNumbers.push_back(ref);
+                                }
                             }
                             objectOffset = copyObjectOffset;
                         }
@@ -2314,10 +2405,14 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                 while (objectOffset < object.endBuffer - PDF::KEY::PDF_STARTXREF_SIZE) {
                     if (!data.Copy(objectOffset, buffer)) {
                         break;
-                    } else if (buffer >= '0' && buffer <= '9') { // get the next object (nr 0 R)
-                        GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
+                    } else if (IsDigit(buffer)) { // get the next object (nr 0 R)
+                        uint64 objNum = 0;
+                        uint16 genNum = 0;
+                        if (!GetObjectReference(dataSize, data, objectOffset, buffer, objectNums, objNum, genNum)) {
+                            objectOffset++;
+                        }
                     } else if (data.Copy(objectOffset, buffer) && buffer == PDF::DC::SOLIDUS) {
-                        const uint64 copyOffset       = objectOffset;
+                        const uint64 copyOffset = objectOffset;
                         std::string decodedName = DecodeName(data, objectOffset, object.endBuffer);
                         if (IsEqualType(decodedName, PDF::KEY::PDF_FILTER_SIZE, PDF::KEY::PDF_FILTER)) {
                             GetFilters(data, objectOffset, dataSize, pdf->objectNodeRoot.decodeObj.filters, pdf->errList);
@@ -2325,8 +2420,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
                             streamLength = GetLengthNumber(data, objectOffset, dataSize, pdf->pdfObjects);
                             foundLength  = true;
-                        }
-                        else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
+                        } else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
                             objectOffset += 1;
                             pdf->objectNodeRoot.decodeObj.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
@@ -2340,7 +2434,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             pdf->objectNodeRoot.decodeObj.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
                             const uint64 copyObjectOffset = objectOffset;
-                            std::string typeNameObject = GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
+                            std::string typeNameObject    = GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
                             if (IsEqualType(typeNameObject, PDF::KEY::PDF_EMBEDDEDFILE_SIZE, PDF::KEY::PDF_EMBEDDEDFILE)) {
                                 pdf->errList.AddWarning(
                                       "Contains an embedded file payload (/EmbeddedFile) in the Object %llu (0x%llX)",
@@ -2356,9 +2450,14 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             if (!data.Copy(objectOffset, buffer)) {
                                 break;
                             }
-                            if (buffer >= '0' && buffer <= '9') {
-                                const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
-                                pdf->errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llu", (uint64_t) number);
+                            if (IsDigit(buffer)) {
+                                uint64 number     = 0;
+                                uint16 generation = 0;
+                                if (!GetObjectReference(dataSize, data, objectOffset, buffer, objectNums, number, generation)) {
+                                    pdf->errList.AddWarning("Contains a JavaScript block (/JS) in the Object %llu", (uint64_t) number);
+                                } else {
+                                    objectOffset++;
+                                }
                             } else {
                                 pdf->errList.AddWarning("Contains a JavaScript block (/JS) (0x%llX)", (uint64_t) objectOffset);
                             }
@@ -2375,7 +2474,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_ADDITIONALACTIONS_SIZE, PDF::KEY::PDF_ADDITIONALACTIONS)) {
                             pdf->errList.AddWarning("Contains additional actions (/AA) (0x%llX)", (uint64_t) (copyOffset));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_URI_SIZE, PDF::KEY::PDF_URI)) {
-                            bool correctURI = false;
+                            bool correctURI         = false;
                             uint64 copyObjectOffset = objectOffset;
                             if (!data.Copy(copyObjectOffset, buffer)) {
                                 break;
@@ -2407,10 +2506,14 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             pdf->errList.AddWarning("Contains a form submission action (/SubmitForm) (0x%llX)", (uint64_t) (copyOffset));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_INFO_SIZE, PDF::KEY::PDF_INFO)) {
                             objectOffset++;
-                            const uint64 number = GetObjectReference(dataSize, data, objectOffset, buffer, objectsNumber);
-                            // only unique entries
-                            if (std::find(pdf->metadataObjectNumbers.begin(), pdf->metadataObjectNumbers.end(), number) == pdf->metadataObjectNumbers.end()) {
-                                pdf->metadataObjectNumbers.push_back(number);
+                            uint64 number     = 0;
+                            uint16 generation = 0;
+                            if (GetObjectReference(dataSize, data, objectOffset, buffer, objectNums, number, generation)) {
+                                // only unique entries
+                                PDF::ObjectNums ref{ number, generation };
+                                if (std::find(pdf->metadataObjectNumbers.begin(), pdf->metadataObjectNumbers.end(), ref) == pdf->metadataObjectNumbers.end()) {
+                                    pdf->metadataObjectNumbers.push_back(ref);
+                                }
                             }
                         } else {
                             objectOffset++;
@@ -2430,15 +2533,16 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             objectOffset++;
                         }
                         if (!CheckType(data, objectOffset, PDF::KEY::PDF_ENDSTREAM_SIZE, PDF::KEY::PDF_ENDSTREAM)) {
-                            //Dialogs::MessageBox::ShowError("Error!", "Invalid endstream marker!");
+                            // Dialogs::MessageBox::ShowError("Error!", "Invalid endstream marker!");
                             pdf->errList.AddError("Invalid endstream marker (0x%llX)", (uint64_t) objectOffset);
                         } else {
                             PDF::ObjectNode streamChild;
-                            streamChild.pdfObject.type = PDF::SectionPDFObjectType::Stream;
-                            streamChild.pdfObject.number = pdf->objectNodeRoot.pdfObject.number;
-                            streamChild.pdfObject.hasStream    = false;
+                            streamChild.pdfObject.type        = PDF::SectionPDFObjectType::Stream;
+                            streamChild.pdfObject.number      = pdf->objectNodeRoot.pdfObject.number;
+                            streamChild.pdfObject.generation  = pdf->objectNodeRoot.pdfObject.generation;
+                            streamChild.pdfObject.hasStream   = false;
                             streamChild.pdfObject.startBuffer = pdf->objectNodeRoot.decodeObj.streamOffsetStart;
-                            streamChild.pdfObject.endBuffer    = pdf->objectNodeRoot.decodeObj.streamOffsetEnd;
+                            streamChild.pdfObject.endBuffer   = pdf->objectNodeRoot.decodeObj.streamOffsetEnd;
                             pdf->objectNodeRoot.children.push_back(streamChild);
                             break;
                         }
@@ -2448,12 +2552,13 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                 }
                 crossStreamCnt = true;
             } else if (object.type == PDF::SectionPDFObjectType::CrossRefStream) {
-                objectsNumber.push_back(object.number);
+                PDF::ObjectNums objectNum{ object.number, object.generation };
+                objectNums.push_back(objectNum);
             }
         }
     }
 
-    if (auto* found = FindObjectByNumber(pdf->pdfObjects, pdf->objectNodeRoot.pdfObject.number, pdf->objectNodeRoot.pdfObject.startBuffer)) {
+    if (auto* found = FindObjectByNumber(pdf->pdfObjects, pdf->objectNodeRoot.pdfObject.number, pdf->objectNodeRoot.pdfObject.generation, pdf->objectNodeRoot.pdfObject.startBuffer)) {
         found->filters            = pdf->objectNodeRoot.decodeObj.filters;
         found->dictionaryTypes    = pdf->objectNodeRoot.pdfObject.dictionaryTypes;
         found->dictionarySubtypes = pdf->objectNodeRoot.pdfObject.dictionarySubtypes;
@@ -2462,26 +2567,31 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
     }
 
     // make sure that the objects inserted as children are unique for the node
-    std::unordered_set<uint64_t> insertedObjectNumbers;
-    for (const auto& objectNumber : objectsNumber) {
+    std::unordered_set<PDF::ObjectNums, PDF::ObjectNumsHash> insertedObjectIds;
+
+    for (const auto& ref : objectNums) {
         for (const auto& object : pdf->pdfObjects) {
-            if (objectNumber == object.number && insertedObjectNumbers.insert(object.number).second) {
-                PDF::ObjectNode newObject;
-                newObject.pdfObject = object;
-                pdf->objectNodeRoot.children.push_back(newObject);
+            if (ref.obj == object.number && ref.gen == object.generation) {
+                if (insertedObjectIds.insert(ref).second) {
+                    PDF::ObjectNode newObject;
+                    newObject.pdfObject = object;
+                    pdf->objectNodeRoot.children.push_back(newObject);
+                }
             }
         }
     }
 
     for (uint64 i = 0; i < pdf->objectNodeRoot.children.size(); i++) {
-        ProcessPDFTree(dataSize, data, pdf->objectNodeRoot.children[i], pdf->pdfObjects, pdf->processedObjects, pdf->pdfStats, pdf->metadataObjectNumbers, pdf->errList);
+        ProcessPDFTree(
+              dataSize, data, pdf->objectNodeRoot.children[i], pdf->pdfObjects, pdf->processedObjects, pdf->pdfStats, pdf->metadataObjectNumbers, pdf->errList);
     }
 
     // process the rest of the objects that don't have references
 
     for (const auto& object : pdf->pdfObjects) {
-        if ((std::count(pdf->processedObjects.begin(), pdf->processedObjects.end(), object.number) == 0) && (object.number != 0) &&
-            (object.type != PDF::SectionPDFObjectType::CrossRefStream)) {
+        PDF::ObjectNums key{ object.number, object.generation };
+        if (object.number != 0 && object.type != PDF::SectionPDFObjectType::CrossRefStream &&
+            std::count(pdf->processedObjects.begin(), pdf->processedObjects.end(), key) == 0) {
             pdf->objectNodeRoot.children.emplace_back();
             auto& childNode = pdf->objectNodeRoot.children.back();
 
@@ -2489,9 +2599,9 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
             ProcessPDFTree(dataSize, data, childNode, pdf->pdfObjects, pdf->processedObjects, pdf->pdfStats, pdf->metadataObjectNumbers, pdf->errList);
         }
     }
+
     pdf->pdfStats.objectCount = pdf->pdfObjects.size();
     FindAndProcessMetadataObjects(pdf);
-
 }
 
 std::u16string PDF::PDFFile::to_u16string(const uint32_t value)
@@ -2549,9 +2659,9 @@ PDF::ObjectNode* PDF::PDFFile::FindNodeByPath(Reference<GView::Type::PDF::PDFFil
         tokens.erase(tokens.begin());
     }
 
-    for (const auto &tk : tokens) {
+    for (const auto& tk : tokens) {
         PDF::ObjectNode* found = nullptr;
-        for (auto &child : currentNode->children) {
+        for (auto& child : currentNode->children) {
             std::u16string childName;
             switch (child.pdfObject.type) {
             case PDF::SectionPDFObjectType::Trailer:
@@ -2607,7 +2717,7 @@ PDF::ObjectNode* PDF::PDFFile::FindNodeByObjectNumber(const uint32_t number)
     return nullptr;
 }
 
-void PDF::PDFFile::PopulateHeader(View::ContainerViewer::Settings &settings, const PDFStats pdfStats)
+void PDF::PDFFile::PopulateHeader(View::ContainerViewer::Settings& settings, const PDFStats pdfStats)
 {
     settings.AddProperty("Objects count", std::to_string(pdfStats.objectCount));
     settings.AddProperty("Streams count", std::to_string(pdfStats.streamsCount));
@@ -2688,7 +2798,7 @@ std::string ExtractTextFromPDF(Reference<GView::Type::PDF::PDFFile> pdf)
 {
     PoDoFo::PdfMemDocument doc;
 
-    auto& dataCache = pdf->obj->GetData();
+    auto& dataCache       = pdf->obj->GetData();
     const auto fileBuffer = dataCache.GetEntireFile();
 
     // construct a PoDoFo::bufferview from the underlying data.
@@ -2698,7 +2808,7 @@ std::string ExtractTextFromPDF(Reference<GView::Type::PDF::PDFFile> pdf)
     doc.LoadFromBuffer(buffer);
 
     std::string extractedText;
-    const auto& pages = doc.GetPages();
+    const auto& pages       = doc.GetPages();
     const uint64 totalPages = static_cast<uint64>(pages.GetCount());
 
     ProgressStatus::Init("Extracting text", totalPages);
@@ -2778,7 +2888,7 @@ bool PDF::PDFFile::ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFF
     }
 
     // convert to std::u16string
-    std::wstring wide = chosenFsPath.wstring();
+    std::wstring wide       = chosenFsPath.wstring();
     std::u16string savePath = std::u16string(wide.begin(), wide.end());
 
     // save extracted text

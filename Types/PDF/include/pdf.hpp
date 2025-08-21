@@ -39,7 +39,7 @@ namespace Type
             constexpr uint8 SOLIDUS              = 0x2F;   // /
             constexpr uint8 PERCENT              = 0x25;   // %
             constexpr uint8 REVERSE_SOLIDUS      = 0x5C;   // '\'
-        }                                                  // namespace DC
+        } // namespace DC
 
         namespace FILTER
         {
@@ -99,7 +99,6 @@ namespace Type
             constexpr uint8_t PDF_DMGROWSBEFERROR[]     = "/DamagedRowsBeforeError";
             constexpr uint8_t PDF_DMGROWSBEFERROR_SIZE  = 23;
 
-
             constexpr uint8_t PDF_DIC_START[] = "<<";
             constexpr uint8_t PDF_DIC_END[]   = ">>";
             constexpr uint8_t PDF_DIC_SIZE    = 2;
@@ -111,18 +110,18 @@ namespace Type
             constexpr uint8_t PDF_NULL[]     = "null";
             constexpr uint8_t PDF_NULL_SIZE  = 4;
 
-            constexpr uint8_t PDF_XREF[]       = "xref";
-            constexpr uint8_t PDF_XREF_SIZE    = 4;
-            constexpr uint8_t PDF_TRAILER_KEY[]    = "trailer";
-            constexpr uint8_t PDF_TRAILER_SIZE = 7;
+            constexpr uint8_t PDF_XREF[]        = "xref";
+            constexpr uint8_t PDF_XREF_SIZE     = 4;
+            constexpr uint8_t PDF_TRAILER_KEY[] = "trailer";
+            constexpr uint8_t PDF_TRAILER_SIZE  = 7;
 
             constexpr uint8_t PDF_STREAM[]       = "stream";
             constexpr uint8_t PDF_STREAM_SIZE    = 6;
             constexpr uint8_t PDF_ENDSTREAM[]    = "endstream";
             constexpr uint8_t PDF_ENDSTREAM_SIZE = 9;
 
-            constexpr uint8_t PDF_OBJ[]    = "obj";
-            constexpr uint8_t PDF_OBJ_SIZE = 3;
+            constexpr uint8_t PDF_OBJ[]       = "obj";
+            constexpr uint8_t PDF_OBJ_SIZE    = 3;
             constexpr uint8_t PDF_ENDOBJ[]    = "endobj";
             constexpr uint8_t PDF_ENDOBJ_SIZE = 6;
 
@@ -137,8 +136,8 @@ namespace Type
             constexpr uint8_t ZERO            = 0;
             constexpr uint8_t PDF_INDIRECTOBJ = 'R';
 
-            constexpr uint8_t PDF_PARENT[] = "/Parent";
-            constexpr uint8_t PDF_PARENT_SIZE   = 7;
+            constexpr uint8_t PDF_PARENT[]    = "/Parent";
+            constexpr uint8_t PDF_PARENT_SIZE = 7;
 
             constexpr uint8_t PDF_TYPE[]    = "/Type";
             constexpr uint8_t PDF_TYPE_SIZE = 5;
@@ -146,7 +145,7 @@ namespace Type
             constexpr uint8_t PDF_SUBTYPE[]    = "/Subtype";
             constexpr uint8_t PDF_SUBTYPE_SIZE = 8;
 
-            constexpr uint8_t PDF_ENCRYPT[] = "/Encrypt";
+            constexpr uint8_t PDF_ENCRYPT[]    = "/Encrypt";
             constexpr uint8_t PDF_ENCRYPT_SIZE = 8;
 
             // Keys for metadata objects
@@ -217,7 +216,7 @@ namespace Type
             constexpr uint8_t PDF_GOTOR[]   = "/GoToR";
             constexpr uint8_t PDF_GOTOE[]   = "/GoToE";
             constexpr uint8_t PDF_GOTO_SIZE = 6;
-            
+
             constexpr uint8_t PDF_XFA[]    = "/XFA";
             constexpr uint8_t PDF_XFA_SIZE = 4;
 
@@ -240,9 +239,9 @@ namespace Type
 
         struct Header {
             char identifier[5]; // %PDF-
-            uint8 version;     // 1 or 2
+            uint8 version;      // 1 or 2
             uint8 point;        // .
-            uint8 subVersion;     // for version = 1 -> [0,7], for version = 2 -> 0
+            uint8 subVersion;   // for version = 1 -> [0,7], for version = 2 -> 0
         };
 
         struct TableEntry {
@@ -275,17 +274,17 @@ namespace Type
         struct DecodeParms {
             bool hasDecodeParms = false;
             // FlateDecode and LZWDecode params
-            uint8 predictor = 1;
-            uint16 column = 1;
+            uint8 predictor        = 1;
+            uint16 column          = 1;
             uint8 bitsPerComponent = 8;
             uint8 earlyChange      = 1;
             // CCITTDecode params
-            int K                  = 0;
-            bool endOfLine         = false;
-            bool encodedByteAlign  = false;
-            uint16 rows            = 0;
-            bool endOfBlock        = true;
-            bool blackIs1          = false;
+            int K                 = 0;
+            bool endOfLine        = false;
+            bool encodedByteAlign = false;
+            uint16 rows           = 0;
+            bool endOfBlock       = true;
+            bool blackIs1         = false;
             uint8 dmgRowsBefError = 0;
         };
 
@@ -303,6 +302,7 @@ namespace Type
             uint64 endBuffer;
             SectionPDFObjectType type;
             uint64 number;
+            uint16 generation;
             bool hasStream = false;
             bool hasJS     = false;
             std::vector<std::string> filters;
@@ -311,20 +311,20 @@ namespace Type
         };
 
         enum class PDFObjectType : uint8 {
-            Unknown = 0,
-            Object  = 1,
-            Boolean = 2,
-            Numeric = 3,
+            Unknown        = 0,
+            Object         = 1,
+            Boolean        = 2,
+            Numeric        = 3,
             Literal_String = 4,
-            Hex_String = 5,
-            Name = 6, 
-            Array = 7, 
-            Dictionary = 8,
-            Null = 9,
-            Indirect = 10,
-            Trailer = 11,
+            Hex_String     = 5,
+            Name           = 6,
+            Array          = 7,
+            Dictionary     = 8,
+            Null           = 9,
+            Indirect       = 10,
+            Trailer        = 11,
         };
-        // data needed for decoding the stream 
+        // data needed for decoding the stream
         struct DecodeObjects {
             uint64 streamOffsetStart;
             uint64 streamOffsetEnd;
@@ -336,7 +336,7 @@ namespace Type
         struct ObjectNode {
             PDFObject pdfObject;
             DecodeObjects decodeObj;
-            std::vector<ObjectNode> children;                                                       
+            std::vector<ObjectNode> children;
         };
 
         struct PDFStats {
@@ -362,28 +362,44 @@ namespace Type
             uint16 xrefCount    = 0;
         };
 
+        struct ObjectNums {
+            uint64 obj;
+            uint16 gen;
+            bool operator==(const ObjectNums& other) const noexcept
+            {
+                return obj == other.obj && gen == other.gen;
+            }
+        };
+
+        struct ObjectNumsHash {
+            size_t operator()(const ObjectNums& v) const noexcept
+            {
+                return std::hash<uint64>{}(v.obj) ^ (std::hash<uint16>{}(v.gen) << 1);
+            }
+        };
+
 #pragma pack(pop) // Back to default packing
 
         class PDFFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
-        {   
+        {
           public:
             Header header{};
-            bool hasXrefTable = false; // Cross-reference table or Cross-reference Stream
-            bool hashEscaping = false;
+            bool hasXrefTable         = false; // Cross-reference table or Cross-reference Stream
+            bool hashEscaping         = false;
             bool enableFaultTolerance = false;
-            uint64 index         = 0;
+            uint64 index              = 0;
             PDF::ObjectNode objectNodeRoot;
             std::u16string currentPath;
             uint32 currentItemIndex = 0;
             std::vector<PDF::ObjectNode*> currentChildNodes;
-            vector<PDFObject> pdfObjects;
-            vector<uint64> processedObjects; 
+            std::vector<PDFObject> pdfObjects;
+            std::vector<PDF::ObjectNums> processedObjects;
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
             PDFStats pdfStats;
             MalformedStats malformedStats;
             // metadata related
             Metadata pdfMetadata;
-            vector<uint64> metadataObjectNumbers;
+            std::vector<PDF::ObjectNums> metadataObjectNumbers;
             GView::Utils::ErrorList errList;
 
           public:
@@ -442,7 +458,7 @@ namespace Type
 
             static void GetPreviousRow(const Buffer& data, uint64_t offset, uint8_t* buffer, const uint64_t rowLength);
             static void ApplyFilter(
-                    Buffer& data, uint64_t offset, uint8_t* rowBuffer, const uint64_t rowLength, const uint8_t bytesPerComponent, const uint8_t predictor);
+                  Buffer& data, uint64_t offset, uint8_t* rowBuffer, const uint64_t rowLength, const uint8_t bytesPerComponent, const uint8_t predictor);
             static void ApplyPNGFilter(Buffer& data, const uint16_t& column, const uint8_t& predictor, const uint8_t& bitsPerComponent);
             bool RunLengthDecode(const BufferView& input, Buffer& output, String& message);
             bool ASCIIHexDecode(const BufferView& input, Buffer& output, String& message);
