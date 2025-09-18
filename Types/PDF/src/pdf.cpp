@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cctype>
+#include <charconv>
 #include <podofo/podofo.h>
 
 using namespace AppCUI;
