@@ -198,24 +198,47 @@ static std::string DecodeName(GView::Utils::DataCache& data, uint64_t& offset, c
     return result;
 }
 
-uint64 GetTypeValue(GView::Utils::DataCache& data, uint64& offset, const uint64& dataSize)
+uint64_t GetTypeValue(GView::Utils::DataCache& data, uint64_t& offset, const uint64_t& dataSize)
 {
-    std::string lengthValStr;
-    uint8_t buffer;
-    uint64 value = 0;
-    bool error   = false;
-    while (offset < dataSize && data.Copy(offset, buffer) && IsDigit(buffer)) {
-        lengthValStr.push_back(buffer);
-        offset++;
-        if (lengthValStr.size() > 20) {
-            Dialogs::MessageBox::ShowError("Error!", "Unusual big size for length");
-            error = true;
-            break;
+    if (offset >= dataSize) {
+        return 0;
+    }
+
+    const uint64_t start = offset;
+    uint8_t b            = 0;
+    while (offset < dataSize && data.Copy(offset, b) && std::isdigit(static_cast<unsigned char>(b))) {
+        ++offset;
+    }
+
+    const uint64_t len = offset - start;
+    if (len == 0) {
+        return 0;
+    }
+
+    if (len > 20) {
+        // Dialogs::MessageBox::ShowError("Error!", "Unusual big size for length");
+        return 0;
+    }
+
+    char buf[21];
+    for (uint64_t i = 0; i < len; ++i) {
+        data.Copy(start + i, b);
+        buf[i] = static_cast<char>(b);
+    }
+
+    if (len == 20) {
+        static constexpr char kMax[] = "18446744073709551615";
+        if (std::lexicographical_compare(kMax, kMax + 20, buf, buf + 20) == false) {
+            // buf >= kMax -> overflow
+            // Dialogs::MessageBox::ShowError("Error!", "Length value overflows uint64");
+            return 0;
         }
     }
 
-    if (!lengthValStr.empty() && !error) {
-        value = std::stoull(lengthValStr);
+    uint64_t value = 0;
+    auto res       = std::from_chars(buf, buf + len, value, 10);
+    if (res.ec != std::errc()) {
+        return 0;
     }
     return value;
 }
@@ -1356,11 +1379,18 @@ std::string GetDictionaryType(GView::Utils::DataCache& data, uint64& objectOffse
     return entry;
 }
 
-uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, const uint64& dataSize, vector<PDF::PDFObject>& pdfObjects)
+uint64 GetLengthNumber(
+      GView::Utils::DataCache& data,
+      uint64& objectOffset,
+      const uint64& dataSize,
+      std::vector<PDF::PDFObject>& pdfObjects,
+      const std::vector<PDF::ObjectNums>& processedObjects,
+      std::vector<PDF::ObjectNums>& objectNums)
 {
     uint64 numberLength = 0;
     uint8 buffer;
     bool foundRef = false;
+
     objectOffset += 1;
     numberLength      = GetTypeValue(data, objectOffset, dataSize);
     uint64 copyOffset = objectOffset;
@@ -1372,6 +1402,8 @@ uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, cons
     if (!data.Copy(copyOffset, buffer)) {
         Dialogs::MessageBox::ShowError("Error!", "Buffer copy failed!");
     }
+
+    uint64 generation = 0;
     if (buffer == '0') {
         copyOffset += 2;
         if (!data.Copy(copyOffset, buffer)) {
@@ -1381,6 +1413,16 @@ uint64 GetLengthNumber(GView::Utils::DataCache& data, uint64& objectOffset, cons
             foundRef = true;
         }
     }
+
+    if (foundRef) {
+        PDF::ObjectNums ref{ static_cast<uint32_t>(numberLength), static_cast<uint16_t>(generation) };
+        if (std::count(processedObjects.begin(), processedObjects.end(), ref) == 0) {
+            if (std::find(objectNums.begin(), objectNums.end(), ref) == objectNums.end()) {
+                objectNums.push_back(ref);
+            }
+        }
+    }
+
     if (foundRef) {
         for (auto& object : pdfObjects) {
             if (object.number == numberLength) {
@@ -1986,7 +2028,7 @@ void ProcessPDFTree(
                     break;
                 }
                 if (IsWhitespace(buffer)) {
-                    streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects);
+                    streamLength = GetLengthNumber(data, objectOffset, dataSize, pdfObjects, processedObjects, objectNums);
                     foundLength  = true;
                 } else {
                     objectOffset = copyObjectOffset;
@@ -2418,7 +2460,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             GetFilters(data, objectOffset, dataSize, pdf->objectNodeRoot.decodeObj.filters, pdf->errList);
                             InsertValuesIntoStats(pdf->pdfStats.filtersTypes, pdf->objectNodeRoot.decodeObj.filters);
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_STREAM_LENGTH_SIZE, PDF::KEY::PDF_STREAM_LENGTH) && !foundLength) {
-                            streamLength = GetLengthNumber(data, objectOffset, dataSize, pdf->pdfObjects);
+                            streamLength = GetLengthNumber(data, objectOffset, dataSize, pdf->pdfObjects, pdf->processedObjects, objectNums);
                             foundLength  = true;
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
                             objectOffset += 1;
