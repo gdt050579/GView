@@ -41,70 +41,47 @@ static std::string GuessPageFormat(const double widthMm, const double heightMm)
     return "Unknown";
 }
 
-static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::PdfMemDocument& doc, GView::Utils::ErrorList &errList)
+static std::pair<std::string, std::string> GetPageFormatAndOrientation(PoDoFo::PdfMemDocument& doc, GView::Utils::ErrorList& errList)
 {
     try {
-        PoDoFo::PdfIndirectObjectList& objects = doc.GetObjects();
-        for (auto* obj : objects) {
-            if (!obj || !obj->IsDictionary()) {
-                continue;
-            }
-            // Check if this object has Type = Page
-            PoDoFo::PdfDictionary& dict = obj->GetDictionary();
-            const PoDoFo::PdfObject* typeItem = dict.GetKey(PoDoFo::PdfName("Type"));
-            if (!typeItem || !typeItem->IsName()) {
-                continue;
-            }
-            if (typeItem->GetName() == PoDoFo::PdfName("Page")) {
-                PoDoFo::PdfObject* mediaBoxObj = dict.GetKey(PoDoFo::PdfName("MediaBox"));
-                if (!mediaBoxObj || !mediaBoxObj->IsArray()) {
-                    Dialogs::MessageBox::ShowError("Error!", "Page has no /MediaBox array.");
-                    errList.AddError("Page has no /MediaBox array");
-                    return { "Unknown", "Unknown" };
-                }
-
-                const PoDoFo::PdfArray& mediaBoxArr = mediaBoxObj->GetArray();
-                if (mediaBoxArr.size() < 4) {
-                    Dialogs::MessageBox::ShowError("Error!", "MediaBox array has fewer than 4 numbers.");
-                    errList.AddError("MediaBox array has fewer than 4 numbers");
-                    return { "Unknown", "Unknown" };
-                }
-
-                // [ left, bottom, right, top ] in PDF points
-                const double left   = mediaBoxArr[0].GetReal();
-                const double bottom = mediaBoxArr[1].GetReal();
-                const double right  = mediaBoxArr[2].GetReal();
-                const double top    = mediaBoxArr[3].GetReal();
-
-                const double widthPoints  = right - left;
-                const double heightPoints = top - bottom;
-                if (widthPoints <= 0.0 || heightPoints <= 0.0) {
-                    Dialogs::MessageBox::ShowError("Error!", "Invalid MediaBox coordinates.");
-                    errList.AddError("Invalid MediaBox coordinates");
-                    return { "Unknown", "Unknown" };
-                }
-
-                // Convert from points -> millimeters
-                const double widthMm  = widthPoints * 25.4 / 72.0;
-                const double heightMm = heightPoints * 25.4 / 72.0;
-
-                // Determine orientation
-                const bool isLandscape = (widthPoints > heightPoints);
-                const std::string format      = GuessPageFormat(widthMm, heightMm);
-                const std::string orientation = isLandscape ? "Landscape" : "Portrait";
-                return { format, orientation };
-            }
+        const auto& pages = doc.GetPages();
+        if (pages.GetCount() == 0) {
+            errList.AddError("No pages in document");
+            return { "Unknown", "Unknown" };
         }
-        Dialogs::MessageBox::ShowError("Error!", "No /Page object found in PDF.");
-        errList.AddError("No /Page object found in PDF");
-        return { "Unknown", "Unknown" };
-    } catch (const std::exception& e) {
-        Dialogs::MessageBox::ShowError("Error!", "Failed to process the file while loading the buffer.");
-        errList.AddError("Failed to process the file while loading the buffer");
+
+        const auto& page               = pages.GetPageAt(0);
+        auto& pageObj                  = const_cast<PoDoFo::PdfObject&>(page.GetObject());
+        PoDoFo::PdfObject* mediaBoxObj = pageObj.GetDictionary().GetKey(PoDoFo::PdfName("MediaBox"));
+
+        if (!mediaBoxObj || !mediaBoxObj->IsArray() || mediaBoxObj->GetArray().size() < 4) {
+            errList.AddError("Missing/invalid MediaBox");
+            return { "Unknown", "Unknown" };
+        }
+
+        const auto& a       = mediaBoxObj->GetArray();
+        const double left   = a[0].GetReal();
+        const double bottom = a[1].GetReal();
+        const double right  = a[2].GetReal();
+        const double top    = a[3].GetReal();
+
+        const double wPt = right - left;
+        const double hPt = top - bottom;
+        if (wPt <= 0 || hPt <= 0) {
+            errList.AddError("Invalid MediaBox dimensions");
+            return { "Unknown", "Unknown" };
+        }
+
+        const double wMm     = wPt * 25.4 / 72.0;
+        const double hMm     = hPt * 25.4 / 72.0;
+        const bool landscape = (wPt > hPt);
+
+        return { GuessPageFormat(wMm, hMm), landscape ? "Landscape" : "Portrait" };
+    } catch (...) {
+        errList.AddError("Failed to read MediaBox");
         return { "Unknown", "Unknown" };
     }
 }
-
 
 static int GetPDFPageCount(const PoDoFo::PdfMemDocument& doc)
 {
