@@ -934,6 +934,78 @@ namespace Entropy
     CORE_EXPORT double RenyiEntropy(const BufferView& buffer, double alpha);
 } // namespace Entropy
 
+namespace Components
+{
+    namespace AnalysisEngine
+    {
+        // Subjects of analysis
+        using FileId = uint64;
+        using UserId = uint64;
+        using ProcId = uint64;
+        using CaseId = uint64;
+
+        // Subject of a fact: file/user/process or engine itself
+        struct CORE_EXPORT Subject
+        {
+            enum class SubjectType : uint8 {
+                None    = 0,
+                File    = 1,
+                User    = 2,
+                Process = 3,
+                Case    = 4,
+            };
+            SubjectType kind{ SubjectType::None };
+            uint64 value;
+        };
+        inline bool operator==(const Subject& a, const Subject& b) noexcept
+        {
+            return a.kind == b.kind && a.value == b.value;
+        }
+
+        // Predicates & Actions
+        using PredId = uint64;
+        using ActId  = uint64;
+        constexpr PredId INVALID_PRED_ID = UINT64_MAX;
+        constexpr ActId  INVALID_ACT_ID   = UINT64_MAX;
+
+        // Data model for facts
+        // Value carried by a predicate argument (e.g., severity, string, number)
+        using Value = std::variant<std::monostate, bool, int64, uint64, double, std::string>;
+        struct Arg
+        {
+            std::string name; // optional name (e.g., "level", "format")
+            Value value;
+        };
+
+        // A single atom: PredKey + Subject + optional args
+        struct Atom
+        {
+            PredId pred;
+            Subject subject;
+            std::vector<Arg> args; /* small, usually empty*/
+        };
+
+        using Clock     = std::chrono::steady_clock;
+        using TimePoint = std::chrono::time_point<Clock>;
+        // A fact: atom + truth (true only in this engine), timestamp and provenance
+        struct Fact
+        {
+            Atom atom;
+            TimePoint t0;
+            std::string source;
+        };
+
+        struct CORE_EXPORT AnalysisEngineInterface {
+            virtual bool SubmitFact(const Fact& fact)               = 0;
+            virtual ActId RegisterAct(std::string_view name)        = 0;
+            virtual ActId GetActId(std::string_view name) const     = 0;
+            virtual PredId RegisterPredicate(std::string_view name) = 0;
+            virtual PredId GetPredId(std::string_view name) const   = 0;
+            virtual ~AnalysisEngineInterface()                      = default;
+        };
+    }
+} // namespace GView
+
 /*
  * Object can be:
  *   - a file
