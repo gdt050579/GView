@@ -8,6 +8,7 @@ using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
+using namespace GView::Components::AnalysisEngine;
 
 constexpr uint32 DEFAULT_CACHE_SIZE    = 0xA00000; // 10 MB
 constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
@@ -66,7 +67,7 @@ bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
     return true;
 }
 
-Instance::Instance() : analysisEngine(new Components::AnalysisEngine::RuleEngine())
+Instance::Instance() : analysisEngine(new RuleEngine())
 {
     this->defaultCacheSize         = DEFAULT_CACHE_SIZE;
     this->mnuWindow                = nullptr;

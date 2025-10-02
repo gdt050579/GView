@@ -251,7 +251,7 @@ struct GeminiPro1_5SmartAssistant : SmartAssistantRegisterInterface
 
 bool GView::Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(Reference<GView::View::WindowInterface> win)
 {
-    const auto queryInterface = win->GetQueryInterface();
+    auto queryInterface = win->GetQueryInterface();
 #ifndef DISABLE_GEMINI_PRO1_5
     queryInterface->RegisterSmartAssistantInterface(Pointer<SmartAssistantRegisterInterface>(new GeminiPro1_5SmartAssistant));
 #endif

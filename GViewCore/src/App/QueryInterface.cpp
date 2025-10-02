@@ -16,21 +16,26 @@ constexpr int32 PROMPT_BUTTON_ID                = 1;
 constexpr int32 SHOW_LAST_PROMPT_BUTTON_ID      = 2;
 constexpr int32 OPEN_SELECTION_BUTTON_ID        = 3;
 
-GView::CommonInterfaces::QueryInterface* FileWindow::GetQueryInterface()
+Reference<GView::CommonInterfaces::QueryInterface> FileWindow::GetQueryInterface()
 {
     return &queryInterface;
 }
 
-GView::Components::AnalysisEngine::AnalysisEngineInterface* FileWindow::GetAnalysisEngine()
+Reference<GView::Components::AnalysisEngine::AnalysisEngineInterface> FileWindow::GetAnalysisEngine()
 {
     return gviewApp->GetAnalysisEngine();
+}
+
+Reference<GView::Components::AnalysisEngine::Subject> FileWindow::GetCurrentWindowSubject()
+{
+    return &subject;
 }
 
 void TextHighlighAdvanced(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
 {
     Graphics::Character* end   = chars + charsCount;
     Graphics::Character* start = nullptr;
-    ColorPair col;
+    //ColorPair col;
     while (chars < end) {
         if (chars->Code == '*') // Check for '**'
         {

@@ -621,7 +621,7 @@ namespace App
         uint32 GetTypePluginsCount();
         std::string_view GetTypePluginName(uint32 index);
         std::string_view GetTypePluginDescription(uint32 index);
-        Components::AnalysisEngine::AnalysisEngineInterface* GetAnalysisEngine() const
+        Reference<Components::AnalysisEngine::AnalysisEngineInterface> GetAnalysisEngine() const
         {
             return analysisEngine.get();
         }
@@ -733,6 +733,7 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
         QueryInterfaceImpl::GViewQueryInterface queryInterface;
+        Components::AnalysisEngine::Subject subject;
 
         void ShowFilePropertiesDialog();
         void ShowGoToDialog();
@@ -756,8 +757,9 @@ namespace App
         bool CreateViewer(View::TextViewer::Settings& settings) override;
         bool CreateViewer(View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(View::LexicalViewer::Settings& settings) override;
-        CommonInterfaces::QueryInterface* GetQueryInterface() override;
-        Components::AnalysisEngine::AnalysisEngineInterface* GetAnalysisEngine() override;
+        Reference<CommonInterfaces::QueryInterface> GetQueryInterface() override;
+        Reference<Components::AnalysisEngine::AnalysisEngineInterface> GetAnalysisEngine() override;
+        Reference<Components::AnalysisEngine::Subject> GetCurrentWindowSubject() override;
 
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 

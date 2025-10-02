@@ -306,6 +306,7 @@ void FileWindow::Start()
 {
     this->view->SetCurrentTabPageByIndex(0);
     this->view->SetFocus();
+    this->subject = { Components::AnalysisEngine::Subject::SubjectType::File, 0 };
 
     queryInterface.Start();
 }

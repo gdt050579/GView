@@ -576,7 +576,7 @@ namespace View
             AsmData asmData;
             JumpsHolder jumps_holder;
             DissasmCache cacheData;
-            CommonInterfaces::QueryInterface* queryInterface;
+            Reference<CommonInterfaces::QueryInterface> queryInterface;
 
             inline void UpdateCurrentZoneIndex(const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
