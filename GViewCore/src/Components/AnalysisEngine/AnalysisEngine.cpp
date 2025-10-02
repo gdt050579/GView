@@ -11,12 +11,12 @@ namespace GView::Components::AnalysisEngine
 {
 
 // Implementation from GView::Components::AnalysisEngine::AnalysisEngineInterface
-Atom AnalysisEngineInterface::CreateAtomFromPredicateAndSubject(PredId pred, const Subject& subject)
+Atom AnalysisEngineInterface::CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject)
 {
     return Atom{ pred, subject, {} };
 }
 
-Fact AnalysisEngineInterface::CreateFactFromPredicateAndSubject(PredId pred, const Subject& subject, std::string_view source, std::string_view details)
+Fact AnalysisEngineInterface::CreateFactFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details)
 {
     auto atom = CreateAtomFromPredicateAndSubject(pred, subject);
     return Fact{ .atom = atom, .time = now(), .source = std::string(source), .details = std::string(details) };

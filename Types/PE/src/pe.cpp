@@ -9,6 +9,7 @@ using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
+using namespace GView::Components;
 
 constexpr auto OVERLAY_BOOKMARK_VALUE = 0;
 
@@ -197,6 +198,23 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 {
     auto pe = win->GetObject()->GetContentType<PE::PEFile>();
     pe->Update();
+
+
+    auto engine = win->GetAnalysisEngine();
+    if (engine.IsValid()) 
+    {
+        auto is_pe_pred = engine->GetPredId("IsPe");
+        if (AnalysisEngine::AnalysisEngineInterface::IsValidPredicateId(is_pe_pred))
+        {
+            auto subject = win->GetCurrentWindowSubject();
+            auto fact =
+                  AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(is_pe_pred, subject, "static analysis", "parsed the PE header");
+            auto res = engine->SubmitFact(fact);
+            if (!res) {
+                LOG_ERROR("Failed to add IsPe fact");
+            }
+        }
+    }
 
 #ifdef DISSASM_DEV
     CreateDissasmView(win, pe);
