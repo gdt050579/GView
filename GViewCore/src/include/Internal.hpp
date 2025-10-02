@@ -513,6 +513,7 @@ namespace App
         AppCUI::Controls::Menu* mnuFile;
         std::vector<GView::Type::Plugin> typePlugins;
         std::vector<GView::Generic::Plugin> genericPlugins;
+        Pointer<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
@@ -620,6 +621,10 @@ namespace App
         uint32 GetTypePluginsCount();
         std::string_view GetTypePluginName(uint32 index);
         std::string_view GetTypePluginDescription(uint32 index);
+        Components::AnalysisEngine::AnalysisEngineInterface* GetAnalysisEngine() const
+        {
+            return analysisEngine.get();
+        }
     };
 
     class SelectTypeDialog : public Window
@@ -752,6 +757,7 @@ namespace App
         bool CreateViewer(View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(View::LexicalViewer::Settings& settings) override;
         CommonInterfaces::QueryInterface* GetQueryInterface() override;
+        Components::AnalysisEngine::AnalysisEngineInterface* GetAnalysisEngine() override;
 
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 

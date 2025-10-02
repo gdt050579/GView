@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include <array>
+#include "../Components/AnalysisEngine/AnalysisEngine.hpp"
 
 using namespace GView::App;
 using namespace GView::App::InstanceCommands;
@@ -65,7 +66,7 @@ bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
     return true;
 }
 
-Instance::Instance()
+Instance::Instance() : analysisEngine(new Components::AnalysisEngine::RuleEngine())
 {
     this->defaultCacheSize         = DEFAULT_CACHE_SIZE;
     this->mnuWindow                = nullptr;
@@ -186,6 +187,8 @@ bool Instance::Init(bool isTestingEnabled)
     auto dsk                 = AppCUI::Application::GetDesktop();
     dsk->Handlers()->OnEvent = this;
     dsk->Handlers()->OnStart = this;
+
+    CHECK(analysisEngine->Init(), false, "Fail to init the analysis engine!");
     return true;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(

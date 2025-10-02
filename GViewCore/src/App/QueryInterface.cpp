@@ -21,6 +21,11 @@ GView::CommonInterfaces::QueryInterface* FileWindow::GetQueryInterface()
     return &queryInterface;
 }
 
+GView::Components::AnalysisEngine::AnalysisEngineInterface* FileWindow::GetAnalysisEngine()
+{
+    return gviewApp->GetAnalysisEngine();
+}
+
 void TextHighlighAdvanced(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
 {
     Graphics::Character* end   = chars + charsCount;

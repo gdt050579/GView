@@ -991,17 +991,18 @@ namespace Components
         struct Fact
         {
             Atom atom;
-            TimePoint t0;
+            TimePoint time;
             std::string source;
         };
 
         struct CORE_EXPORT AnalysisEngineInterface {
-            virtual bool SubmitFact(const Fact& fact)               = 0;
-            virtual ActId RegisterAct(std::string_view name)        = 0;
-            virtual ActId GetActId(std::string_view name) const     = 0;
-            virtual PredId RegisterPredicate(std::string_view name) = 0;
-            virtual PredId GetPredId(std::string_view name) const   = 0;
-            virtual ~AnalysisEngineInterface()                      = default;
+            virtual bool SubmitFact(const Fact& fact) = 0;
+            // virtual ActId RegisterAct(std::string_view name)        = 0; // WIP for future use
+            // virtual PredId RegisterPredicate(std::string_view name) = 0; // WIP for future use
+            virtual ActId GetActId(std::string_view name) const   = 0;
+            virtual PredId GetPredId(std::string_view name) const = 0;
+            virtual bool Init()                                   = 0;
+            virtual ~AnalysisEngineInterface()                    = default;
         };
     }
 } // namespace GView
@@ -1691,20 +1692,21 @@ namespace View
     }; // namespace DissasmViewer
 
     struct CORE_EXPORT WindowInterface {
-        virtual Reference<Object> GetObject()                          = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)    = 0;
-        virtual bool CreateViewer(BufferViewer::Settings& settings)    = 0;
-        virtual bool CreateViewer(ImageViewer::Settings& settings)     = 0;
-        virtual bool CreateViewer(GridViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(DissasmViewer::Settings& settings)   = 0;
-        virtual bool CreateViewer(TextViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(ContainerViewer::Settings& settings) = 0;
-        virtual bool CreateViewer(LexicalViewer::Settings& settings)   = 0;
-        virtual Reference<ViewControl> GetCurrentView()                = 0;
-        virtual uint32 GetViewsCount()                                 = 0;
-        virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
-        virtual bool SetViewByIndex(uint32 index)                      = 0;
-        virtual CommonInterfaces::QueryInterface* GetQueryInterface()  = 0;
+        virtual Reference<Object> GetObject()                                            = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                      = 0;
+        virtual bool CreateViewer(BufferViewer::Settings& settings)                      = 0;
+        virtual bool CreateViewer(ImageViewer::Settings& settings)                       = 0;
+        virtual bool CreateViewer(GridViewer::Settings& settings)                        = 0;
+        virtual bool CreateViewer(DissasmViewer::Settings& settings)                     = 0;
+        virtual bool CreateViewer(TextViewer::Settings& settings)                        = 0;
+        virtual bool CreateViewer(ContainerViewer::Settings& settings)                   = 0;
+        virtual bool CreateViewer(LexicalViewer::Settings& settings)                     = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                  = 0;
+        virtual uint32 GetViewsCount()                                                   = 0;
+        virtual Reference<ViewControl> GetViewByIndex(uint32 index)                      = 0;
+        virtual bool SetViewByIndex(uint32 index)                                        = 0;
+        virtual CommonInterfaces::QueryInterface* GetQueryInterface()                    = 0;
+        virtual Components::AnalysisEngine::AnalysisEngineInterface* GetAnalysisEngine() = 0;
 
         template <typename T>
         inline bool CreateViewer(const std::optional<std::string_view> name = {})
