@@ -74,7 +74,7 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
         return true;
     std::vector<uint8> buffer;
     buffer.resize((uint32) fileSize);
-    cacheFile.Read(reinterpret_cast<char*>(buffer.data()), fileSize);
+    cacheFile.Read(reinterpret_cast<char*>(buffer.data()), (uint32)fileSize);
     cacheFile.Close();
 
     if (fileSize < sizeof(uint32))
@@ -213,7 +213,7 @@ bool DissasmCodeZone::ToBuffer(std::vector<uint8>& buffer) const
 {
     uint32 reserveSize = 0;
     for (const auto& comment : dissasmType.commentsData.comments) {
-        reserveSize += sizeof(comment.first) + sizeof(uint32) + comment.second.size();
+        reserveSize += sizeof(comment.first) + sizeof(uint32) + (uint32) comment.second.size();
     }
     for (const auto& annotation : dissasmType.annotations) {
         reserveSize += sizeof(annotation.first) + sizeof(uint32) + (uint32)annotation.second.first.size() + sizeof(annotation.second.second);

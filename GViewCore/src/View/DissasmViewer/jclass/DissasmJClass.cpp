@@ -8,7 +8,7 @@ using namespace GView::View::DissasmViewer::JClass;
 inline void PopulateZoneTextToDissasmAsmPreCacheLine(DissasmCodeZone* zone, const char* text, uint32 len)
 {
     DissasmAsmPreCacheLine line = {};
-    line.op_str                 = strdup(text);
+    line.op_str                 = portable_strdup(text);
     line.op_str_size            = len;
     zone->asmPreCacheData.cachedAsmLines.push_back(std::move(line));
 }

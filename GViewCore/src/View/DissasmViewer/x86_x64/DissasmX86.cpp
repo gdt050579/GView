@@ -1778,7 +1778,7 @@ void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCo
 {
     Graphics::Character* end   = chars + charsCount;
     Graphics::Character* start = nullptr;
-    ColorPair col;
+    //ColorPair col;
     while (chars < end) {
         if (chars->Code == '*') // Check for '**'
         {
