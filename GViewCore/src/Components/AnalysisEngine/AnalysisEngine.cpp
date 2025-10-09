@@ -1,4 +1,3 @@
-// GView Analysis Engine Implementation (C++20)
 #include "AnalysisEngine.hpp"
 
 #include <algorithm>
@@ -9,6 +8,35 @@
 
 namespace GView::Components::AnalysisEngine
 {
+PredicateStorage AnalysisEngineInterface::RequestPredicateStorage(const std::vector<std::string_view>& predicates) const
+{
+    PredicateStorage storage;
+    for (const auto& p : predicates) {
+        auto res = GetPredId(p);
+        if (IsValidPredicateId(res)) {
+            PredicateEntry entry = { std::string(p), res };
+            storage.predicates.emplace_back(std::move(entry));
+        } else {
+            storage.failed_predicates.emplace_back(std::string(p));
+        }
+    }
+    return storage;
+}
+
+bool AnalysisEngineInterface::RequestPredicate(PredicateStorage& predicateStorage, std::string_view predicate) const
+{
+    for (const auto& p : predicateStorage.predicates)
+        if (p.name == predicate)
+            return true;
+    auto res = GetPredId(predicate);
+    if (IsValidPredicateId(res)) {
+        PredicateEntry entry = { std::string(predicate), res };
+        predicateStorage.predicates.emplace_back(std::move(entry));
+        return true;
+    }
+    predicateStorage.failed_predicates.emplace_back(std::string(predicate));
+    return false;
+}
 
 // Implementation from GView::Components::AnalysisEngine::AnalysisEngineInterface
 Atom AnalysisEngineInterface::CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject)
@@ -47,6 +75,13 @@ enum class PredDefaultValues : PredId {
     ContainsKnownExploitArtifacts,
     ViewedRtfControls,
     AbusesEquationEditor,
+    IsPacked,
+    HasOverlayData,
+    ContainsIpLiteral,
+    ContainsEmailAddress,
+    ContainsSuspiciousKeywords,
+    ContainsPersistenceArtifacts,
+    ContainsEmbeddedScript,
     // Scripts
     IsScript,
     HasObfuscatedStrings,
@@ -235,7 +270,6 @@ enum class ActDefaultValues : ActId {
     COUNT
 };
 
-
 // ---------------------- Name tables for enums ------------------------------ //
 const std::vector<std::string> kPredNames = {
     // Must match enum Pred order exactly
@@ -262,6 +296,13 @@ const std::vector<std::string> kPredNames = {
     "ContainsKnownExploitArtifacts",
     "ViewedRtfControls",
     "AbusesEquationEditor",
+    "IsPacked",
+    "HasOverlayData",
+    "ContainsIpLiteral",
+    "ContainsEmailAddress",
+    "ContainsSuspiciousKeywords",
+    "ContainsPersistenceArtifacts",
+    "ContainsEmbeddedScript",
     // Scripts
     "IsScript",
     "HasObfuscatedStrings",
@@ -547,7 +588,7 @@ namespace
         static Key make_key(const Action& a)
         {
             // cheap serialization
-            std::string s = std::to_string(static_cast<unsigned>(a.key)) + "#" + std::to_string((uint32_t)a.subject.kind);
+            std::string s = std::to_string(static_cast<unsigned>(a.key)) + "#" + std::to_string((uint32_t) a.subject.kind);
             if (a.subject.kind != Subject::SubjectType::None)
                 s += ":" + std::to_string(a.subject.value);
             return s;
@@ -640,7 +681,7 @@ Status RuleEngine::set_fact(PredId p, const Subject& s, std::string source) noex
     f.atom.pred    = p;
     f.atom.subject = s;
     f.source       = std::move(source);
-    f.time           = now();
+    f.time         = now();
     return set_fact(f);
 }
 
@@ -689,20 +730,25 @@ Status RuleEngine::install_builtin_rules() noexcept
 {
     // TODO: to be replaced with the file that contains the comprehensive rulebook
     try {
-        auto R = [&](std::string id, ConjClause c, ActDefaultValues ak, Severity sev, std::string msg, std::chrono::milliseconds cd = std::chrono::minutes(30)) {
-            Rule r;
-            r.id       = std::move(id);
-            r.clause   = std::move(c);
-            r.action   = { (ActId) ak, Subject{} };
-            r.severity = sev;
-            r.message  = std::move(msg);
-            r.cooldown = cd;
-            return register_rule(r);
-        };
+        auto R =
+              [&](std::string id, ConjClause c, ActDefaultValues ak, Severity sev, std::string msg, std::chrono::milliseconds cd = std::chrono::minutes(30)) {
+                  Rule r;
+                  r.id       = std::move(id);
+                  r.clause   = std::move(c);
+                  r.action   = { (ActId) ak, Subject{} };
+                  r.severity = sev;
+                  r.message  = std::move(msg);
+                  r.cooldown = cd;
+                  return register_rule(r);
+              };
         auto C = [&](std::initializer_list<Literal> lits, int win_ms = 0) { return clause(lits, std::chrono::milliseconds{ win_ms }); };
 
         // File-only
-        R("F-001", C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacros) }), ActDefaultValues::ViewMacros, Severity::High, "Macros present. Open Macro Viewer?");
+        R("F-001",
+          C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacros) }),
+          ActDefaultValues::ViewMacros,
+          Severity::High,
+          "Macros present. Open Macro Viewer?");
         R("F-002",
           C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacroObfuscation) }),
           ActDefaultValues::DeobfuscateVBA,
@@ -713,12 +759,36 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::ViewExternalTemplates,
           Severity::Warn,
           "External template reference. Inspect RELs?");
-        R("F-004", C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasXlm4Macro) }), ActDefaultValues::ViewXlmSheets, Severity::High, "Excel 4.0 macro sheet present. Review?");
-        R("F-005", C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasHiddenSheets) }), ActDefaultValues::ViewHiddenSheets, Severity::Warn, "Hidden sheets found. Show list?");
-        R("F-010", C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasJavaScript) }), ActDefaultValues::ViewPdfJavaScript, Severity::High, "PDF has JavaScript. Inspect code?");
-        R("F-011", C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasOpenAction) }), ActDefaultValues::ViewPdfObjects, Severity::High, "Auto-action triggers on open. Inspect objects?");
-        R("F-020", C({ lit(PredDefaultValues::IsScript), lit(PredDefaultValues::HasObfuscatedStrings) }), ActDefaultValues::BeautifyScript, Severity::High, "Obfuscated script. Beautify for review?");
-        R("F-030", C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::HasHighEntropy) }), ActDefaultValues::IdentifyPacker, Severity::Warn, "High entropy suggests packing. Identify packer?");
+        R("F-004",
+          C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasXlm4Macro) }),
+          ActDefaultValues::ViewXlmSheets,
+          Severity::High,
+          "Excel 4.0 macro sheet present. Review?");
+        R("F-005",
+          C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasHiddenSheets) }),
+          ActDefaultValues::ViewHiddenSheets,
+          Severity::Warn,
+          "Hidden sheets found. Show list?");
+        R("F-010",
+          C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasJavaScript) }),
+          ActDefaultValues::ViewPdfJavaScript,
+          Severity::High,
+          "PDF has JavaScript. Inspect code?");
+        R("F-011",
+          C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasOpenAction) }),
+          ActDefaultValues::ViewPdfObjects,
+          Severity::High,
+          "Auto-action triggers on open. Inspect objects?");
+        R("F-020",
+          C({ lit(PredDefaultValues::IsScript), lit(PredDefaultValues::HasObfuscatedStrings) }),
+          ActDefaultValues::BeautifyScript,
+          Severity::High,
+          "Obfuscated script. Beautify for review?");
+        R("F-030",
+          C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::HasHighEntropy) }),
+          ActDefaultValues::IdentifyPacker,
+          Severity::Warn,
+          "High entropy suggests packing. Identify packer?");
         R("F-031",
           C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ContainsEmbeddedExecutable) }),
           ActDefaultValues::ViewResources,
@@ -734,7 +804,11 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::ViewArchiveManifest,
           Severity::Warn,
           "Executable(s) inside archive. Review manifest?");
-        R("F-050", C({ lit(PredDefaultValues::MarkOfTheWeb) }), ActDefaultValues::ViewMOTW, Severity::Info, "Internet-origin marker present. Inspect source zone?");
+        R("F-050",
+          C({ lit(PredDefaultValues::MarkOfTheWeb) }),
+          ActDefaultValues::ViewMOTW,
+          Severity::Info,
+          "Internet-origin marker present. Inspect source zone?");
         R("F-051",
           C({ lit(PredDefaultValues::HashInThreatIntel) }),
           ActDefaultValues::ViewThreatIntelHits,
@@ -743,13 +817,21 @@ Status RuleEngine::install_builtin_rules() noexcept
           std::chrono::minutes(5));
 
         // User-only
-        R("U-100", C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedHashes, true) }), ActDefaultValues::ComputeHashes, Severity::Info, "Compute hashes for correlation & TI lookups?");
+        R("U-100",
+          C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedHashes, true) }),
+          ActDefaultValues::ComputeHashes,
+          Severity::Info,
+          "Compute hashes for correlation & TI lookups?");
         R("U-101",
           C({ lit(PredDefaultValues::ComputedHashes), lit(PredDefaultValues::QueriedThreatIntel, true) }),
           ActDefaultValues::QueryThreatIntel,
           Severity::Info,
           "Check reputation across intel sources?");
-        R("U-102", C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedStrings, true) }), ActDefaultValues::ViewStrings, Severity::Info, "Review strings for URLs and IOCs?");
+        R("U-102",
+          C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedStrings, true) }),
+          ActDefaultValues::ViewStrings,
+          Severity::Info,
+          "Review strings for URLs and IOCs?");
         R("U-120",
           C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::OpenedSafely, true), lit(PredDefaultValues::IsWord) }),
           ActDefaultValues::OpenInSafeView,
@@ -760,7 +842,11 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::SwitchToIsolatedNetwork,
           Severity::High,
           "Switch to isolated/no-Internet sandbox.");
-        R("U-122", C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::CreatedSnapshot, true) }), ActDefaultValues::CreateSnapshot, Severity::Info, "Create VM snapshot before detonation?");
+        R("U-122",
+          C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::CreatedSnapshot, true) }),
+          ActDefaultValues::CreateSnapshot,
+          Severity::Info,
+          "Create VM snapshot before detonation?");
 
         // Mixed (subset of comprehensive rulebook)
         R("M-200",
@@ -789,21 +875,37 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::DecodeBase64,
           Severity::Warn,
           "Base64 blobs detected. Decode for payloads?");
-        R("M-211", C({ lit(PredDefaultValues::ContainsHexBlobs), lit(PredDefaultValues::DecodedHexBlobs, true) }), ActDefaultValues::DecodeHex, Severity::Info, "Hex blobs present. Decode now?");
-        R("M-212", C({ lit(PredDefaultValues::ContainsUrl), lit(PredDefaultValues::ExtractedUrls, true) }), ActDefaultValues::ExtractUrls, Severity::Info, "Extract URLs for pivoting & blocking?");
+        R("M-211",
+          C({ lit(PredDefaultValues::ContainsHexBlobs), lit(PredDefaultValues::DecodedHexBlobs, true) }),
+          ActDefaultValues::DecodeHex,
+          Severity::Info,
+          "Hex blobs present. Decode now?");
+        R("M-212",
+          C({ lit(PredDefaultValues::ContainsUrl), lit(PredDefaultValues::ExtractedUrls, true) }),
+          ActDefaultValues::ExtractUrls,
+          Severity::Info,
+          "Extract URLs for pivoting & blocking?");
         R("M-213",
           C({ lit(PredDefaultValues::ContainsEmbeddedArchive), lit(PredDefaultValues::CarvedEmbeddedFiles, true) }),
           ActDefaultValues::CarveEmbedded,
           Severity::Warn,
           "Embedded archive(s) found. Carve safely?");
 
-        R("M-220", C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedImports, true) }), ActDefaultValues::ViewImports, Severity::Info, "Review imported APIs for intent?");
+        R("M-220",
+          C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedImports, true) }),
+          ActDefaultValues::ViewImports,
+          Severity::Info,
+          "Review imported APIs for intent?");
         R("M-221",
           C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::HasHighEntropy), lit(PredDefaultValues::RanPackerId, true) }),
           ActDefaultValues::IdentifyPacker,
           Severity::Warn,
           "Likely packed. Identify packer?");
-        R("M-223", C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedOverlay, true) }), ActDefaultValues::ViewOverlay, Severity::Info, "Overlay data present. Inspect trailing bytes?");
+        R("M-223",
+          C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedOverlay, true) }),
+          ActDefaultValues::ViewOverlay,
+          Severity::Info,
+          "Overlay data present. Inspect trailing bytes?");
 
         R("M-230",
           C({ lit(PredDefaultValues::TriesToAccessTheInternet), lit(PredDefaultValues::ViewedNetworkBehavior, true) }),
@@ -900,8 +1002,16 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::QueryThreatIntel,
           Severity::Info,
           "Reputation check likely useful here. Query TI?");
-        R("M-292", C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExtractedUrls, true) }), ActDefaultValues::ExtractUrls, Severity::High, "Extract IOCs to pivot and contain?");
-        R("M-293", C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExportedIOCs, true) }), ActDefaultValues::ExportIOCs, Severity::Info, "Export IOCs (CSV/STIX) for sharing?");
+        R("M-292",
+          C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExtractedUrls, true) }),
+          ActDefaultValues::ExtractUrls,
+          Severity::High,
+          "Extract IOCs to pivot and contain?");
+        R("M-293",
+          C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExportedIOCs, true) }),
+          ActDefaultValues::ExportIOCs,
+          Severity::Info,
+          "Export IOCs (CSV/STIX) for sharing?");
         R("M-294",
           C({ lit(PredDefaultValues::IsMalicious), lit(PredDefaultValues::GeneratedReport, true) }),
           ActDefaultValues::GenerateReport,
@@ -914,8 +1024,16 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::ViewProcessTree,
           Severity::High,
           "Drop-and-run chain just occurred. Open process graph.");
-        R("P-302", C({ lit(PredDefaultValues::TriesToAccessTheInternet) }, 600000), ActDefaultValues::ViewNetwork, Severity::High, "Recent network activity. Review flows.");
-        R("P-303", C({ lit(PredDefaultValues::CreatesRunKey) }, 600000), ActDefaultValues::ViewPersistence, Severity::High, "New persistence. Review startup artifacts.");
+        R("P-302",
+          C({ lit(PredDefaultValues::TriesToAccessTheInternet) }, 600000),
+          ActDefaultValues::ViewNetwork,
+          Severity::High,
+          "Recent network activity. Review flows.");
+        R("P-303",
+          C({ lit(PredDefaultValues::CreatesRunKey) }, 600000),
+          ActDefaultValues::ViewPersistence,
+          Severity::High,
+          "New persistence. Review startup artifacts.");
 
         return Status::OK();
     } catch (const std::exception& e) {
@@ -926,4 +1044,4 @@ Status RuleEngine::install_builtin_rules() noexcept
     }
 }
 
-} // namespace GView::AnalysisEngine
+} // namespace GView::Components::AnalysisEngine

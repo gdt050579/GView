@@ -194,11 +194,56 @@ UInt16 e_res[4];)");
     win->CreateViewer(settings);
 }
 
+void InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe) {
+    auto engine = win->GetAnalysisEngine();
+    if (!engine.IsValid())
+        return;
+    std::vector<Components::AnalysisEngine::PredId*> preds = { &pe->predicates.IsPe,
+                                                               &pe->predicates.IsPacked,
+                                                               &pe->predicates.HasOverlayData,
+                                                               &pe->predicates.HasObfuscatedStrings,
+                                                               &pe->predicates.ContainsEmbeddedArchive,
+                                                               &pe->predicates.ContainsEmbeddedExecutable,
+                                                               &pe->predicates.ContainsEmbeddedScript,
+                                                               &pe->predicates.IsSigned,
+                                                               &pe->predicates.SignatureValid,
+                                                               &pe->predicates.ContainsUrl,
+                                                               &pe->predicates.ContainsIpLiteral,
+                                                               &pe->predicates.ContainsEmailAddress,
+                                                               &pe->predicates.ContainsSuspiciousKeywords,
+                                                               &pe->predicates.ContainsBase64Blobs,
+                                                               &pe->predicates.ContainsPersistenceArtifacts };
+    std::vector<std::string_view> predNames                = { "IsPe",
+                                                               "IsPacked",
+                                                               "HasOverlayData",
+                                                               "HasObfuscatedStrings",
+                                                               "ContainsEmbeddedArchive",
+                                                               "ContainsEmbeddedExecutable",
+                                                               "ContainsEmbeddedScript",
+                                                               "IsSigned",
+                                                               "SignatureValid",
+                                                               "ContainsUrl",
+                                                               "ContainsIpLiteral",
+                                                               "ContainsEmailAddress",
+                                                               "ContainsSuspiciousKeywords",
+                                                               "ContainsBase64Blobs",
+                                                               "ContainsPersistenceArtifacts" };
+    for (uint32 i = 0; i < predNames.size(); i++) {
+        const auto& p = predNames[i];
+        auto res      = engine->GetPredId(p);
+        if (AnalysisEngine::AnalysisEngineInterface::IsValidPredicateId(res)) {
+            *preds[i] = res;
+        } else {
+            AppCUI::Dialogs::MessageBox::ShowError("Failed to get predicate", p);
+        }
+    }
+};
+
 PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 {
     auto pe = win->GetObject()->GetContentType<PE::PEFile>();
     pe->Update();
-
+    InitPePredicates(win, pe);
 
     auto engine = win->GetAnalysisEngine();
     if (engine.IsValid()) 
@@ -214,6 +259,9 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
                 LOG_ERROR("Failed to add IsPe fact");
             }
         }
+
+        //ViewerMacros
+        auto viwed = engine->GetActId("ViewedMacros");
     }
 
 #ifdef DISSASM_DEV

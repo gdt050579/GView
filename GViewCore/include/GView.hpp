@@ -996,6 +996,18 @@ namespace Components
             std::string details;
         };
 
+        struct PredicateEntry
+        {
+            std::string name;
+            PredId id;
+        };
+
+        struct PredicateStorage
+        {
+            std::vector<PredicateEntry> predicates;
+            std::vector<std::string> failed_predicates;
+        };
+
         struct CORE_EXPORT AnalysisEngineInterface {
             virtual bool SubmitFact(const Fact& fact) = 0;
             // virtual ActId RegisterAct(std::string_view name)        = 0; // WIP for future use
@@ -1004,6 +1016,9 @@ namespace Components
             virtual PredId GetPredId(std::string_view name) const = 0;
             virtual bool Init()                                   = 0;
             virtual ~AnalysisEngineInterface()                    = default;
+
+            PredicateStorage RequestPredicateStorage(const std::vector<std::string_view>& predicates) const;
+            bool RequestPredicate(PredicateStorage& predicateStorage, std::string_view predicate) const;
 
             static bool IsValidPredicateId(PredId pred)
             {

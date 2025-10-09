@@ -574,6 +574,18 @@ namespace Type
             VA         = 2
         };
 
+        struct PEPredicates
+        {
+            Components::AnalysisEngine::PredId IsPe, IsPacked, HasOverlayData, HasObfuscatedStrings, ContainsEmbeddedArchive, ContainsEmbeddedExecutable,
+                  ContainsEmbeddedScript;
+
+            Components::AnalysisEngine::PredId IsSigned, SignatureValid;
+            Components::AnalysisEngine::PredId ContainsUrl, ContainsIpLiteral, ContainsEmailAddress, ContainsSuspiciousKeywords, ContainsBase64Blobs,
+                  ContainsPersistenceArtifacts;
+
+            // Components::AnalysisEngine::PredId CreatesRunKey, ContainsDownloaderCode; // TODO
+        };
+
         enum class MachineType : uint16
         {
             Unknown   = 0,
@@ -742,7 +754,6 @@ namespace Type
                 ImageSymbol is;
             };
 
-          public:
             // PE informations
             ImageDOSHeader dos;
             union
@@ -796,8 +807,8 @@ namespace Type
             // digital signature
             bool signatureChecked{ false };
             DigitalSignature::AuthenticodeMS data{};
-
-          public:
+            PEPredicates predicates;
+        
             PEFile();
             ~PEFile() override = default;
 
@@ -859,7 +870,6 @@ namespace Type
             static std::string_view LanguageIDToName(uint32 langID);
             static std::string_view DirectoryIDToName(uint32 dirID);
 
-          public:
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
             uint32 GetSelectionZonesCount() override
