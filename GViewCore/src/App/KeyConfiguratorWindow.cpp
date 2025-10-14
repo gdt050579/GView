@@ -10,7 +10,7 @@ class KeyConfigDisplayWindow : public Controls::Window
 {
   public:
     KeyConfigDisplayWindow(const std::vector<KeyboardControlsImplementation::OwnedKeyboardControl>& keys)
-        : Window("Available keys", "d:c,w:160,h:30", Controls::WindowFlags::Sizeable)
+        : Window("Available keys", "d:c", Controls::WindowFlags::Sizeable)
     {
         auto list = Factory::ListView::Create(
               this, "x:1,y:1,w:99%,h:99%", { "n:Caption,w:30%", "n:Description,w:50%", "n:Key,w:20%" }, ListViewFlags::PopupSearchBar);
