@@ -1968,7 +1968,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
 
 void PEFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "DigitalSignature") {
+    if (commandName == "DigitalSignature" || commandName == "DigitalSignatureCmd") {
         while (!signatureChecked) {
             data.winTrust.errorMessage = "Digital signature not found!";
 
@@ -1977,6 +1977,14 @@ void PEFile::RunCommand(std::string_view commandName)
             WinCertificate cert{};
             CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
             CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
+
+            auto subject = win->GetCurrentWindowSubject();
+            auto fact    = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  predicates.IsSigned, subject, "static analysis", "Has digital signature");
+            auto res = analysisEngine->SubmitFact(fact);
+            if (!res) {
+                LOG_ERROR("Failed to add IsSigned fact");
+            }   
 
             CHECKBK(GView::DigitalSignature::VerifyEmbeddedSignature(data, obj->GetData()), "");
 #ifdef BUILD_FOR_WINDOWS
@@ -1994,10 +2002,19 @@ void PEFile::RunCommand(std::string_view commandName)
 
                 break;
             }
-        };
+        }
 
         if (signatureChecked) {
-            PE::Commands::DigitalSignature(this).Show();
+            if (commandName != "DigitalSignatureCmd") {
+                PE::Commands::DigitalSignature(this).Show();
+            }
+            auto subject = win->GetCurrentWindowSubject();
+            auto fact    = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  predicates.SignatureValid, subject, "static analysis", "Has valid signature");
+            auto res = analysisEngine->SubmitFact(fact);
+            if (!res) {
+                LOG_ERROR("Failed to add SignatureValid fact");
+            }  
         } else {
             AppCUI::Dialogs::MessageBox::ShowError("Error", data.winTrust.errorMessage);
         }

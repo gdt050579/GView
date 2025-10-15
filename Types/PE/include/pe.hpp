@@ -808,6 +808,8 @@ namespace Type
             bool signatureChecked{ false };
             DigitalSignature::AuthenticodeMS data{};
             PEPredicates predicates;
+            Reference<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
+            Reference<GView::View::WindowInterface> win;
         
             PEFile();
             ~PEFile() override = default;

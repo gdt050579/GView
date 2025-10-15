@@ -194,10 +194,10 @@ UInt16 e_res[4];)");
     win->CreateViewer(settings);
 }
 
-void InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe) {
+bool InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe) {
     auto engine = win->GetAnalysisEngine();
     if (!engine.IsValid())
-        return;
+        return false;
     std::vector<Components::AnalysisEngine::PredId*> preds = { &pe->predicates.IsPe,
                                                                &pe->predicates.IsPacked,
                                                                &pe->predicates.HasOverlayData,
@@ -228,6 +228,7 @@ void InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE:
                                                                "ContainsSuspiciousKeywords",
                                                                "ContainsBase64Blobs",
                                                                "ContainsPersistenceArtifacts" };
+    bool res_value                                         = true;
     for (uint32 i = 0; i < predNames.size(); i++) {
         const auto& p = predNames[i];
         auto res      = engine->GetPredId(p);
@@ -235,33 +236,25 @@ void InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE:
             *preds[i] = res;
         } else {
             AppCUI::Dialogs::MessageBox::ShowError("Failed to get predicate", p);
+            res_value = false;
         }
     }
+    pe->analysisEngine = engine;
+    return res_value;
 };
 
 PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 {
     auto pe = win->GetObject()->GetContentType<PE::PEFile>();
+    pe->win = win;
     pe->Update();
-    InitPePredicates(win, pe);
-
-    auto engine = win->GetAnalysisEngine();
-    if (engine.IsValid()) 
-    {
-        auto is_pe_pred = engine->GetPredId("IsPe");
-        if (AnalysisEngine::AnalysisEngineInterface::IsValidPredicateId(is_pe_pred))
-        {
-            auto subject = win->GetCurrentWindowSubject();
-            auto fact =
-                  AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(is_pe_pred, subject, "static analysis", "parsed the PE header");
-            auto res = engine->SubmitFact(fact);
-            if (!res) {
-                LOG_ERROR("Failed to add IsPe fact");
-            }
-        }
-
-        //ViewerMacros
-        auto viwed = engine->GetActId("ViewedMacros");
+    if (InitPePredicates(win, pe)) {
+        auto subject = win->GetCurrentWindowSubject();
+        auto fact = AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(pe->predicates.IsPe, subject, "static analysis", "parsed the PE header");
+        auto res  = pe->analysisEngine->SubmitFact(fact);
+        if (!res) {
+            LOG_ERROR("Failed to add IsPe fact");
+        }   
     }
 
 #ifdef DISSASM_DEV
