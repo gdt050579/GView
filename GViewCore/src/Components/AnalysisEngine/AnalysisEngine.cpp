@@ -39,14 +39,15 @@ bool AnalysisEngineInterface::RequestPredicate(PredicateStorage& predicateStorag
 }
 
 // Implementation from GView::Components::AnalysisEngine::AnalysisEngineInterface
-Atom AnalysisEngineInterface::CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject)
+Atom AnalysisEngineInterface::CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::vector<Arg> args)
 {
-    return Atom{ pred, subject, {} };
+    return Atom{ pred, subject, std::move(args) };
 }
 
-Fact AnalysisEngineInterface::CreateFactFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details)
+Fact AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+      PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details, std::vector<Arg> args)
 {
-    auto atom = CreateAtomFromPredicateAndSubject(pred, subject);
+    auto atom = CreateAtomFromPredicateAndSubject(pred, subject, std::move(args));
     return Fact{ .atom = atom, .time = now(), .source = std::string(source), .details = std::string(details) };
 }
 
@@ -191,6 +192,12 @@ enum class PredDefaultValues : PredId {
     ExtractedIOCs,
     ExportedIOCs,
     GeneratedReport,
+
+    //New:
+    IsPCAP,
+    HasNetworkConnections,
+    HasConnectionWithExecutable,
+    HasConnectionWithScript,
     // COUNT sentinel
     COUNT
 };
@@ -411,7 +418,13 @@ const std::vector<std::string> kPredNames = {
     // Reporting / outputs
     "ExtractedIOCs",
     "ExportedIOCs",
-    "GeneratedReport"
+    "GeneratedReport",
+
+    // New:
+    "IsPCAP",
+    "HasNetworkConnections",
+    "HasConnectionWithExecutable",
+    "HasConnectionWithScript",
 };
 
 const std::vector<std::string> kActNames = {

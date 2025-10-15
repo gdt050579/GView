@@ -73,6 +73,9 @@ class StreamManager
 
         return res;
     }
+
+    std::vector<uint16> GetConnectionsWithJSScripts() const;
+    std::vector<uint16> GetConnectionsWithExecutables() const;
 };
 
 } // namespace GView::Type::PCAP

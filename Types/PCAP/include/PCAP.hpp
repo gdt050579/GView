@@ -6,6 +6,12 @@
 
 namespace GView::Type::PCAP
 {
+
+struct PCAPPredicates
+{
+    Components::AnalysisEngine::PredId IsPCAP, HasNetworkConnections, HasConnectionWithExecutable, HasConnectionWithScript;
+};
+
 class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
@@ -14,6 +20,8 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
     Header header;
     std::vector<std::pair<PacketHeader*, uint32>> packetHeaders;
     StreamManager streamManager;
+    PCAPPredicates predicates;
+    Reference<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
 
 	uint32 currentItemIndex{ 0 };
     std::vector<uint32> currentChildIndexes{};

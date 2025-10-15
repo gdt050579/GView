@@ -1030,8 +1030,9 @@ namespace Components
                 return act != INVALID_ACT_ID;
             }
 
-            static Atom CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject);
-            static Fact CreateFactFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details = "");
+            static Atom CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::vector<Arg> args = {});
+            static Fact CreateFactFromPredicateAndSubject(
+                  PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details = "", std::vector<Arg> args = {});
         };
     }
 } // namespace GView

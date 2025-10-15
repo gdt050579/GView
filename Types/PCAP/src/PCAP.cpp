@@ -55,7 +55,7 @@ extern "C"
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
     {
         BufferViewer::Settings settings;
-
+        
         auto offset = 0ULL;
         settings.AddZone(offset, sizeof(pcap->header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
         offset += sizeof(pcap->header);
@@ -102,6 +102,80 @@ extern "C"
         win->CreateViewer(settings);
     }
 
+    bool InitPredicates(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
+    {
+        auto engine = win->GetAnalysisEngine();
+        if (!engine.IsValid())
+            return false;
+        std::vector<Components::AnalysisEngine::PredId*> preds = { &pcap->predicates.IsPCAP,
+                                                                   &pcap->predicates.HasNetworkConnections,
+                                                                   &pcap->predicates.HasConnectionWithExecutable,
+                                                                   &pcap->predicates.HasConnectionWithScript };
+        std::vector<std::string_view> predNames                = { "IsPCAP",
+                                                                   "HasNetworkConnections",
+                                                                   "HasConnectionWithExecutable",
+                                                                   "HasConnectionWithScript"};
+        bool res_value                                         = true;
+        for (uint32 i = 0; i < predNames.size(); i++) {
+            const auto& p = predNames[i];
+            auto res      = engine->GetPredId(p);
+            if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidPredicateId(res)) {
+                *preds[i] = res;
+            } else {
+                AppCUI::Dialogs::MessageBox::ShowError("Failed to get predicate", p);
+                res_value = false;
+            }
+        }
+        pcap->analysisEngine = engine;
+        return res_value;
+    }
+
+    void GetArgsForConnections(std::vector<Components::AnalysisEngine::Arg> &args, const std::vector<uint16>& connections)
+    {
+        args.reserve(connections.size());
+        for (const auto& conn: connections) {
+            args.emplace_back("", (uint64) conn);
+        }
+    }
+    void SendInitialPredicates(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
+    {
+        if (pcap->streamManager.empty())
+            return;
+        auto subject                     = win->GetCurrentWindowSubject();
+        {
+            const auto has_network_connection_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  pcap->predicates.HasNetworkConnections, subject, "static analysis", "parsed the PCAP file");
+
+            auto res = pcap->analysisEngine->SubmitFact(has_network_connection_fact);
+            if (!res) {
+                LOG_ERROR("Failed to add IsPCAP fact");
+            }
+        }
+
+        std::vector<uint16> js_connections = pcap->streamManager.GetConnectionsWithJSScripts();
+        if (!js_connections.empty()) {
+            const auto has_js_connections_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  pcap->predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file");
+            auto res = pcap->analysisEngine->SubmitFact(has_js_connections_fact);
+            if (!res) {
+                LOG_ERROR("Failed to add HasConnectionWithScript fact");
+            }
+            std::vector<Components::AnalysisEngine::Arg> args;
+            GetArgsForConnections(args, js_connections);
+        }
+
+        std::vector<uint16> exe_connections = pcap->streamManager.GetConnectionsWithExecutables();
+        if (!exe_connections.empty()) {
+            std::vector<Components::AnalysisEngine::Arg> args;
+            const auto has_exe_connections_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  pcap->predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file");
+            auto res = pcap->analysisEngine->SubmitFact(has_exe_connections_fact);
+            if (!res) {
+                LOG_ERROR("Failed to add HasConnectionWithScript fact");
+            }
+        }
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto pcap = win->GetObject()->GetContentType<PCAP::PCAPFile>();
@@ -109,9 +183,24 @@ extern "C"
         pcap->RegisterPayloadParser(std::make_unique<PCAP::HTTP::HTTPParser>());
         pcap->Update();
 
+        const bool has_init_predicates = InitPredicates(win, pcap);
+        if (has_init_predicates) {
+            auto subject      = win->GetCurrentWindowSubject();
+            auto is_pcap_fact    = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  pcap->predicates.IsPCAP, subject, "static analysis", "parsed the PCAP header");
+            auto res = pcap->analysisEngine->SubmitFact(is_pcap_fact);
+            if (!res) {
+                LOG_ERROR("Failed to add IsPCAP fact");
+            }
+        }
+
         // add views
         CreateContainerView(win, pcap);
         CreateBufferView(win, pcap);
+
+        if (has_init_predicates) {
+            SendInitialPredicates(win, pcap);
+        }
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new PCAP::Panels::Information(win->GetObject(), pcap)), true);
