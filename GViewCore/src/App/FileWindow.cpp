@@ -186,6 +186,10 @@ bool FileWindow::SetViewByIndex(uint32 index)
 
 bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 {
+    if (keyCode == Key::Escape && !view->HasFocus()) {
+        view->SetFocus();
+        return true;
+    }
     if (Window::OnKeyEvent(keyCode, unicode))
         return true;
     // check vertical panel
@@ -195,7 +199,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == INSTANCE_CHOOSE_TYPE.Key)
+    if (keyCode == INSTANCE_SWITCH_TO_VIEW.Key)
     {
         if (!view->HasFocus())
             view->SetFocus();

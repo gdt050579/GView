@@ -39,8 +39,9 @@ FindAllDialog::FindAllDialog(const TokenObject& currentToken, const std::vector<
         if (tokens[start].lineNo != tok.lineNo)
             start++;
         auto end = idx;
-        while ((end > 0) && (tokens[end].lineNo == tok.lineNo))
+        while ((end > 0 && end < tokens.size()) && (tokens[end].lineNo == tok.lineNo))
             end++;
+        end = std::max(end, (unsigned)tokens.size());
         end--;
         // between start and end a new line is found
         content.Clear();

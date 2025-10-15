@@ -1061,9 +1061,9 @@ void Instance::Paint(Graphics::Renderer& renderer)
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     if (this->showMetaData)
-        commandBar.SetCommand(ShowPluginsCmd.Key, "ShowMetaData:ON", ShowPluginsCmd.CommandId);
+        commandBar.SetCommand(ShowMetaDataCmd.Key, "ShowMetaData:ON", ShowMetaDataCmd.CommandId);
     else
-        commandBar.SetCommand(ShowPluginsCmd.Key, "ShowMetaData:OFF", ShowPluginsCmd.CommandId);
+        commandBar.SetCommand(ShowMetaDataCmd.Key, "ShowMetaData:OFF", ShowMetaDataCmd.CommandId);
 
     if (this->noItemsVisible == false)
         commandBar.SetCommand(DeleteCmd.Key, DeleteCmd.Caption, DeleteCmd.CommandId);
