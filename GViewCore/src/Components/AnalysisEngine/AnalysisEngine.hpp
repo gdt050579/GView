@@ -116,7 +116,7 @@ struct Rule {
     std::string id;    // stable id for telemetry
     ConjClause clause; // keep single-clause for simplicity; duplicate Rule for ORs
     Action action;
-    Severity severity{ Severity::Info };
+    Confidence confidence = 0;
     std::string message;
     std::chrono::milliseconds cooldown{ std::chrono::minutes(30) };
 };

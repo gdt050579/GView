@@ -716,7 +716,7 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
                 if (impl_->st.bus.should_emit(r.action, r.cooldown)) {
                     Suggestion sug;
                     sug.action       = r.action;
-                    sug.severity     = r.severity;
+                    sug.confidence = r.confidence;
                     sug.message      = r.message;
                     //sug.cooldown     = r.cooldown;
                     sug.last_emitted = now();
@@ -750,12 +750,12 @@ Status RuleEngine::install_builtin_rules() noexcept
     // TODO: to be replaced with the file that contains the comprehensive rulebook
     try {
         auto R =
-              [&](std::string id, ConjClause c, ActDefaultValues ak, Severity sev, std::string msg, std::chrono::milliseconds cd = std::chrono::minutes(30)) {
+              [&](std::string id, ConjClause c, ActDefaultValues ak, Confidence confidence, std::string msg, std::chrono::milliseconds cd = std::chrono::minutes(30)) {
                   Rule r;
                   r.id       = std::move(id);
                   r.clause   = std::move(c);
                   r.action   = { (ActId) ak, Subject{} };
-                  r.severity = sev;
+                  r.confidence = confidence;
                   r.message  = std::move(msg);
                   //r.cooldown = cd;
                   return register_rule(r);
@@ -766,72 +766,72 @@ Status RuleEngine::install_builtin_rules() noexcept
         R("F-001",
           C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacros) }),
           ActDefaultValues::ViewMacros,
-          Severity::High,
+          70,
           "Macros present. Open Macro Viewer?");
         R("F-002",
           C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacroObfuscation) }),
           ActDefaultValues::DeobfuscateVBA,
-          Severity::High,
+          70,
           "Obfuscated macros detected. Deobfuscate now?");
         R("F-003",
           C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::ContainsExternalTemplateRef) }),
           ActDefaultValues::ViewExternalTemplates,
-          Severity::Warn,
+          40,
           "External template reference. Inspect RELs?");
         R("F-004",
           C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasXlm4Macro) }),
           ActDefaultValues::ViewXlmSheets,
-          Severity::High,
+          70,
           "Excel 4.0 macro sheet present. Review?");
         R("F-005",
           C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasHiddenSheets) }),
           ActDefaultValues::ViewHiddenSheets,
-          Severity::Warn,
+          40,
           "Hidden sheets found. Show list?");
         R("F-010",
           C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasJavaScript) }),
           ActDefaultValues::ViewPdfJavaScript,
-          Severity::High,
+          70,
           "PDF has JavaScript. Inspect code?");
         R("F-011",
           C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasOpenAction) }),
           ActDefaultValues::ViewPdfObjects,
-          Severity::High,
+          70,
           "Auto-action triggers on open. Inspect objects?");
         R("F-020",
           C({ lit(PredDefaultValues::IsScript), lit(PredDefaultValues::HasObfuscatedStrings) }),
           ActDefaultValues::BeautifyScript,
-          Severity::High,
+          70,
           "Obfuscated script. Beautify for review?");
         R("F-030",
           C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::HasHighEntropy) }),
           ActDefaultValues::IdentifyPacker,
-          Severity::Warn,
+          40,
           "High entropy suggests packing. Identify packer?");
         R("F-031",
           C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ContainsEmbeddedExecutable) }),
           ActDefaultValues::ViewResources,
-          Severity::Warn,
+          40,
           "Embedded payload(s) detected. Inspect resources?");
         R("F-040",
           C({ lit(PredDefaultValues::IsArchive), lit(PredDefaultValues::ArchiveIsPasswordProtected) }),
           ActDefaultValues::SafeExtract,
-          Severity::Warn,
+          40,
           "Password-protected archive. Safe-extract to sandbox?");
         R("F-041",
           C({ lit(PredDefaultValues::IsArchive), lit(PredDefaultValues::ArchiveContainsExecutable) }),
           ActDefaultValues::ViewArchiveManifest,
-          Severity::Warn,
+          40,
           "Executable(s) inside archive. Review manifest?");
         R("F-050",
           C({ lit(PredDefaultValues::MarkOfTheWeb) }),
           ActDefaultValues::ViewMOTW,
-          Severity::Info,
+          10,
           "Internet-origin marker present. Inspect source zone?");
         R("F-051",
           C({ lit(PredDefaultValues::HashInThreatIntel) }),
           ActDefaultValues::ViewThreatIntelHits,
-          Severity::Critical,
+          100,
           "Known-bad hash in intel. Review details now.",
           std::chrono::minutes(5));
 
@@ -839,225 +839,225 @@ Status RuleEngine::install_builtin_rules() noexcept
         R("U-100",
           C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedHashes, true) }),
           ActDefaultValues::ComputeHashes,
-          Severity::Info,
+          10,
           "Compute hashes for correlation & TI lookups?");
         R("U-101",
           C({ lit(PredDefaultValues::ComputedHashes), lit(PredDefaultValues::QueriedThreatIntel, true) }),
           ActDefaultValues::QueryThreatIntel,
-          Severity::Info,
+          10,
           "Check reputation across intel sources?");
         R("U-102",
           C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedStrings, true) }),
           ActDefaultValues::ViewStrings,
-          Severity::Info,
+          10,
           "Review strings for URLs and IOCs?");
         R("U-120",
           C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::OpenedSafely, true), lit(PredDefaultValues::IsWord) }),
           ActDefaultValues::OpenInSafeView,
-          Severity::High,
+          70,
           "Use protected view to avoid executing active content.");
         R("U-121",
           C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::SwitchedToIsolatedNetwork, true), lit(PredDefaultValues::MarkOfTheWeb) }),
           ActDefaultValues::SwitchToIsolatedNetwork,
-          Severity::High,
+          70,
           "Switch to isolated/no-Internet sandbox.");
         R("U-122",
           C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::CreatedSnapshot, true) }),
           ActDefaultValues::CreateSnapshot,
-          Severity::Info,
+          10,
           "Create VM snapshot before detonation?");
 
         // Mixed (subset of comprehensive rulebook)
         R("M-200",
           C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacros), lit(PredDefaultValues::ViewedMacros, true) }),
           ActDefaultValues::ViewMacros,
-          Severity::High,
+          70,
           "Macros present. Open Macro Viewer?");
         R("M-201",
           C({ lit(PredDefaultValues::HasMacroObfuscation), lit(PredDefaultValues::DeobfuscatedVBA, true) }),
           ActDefaultValues::DeobfuscateVBA,
-          Severity::High,
+          70,
           "Obfuscated macros found. Deobfuscate now?");
         R("M-202",
           C({ lit(PredDefaultValues::HasSuspiciousMacroFunctionCalls), lit(PredDefaultValues::ViewedSuspiciousCalls, true) }),
           ActDefaultValues::ViewSuspiciousCalls,
-          Severity::High,
+          70,
           "Suspicious macro APIs detected. Review call list?");
         R("M-203",
           C({ lit(PredDefaultValues::ContainsExternalTemplateRef), lit(PredDefaultValues::ViewedExternalTemplateRels, true) }),
           ActDefaultValues::ViewExternalTemplates,
-          Severity::Warn,
+          40,
           "Remote template reference. Inspect RELs?");
 
         R("M-210",
           C({ lit(PredDefaultValues::ContainsBase64Blobs), lit(PredDefaultValues::DecodedBase64Blobs, true) }),
           ActDefaultValues::DecodeBase64,
-          Severity::Warn,
+          40,
           "Base64 blobs detected. Decode for payloads?");
         R("M-211",
           C({ lit(PredDefaultValues::ContainsHexBlobs), lit(PredDefaultValues::DecodedHexBlobs, true) }),
           ActDefaultValues::DecodeHex,
-          Severity::Info,
+          10,
           "Hex blobs present. Decode now?");
         R("M-212",
           C({ lit(PredDefaultValues::ContainsUrl), lit(PredDefaultValues::ExtractedUrls, true) }),
           ActDefaultValues::ExtractUrls,
-          Severity::Info,
+          10,
           "Extract URLs for pivoting & blocking?");
         R("M-213",
           C({ lit(PredDefaultValues::ContainsEmbeddedArchive), lit(PredDefaultValues::CarvedEmbeddedFiles, true) }),
           ActDefaultValues::CarveEmbedded,
-          Severity::Warn,
+          40,
           "Embedded archive(s) found. Carve safely?");
 
         R("M-220",
           C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedImports, true) }),
           ActDefaultValues::ViewImports,
-          Severity::Info,
+          10,
           "Review imported APIs for intent?");
         R("M-221",
           C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::HasHighEntropy), lit(PredDefaultValues::RanPackerId, true) }),
           ActDefaultValues::IdentifyPacker,
-          Severity::Warn,
+          40,
           "Likely packed. Identify packer?");
         R("M-223",
           C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedOverlay, true) }),
           ActDefaultValues::ViewOverlay,
-          Severity::Info,
+          10,
           "Overlay data present. Inspect trailing bytes?");
 
         R("M-230",
           C({ lit(PredDefaultValues::TriesToAccessTheInternet), lit(PredDefaultValues::ViewedNetworkBehavior, true) }),
           ActDefaultValues::ViewNetwork,
-          Severity::High,
+          70,
           "Outbound connections observed. Review endpoints?");
         R("M-231",
           C({ lit(PredDefaultValues::BeaconingPattern), lit(PredDefaultValues::ResolvedDomains, true) }),
           ActDefaultValues::ViewDnsQueries,
-          Severity::High,
+          70,
           "Beaconing detected. Review DNS queries/domains?");
         R("M-232",
           C({ lit(PredDefaultValues::UsesHTTPSRequests), lit(PredDefaultValues::UsesSelfSignedTls), lit(PredDefaultValues::ViewedTlsCertificates, true) }),
           ActDefaultValues::ViewTlsCertificates,
-          Severity::High,
+          70,
           "Self-signed/invalid TLS. Inspect certificate chain?");
         R("M-233",
           C({ lit(PredDefaultValues::WritesToTempExecutable), lit(PredDefaultValues::ViewedFileSystemActivity, true) }),
           ActDefaultValues::ViewFileWrites,
-          Severity::High,
+          70,
           "New executable(s) in temp. Review drops?");
         R("M-234",
           C({ lit(PredDefaultValues::DropsAndExecutes), lit(PredDefaultValues::ViewedProcessTree, true) }),
           ActDefaultValues::ViewProcessTree,
-          Severity::High,
+          70,
           "Drop-and-run sequence observed. Open process tree?");
         R("M-235",
           C({ lit(PredDefaultValues::CreatesRunKey), lit(PredDefaultValues::ViewedRegistryActivity, true) }),
           ActDefaultValues::ViewRegistryChanges,
-          Severity::High,
+          70,
           "Startup persistence detected. Inspect registry changes?");
 
         R("M-240",
           C({ lit(PredDefaultValues::PersistenceIndicatorsPresent), lit(PredDefaultValues::PersistenceReviewed, true) }),
           ActDefaultValues::ViewPersistence,
-          Severity::High,
+          70,
           "Persistence artifacts found. Review them now?");
         R("M-241",
           C({ lit(PredDefaultValues::RequestsUacElevation), lit(PredDefaultValues::ViewedUacEvents, true) }),
           ActDefaultValues::ViewUac,
-          Severity::Warn,
+          40,
           "UAC prompt/elevation attempt. Inspect event details?");
         R("M-242",
           C({ lit(PredDefaultValues::AcquiresSeDebugPrivilege), lit(PredDefaultValues::ViewedTokenPrivileges, true) }),
           ActDefaultValues::ViewTokenPrivileges,
-          Severity::High,
+          70,
           "Debug privilege acquired. Review token changes?");
 
         R("M-250",
           C({ lit(PredDefaultValues::MassFileModification), lit(PredDefaultValues::ViewedEncryptionMonitor, true) }),
           ActDefaultValues::MonitorEncryption,
-          Severity::Critical,
+          100,
           "Rapid file modifications. Start encryption monitor?");
         R("M-251",
           C({ lit(PredDefaultValues::DeletesShadowCopies), lit(PredDefaultValues::ViewedShadowCopyEvents, true) }),
           ActDefaultValues::ViewShadowCopyEvents,
-          Severity::High,
+          70,
           "VSS deletion observed. Inspect events?");
         R("M-252",
           C({ lit(PredDefaultValues::DropsRansomNote), lit(PredDefaultValues::ViewedRansomNotes, true) }),
           ActDefaultValues::ViewRansomNotes,
-          Severity::High,
+          70,
           "Ransom note artifacts dropped. Open list?");
 
         R("M-260",
           C({ lit(PredDefaultValues::ReadsManyDocs), lit(PredDefaultValues::ViewedExfilTimeline, true) }),
           ActDefaultValues::ViewExfil,
-          Severity::High,
+          70,
           "Mass document reads. Check exfil timeline?");
         R("M-262",
           C({ lit(PredDefaultValues::UploadsLargeVolume), lit(PredDefaultValues::CapturedPcap, true) }),
           ActDefaultValues::StartCapturePcap,
-          Severity::High,
+          70,
           "Large outbound traffic. Capture PCAP now?");
 
         R("M-270",
           C({ lit(PredDefaultValues::ChecksSandboxArtifacts), lit(PredDefaultValues::ViewedAntiVMChecks, true) }),
           ActDefaultValues::ViewAntiVM,
-          Severity::Warn,
+          40,
           "Anti-VM checks observed. Review heuristics?");
         R("M-271",
           C({ lit(PredDefaultValues::DelaysExecutionLong), lit(PredDefaultValues::EnabledTimeWarp, true) }),
           ActDefaultValues::EnableTimeWarp,
-          Severity::Info,
+          10,
           "Long sleeps observed. Enable time warp?");
 
         R("M-280",
           C({ lit(PredDefaultValues::IsArchive), lit(PredDefaultValues::ArchiveIsPasswordProtected), lit(PredDefaultValues::ExtractedArchiveSafely, true) }),
           ActDefaultValues::SafeExtract,
-          Severity::Warn,
+          40,
           "Password-protected archive. Extract to sandbox?");
         R("M-290",
           C({ lit(PredDefaultValues::ComputedHashes), lit(PredDefaultValues::QueriedThreatIntel, true), lit(PredDefaultValues::ContainsUrl) }),
           ActDefaultValues::QueryThreatIntel,
-          Severity::Info,
+          10,
           "Reputation check likely useful here. Query TI?");
         R("M-292",
           C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExtractedUrls, true) }),
           ActDefaultValues::ExtractUrls,
-          Severity::High,
+          70,
           "Extract IOCs to pivot and contain?");
         R("M-293",
           C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExportedIOCs, true) }),
           ActDefaultValues::ExportIOCs,
-          Severity::Info,
+          10,
           "Export IOCs (CSV/STIX) for sharing?");
         R("M-294",
           C({ lit(PredDefaultValues::IsMalicious), lit(PredDefaultValues::GeneratedReport, true) }),
           ActDefaultValues::GenerateReport,
-          Severity::High,
+          70,
           "Generate a concise report with findings?");
 
         // Time-windowed examples
         R("P-301",
           C({ lit(PredDefaultValues::WritesToTempExecutable), lit(PredDefaultValues::DropsAndExecutes) }, 180000),
           ActDefaultValues::ViewProcessTree,
-          Severity::High,
+          70,
           "Drop-and-run chain just occurred. Open process graph.");
         R("P-302",
           C({ lit(PredDefaultValues::TriesToAccessTheInternet) }, 600000),
           ActDefaultValues::ViewNetwork,
-          Severity::High,
+          70,
           "Recent network activity. Review flows.");
         R("P-303",
           C({ lit(PredDefaultValues::CreatesRunKey) }, 600000),
           ActDefaultValues::ViewPersistence,
-          Severity::High,
+          70,
           "New persistence. Review startup artifacts.");
 
         R("G-001",
           C({ lit(PredDefaultValues::IsPCAP), lit(PredDefaultValues::HasNetworkConnections) }),
           ActDefaultValues::CheckConnection,
-          Severity::Info,
+          100,
           "The PCAP file has connections. Analyze them?");
 
         return Status::OK();

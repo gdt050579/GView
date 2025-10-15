@@ -985,8 +985,9 @@ namespace Components
             std::vector<Arg> args; /* small, usually empty*/
         };
 
-        using Clock     = std::chrono::steady_clock;
-        using TimePoint = std::chrono::time_point<Clock>;
+        using Clock      = std::chrono::steady_clock;
+        using TimePoint  = std::chrono::time_point<Clock>;
+        using Confidence = uint8; // 0-100
         // A fact: atom + truth (true only in this engine), timestamp and provenance
         struct Fact
         {
@@ -1008,9 +1009,6 @@ namespace Components
             std::vector<std::string> failed_predicates;
         };
 
-        // TODO: refactor this to confidence level into float 0..1
-        enum class Severity : std::uint8_t { Info = 0, Warn = 1, High = 2, Critical = 3 };
-
         struct Action {
             ActId key{};
             Subject subject{};
@@ -1019,7 +1017,7 @@ namespace Components
 
         struct Suggestion {
             Action action;
-            Severity severity{ Severity::Info };
+            Confidence confidence;
             std::string message; // human readable                                           
             //std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval TODO ?
             TimePoint last_emitted{};                                       // zero == never
