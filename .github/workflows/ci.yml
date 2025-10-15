@@ -47,7 +47,7 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew update
-          brew install autoconf autoconf-archive automake libtool
+          brew install autoconf autoconf-archive automake libtool make
           # Uncomment if needed later:
           # brew install pkg-config # https://github.com/dotnet/runtime/issues/82240
 
