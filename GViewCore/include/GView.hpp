@@ -1026,7 +1026,7 @@ namespace Components
 
         struct CORE_EXPORT RuleTriggerInterface
         {
-            virtual void OnRuleTrigger(const Suggestion& suggestion) = 0;
+            virtual void OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSuggestion) = 0;
             virtual ~RuleTriggerInterface() = default;
         };
 
@@ -1039,7 +1039,7 @@ namespace Components
             virtual bool Init()                                                             = 0;
             virtual ~AnalysisEngineInterface()                                              = default;
             virtual void ShowAnalysisEngineWindow()                                         = 0;
-            virtual bool RegisterActionTrigger(ActId action, RuleTriggerInterface* trigger) = 0;
+            virtual bool RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger) = 0;
 
             PredicateStorage RequestPredicateStorage(const std::vector<std::string_view>& predicates) const;
             bool RequestPredicate(PredicateStorage& predicateStorage, std::string_view predicate) const;

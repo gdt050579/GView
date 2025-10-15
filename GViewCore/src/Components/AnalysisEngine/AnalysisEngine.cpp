@@ -277,6 +277,8 @@ enum class ActDefaultValues : ActId {
 
     //New added
     CheckConnection,
+    ViewConnectionWithExecutable,
+    ViewConnectionWithScript,
     // COUNT sentinel
     COUNT
 };
@@ -505,6 +507,8 @@ const std::vector<std::string> kActNames = {
 
     // New added
     "CheckConnection",
+    "ViewConnectionWithExecutable",
+    "ViewConnectionWithScript",
 };
 
 // ------------------------- Internal Structures ----------------------------- //
@@ -709,9 +713,12 @@ void RuleEngine::ShowAnalysisEngineWindow()
     w.Show();
 }
 
-bool RuleEngine::RegisterActionTrigger(ActId action, RuleTriggerInterface* trigger)
+bool RuleEngine::RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger)
 {
-    return false;
+    if (action == INVALID_ACT_ID || action >= (ActId) ActDefaultValues::COUNT || trigger == nullptr)
+        return false;
+    action_handlers[action].push_back(trigger);
+    return true;
 }
 
 // Set a fact; threadsafe. Returns Status.
@@ -1089,6 +1096,18 @@ Status RuleEngine::install_builtin_rules() noexcept
           100,
           "The PCAP file has connections. Analyze them?");
 
+        R("G-002",
+          C({ /*lit(PredDefaultValues::HasNetworkConnections),*/ lit(PredDefaultValues::HasConnectionWithExecutable) }),
+          ActDefaultValues::ViewConnectionWithExecutable,
+          80,
+          "The PCAP file seems to have connections with executable. Open them?");
+
+        R("G-003",
+          C({ /*lit(PredDefaultValues::HasNetworkConnections),*/ lit(PredDefaultValues::HasConnectionWithScript) }),
+          ActDefaultValues::ViewConnectionWithScript,
+          80,
+          "he PCAP file seems to have connections with scripts. Open them?");
+
         return Status::OK();
     } catch (const std::exception& e) {
         const auto err = std::format("install_builtin_rules: {}", e.what());
@@ -1098,13 +1117,27 @@ Status RuleEngine::install_builtin_rules() noexcept
     }
 }
 
-bool RuleEngine::ExecuteSuggestion(uint32 index)
+bool RuleEngine::TryExecuteSuggestion(uint32 index)
 {
     if (current_suggestions.empty())
         return false;
     if (index >= current_suggestions.size())
         return false;
-    //TODO:
+    auto it = action_handlers.find(current_suggestions[index].action.key);
+    if (it == action_handlers.end())
+        return true; // no handlers registered
+    const auto& s = current_suggestions[index];
+    bool final_delete_rule = true;
+    for (auto& h : it->second) {
+        if (!h.IsValid())
+            continue;
+        bool delete_rule = true;
+        h->OnRuleTrigger(s, delete_rule);
+        final_delete_rule = final_delete_rule && delete_rule;
+    }
+    if (final_delete_rule) {
+        current_suggestions.erase(current_suggestions.begin() + index);
+    }
     return true;
 }
 } // namespace GView::Components::AnalysisEngine

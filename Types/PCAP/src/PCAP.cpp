@@ -130,19 +130,12 @@ extern "C"
         return res_value;
     }
 
-    void GetArgsForConnections(std::vector<Components::AnalysisEngine::Arg> &args, const std::vector<uint16>& connections)
-    {
-        args.reserve(connections.size());
-        for (const auto& conn: connections) {
-            args.emplace_back("", (uint64) conn);
-        }
-    }
     void SendInitialPredicates(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
     {
         if (pcap->streamManager.empty())
             return;
-        auto subject                     = win->GetCurrentWindowSubject();
         {
+            auto subject                           = win->GetCurrentWindowSubject();
             const auto has_network_connection_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
                   pcap->predicates.HasNetworkConnections, subject, "static analysis", "parsed the PCAP file");
 
@@ -152,27 +145,19 @@ extern "C"
             }
         }
 
-        std::vector<uint16> js_connections = pcap->streamManager.GetConnectionsWithJSScripts();
-        if (!js_connections.empty()) {
-            const auto has_js_connections_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  pcap->predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file");
-            auto res = pcap->analysisEngine->SubmitFact(has_js_connections_fact);
-            if (!res) {
-                LOG_ERROR("Failed to add HasConnectionWithScript fact");
-            }
-            std::vector<Components::AnalysisEngine::Arg> args;
-            GetArgsForConnections(args, js_connections);
+        auto checkConnectionPredicate = pcap->analysisEngine->GetActId("CheckConnection");
+        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(checkConnectionPredicate)) {
+            pcap->analysisEngine->RegisterActionTrigger(checkConnectionPredicate, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
         }
 
-        std::vector<uint16> exe_connections = pcap->streamManager.GetConnectionsWithExecutables();
-        if (!exe_connections.empty()) {
-            std::vector<Components::AnalysisEngine::Arg> args;
-            const auto has_exe_connections_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  pcap->predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file");
-            auto res = pcap->analysisEngine->SubmitFact(has_exe_connections_fact);
-            if (!res) {
-                LOG_ERROR("Failed to add HasConnectionWithScript fact");
-            }
+        auto viewConnectionWithExecutablePredicate = pcap->analysisEngine->GetActId("ViewConnectionWithExecutable");
+        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(viewConnectionWithExecutablePredicate)) {
+            pcap->analysisEngine->RegisterActionTrigger(viewConnectionWithExecutablePredicate, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
+        }
+
+        auto iewConnectionWithScriptPredicate = pcap->analysisEngine->GetActId("ViewConnectionWithScript");
+        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(iewConnectionWithScriptPredicate)) {
+            pcap->analysisEngine->RegisterActionTrigger(iewConnectionWithScriptPredicate, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
         }
     }
 

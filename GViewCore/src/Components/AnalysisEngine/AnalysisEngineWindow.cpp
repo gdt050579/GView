@@ -63,9 +63,11 @@ void AnalysisEngineWindow::OnListViewItemPressed(Reference<Controls::ListView> l
     const auto index = item.GetData((uint64) (-1));
     if (index == (uint64) (-1))
         return;
-    if (!engine->ExecuteSuggestion((uint32)index)) {
-        Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");   
+    if (!engine->TryExecuteSuggestion((uint32) index)) {
+        Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
+        return;
     }
+    DrawSuggestions();
 }
 
 void AnalysisEngineWindow::GetHint()
@@ -93,10 +95,10 @@ void AnalysisEngineWindow::GetHint()
 
 void AnalysisEngineWindow::DrawSuggestions()
 {
+    listView->DeleteAllItems();
     auto available_suggestions = engine->GetAllAvailableSuggestions();
     if (available_suggestions.empty())
         return;
-    listView->DeleteAllItems();
     for (uint32 i = 0; i < available_suggestions.size(); i++) {
         const auto& s = available_suggestions[i];
 

@@ -1,3 +1,5 @@
+#include <codecvt>
+
 #include "PCAP.hpp"
 
 using namespace GView::Type::PCAP;
@@ -195,4 +197,72 @@ GView::Utils::JsonBuilderInterface* PCAPFile::GetSmartAssistantContext(const std
     builder->AddUInt("TotalPackets", packetHeaders.size());
     builder->AddUInt("TotalStreams", streamManager.size());
     return builder;
+}
+
+void GetArgsForConnections(std::vector<GView::Components::AnalysisEngine::Arg>& args, const std::vector<uint16>& connections)
+{
+    args.reserve(connections.size());
+    for (const auto& conn : connections) {
+        args.emplace_back("", (uint64) conn);
+    }
+}
+
+std::u16string utf8_to_u16(const std::string& utf8_str)
+{
+    try {
+        // Create a converter for UTF-8 <-> UTF-16
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+
+        // Perform the conversion
+        return converter.from_bytes(utf8_str);
+    } catch (const std::range_error& e) {
+        return std::u16string{}; // Return empty or handle error
+    }
+}
+
+void PCAPFile::OnRuleTrigger(const Components::AnalysisEngine::Suggestion& suggestion, bool& shouldDeleteSuggestion)
+{
+    // TODO: make the code more generic ! maybe use the action id and store it in a member variable
+    if (suggestion.rule_id == "G-001") //CheckConnection
+    {
+        auto subject                       = streamManager.GetWindow()->GetCurrentWindowSubject();
+        std::vector<uint16> js_connections = streamManager.GetConnectionsWithJSScripts();
+        if (!js_connections.empty()) {
+            const auto has_js_connections_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file");
+            auto res = analysisEngine->SubmitFact(has_js_connections_fact);
+            if (!res) {
+                LOG_ERROR("Failed to add HasConnectionWithScript fact");
+            }
+            std::vector<Components::AnalysisEngine::Arg> args;
+            GetArgsForConnections(args, js_connections);
+        }
+
+        std::vector<uint16> exe_connections = streamManager.GetConnectionsWithExecutables();
+        if (!exe_connections.empty()) {
+            std::vector<Components::AnalysisEngine::Arg> args;
+            const auto has_exe_connections_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  predicates.HasConnectionWithExecutable, subject, "static analysis", "parsed the PCAP file");
+            auto res = analysisEngine->SubmitFact(has_exe_connections_fact);
+            if (!res) {
+                LOG_ERROR("Failed to add HasConnectionWithScript fact");
+            }
+        }
+    }
+    if (suggestion.rule_id == "G-002") // ViewConnectionWithExecutable
+    {
+        // TODO: send args and check if they are received correctly
+        std::vector<uint16> exe_connections = streamManager.GetConnectionsWithExecutables();
+        if (exe_connections.empty())
+            return;
+        std::string f    = std::to_string(exe_connections[0]) + "\\1";
+        auto initial_pos = utf8_to_u16(f);
+        OnOpenItem(initial_pos, {});
+    }
+
+    if (suggestion.rule_id == "G-003") // ViewConnectionWithScript
+    {
+        shouldDeleteSuggestion = false;
+    }
+
 }

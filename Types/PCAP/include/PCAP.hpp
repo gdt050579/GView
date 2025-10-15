@@ -12,7 +12,10 @@ struct PCAPPredicates
     Components::AnalysisEngine::PredId IsPCAP, HasNetworkConnections, HasConnectionWithExecutable, HasConnectionWithScript;
 };
 
-class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
+class PCAPFile : public TypeInterface,
+                 public View::ContainerViewer::EnumerateInterface,
+                 public View::ContainerViewer::OpenItemInterface,
+                 public Components::AnalysisEngine::RuleTriggerInterface
 {
   public:
     Buffer data; // it's maximum 0xFFFF so just save it here
@@ -77,6 +80,7 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
 
 	std::vector<std::pair<std::string, std::string>> GetPropertiesForContainerView();
     GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+    void OnRuleTrigger(const Components::AnalysisEngine::Suggestion& suggestion, bool& shouldDeleteSuggestion) override;
 };
 
 namespace Panels

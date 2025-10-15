@@ -138,7 +138,7 @@ class RuleEngine final : public AnalysisEngineInterface
     std::string_view GetPredName(PredId p) const;
     std::string_view GetActName(ActId a) const;
     void ShowAnalysisEngineWindow() override;
-    bool RegisterActionTrigger(ActId action, RuleTriggerInterface* trigger) override;
+    bool RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger) override;
 
     Status set_fact(const Fact& f) noexcept;
     Status set_fact(PredId p, const Subject& s, std::string source) noexcept;
@@ -164,12 +164,13 @@ class RuleEngine final : public AnalysisEngineInterface
         c.window = window;
         return c;
     }
-    bool ExecuteSuggestion(uint32 index);
+    bool TryExecuteSuggestion(uint32 index);
   private:
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
     std::vector<Suggestion> current_suggestions;
+    std::unordered_map<ActId, std::vector<Reference<RuleTriggerInterface>>> action_handlers;
 };
 
 // Convenience helpers
