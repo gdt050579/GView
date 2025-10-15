@@ -83,21 +83,21 @@ inline TimePoint now() noexcept
 }
 
 // Simple severity for suggestion UI
-enum class Severity : std::uint8_t { Info = 0, Warn = 1, High = 2, Critical = 3 };
+//enum class Severity : std::uint8_t { Info = 0, Warn = 1, High = 2, Critical = 3 };
 
 // Action to propose (Suggest(Action))
-struct Action {
-    ActId key{};
-    Subject subject{};
-    std::vector<Arg> args;
-};
-struct Suggestion {
-    Action action;
-    Severity severity{ Severity::Info };
-    std::string message;                                            // human readable
-    std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval
-    TimePoint last_emitted{};                                       // zero == never
-};
+//struct Action {
+//    ActId key{};
+//    Subject subject{};
+//    std::vector<Arg> args;
+//};
+//struct Suggestion {
+//    Action action;
+//    Severity severity{ Severity::Info };
+//    std::string message;                                            // human readable
+//    std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval
+//    TimePoint last_emitted{};                                       // zero == never
+//};
 
 // A literal (possibly negated) that must hold
 struct Literal {

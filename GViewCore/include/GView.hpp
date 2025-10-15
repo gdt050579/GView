@@ -1008,6 +1008,23 @@ namespace Components
             std::vector<std::string> failed_predicates;
         };
 
+        // TODO: refactor this to confidence level into float 0..1
+        enum class Severity : std::uint8_t { Info = 0, Warn = 1, High = 2, Critical = 3 };
+
+        struct Action {
+            ActId key{};
+            Subject subject{};
+            std::vector<Arg> args;
+        };
+
+        struct Suggestion {
+            Action action;
+            Severity severity{ Severity::Info };
+            std::string message; // human readable                                           
+            //std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval TODO ?
+            TimePoint last_emitted{};                                       // zero == never
+        };
+
         struct CORE_EXPORT AnalysisEngineInterface {
             virtual bool SubmitFact(const Fact& fact) = 0;
             // virtual ActId RegisterAct(std::string_view name)        = 0; // WIP for future use

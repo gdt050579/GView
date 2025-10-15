@@ -273,6 +273,9 @@ enum class ActDefaultValues : ActId {
     // Anti-analysis helpers
     ViewAntiVM,
     EnableTimeWarp,
+
+    //New added
+    CheckConnection,
     // COUNT sentinel
     COUNT
 };
@@ -497,7 +500,10 @@ const std::vector<std::string> kActNames = {
     "ExportIOCs",
     // Anti-analysis helpers
     "ViewAntiVM",
-    "EnableTimeWarp"
+    "EnableTimeWarp",
+
+    // New added
+    "CheckConnection",
 };
 
 // ------------------------- Internal Structures ----------------------------- //
@@ -712,7 +718,7 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
                     sug.action       = r.action;
                     sug.severity     = r.severity;
                     sug.message      = r.message;
-                    sug.cooldown     = r.cooldown;
+                    //sug.cooldown     = r.cooldown;
                     sug.last_emitted = now();
                     out.push_back(std::move(sug));
                 }
@@ -751,7 +757,7 @@ Status RuleEngine::install_builtin_rules() noexcept
                   r.action   = { (ActId) ak, Subject{} };
                   r.severity = sev;
                   r.message  = std::move(msg);
-                  r.cooldown = cd;
+                  //r.cooldown = cd;
                   return register_rule(r);
               };
         auto C = [&](std::initializer_list<Literal> lits, int win_ms = 0) { return clause(lits, std::chrono::milliseconds{ win_ms }); };
@@ -1047,6 +1053,12 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::ViewPersistence,
           Severity::High,
           "New persistence. Review startup artifacts.");
+
+        R("G-001",
+          C({ lit(PredDefaultValues::IsPCAP), lit(PredDefaultValues::HasNetworkConnections) }),
+          ActDefaultValues::CheckConnection,
+          Severity::Info,
+          "The PCAP file has connections. Analyze them?");
 
         return Status::OK();
     } catch (const std::exception& e) {
