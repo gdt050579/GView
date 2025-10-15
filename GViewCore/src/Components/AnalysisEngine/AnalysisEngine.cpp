@@ -1,4 +1,5 @@
 #include "AnalysisEngine.hpp"
+#include "AnalysisEngineWindow.hpp"
 
 #include <algorithm>
 #include <mutex>
@@ -656,6 +657,7 @@ struct RuleEngine::Impl {
 
 RuleEngine::RuleEngine() : impl_(std::make_unique<Impl>())
 {
+    current_suggestions.reserve(8);
 }
 RuleEngine::~RuleEngine() noexcept = default;
 
@@ -685,6 +687,31 @@ PredId RuleEngine::GetPredId(std::string_view name) const
     if (it == kPredNames.end())
         return INVALID_PRED_ID;
     return static_cast<PredId>(std::distance(kPredNames.begin(), it));
+}
+
+std::string_view RuleEngine::GetPredName(PredId p) const
+{
+    if (p == INVALID_ACT_ID || p >= (PredId) PredDefaultValues::COUNT)
+        return "";
+    return kPredNames[p];
+}
+
+std::string_view RuleEngine::GetActName(ActId a) const
+{
+    if (a == INVALID_ACT_ID || a >= (ActId) ActDefaultValues::COUNT)
+        return "";
+    return kActNames[a];
+}
+
+void RuleEngine::ShowAnalysisEngineWindow()
+{
+    Window::AnalysisEngineWindow w(this);
+    w.Show();
+}
+
+bool RuleEngine::RegisterActionTrigger(ActId action, RuleTriggerInterface* trigger)
+{
+    return false;
 }
 
 // Set a fact; threadsafe. Returns Status.
@@ -720,6 +747,8 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
                     sug.message      = r.message;
                     //sug.cooldown     = r.cooldown;
                     sug.last_emitted = now();
+                    sug.rule_id      = r.id;
+                    current_suggestions.push_back(sug);
                     out.push_back(std::move(sug));
                 }
             }
@@ -1069,4 +1098,13 @@ Status RuleEngine::install_builtin_rules() noexcept
     }
 }
 
+bool RuleEngine::ExecuteSuggestion(uint32 index)
+{
+    if (current_suggestions.empty())
+        return false;
+    if (index >= current_suggestions.size())
+        return false;
+    //TODO:
+    return true;
+}
 } // namespace GView::Components::AnalysisEngine

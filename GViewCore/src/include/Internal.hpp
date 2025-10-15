@@ -490,6 +490,7 @@ namespace App
         constexpr int CMD_COPY_DIALOG           = 30012350;
         constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
         constexpr int CMD_OPEN_ADD_NOTE         = 30012352;
+        constexpr int CMD_ANALYSIS_ENGINE       = 30012353;
 
         static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
         static GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
@@ -497,11 +498,12 @@ namespace App
         static GView::KeyboardControl INSTANCE_COMMAND_FIND      = { Input::Key::Alt | Input::Key::F7, "FindDialog", "Open the Find dialog", CMD_FIND };
         static GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Input::Key::Ctrl | Input::Key::C, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
         static GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Input::Key::Ctrl | Input::Key::Insert, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
-        static GView::KeyboardControl INSTANCE_CHANGE_VIEW      = { Input::Key::F4, "ChangeView", "Change the current viewer", CMD_NEXT_VIEW };
-        static GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW        = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Set focus on viewer", CMD_SWITCH_TO_VIEW };
-        static GView::KeyboardControl INSTANCE_CHOOSE_TYPE         = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
-        static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
-        static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE       = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
+        static GView::KeyboardControl INSTANCE_CHANGE_VIEW       = { Input::Key::F4, "ChangeView", "Change the current viewer", CMD_NEXT_VIEW };
+        static GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW    = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Set focus on viewer", CMD_SWITCH_TO_VIEW };
+        static GView::KeyboardControl INSTANCE_CHOOSE_TYPE       = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
+        static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR  = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
+        static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE     = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
+        static GView::KeyboardControl INSTANCE_ANALYSIS_ENGINE   = { Input::Key::Alt | Input::Key::F12, "AnalysisEngine", "Show the AnalysisEngine", CMD_ANALYSIS_ENGINE };
     }
 
     class Instance : public AppCUI::Utils::PropertiesInterface,

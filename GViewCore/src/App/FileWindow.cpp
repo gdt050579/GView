@@ -53,6 +53,7 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     // CursorInformation
     horizontalPanels->CreateChildControl<CursorInformation>(this);
     horizontalPanels->SetCurrentTabPageByIndex(0);
+    subject = { Components::AnalysisEngine::Subject::SubjectType::File, 0 };
 
     // configuration menu
     char16_t menuSymbol = 0x2261;
@@ -226,11 +227,9 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 {
     if (Window::OnEvent(ctrl, eventType, ID))
         return true;
-    switch (eventType)
-    {
+    switch (eventType) {
     case Event::Command:
-        switch (ID)
-        {
+        switch (ID) {
         case CMD_SHOW_VIEW_CONFIG_PANEL:
             ShowFilePropertiesDialog();
             return true;
@@ -244,12 +243,9 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             ShowFindDialog();
             return true;
         case CMD_CHOSE_NEW_TYPE:
-            if (this->obj->GetObjectType() == Object::Type::File)
-            {
+            if (this->obj->GetObjectType() == Object::Type::File) {
                 GView::App::OpenFile(this->obj->GetPath(), OpenMethod::Select);
-            }
-            else
-            {
+            } else {
                 AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet for this type of object (buffer/PID/Folder)");
             }
             return true;
@@ -258,6 +254,11 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             return true;
         case CMD_OPEN_ADD_NOTE:
             GView::App::ShowAddNoteDialog();
+            return true;
+        case CMD_ANALYSIS_ENGINE:
+            if (gviewApp->GetAnalysisEngine().IsValid()) {
+                gviewApp->GetAnalysisEngine()->ShowAnalysisEngineWindow();
+            }
             return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
@@ -292,6 +293,7 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(INSTANCE_CHOOSE_TYPE.Key, INSTANCE_CHOOSE_TYPE.Caption, CMD_CHOSE_NEW_TYPE);
     commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, INSTANCE_KEY_CONFIGURATOR.Caption, CMD_SHOW_KEY_CONFIGURATOR);
     commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE.Key, INSTANCE_OPEN_ADD_NOTE.Caption, CMD_OPEN_ADD_NOTE);
+    commandBar.SetCommand(INSTANCE_ANALYSIS_ENGINE.Key, INSTANCE_ANALYSIS_ENGINE.Caption, CMD_ANALYSIS_ENGINE);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {
@@ -310,7 +312,6 @@ void FileWindow::Start()
 {
     this->view->SetCurrentTabPageByIndex(0);
     this->view->SetFocus();
-    this->subject = { Components::AnalysisEngine::Subject::SubjectType::File, 0 };
 
     queryInterface.Start();
 }
@@ -328,5 +329,6 @@ bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
     impl->RegisterKey(&INSTANCE_CHOOSE_TYPE);
     impl->RegisterKey(&INSTANCE_KEY_CONFIGURATOR);
     impl->RegisterKey(&INSTANCE_OPEN_ADD_NOTE);
+    impl->RegisterKey(&INSTANCE_ANALYSIS_ENGINE);
     return true;
 }

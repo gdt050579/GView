@@ -135,12 +135,22 @@ class RuleEngine final : public AnalysisEngineInterface
     bool SubmitFact(const Fact& fact) override;
     ActId GetActId(std::string_view name) const override;
     PredId GetPredId(std::string_view name) const override;
+    std::string_view GetPredName(PredId p) const;
+    std::string_view GetActName(ActId a) const;
+    void ShowAnalysisEngineWindow() override;
+    bool RegisterActionTrigger(ActId action, RuleTriggerInterface* trigger) override;
 
     Status set_fact(const Fact& f) noexcept;
     Status set_fact(PredId p, const Subject& s, std::string source) noexcept;
     std::vector<Suggestion> evaluate(const Subject& s) noexcept;
     Status register_rule(const Rule& r) noexcept;
     Status install_builtin_rules() noexcept;
+
+    const std::vector<Suggestion>& GetAllAvailableSuggestions() const
+    {
+        return current_suggestions;
+    }
+
 
     // Small helpers
     static Literal lit(PredDefaultValues p, bool neg = false) noexcept
@@ -154,10 +164,12 @@ class RuleEngine final : public AnalysisEngineInterface
         c.window = window;
         return c;
     }
-
+    bool ExecuteSuggestion(uint32 index);
   private:
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    std::vector<Suggestion> current_suggestions;
 };
 
 // Convenience helpers
