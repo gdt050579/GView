@@ -36,7 +36,7 @@ jobs:
             ${{ runner.os }}-vcpkg-
 
 
-            # OS-specific dependencies
+      # OS-specific dependencies
       - name: Install dependencies
         if: startsWith(matrix.os, 'ubuntu')
         run: |
@@ -47,7 +47,8 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew update
-          brew install autoconf autoconf-archive automake libtool make
+          brew install autoconf autoconf-archive automake libtool make cmake ninja
+          echo "VCPKG_CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
           # Uncomment if needed later:
           # brew install pkg-config # https://github.com/dotnet/runtime/issues/82240
 
