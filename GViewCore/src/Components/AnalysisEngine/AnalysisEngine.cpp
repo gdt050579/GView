@@ -1143,7 +1143,7 @@ std::string RuleEngine::GetRulePredicates(std::string_view rule_id) const
     return "";
 }
 
-bool RuleEngine::TryExecuteSuggestion(uint32 index)
+bool RuleEngine::TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWindow)
 {
     if (current_suggestions.empty())
         return false;
@@ -1158,7 +1158,7 @@ bool RuleEngine::TryExecuteSuggestion(uint32 index)
         if (!h.IsValid())
             continue;
         bool delete_rule = true;
-        h->OnRuleTrigger(s, delete_rule);
+        h->OnRuleTrigger(s, delete_rule, shouldCloseAnalysisWindow);
         final_delete_rule = final_delete_rule && delete_rule;
     }
     if (final_delete_rule) {

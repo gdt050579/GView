@@ -1026,7 +1026,7 @@ namespace Components
 
         struct CORE_EXPORT RuleTriggerInterface
         {
-            virtual void OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSuggestion) = 0;
+            virtual void OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow) = 0;
             virtual ~RuleTriggerInterface() = default;
         };
 

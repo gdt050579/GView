@@ -70,11 +70,15 @@ void AnalysisEngineWindow::OnListViewItemPressed(Reference<Controls::ListView> l
     const auto index = item.GetData(UINT64_MAX);
     if (index == UINT64_MAX)
         return;
-    if (!engine->TryExecuteSuggestion(static_cast<uint32>(index))) {
+    bool shouldCloseAnalysisWindow = false;
+    if (!engine->TryExecuteSuggestion(static_cast<uint32>(index), shouldCloseAnalysisWindow)) {
         Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
         return;
     }
     DrawSuggestions();
+    if (shouldCloseAnalysisWindow) {
+        Exit(Dialogs::Result::Ok);
+    }
 }
 
 void AnalysisEngineWindow::OnListViewCurrentItemChanged(Reference<Controls::ListView> lv, Controls::ListViewItem item)

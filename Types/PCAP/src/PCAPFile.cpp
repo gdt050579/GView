@@ -220,7 +220,7 @@ std::u16string utf8_to_u16(const std::string& utf8_str)
     }
 }
 
-void PCAPFile::OnRuleTrigger(const Components::AnalysisEngine::Suggestion& suggestion, bool& shouldDeleteSuggestion)
+void PCAPFile::OnRuleTrigger(const Components::AnalysisEngine::Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow)
 {
     // TODO: make the code more generic ! maybe use the action id and store it in a member variable
     if (suggestion.rule_id == "G-001") //CheckConnection
@@ -248,6 +248,7 @@ void PCAPFile::OnRuleTrigger(const Components::AnalysisEngine::Suggestion& sugge
                 LOG_ERROR("Failed to add HasConnectionWithScript fact");
             }
         }
+        closeAnalysisWindow = false;
     }
     if (suggestion.rule_id == "G-002") // ViewConnectionWithExecutable
     {
@@ -258,6 +259,7 @@ void PCAPFile::OnRuleTrigger(const Components::AnalysisEngine::Suggestion& sugge
         std::string f    = std::to_string(exe_connections[0]) + "\\1";
         auto initial_pos = utf8_to_u16(f);
         OnOpenItem(initial_pos, {});
+        closeAnalysisWindow = true;
     }
 
     if (suggestion.rule_id == "G-003") // ViewConnectionWithScript

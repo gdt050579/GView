@@ -80,7 +80,7 @@ class PCAPFile : public TypeInterface,
 
 	std::vector<std::pair<std::string, std::string>> GetPropertiesForContainerView();
     GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
-    void OnRuleTrigger(const Components::AnalysisEngine::Suggestion& suggestion, bool& shouldDeleteSuggestion) override;
+    void OnRuleTrigger(const Components::AnalysisEngine::Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow) override;
 };
 
 namespace Panels

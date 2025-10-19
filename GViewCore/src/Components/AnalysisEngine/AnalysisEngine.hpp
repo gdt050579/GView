@@ -165,7 +165,7 @@ class RuleEngine final : public AnalysisEngineInterface
         c.window = window;
         return c;
     }
-    bool TryExecuteSuggestion(uint32 index);
+    bool TryExecuteSuggestion(uint32 index, bool &shouldCloseAnalysisWindow);
   private:
 
     struct Impl;
