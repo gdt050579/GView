@@ -122,6 +122,12 @@ struct Rule {
 
 enum class PredDefaultValues : PredId;
 
+struct SubjectParentInfo
+{
+    uint64 direct_parent;
+    uint64 main_parent;
+};
+
 class AnalysisEngineWindow;
 // ----------------------- Concrete RuleEngine Impl -------------------------- //
 // RuleEngine: simple rule-based engine with built-in rules.
@@ -139,6 +145,9 @@ class RuleEngine final : public AnalysisEngineInterface
     std::string_view GetActName(ActId a) const;
     void ShowAnalysisEngineWindow() override;
     bool RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger) override;
+    Subject GetSubjectForNewWindow(Object::Type objectType) override;
+    void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow) override;
+    uint64 FindMainParent(uint64 current_subject);
 
     Status set_fact(const Fact& f) noexcept;
     Status set_fact(PredId p, const Subject& s, std::string source) noexcept;
@@ -173,6 +182,9 @@ class RuleEngine final : public AnalysisEngineInterface
     std::unique_ptr<Impl> impl_;
     std::vector<Suggestion> current_suggestions;
     std::unordered_map<ActId, std::vector<Reference<RuleTriggerInterface>>> action_handlers;
+    std::atomic<uint32> next_available_subject{ 1 };
+    std::unordered_map<uint64, SubjectParentInfo> subjects_hierarchy;
+    std::unordered_map<uint64, Subject> windows;
 };
 
 // Convenience helpers

@@ -1,6 +1,7 @@
 #include "AnalysisEngine.hpp"
 #include "AnalysisEngineWindow.hpp"
 
+#include <cassert>
 #include <algorithm>
 #include <mutex>
 #include <shared_mutex>
@@ -722,6 +723,57 @@ bool RuleEngine::RegisterActionTrigger(ActId action, Reference<RuleTriggerInterf
         return false;
     action_handlers[action].push_back(trigger);
     return true;
+}
+
+Subject RuleEngine::GetSubjectForNewWindow(Object::Type objectType)
+{
+    Subject::SubjectType type = Subject::SubjectType::None;
+    switch (objectType) {
+    case Object::Type::File:
+        type = Subject::SubjectType::File;
+        break;
+    case Object::Type::Process:
+        type = Subject::SubjectType::Process;
+        break;
+    case Object::Type::Folder:
+        type = Subject::SubjectType::File; // Treat folders as files for now
+        break;
+    case Object::Type::MemoryBuffer:
+        type = Subject::SubjectType::File; // Treat memory buffers as files for now
+        break;
+    default:
+        assert(false);
+        //Should be implemented -> report to @rzaharia
+        break;
+    }
+    return { type, next_available_subject++ };
+}
+
+void RuleEngine::RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)
+{
+    const bool already_inside = subjects_hierarchy.contains(currentWindow.value);
+    assert(!already_inside); // Should not re-register existing subject
+
+    if (parentWindow) 
+    {
+        SubjectParentInfo info;
+        info.direct_parent                      = parentWindow->value;
+        info.main_parent                        = FindMainParent(parentWindow->value);
+        subjects_hierarchy[currentWindow.value] = info;
+    }
+    windows[currentWindow.value] = currentWindow;
+}
+
+uint64 RuleEngine::FindMainParent(uint64 current_subject)
+{
+    uint64 subject = current_subject;
+    while (true) {
+        auto it = subjects_hierarchy.find(subject);
+        if (it == subjects_hierarchy.end())
+            break;
+        subject = it->first;
+    }
+    return subject;
 }
 
 // Set a fact; threadsafe. Returns Status.

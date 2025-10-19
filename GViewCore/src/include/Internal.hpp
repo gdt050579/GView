@@ -577,7 +577,7 @@ namespace App
               std::string_view typeName,
               Reference<Window> parent = nullptr,
               const ConstString& creationProcess = "");
-        bool AddFolder(const std::filesystem::path& path, const ConstString& creationProcess = "");
+        bool AddFolder(const std::filesystem::path& path, const ConstString& creationProcess = "", Reference<Window> parent = nullptr);
 
       public:
         Instance();

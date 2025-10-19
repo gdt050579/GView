@@ -75,6 +75,7 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     this->SetTag(obj->GetContentType()->GetTypeName(), "");
 
     queryInterface.fileWindow = this;
+    subject                   = gviewApp->GetAnalysisEngine()->GetSubjectForNewWindow(obj->GetObjectType());
 }
 Reference<GView::Object> FileWindow::GetObject()
 {

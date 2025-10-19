@@ -396,6 +396,12 @@ bool Instance::Add(
 
         if (parent == nullptr)
             parent = GetCurrentWindow();
+
+        Reference<Subject> subject = nullptr;
+        if (parent)
+            subject = parent.ToObjectRef<FileWindow>()->GetCurrentWindowSubject();
+        GetAnalysisEngine()->RegisterSubjectWithParent(win->GetCurrentWindowSubject(), subject);
+
         auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
@@ -404,7 +410,7 @@ bool Instance::Add(
     // error case
     return false;
 }
-bool Instance::AddFolder(const std::filesystem::path& path, const ConstString& creationProcess)
+bool Instance::AddFolder(const std::filesystem::path& path, const ConstString& creationProcess, Reference<Window> parent)
 {
     auto contentType = GView::Type::FolderViewPlugin::CreateInstance(path);
     CHECK(contentType, false, "`CreateInstance` returned a null pointer to a type object !");
@@ -419,7 +425,11 @@ bool Instance::AddFolder(const std::filesystem::path& path, const ConstString& c
     while (true) {
         GView::Type::FolderViewPlugin::PopulateWindow(win.get());
         win->Start(); // starts the window and set focus
-        auto res = AppCUI::Application::AddWindow(std::move(win), nullptr, creationProcess);
+
+        Reference<Subject> subject = nullptr; // TODO: implement folder subjects
+        GetAnalysisEngine()->RegisterSubjectWithParent(win->GetCurrentWindowSubject(), subject);
+
+        auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
@@ -440,7 +450,7 @@ bool Instance::AddFileWindow(
 {
     try {
         if (std::filesystem::is_directory(path)) {
-            return AddFolder(path);
+            return AddFolder(path, creationProcess, parent);
         } else {
             auto f = std::make_unique<AppCUI::OS::File>();
             if (f->OpenRead(path) == false) {

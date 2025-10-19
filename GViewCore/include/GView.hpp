@@ -934,133 +934,6 @@ namespace Entropy
     CORE_EXPORT double RenyiEntropy(const BufferView& buffer, double alpha);
 } // namespace Entropy
 
-namespace Components
-{
-    namespace AnalysisEngine
-    {
-        // Subjects of analysis
-        using FileId = uint64;
-        using UserId = uint64;
-        using ProcId = uint64;
-        using CaseId = uint64;
-
-        // Subject of a fact: file/user/process or engine itself
-        struct CORE_EXPORT Subject
-        {
-            enum class SubjectType : uint8 {
-                None    = 0,
-                File    = 1,
-                User    = 2,
-                Process = 3,
-                Case    = 4,
-            };
-            SubjectType kind{ SubjectType::None };
-            uint64 value;
-        };
-        inline bool operator==(const Subject& a, const Subject& b) noexcept
-        {
-            return a.kind == b.kind && a.value == b.value;
-        }
-
-        // Predicates & Actions
-        using PredId = uint64;
-        using ActId  = uint64;
-        constexpr PredId INVALID_PRED_ID = UINT64_MAX;
-        constexpr ActId  INVALID_ACT_ID   = UINT64_MAX;
-
-        // Data model for facts
-        // Value carried by a predicate argument (e.g., severity, string, number)
-        using Value = std::variant<std::monostate, bool, int64, uint64, double, std::string>;
-        struct Arg
-        {
-            std::string name; // optional name (e.g., "level", "format")
-            Value value;
-        };
-
-        // A single atom: PredKey + Subject + optional args
-        struct Atom
-        {
-            PredId pred;
-            Subject subject;
-            std::vector<Arg> args; /* small, usually empty*/
-        };
-
-        using Clock      = std::chrono::steady_clock;
-        using TimePoint  = std::chrono::time_point<Clock>;
-        using Confidence = uint8; // 0-100
-        // A fact: atom + truth (true only in this engine), timestamp and provenance
-        struct Fact
-        {
-            Atom atom;
-            TimePoint time;
-            std::string source;
-            std::string details;
-        };
-
-        struct PredicateEntry
-        {
-            std::string name;
-            PredId id;
-        };
-
-        struct PredicateStorage
-        {
-            std::vector<PredicateEntry> predicates;
-            std::vector<std::string> failed_predicates;
-        };
-
-        struct Action {
-            ActId key{};
-            Subject subject{};
-            std::vector<Arg> args;
-        };
-
-        struct Suggestion {
-            Action action;
-            Confidence confidence;
-            std::string message; // human readable                                           
-            //std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval TODO ?
-            TimePoint last_emitted{};                                       // zero == never
-            std::string rule_id;
-        };
-
-        struct CORE_EXPORT RuleTriggerInterface
-        {
-            virtual void OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow) = 0;
-            virtual ~RuleTriggerInterface() = default;
-        };
-
-        struct CORE_EXPORT AnalysisEngineInterface {
-            virtual bool SubmitFact(const Fact& fact) = 0;
-            // virtual ActId RegisterAct(std::string_view name)        = 0; // WIP for future use
-            // virtual PredId RegisterPredicate(std::string_view name) = 0; // WIP for future use
-            virtual ActId GetActId(std::string_view name) const                             = 0;
-            virtual PredId GetPredId(std::string_view name) const                           = 0;
-            virtual bool Init()                                                             = 0;
-            virtual ~AnalysisEngineInterface()                                              = default;
-            virtual void ShowAnalysisEngineWindow()                                         = 0;
-            virtual bool RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger) = 0;
-
-            PredicateStorage RequestPredicateStorage(const std::vector<std::string_view>& predicates) const;
-            bool RequestPredicate(PredicateStorage& predicateStorage, std::string_view predicate) const;
-
-            static bool IsValidPredicateId(PredId pred)
-            {
-                return pred != INVALID_PRED_ID;
-            }
-
-            static bool IsValidActionId(ActId act)
-            {
-                return act != INVALID_ACT_ID;
-            }
-
-            static Atom CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::vector<Arg> args = {});
-            static Fact CreateFactFromPredicateAndSubject(
-                  PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details = "", std::vector<Arg> args = {});
-        };
-    }
-} // namespace GView
-
 /*
  * Object can be:
  *   - a file
@@ -1118,6 +991,128 @@ class CORE_EXPORT Object
         return objectType;
     }
 };
+
+namespace Components
+{
+    namespace AnalysisEngine
+    {
+        // Subjects of analysis
+        using FileId = uint64;
+        using UserId = uint64;
+        using ProcId = uint64;
+        using CaseId = uint64;
+
+        // Subject of a fact: file/user/process or engine itself
+        struct CORE_EXPORT Subject {
+            enum class SubjectType : uint8 {
+                None    = 0,
+                File    = 1,
+                User    = 2,
+                Process = 3,
+                Case    = 4,
+            };
+            SubjectType kind{ SubjectType::None };
+            uint64 value;
+        };
+        inline bool operator==(const Subject& a, const Subject& b) noexcept
+        {
+            return a.kind == b.kind && a.value == b.value;
+        }
+
+        // Predicates & Actions
+        using PredId                     = uint64;
+        using ActId                      = uint64;
+        constexpr PredId INVALID_PRED_ID = UINT64_MAX;
+        constexpr ActId INVALID_ACT_ID   = UINT64_MAX;
+
+        // Data model for facts
+        // Value carried by a predicate argument (e.g., severity, string, number)
+        using Value = std::variant<std::monostate, bool, int64, uint64, double, std::string>;
+        struct Arg {
+            std::string name; // optional name (e.g., "level", "format")
+            Value value;
+        };
+
+        // A single atom: PredKey + Subject + optional args
+        struct Atom {
+            PredId pred;
+            Subject subject;
+            std::vector<Arg> args; /* small, usually empty*/
+        };
+
+        using Clock      = std::chrono::steady_clock;
+        using TimePoint  = std::chrono::time_point<Clock>;
+        using Confidence = uint8; // 0-100
+        // A fact: atom + truth (true only in this engine), timestamp and provenance
+        struct Fact {
+            Atom atom;
+            TimePoint time;
+            std::string source;
+            std::string details;
+        };
+
+        struct PredicateEntry {
+            std::string name;
+            PredId id;
+        };
+
+        struct PredicateStorage {
+            std::vector<PredicateEntry> predicates;
+            std::vector<std::string> failed_predicates;
+        };
+
+        struct Action {
+            ActId key{};
+            Subject subject{};
+            std::vector<Arg> args;
+        };
+
+        struct Suggestion {
+            Action action;
+            Confidence confidence;
+            std::string message; // human readable
+            // std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval TODO ?
+            TimePoint last_emitted{}; // zero == never
+            std::string rule_id;
+        };
+
+        struct CORE_EXPORT RuleTriggerInterface {
+            virtual void OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow) = 0;
+            virtual ~RuleTriggerInterface()                                                                                   = default;
+        };
+
+        struct CORE_EXPORT AnalysisEngineInterface {
+            virtual bool SubmitFact(const Fact& fact) = 0;
+            // virtual ActId RegisterAct(std::string_view name)        = 0; // WIP for future use
+            // virtual PredId RegisterPredicate(std::string_view name) = 0; // WIP for future use
+            virtual ActId GetActId(std::string_view name) const                                                   = 0;
+            virtual PredId GetPredId(std::string_view name) const                                                 = 0;
+            virtual bool Init()                                                                                   = 0;
+            virtual ~AnalysisEngineInterface()                                                                    = default;
+            virtual void ShowAnalysisEngineWindow()                                                               = 0;
+            virtual bool RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger)             = 0;
+            virtual Subject GetSubjectForNewWindow(Object::Type objectType)                                       = 0;
+            virtual void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow) = 0;
+
+            PredicateStorage RequestPredicateStorage(const std::vector<std::string_view>& predicates) const;
+            bool RequestPredicate(PredicateStorage& predicateStorage, std::string_view predicate) const;
+
+            static bool IsValidPredicateId(PredId pred)
+            {
+                return pred != INVALID_PRED_ID;
+            }
+
+            static bool IsValidActionId(ActId act)
+            {
+                return act != INVALID_ACT_ID;
+            }
+
+            static Atom CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::vector<Arg> args = {});
+            static Fact CreateFactFromPredicateAndSubject(
+                  PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details = "", std::vector<Arg> args = {});
+        };
+    } // namespace AnalysisEngine
+} // namespace Components
 
 namespace View
 {
