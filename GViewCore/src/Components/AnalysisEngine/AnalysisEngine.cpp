@@ -1106,7 +1106,7 @@ Status RuleEngine::install_builtin_rules() noexcept
           C({ /*lit(PredDefaultValues::HasNetworkConnections),*/ lit(PredDefaultValues::HasConnectionWithScript) }),
           ActDefaultValues::ViewConnectionWithScript,
           80,
-          "he PCAP file seems to have connections with scripts. Open them?");
+          "The PCAP file seems to have connections with scripts. Open them?");
 
         return Status::OK();
     } catch (const std::exception& e) {
@@ -1115,6 +1115,32 @@ Status RuleEngine::install_builtin_rules() noexcept
     } catch (...) {
         return Status::Error("install_builtin_rules: unknown");
     }
+}
+
+std::string RuleEngine::GetRulePredicates(std::string_view rule_id) const
+{
+    //std::shared_lock lk(impl_->st.mu_rules);
+    for (const auto& r : impl_->st.rules) {
+        if (r.id == rule_id) {
+            LocalString<1024> buf = {};
+            bool first_add        = true;
+            const char* and_str   = "";
+            try {
+                for (const auto& L : r.clause.all_of) {
+                    auto pred_name = GetPredName(L.pred);
+                    buf.AddFormat(" %s%s%.*s", and_str, L.negated ? "NOT-" : "", pred_name.size(), pred_name.data());
+                    if (first_add) {
+                        first_add = false;
+                        and_str   = "AND ";
+                    } 
+                }
+                return std::string(buf.GetText());
+            } catch (...) {
+                return "";
+            }
+        }
+    }
+    return "";
 }
 
 bool RuleEngine::TryExecuteSuggestion(uint32 index)

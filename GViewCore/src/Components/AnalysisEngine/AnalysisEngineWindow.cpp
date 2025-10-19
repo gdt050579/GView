@@ -11,12 +11,19 @@ AnalysisEngineWindow::AnalysisEngineWindow(Reference<RuleEngine> engine)
     listView = Factory::ListView::Create(
           this, "x:1,y:1,w:99%,h:70%", { "n:RuleID,w:10%", "n:Confidence,w:10%", "n:Action,w:20%", "n:Message,w:59%" }, ListViewFlags::PopupSearchBar);
 
-    const auto y = listView->GetHeight() + 2;
+    auto y = listView->GetHeight() + 2;
     LocalString<128> ls;
     ls.Format("x:1,y:%d, w:99", y);
     statusLabel = Factory::Label::Create(this, "Press F12 to get hints", ls.GetText());
 
-    listView->Handlers()->OnItemPressed = this;
+    y += 2;
+    ls.Format("x:1,y:%d, w:99", y);
+    predicatesLabel = Factory::Label::Create(this, "Predicates: ", ls.GetText());
+
+    listView->Handlers()->OnItemPressed        = this;
+    listView->Handlers()->OnCurrentItemChanged = this;
+
+    listView->DeleteAllItems();
 
     DrawSuggestions();
 }
@@ -60,14 +67,24 @@ void AnalysisEngineWindow::OnListViewItemPressed(Reference<Controls::ListView> l
 {
     if (!item.IsValid())
         return;
-    const auto index = item.GetData((uint64) (-1));
-    if (index == (uint64) (-1))
+    const auto index = item.GetData(UINT64_MAX);
+    if (index == UINT64_MAX)
         return;
-    if (!engine->TryExecuteSuggestion((uint32) index)) {
+    if (!engine->TryExecuteSuggestion(static_cast<uint32>(index))) {
         Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
         return;
     }
     DrawSuggestions();
+}
+
+void AnalysisEngineWindow::OnListViewCurrentItemChanged(Reference<Controls::ListView> lv, Controls::ListViewItem item)
+{
+    if (!item.IsValid())
+        return;
+    const auto index = item.GetData(UINT64_MAX);
+    if (index == UINT64_MAX)
+        return;
+    DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
 }
 
 void AnalysisEngineWindow::GetHint()
@@ -108,4 +125,21 @@ void AnalysisEngineWindow::DrawSuggestions()
         auto new_item                                  = listView->AddItem(items);
         new_item.SetData(i);
     }
+    DrawPredicatesForCurrentIndex(0);
+}
+
+void AnalysisEngineWindow::DrawPredicatesForCurrentIndex(uint32 index)
+{
+    LocalString<512> ls;
+    const auto& suggestions = engine->GetAllAvailableSuggestions();
+    if (index >= suggestions.size()) {
+        ls.Format("Invalid index: %u", index);
+        predicatesLabel->SetText(ls.GetText());
+        return;
+    }
+    const auto& s         = engine->GetAllAvailableSuggestions()[index];
+    auto predicate_string = engine->GetRulePredicates(s.rule_id);
+
+    ls.Format("Predicates: %s", predicate_string.c_str());
+    predicatesLabel->SetText(ls.GetText());
 }

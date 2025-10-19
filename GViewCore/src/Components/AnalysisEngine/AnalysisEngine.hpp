@@ -145,6 +145,7 @@ class RuleEngine final : public AnalysisEngineInterface
     std::vector<Suggestion> evaluate(const Subject& s) noexcept;
     Status register_rule(const Rule& r) noexcept;
     Status install_builtin_rules() noexcept;
+    std::string GetRulePredicates(std::string_view rule_id) const;
 
     const std::vector<Suggestion>& GetAllAvailableSuggestions() const
     {
