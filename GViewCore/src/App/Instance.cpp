@@ -394,7 +394,9 @@ bool Instance::Add(
         CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
 
-        auto res = AppCUI::Application::AddWindow(std::move(win), GetCurrentWindow(), creationProcess);
+        if (parent == nullptr)
+            parent = GetCurrentWindow();
+        auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
