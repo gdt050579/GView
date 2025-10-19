@@ -1,7 +1,7 @@
 #pragma once
 #include "AnalysisEngine.hpp"
 
-namespace GView::Components::AnalysisEngine::Window
+namespace GView::Components::AnalysisEngine
 {
 class AnalysisEngineWindow : public Controls::Window,
                              public Handlers::OnListViewItemPressedInterface,
@@ -13,6 +13,7 @@ class AnalysisEngineWindow : public Controls::Window,
     bool OnUpdateCommandBar(Application::CommandBar& commandBar) override;
     void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
     void OnListViewCurrentItemChanged(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
+    void BeforeOpen();
 
   private:
     void GetHint();

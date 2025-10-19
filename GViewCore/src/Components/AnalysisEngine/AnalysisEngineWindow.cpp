@@ -1,6 +1,6 @@
 #include "AnalysisEngineWindow.hpp"
 
-using namespace GView::Components::AnalysisEngine::Window;
+using namespace GView::Components::AnalysisEngine;
 
 constexpr int32 COMMAND_CLOSE    = 0;
 constexpr int32 COMMAND_GET_HINT = 1;
@@ -89,6 +89,11 @@ void AnalysisEngineWindow::OnListViewCurrentItemChanged(Reference<Controls::List
     if (index == UINT64_MAX)
         return;
     DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
+}
+
+void AnalysisEngineWindow::BeforeOpen()
+{
+    DrawSuggestions();
 }
 
 void AnalysisEngineWindow::GetHint()

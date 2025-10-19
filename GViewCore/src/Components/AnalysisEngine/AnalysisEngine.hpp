@@ -12,7 +12,6 @@
 
 namespace GView::Components::AnalysisEngine
 {
-
 // ----------------------------- Status ------------------------------------- //
 struct Status {
     bool ok{ true };
@@ -123,6 +122,7 @@ struct Rule {
 
 enum class PredDefaultValues : PredId;
 
+class AnalysisEngineWindow;
 // ----------------------- Concrete RuleEngine Impl -------------------------- //
 // RuleEngine: simple rule-based engine with built-in rules.
 class RuleEngine final : public AnalysisEngineInterface
@@ -169,6 +169,7 @@ class RuleEngine final : public AnalysisEngineInterface
   private:
 
     struct Impl;
+    Reference<AnalysisEngineWindow> engineWindow;
     std::unique_ptr<Impl> impl_;
     std::vector<Suggestion> current_suggestions;
     std::unordered_map<ActId, std::vector<Reference<RuleTriggerInterface>>> action_handlers;

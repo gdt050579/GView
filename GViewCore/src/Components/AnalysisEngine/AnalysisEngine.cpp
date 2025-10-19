@@ -659,7 +659,7 @@ struct RuleEngine::Impl {
     }
 };
 
-RuleEngine::RuleEngine() : impl_(std::make_unique<Impl>())
+RuleEngine::RuleEngine() : engineWindow(nullptr), impl_(std::make_unique<Impl>())
 {
     current_suggestions.reserve(8);
 }
@@ -668,8 +668,11 @@ RuleEngine::~RuleEngine() noexcept = default;
 bool RuleEngine::Init()
 {
     auto status = install_builtin_rules();
-    // TODO: show the error message somewhere
-    return status.ok;
+    if (!status.ok) // TODO: show the error message somewhere
+        return false;
+    
+    engineWindow = { new AnalysisEngineWindow(this) };
+    return true;
 }
 
 bool RuleEngine::SubmitFact(const Fact& fact)
@@ -709,8 +712,8 @@ std::string_view RuleEngine::GetActName(ActId a) const
 
 void RuleEngine::ShowAnalysisEngineWindow()
 {
-    Window::AnalysisEngineWindow w(this);
-    w.Show();
+    engineWindow->BeforeOpen();
+    engineWindow->Show();
 }
 
 bool RuleEngine::RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger)
