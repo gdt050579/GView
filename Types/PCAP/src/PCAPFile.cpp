@@ -169,7 +169,10 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
 
     const Buffer buffer = { payload, layer.payload.size };
 
-    GView::App::OpenBuffer(buffer, extractionName, extractionName, GView::App::OpenMethod::BestMatch);
+    auto parent = AppCUI::Application::GetCurrentWindow();
+    LocalString<128> creation_method;
+    creation_method.SetFormat("Stream %u, layer %u", streamIdVar.value(), appLayerVar.value());
+    GView::App::OpenBuffer(buffer, extractionName, extractionName, GView::App::OpenMethod::BestMatch, "", parent, creation_method.GetText());
 }
 
 std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForContainerView()
