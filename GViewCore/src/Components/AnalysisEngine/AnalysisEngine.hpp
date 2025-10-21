@@ -114,7 +114,7 @@ struct ConjClause {
 struct Rule {
     std::string id;    // stable id for telemetry
     ConjClause clause; // keep single-clause for simplicity; duplicate Rule for ORs
-    Action action;
+    Action action;// or predicate
     Confidence confidence = 0;
     std::string message;
     std::chrono::milliseconds cooldown{ std::chrono::minutes(30) };

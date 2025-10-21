@@ -754,14 +754,11 @@ void RuleEngine::RegisterSubjectWithParent(const Subject& currentWindow, Referen
     const bool already_inside = subjects_hierarchy.contains(currentWindow.value);
     assert(!already_inside); // Should not re-register existing subject
 
-    if (parentWindow) 
-    {
-        SubjectParentInfo info;
-        info.direct_parent                      = parentWindow->value;
-        info.main_parent                        = FindMainParent(parentWindow->value);
-        subjects_hierarchy[currentWindow.value] = info;
-    }
-    windows[currentWindow.value] = currentWindow;
+    SubjectParentInfo info;
+    info.direct_parent                      = parentWindow ? parentWindow->value : 1;
+    info.main_parent                        = parentWindow ? FindMainParent(parentWindow->value) : 1;
+    subjects_hierarchy[currentWindow.value] = info;
+    windows[currentWindow.value]            = currentWindow;
 }
 
 uint64 RuleEngine::FindMainParent(uint64 current_subject)
@@ -770,6 +767,8 @@ uint64 RuleEngine::FindMainParent(uint64 current_subject)
     while (true) {
         auto it = subjects_hierarchy.find(subject);
         if (it == subjects_hierarchy.end())
+            break;
+        if (it->first == 1)
             break;
         subject = it->first;
     }

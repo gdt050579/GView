@@ -1036,7 +1036,7 @@ namespace Components
         // A single atom: PredKey + Subject + optional args
         struct Atom {
             PredId pred;
-            Subject subject;
+            Subject subject; //TODO: move in Fact
             std::vector<Arg> args; /* small, usually empty*/
         };
 
@@ -1046,6 +1046,7 @@ namespace Components
         // A fact: atom + truth (true only in this engine), timestamp and provenance
         struct Fact {
             Atom atom;
+            //Subject subject; // TODO: move from Atom
             TimePoint time;
             std::string source;
             std::string details;
