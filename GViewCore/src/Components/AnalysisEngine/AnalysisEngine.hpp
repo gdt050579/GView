@@ -8,95 +8,16 @@
 #include <variant>
 #include <vector>
 
+#include "AnalysisEngineData.hpp"
 #include "GView.hpp"
 
 namespace GView::Components::AnalysisEngine
 {
-// ----------------------------- Status ------------------------------------- //
-struct Status {
-    bool ok{ true };
-    std::string message;
-    static Status OK()
-    {
-        return Status{};
-    }
-    static Status Error(std::string msg)
-    {
-        Status s;
-        s.ok      = false;
-        s.message = std::move(msg);
-        return s;
-    }
-};
-
-template <typename T>
-class StatusOr
-{
-  public:
-    StatusOr() : s_(Status::Error("Uninitialized"))
-    {
-    }
-    StatusOr(const Status& s) : s_(s)
-    {
-    }
-    StatusOr(T v) : s_(Status::OK()), v_(std::move(v))
-    {
-    }
-    bool ok() const noexcept
-    {
-        return s_.ok;
-    }
-    const Status& status() const noexcept
-    {
-        return s_;
-    }
-    const T& value() const
-    {
-        if (!s_.ok)
-            throw std::runtime_error("StatusOr access error: " + s_.message);
-        return *v_;
-    }
-    T& value()
-    {
-        if (!s_.ok)
-            throw std::runtime_error("StatusOr access error: " + s_.message);
-        return *v_;
-    }
-    const T* operator->() const
-    {
-        return &value();
-    }
-    T* operator->()
-    {
-        return &value();
-    }
-
-  private:
-    Status s_;
-    std::optional<T> v_;
-};
 
 inline TimePoint now() noexcept
 {
     return Clock::now();
 }
-
-// Simple severity for suggestion UI
-//enum class Severity : std::uint8_t { Info = 0, Warn = 1, High = 2, Critical = 3 };
-
-// Action to propose (Suggest(Action))
-//struct Action {
-//    ActId key{};
-//    Subject subject{};
-//    std::vector<Arg> args;
-//};
-//struct Suggestion {
-//    Action action;
-//    Severity severity{ Severity::Info };
-//    std::string message;                                            // human readable
-//    std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval
-//    TimePoint last_emitted{};                                       // zero == never
-//};
 
 // A literal (possibly negated) that must hold
 struct Literal {
@@ -181,6 +102,7 @@ class RuleEngine final : public AnalysisEngineInterface
     Reference<AnalysisEngineWindow> engineWindow;
     std::unique_ptr<Impl> impl_;
     std::vector<Suggestion> current_suggestions;
+
     std::unordered_map<ActId, std::vector<Reference<RuleTriggerInterface>>> action_handlers;
     std::atomic<uint32> next_available_subject{ 1 };
     std::unordered_map<uint64, SubjectParentInfo> subjects_hierarchy;

@@ -1,6 +1,8 @@
 set(ANALYSIS_ENGINE_SOURCES
     AnalysisEngine.cpp
     AnalysisEngine.hpp
+    AnalysisEngineData.cpp
+    AnalysisEngineData.hpp
     AnalysisEngineWindow.cpp
     AnalysisEngineWindow.hpp
 )

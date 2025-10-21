@@ -7,6 +7,9 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <fstream>
+#include <regex>
+using nlohmann::json;
 
 namespace GView::Components::AnalysisEngine
 {
@@ -195,7 +198,7 @@ enum class PredDefaultValues : PredId {
     ExportedIOCs,
     GeneratedReport,
 
-    //New:
+    // New:
     IsPCAP,
     HasNetworkConnections,
     HasConnectionWithExecutable,
@@ -276,7 +279,7 @@ enum class ActDefaultValues : ActId {
     ViewAntiVM,
     EnableTimeWarp,
 
-    //New added
+    // New added
     CheckConnection,
     ViewConnectionWithExecutable,
     ViewConnectionWithScript,
@@ -668,12 +671,33 @@ RuleEngine::~RuleEngine() noexcept = default;
 
 bool RuleEngine::Init()
 {
-    auto status = install_builtin_rules();
-    if (!status.ok) // TODO: show the error message somewhere
+    // TODO: load from file and also using the location near GView or from settings
+    std::ifstream analysis_engine("AnalysisEngine.json");
+    if (!analysis_engine.is_open())
         return false;
-    
-    engineWindow = { new AnalysisEngineWindow(this) };
-    return true;
+    json analysis_data = json::parse(analysis_engine, nullptr, false);
+    if (analysis_data.is_discarded())
+        return false;
+    auto predicates_it = analysis_data.find("predicates");
+    if (predicates_it == analysis_data.end() || !predicates_it->is_array())
+        return false;
+    try {
+        auto predicates = predicates_it->get<std::vector<PredicateSpecification>>();
+        if (!VerifyPredicates(predicates))
+            return false;
+
+        auto status = install_builtin_rules();
+        if (!status.ok) // TODO: show the error message somewhere
+            return false;
+
+        engineWindow = { new AnalysisEngineWindow(this) };
+
+        return true;
+    }
+    catch (const std::exception& e) {
+        AppCUI::Dialogs::MessageBox::ShowError("Found err", e.what());
+        return false;
+    }
 }
 
 bool RuleEngine::SubmitFact(const Fact& fact)
@@ -743,7 +767,7 @@ Subject RuleEngine::GetSubjectForNewWindow(Object::Type objectType)
         break;
     default:
         assert(false);
-        //Should be implemented -> report to @rzaharia
+        // Should be implemented -> report to @rzaharia
         break;
     }
     return { type, next_available_subject++ };
@@ -803,10 +827,10 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
             if (impl_->holds(r.clause, s)) {
                 if (impl_->st.bus.should_emit(r.action, r.cooldown)) {
                     Suggestion sug;
-                    sug.action       = r.action;
+                    sug.action     = r.action;
                     sug.confidence = r.confidence;
-                    sug.message      = r.message;
-                    //sug.cooldown     = r.cooldown;
+                    sug.message    = r.message;
+                    // sug.cooldown     = r.cooldown;
                     sug.last_emitted = now();
                     sug.rule_id      = r.id;
                     current_suggestions.push_back(sug);
@@ -839,17 +863,21 @@ Status RuleEngine::install_builtin_rules() noexcept
 {
     // TODO: to be replaced with the file that contains the comprehensive rulebook
     try {
-        auto R =
-              [&](std::string id, ConjClause c, ActDefaultValues ak, Confidence confidence, std::string msg, std::chrono::milliseconds cd = std::chrono::minutes(30)) {
-                  Rule r;
-                  r.id       = std::move(id);
-                  r.clause   = std::move(c);
-                  r.action   = { (ActId) ak, Subject{} };
-                  r.confidence = confidence;
-                  r.message  = std::move(msg);
-                  //r.cooldown = cd;
-                  return register_rule(r);
-              };
+        auto R = [&](std::string id,
+                     ConjClause c,
+                     ActDefaultValues ak,
+                     Confidence confidence,
+                     std::string msg,
+                     std::chrono::milliseconds cd = std::chrono::minutes(30)) {
+            Rule r;
+            r.id         = std::move(id);
+            r.clause     = std::move(c);
+            r.action     = { (ActId) ak, Subject{} };
+            r.confidence = confidence;
+            r.message    = std::move(msg);
+            // r.cooldown = cd;
+            return register_rule(r);
+        };
         auto C = [&](std::initializer_list<Literal> lits, int win_ms = 0) { return clause(lits, std::chrono::milliseconds{ win_ms }); };
 
         // File-only
@@ -913,11 +941,7 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::ViewArchiveManifest,
           40,
           "Executable(s) inside archive. Review manifest?");
-        R("F-050",
-          C({ lit(PredDefaultValues::MarkOfTheWeb) }),
-          ActDefaultValues::ViewMOTW,
-          10,
-          "Internet-origin marker present. Inspect source zone?");
+        R("F-050", C({ lit(PredDefaultValues::MarkOfTheWeb) }), ActDefaultValues::ViewMOTW, 10, "Internet-origin marker present. Inspect source zone?");
         R("F-051",
           C({ lit(PredDefaultValues::HashInThreatIntel) }),
           ActDefaultValues::ViewThreatIntelHits,
@@ -1138,11 +1162,7 @@ Status RuleEngine::install_builtin_rules() noexcept
           ActDefaultValues::ViewNetwork,
           70,
           "Recent network activity. Review flows.");
-        R("P-303",
-          C({ lit(PredDefaultValues::CreatesRunKey) }, 600000),
-          ActDefaultValues::ViewPersistence,
-          70,
-          "New persistence. Review startup artifacts.");
+        R("P-303", C({ lit(PredDefaultValues::CreatesRunKey) }, 600000), ActDefaultValues::ViewPersistence, 70, "New persistence. Review startup artifacts.");
 
         R("G-001",
           C({ lit(PredDefaultValues::IsPCAP), lit(PredDefaultValues::HasNetworkConnections) }),
@@ -1173,7 +1193,7 @@ Status RuleEngine::install_builtin_rules() noexcept
 
 std::string RuleEngine::GetRulePredicates(std::string_view rule_id) const
 {
-    //std::shared_lock lk(impl_->st.mu_rules);
+    // std::shared_lock lk(impl_->st.mu_rules);
     for (const auto& r : impl_->st.rules) {
         if (r.id == rule_id) {
             LocalString<1024> buf = {};
@@ -1186,7 +1206,7 @@ std::string RuleEngine::GetRulePredicates(std::string_view rule_id) const
                     if (first_add) {
                         first_add = false;
                         and_str   = "AND ";
-                    } 
+                    }
                 }
                 return std::string(buf.GetText());
             } catch (...) {
@@ -1206,7 +1226,7 @@ bool RuleEngine::TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWin
     auto it = action_handlers.find(current_suggestions[index].action.key);
     if (it == action_handlers.end())
         return true; // no handlers registered
-    const auto& s = current_suggestions[index];
+    const auto& s          = current_suggestions[index];
     bool final_delete_rule = true;
     for (auto& h : it->second) {
         if (!h.IsValid())

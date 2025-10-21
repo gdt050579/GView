@@ -189,7 +189,10 @@ bool Instance::Init(bool isTestingEnabled)
     dsk->Handlers()->OnEvent = this;
     dsk->Handlers()->OnStart = this;
 
-    CHECK(analysisEngine->Init(), false, "Fail to init the analysis engine!");
+    if (!analysisEngine->Init()) {
+        Dialogs::MessageBox::ShowError("Error", "Fail to init the analysis engine!");
+        return false;
+    }
     return true;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
