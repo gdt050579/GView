@@ -130,10 +130,10 @@ namespace
     {
       public:
         // Returns true if suggestion should be emitted (not suppressed)
-        bool should_emit(const Action& a, std::chrono::milliseconds cooldown) noexcept
+        bool should_emit(const std::vector<PredOrAction>& results, std::chrono::milliseconds cooldown, const Subject& s) noexcept
         {
             try {
-                auto key = make_key(a);
+                auto key = make_key(results, s);
                 auto t   = now();
                 std::unique_lock lk(mu_);
                 auto it = last_.find(key);
@@ -154,13 +154,14 @@ namespace
 
       private:
         using Key = std::string; // derived from action key + subject
-        static Key make_key(const Action& a)
+        static Key make_key(const std::vector<PredOrAction>& results, const Subject& s)
         {
-            // cheap serialization
-            std::string s = std::to_string(static_cast<unsigned>(a.key)) + "#" + std::to_string((uint32_t) a.subject.kind);
-            if (a.subject.kind != Subject::SubjectType::None)
-                s += ":" + std::to_string(a.subject.value);
-            return s;
+            LocalString<256> buffer;
+            for (const auto& res : results) {
+                buffer.AddFormat("%ull#", res.data.action_id);
+            }
+            buffer.AddFormat("%u#%ull", (uint32) s.kind, s.value);
+            return { buffer.GetText() };
         }
         std::mutex mu_;
         std::unordered_map<Key, TimePoint> last_;
@@ -223,17 +224,62 @@ bool RuleEngine::Init()
         predicates.ExtractPredicates(analysis_data, "predicates");
         actions.ExtractPredicates(analysis_data, "actions");
 
-        auto ctx = std::make_tuple<SpecificationStorage<PredId, PredicateSpecification>*, SpecificationStorage<ActId, PredicateSpecification>*>(&predicates, &actions);
-        rules.ExtractPredicates(analysis_data, "rules", &ctx);
-        auto status = install_builtin_rules();
-        if (!status.ok) // TODO: show the error message somewhere
-            return false;
+        auto ctx = std::make_tuple<SpecificationStorage<PredId, PredicateSpecification>*, SpecificationStorage<ActId, PredicateSpecification>*>(
+              &predicates, &actions);
 
-        engineWindow = { new AnalysisEngineWindow(this) };
+        SpecificationStorage<RuleId, RuleSpecification> rules_specification_storage;
+        rules_specification_storage.ExtractPredicates(analysis_data, "rules", &ctx);
+        for (auto& rule : rules_specification_storage.id_to_specification) {
+            auto clause_literals = std::vector<PredLiteral>{};
+            clause_literals.reserve(rule.second.clauses.size());
+            for (auto& clause : rule.second.clauses) {
+                auto clause_stripped = std::string_view(clause);
+                bool negated         = false;
+                if (clause_stripped.starts_with("NOT ")) {
+                    clause_stripped.remove_prefix(4);
+                    negated = true;
+                }
+                auto pred_id = predicates.name_to_id.find(clause_stripped);
+                if (pred_id == predicates.name_to_id.end())
+                    throw std::runtime_error(std::format("RuleEngine::Init: rule '{}' uses unknown predicate '{}'", rule.second.name, clause_stripped));
+                clause_literals.push_back(PredLiteral{ pred_id->second, negated });
+            }
+            auto rule_clause = clause(clause_literals);
+
+            std::vector<PredOrAction> results_parsed;
+            results_parsed.reserve(rule.second.results.size());
+            for (auto& result : rule.second.results) {
+                auto pred_id = predicates.name_to_id.find(result);
+                if (pred_id != predicates.name_to_id.end()) {
+                    PredOrAction poa;
+                    poa.type         = PredOrAction::PredOrActionType::Predicate;
+                    poa.data.pred_id = pred_id->second;
+                    results_parsed.push_back(poa);
+                    continue;
+                }
+                auto act_id = actions.name_to_id.find(result);
+                if (act_id != actions.name_to_id.end()) {
+                    PredOrAction poa;
+                    poa.type           = PredOrAction::PredOrActionType::Action;
+                    poa.data.action_id = act_id->second;
+                    results_parsed.push_back(poa);
+                    continue;
+                }
+                throw std::runtime_error(std::format("RuleEngine::Init: rule '{}' uses unknown predicate/action '{}'", rule.second.name, result));
+            }
+
+            Rule converted_rule = {
+                rule.first, rule.second.name, rule_clause, results_parsed, rule.second.confidence, rule.second.variable_mapping, rule.second.explanation
+            };
+            register_rule(converted_rule);
+            rules.name_to_id[rule.second.name]    = rule.first;
+            rules.id_to_specification[rule.first] = converted_rule;
+        }
+        rules.next_available_id = rules_specification_storage.next_available_id;
+        engineWindow            = { new AnalysisEngineWindow(this) };
 
         return true;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception& e) {
         AppCUI::Dialogs::MessageBox::ShowError("Found err", e.what());
         return false;
     }
@@ -370,11 +416,12 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
         lk.lock();
         for (const auto& r : impl_->st.rules) {
             if (impl_->holds(r.clause, s)) {
-                if (impl_->st.bus.should_emit(r.action, r.cooldown)) {
+                if (impl_->st.bus.should_emit(r.results, r.cooldown, s)) {
                     Suggestion sug;
-                    sug.action     = r.action;
+                    sug.subject    = s;
+                    sug.results    = r.results;
                     sug.confidence = r.confidence;
-                    sug.message    = r.message;
+                    sug.message    = r.explanation; // Solve this !!
                     // sug.cooldown     = r.cooldown;
                     sug.last_emitted = now();
                     sug.rule_id      = r.id;
@@ -404,360 +451,32 @@ Status RuleEngine::register_rule(const Rule& r) noexcept
     }
 }
 
-Status RuleEngine::install_builtin_rules() noexcept
+std::string RuleEngine::GetRulePredicates(RuleId rule_id) const
 {
-    // TODO: to be replaced with the file that contains the comprehensive rulebook
-    try {
-        //auto R = [&](std::string id,
-        //             ConjClause c,
-        //             ActDefaultValues ak,
-        //             Confidence confidence,
-        //             std::string msg,
-        //             std::chrono::milliseconds cd = std::chrono::minutes(30)) {
-        //    Rule r;
-        //    r.id         = std::move(id);
-        //    r.clause     = std::move(c);
-        //    r.action     = { (ActId) ak, Subject{} };
-        //    r.confidence = confidence;
-        //    r.message    = std::move(msg);
-        //    // r.cooldown = cd;
-        //    return register_rule(r);
-        //};
-        //auto C = [&](std::initializer_list<Literal> lits, int win_ms = 0) { return clause(lits, std::chrono::milliseconds{ win_ms }); };
-
-        //// File-only
-        //R("F-001",
-        //  C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacros) }),
-        //  ActDefaultValues::ViewMacros,
-        //  70,
-        //  "Macros present. Open Macro Viewer?");
-        //R("F-002",
-        //  C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacroObfuscation) }),
-        //  ActDefaultValues::DeobfuscateVBA,
-        //  70,
-        //  "Obfuscated macros detected. Deobfuscate now?");
-        //R("F-003",
-        //  C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::ContainsExternalTemplateRef) }),
-        //  ActDefaultValues::ViewExternalTemplates,
-        //  40,
-        //  "External template reference. Inspect RELs?");
-        //R("F-004",
-        //  C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasXlm4Macro) }),
-        //  ActDefaultValues::ViewXlmSheets,
-        //  70,
-        //  "Excel 4.0 macro sheet present. Review?");
-        //R("F-005",
-        //  C({ lit(PredDefaultValues::IsExcel), lit(PredDefaultValues::HasHiddenSheets) }),
-        //  ActDefaultValues::ViewHiddenSheets,
-        //  40,
-        //  "Hidden sheets found. Show list?");
-        //R("F-010",
-        //  C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasJavaScript) }),
-        //  ActDefaultValues::ViewPdfJavaScript,
-        //  70,
-        //  "PDF has JavaScript. Inspect code?");
-        //R("F-011",
-        //  C({ lit(PredDefaultValues::IsPdf), lit(PredDefaultValues::PdfHasOpenAction) }),
-        //  ActDefaultValues::ViewPdfObjects,
-        //  70,
-        //  "Auto-action triggers on open. Inspect objects?");
-        //R("F-020",
-        //  C({ lit(PredDefaultValues::IsScript), lit(PredDefaultValues::HasObfuscatedStrings) }),
-        //  ActDefaultValues::BeautifyScript,
-        //  70,
-        //  "Obfuscated script. Beautify for review?");
-        //R("F-030",
-        //  C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::HasHighEntropy) }),
-        //  ActDefaultValues::IdentifyPacker,
-        //  40,
-        //  "High entropy suggests packing. Identify packer?");
-        //R("F-031",
-        //  C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ContainsEmbeddedExecutable) }),
-        //  ActDefaultValues::ViewResources,
-        //  40,
-        //  "Embedded payload(s) detected. Inspect resources?");
-        //R("F-040",
-        //  C({ lit(PredDefaultValues::IsArchive), lit(PredDefaultValues::ArchiveIsPasswordProtected) }),
-        //  ActDefaultValues::SafeExtract,
-        //  40,
-        //  "Password-protected archive. Safe-extract to sandbox?");
-        //R("F-041",
-        //  C({ lit(PredDefaultValues::IsArchive), lit(PredDefaultValues::ArchiveContainsExecutable) }),
-        //  ActDefaultValues::ViewArchiveManifest,
-        //  40,
-        //  "Executable(s) inside archive. Review manifest?");
-        //R("F-050", C({ lit(PredDefaultValues::MarkOfTheWeb) }), ActDefaultValues::ViewMOTW, 10, "Internet-origin marker present. Inspect source zone?");
-        //R("F-051",
-        //  C({ lit(PredDefaultValues::HashInThreatIntel) }),
-        //  ActDefaultValues::ViewThreatIntelHits,
-        //  100,
-        //  "Known-bad hash in intel. Review details now.",
-        //  std::chrono::minutes(5));
-
-        //// User-only
-        //R("U-100",
-        //  C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedHashes, true) }),
-        //  ActDefaultValues::ComputeHashes,
-        //  10,
-        //  "Compute hashes for correlation & TI lookups?");
-        //R("U-101",
-        //  C({ lit(PredDefaultValues::ComputedHashes), lit(PredDefaultValues::QueriedThreatIntel, true) }),
-        //  ActDefaultValues::QueryThreatIntel,
-        //  10,
-        //  "Check reputation across intel sources?");
-        //R("U-102",
-        //  C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::ViewedStrings, true) }),
-        //  ActDefaultValues::ViewStrings,
-        //  10,
-        //  "Review strings for URLs and IOCs?");
-        //R("U-120",
-        //  C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::OpenedSafely, true), lit(PredDefaultValues::IsWord) }),
-        //  ActDefaultValues::OpenInSafeView,
-        //  70,
-        //  "Use protected view to avoid executing active content.");
-        //R("U-121",
-        //  C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::SwitchedToIsolatedNetwork, true), lit(PredDefaultValues::MarkOfTheWeb) }),
-        //  ActDefaultValues::SwitchToIsolatedNetwork,
-        //  70,
-        //  "Switch to isolated/no-Internet sandbox.");
-        //R("U-122",
-        //  C({ lit(PredDefaultValues::Opened), lit(PredDefaultValues::CreatedSnapshot, true) }),
-        //  ActDefaultValues::CreateSnapshot,
-        //  10,
-        //  "Create VM snapshot before detonation?");
-
-        //// Mixed (subset of comprehensive rulebook)
-        //R("M-200",
-        //  C({ lit(PredDefaultValues::IsWord), lit(PredDefaultValues::HasMacros), lit(PredDefaultValues::ViewedMacros, true) }),
-        //  ActDefaultValues::ViewMacros,
-        //  70,
-        //  "Macros present. Open Macro Viewer?");
-        //R("M-201",
-        //  C({ lit(PredDefaultValues::HasMacroObfuscation), lit(PredDefaultValues::DeobfuscatedVBA, true) }),
-        //  ActDefaultValues::DeobfuscateVBA,
-        //  70,
-        //  "Obfuscated macros found. Deobfuscate now?");
-        //R("M-202",
-        //  C({ lit(PredDefaultValues::HasSuspiciousMacroFunctionCalls), lit(PredDefaultValues::ViewedSuspiciousCalls, true) }),
-        //  ActDefaultValues::ViewSuspiciousCalls,
-        //  70,
-        //  "Suspicious macro APIs detected. Review call list?");
-        //R("M-203",
-        //  C({ lit(PredDefaultValues::ContainsExternalTemplateRef), lit(PredDefaultValues::ViewedExternalTemplateRels, true) }),
-        //  ActDefaultValues::ViewExternalTemplates,
-        //  40,
-        //  "Remote template reference. Inspect RELs?");
-
-        //R("M-210",
-        //  C({ lit(PredDefaultValues::ContainsBase64Blobs), lit(PredDefaultValues::DecodedBase64Blobs, true) }),
-        //  ActDefaultValues::DecodeBase64,
-        //  40,
-        //  "Base64 blobs detected. Decode for payloads?");
-        //R("M-211",
-        //  C({ lit(PredDefaultValues::ContainsHexBlobs), lit(PredDefaultValues::DecodedHexBlobs, true) }),
-        //  ActDefaultValues::DecodeHex,
-        //  10,
-        //  "Hex blobs present. Decode now?");
-        //R("M-212",
-        //  C({ lit(PredDefaultValues::ContainsUrl), lit(PredDefaultValues::ExtractedUrls, true) }),
-        //  ActDefaultValues::ExtractUrls,
-        //  10,
-        //  "Extract URLs for pivoting & blocking?");
-        //R("M-213",
-        //  C({ lit(PredDefaultValues::ContainsEmbeddedArchive), lit(PredDefaultValues::CarvedEmbeddedFiles, true) }),
-        //  ActDefaultValues::CarveEmbedded,
-        //  40,
-        //  "Embedded archive(s) found. Carve safely?");
-
-        //R("M-220",
-        //  C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedImports, true) }),
-        //  ActDefaultValues::ViewImports,
-        //  10,
-        //  "Review imported APIs for intent?");
-        //R("M-221",
-        //  C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::HasHighEntropy), lit(PredDefaultValues::RanPackerId, true) }),
-        //  ActDefaultValues::IdentifyPacker,
-        //  40,
-        //  "Likely packed. Identify packer?");
-        //R("M-223",
-        //  C({ lit(PredDefaultValues::IsPe), lit(PredDefaultValues::ViewedOverlay, true) }),
-        //  ActDefaultValues::ViewOverlay,
-        //  10,
-        //  "Overlay data present. Inspect trailing bytes?");
-
-        //R("M-230",
-        //  C({ lit(PredDefaultValues::TriesToAccessTheInternet), lit(PredDefaultValues::ViewedNetworkBehavior, true) }),
-        //  ActDefaultValues::ViewNetwork,
-        //  70,
-        //  "Outbound connections observed. Review endpoints?");
-        //R("M-231",
-        //  C({ lit(PredDefaultValues::BeaconingPattern), lit(PredDefaultValues::ResolvedDomains, true) }),
-        //  ActDefaultValues::ViewDnsQueries,
-        //  70,
-        //  "Beaconing detected. Review DNS queries/domains?");
-        //R("M-232",
-        //  C({ lit(PredDefaultValues::UsesHTTPSRequests), lit(PredDefaultValues::UsesSelfSignedTls), lit(PredDefaultValues::ViewedTlsCertificates, true) }),
-        //  ActDefaultValues::ViewTlsCertificates,
-        //  70,
-        //  "Self-signed/invalid TLS. Inspect certificate chain?");
-        //R("M-233",
-        //  C({ lit(PredDefaultValues::WritesToTempExecutable), lit(PredDefaultValues::ViewedFileSystemActivity, true) }),
-        //  ActDefaultValues::ViewFileWrites,
-        //  70,
-        //  "New executable(s) in temp. Review drops?");
-        //R("M-234",
-        //  C({ lit(PredDefaultValues::DropsAndExecutes), lit(PredDefaultValues::ViewedProcessTree, true) }),
-        //  ActDefaultValues::ViewProcessTree,
-        //  70,
-        //  "Drop-and-run sequence observed. Open process tree?");
-        //R("M-235",
-        //  C({ lit(PredDefaultValues::CreatesRunKey), lit(PredDefaultValues::ViewedRegistryActivity, true) }),
-        //  ActDefaultValues::ViewRegistryChanges,
-        //  70,
-        //  "Startup persistence detected. Inspect registry changes?");
-
-        //R("M-240",
-        //  C({ lit(PredDefaultValues::PersistenceIndicatorsPresent), lit(PredDefaultValues::PersistenceReviewed, true) }),
-        //  ActDefaultValues::ViewPersistence,
-        //  70,
-        //  "Persistence artifacts found. Review them now?");
-        //R("M-241",
-        //  C({ lit(PredDefaultValues::RequestsUacElevation), lit(PredDefaultValues::ViewedUacEvents, true) }),
-        //  ActDefaultValues::ViewUac,
-        //  40,
-        //  "UAC prompt/elevation attempt. Inspect event details?");
-        //R("M-242",
-        //  C({ lit(PredDefaultValues::AcquiresSeDebugPrivilege), lit(PredDefaultValues::ViewedTokenPrivileges, true) }),
-        //  ActDefaultValues::ViewTokenPrivileges,
-        //  70,
-        //  "Debug privilege acquired. Review token changes?");
-
-        //R("M-250",
-        //  C({ lit(PredDefaultValues::MassFileModification), lit(PredDefaultValues::ViewedEncryptionMonitor, true) }),
-        //  ActDefaultValues::MonitorEncryption,
-        //  100,
-        //  "Rapid file modifications. Start encryption monitor?");
-        //R("M-251",
-        //  C({ lit(PredDefaultValues::DeletesShadowCopies), lit(PredDefaultValues::ViewedShadowCopyEvents, true) }),
-        //  ActDefaultValues::ViewShadowCopyEvents,
-        //  70,
-        //  "VSS deletion observed. Inspect events?");
-        //R("M-252",
-        //  C({ lit(PredDefaultValues::DropsRansomNote), lit(PredDefaultValues::ViewedRansomNotes, true) }),
-        //  ActDefaultValues::ViewRansomNotes,
-        //  70,
-        //  "Ransom note artifacts dropped. Open list?");
-
-        //R("M-260",
-        //  C({ lit(PredDefaultValues::ReadsManyDocs), lit(PredDefaultValues::ViewedExfilTimeline, true) }),
-        //  ActDefaultValues::ViewExfil,
-        //  70,
-        //  "Mass document reads. Check exfil timeline?");
-        //R("M-262",
-        //  C({ lit(PredDefaultValues::UploadsLargeVolume), lit(PredDefaultValues::CapturedPcap, true) }),
-        //  ActDefaultValues::StartCapturePcap,
-        //  70,
-        //  "Large outbound traffic. Capture PCAP now?");
-
-        //R("M-270",
-        //  C({ lit(PredDefaultValues::ChecksSandboxArtifacts), lit(PredDefaultValues::ViewedAntiVMChecks, true) }),
-        //  ActDefaultValues::ViewAntiVM,
-        //  40,
-        //  "Anti-VM checks observed. Review heuristics?");
-        //R("M-271",
-        //  C({ lit(PredDefaultValues::DelaysExecutionLong), lit(PredDefaultValues::EnabledTimeWarp, true) }),
-        //  ActDefaultValues::EnableTimeWarp,
-        //  10,
-        //  "Long sleeps observed. Enable time warp?");
-
-        //R("M-280",
-        //  C({ lit(PredDefaultValues::IsArchive), lit(PredDefaultValues::ArchiveIsPasswordProtected), lit(PredDefaultValues::ExtractedArchiveSafely, true) }),
-        //  ActDefaultValues::SafeExtract,
-        //  40,
-        //  "Password-protected archive. Extract to sandbox?");
-        //R("M-290",
-        //  C({ lit(PredDefaultValues::ComputedHashes), lit(PredDefaultValues::QueriedThreatIntel, true), lit(PredDefaultValues::ContainsUrl) }),
-        //  ActDefaultValues::QueryThreatIntel,
-        //  10,
-        //  "Reputation check likely useful here. Query TI?");
-        //R("M-292",
-        //  C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExtractedUrls, true) }),
-        //  ActDefaultValues::ExtractUrls,
-        //  70,
-        //  "Extract IOCs to pivot and contain?");
-        //R("M-293",
-        //  C({ lit(PredDefaultValues::IsSuspicious), lit(PredDefaultValues::ExportedIOCs, true) }),
-        //  ActDefaultValues::ExportIOCs,
-        //  10,
-        //  "Export IOCs (CSV/STIX) for sharing?");
-        //R("M-294",
-        //  C({ lit(PredDefaultValues::IsMalicious), lit(PredDefaultValues::GeneratedReport, true) }),
-        //  ActDefaultValues::GenerateReport,
-        //  70,
-        //  "Generate a concise report with findings?");
-
-        //// Time-windowed examples
-        //R("P-301",
-        //  C({ lit(PredDefaultValues::WritesToTempExecutable), lit(PredDefaultValues::DropsAndExecutes) }, 180000),
-        //  ActDefaultValues::ViewProcessTree,
-        //  70,
-        //  "Drop-and-run chain just occurred. Open process graph.");
-        //R("P-302",
-        //  C({ lit(PredDefaultValues::TriesToAccessTheInternet) }, 600000),
-        //  ActDefaultValues::ViewNetwork,
-        //  70,
-        //  "Recent network activity. Review flows.");
-        //R("P-303", C({ lit(PredDefaultValues::CreatesRunKey) }, 600000), ActDefaultValues::ViewPersistence, 70, "New persistence. Review startup artifacts.");
-
-        //R("G-001",
-        //  C({ lit(PredDefaultValues::IsPCAP), lit(PredDefaultValues::HasNetworkConnections) }),
-        //  ActDefaultValues::CheckConnection,
-        //  100,
-        //  "The PCAP file has connections. Analyze them?");
-
-        //R("G-002",
-        //  C({ /*lit(PredDefaultValues::HasNetworkConnections),*/ lit(PredDefaultValues::HasConnectionWithExecutable) }),
-        //  ActDefaultValues::ViewConnectionWithExecutable,
-        //  80,
-        //  "The PCAP file seems to have connections with executable. Open them?");
-
-        //R("G-003",
-        //  C({ /*lit(PredDefaultValues::HasNetworkConnections),*/ lit(PredDefaultValues::HasConnectionWithScript) }),
-        //  ActDefaultValues::ViewConnectionWithScript,
-        //  80,
-        //  "The PCAP file seems to have connections with scripts. Open them?");
-
-        return Status::OK();
-    } catch (const std::exception& e) {
-        const auto err = std::format("install_builtin_rules: {}", e.what());
-        return Status::Error(err);
-    } catch (...) {
-        return Status::Error("install_builtin_rules: unknown");
-    }
-}
-
-std::string RuleEngine::GetRulePredicates(std::string_view rule_id) const
-{
+    // TODO --> implement this properly
     // std::shared_lock lk(impl_->st.mu_rules);
-    for (const auto& r : impl_->st.rules) {
-        if (r.id == rule_id) {
-            LocalString<1024> buf = {};
-            bool first_add        = true;
-            const char* and_str   = "";
-            try {
-                for (const auto& L : r.clause.all_of) {
-                    auto pred_name = GetPredName(L.pred);
-                    buf.AddFormat(" %s%s%.*s", and_str, L.negated ? "NOT-" : "", pred_name.size(), pred_name.data());
-                    if (first_add) {
-                        first_add = false;
-                        and_str   = "AND ";
-                    }
-                }
-                return std::string(buf.GetText());
-            } catch (...) {
-                return "";
+
+    const auto& rule_it = rules.id_to_specification.find(rule_id);
+    if (rule_it == rules.id_to_specification.end()) {
+        Dialogs::MessageBox::ShowError("Err", "Invalid rule, not found!");
+        return "";
+    }
+    auto& r = rule_it->second;
+    LocalString<1024> buf = {};
+    bool first_add        = true;
+    const char* and_str   = "";
+    try {
+        for (const auto& L : r.clause.all_of) {
+            auto pred_name = GetPredName(L.pred);
+            buf.AddFormat(" %s%s%.*s", and_str, L.negated ? "NOT-" : "", pred_name.size(), pred_name.data());
+            if (first_add) {
+                first_add = false;
+                and_str   = "AND ";
             }
         }
+        return std::string(buf.GetText());
+    } catch (...) {
+        return "";
     }
     return "";
 }
@@ -768,12 +487,26 @@ bool RuleEngine::TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWin
         return false;
     if (index >= current_suggestions.size())
         return false;
-    auto it = action_handlers.find(current_suggestions[index].action.key);
-    if (it == action_handlers.end())
-        return true; // no handlers registered
-    const auto& s          = current_suggestions[index];
+    const auto& s = current_suggestions[index];
+
+    std::vector<Reference<RuleTriggerInterface>> handlers;
+    for (const auto& res : s.results) {
+        if (res.type == PredOrAction::PredOrActionType::Action) {
+            auto it = action_handlers.find(res.data.action_id);
+            if (it != action_handlers.end()) {
+                for (auto& h : it->second) {
+                    if (h.IsValid())
+                        handlers.push_back(h);
+                }
+            }
+        }
+    }
+
+    /*if (handlers.empty())//TODO: consider reenable this check?
+        return true; */
+
     bool final_delete_rule = true;
-    for (auto& h : it->second) {
+    for (auto& h : handlers) {
         if (!h.IsValid())
             continue;
         bool delete_rule = true;

@@ -126,11 +126,17 @@ void AnalysisEngineWindow::DrawSuggestions()
     if (available_suggestions.empty())
         return;
     for (uint32 i = 0; i < available_suggestions.size(); i++) {
-        const auto& s = available_suggestions[i];
-
-        const auto action_name                         = engine->GetActName(s.action.key);
+        const auto& s                = available_suggestions[i];
+        std::string_view action_name = "NoAction!!";
+        for (const auto& result : s.results) {
+            if (result.type == PredOrAction::PredOrActionType::Action) {
+                action_name = engine->GetActName(result.data.action_id);
+                break;
+            }
+        }
+        std::string rule_id                            = std::to_string(s.rule_id);
         const auto confidence                          = std::to_string(s.confidence);
-        const std::initializer_list<ConstString> items = { s.rule_id, confidence, action_name, s.message };
+        const std::initializer_list<ConstString> items = { rule_id, confidence, action_name, s.message };
         auto new_item                                  = listView->AddItem(items);
         new_item.SetData(i);
     }
@@ -139,6 +145,7 @@ void AnalysisEngineWindow::DrawSuggestions()
 
 void AnalysisEngineWindow::DrawPredicatesForCurrentIndex(uint32 index)
 {
+    // TODO: implement predicates display
     LocalString<512> ls;
     const auto& suggestions = engine->GetAllAvailableSuggestions();
     if (index >= suggestions.size()) {

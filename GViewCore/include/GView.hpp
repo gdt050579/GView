@@ -1064,19 +1064,26 @@ namespace Components
             std::vector<std::string> failed_predicates;
         };
 
-        struct Action {
-            ActId key{};
-            Subject subject{};
-            std::vector<Arg> args;
+        struct PredOrAction {
+            enum class PredOrActionType : uint8 {
+                Predicate = 0,
+                Action    = 1,
+            };
+            union Data {
+                PredId pred_id;
+                ActId action_id;
+            } data;
+            PredOrActionType type{ PredOrActionType::Predicate };
         };
 
         struct Suggestion {
-            Action action;
+            Subject subject{};
+            std::vector<PredOrAction> results;
             Confidence confidence;
-            std::string message; // human readable
+            std::string message;
             // std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval TODO ?
             TimePoint last_emitted{}; // zero == never
-            std::string rule_id;
+            RuleId rule_id;
         };
 
         struct CORE_EXPORT RuleTriggerInterface {

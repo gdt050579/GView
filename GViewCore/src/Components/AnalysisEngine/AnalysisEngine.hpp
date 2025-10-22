@@ -12,35 +12,6 @@
 namespace GView::Components::AnalysisEngine
 {
 
-inline TimePoint now() noexcept
-{
-    return Clock::now();
-}
-
-// A literal (possibly negated) that must hold
-struct Literal {
-    PredId pred;
-    bool negated{ false };
-};
-
-// One conjunctive clause over a subject, with optional time window requirement
-struct ConjClause {
-    std::vector<Literal> all_of; // AND over literals
-    std::chrono::milliseconds window{ std::chrono::milliseconds{ 0 } };
-};
-
-// A rule: disjunction of conjunctive clauses (DNF). If any clause holds, emit suggestion.
-struct Rule {
-    std::string id;    // stable id for telemetry
-    ConjClause clause; // keep single-clause for simplicity; duplicate Rule for ORs
-    Action action;     // or predicate
-    Confidence confidence = 0;
-    std::string message;
-    std::chrono::milliseconds cooldown{ std::chrono::minutes(30) };
-};
-
-enum class PredDefaultValues : PredId;
-
 struct SubjectParentInfo {
     uint64 direct_parent;
     uint64 main_parent;
@@ -71,8 +42,7 @@ class RuleEngine final : public AnalysisEngineInterface
     Status set_fact(PredId p, const Subject& s, std::string source) noexcept;
     std::vector<Suggestion> evaluate(const Subject& s) noexcept;
     Status register_rule(const Rule& r) noexcept;
-    Status install_builtin_rules() noexcept;
-    std::string GetRulePredicates(std::string_view rule_id) const;
+    std::string GetRulePredicates(RuleId rule_id) const;
 
     const std::vector<Suggestion>& GetAllAvailableSuggestions() const
     {
@@ -80,14 +50,21 @@ class RuleEngine final : public AnalysisEngineInterface
     }
 
     // Small helpers
-    static Literal lit(PredDefaultValues p, bool neg = false) noexcept
+    static PredLiteral lit(PredId p, bool neg = false) noexcept
     {
-        return Literal{ (PredId) p, neg };
+        return PredLiteral{ p, neg };
     }
-    static ConjClause clause(std::initializer_list<Literal> all, std::chrono::milliseconds window = std::chrono::milliseconds{ 0 })
+    static ConjClause clause(std::initializer_list<PredLiteral> all, std::chrono::milliseconds window = std::chrono::milliseconds{ 0 })
     {
         ConjClause c;
         c.all_of.assign(all.begin(), all.end());
+        c.window = window;
+        return c;
+    }
+    static ConjClause clause(std::vector<PredLiteral> all, std::chrono::milliseconds window = std::chrono::milliseconds{ 0 })
+    {
+        ConjClause c;
+        c.all_of = std::move(all);
         c.window = window;
         return c;
     }
@@ -106,7 +83,7 @@ class RuleEngine final : public AnalysisEngineInterface
 
     SpecificationStorage<PredId, PredicateSpecification> predicates;
     SpecificationStorage<ActId, PredicateSpecification> actions;
-    SpecificationStorage<RuleId, RuleSpecification> rules;
+    SpecificationStorage<RuleId, Rule> rules;
 };
 
 // Convenience helpers

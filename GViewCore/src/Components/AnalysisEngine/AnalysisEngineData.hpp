@@ -64,6 +64,35 @@ void to_json(nlohmann::json& j, const RuleSpecification& p);
 void from_json(const nlohmann::json& j, RuleSpecification& p);
 bool VerifyPredicates(const std::vector<RuleSpecification>& rules, void* extra_ctx);
 
+inline TimePoint now() noexcept
+{
+    return Clock::now();
+}
+
+// A literal (possibly negated) that must hold
+struct PredLiteral {
+    PredId pred;
+    bool negated{ false };
+};
+
+// One conjunctive clause over a subject, with optional time window requirement
+struct ConjClause {
+    std::vector<PredLiteral> all_of; // AND over literals
+    std::chrono::milliseconds window{ std::chrono::milliseconds{ 0 } };
+};
+
+// A rule: disjunction of conjunctive clauses (DNF). If any clause holds, emit suggestion.
+struct Rule {
+    RuleId id{ 0 };
+    std::string name;
+    ConjClause clause; // keep single-clause for simplicity; duplicate Rule for ORs
+    std::vector<PredOrAction> results; 
+    Confidence confidence;
+    std::unordered_map<std::string, std::string> variable_mapping;
+    std::string explanation;
+    std::chrono::milliseconds cooldown{ std::chrono::minutes(30) };
+};
+
 template<typename IdType, typename DataType>
 struct SpecificationStorage
 {
