@@ -12,6 +12,11 @@ struct PCAPPredicates
     Components::AnalysisEngine::PredId IsPCAP, HasNetworkConnections, HasConnectionWithExecutable, HasConnectionWithScript;
 };
 
+struct PCAPActions
+{
+    Components::AnalysisEngine::ActId CheckNetworkConnections, ViewExecutableFromConnection, ViewScriptFromConnection;
+};
+
 class PCAPFile : public TypeInterface,
                  public View::ContainerViewer::EnumerateInterface,
                  public View::ContainerViewer::OpenItemInterface,
@@ -24,6 +29,7 @@ class PCAPFile : public TypeInterface,
     std::vector<std::pair<PacketHeader*, uint32>> packetHeaders;
     StreamManager streamManager;
     PCAPPredicates predicates;
+    PCAPActions actions;
     Reference<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
 
 	uint32 currentItemIndex{ 0 };

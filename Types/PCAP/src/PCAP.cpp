@@ -1,6 +1,7 @@
 #include "PCAP.hpp"
 #include "PayloadParsers/HttpParser.hpp"
 #include <array>
+#include <cassert>
 
 using namespace AppCUI;
 using namespace AppCUI::OS;
@@ -147,20 +148,31 @@ extern "C"
                 LOG_ERROR("Failed to add IsPCAP fact");
             }
         }
-
-        auto checkConnectionPredicate = pcap->analysisEngine->GetActId("CheckConnection");
-        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(checkConnectionPredicate)) {
-            pcap->analysisEngine->RegisterActionTrigger(checkConnectionPredicate, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
+        std::vector<Components::AnalysisEngine::ActId> actions;
+        auto checkConnectionAction = pcap->analysisEngine->GetActId("CheckNetworkConnections");
+        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(checkConnectionAction)) {
+            pcap->actions.CheckNetworkConnections = checkConnectionAction;
+            actions.push_back(checkConnectionAction);
         }
 
-        auto viewConnectionWithExecutablePredicate = pcap->analysisEngine->GetActId("ViewConnectionWithExecutable");
-        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(viewConnectionWithExecutablePredicate)) {
-            pcap->analysisEngine->RegisterActionTrigger(viewConnectionWithExecutablePredicate, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
+        auto viewConnectionWithExecutableAction = pcap->analysisEngine->GetActId("ViewExecutableFromConnection");
+        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(viewConnectionWithExecutableAction)) {
+            pcap->actions.ViewExecutableFromConnection = viewConnectionWithExecutableAction;
+            actions.push_back(viewConnectionWithExecutableAction);
         }
 
-        auto iewConnectionWithScriptPredicate = pcap->analysisEngine->GetActId("ViewConnectionWithScript");
-        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(iewConnectionWithScriptPredicate)) {
-            pcap->analysisEngine->RegisterActionTrigger(iewConnectionWithScriptPredicate, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
+        auto viewConnectionWithScriptAction= pcap->analysisEngine->GetActId("ViewScriptFromConnection");
+        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(viewConnectionWithScriptAction)) {
+            pcap->actions.ViewScriptFromConnection = viewConnectionWithScriptAction;
+            actions.push_back(viewConnectionWithScriptAction);
+        }
+
+        auto results = pcap->analysisEngine->RegisterActionTrigger(actions, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
+        for (size_t i = 0; i < results.size(); i++) {
+            if (results[i] == false) {
+                LOG_ERROR("Failed to register action trigger for action id {}", actions[i]);
+                assert(false);
+            }
         }
     }
 

@@ -367,12 +367,21 @@ void RuleEngine::ShowAnalysisEngineWindow()
     engineWindow->Show();
 }
 
-bool RuleEngine::RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger)
+std::vector<bool> RuleEngine::RegisterActionTrigger(const std::vector<ActId>& action_ids, Reference<RuleTriggerInterface> trigger)
 {
-    if (action == INVALID_ACT_ID || trigger == nullptr || !actions.id_to_specification.contains(action))
-        return false;
-    action_handlers[action].push_back(trigger);
-    return true;
+    std::vector<bool> results;
+    results.resize(action_ids.size());
+    for (size_t i = 0; i < action_ids.size(); i++) {
+        const auto& action = action_ids[i];
+        if (action == INVALID_ACT_ID || trigger == nullptr || !actions.id_to_specification.contains(action)) {
+            results[i] = false;
+            continue;
+        }
+        // TODO: check if already registered?
+        action_handlers[action].push_back(trigger);
+        results[i] = true;
+    }
+    return results;
 }
 
 Subject RuleEngine::GetSubjectForNewWindow(Object::Type objectType)

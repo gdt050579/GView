@@ -33,7 +33,7 @@ class RuleEngine final : public AnalysisEngineInterface
     std::string_view GetPredName(PredId p) const;
     std::string_view GetActName(ActId a) const;
     void ShowAnalysisEngineWindow() override;
-    bool RegisterActionTrigger(ActId action, Reference<RuleTriggerInterface> trigger) override;
+    std::vector<bool> RegisterActionTrigger(const std::vector<ActId>& action_ids, Reference<RuleTriggerInterface> trigger) override;
     Subject GetSubjectForNewWindow(Object::Type objectType) override;
     void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow) override;
     uint64 FindMainParent(uint64 current_subject);
