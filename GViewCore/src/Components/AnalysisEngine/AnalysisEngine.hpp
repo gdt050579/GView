@@ -33,7 +33,7 @@ struct ConjClause {
 struct Rule {
     std::string id;    // stable id for telemetry
     ConjClause clause; // keep single-clause for simplicity; duplicate Rule for ORs
-    Action action;// or predicate
+    Action action;     // or predicate
     Confidence confidence = 0;
     std::string message;
     std::chrono::milliseconds cooldown{ std::chrono::minutes(30) };
@@ -41,8 +41,7 @@ struct Rule {
 
 enum class PredDefaultValues : PredId;
 
-struct SubjectParentInfo
-{
+struct SubjectParentInfo {
     uint64 direct_parent;
     uint64 main_parent;
 };
@@ -80,11 +79,10 @@ class RuleEngine final : public AnalysisEngineInterface
         return current_suggestions;
     }
 
-
     // Small helpers
     static Literal lit(PredDefaultValues p, bool neg = false) noexcept
     {
-        return Literal{ (PredId)p, neg };
+        return Literal{ (PredId) p, neg };
     }
     static ConjClause clause(std::initializer_list<Literal> all, std::chrono::milliseconds window = std::chrono::milliseconds{ 0 })
     {
@@ -93,9 +91,9 @@ class RuleEngine final : public AnalysisEngineInterface
         c.window = window;
         return c;
     }
-    bool TryExecuteSuggestion(uint32 index, bool &shouldCloseAnalysisWindow);
-  private:
+    bool TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWindow);
 
+  private:
     struct Impl;
     Reference<AnalysisEngineWindow> engineWindow;
     std::unique_ptr<Impl> impl_;
@@ -106,7 +104,9 @@ class RuleEngine final : public AnalysisEngineInterface
     std::unordered_map<uint64, SubjectParentInfo> subjects_hierarchy;
     std::unordered_map<uint64, Subject> windows;
 
-    PredicateSpecificationStorage predicates, actions;
+    SpecificationStorage<PredId, PredicateSpecification> predicates;
+    SpecificationStorage<ActId, PredicateSpecification> actions;
+    SpecificationStorage<RuleId, RuleSpecification> rules;
 };
 
 // Convenience helpers

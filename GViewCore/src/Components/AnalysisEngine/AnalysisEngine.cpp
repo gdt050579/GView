@@ -222,6 +222,9 @@ bool RuleEngine::Init()
     try {
         predicates.ExtractPredicates(analysis_data, "predicates");
         actions.ExtractPredicates(analysis_data, "actions");
+
+        auto ctx = std::make_tuple<SpecificationStorage<PredId, PredicateSpecification>*, SpecificationStorage<ActId, PredicateSpecification>*>(&predicates, &actions);
+        rules.ExtractPredicates(analysis_data, "rules", &ctx);
         auto status = install_builtin_rules();
         if (!status.ok) // TODO: show the error message somewhere
             return false;

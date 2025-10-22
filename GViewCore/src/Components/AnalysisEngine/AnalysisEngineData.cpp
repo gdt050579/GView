@@ -63,6 +63,77 @@ bool verify_predicate(const PredicateSpecification& pred, std::vector<std::strin
     return ok;
 }
 
+bool verify_rule(const RuleSpecification& rule, std::vector<std::string>& errors, void* extra_ctx)
+{
+    if (!extra_ctx)
+        return false;
+    auto prev_data = (std::tuple<SpecificationStorage<PredId, PredicateSpecification>*, SpecificationStorage<ActId, PredicateSpecification>*>*) extra_ctx;
+    auto predicate_storage_ptr = std::get<0>(*prev_data);
+    auto action_storage_ptr    = std::get<1>(*prev_data);
+    bool ok                    = true;
+
+    std::unordered_set<std::string> args;
+    for (const auto& clause : rule.clauses) {
+        auto pred_it = predicate_storage_ptr->name_to_id.find(clause);
+        if (pred_it != predicate_storage_ptr->name_to_id.end()) {
+            auto& pred_specification = predicate_storage_ptr->id_to_specification[pred_it->second];
+            args.insert(pred_specification.arguments.begin(), pred_specification.arguments.end());
+            continue;
+        }
+        auto act_it = action_storage_ptr->name_to_id.find(clause);
+        if (act_it != action_storage_ptr->name_to_id.end()) {
+            auto& act_specification = action_storage_ptr->id_to_specification[act_it->second];
+            args.insert(act_specification.arguments.begin(), act_specification.arguments.end());
+            continue;
+        }
+        errors.emplace_back("[ERROR] Rule '" + rule.name + "' uses unknown predicate '" + clause + "' in clauses.");
+        ok = false;
+    }
+
+    std::unordered_set<std::string> expected_args;
+    for (const auto& result : rule.results) {
+        auto pred_it = predicate_storage_ptr->name_to_id.find(result);
+        if (pred_it != predicate_storage_ptr->name_to_id.end()) {
+            auto& pred_specification = predicate_storage_ptr->id_to_specification[pred_it->second];
+            expected_args.insert(pred_specification.arguments.begin(), pred_specification.arguments.end());
+            continue;
+        }
+        auto act_it = action_storage_ptr->name_to_id.find(result);
+        if (act_it != action_storage_ptr->name_to_id.end()) {
+            auto& act_specification = action_storage_ptr->id_to_specification[act_it->second];
+            expected_args.insert(act_specification.arguments.begin(), act_specification.arguments.end());
+            continue;
+        }
+        errors.emplace_back("[ERROR] Rule '" + rule.name + "' uses unknown predicate '" + result + "' in results.");
+        ok = false;
+    }
+
+    const auto placeholders = extract_placeholders(rule.explanation);
+    expected_args.insert(placeholders.begin(), placeholders.end());
+
+    for (const auto& mapping : rule.variable_mapping) {
+        auto arg_it = args.find(mapping.first);
+        if (arg_it == args.end()) {
+            errors.emplace_back("[ERROR] Rule '" + rule.name + "' uses mapping '" + mapping.first + "' that is not among the clauses.");
+            ok = false;
+            continue;
+        }
+        args.insert(mapping.second);
+    }
+
+    LocalString<512> buffer;
+    // Check if placeholders exist in arguments
+    for (const auto& arg : expected_args) {
+        if (!args.contains(arg)) {
+            buffer.SetFormat("[ERROR] Rule '%s' uses placeholder {%s} not found in arguments.", rule.name.c_str(), arg.c_str());
+            errors.emplace_back(buffer.GetText());
+            ok = false;
+        }
+    }
+
+    return ok;
+}
+
 } // namespace
 
 namespace GView::Components::AnalysisEngine
@@ -83,7 +154,7 @@ void from_json(const json& j, PredicateSpecification& p)
     }
 }
 
-bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates)
+bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates, void*)
 {
     std::vector<std::string> errors;
     for (const auto& pred : predicates) {
@@ -105,19 +176,50 @@ bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates)
     return true;
 }
 
-bool PredicateSpecificationStorage::ExtractPredicates(const nlohmann::json& j, std::string_view field_name)
+void to_json(json& j, const RuleSpecification& p)
 {
-    auto predicates_it = j.find("predicates");
-    if (predicates_it == j.end() || !predicates_it->is_array())
-        return false;
-    auto predicates = predicates_it->get<std::vector<PredicateSpecification>>();
-    if (!VerifyPredicates(predicates))
-        return false;
-    for (auto& p : predicates) {
-        PredId pred_id               = next_available_id++;
-        name_to_id[p.name]           = pred_id;
-        id_to_specification[pred_id] = std::move(p);
+    j = json{
+        { "name", p.name }, { "clauses", p.clauses }, { "results", p.results }, { "explanation", p.explanation }, { "variable_mapping", p.variable_mapping }
+    };
+}
+void from_json(const json& j, RuleSpecification& p)
+{
+    try {
+        j.at("name").get_to(p.name);
+        j.at("clauses").get_to(p.clauses);
+        j.at("results").get_to(p.results);
+        j.at("explanation").get_to(p.explanation);
+        auto mapping_it = j.find("variable_mapping");
+        if (mapping_it != j.end() && mapping_it->is_object()) {
+            mapping_it->get_to(p.variable_mapping);
+        }
+    } catch (const json::exception& e) {
+        throw std::runtime_error("Invalid JSON structure for RuleSpecification: " + std::string(e.what()));
     }
+}
+
+bool VerifyPredicates(const std::vector<RuleSpecification>& rules, void* extra_ctx)
+{
+    if (!extra_ctx)
+        return false;
+
+    std::vector<std::string> errors;
+    for (const auto& rule : rules) {
+        if (!verify_rule(rule, errors, extra_ctx)) {
+            errors.push_back("Rule '" + rule.name + "' verification failed.");
+        }
+    }
+
+    if (!errors.empty()) {
+        LocalString<4096> buffer;
+        for (const auto& err : errors) {
+            buffer.Add(err.c_str());
+            buffer.Add("\n");
+        }
+        AppCUI::Dialogs::MessageBox::ShowError("Rule Verification Errors", buffer.GetText());
+        return false;
+    }
+
     return true;
 }
 

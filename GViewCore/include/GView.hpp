@@ -1022,8 +1022,10 @@ namespace Components
         // Predicates & Actions
         using PredId                     = uint64;
         using ActId                      = uint64;
+        using RuleId                     = uint64;
         constexpr PredId INVALID_PRED_ID = UINT64_MAX;
         constexpr ActId INVALID_ACT_ID   = UINT64_MAX;
+        constexpr RuleId INVALID_RULE_ID = UINT64_MAX;
 
         // Data model for facts
         // Value carried by a predicate argument (e.g., severity, string, number)

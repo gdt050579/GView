@@ -46,16 +46,48 @@ struct Status {
 struct PredicateSpecification {
     std::string name;
     std::vector<std::string> arguments;
-    std::string explanation; // TODO: consider class ?
+    std::string explanation;
 };
+void to_json(nlohmann::json& j, const PredicateSpecification& p);
+void from_json(const nlohmann::json& j, PredicateSpecification& p);
+bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates, void*);
 
-struct PredicateSpecificationStorage
+struct RuleSpecification {
+    std::string name;
+    std::vector<std::string> clauses;      // list of predicate names
+    std::vector<std::string> results;      // list of predicates or action names
+    std::unordered_map<std::string, std::string> variable_mapping; // [optional] argument remapping
+    std::string explanation;
+};
+void to_json(nlohmann::json& j, const RuleSpecification& p);
+void from_json(const nlohmann::json& j, RuleSpecification& p);
+bool VerifyPredicates(const std::vector<RuleSpecification>& rules, void* extra_ctx);
+
+template<typename IdType, typename DataType>
+struct SpecificationStorage
 {
-    uint32 next_available_id{ 1 };
-    StringKeyMap<PredId> name_to_id;
-    std::unordered_map<PredId, PredicateSpecification> id_to_specification;
+    IdType next_available_id{ 1 };
+    StringKeyMap<IdType> name_to_id;
+    std::unordered_map<IdType, DataType> id_to_specification;
 
-    bool ExtractPredicates(const nlohmann::json& j, std::string_view field_name);
+    bool ExtractPredicates(const nlohmann::json& j, std::string_view field_name, void* extra_ctx = nullptr);
 };
+
+template <typename IdType, typename DataType>
+bool SpecificationStorage<IdType, DataType>::ExtractPredicates(const nlohmann::json& j, std::string_view field_name, void* extra_ctx)
+{
+    auto field_it = j.find(field_name);
+    if (field_it == j.end() || !field_it->is_array())
+        return false;
+    std::vector<DataType> entries = field_it->get<std::vector<DataType>>();
+    if (!VerifyPredicates(entries, extra_ctx))
+        return false;
+    for (auto& p : entries) {
+        IdType pred_id               = next_available_id++;
+        name_to_id[p.name]           = pred_id;
+        id_to_specification[pred_id] = std::move(p);
+    }
+    return true;
+}
 
 }
