@@ -136,8 +136,11 @@ extern "C"
             return;
         {
             auto subject                           = win->GetCurrentWindowSubject();
+
+            std::vector<Components::AnalysisEngine::Arg> args = { { "count", pcap->streamManager.size() } };
+
             const auto has_network_connection_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  pcap->predicates.HasNetworkConnections, subject, "static analysis", "parsed the PCAP file");
+                  pcap->predicates.HasNetworkConnections, subject, "static analysis", "parsed the PCAP file", args);
 
             auto res = pcap->analysisEngine->SubmitFact(has_network_connection_fact);
             if (!res) {
@@ -168,11 +171,21 @@ extern "C"
         pcap->RegisterPayloadParser(std::make_unique<PCAP::HTTP::HTTPParser>());
         pcap->Update();
 
+        auto u16_name = win->GetObject()->GetName();
+        std::string file_name = {};
+        UnicodeStringBuilder sb(u16_name);
+        sb.ToString(file_name);
+        if (file_name.empty())
+            file_name = "Unknown";
+
         const bool has_init_predicates = InitPredicates(win, pcap);
         if (has_init_predicates) {
             auto subject      = win->GetCurrentWindowSubject();
-            auto is_pcap_fact    = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  pcap->predicates.IsPCAP, subject, "static analysis", "parsed the PCAP header");
+
+            std::vector<Components::AnalysisEngine::Arg> args = { { "filename", file_name } };
+
+            auto is_pcap_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  pcap->predicates.IsPCAP, subject, "static analysis", "parsed the PCAP header", args);
             auto res = pcap->analysisEngine->SubmitFact(is_pcap_fact);
             if (!res) {
                 LOG_ERROR("Failed to add IsPCAP fact");

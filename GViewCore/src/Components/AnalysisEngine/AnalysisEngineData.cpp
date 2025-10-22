@@ -233,4 +233,112 @@ bool VerifyPredicates(const std::vector<RuleSpecification>& rules, void* extra_c
     return true;
 }
 
+std::string variant_to_string(const Value& v)
+{
+    return std::visit(
+          [](const auto& arg) -> std::string {
+              using T = std::decay_t<decltype(arg)>;
+              if constexpr (std::is_same_v<T, std::monostate>) {
+                  return "(null)";
+              } else if constexpr (std::is_same_v<T, bool>) {
+                  return arg ? "true" : "false";
+              } else if constexpr (std::is_same_v<T, int64_t>) {
+                  return std::to_string(arg);
+              } else if constexpr (std::is_same_v<T, uint64_t>) {
+                  return std::to_string(arg);
+              } else if constexpr (std::is_same_v<T, double>) {
+                  std::ostringstream oss;
+                  oss << std::fixed << std::setprecision(4) << arg;
+                  return oss.str();
+              } else if constexpr (std::is_same_v<T, std::string>) {
+                  return "\"" + arg + "\"";
+              } else {
+                  // Should not happen if all types are covered
+                  return "Unknown Type Error";
+              }
+          },
+          v);
+}
+
+std::string format_message(
+      const std::string& message_template, const StringKeyMap<std::string>& arguments, const std::unordered_set<std::string>& valid_placeholders)
+{
+    std::string result;
+    result.reserve((size_t) ((double) message_template.length() * 1.2));
+
+    size_t current_pos = 0;
+
+    while (current_pos < message_template.length()) {
+        size_t start_pos = message_template.find('{', current_pos);
+        result.append(message_template, current_pos, start_pos - current_pos);
+        if (start_pos == std::string::npos) {
+            break;
+        }
+        if (start_pos + 1 < message_template.length() && message_template[start_pos + 1] == '{') {
+            // Found '{{', treat as a literal '{'
+            result.append("{");
+            current_pos = start_pos + 2; 
+            continue;                    
+        }
+        size_t end_pos = message_template.find('}', start_pos + 1);
+        if (end_pos == std::string::npos) {
+            LocalString<128> buffer;
+            buffer.SetFormat("Malformed template: Placeholder opened at index %z is not closed.", start_pos);
+            throw std::runtime_error(buffer.GetText());
+        }
+
+        size_t key_start = start_pos + 1;
+        size_t key_len   = end_pos - key_start;
+        // TODO: consider string_view to avoid allocations.
+        std::string key = message_template.substr(key_start, key_len);
+        current_pos = end_pos + 1; // after '}'
+        if (key.empty()) {             // empty placeholder {} TODO: decide how to handle
+            result.append("{}", 2);
+            continue;
+        }
+
+        if (!valid_placeholders.contains(key)) {
+            result.append("{" + key + "}");// Treat unknown keys as a literal string to prevent injection.
+            continue;
+        }
+
+        auto it = arguments.find(key);
+        if (it != arguments.end()) {
+            result.append(it->second);
+        } else {
+            result.append("<MISSING_ARG:" + key + ">");
+        }
+    }
+
+    return result;
+}
+
+std::string FillRuleTemplate(const Rule& r, std::vector<Reference<const Fact>>& matched_facts)
+{
+    const auto placeholders = extract_placeholders(r.explanation);
+    StringKeyMap<std::string> argument_with_values;
+
+    for (auto& fact : matched_facts) {
+        for (const auto& arg : fact->atom.args) {
+            argument_with_values[arg.name] = variant_to_string(arg.value);
+        }
+    }
+    for (const auto& mapping : r.variable_mapping) {
+        auto arg_it = argument_with_values.find(mapping.first);
+        if (arg_it == argument_with_values.end()) {
+            // error: mapping from unknown argument
+            assert(false); // report this !!
+            continue;
+        }
+        argument_with_values[mapping.second] = arg_it->second;
+    }
+
+    try {
+        auto result = format_message(r.explanation, argument_with_values, placeholders);
+        return result;
+    } catch (std::exception& e) {
+        return "[ERROR] Failed to format rule explanation: " + std::string(e.what());
+    }
+}
+
 } // namespace GView::Components::AnalysisEngine

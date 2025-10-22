@@ -112,6 +112,25 @@ namespace
             }
         }
 
+        std::optional<Reference<const Fact>> get_fact(PredId p, const Subject& s) const noexcept
+        {
+            try {
+                std::shared_lock lk(mu_);
+                auto it = by_pred_.find(p);
+                if (it == by_pred_.end())
+                    return std::nullopt;
+                for (auto rit = it->second.rbegin(); rit != it->second.rend(); ++rit) {
+                    const Fact& f = facts_[*rit];
+                    if (subject_eq(f.atom.subject, s)) {
+                        return { &f };
+                    }
+                }
+                return std::nullopt;
+            } catch (...) {
+                return std::nullopt;
+            }
+        }
+
       private:
         static bool subject_eq(const Subject& a, const Subject& b) noexcept
         {
@@ -180,11 +199,13 @@ namespace
 struct RuleEngine::Impl {
     RuleEngineState st;
 
-    bool holds(const ConjClause& c, const Subject& s) const noexcept
+    bool holds(const ConjClause& c, const Subject& s, std::vector<Reference<const Fact>>& facts) const noexcept
     {
+        facts.reserve(c.all_of.size());
         const auto t_now = now();
         for (const auto& L : c.all_of) {
-            const bool present = st.facts.exists(L.pred, s);
+            auto optional_fact = st.facts.get_fact(L.pred, s);
+            const bool present = optional_fact.has_value();
             if (!L.negated) {
                 if (!present)
                     return false;
@@ -200,6 +221,8 @@ struct RuleEngine::Impl {
                 if (present)
                     return false;
             }
+            if (present)
+                facts.emplace_back(optional_fact.value());
         }
         return true;
     }
@@ -287,6 +310,18 @@ bool RuleEngine::Init()
 
 bool RuleEngine::SubmitFact(const Fact& fact)
 {
+    auto pred_id = fact.atom.pred;
+    auto pred_specif_it = predicates.id_to_specification.find(pred_id);
+    if (pred_specif_it == predicates.id_to_specification.end())
+        return false;
+    if (pred_specif_it->second.arguments.size() > fact.atom.args.size())
+        return false;
+    std::unordered_set<std::string> expected_args = {};
+    expected_args.insert(pred_specif_it->second.arguments.begin(), pred_specif_it->second.arguments.end());
+    for (const auto& arg : fact.atom.args) {
+        if (!expected_args.contains(arg.name))
+            return false;
+    }
     return set_fact(fact).ok;
 }
 
@@ -415,13 +450,14 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
         std::unique_lock lk(impl_->st.mu_rules, std::defer_lock);
         lk.lock();
         for (const auto& r : impl_->st.rules) {
-            if (impl_->holds(r.clause, s)) {
+            std::vector<Reference<const Fact>> matched_facts;
+            if (impl_->holds(r.clause, s, matched_facts)) {
                 if (impl_->st.bus.should_emit(r.results, r.cooldown, s)) {
                     Suggestion sug;
                     sug.subject    = s;
                     sug.results    = r.results;
                     sug.confidence = r.confidence;
-                    sug.message    = r.explanation; // Solve this !!
+                    sug.message    = FillRuleTemplate(r, matched_facts);
                     // sug.cooldown     = r.cooldown;
                     sug.last_emitted = now();
                     sug.rule_id      = r.id;

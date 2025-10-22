@@ -75,6 +75,7 @@ void AnalysisEngineWindow::OnListViewItemPressed(Reference<Controls::ListView> l
         Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
         return;
     }
+    predicatesLabel->SetText("Predicates: ");
     DrawSuggestions();
     if (shouldCloseAnalysisWindow) {
         Exit(Dialogs::Result::Ok);
@@ -145,7 +146,6 @@ void AnalysisEngineWindow::DrawSuggestions()
 
 void AnalysisEngineWindow::DrawPredicatesForCurrentIndex(uint32 index)
 {
-    // TODO: implement predicates display
     LocalString<512> ls;
     const auto& suggestions = engine->GetAllAvailableSuggestions();
     if (index >= suggestions.size()) {

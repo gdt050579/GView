@@ -38,10 +38,11 @@ class RuleEngine final : public AnalysisEngineInterface
     void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow) override;
     uint64 FindMainParent(uint64 current_subject);
 
+    std::vector<Suggestion> evaluate(const Subject& s) noexcept;
+
     Status set_fact(const Fact& f) noexcept;
     Status set_fact(PredId p, const Subject& s, std::string source) noexcept;
-    std::vector<Suggestion> evaluate(const Subject& s) noexcept;
-    Status register_rule(const Rule& r) noexcept;
+    
     std::string GetRulePredicates(RuleId rule_id) const;
 
     const std::vector<Suggestion>& GetAllAvailableSuggestions() const
@@ -50,6 +51,11 @@ class RuleEngine final : public AnalysisEngineInterface
     }
 
     // Small helpers
+    bool TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWindow);
+
+  private:
+    Status register_rule(const Rule& r) noexcept;
+
     static PredLiteral lit(PredId p, bool neg = false) noexcept
     {
         return PredLiteral{ p, neg };
@@ -68,9 +74,8 @@ class RuleEngine final : public AnalysisEngineInterface
         c.window = window;
         return c;
     }
-    bool TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWindow);
 
-  private:
+
     struct Impl;
     Reference<AnalysisEngineWindow> engineWindow;
     std::unique_ptr<Impl> impl_;
