@@ -2,6 +2,27 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include <AppCUI/include/AppCUI.hpp>
+#include "GView.hpp"
+
+struct TransparentHash {
+    using is_transparent = void;  // Enables heterogeneous lookup
+    using key_equal = std::equal_to<>;
+
+    size_t operator()(std::string_view sv) const noexcept {
+        return std::hash<std::string_view>{}(sv);
+    }
+};
+
+struct TransparentEqual {
+    using is_transparent = void;
+    bool operator()(std::string_view a, std::string_view b) const noexcept {
+        return a == b;
+    }
+};
+
+template <typename T>
+using StringKeyMap = std::unordered_map<std::string, T, TransparentHash, TransparentEqual>;
 
 namespace GView::Components::AnalysisEngine
 {
@@ -27,8 +48,14 @@ struct PredicateSpecification {
     std::vector<std::string> arguments;
     std::string explanation; // TODO: consider class ?
 };
-void to_json(nlohmann::json& j, const PredicateSpecification& p);
-void from_json(const nlohmann::json& j, PredicateSpecification& p);
-bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates);
+
+struct PredicateSpecificationStorage
+{
+    uint32 next_available_id{ 1 };
+    StringKeyMap<PredId> name_to_id;
+    std::unordered_map<PredId, PredicateSpecification> id_to_specification;
+
+    bool ExtractPredicates(const nlohmann::json& j, std::string_view field_name);
+};
 
 }

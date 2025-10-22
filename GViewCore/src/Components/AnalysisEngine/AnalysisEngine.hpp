@@ -1,8 +1,6 @@
 #pragma once
 #include <chrono>
-#include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -107,6 +105,8 @@ class RuleEngine final : public AnalysisEngineInterface
     std::atomic<uint32> next_available_subject{ 1 };
     std::unordered_map<uint64, SubjectParentInfo> subjects_hierarchy;
     std::unordered_map<uint64, Subject> windows;
+
+    PredicateSpecificationStorage predicates, actions;
 };
 
 // Convenience helpers

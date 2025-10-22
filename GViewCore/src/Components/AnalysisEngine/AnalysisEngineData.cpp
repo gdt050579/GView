@@ -2,14 +2,16 @@
 
 #include <regex>
 #include <unordered_set>
-#include <AppCUI/include/AppCUI.hpp>
 
 using nlohmann::json;
 using namespace AppCUI::Utils;
 using namespace GView::Components::AnalysisEngine;
 
+namespace
+{
+
 // Double braces {{...}} are treated as escaped and ignored.
-static std::unordered_set<std::string> extract_placeholders(const std::string& explanation)
+std::unordered_set<std::string> extract_placeholders(const std::string& explanation)
 {
     static const std::regex placeholder_regex(R"(\{([A-Za-z0-9_]+)\})");
 
@@ -29,7 +31,7 @@ static std::unordered_set<std::string> extract_placeholders(const std::string& e
     return params;
 }
 
-static bool verify_predicate(const PredicateSpecification& pred, std::vector<std::string>& errors)
+bool verify_predicate(const PredicateSpecification& pred, std::vector<std::string>& errors)
 {
     const auto placeholders = extract_placeholders(pred.explanation);
     std::unordered_set<std::string> args(pred.arguments.begin(), pred.arguments.end());
@@ -60,6 +62,8 @@ static bool verify_predicate(const PredicateSpecification& pred, std::vector<std
 
     return ok;
 }
+
+} // namespace
 
 namespace GView::Components::AnalysisEngine
 {
@@ -98,6 +102,22 @@ bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates)
         return false;
     }
 
+    return true;
+}
+
+bool PredicateSpecificationStorage::ExtractPredicates(const nlohmann::json& j, std::string_view field_name)
+{
+    auto predicates_it = j.find("predicates");
+    if (predicates_it == j.end() || !predicates_it->is_array())
+        return false;
+    auto predicates = predicates_it->get<std::vector<PredicateSpecification>>();
+    if (!VerifyPredicates(predicates))
+        return false;
+    for (auto& p : predicates) {
+        PredId pred_id               = next_available_id++;
+        name_to_id[p.name]           = pred_id;
+        id_to_specification[pred_id] = std::move(p);
+    }
     return true;
 }
 
