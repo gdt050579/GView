@@ -58,6 +58,7 @@ struct RuleSpecification {
     std::vector<std::string> results;      // list of predicates or action names
     std::unordered_map<std::string, std::string> variable_mapping; // [optional] argument remapping
     std::string explanation;
+    Confidence confidence = 0; // 0-100
 };
 void to_json(nlohmann::json& j, const RuleSpecification& p);
 void from_json(const nlohmann::json& j, RuleSpecification& p);

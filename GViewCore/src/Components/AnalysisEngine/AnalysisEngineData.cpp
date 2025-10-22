@@ -178,9 +178,12 @@ bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates, voi
 
 void to_json(json& j, const RuleSpecification& p)
 {
-    j = json{
-        { "name", p.name }, { "clauses", p.clauses }, { "results", p.results }, { "explanation", p.explanation }, { "variable_mapping", p.variable_mapping }
-    };
+    j = json{ { "name", p.name },
+              { "clauses", p.clauses },
+              { "results", p.results },
+              { "explanation", p.explanation },
+              { "variable_mapping", p.variable_mapping },
+              { "confidence", p.confidence } };
 }
 void from_json(const json& j, RuleSpecification& p)
 {
@@ -189,10 +192,17 @@ void from_json(const json& j, RuleSpecification& p)
         j.at("clauses").get_to(p.clauses);
         j.at("results").get_to(p.results);
         j.at("explanation").get_to(p.explanation);
+        j.at("confidence").get_to(p.confidence);
         auto mapping_it = j.find("variable_mapping");
         if (mapping_it != j.end() && mapping_it->is_object()) {
             mapping_it->get_to(p.variable_mapping);
         }
+        if (p.confidence > 100) {
+            LocalString<256> buffer;
+            buffer.SetFormat("Invalid confidence value for RuleSpecification %s bigger than 100: %u", p.name.c_str(), (uint32) p.confidence);
+            throw std::runtime_error(buffer.GetText());
+        }
+
     } catch (const json::exception& e) {
         throw std::runtime_error("Invalid JSON structure for RuleSpecification: " + std::string(e.what()));
     }
