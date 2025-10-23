@@ -73,7 +73,7 @@ bool verify_rule(const RuleSpecification& rule, std::vector<std::string>& errors
     bool ok                    = true;
 
     std::unordered_set<std::string> args;
-    for (const auto& clause : rule.clauses) {
+    for (const auto& clause : rule.body) {
         auto pred_it = predicate_storage_ptr->name_to_id.find(clause);
         if (pred_it != predicate_storage_ptr->name_to_id.end()) {
             auto& pred_specification = predicate_storage_ptr->id_to_specification[pred_it->second];
@@ -91,7 +91,7 @@ bool verify_rule(const RuleSpecification& rule, std::vector<std::string>& errors
     }
 
     std::unordered_set<std::string> expected_args;
-    for (const auto& result : rule.results) {
+    for (const auto& result : rule.head) {
         auto pred_it = predicate_storage_ptr->name_to_id.find(result);
         if (pred_it != predicate_storage_ptr->name_to_id.end()) {
             auto& pred_specification = predicate_storage_ptr->id_to_specification[pred_it->second];
@@ -179,8 +179,8 @@ bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates, voi
 void to_json(json& j, const RuleSpecification& p)
 {
     j = json{ { "name", p.name },
-              { "clauses", p.clauses },
-              { "results", p.results },
+              { "body", p.body },
+              { "head", p.head },
               { "explanation", p.explanation },
               { "variable_mapping", p.variable_mapping },
               { "confidence", p.confidence } };
@@ -189,8 +189,8 @@ void from_json(const json& j, RuleSpecification& p)
 {
     try {
         j.at("name").get_to(p.name);
-        j.at("clauses").get_to(p.clauses);
-        j.at("results").get_to(p.results);
+        j.at("body").get_to(p.body);
+        j.at("head").get_to(p.head);
         j.at("explanation").get_to(p.explanation);
         j.at("confidence").get_to(p.confidence);
         auto mapping_it = j.find("variable_mapping");
@@ -277,8 +277,8 @@ std::string format_message(
         if (start_pos + 1 < message_template.length() && message_template[start_pos + 1] == '{') {
             // Found '{{', treat as a literal '{'
             result.append("{");
-            current_pos = start_pos + 2; 
-            continue;                    
+            current_pos = start_pos + 2;
+            continue;
         }
         size_t end_pos = message_template.find('}', start_pos + 1);
         if (end_pos == std::string::npos) {
@@ -291,14 +291,14 @@ std::string format_message(
         size_t key_len   = end_pos - key_start;
         // TODO: consider string_view to avoid allocations.
         std::string key = message_template.substr(key_start, key_len);
-        current_pos = end_pos + 1; // after '}'
+        current_pos     = end_pos + 1; // after '}'
         if (key.empty()) {             // empty placeholder {} TODO: decide how to handle
             result.append("{}", 2);
             continue;
         }
 
         if (!valid_placeholders.contains(key)) {
-            result.append("{" + key + "}");// Treat unknown keys as a literal string to prevent injection.
+            result.append("{" + key + "}"); // Treat unknown keys as a literal string to prevent injection.
             continue;
         }
 

@@ -254,8 +254,8 @@ bool RuleEngine::Init()
         rules_specification_storage.ExtractPredicates(analysis_data, "rules", &ctx);
         for (auto& rule : rules_specification_storage.id_to_specification) {
             auto clause_literals = std::vector<PredLiteral>{};
-            clause_literals.reserve(rule.second.clauses.size());
-            for (auto& clause : rule.second.clauses) {
+            clause_literals.reserve(rule.second.body.size());
+            for (auto& clause : rule.second.body) {
                 auto clause_stripped = std::string_view(clause);
                 bool negated         = false;
                 if (clause_stripped.starts_with("NOT ")) {
@@ -270,8 +270,8 @@ bool RuleEngine::Init()
             auto rule_clause = clause(clause_literals);
 
             std::vector<PredOrAction> results_parsed;
-            results_parsed.reserve(rule.second.results.size());
-            for (auto& result : rule.second.results) {
+            results_parsed.reserve(rule.second.head.size());
+            for (auto& result : rule.second.head) {
                 auto pred_id = predicates.name_to_id.find(result);
                 if (pred_id != predicates.name_to_id.end()) {
                     PredOrAction poa;
@@ -460,11 +460,11 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
         lk.lock();
         for (const auto& r : impl_->st.rules) {
             std::vector<Reference<const Fact>> matched_facts;
-            if (impl_->holds(r.clause, s, matched_facts)) {
-                if (impl_->st.bus.should_emit(r.results, r.cooldown, s)) {
+            if (impl_->holds(r.body, s, matched_facts)) {
+                if (impl_->st.bus.should_emit(r.head, r.cooldown, s)) {
                     Suggestion sug;
                     sug.subject    = s;
-                    sug.results    = r.results;
+                    sug.results    = r.head;
                     sug.confidence = r.confidence;
                     sug.message    = FillRuleTemplate(r, matched_facts);
                     // sug.cooldown     = r.cooldown;
@@ -511,7 +511,7 @@ std::string RuleEngine::GetRulePredicates(RuleId rule_id) const
     bool first_add        = true;
     const char* and_str   = "";
     try {
-        for (const auto& L : r.clause.all_of) {
+        for (const auto& L : r.body.all_of) {
             auto pred_name = GetPredName(L.pred);
             buf.AddFormat(" %s%s%.*s", and_str, L.negated ? "NOT-" : "", pred_name.size(), pred_name.data());
             if (first_add) {

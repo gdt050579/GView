@@ -54,8 +54,8 @@ bool VerifyPredicates(const std::vector<PredicateSpecification>& predicates, voi
 
 struct RuleSpecification {
     std::string name;
-    std::vector<std::string> clauses;      // list of predicate names
-    std::vector<std::string> results;      // list of predicates or action names
+    std::vector<std::string> body;      // list of predicate names
+    std::vector<std::string> head;      // list of predicates or action names
     std::unordered_map<std::string, std::string> variable_mapping; // [optional] argument remapping
     std::string explanation;
     Confidence confidence = 0; // 0-100
@@ -85,8 +85,8 @@ struct ConjClause {
 struct Rule {
     RuleId id{ 0 };
     std::string name;
-    ConjClause clause; // keep single-clause for simplicity; duplicate Rule for ORs
-    std::vector<PredOrAction> results; 
+    ConjClause body; // keep single-clause for simplicity; duplicate Rule for ORs
+    std::vector<PredOrAction> head; 
     Confidence confidence;
     std::unordered_map<std::string, std::string> variable_mapping;
     std::string explanation;
