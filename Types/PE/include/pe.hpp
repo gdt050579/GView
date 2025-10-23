@@ -576,12 +576,11 @@ namespace Type
 
         struct PEPredicates
         {
-            Components::AnalysisEngine::PredId IsPe, IsPacked, HasOverlayData, HasObfuscatedStrings, ContainsEmbeddedArchive, ContainsEmbeddedExecutable,
-                  ContainsEmbeddedScript;
+            Components::AnalysisEngine::PredId IsPe, /*IsPacked,*/ HasOverlayData;//, HasObfuscatedStrings, ContainsEmbeddedArchive, ContainsEmbeddedExecutable, ContainsEmbeddedScript;
 
             Components::AnalysisEngine::PredId IsSigned, SignatureValid;
-            Components::AnalysisEngine::PredId ContainsUrl, ContainsIpLiteral, ContainsEmailAddress, ContainsSuspiciousKeywords, ContainsBase64Blobs,
-                  ContainsPersistenceArtifacts;
+            //Components::AnalysisEngine::PredId ContainsUrl, ContainsIpLiteral, ContainsEmailAddress, ContainsSuspiciousKeywords, ContainsBase64Blobs,
+                  //ContainsPersistenceArtifacts;
 
             // Components::AnalysisEngine::PredId CreatesRunKey, ContainsDownloaderCode; // TODO
         };

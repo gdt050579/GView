@@ -194,41 +194,46 @@ UInt16 e_res[4];)");
     win->CreateViewer(settings);
 }
 
-bool InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe) {
+bool InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
+{
     auto engine = win->GetAnalysisEngine();
     if (!engine.IsValid())
         return false;
-    std::vector<Components::AnalysisEngine::PredId*> preds = { &pe->predicates.IsPe,
-                                                               &pe->predicates.IsPacked,
-                                                               &pe->predicates.HasOverlayData,
-                                                               &pe->predicates.HasObfuscatedStrings,
-                                                               &pe->predicates.ContainsEmbeddedArchive,
-                                                               &pe->predicates.ContainsEmbeddedExecutable,
-                                                               &pe->predicates.ContainsEmbeddedScript,
-                                                               &pe->predicates.IsSigned,
-                                                               &pe->predicates.SignatureValid,
-                                                               &pe->predicates.ContainsUrl,
-                                                               &pe->predicates.ContainsIpLiteral,
-                                                               &pe->predicates.ContainsEmailAddress,
-                                                               &pe->predicates.ContainsSuspiciousKeywords,
-                                                               &pe->predicates.ContainsBase64Blobs,
-                                                               &pe->predicates.ContainsPersistenceArtifacts };
-    std::vector<std::string_view> predNames                = { "IsPe",
-                                                               "IsPacked",
-                                                               "HasOverlayData",
-                                                               "HasObfuscatedStrings",
-                                                               "ContainsEmbeddedArchive",
-                                                               "ContainsEmbeddedExecutable",
-                                                               "ContainsEmbeddedScript",
-                                                               "IsSigned",
-                                                               "SignatureValid",
-                                                               "ContainsUrl",
-                                                               "ContainsIpLiteral",
-                                                               "ContainsEmailAddress",
-                                                               "ContainsSuspiciousKeywords",
-                                                               "ContainsBase64Blobs",
-                                                               "ContainsPersistenceArtifacts" };
-    bool res_value                                         = true;
+    std::vector<Components::AnalysisEngine::PredId*> preds = {
+        &pe->predicates.IsPe,
+        //&pe->predicates.IsPacked,
+        &pe->predicates.HasOverlayData,
+        //&pe->predicates.HasObfuscatedStrings,
+        //&pe->predicates.ContainsEmbeddedArchive,
+        //&pe->predicates.ContainsEmbeddedExecutable,
+        //&pe->predicates.ContainsEmbeddedScript,
+        &pe->predicates.IsSigned,
+        &pe->predicates.SignatureValid,
+        //&pe->predicates.ContainsUrl,
+        //&pe->predicates.ContainsIpLiteral,
+        //&pe->predicates.ContainsEmailAddress,
+        //&pe->predicates.ContainsSuspiciousKeywords,
+        //&pe->predicates.ContainsBase64Blobs,
+        //&pe->predicates.ContainsPersistenceArtifacts
+    };
+    std::vector<std::string_view> predNames = {
+        "IsPE",
+        //"IsPacked",
+        "HasOverlayData",
+        //"HasObfuscatedStrings",
+        //"ContainsEmbeddedArchive",
+        //"ContainsEmbeddedExecutable",
+        //"ContainsEmbeddedScript",
+        "IsSigned",
+        //"SignatureValid",
+        //"ContainsUrl",
+        //"ContainsIpLiteral",
+        //"ContainsEmailAddress",
+        //"ContainsSuspiciousKeywords",
+        //"ContainsBase64Blobs",
+        //"ContainsPersistenceArtifacts"
+    };
+    bool res_value = true;
     for (uint32 i = 0; i < predNames.size(); i++) {
         const auto& p = predNames[i];
         auto res      = engine->GetPredId(p);
@@ -250,11 +255,12 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     pe->Update();
     if (InitPePredicates(win, pe)) {
         auto subject = win->GetCurrentWindowSubject();
-        auto fact = AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(pe->predicates.IsPe, subject, "static analysis", "parsed the PE header");
-        auto res  = pe->analysisEngine->SubmitFact(fact);
+        auto fact    = AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+              pe->predicates.IsPe, subject, "static analysis", "parsed the PE header");
+        auto res = pe->analysisEngine->SubmitFact(fact);
         if (!res) {
             LOG_ERROR("Failed to add IsPe fact");
-        }   
+        }
     }
 
 #ifdef DISSASM_DEV
@@ -297,14 +303,13 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["Pattern"]                  = "magic:4D 5A";
-    sect["Priority"]                 = 1;
-    sect["Description"]              = "Portable executable format for Windows OS binaries";
-    sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
+    sect["Pattern"]      = "magic:4D 5A";
+    sect["Priority"]     = 1;
+    sect["Description"]  = "Portable executable format for Windows OS binaries";
+    sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
 
     LocalString<128> buffer;
     for (const auto& command : PE::PE_COMMANDS) {
-
         buffer.SetFormat("Command.%s", command.Caption);
         sect[buffer.GetText()] = command.Key;
     }
