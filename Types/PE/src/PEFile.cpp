@@ -1545,6 +1545,7 @@ bool PEFile::Update()
     }
 
     hasOverlay = computedSize < obj->GetData().GetSize();
+    overlaySize = hasOverlay ? obj->GetData().GetSize() - computedSize : 0;
 
     for (auto i = 0U; i < nrSections; i++) {
         const auto& section = sect[i];

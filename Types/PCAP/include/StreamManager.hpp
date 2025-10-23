@@ -76,6 +76,8 @@ class StreamManager
 
     std::vector<uint16> GetConnectionsWithJSScripts() const;
     std::vector<uint16> GetConnectionsWithExecutables() const;
+    std::string GetExecutableNameFromConnection(uint16 connection_id);
+    std::string GetScriptNameFromConnection(uint16 connection_id);
 };
 
 } // namespace GView::Type::PCAP

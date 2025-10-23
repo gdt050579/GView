@@ -265,3 +265,31 @@ std::vector<uint16> StreamManager::GetConnectionsWithExecutables() const
     }
     return result;
 }
+
+std::string StreamManager::GetExecutableNameFromConnection(uint16 connection_id)
+{
+    // TODO: add better checks
+    if (connection_id >= finalStreams.size())
+        return {};
+    const auto& stream_summary = finalStreams[connection_id].summary;
+
+    const size_t pos = stream_summary.find_last_of('/');
+    if (pos == std::string::npos)
+        return stream_summary;
+
+    return stream_summary.substr(pos + 1);
+}
+
+std::string StreamManager::GetScriptNameFromConnection(uint16 connection_id)
+{
+    // TODO: add better checks
+    if (connection_id >= finalStreams.size())
+        return {};
+    const auto& stream_summary = finalStreams[connection_id].summary;
+
+    const size_t pos = stream_summary.find_last_of('/');
+    if (pos == std::string::npos)
+        return stream_summary;
+
+    return stream_summary.substr(pos + 1);
+}

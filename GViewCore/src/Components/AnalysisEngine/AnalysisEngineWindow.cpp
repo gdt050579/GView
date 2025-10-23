@@ -153,8 +153,8 @@ void AnalysisEngineWindow::RegisterSubjectWithParent(const Subject& currentWindo
     assert(!already_inside); // Should not re-register existing subject
 
     SubjectParentInfo info;
-    info.direct_parent                      = parentWindow ? parentWindow->value : 1;
-    info.main_parent                        = parentWindow ? FindMainParent(parentWindow->value) : 1;
+    info.direct_parent                      = parentWindow ? parentWindow->value : 0;
+    info.main_parent                        = parentWindow ? FindMainParent(parentWindow->value) : 0;
     subjects_hierarchy[currentWindow.value] = info;
     windows[currentWindow.value]            = currentWindow;
 
@@ -168,7 +168,7 @@ uint64 AnalysisEngineWindow::FindMainParent(uint64 current_subject)
         auto it = subjects_hierarchy.find(subject);
         if (it == subjects_hierarchy.end())
             break;
-        if (it->first == 1)
+        if (it->first == 1)//First ID
             break;
         subject = it->first;
     }
@@ -268,7 +268,7 @@ void AnalysisEngineWindow::RebuildTreeData()
         std::string initial_val         = std::to_string(subject_data.value);
         TreeWindowData tree_window_data = {};
         tree_window_data.parent         = subjects_hierarchy[window.first].direct_parent;
-        if (tree_window_data.parent != 1) {
+        if (tree_window_data.parent != 0) {
             tree_window_data.parent_handle = tree_data[tree_window_data.parent].handle;
             tree_window_data.handle        = tree_window_data.parent_handle.AddChild(initial_val);
         } else {

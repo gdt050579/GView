@@ -223,21 +223,24 @@ void PCAPFile::OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSug
             auto subject                       = streamManager.GetWindow()->GetCurrentWindowSubject();
             std::vector<uint16> js_connections = streamManager.GetConnectionsWithJSScripts();
             if (!js_connections.empty()) {
+                auto script_name                   = streamManager.GetScriptNameFromConnection(js_connections[0]);
+                std::vector<Arg> args              = { { "script_name", script_name }, { "connection_id", std::to_string(js_connections[0]) } };
                 const auto has_js_connections_fact = AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                      predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file");
+                      predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file", args);
                 auto res = analysisEngine->SubmitFact(has_js_connections_fact);
                 if (!res) {
                     LOG_ERROR("Failed to add HasConnectionWithScript fact");
                 }
-                std::vector<Components::AnalysisEngine::Arg> args;
-                GetArgsForConnections(args, js_connections);
+                //std::vector<Components::AnalysisEngine::Arg> args;
+                // GetArgsForConnections(args, js_connections); //TODO: ajust to send multiple connections
             }
 
             std::vector<uint16> exe_connections = streamManager.GetConnectionsWithExecutables();
             if (!exe_connections.empty()) {
-                std::vector<Arg> args;
+                auto executable_name                = streamManager.GetExecutableNameFromConnection(exe_connections[0]);
+                std::vector<Arg> args               = { { "executable_name", executable_name }, { "connection_id", std::to_string(exe_connections[0]) } };
                 const auto has_exe_connections_fact = AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                      predicates.HasConnectionWithExecutable, subject, "static analysis", "parsed the PCAP file");
+                      predicates.HasConnectionWithExecutable, subject, "static analysis", "parsed the PCAP file", args);
                 auto res = analysisEngine->SubmitFact(has_exe_connections_fact);
                 if (!res) {
                     LOG_ERROR("Failed to add HasConnectionWithScript fact");

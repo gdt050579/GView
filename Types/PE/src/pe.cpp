@@ -225,7 +225,7 @@ bool InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE:
         //"ContainsEmbeddedExecutable",
         //"ContainsEmbeddedScript",
         "IsSigned",
-        //"SignatureValid",
+        "SignatureValid",
         //"ContainsUrl",
         //"ContainsIpLiteral",
         //"ContainsEmailAddress",
@@ -254,12 +254,30 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     pe->win = win;
     pe->Update();
     if (InitPePredicates(win, pe)) {
+        auto u16_name         = win->GetObject()->GetName();
+        std::string file_name = {};
+        UnicodeStringBuilder sb(u16_name);
+        sb.ToString(file_name);
+        if (file_name.empty())
+            file_name = "Unknown";
+        std::vector<AnalysisEngine::Arg> args = { { "filename", file_name } };
+
         auto subject = win->GetCurrentWindowSubject();
         auto fact    = AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-              pe->predicates.IsPe, subject, "static analysis", "parsed the PE header");
+              pe->predicates.IsPe, subject, "static analysis", "parsed the PE header", args);
         auto res = pe->analysisEngine->SubmitFact(fact);
         if (!res) {
             LOG_ERROR("Failed to add IsPe fact");
+        }
+
+        if (pe->hasOverlay) {
+            args = { { "size", pe->overlaySize } };
+            auto overlayFact = AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
+                  pe->predicates.HasOverlayData, subject, "static analysis", "PE has overlay data", args);
+            auto res2 = pe->analysisEngine->SubmitFact(overlayFact);
+            if (!res2) {
+                LOG_ERROR("Failed to add HasOverlayData fact");
+            }
         }
     }
 
