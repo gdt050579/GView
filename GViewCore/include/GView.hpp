@@ -1023,6 +1023,7 @@ namespace Components
         using PredId                     = uint64;
         using ActId                      = uint64;
         using RuleId                     = uint64;
+        using SuggestionId               = uint64;
         constexpr PredId INVALID_PRED_ID = UINT64_MAX;
         constexpr ActId INVALID_ACT_ID   = UINT64_MAX;
         constexpr RuleId INVALID_RULE_ID = UINT64_MAX;
@@ -1084,6 +1085,7 @@ namespace Components
             // std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval TODO ?
             TimePoint last_emitted{}; // zero == never
             RuleId rule_id;
+            SuggestionId id;
         };
 
         struct CORE_EXPORT RuleTriggerInterface {

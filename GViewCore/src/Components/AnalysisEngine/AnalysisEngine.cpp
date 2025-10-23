@@ -410,28 +410,12 @@ Subject RuleEngine::GetSubjectForNewWindow(Object::Type objectType)
 
 void RuleEngine::RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)
 {
-    const bool already_inside = subjects_hierarchy.contains(currentWindow.value);
-    assert(!already_inside); // Should not re-register existing subject
-
-    SubjectParentInfo info;
-    info.direct_parent                      = parentWindow ? parentWindow->value : 1;
-    info.main_parent                        = parentWindow ? FindMainParent(parentWindow->value) : 1;
-    subjects_hierarchy[currentWindow.value] = info;
-    windows[currentWindow.value]            = currentWindow;
+    engineWindow->RegisterSubjectWithParent(currentWindow, parentWindow);
 }
 
 uint64 RuleEngine::FindMainParent(uint64 current_subject)
 {
-    uint64 subject = current_subject;
-    while (true) {
-        auto it = subjects_hierarchy.find(subject);
-        if (it == subjects_hierarchy.end())
-            break;
-        if (it->first == 1)
-            break;
-        subject = it->first;
-    }
-    return subject;
+    return engineWindow->FindMainParent(current_subject);
 }
 
 // Set a fact; threadsafe. Returns Status.
@@ -470,6 +454,7 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
                     // sug.cooldown     = r.cooldown;
                     sug.last_emitted = now();
                     sug.rule_id      = r.id;
+                    sug.id           = next_suggestion_id++;
                     current_suggestions.push_back(sug);
                     out.push_back(std::move(sug));
                 }
@@ -526,7 +511,7 @@ std::string RuleEngine::GetRulePredicates(RuleId rule_id) const
     return "";
 }
 
-bool RuleEngine::TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWindow)
+bool RuleEngine::TryExecuteSuggestionByArrayIndex(uint32 index, bool& shouldCloseAnalysisWindow)
 {
     if (current_suggestions.empty())
         return false;
@@ -564,4 +549,15 @@ bool RuleEngine::TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWin
     return true;
 }
 
+bool RuleEngine::TryExecuteSuggestionBySuggestionId(SuggestionId id, bool& shouldCloseAnalysisWindow)
+{
+    for (uint32 i=0;i<current_suggestions.size();i++)
+    {
+        if (current_suggestions[i].id == id)
+        {
+            return TryExecuteSuggestionByArrayIndex(i, shouldCloseAnalysisWindow);
+        }
+    }
+    return false;
+}
 } // namespace GView::Components::AnalysisEngine

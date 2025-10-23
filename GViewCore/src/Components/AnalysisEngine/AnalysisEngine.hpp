@@ -51,8 +51,8 @@ class RuleEngine final : public AnalysisEngineInterface
     }
 
     // Small helpers
-    bool TryExecuteSuggestion(uint32 index, bool& shouldCloseAnalysisWindow);
-
+    bool TryExecuteSuggestionByArrayIndex(uint32 index, bool& shouldCloseAnalysisWindow);
+    bool TryExecuteSuggestionBySuggestionId(SuggestionId id, bool& shouldCloseAnalysisWindow);
   private:
     Status register_rule(const Rule& r) noexcept;
 
@@ -80,11 +80,10 @@ class RuleEngine final : public AnalysisEngineInterface
     Reference<AnalysisEngineWindow> engineWindow;
     std::unique_ptr<Impl> impl_;
     std::vector<Suggestion> current_suggestions;
+    SuggestionId next_suggestion_id = { 1 };
 
     std::unordered_map<ActId, std::vector<Reference<RuleTriggerInterface>>> action_handlers;
     std::atomic<uint32> next_available_subject{ 1 };
-    std::unordered_map<uint64, SubjectParentInfo> subjects_hierarchy;
-    std::unordered_map<uint64, Subject> windows;
 
     SpecificationStorage<PredId, PredicateSpecification> predicates;
     SpecificationStorage<ActId, PredicateSpecification> actions;
