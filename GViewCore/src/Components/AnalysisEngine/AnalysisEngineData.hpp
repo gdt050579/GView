@@ -121,5 +121,6 @@ bool SpecificationStorage<IdType, DataType>::ExtractPredicates(const nlohmann::j
 }
 std::string variant_to_string(const Value& v);
 std::string FillRuleTemplate(const Rule& r, std::vector<Reference<const Fact>>& matched_facts);
+std::string FormatFactMessage(const Fact& fact, const PredicateSpecification& specification);
 
 }

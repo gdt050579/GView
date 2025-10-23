@@ -36,7 +36,7 @@ class AnalysisEngineWindow : public Controls::Window, Handlers::OnTreeViewCurren
     void OnTreeViewCurrentItemChanged(Reference<Controls::TreeView> tree, TreeViewItem& item) override;
     void OnTreeViewItemPressed(Reference<Controls::TreeView> tree, TreeViewItem& item) override;
     void BeforeOpen();
-
+    void AddAnalysisNotes(const Subject& currentWindow, std::string data);
     void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow);
     uint64 FindMainParent(uint64 current_subject);
 

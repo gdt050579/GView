@@ -405,6 +405,13 @@ bool Instance::Add(
             subject = parent.ToObjectRef<FileWindow>()->GetCurrentWindowSubject();
         GetAnalysisEngine()->RegisterSubjectWithParent(win->GetCurrentWindowSubject(), subject);
 
+        UnicodeStringBuilder sb;
+        sb.Add("Opening ");
+        sb.Add(name);
+        std::string opening_note = {};
+        sb.ToString(opening_note);
+        GetAnalysisEngine()->AddAnalysisNotes(win->GetCurrentWindowSubject(), std::move(opening_note));
+
         auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
@@ -431,6 +438,13 @@ bool Instance::AddFolder(const std::filesystem::path& path, const ConstString& c
 
         Reference<Subject> subject = nullptr; // TODO: implement folder subjects
         GetAnalysisEngine()->RegisterSubjectWithParent(win->GetCurrentWindowSubject(), subject);
+
+        UnicodeStringBuilder sb;
+        sb.Add("Opening ");
+        sb.Add(path.filename().generic_u16string());
+        std::string opening_note = {};
+        sb.ToString(opening_note);
+        GetAnalysisEngine()->AddAnalysisNotes(win->GetCurrentWindowSubject(), std::move(opening_note));
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");

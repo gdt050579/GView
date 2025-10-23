@@ -9,6 +9,8 @@
 #include "AnalysisEngineData.hpp"
 #include "GView.hpp"
 
+constexpr bool DISPLAY_FACTS_AS_ANALYSIS_NOTES = true;
+
 namespace GView::Components::AnalysisEngine
 {
 
@@ -36,6 +38,8 @@ class RuleEngine final : public AnalysisEngineInterface
     std::vector<bool> RegisterActionTrigger(const std::vector<ActId>& action_ids, Reference<RuleTriggerInterface> trigger) override;
     Subject GetSubjectForNewWindow(Object::Type objectType) override;
     void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow) override;
+    void AddAnalysisNotes(const Subject& currentWindow, std::string data) override;
+
     uint64 FindMainParent(uint64 current_subject);
 
     std::vector<Suggestion> evaluate(const Subject& s) noexcept;

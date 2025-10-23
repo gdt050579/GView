@@ -322,7 +322,14 @@ bool RuleEngine::SubmitFact(const Fact& fact)
         if (!expected_args.contains(arg.name))
             return false;
     }
-    return set_fact(fact).ok;
+
+    if (!set_fact(fact).ok)
+        return false;
+    if constexpr (DISPLAY_FACTS_AS_ANALYSIS_NOTES) {
+        auto fact_message = FormatFactMessage(fact, pred_specif_it->second);
+        AddAnalysisNotes(fact.atom.subject, std::move(fact_message));
+    }
+    return true;
 }
 
 ActId RuleEngine::GetActId(std::string_view name) const
@@ -411,6 +418,11 @@ Subject RuleEngine::GetSubjectForNewWindow(Object::Type objectType)
 void RuleEngine::RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)
 {
     engineWindow->RegisterSubjectWithParent(currentWindow, parentWindow);
+}
+
+void RuleEngine::AddAnalysisNotes(const Subject& currentWindow, std::string data)
+{
+    engineWindow->AddAnalysisNotes(currentWindow, std::move(data));
 }
 
 uint64 RuleEngine::FindMainParent(uint64 current_subject)

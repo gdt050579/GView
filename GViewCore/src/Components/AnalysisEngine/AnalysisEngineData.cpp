@@ -341,4 +341,20 @@ std::string FillRuleTemplate(const Rule& r, std::vector<Reference<const Fact>>& 
     }
 }
 
+std::string FormatFactMessage(const Fact& fact, const PredicateSpecification& specification)
+{
+    const auto placeholders = extract_placeholders(specification.explanation);
+    StringKeyMap<std::string> argument_with_values;
+
+    for (const auto& arg : fact.atom.args) {
+        argument_with_values[arg.name] = variant_to_string(arg.value);
+    }
+    try {
+        auto result = format_message(specification.explanation, argument_with_values, placeholders);
+        return result;
+    } catch (std::exception& e) {
+        return "[ERROR] Failed to format rule explanation: " + std::string(e.what());
+    }
+}
+
 } // namespace GView::Components::AnalysisEngine

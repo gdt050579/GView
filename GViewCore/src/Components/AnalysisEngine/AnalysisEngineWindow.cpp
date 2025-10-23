@@ -88,18 +88,21 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     if (!data.IsValid())
         return;
     bool shouldCloseAnalysisWindow = false;
-    if (!engine->TryExecuteSuggestionBySuggestionId(data->suggestion_id, shouldCloseAnalysisWindow)) {
+    SuggestionId suggestion_id     = data->suggestion_id;
+
+    data->subject       = "";
+    data->suggestion_id = 0;
+    data->confidence    = "";
+    data->action        = "";
+    item.SetData<LineData>(nullptr);
+
+    if (!engine->TryExecuteSuggestionBySuggestionId(suggestion_id, shouldCloseAnalysisWindow)) {
         Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
         return;
     }
 
     predicatesLabel->SetText("Predicates: ");
     DrawSuggestions();
-    data->subject       = "";
-    data->suggestion_id = 0;
-    data->confidence    = "";
-    data->action        = "";
-    item.SetData<LineData>(nullptr);
 
     if (shouldCloseAnalysisWindow) {
         tree_data_needs_rebuild = true;
@@ -147,6 +150,17 @@ void AnalysisEngineWindow::BeforeOpen()
     // DrawSuggestions();
 }
 
+void AnalysisEngineWindow::AddAnalysisNotes(const Subject& currentWindow, std::string data)
+{
+    if (data.empty())
+        return;
+    auto& window_data_entry = window_data[currentWindow.value];
+    LineData line_data = {};
+    line_data.message = std::move(data);
+    window_data_entry.data.push_back(std::move(line_data));
+    tree_data_needs_rebuild = true;
+}
+
 void AnalysisEngineWindow::RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)
 {
     const bool already_inside = subjects_hierarchy.contains(currentWindow.value);
@@ -158,7 +172,8 @@ void AnalysisEngineWindow::RegisterSubjectWithParent(const Subject& currentWindo
     subjects_hierarchy[currentWindow.value] = info;
     windows[currentWindow.value]            = currentWindow;
 
-    window_data[currentWindow.value] = WindowData();
+    if (!window_data.contains(currentWindow.value))
+        window_data[currentWindow.value] = WindowData();
 }
 
 uint64 AnalysisEngineWindow::FindMainParent(uint64 current_subject)
@@ -198,7 +213,7 @@ void AnalysisEngineWindow::GetHint()
         auto& window_data_entry = window_data[subject->value];
         for (const auto& suggestion : suggestions) {
 
-            LineData line_data;
+            LineData line_data = {};
             line_data.confidence = std::to_string(suggestion.confidence);
 
             const auto &first_result = suggestion.results[0];
@@ -277,7 +292,9 @@ void AnalysisEngineWindow::RebuildTreeData()
 
         tree_window_data.handle.SetData<LineData>(nullptr);
 
-        for (auto& data : window.second.data) {
+        for (uint32 i = 0; i < window.second.data.size(); i++) {
+            auto& data = window.second.data[i];
+
             std::string default_name = "-";
             if (!data.subject.empty())
                 default_name = data.subject;
@@ -285,17 +302,16 @@ void AnalysisEngineWindow::RebuildTreeData()
             const bool expandable = data.suggestion_id != 0;
             auto entry            = tree_window_data.handle.AddChild(default_name);
             if (!data.confidence.empty())
-                entry.SetText(1,data.confidence);
+                entry.SetText(1, data.confidence);
             if (!data.action.empty())
                 entry.SetText(2, data.action);
             if (!data.message.empty())
                 entry.SetText(3, data.message);
 
             if (expandable)
-                entry.SetData<LineData>(&data);
+                entry.SetData<LineData>(&window.second.data[i]);
             else
                 entry.SetData<LineData>(nullptr);
-
         }
         tree_data[window.first] = std::move(tree_window_data);
     }

@@ -1105,6 +1105,7 @@ namespace Components
             virtual std::vector<bool> RegisterActionTrigger(const std::vector<ActId>& action_ids, Reference<RuleTriggerInterface> trigger) = 0;
             virtual Subject GetSubjectForNewWindow(Object::Type objectType)                                                                = 0;
             virtual void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)                          = 0;
+            virtual void AddAnalysisNotes(const Subject& currentWindow, std::string data)                                                  = 0;
 
             PredicateStorage RequestPredicateStorage(const std::vector<std::string_view>& predicates) const;
             bool RequestPredicate(PredicateStorage& predicateStorage, std::string_view predicate) const;
