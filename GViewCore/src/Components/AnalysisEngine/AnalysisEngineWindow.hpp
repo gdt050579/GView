@@ -17,6 +17,7 @@ struct LineData
     std::string action;
     std::string message;
 
+    bool was_suggestion;
     SuggestionId suggestion_id;
 };
 

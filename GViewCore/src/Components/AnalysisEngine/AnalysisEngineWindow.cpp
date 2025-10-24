@@ -94,6 +94,8 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     data->suggestion_id = 0;
     data->confidence    = "";
     data->action        = "";
+    data->was_suggestion = true;
+    item.SetType(TreeViewItem::Type::WarningInformation);
     item.SetData<LineData>(nullptr);
 
     if (!engine->TryExecuteSuggestionBySuggestionId(suggestion_id, shouldCloseAnalysisWindow)) {
@@ -144,7 +146,7 @@ void AnalysisEngineWindow::BeforeOpen()
 {
     if (!tree_data_needs_rebuild)
         return;
-    tree_data_needs_rebuild = true;
+    tree_data_needs_rebuild = false;
     RebuildTreeData();
 
     // DrawSuggestions();
@@ -275,6 +277,15 @@ void AnalysisEngineWindow::DrawPredicatesForCurrentIndex(uint32 index)
 
 void AnalysisEngineWindow::RebuildTreeData()
 {
+    std::map<std::string, bool> extended_items = {};
+
+    auto children_count = detailsTree->GetItemsCount();
+    for (uint32 i=0;i<children_count;i++) {
+        auto item = detailsTree->GetItemByIndex(i);
+        if (item.IsExpandable() && !item.IsFolded())
+            extended_items[item.GetText()] = true;
+    }
+
     detailsTree->ClearItems();
     tree_data.clear();
 
@@ -290,12 +301,27 @@ void AnalysisEngineWindow::RebuildTreeData()
             tree_window_data.handle = detailsTree->AddItem(initial_val);
         }
 
-        tree_window_data.handle.SetData<LineData>(nullptr);
+        if (extended_items.contains(initial_val)) {
+            tree_window_data.handle.SetFolding(true);
+        }
 
-        for (uint32 i = 0; i < window.second.data.size(); i++) {
+        tree_window_data.handle.SetData<LineData>(nullptr);
+        const uint32 data_size = (uint32) window.second.data.size();
+        uint32 starting_data_index = 0;
+
+        if (data_size > 0) {
+            auto& first_item = window.second.data[0];
+            if (first_item.message.starts_with("Opening")) {
+                tree_window_data.handle.SetText(3, first_item.message);
+                starting_data_index = 1;
+                tree_window_data.handle.SetType(TreeViewItem::Type::Category);
+            }
+        }
+
+        for (uint32 i = starting_data_index; i < window.second.data.size(); i++) {
             auto& data = window.second.data[i];
 
-            std::string default_name = "-";
+            std::string default_name;
             if (!data.subject.empty())
                 default_name = data.subject;
 
@@ -308,10 +334,20 @@ void AnalysisEngineWindow::RebuildTreeData()
             if (!data.message.empty())
                 entry.SetText(3, data.message);
 
-            if (expandable)
+            TreeViewItem::Type itemType = TreeViewItem::Type::Normal;
+
+            if (expandable) {
                 entry.SetData<LineData>(&window.second.data[i]);
-            else
+                itemType = TreeViewItem::Type::Emphasized_2;
+            } else {
                 entry.SetData<LineData>(nullptr);
+                //entry.SetType(TreeViewItem::Type::GrayedOut);
+            }
+
+            if (data.was_suggestion)
+                itemType = TreeViewItem::Type::WarningInformation;
+
+            entry.SetType(itemType);
         }
         tree_data[window.first] = std::move(tree_window_data);
     }
