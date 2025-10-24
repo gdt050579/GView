@@ -279,16 +279,23 @@ void AnalysisEngineWindow::RebuildTreeData()
 {
     std::map<std::string, bool> extended_items = {};
 
+    auto selectedItem = detailsTree->GetCurrentItem();
+    const bool validSelectedItem = selectedItem.IsValid();
+    uint32 selectedIndex         = UINT32_MAX;
+
     auto children_count = detailsTree->GetItemsCount();
     for (uint32 i=0;i<children_count;i++) {
         auto item = detailsTree->GetItemByIndex(i);
         if (item.IsExpandable() && !item.IsFolded())
             extended_items[item.GetText()] = true;
+        if (validSelectedItem && item == selectedItem) {
+            selectedIndex = i;
+        }
     }
 
     detailsTree->ClearItems();
     tree_data.clear();
-
+    uint32 current_index = 0;
     for (auto& window : window_data) {
         auto& subject_data              = windows[window.first];
         std::string initial_val         = std::to_string(subject_data.value);
@@ -303,6 +310,10 @@ void AnalysisEngineWindow::RebuildTreeData()
 
         if (extended_items.contains(initial_val)) {
             tree_window_data.handle.SetFolding(true);
+        }
+
+        if (selectedIndex == current_index++) {
+            tree_window_data.handle.SetCurrent();
         }
 
         tree_window_data.handle.SetData<LineData>(nullptr);
@@ -342,6 +353,9 @@ void AnalysisEngineWindow::RebuildTreeData()
             } else {
                 entry.SetData<LineData>(nullptr);
                 //entry.SetType(TreeViewItem::Type::GrayedOut);
+            }
+            if (selectedIndex == current_index++) {
+                entry.SetCurrent();
             }
 
             if (data.was_suggestion)
