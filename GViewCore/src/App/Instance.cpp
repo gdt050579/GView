@@ -369,6 +369,12 @@ bool Instance::Add(
       Reference<Window> parent,
       const ConstString& creationProcess)
 {
+    if (parent == nullptr)
+        parent = GetCurrentWindow();
+    Reference<Subject> subject = nullptr;
+    if (parent)
+        subject = parent.ToObjectRef<FileWindow>()->GetCurrentWindowSubject();
+
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
@@ -393,24 +399,10 @@ bool Instance::Add(
 
     // instantiate window
     while (true) {
+        win->InitialiseAnalysisEngineData(subject);
         CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
         CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
-
-        if (parent == nullptr)
-            parent = GetCurrentWindow();
-
-        Reference<Subject> subject = nullptr;
-        if (parent)
-            subject = parent.ToObjectRef<FileWindow>()->GetCurrentWindowSubject();
-        GetAnalysisEngine()->RegisterSubjectWithParent(win->GetCurrentWindowSubject(), subject);
-
-        UnicodeStringBuilder sb;
-        sb.Add("Opening ");
-        sb.Add(name);
-        std::string opening_note = {};
-        sb.ToString(opening_note);
-        GetAnalysisEngine()->AddAnalysisNotes(win->GetCurrentWindowSubject(), std::move(opening_note));
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
@@ -433,18 +425,9 @@ bool Instance::AddFolder(const std::filesystem::path& path, const ConstString& c
 
     // instantiate window
     while (true) {
+        win->InitialiseAnalysisEngineData();
         GView::Type::FolderViewPlugin::PopulateWindow(win.get());
         win->Start(); // starts the window and set focus
-
-        Reference<Subject> subject = nullptr; // TODO: implement folder subjects
-        GetAnalysisEngine()->RegisterSubjectWithParent(win->GetCurrentWindowSubject(), subject);
-
-        UnicodeStringBuilder sb;
-        sb.Add("Opening ");
-        sb.Add(path.filename().generic_u16string());
-        std::string opening_note = {};
-        sb.ToString(opening_note);
-        GetAnalysisEngine()->AddAnalysisNotes(win->GetCurrentWindowSubject(), std::move(opening_note));
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");

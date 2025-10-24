@@ -309,6 +309,21 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     this->gviewApp->UpdateCommandBar(commandBar);
     return true;
 }
+
+void FileWindow::InitialiseAnalysisEngineData(Reference<GView::Components::AnalysisEngine::Subject> parentSubject)
+{
+    auto analysisEngine = GetAnalysisEngine();
+    if (!analysisEngine.IsValid())
+        return;
+    analysisEngine->RegisterSubjectWithParent(subject, parentSubject);
+    UnicodeStringBuilder sb;
+    sb.Add("Opening ");
+    sb.Add(obj->GetName());
+    std::string opening_note = {};
+    sb.ToString(opening_note);
+    analysisEngine->AddAnalysisNotes(subject, std::move(opening_note));
+}
+
 void FileWindow::Start()
 {
     this->view->SetCurrentTabPageByIndex(0);

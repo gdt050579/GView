@@ -747,7 +747,7 @@ namespace App
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
-
+        void InitialiseAnalysisEngineData(Reference<GView::Components::AnalysisEngine::Subject> parentSubject = nullptr);
         void Start();
 
         Reference<Object> GetObject() override;
