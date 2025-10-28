@@ -145,7 +145,7 @@ extern "C"
 
             auto res = pcap->analysisEngine->SubmitFact(has_network_connection_fact);
             if (!res) {
-                LOG_ERROR("Failed to add IsPCAP fact");
+                LOG_ERROR("Failed to add HasNetworkConnections fact");
             }
         }
         std::vector<Components::AnalysisEngine::ActId> actions;

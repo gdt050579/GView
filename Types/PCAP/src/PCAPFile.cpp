@@ -243,7 +243,7 @@ void PCAPFile::OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSug
                       predicates.HasConnectionWithExecutable, subject, "static analysis", "parsed the PCAP file", args);
                 auto res = analysisEngine->SubmitFact(has_exe_connections_fact);
                 if (!res) {
-                    LOG_ERROR("Failed to add HasConnectionWithScript fact");
+                    LOG_ERROR("Failed to add HasConnectionWithExecutable fact");
                 }
             }
             closeAnalysisWindow = false;

@@ -56,7 +56,7 @@ struct RuleSpecification {
     std::string name;
     std::vector<std::string> body;      // list of predicate names
     std::vector<std::string> head;      // list of predicates or action names
-    std::unordered_map<std::string, std::string> variable_mapping; // [optional] argument remapping
+    StringKeyMap<std::string> variable_mapping; // [optional] argument remapping
     std::string explanation;
     Confidence confidence = 0; // 0-100
 };
@@ -88,7 +88,7 @@ struct Rule {
     ConjClause body; // keep single-clause for simplicity; duplicate Rule for ORs
     std::vector<PredOrAction> head; 
     Confidence confidence;
-    std::unordered_map<std::string, std::string> variable_mapping;
+    StringKeyMap<std::string> variable_mapping;
     std::string explanation;
     std::chrono::milliseconds cooldown{ std::chrono::minutes(30) };
 };
