@@ -5,12 +5,15 @@ using namespace GView::Components::AnalysisEngine;
 constexpr int32 COMMAND_CLOSE    = 0;
 constexpr int32 COMMAND_GET_HINT = 1;
 
+constexpr uint32 SUBJECT_COLUMN_INDEX = 0;
+constexpr uint32 ACTION_COLUMN_INDEX  = 1;
+constexpr uint32 MESSAGE_COLUMN_INDEX = 2;
+
 AnalysisEngineWindow::AnalysisEngineWindow(Reference<RuleEngine> engine)
     : Window("Analysis Engine", "t:1,l:1,r:1,b:1", Controls::WindowFlags::Sizeable), engine(engine)
 {
     tree_data_needs_rebuild = true;
-    detailsTree =
-          Factory::TreeView::Create(this, "l:0,t:0,r:0,b:5", { "n:Subj.,w:8", "n:Conf.,w:6", "n:Action,w:25", "n:Message,w:fill" }, TreeViewFlags::Searchable);
+    detailsTree = Factory::TreeView::Create(this, "l:0,t:0,r:0,b:5", { "n:Subject,w:30", "n:Action,w:25", "n:Message,w:fill" }, TreeViewFlags::Searchable);
     detailsTree->Handlers()->OnCurrentItemChanged = this;
     detailsTree->Handlers()->OnItemPressed        = this;
     // windowTree->Handlers()->OnCurrentItemChanged = this;
@@ -77,7 +80,7 @@ void AnalysisEngineWindow::OnTreeViewCurrentItemChanged(Reference<Controls::Tree
     const auto data = item.GetData<LineData>();
     if (!data.IsValid())
         return;
-    //DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
+    // DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
 }
 
 void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> tree, TreeViewItem& item)
@@ -90,10 +93,10 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     bool shouldCloseAnalysisWindow = false;
     SuggestionId suggestion_id     = data->suggestion_id;
 
-    data->subject       = "";
-    data->suggestion_id = 0;
-    data->confidence    = "";
-    data->action        = "";
+    data->subject        = "";
+    data->suggestion_id  = 0;
+    data->confidence     = "";
+    data->action         = "";
     data->was_suggestion = true;
     item.SetType(TreeViewItem::Type::WarningInformation);
     item.SetData<LineData>(nullptr);
@@ -113,34 +116,34 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     RebuildTreeData();
 }
 
-//void AnalysisEngineWindow::OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item)
+// void AnalysisEngineWindow::OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item)
 //{
-//    if (!item.IsValid())
-//        return;
-//    const auto index = item.GetData(UINT64_MAX);
-//    if (index == UINT64_MAX)
-//        return;
-//    bool shouldCloseAnalysisWindow = false;
-//    if (!engine->TryExecuteSuggestionByArrayIndex(static_cast<uint32>(index), shouldCloseAnalysisWindow)) {
-//        Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
-//        return;
-//    }
-//    predicatesLabel->SetText("Predicates: ");
-//    DrawSuggestions();
-//    if (shouldCloseAnalysisWindow) {
-//        Exit(Dialogs::Result::Ok);
-//    }
-//}
+//     if (!item.IsValid())
+//         return;
+//     const auto index = item.GetData(UINT64_MAX);
+//     if (index == UINT64_MAX)
+//         return;
+//     bool shouldCloseAnalysisWindow = false;
+//     if (!engine->TryExecuteSuggestionByArrayIndex(static_cast<uint32>(index), shouldCloseAnalysisWindow)) {
+//         Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
+//         return;
+//     }
+//     predicatesLabel->SetText("Predicates: ");
+//     DrawSuggestions();
+//     if (shouldCloseAnalysisWindow) {
+//         Exit(Dialogs::Result::Ok);
+//     }
+// }
 
-//void AnalysisEngineWindow::OnListViewCurrentItemChanged(Reference<Controls::ListView> lv, Controls::ListViewItem item)
+// void AnalysisEngineWindow::OnListViewCurrentItemChanged(Reference<Controls::ListView> lv, Controls::ListViewItem item)
 //{
-//    if (!item.IsValid())
-//        return;
-//    const auto index = item.GetData(UINT64_MAX);
-//    if (index == UINT64_MAX)
-//        return;
-//    DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
-//}
+//     if (!item.IsValid())
+//         return;
+//     const auto index = item.GetData(UINT64_MAX);
+//     if (index == UINT64_MAX)
+//         return;
+//     DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
+// }
 
 void AnalysisEngineWindow::BeforeOpen()
 {
@@ -157,8 +160,8 @@ void AnalysisEngineWindow::AddAnalysisNotes(const Subject& currentWindow, std::s
     if (data.empty())
         return;
     auto& window_data_entry = window_data[currentWindow.value];
-    LineData line_data = {};
-    line_data.message = std::move(data);
+    LineData line_data      = {};
+    line_data.message       = std::move(data);
     window_data_entry.data.push_back(std::move(line_data));
     tree_data_needs_rebuild = true;
 }
@@ -185,7 +188,7 @@ uint64 AnalysisEngineWindow::FindMainParent(uint64 current_subject)
         auto it = subjects_hierarchy.find(subject);
         if (it == subjects_hierarchy.end())
             break;
-        if (it->first == 1)//First ID
+        if (it->first == 1) // First ID
             break;
         subject = it->first;
     }
@@ -214,19 +217,18 @@ void AnalysisEngineWindow::GetHint()
 
         auto& window_data_entry = window_data[subject->value];
         for (const auto& suggestion : suggestions) {
-
-            LineData line_data = {};
+            LineData line_data   = {};
             line_data.confidence = std::to_string(suggestion.confidence);
 
-            const auto &first_result = suggestion.results[0];
+            const auto& first_result = suggestion.results[0];
             std::string first_result_name;
             if (first_result.type == PredOrAction::PredOrActionType::Action) {
                 first_result_name = engine->GetActName(first_result.data.action_id);
             } else {
                 first_result_name = "NoAction";
             }
-            line_data.action = first_result_name;
-            line_data.message = suggestion.message;
+            line_data.action        = first_result_name;
+            line_data.message       = suggestion.message;
             line_data.suggestion_id = suggestion.id;
             window_data_entry.data.push_back(std::move(line_data));
         }
@@ -279,12 +281,12 @@ void AnalysisEngineWindow::RebuildTreeData()
 {
     std::map<std::string, bool> extended_items = {};
 
-    auto selectedItem = detailsTree->GetCurrentItem();
+    auto selectedItem            = detailsTree->GetCurrentItem();
     const bool validSelectedItem = selectedItem.IsValid();
     uint32 selectedIndex         = UINT32_MAX;
 
     auto children_count = detailsTree->GetItemsCount();
-    for (uint32 i=0;i<children_count;i++) {
+    for (uint32 i = 0; i < children_count; i++) {
         auto item = detailsTree->GetItemByIndex(i);
         if (item.IsExpandable() && !item.IsFolded())
             extended_items[item.GetText()] = true;
@@ -308,25 +310,32 @@ void AnalysisEngineWindow::RebuildTreeData()
             tree_window_data.handle = detailsTree->AddItem(initial_val);
         }
 
-        if (extended_items.contains(initial_val)) {
-            tree_window_data.handle.SetFolding(true);
-        }
-
         if (selectedIndex == current_index++) {
             tree_window_data.handle.SetCurrent();
         }
 
         tree_window_data.handle.SetData<LineData>(nullptr);
-        const uint32 data_size = (uint32) window.second.data.size();
+        const uint32 data_size     = (uint32) window.second.data.size();
         uint32 starting_data_index = 0;
 
         if (data_size > 0) {
             auto& first_item = window.second.data[0];
-            if (first_item.message.starts_with("Opening")) {
-                tree_window_data.handle.SetText(3, first_item.message);
+            constexpr const char* opening_string = "Opening ";
+            if (first_item.message.starts_with(opening_string)) {
+                tree_window_data.handle.SetText(MESSAGE_COLUMN_INDEX, first_item.message);
                 starting_data_index = 1;
                 tree_window_data.handle.SetType(TreeViewItem::Type::Category);
+                auto name_it = first_item.message.find(opening_string);
+                if (name_it != std::string::npos) {
+                    auto filename = first_item.message.substr(name_it + strlen(opening_string));
+                    tree_window_data.handle.SetText(SUBJECT_COLUMN_INDEX, filename);
+                    initial_val = move(filename);
+                }
             }
+        }
+
+        if (extended_items.contains(initial_val)) {
+            tree_window_data.handle.SetFolding(true);
         }
 
         for (uint32 i = starting_data_index; i < window.second.data.size(); i++) {
@@ -338,12 +347,12 @@ void AnalysisEngineWindow::RebuildTreeData()
 
             const bool expandable = data.suggestion_id != 0;
             auto entry            = tree_window_data.handle.AddChild(default_name);
-            if (!data.confidence.empty())
-                entry.SetText(1, data.confidence);
+            /*if (!data.confidence.empty())
+                entry.SetText(1, data.confidence);*/
             if (!data.action.empty())
-                entry.SetText(2, data.action);
+                entry.SetText(ACTION_COLUMN_INDEX, data.action);
             if (!data.message.empty())
-                entry.SetText(3, data.message);
+                entry.SetText(MESSAGE_COLUMN_INDEX, data.message);
 
             TreeViewItem::Type itemType = TreeViewItem::Type::Normal;
 
@@ -352,7 +361,7 @@ void AnalysisEngineWindow::RebuildTreeData()
                 itemType = TreeViewItem::Type::Emphasized_2;
             } else {
                 entry.SetData<LineData>(nullptr);
-                //entry.SetType(TreeViewItem::Type::GrayedOut);
+                // entry.SetType(TreeViewItem::Type::GrayedOut);
             }
             if (selectedIndex == current_index++) {
                 entry.SetCurrent();
