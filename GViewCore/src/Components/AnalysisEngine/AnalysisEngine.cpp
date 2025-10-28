@@ -236,10 +236,18 @@ RuleEngine::~RuleEngine() noexcept = default;
 
 bool RuleEngine::Init()
 {
-    // TODO: load from file and also using the location near GView or from settings
     std::ifstream analysis_engine("AnalysisEngine.json");
-    if (!analysis_engine.is_open())
-        return false;
+    if (!analysis_engine.is_open()) {
+
+        auto current_app_path = AppCUI::OS::GetCurrentApplicationPath();
+        if (!current_app_path.has_filename())
+            return false;
+        current_app_path      = current_app_path.remove_filename();
+        current_app_path /= "AnalysisEngine.json";
+        analysis_engine.open(current_app_path);
+        if (!analysis_engine.is_open())
+            return false;
+    }
     json analysis_data = json::parse(analysis_engine, nullptr, false);
     if (analysis_data.is_discarded())
         return false;
@@ -290,7 +298,7 @@ bool RuleEngine::Init()
                 }
                 throw std::runtime_error(std::format("RuleEngine::Init: rule '{}' uses unknown predicate/action '{}'", rule.second.name, result));
             }
-
+            
             Rule converted_rule = {
                 rule.first, rule.second.name, rule_clause, results_parsed, rule.second.confidence, rule.second.variable_mapping, rule.second.explanation
             };
