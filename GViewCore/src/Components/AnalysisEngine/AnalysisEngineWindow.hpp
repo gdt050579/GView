@@ -7,7 +7,8 @@ namespace GView::Components::AnalysisEngine
 struct TreeWindowData
 {
     uint64 parent;
-    TreeViewItem parent_handle, handle;
+    TreeViewItem parent_handle;
+    TreeViewItem handle;
 };
 
 struct LineData
@@ -26,7 +27,7 @@ struct WindowData
     std::vector<LineData> data;
 };
 
-class AnalysisEngineWindow : public Controls::Window, Handlers::OnTreeViewCurrentItemChangedInterface, Handlers::OnTreeViewItemPressedInterface
+class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeViewCurrentItemChangedInterface, public Handlers::OnTreeViewItemPressedInterface
 {
   public:
     AnalysisEngineWindow(Reference<RuleEngine> engine);
