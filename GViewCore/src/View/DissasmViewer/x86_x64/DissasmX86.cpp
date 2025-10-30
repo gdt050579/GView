@@ -569,6 +569,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         auto fnName = FormatFunctionName(hexValue.value(), prefix);
         // fnName.AddFormat(" (%s)", res.data());
 
+        /*if (parent) {
+            parent->annotations.
+        }*/
+
         op_str      = strdup(fnName.GetText());
         op_str_size = static_cast<uint32>(fnName.Len());
     }
@@ -1197,8 +1201,14 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line, std
         SingleLineEditWindow dlg(it->second.first, "Edit label");
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
-            if (!res.empty())
+            if (!res.empty()) {
+                if (!annotations.add_name_change(it->second.first, res)) {
+                    //TODO: do this check inside the SingleLineEditWindow
+                    Dialogs::MessageBox::ShowError("Error", "Name already exists!");
+                    return false;
+                }
                 it->second.first = res;
+            }
         }
         return true;
     }

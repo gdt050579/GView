@@ -144,7 +144,9 @@ inline bool ExtractCallsToInsertFunctionNames(
         uint32 diffLines       = 0;
         auto callInsn          = GetCurrentInstructionByOffset(callValue, zone, obj, diffLines);
         if (callInsn) {
-            zone->dissasmType.annotations.insert({ diffLines + extraLines, { call.second, callValue - offsets[0].offset } });
+            auto& annotations = zone->dissasmType.annotations;
+            annotations.insert({ diffLines + extraLines, { call.second, callValue - offsets[0].offset } });
+            annotations.add_initial_name(call.second);
             cs_free(callInsn, 1);
             extraLines++;
         }
