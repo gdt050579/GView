@@ -243,6 +243,10 @@ namespace View
             bool HasComment(uint32 line) const;
             void RemoveComment(uint32 line);
             void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+
+            uint32 GetRequiredSizeForSerialization() const;
+            void ToBuffer(std::vector<std::byte>& buffer) const;
+            //bool FromBuffer();
         };
 
         struct DissasmAsmPreCacheData {

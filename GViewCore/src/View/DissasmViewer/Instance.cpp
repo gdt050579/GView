@@ -2,6 +2,7 @@
 
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
+#include "DissasmIOHelpers.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -1563,6 +1564,24 @@ void DissasmComments::AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine
     }
 
     comments = std::move(commentsAjusted);
+}
+
+uint32 DissasmComments::GetRequiredSizeForSerialization() const
+{
+    uint32 result = 0;
+    for (const auto& comment : comments) {
+        result += sizeof(comment.first) + sizeof(uint32) + (uint32) comment.second.size();
+    }
+    return result;
+}
+
+void DissasmComments::ToBuffer(std::vector<std::byte>& buffer) const
+{
+    append_bytes(buffer, (uint32) comments.size());
+    for (const auto& comment : comments) {
+        append_bytes(buffer, comment.first);
+        append_string(buffer, comment.second);
+    }
 }
 
 void Instance::ProcessSpaceKey(bool goToEntryPoint)

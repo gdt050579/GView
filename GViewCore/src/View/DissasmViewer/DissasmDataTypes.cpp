@@ -1,7 +1,9 @@
 #include "DissasmDataTypes.hpp"
 #include "DissasmIOHelpers.hpp"
 
-uint32 GView::View::DissasmViewer::AnnotationContainer::get_required_size_for_serialization() const
+using namespace GView::View::DissasmViewer;
+
+uint32 AnnotationContainer::GetRequiredSizeForSerialization() const
 {
     uint32 result = 3 * sizeof(uint32);
     for (const auto& annotation : mappings) {
@@ -16,7 +18,7 @@ uint32 GView::View::DissasmViewer::AnnotationContainer::get_required_size_for_se
     return result;
 }
 
-void GView::View::DissasmViewer::AnnotationContainer::to_buffer(std::vector<std::byte>& buffer) const
+void AnnotationContainer::ToBuffer(std::vector<std::byte>& buffer) const
 {
     append_bytes(buffer, (uint32) mappings.size());
     for (const auto& [line, details] : mappings) {
@@ -37,4 +39,9 @@ void GView::View::DissasmViewer::AnnotationContainer::to_buffer(std::vector<std:
         append_string(buffer, name1);
         append_string(buffer, name2);
     }
+}
+
+void AnnotationContainer::LoadFromBuffer(const std::byte*& start, const std::byte* end)
+{
+
 }
