@@ -3,6 +3,7 @@
 #include "DissasmCache.hpp"
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
+#include "DissasmIOHelpers.hpp"
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -17,11 +18,11 @@ void DissasmCache::ClearCache(bool forceClear)
     zonesData.clear();
 }
 
-bool DissasmCache::AddRegion(std::string regionName, const AppCUI::uint8* data, AppCUI::uint32 size)
+bool DissasmCache::AddRegion(std::string regionName, const std::byte* data, AppCUI::uint32 size)
 {
     if (zonesData.contains(regionName))
         return false;
-    DissasmCacheEntry entry = { std::make_unique<uint8[]>(size), size };
+    DissasmCacheEntry entry = { std::make_unique<std::byte[]>(size), size };
     memcpy(entry.data.get(), data, size);
     zonesData[std::move(regionName)] = std::move(entry);
     return true;
@@ -110,14 +111,14 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
         if (offset > buffer.size())
             return false;
 
-        auto newCacheEntry = DissasmCacheEntry{ std::make_unique<uint8[]>(entrySize), entrySize };
+        auto newCacheEntry = DissasmCacheEntry{ std::make_unique<std::byte[]>(entrySize), entrySize };
         memcpy(newCacheEntry.data.get(), entryData, entrySize);
         zonesData.emplace(entryName, std::move(newCacheEntry));
     }
     return true;
 }
 
-bool DisassemblyZone::ToBuffer(std::vector<uint8>& buffer, Reference<GView::Object> obj) const
+bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj) const
 {
     Hashes::OpenSSLHash hash(Hashes::OpenSSLHashKind::Md5);
     const auto zoneData = obj->GetData().Get(startingZonePoint, (uint32) size, false);
@@ -128,8 +129,8 @@ bool DisassemblyZone::ToBuffer(std::vector<uint8>& buffer, Reference<GView::Obje
     const auto hashValue = hash.GetHexValue();
     buffer.reserve(hashValue.size() + sizeof(DisassemblyZone));
     buffer.clear();
-    buffer.insert(buffer.end(), hashValue.data(), hashValue.data() + hashValue.size());
-    buffer.insert(buffer.end(), reinterpret_cast<const uint8*>(this), reinterpret_cast<const uint8*>(this) + sizeof(DisassemblyZone));
+    buffer.insert(buffer.end(), (const std::byte*) hashValue.data(), (const std::byte*) hashValue.data() + hashValue.size());
+    buffer.insert(buffer.end(), reinterpret_cast<const std::byte*>(this), reinterpret_cast<const std::byte*>(this) + sizeof(DisassemblyZone));
     return true;
 }
 
@@ -157,7 +158,7 @@ void Instance::SaveCacheData()
     if (!settings->SaveToCache(cacheData, obj))
         return;
 
-    std::vector<uint8> buffer;
+    std::vector<std::byte> buffer;
     LocalString<64> zoneName;
     for (auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
@@ -176,7 +177,7 @@ void Instance::SaveCacheData()
 
 bool SettingsData::SaveToCache(DissasmCache& cache, Reference<GView::Object> obj)
 {
-    std::vector<uint8> buffer;
+    std::vector<std::byte> buffer;
     LocalString<64> zoneName;
     for (auto& [start, zone] : disassemblyZones) {
         if (!zone.ToBuffer(buffer, obj))
@@ -190,7 +191,7 @@ bool SettingsData::SaveToCache(DissasmCache& cache, Reference<GView::Object> obj
 
 bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Object> obj)
 {
-    std::vector<uint8> buffer;
+    std::vector<std::byte> buffer;
     LocalString<64> zoneName;
     for (auto& [start, zone] : disassemblyZones) {
         zoneName.SetFormat("DisassemblyZone.%llu", start);
@@ -209,41 +210,24 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
     return true;
 }
 
-bool DissasmCodeZone::ToBuffer(std::vector<uint8>& buffer) const
+bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
 {
     uint32 reserveSize = 0;
     for (const auto& comment : dissasmType.commentsData.comments) {
         reserveSize += sizeof(comment.first) + sizeof(uint32) + (uint32) comment.second.size();
     }
-    for (const auto& annotation : dissasmType.annotations) {
-        reserveSize += sizeof(annotation.first) + sizeof(uint32) + (uint32)annotation.second.first.size() + sizeof(annotation.second.second);
-    }
+    reserveSize += dissasmType.annotations.get_required_size_for_serialization();
     buffer.reserve(reserveSize);
 
     // comments
-    uint32 entriesCount = (uint32) dissasmType.commentsData.comments.size();
-    uint32 entryStringSizeCount;
-    buffer.insert(buffer.end(), (const char*) &entriesCount, (const char*) &entriesCount + sizeof(entriesCount));
+    append_bytes(buffer, (uint32) dissasmType.commentsData.comments.size());
     for (const auto& comment : dissasmType.commentsData.comments) {
-        buffer.insert(buffer.end(), (const char*) &comment.first, (const char*) &comment.first + sizeof(comment.first));
-        entryStringSizeCount = (uint32) comment.second.size();
-        buffer.insert(buffer.end(), (const char*) &entryStringSizeCount, (const char*) &entryStringSizeCount + sizeof(entryStringSizeCount));
-        buffer.insert(buffer.end(), comment.second.data(), comment.second.data() + entryStringSizeCount);
+        append_bytes(buffer, comment.first);
+        append_string(buffer, comment.second);
     }
 
     // annotations
-    entriesCount = (uint32) dissasmType.annotations.size();
-    buffer.insert(buffer.end(), (const char*) &entriesCount, (const char*) &entriesCount + sizeof(entriesCount));
-    for (const auto& annotation : dissasmType.annotations) {
-        buffer.insert(buffer.end(), (const char*) &annotation.first, (const char*) &annotation.first + sizeof(annotation.first));
-
-        entryStringSizeCount = (uint32) annotation.second.first.size();
-        buffer.insert(buffer.end(), (const char*) &entryStringSizeCount, (const char*) &entryStringSizeCount + sizeof(entryStringSizeCount));
-        buffer.insert(buffer.end(), annotation.second.first.data(), annotation.second.first.data() + entryStringSizeCount);
-
-        buffer.insert(buffer.end(), (const char*) &annotation.second.second, (const char*) &annotation.second.second + sizeof(annotation.second.second));
-    }
-
+    dissasmType.annotations.to_buffer(buffer);
     return true;
 }
 
@@ -265,7 +249,7 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache)
     if (dataPtr + sizeof(uint32) > dataPtrEnd)
         return false;
 
-    std::vector<uint8> buffer;
+    std::vector<std::byte> buffer;
     buffer.reserve(512);
 
     uint32 commentsCount = *(uint32*) dataPtr;

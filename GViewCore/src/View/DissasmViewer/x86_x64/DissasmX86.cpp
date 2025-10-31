@@ -569,9 +569,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         auto fnName = FormatFunctionName(hexValue.value(), prefix);
         // fnName.AddFormat(" (%s)", res.data());
 
-        /*if (parent) {
-            parent->annotations.
-        }*/
+        if (parent) {
+            auto new_name = parent->annotations.get_name_change(fnName.GetText());
+            if (!new_name.empty())
+                fnName.Set(new_name.c_str(), (uint32)new_name.size());
+        }
 
         op_str      = strdup(fnName.GetText());
         op_str_size = static_cast<uint32>(fnName.Len());
@@ -1034,7 +1036,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint32 actualLine       = zone->types.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
 
     const auto annotations = zone->types.back().get().annotations;
-    for (const auto& entry : annotations) // no std::views::keys on mac
+    for (const auto& entry : annotations.mappings) // no std::views::keys on mac
     {
         if (entry.first > diffLines + 1)
             break;
@@ -1355,7 +1357,7 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, Dissas
 
             AnnotationContainer zoneAnnotations = std::move(zone.annotations);
             zone.annotations                    = {};
-            for (auto& annotation : zoneAnnotations) {
+            for (auto& annotation : zoneAnnotations.mappings) {
                 zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
             }
 
@@ -1469,7 +1471,8 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
 
     // TODO: improve annotations moving
     decltype(annotations) annotationsBefore, annotationCurrent, annotationAfter;
-    for (const auto& zoneVal : parentZone->annotations) {
+    // TODO: check this ??
+    for (const auto& zoneVal : parentZone->annotations.mappings) {
         if (zoneVal.first < zoneLineStart)
             annotationsBefore.insert(zoneVal);
         else if (zoneVal.first >= zoneLineStart && zoneVal.first < zoneLineEnd)
@@ -1517,7 +1520,7 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         firstZone.name                = newZone.name;
         firstZone.indexZoneEnd        = zoneLineEnd;
         firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
-        firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
+        firstZone.annotations.populate_annotations_from_other_storage(newZone.annotations);
         firstZone.commentsData.comments.insert(newZone.commentsData.comments.begin(), newZone.commentsData.comments.end());
         // newZone.UpdateDataLineFromPrevious(firstZone);
         lastZone.UpdateDataLineFromPrevious(firstZone);
@@ -1626,7 +1629,7 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
                 indexesToRemove.push_back(removableDetails.zoneIndex + 1);
                 zoneToUpdate->indexZoneEnd        = nextZone.indexZoneEnd;
                 zoneToUpdate->workingIndexZoneEnd = nextZone.workingIndexZoneEnd;
-                zoneToUpdate->annotations.insert(nextZone.annotations.begin(), nextZone.annotations.end());
+                zoneToUpdate->annotations.populate_annotations_from_other_storage(nextZone.annotations);
             }
         }
     }
@@ -1637,7 +1640,7 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
                 indexesToRemove.push_back(removableDetails.zoneIndex);
                 zoneToUpdate->indexZoneStart        = prevZone.indexZoneStart;
                 zoneToUpdate->workingIndexZoneStart = prevZone.workingIndexZoneStart;
-                zoneToUpdate->annotations.insert(prevZone.annotations.begin(), prevZone.annotations.end());
+                zoneToUpdate->annotations.populate_annotations_from_other_storage(prevZone.annotations);
             }
         }
     }

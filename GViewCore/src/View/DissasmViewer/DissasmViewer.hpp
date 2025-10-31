@@ -41,99 +41,6 @@ namespace View
 
         static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
 
-        using AnnoationCallNameType = std::string;
-        using AnnoationCallValueType = uint64;
-        using AnnoationLineNumberType = uint32;
-        using AnnotationDetails   = std::pair<AnnoationCallNameType, AnnoationCallValueType>;
-        using AnnotationMap = std::map<AnnoationLineNumberType, AnnotationDetails>;
-
-        struct AnnotationContainer {
-            using value_type         = typename AnnotationMap::value_type;
-            using iterator           = typename AnnotationMap::iterator;
-            using const_iterator     = typename AnnotationMap::const_iterator;
-            using mapped_type        = typename AnnotationMap::mapped_type;
-            using key_type           = typename AnnotationMap::key_type;
-
-            AnnotationMap mappings;
-            std::unordered_map<std::string, std::string> initial_name_to_current_name;
-            std::unordered_map<std::string, std::string> current_name_to_initial_name;
-
-            std::size_t size() const
-            {
-                return mappings.size();
-            }
-
-            auto begin() const
-            {
-                return mappings.begin();
-            }
-
-            auto end() const
-            {
-                return mappings.end();
-            }
-
-            std::pair<iterator, bool> insert(const value_type& v)
-            {
-                return mappings.insert(v); 
-            }
-
-            template <class P, std::enable_if_t<std::is_constructible_v<value_type, P&&>, int> = 0>
-            std::pair<iterator, bool> insert(P&& v)
-            {
-                return mappings.insert(std::forward<P>(v));
-            }
-
-            template <class InputIt>
-            void insert(InputIt first, InputIt last)
-            {
-                mappings.insert(first, last);
-            }
-
-            mapped_type& operator[](const key_type& k)
-            {
-                return mappings[k];
-            }
-            mapped_type& operator[](key_type&& k)
-            {
-                return mappings[std::move(k)];
-            }
-
-            bool contains(const key_type& k) const
-            {
-                return mappings.contains(k);
-            }
-
-            iterator find(const key_type& k)
-            {
-                return mappings.find(k);
-            }
-            const_iterator find(const key_type& k) const
-            {
-                return mappings.find(k);
-            }
-
-            void add_initial_name(const std::string& initial_name)
-            {
-                initial_name_to_current_name.insert({ initial_name, initial_name });
-                current_name_to_initial_name.insert({ initial_name, initial_name });
-            }
-
-            bool add_name_change(const std::string& initial_name, const std::string& new_name)
-            {
-                if (current_name_to_initial_name.contains(new_name))
-                    return false;
-                initial_name_to_current_name[initial_name] = new_name;
-                current_name_to_initial_name[new_name]     = initial_name;
-                return true;
-            }
-
-            std::string get_name_change(const std::string& initial_name)
-            {
-                return {};
-            }
-        };
-
         enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel, FunctionNameAndExplanation, MitreTechiques };
 
         struct QuerySmartAssistantParams {
@@ -151,7 +58,7 @@ namespace View
             uint64 entryPoint;
             DisassemblyLanguage language;
 
-            bool ToBuffer(std::vector<uint8>& buffer, Reference<GView::Object> obj) const;
+            bool ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj) const;
         };
 
         enum class InternalDissasmType : uint8 {
