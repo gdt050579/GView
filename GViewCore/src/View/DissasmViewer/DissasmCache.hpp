@@ -7,7 +7,7 @@ namespace GView::View::DissasmViewer
 {
 struct DissasmCacheEntry
 {
-    std::unique_ptr<AppCUI::uint8[]> data;
+    std::unique_ptr<std::byte[]> data;
     AppCUI::uint32 size;
 };
 
@@ -19,7 +19,7 @@ struct DissasmCache {
     void ClearCache(bool forceClear = false);
 
     static std::filesystem::path GetCacheFilePath(std::u16string_view fileLocation, bool cacheSameLocationAsAnalyzedFile);
-    bool AddRegion(std::string regionName, const AppCUI::uint8* data, AppCUI::uint32 size);
+    bool AddRegion(std::string regionName, const std::byte* data, AppCUI::uint32 size);
 
     bool SaveCacheFile(std::u16string_view location);
     bool LoadCacheFile(std::u16string_view location);
