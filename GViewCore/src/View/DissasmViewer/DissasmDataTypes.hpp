@@ -144,10 +144,9 @@ namespace View
                 current_name_to_initial_name.insert(other.current_name_to_initial_name.begin(), other.current_name_to_initial_name.end());
             }
 
-            uint32 get_required_size_for_serialization() const;
-
-            void to_buffer(std::vector<std::byte>& buffer) const;
-            //void load_from_buffer(std::vector<uint8>& buffer);
+            uint32 GetRequiredSizeForSerialization() const;
+            void ToBuffer(std::vector<std::byte>& buffer) const;
+            void LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
     } // namespace DissasmViewer
 } // namespace View

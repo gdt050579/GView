@@ -212,22 +212,14 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
 
 bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
 {
-    uint32 reserveSize = 0;
-    for (const auto& comment : dissasmType.commentsData.comments) {
-        reserveSize += sizeof(comment.first) + sizeof(uint32) + (uint32) comment.second.size();
-    }
-    reserveSize += dissasmType.annotations.get_required_size_for_serialization();
+    uint32 reserveSize = dissasmType.commentsData.GetRequiredSizeForSerialization();
+    reserveSize += dissasmType.annotations.GetRequiredSizeForSerialization();
     buffer.reserve(reserveSize);
 
     // comments
-    append_bytes(buffer, (uint32) dissasmType.commentsData.comments.size());
-    for (const auto& comment : dissasmType.commentsData.comments) {
-        append_bytes(buffer, comment.first);
-        append_string(buffer, comment.second);
-    }
-
+    dissasmType.commentsData.ToBuffer(buffer);
     // annotations
-    dissasmType.annotations.to_buffer(buffer);
+    dissasmType.annotations.ToBuffer(buffer);
     return true;
 }
 
@@ -243,20 +235,24 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache)
     auto it = cache.zonesData.find(zoneName.GetText());
     if (it == cache.zonesData.end())
         return false;
-    auto dataPtr          = it->second.data.get();
-    const auto dataPtrEnd = dataPtr + it->second.size;
+    const std::byte* dataPtr          = it->second.data.get();
+    const std::byte* dataPtrEnd = dataPtr + it->second.size;
 
     if (dataPtr + sizeof(uint32) > dataPtrEnd)
         return false;
 
     std::vector<std::byte> buffer;
     buffer.reserve(512);
-
-    uint32 commentsCount = *(uint32*) dataPtr;
-    dataPtr += sizeof(uint32);
-
+  
+    uint32 commentsCount = 0;
+    if (!read_primitive(dataPtr, dataPtrEnd, commentsCount))
+        return false;
     while (commentsCount > 0) {
-        if (dataPtr + sizeof(uint32) > dataPtrEnd)
+        uint32 comment_size = 0;
+        if (!read_primitive(dataPtr, dataPtrEnd, comment_size))
+            return false;
+        const std::byte* out = nullptr;
+        if (!read_bytes(dataPtr, dataPtrEnd, comment_size, out))
             return false;
         const uint32 offset = *(uint32*) dataPtr;
         dataPtr += sizeof(uint32);
