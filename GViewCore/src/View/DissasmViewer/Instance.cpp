@@ -2,7 +2,6 @@
 
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
-#include "DissasmIOHelpers.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -1518,69 +1517,6 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
         comments.AddOrUpdateComment(it->currentLine, commentResult.GetText());
         pushesRemaining--;
         pushIndex++;
-    }
-}
-
-void DissasmComments::AddOrUpdateComment(uint32 line, std::string comment)
-{
-    comments[line - 1] = std::move(comment);
-}
-
-bool DissasmComments::GetComment(uint32 line, std::string& comment) const
-{
-    const auto it = comments.find(line - 1);
-    if (it != comments.end()) {
-        comment = it->second;
-        return true;
-    }
-    return false;
-}
-
-bool DissasmComments::HasComment(uint32 line) const
-{
-    return comments.contains(line - 1);
-}
-
-void DissasmComments::RemoveComment(uint32 line)
-{
-    const auto it = comments.find(line - 1);
-    if (it != comments.end()) {
-        comments.erase(it);
-        return;
-    }
-    Dialogs::MessageBox::ShowError("Error", "No comments found on the selected line !");
-}
-
-void DissasmComments::AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine)
-{
-    decltype(comments) commentsAjusted = {};
-    for (auto& comment : comments) {
-        if (comment.first >= changedLine) {
-            if (isAddedLine)
-                commentsAjusted.insert({ comment.first + 1, std::move(comment.second) });
-            else
-                commentsAjusted.insert({ comment.first - 1, std::move(comment.second) });
-        }
-    }
-
-    comments = std::move(commentsAjusted);
-}
-
-uint32 DissasmComments::GetRequiredSizeForSerialization() const
-{
-    uint32 result = 0;
-    for (const auto& comment : comments) {
-        result += sizeof(comment.first) + sizeof(uint32) + (uint32) comment.second.size();
-    }
-    return result;
-}
-
-void DissasmComments::ToBuffer(std::vector<std::byte>& buffer) const
-{
-    append_bytes(buffer, (uint32) comments.size());
-    for (const auto& comment : comments) {
-        append_bytes(buffer, comment.first);
-        append_string(buffer, comment.second);
     }
 }
 

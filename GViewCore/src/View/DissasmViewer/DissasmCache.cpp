@@ -235,72 +235,18 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache)
     auto it = cache.zonesData.find(zoneName.GetText());
     if (it == cache.zonesData.end())
         return false;
-    const std::byte* dataPtr          = it->second.data.get();
+    const std::byte* dataPtr    = it->second.data.get();
     const std::byte* dataPtrEnd = dataPtr + it->second.size;
 
     if (dataPtr + sizeof(uint32) > dataPtrEnd)
         return false;
 
-    std::vector<std::byte> buffer;
-    buffer.reserve(512);
-  
-    uint32 commentsCount = 0;
-    if (!read_primitive(dataPtr, dataPtrEnd, commentsCount))
+        // comments
+    if (!dissasmType.commentsData.LoadFromBuffer(dataPtr, dataPtrEnd))
         return false;
-    while (commentsCount > 0) {
-        uint32 comment_size = 0;
-        if (!read_primitive(dataPtr, dataPtrEnd, comment_size))
-            return false;
-        const std::byte* out = nullptr;
-        if (!read_bytes(dataPtr, dataPtrEnd, comment_size, out))
-            return false;
-        const uint32 offset = *(uint32*) dataPtr;
-        dataPtr += sizeof(uint32);
-
-        if (dataPtr + sizeof(uint32) > dataPtrEnd)
-            return false;
-        const uint32 commLen = *(uint32*) dataPtr;
-        if (dataPtr + commLen > dataPtrEnd)
-            return false;
-        dataPtr += sizeof(uint32);
-        buffer.clear();
-        buffer.insert(buffer.end(), dataPtr, dataPtr + commLen);
-        dataPtr += commLen;
-
-        dissasmType.commentsData.comments[offset] = std::string((const char*)buffer.data(), commLen);
-        --commentsCount;
-    }
-
-    if (dataPtr + sizeof(uint32) > dataPtrEnd)
+    // annotations
+    if (!dissasmType.annotations.LoadFromBuffer(dataPtr, dataPtrEnd))
         return false;
-    uint32 annotationsCount = *(uint32*) dataPtr;
-    dataPtr += sizeof(uint32);
-    while (annotationsCount > 0) {
-        if (dataPtr + sizeof(uint32) > dataPtrEnd)
-            return false;
-        const uint32 offset = *(uint32*) dataPtr;
-        dataPtr += sizeof(uint32);
-
-        if (dataPtr + sizeof(uint32) > dataPtrEnd)
-            return false;
-        const uint32 annLen = *(uint32*) dataPtr;
-        if (dataPtr + annLen > dataPtrEnd)
-            return false;
-        dataPtr += sizeof(uint32);
-
-        buffer.clear();
-        buffer.insert(buffer.end(), dataPtr, dataPtr + annLen);
-        dataPtr += annLen;
-
-        if (dataPtr + sizeof(uint64) > dataPtrEnd)
-            return false;
-        const uint64 annValue = *(uint64*) dataPtr;
-        dataPtr += sizeof(uint64);
-        --annotationsCount;
-
-        std::string annName((const char*)buffer.data(), annLen);
-        dissasmType.annotations[offset] = { std::move(annName), annValue };
-    }
 
     return true;
 }

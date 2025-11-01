@@ -234,21 +234,6 @@ namespace View
             std::vector<NameType> params;
         };
 
-        struct DissasmComments {
-            std::map<uint32, std::string> comments;
-
-            void AddOrUpdateComment(uint32 line, std::string comment);
-
-            bool GetComment(uint32 line, std::string& comment) const;
-            bool HasComment(uint32 line) const;
-            void RemoveComment(uint32 line);
-            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
-
-            uint32 GetRequiredSizeForSerialization() const;
-            void ToBuffer(std::vector<std::byte>& buffer) const;
-            //bool FromBuffer();
-        };
-
         struct DissasmAsmPreCacheData {
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
             std::unordered_map<uint32, uint8> instructionFlags;
