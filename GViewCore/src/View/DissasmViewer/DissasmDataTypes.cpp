@@ -173,5 +173,5 @@ bool AnnotationContainer::LoadFromBuffer(const std::byte*& start, const std::byt
         }
     }
 
-    return false;
+    return true;
 }

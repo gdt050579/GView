@@ -13,9 +13,7 @@ void DissasmCache::ClearCache(bool forceClear)
     if (!hasCache && !forceClear)
         return;
     zonesData.clear();
-
     cacheFile.Close();
-    zonesData.clear();
 }
 
 bool DissasmCache::AddRegion(std::string regionName, const std::byte* data, AppCUI::uint32 size)
@@ -202,8 +200,6 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
             return false;
         if (entry.size != buffer.size())
             return false;
-        auto data1 = entry.data.get();
-        auto data2 = buffer.data();
         if (memcmp(entry.data.get(), buffer.data(), buffer.size()) != 0)
             return false;
     }
