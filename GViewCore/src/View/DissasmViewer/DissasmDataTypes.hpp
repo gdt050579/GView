@@ -39,12 +39,28 @@ namespace View
             }
         };
 
+        struct DissasmComments {
+            std::map<uint32, std::string> comments;
+
+            void AddOrUpdateComment(uint32 line, std::string comment);
+
+            bool GetComment(uint32 line, std::string& comment) const;
+            bool HasComment(uint32 line) const;
+            void RemoveComment(uint32 line);
+            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+
+            uint32 GetRequiredSizeForSerialization() const;
+            void ToBuffer(std::vector<std::byte>& buffer) const;
+            bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
+        };
+
         struct AnnotationContainer {
             using AnnoationCallNameType   = std::string;
             using AnnoationCallValueType  = uint64;
             using AnnoationLineNumberType = uint32;
             using AnnotationDetails       = std::pair<AnnoationCallNameType, AnnoationCallValueType>;
             using AnnotationMap           = std::map<AnnoationLineNumberType, AnnotationDetails>;
+            using MapNameLinkType         = std::unordered_map<std::string, std::string>;
 
             using value_type     = typename AnnotationMap::value_type;
             using iterator       = typename AnnotationMap::iterator;
@@ -53,8 +69,8 @@ namespace View
             using key_type       = typename AnnotationMap::key_type;
 
             AnnotationMap mappings;
-            std::unordered_map<std::string, std::string> initial_name_to_current_name;
-            std::unordered_map<std::string, std::string> current_name_to_initial_name;
+            MapNameLinkType initial_name_to_current_name;
+            MapNameLinkType current_name_to_initial_name;
 
             std::size_t size() const
             {
@@ -146,8 +162,10 @@ namespace View
 
             uint32 GetRequiredSizeForSerialization() const;
             void ToBuffer(std::vector<std::byte>& buffer) const;
-            void LoadFromBuffer(const std::byte*& start, const std::byte* end);
+            bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
+
+
     } // namespace DissasmViewer
 } // namespace View
 } // namespace GView

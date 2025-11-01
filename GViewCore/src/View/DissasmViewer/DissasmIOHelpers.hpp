@@ -132,6 +132,14 @@ static inline bool read_bytes(const std::byte*& p, const std::byte* end, std::si
     return true;
 }
 
+template<class T>
+static inline bool read_string_with_size(const std::byte*& p, const std::byte* end, T& out, const std::byte*& out_begin)
+{
+    if (!read_primitive(p, end, out))
+        return false;
+    return read_bytes(p, end, out, out_begin);
+}
+
 static inline bool read_u32_len_prefixed_string(const std::byte*& p, const std::byte* end, std::string& out)
 {
     uint32 len_u32 = 0;
