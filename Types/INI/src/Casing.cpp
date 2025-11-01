@@ -128,7 +128,7 @@ void Casing::ChangeCaseForToken(Token& tok, CaseFormat format, bool isSection)
     tok.SetText(temp);
 }
 
-PluginAfterActionRequest Casing::Execute(PluginData& data)
+PluginAfterActionRequest Casing::Execute(PluginData& data, Reference<Window> parent)
 {
     SelectCaseDialog dlg;
     if (dlg.Show() != Dialogs::Result::Ok)

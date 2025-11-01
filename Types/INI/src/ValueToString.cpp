@@ -103,7 +103,7 @@ void ValueToString::ConvertToString(Token& tok, GView::View::LexicalViewer::Plug
         data.editor.Replace(start.value(), end.value() - start.value(), temp);
 }
 
-PluginAfterActionRequest ValueToString::Execute(PluginData& data)
+PluginAfterActionRequest ValueToString::Execute(PluginData& data, Reference<Window> parent)
 {
     SelectValuesToConvertDialog dlg;
     if (dlg.Show() != Dialogs::Result::Ok)

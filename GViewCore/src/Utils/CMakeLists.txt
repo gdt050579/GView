@@ -5,5 +5,7 @@ target_sources(GViewCore PRIVATE
     DataCache.cpp
     Selection.cpp
     CharacterEncoding.cpp
-    ZonesList.cpp)
+    ZonesList.cpp
+    JsonBuilder.cpp
+)
 

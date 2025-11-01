@@ -21,7 +21,7 @@ if (${ENABLE_TESTS})
     set(CURRENT_PROJECT_NAME GViewTesting)
 endif()
 
-project(${CURRENT_PROJECT_NAME} VERSION 1.0)
+project(${CURRENT_PROJECT_NAME} VERSION 1.0 DESCRIPTION "GView - GenericViewer" LANGUAGES C CXX)
 
 include(CheckIPOSupported)
 check_ipo_supported(RESULT supported OUTPUT error)
@@ -199,16 +199,13 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/JCLASS)
     add_subdirectory(Types/EML)
     add_subdirectory(Types/DOC)
-	  add_subdirectory(Types/JPG)
+    add_subdirectory(Types/JPG)
+    add_subdirectory(Types/XML)
+    add_subdirectory(Types/PDF)
 
     # Generic plugins supported by GView
-    add_subdirectory(GenericPlugins/CharacterTable)
-    add_subdirectory(GenericPlugins/Hashes)
-    add_subdirectory(GenericPlugins/SyncCompare)
-    add_subdirectory(GenericPlugins/EntropyVisualizer)
-    add_subdirectory(GenericPlugins/Dropper)
-    add_subdirectory(GenericPlugins/Unpacker)
-                                                                    
+    add_subdirectory(GenericPlugins)
+                                    
     if (APPLE)
             set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
     elseif (UNIX)

@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.363.0"
+#define GVIEW_VERSION "0.378.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -28,6 +28,12 @@ using namespace AppCUI;
 
 namespace GView
 {
+
+namespace Utils
+{
+    class JsonBuilderInterface;
+}
+
 struct CORE_EXPORT KeyboardControl {
     Input::Key Key;
     const char* Caption;
@@ -47,11 +53,12 @@ struct CORE_EXPORT TypeInterface {
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) = 0;
     /**
      * \brief Function to retrieve the context of the smart assistant for user's prompt based on the current type plugin
+     * To return the object use the Create function from GView::Utils::JsonBuilderInterface
      * \param prompt The actual prompt (question) that the smart assistant will be asked
      * \param displayPrompt The information that will be seen by the user (summarised version)
-     * \return string that has a json textual format with minimal information: {"Name": obj->GetName(), "ContentSize": obj->GetData().GetSize()} 
+     * \return JsonBuilderInterface that has a json textual information with minimal information: {"Name": obj->GetName(), "ContentSize": obj->GetData().GetSize()} 
      */
-    virtual std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
+    virtual Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) = 0;
 
     virtual ~TypeInterface()
     {
@@ -213,6 +220,67 @@ namespace Utils
         virtual std::optional<Zone> GetObjectsZone(uint32 index) const = 0;
         virtual bool SetZones(const ZonesList& zones)                  = 0;
     };
+
+    template <typename ListType, typename ValueType>
+    class CORE_EXPORT ListIterator
+    {
+        const ListType& iteratorList;
+        uint32_t index;
+
+      public:
+        ListIterator(const ListType& listParam, uint32_t index = 0) : iteratorList(listParam), index(index)
+        {
+        }
+
+        ValueType operator*() const
+        {
+            return iteratorList[index];
+        }
+
+        ListIterator& operator++()
+        {
+            ++index;
+            return *this;
+        }
+
+        bool operator!=(const ListIterator& other) const
+        {
+            return index != other.index;
+        }
+    };
+
+    class CORE_EXPORT JsonBuilderInterface
+    {
+    protected:
+        void* data;
+        JsonBuilderInterface() = default;
+      public:
+        using JsonNode = void*;
+        static JsonBuilderInterface* Create();
+        static void Destroy(JsonBuilderInterface* instance);
+
+        virtual ~JsonBuilderInterface() = default;
+
+        virtual void AddInt(std::string_view key, int64_t value, JsonNode parent = nullptr)                                        = 0;
+        virtual void AddUInt(std::string_view key, uint64_t value, JsonNode parent = nullptr)                                      = 0;
+        virtual void AddBool(std::string_view key, bool value, JsonNode parent = nullptr)                                          = 0;
+        virtual void AddString(std::string_view key, std::string_view value, JsonNode parent = nullptr)                            = 0;
+        virtual void AddU16String(std::string_view key, std::u16string_view value, JsonNode parent = nullptr)                      = 0;
+        virtual void AddStringArray(std::string_view key, const std::vector<std::string>& values, JsonNode parent = nullptr)       = 0;
+        virtual void AddU16StringArray(std::string_view key, const std::vector<std::u16string>& values, JsonNode parent = nullptr) = 0;
+
+        virtual JsonNode StartObject(std::string_view key, JsonNode parent = nullptr) = 0;
+
+        virtual JsonNode StartArray(std::string_view key, JsonNode parent = nullptr) = 0;
+        virtual void AddStringToArray(std::string_view value, JsonNode arrayNode)    = 0;
+        virtual void AddU16StringToArray(std::u16string_view value, JsonNode arrayNode) = 0;
+        virtual void AddBoolToArray(bool value, JsonNode arrayNode)                  = 0;
+        virtual void AddIntToArray(int64_t value, JsonNode arrayNode)                = 0;
+        virtual void AddUIntToArray(uint64_t value, JsonNode arrayNode)              = 0;
+
+        virtual std::string ToString() const = 0;
+        virtual void* GetData() const        = 0;
+    };
 } // namespace Utils
 
 namespace CommonInterfaces
@@ -236,8 +304,9 @@ namespace CommonInterfaces
     struct CORE_EXPORT QueryInterface
     {
         virtual bool RegisterSmartAssistantInterface(Pointer<SmartAssistants::SmartAssistantRegisterInterface> smartAssistantInterface) = 0;
-        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                    = 0;
-        virtual ~QueryInterface()                                                                                               = default;
+        virtual SmartAssistants::SmartAssistantPromptInterface* GetSmartAssistantInterface()                                            = 0;
+        virtual uint32 GetPromptRetriesCount() const                                                                                    = 0;
+        virtual ~QueryInterface()                                                                                                       = default;
     };
 } // namespace CommonInterfaces
 
@@ -658,6 +727,30 @@ namespace Decoding
         CORE_EXPORT void Encode(BufferView view, Buffer& output);
         CORE_EXPORT bool Decode(BufferView view, Buffer& output);
     } // namespace QuotedPrintable
+
+    namespace HexCharactersToAscii
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace HexCharactersToAscii
+
+    namespace VBSEncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace VBSEncoding
+
+    namespace XOREncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace XOREncoding
+
+    namespace HTMLCharactersEncoding
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace HTMLCharactersEncoding
 
     namespace ZLIB
     {
@@ -1303,6 +1396,7 @@ namespace View
             bool SetTokenColor(TokenColor col);
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
+            bool SetTypeID(uint32 typeID);
             bool DisableSimilartyHighlight();
             bool SetText(const ConstString& text);
             bool SetError(const ConstString& error);
@@ -1352,6 +1446,15 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, TokenFlags flags);
             // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+
+            Utils::ListIterator<TokensList, Token> begin() const
+            {
+                return { *this, 0 };
+            }
+            Utils::ListIterator<TokensList, Token> end() const
+            {
+                return { *this, Len() };
+            }
         };
         class CORE_EXPORT BlocksList
         {
@@ -1367,6 +1470,15 @@ namespace View
             Block operator[](uint32 index) const;
             Block Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
             Block Add(Token start, Token end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
+
+            Utils::ListIterator<BlocksList, Block> begin() const
+            {
+                return { *this, 0 };
+            }
+            Utils::ListIterator<BlocksList, Block> end() const
+            {
+                return { *this, Len() };
+            }
         };
         struct SyntaxManager {
             const TextParser& text;
@@ -1418,10 +1530,10 @@ namespace View
             Rescan,
         };
         struct CORE_EXPORT Plugin {
-            virtual std::string_view GetName()                         = 0;
-            virtual std::string_view GetDescription()                  = 0;
-            virtual bool CanBeAppliedOn(const PluginData& data)        = 0;
-            virtual PluginAfterActionRequest Execute(PluginData& data) = 0;
+            virtual std::string_view GetName()                                                   = 0;
+            virtual std::string_view GetDescription()                                            = 0;
+            virtual bool CanBeAppliedOn(const PluginData& data)                                  = 0;
+            virtual PluginAfterActionRequest Execute(PluginData& data, Reference<Window> parent) = 0;
         };
         struct CORE_EXPORT Settings {
             void* data;
@@ -1541,20 +1653,28 @@ namespace App
     bool CORE_EXPORT Init(bool isTestingEnabled);
     void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenFile(
+          const std::filesystem::path& path,
+          OpenMethod method,
+          std::string_view typeName          = "",
+          Reference<Window> parent           = nullptr,
+          const ConstString& creationProcess = "");
+    void CORE_EXPORT
+    OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr, const ConstString& creationProcess = "");
     void CORE_EXPORT OpenBuffer(
           BufferView buf,
           const ConstString& name,
           const ConstString& path,
           OpenMethod method,
           std::string_view typeName = "",
-          Reference<Window> parent  = nullptr);
+          Reference<Window> parent  = nullptr,
+          const ConstString& creationProcess = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
     std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
     uint32 CORE_EXPORT GetTypePluginsCount();
+    bool CORE_EXPORT ShowAddNoteDialog();
 
 }; // namespace App
 }; // namespace GView

@@ -117,12 +117,13 @@ bool GView::App::ResetConfiguration()
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
 
-void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent)
+void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent, const ConstString& creationProcess)
 {
-    OpenFile(path, OpenMethod::ForceType, typeName, parent);
+    OpenFile(path, OpenMethod::ForceType, typeName, parent, creationProcess);
 }
 
-void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName, Reference<Window> parent)
+void GView::App::OpenFile(
+      const std::filesystem::path& path, OpenMethod method, std::string_view typeName, Reference<Window> parent, const ConstString& creationProcess)
 {
     if (gviewAppInstance)
     {
@@ -130,25 +131,31 @@ void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, 
         {
             if (path.is_absolute())
             {
-                gviewAppInstance->AddFileWindow(path, method, typeName, parent);
+                gviewAppInstance->AddFileWindow(path, method, typeName, parent, creationProcess);
             }
             else
             {
                 const auto absPath = std::filesystem::canonical(path);
-                gviewAppInstance->AddFileWindow(absPath, method, typeName, parent);
+                gviewAppInstance->AddFileWindow(absPath, method, typeName, parent, creationProcess);
             }
         }
         catch (std::filesystem::filesystem_error /* e */)
         {
-            gviewAppInstance->AddFileWindow(path, method, typeName, parent);
+            gviewAppInstance->AddFileWindow(path, method, typeName, parent, creationProcess);
         }
     }
 }
 void GView::App::OpenBuffer(
-      BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName, Reference<Window> parent)
+      BufferView buf,
+      const ConstString& name,
+      const ConstString& path,
+      OpenMethod method,
+      std::string_view typeName,
+      Reference<Window> parent,
+      const ConstString& creationProcess)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName, parent);
+        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName, parent, creationProcess);
 }
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)
@@ -175,4 +182,66 @@ uint32 CORE_EXPORT GView::App::GetTypePluginsCount()
 {
     CHECK(gviewAppInstance, 0, "GView was not initialized !");
     return gviewAppInstance->GetTypePluginsCount();
+}
+
+class AddNoteWindow : public Controls::Window
+{
+    constexpr static int BUTTON_ID_OK    = 10000;
+    constexpr static int BUTTON_ID_CLOSE = 10001;
+
+    CharacterBuffer data;
+    Reference<TextField> input;
+
+  public:
+    AddNoteWindow() : Window("Add note", "d:c,w:30,h:8", WindowFlags::Sizeable)
+    {
+        input = Factory::TextField::Create(this, data, "l:1,t:1,r:1", TextFieldFlags::None);
+        Factory::Button::Create(this, "OK", "l:6,b:0,w:10", BUTTON_ID_OK);
+        Factory::Button::Create(this, "Close", "l:16,b:0,w:10", BUTTON_ID_CLOSE);
+        input->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> c, Event eventType, int id) override
+    {
+        if (eventType == Event::WindowClose || eventType == Event::WindowAccept) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType != Event::ButtonClicked)
+            return true;
+        switch (id) {
+        case BUTTON_ID_OK:
+            if (input->GetText().Len() > 0) {
+                data = input->GetText();
+                Exit(Dialogs::Result::Ok);
+            } else
+                Dialogs::MessageBox::ShowError("Error", "Note cannot be empty !");
+            return true;
+        case BUTTON_ID_CLOSE:
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        default:
+            return true;
+        }
+    }
+
+    const CharacterBuffer& GetNote() const
+    {
+        return data;
+    }
+};
+
+bool CORE_EXPORT GView::App::ShowAddNoteDialog()
+{
+    CHECK(gviewAppInstance, false, "GView was not initialized !");
+
+    AddNoteWindow win;
+    const auto result = win.Show();
+    if (result != Dialogs::Result::Ok)
+        return false;
+    std::u16string newNodeStr;
+    if (!win.GetNote().ToString(newNodeStr))
+        return false;
+    GetCurrentWindow()->AddNote(newNodeStr);
+    return true;
 }

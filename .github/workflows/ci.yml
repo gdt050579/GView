@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-13, windows-latest]
+        os: [ubuntu-22.04, macos-15-intel, windows-latest]
     
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
             ${{ runner.os }}-vcpkg-
 
 
-            # OS-specific dependencies
+      # OS-specific dependencies
       - name: Install dependencies
         if: startsWith(matrix.os, 'ubuntu')
         run: |
@@ -47,7 +47,8 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew update
-          brew install autoconf autoconf-archive automake libtool
+          brew install autoconf autoconf-archive automake libtool make cmake ninja
+          echo "VCPKG_CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
           # Uncomment if needed later:
           # brew install pkg-config # https://github.com/dotnet/runtime/issues/82240
 

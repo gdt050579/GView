@@ -162,8 +162,8 @@ const std::array<AsmFunctionDetails, 58> KNOWN_FUNCTIONS = { {
       { "lstrlenA", { { "lpString", "LPCSTR" } } },
 } };
 
-Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
-    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS), queryInterface(queryInterface)
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
+    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
     // settings
@@ -175,6 +175,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings, CommonInte
         this->settings.reset(new SettingsData());
     }
 
+    queryInterface = nullptr;
     if (config.Loaded == false)
         config.Initialize();
     this->ColorMan.InitFromConfigColors(config.ConfigColors);
@@ -1401,6 +1402,10 @@ void Instance::OnAfterResize(int newWidth, int newHeight)
 
 void Instance::OnStart()
 {
+    auto currentWindow     = Application::GetCurrentWindow();
+    auto windowInterface   = currentWindow.ToObjectRef<GView::View::WindowInterface>();
+    queryInterface = windowInterface->GetQueryInterface();
+
     // TODO: rethink
     if (settings->defaultLanguage == DisassemblyLanguage::Default)
         settings->defaultLanguage = DisassemblyLanguage::x86;

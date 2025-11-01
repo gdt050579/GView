@@ -70,7 +70,7 @@ inline std::string_view TokenDataTypeToString(TokenDataType dataType)
     }
 }
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj = _obj;
@@ -1061,9 +1061,9 @@ void Instance::Paint(Graphics::Renderer& renderer)
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     if (this->showMetaData)
-        commandBar.SetCommand(ShowPluginsCmd.Key, "ShowMetaData:ON", ShowPluginsCmd.CommandId);
+        commandBar.SetCommand(ShowMetaDataCmd.Key, "ShowMetaData:ON", ShowMetaDataCmd.CommandId);
     else
-        commandBar.SetCommand(ShowPluginsCmd.Key, "ShowMetaData:OFF", ShowPluginsCmd.CommandId);
+        commandBar.SetCommand(ShowMetaDataCmd.Key, "ShowMetaData:OFF", ShowMetaDataCmd.CommandId);
 
     if (this->noItemsVisible == false)
         commandBar.SetCommand(DeleteCmd.Key, DeleteCmd.Caption, DeleteCmd.CommandId);
@@ -1804,7 +1804,7 @@ void Instance::ShowPlugins()
         }
     }
 
-    PluginDialog dlg(pd, this->settings.ToReference(), selectionStart, selectionEnd, blockStart, blockEnd);
+    PluginDialog dlg(pd, this->settings.ToReference(), Application::GetCurrentWindow(), selectionStart, selectionEnd, blockStart, blockEnd);
     auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());
     textClone   = ted.Release();
     if (result == Dialogs::Result::Cancel)
@@ -1834,23 +1834,6 @@ void Instance::ShowPlugins()
 }
 void Instance::ShowSaveAsDialog()
 {
-    Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
-    {
-        auto desktop         = AppCUI::Application::GetDesktop();
-        auto focusedChild    = desktop->GetFocusedChild();
-        const auto windowsNo = desktop->GetChildrenCount();
-        for (uint32 i = 0; i < windowsNo; i++)
-        {
-            auto window = desktop->GetChild(i);
-
-            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window)))
-            {
-                parentWindow = window.ToObjectRef<Window>();
-                break;
-            }
-        }
-    }
-
     SaveAsDialog dlg(this->obj);
     if (dlg.Show() != Dialogs::Result::Ok)
         return;
@@ -1980,7 +1963,7 @@ void Instance::ShowSaveAsDialog()
     AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save successful!");
     if (dlg.ShouldOpenANewWindow())
     {
-        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch, "", parentWindow);
+        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch, "", Application::GetCurrentWindow());
     }
 }
 void Instance::ShowFindAllDialog()

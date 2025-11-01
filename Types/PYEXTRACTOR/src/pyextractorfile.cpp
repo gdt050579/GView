@@ -1,7 +1,5 @@
-#include <nlohmann/json.hpp>
 #include "pyextractor.hpp"
-
-using nlohmann::json;
+#include <cstring>
 
 namespace GView::Type::PYEXTRACTOR
 {
@@ -143,19 +141,20 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
     return true;
 }
 
-std::string PYEXTRACTORFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* PYEXTRACTORFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"]                   = obj->GetName();
-    context["ContentSize"]            = obj->GetData().GetSize();
-    context["CookiePosition"]         = archive.cookiePosition;
-    context["PyInstallerVersion"]     = (archive.version == PyInstallerVersion::V20 ? "2.0" : "2.1+");
-    context["TableOfContentPosition"] = archive.info.tableOfContentPosition;
-    context["TableOfContentSize"]     = archive.info.tableOfContentSize;
-    context["PyVersion"]              = archive.info.pyver;
-    if (strlen(archive.info.pylibname) > 0)
-        context["PyLibName"] = archive.info.pylibname;
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("CookiePosition", archive.cookiePosition);
+    builder->AddString("PyInstallerVersion", archive.version == PyInstallerVersion::V20 ? "2.0" : "2.1+");
+    builder->AddUInt("TableOfContentPosition", archive.info.tableOfContentPosition);
+    builder->AddUInt("TableOfContentSize", archive.info.tableOfContentSize);
+    builder->AddUInt("PyVersion", archive.info.pyver);
+    if (std::strlen(archive.info.pylibname) > 0)
+        builder->AddString("PylibName", archive.info.pylibname);
+
+    return builder;
 }
 
 bool PYEXTRACTORFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)

@@ -29,7 +29,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
         } // namespace Plugins
 
@@ -81,7 +82,7 @@ namespace Type
                 return selectionZoneInterface->GetSelectionZone(index);
             }
 
-            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+            GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
         };
         namespace Panels
         {

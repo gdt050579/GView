@@ -162,7 +162,7 @@ int ProcessOpenCommand(int argc, T** argv, int startIndex, bool isTesting = fals
         while (start < argc) {
             // skip options
             if (argv[start][0] != '-')
-                GView::App::OpenFile(argv[start], method, type.ToStringView());
+                GView::App::OpenFile(argv[start], method, type.ToStringView(),nullptr, "initial access");
             start++;
         }
     }else {
@@ -170,7 +170,7 @@ int ProcessOpenCommand(int argc, T** argv, int startIndex, bool isTesting = fals
         while (start < argc) {
             if (!foundFile && argv[start][0] != '-') {
                 foundFile = true;
-                GView::App::OpenFile(argv[start], method, type.ToStringView());
+                GView::App::OpenFile(argv[start], method, type.ToStringView(),nullptr, "initial access");
                 start++;
                 continue;
             }

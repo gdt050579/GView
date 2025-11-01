@@ -3,8 +3,6 @@
 #include "Internal.hpp"
 #include <array>
 
-#include "ImageViewer.hpp"
-
 namespace GView
 {
 namespace View
@@ -380,7 +378,7 @@ namespace View
             std::vector<BlockObject> blocks;
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             inline uint32 GetUnicodeTextLen() const
             {
@@ -512,6 +510,7 @@ namespace View
         };
         class PluginDialog : public Window
         {
+            Reference<Window> parent;
             PluginData& pluginData;
             Reference<ListView> lstPlugins;
             Reference<RadioBox> rbRunOnSelection, rbRunOnCurrentBlock, rbRunOnEntireFile;
@@ -527,6 +526,7 @@ namespace View
             PluginDialog(
                   PluginData& data,
                   Reference<SettingsData> settings,
+                  Reference<Window> parent,
                   uint32 selectionStart,
                   uint32 selectionEnd,
                   uint32 blockStart,

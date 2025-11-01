@@ -1,8 +1,6 @@
-#include <nlohmann/json.hpp>
 #include "ico.hpp"
 
 using namespace GView::Type::ICO;
-using nlohmann::json;
 
 constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
 
@@ -71,11 +69,11 @@ bool ICOFile::LoadImageToObject(Image& img, uint32 index)
     return true;
 }
 
-std::string ICOFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* ICOFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"] = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    context["ImagesCount"] = dirs.size();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("ImagesCount", dirs.size());
+    return builder;
 }

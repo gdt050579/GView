@@ -74,7 +74,7 @@ jobs:
         subject-path: GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip
      
   build-macos:
-    runs-on: [macos-13] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
+    runs-on: [macos-15-intel] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
     steps:
     - uses: actions/checkout@v4
       with:
@@ -91,7 +91,8 @@ jobs:
     - name: Install build dependencies 
       run: | 
         brew update 
-        brew install autoconf autoconf-archive automake libtool
+        brew install autoconf autoconf-archive automake libtool make cmake ninja
+        echo "VCPKG_CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
     
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
@@ -134,7 +135,7 @@ jobs:
         subject-path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         
   build-ubuntu:
-    runs-on: [ubuntu-20.04]
+    runs-on: [ubuntu-22.04]
     env:
       CC: gcc-10
       CXX: g++-10

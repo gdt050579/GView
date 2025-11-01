@@ -74,7 +74,23 @@
     {
       "name": "nlohmann-json",
       "platform": "windows | linux | osx"
-    }
+    },
+	{
+		"name": "openjpeg",
+		"platform": "windows | linux | osx"
+	},
+	{
+		"name": "tiff",
+		"platform": "windows | linux | osx"
+	},
+	{
+		"name": "jbig2dec",
+		"platform": "windows | linux | osx"
+	},
+	{
+		"name": "podofo",
+		"platform": "windows | linux | osx"
+	}
   ],
   "vcpkg-configuration": {
     "overlay-ports": [ "./AppCUI/vcpkg-ports/ncurses"]

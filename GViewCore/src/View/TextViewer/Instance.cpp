@@ -267,7 +267,7 @@ class DataCharacterStream
     }
 };
 
-Instance::Instance(Reference<GView::Object> _obj, Settings* _settings, CommonInterfaces::QueryInterface* queryInterface)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl("Text View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj = _obj;
@@ -1490,8 +1490,34 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
-    NOT_IMPLEMENTED(false);
-}
+    if (!selection.HasAnySelection()) 
+    {
+        Dialogs::MessageBox::ShowError("Error", "Please make a selection before copying");
+        return false;
+    }
+
+    uint64 start, end;
+    const int res = this->selection.OffsetToSelection(this->Cursor.pos, start, end);
+    if (res < 0) {
+        Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", "Fail to read selection");
+        return false;
+    }
+
+    auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start + 1));
+    if (buf.IsValid() == false) {
+        Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", "Fail to read content to buffer");
+        return false;
+    }
+
+    if (AppCUI::OS::Clipboard::SetText(buf) == false) {
+        LocalString<128> message;
+        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", obj->GetData().GetSize(), 100), false, "");
+        Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
+        return false;
+    }
+
+    return true;
+    }
 //======================================================================[Mouse coords]==================
 void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex)
 {

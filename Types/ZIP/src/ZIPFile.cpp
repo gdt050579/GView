@@ -1,10 +1,7 @@
-#include "zip.hpp"
-
 #include <map>
 #include <queue>
-#include <nlohmann/json.hpp>
 
-using nlohmann::json;
+#include "zip.hpp"
 
 namespace GView::Type::ZIP
 {
@@ -218,21 +215,6 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     GView::Decoding::ZIP::Entry entry{ 0 };
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
-    Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
-    {
-        auto desktop         = AppCUI::Application::GetDesktop();
-        auto focusedChild    = desktop->GetFocusedChild();
-        const auto windowsNo = desktop->GetChildrenCount();
-        for (uint32 i = 0; i < windowsNo; i++) {
-            auto window = desktop->GetChild(i);
-
-            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window))) {
-                parentWindow = window.ToObjectRef<Window>();
-                break;
-            }
-        }
-    }
-
     Buffer buffer{};
     bool decompressed{ false };
 
@@ -261,7 +243,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             {
                 std::replace(path.begin(), path.end(), u'/', u'\\');
             }
-            GView::App::OpenBuffer(buffer, name, path, GView::App::OpenMethod::BestMatch);
+            GView::App::OpenBuffer(buffer, name, path, GView::App::OpenMethod::BestMatch,"",Application::GetCurrentWindow(),"extraction and decompression");
 
             return;
         }
@@ -291,7 +273,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             }
 
             const auto name = entry.GetFilename();
-            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch, "", parentWindow);
+            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch, "", Application::GetCurrentWindow(), "extraction");
             return;
         }
 
@@ -301,12 +283,12 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     Dialogs::MessageBox::ShowError("Error!", "Unable to decompress without a password!");
 }
 
-std::string ZIPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* ZIPFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"] = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    context["EntriesCount"] = this->info.GetCount();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    builder->AddUInt("EntriesCount", info.GetCount());
+    return builder;
 }
 } // namespace GView::Type::ZIP

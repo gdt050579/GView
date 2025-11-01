@@ -258,7 +258,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
             class FoldConstants : public GView::View::LexicalViewer::Plugin
             {
@@ -266,7 +267,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
             class AddStrings : public GView::View::LexicalViewer::Plugin
             {
@@ -274,7 +276,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class ReverseStrings : public GView::View::LexicalViewer::Plugin
@@ -283,7 +286,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
 			class ReplaceConstants : public GView::View::LexicalViewer::Plugin
@@ -292,7 +296,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class ConstPropagation : public GView::View::LexicalViewer::Plugin
@@ -301,7 +306,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class RemoveDeadCode : public GView::View::LexicalViewer::Plugin
@@ -310,7 +316,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class RemoveDummyCode : public GView::View::LexicalViewer::Plugin
@@ -319,7 +326,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class ContextAwareRename : public GView::View::LexicalViewer::Plugin
@@ -328,7 +336,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class Emulate : public GView::View::LexicalViewer::Plugin
@@ -337,7 +346,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class RemoveComments : public GView::View::LexicalViewer::Plugin
@@ -346,7 +356,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class MarkAlwaysTrue : public GView::View::LexicalViewer::Plugin
@@ -355,7 +366,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class MarkAlwaysFalse : public GView::View::LexicalViewer::Plugin
@@ -364,7 +376,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
 
             class UnrollLoop : public GView::View::LexicalViewer::Plugin
@@ -373,7 +386,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
             class InlineFunctions : public GView::View::LexicalViewer::Plugin
             {
@@ -381,7 +395,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
             class HoistFunctions : public GView::View::LexicalViewer::Plugin
             {
@@ -389,7 +404,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
             class DumpAST : public GView::View::LexicalViewer::Plugin
             {
@@ -397,7 +413,8 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(
+                      GView::View::LexicalViewer::PluginData& data, Reference<Window> parent) override;
             };
         } // namespace Plugins
 
@@ -478,7 +495,7 @@ namespace Type
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
             virtual bool StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result) override;
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
-            std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+            GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
         };
         namespace Panels
         {

@@ -24,6 +24,15 @@ namespace View
     {
         using namespace AppCUI;
 
+        inline char* portable_strdup(const char* s)
+        {
+#if defined(_WIN32)
+            return _strdup(s);
+#else
+            return strdup(s);
+#endif
+        }
+
         static constexpr size_t CACHE_OFFSETS_DIFFERENCE      = 500;
         static constexpr size_t DISSASM_MAX_CACHED_LINES      = 50;
         static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
@@ -198,7 +207,7 @@ namespace View
                 size            = other.size;
                 currentLine     = other.currentLine;
                 op_str_size     = other.op_str_size;
-                op_str          = strdup(other.op_str);
+                op_str          = portable_strdup(other.op_str);
                 flags           = other.flags;
                 lineArrowToDraw = other.lineArrowToDraw;
                 mapping         = other.mapping;
@@ -639,7 +648,7 @@ namespace View
             void SaveCacheData();
 
           public:
-            Instance(Reference<GView::Object> obj, Settings* settings, CommonInterfaces::QueryInterface* queryInterface);
+            Instance(Reference<GView::Object> obj, Settings* settings);
             virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;

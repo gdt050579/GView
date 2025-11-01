@@ -362,7 +362,7 @@ class UnrollLoopWindow : public AppCUI::Controls::Window
     }
 };
 
-GView::View::LexicalViewer::PluginAfterActionRequest UnrollLoop::Execute(GView::View::LexicalViewer::PluginData& data)
+GView::View::LexicalViewer::PluginAfterActionRequest UnrollLoop::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
     UnrollLoopWindow dlg;
     auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());

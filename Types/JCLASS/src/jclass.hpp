@@ -15,6 +15,6 @@ class ClassViewer : public TypeInterface
         return true;
     }
 
-    std::string GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+    GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 } // namespace GView::Type::JClass

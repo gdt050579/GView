@@ -1,9 +1,7 @@
-#include <nlohmann/json.hpp>
 #include "sqlite.hpp"
 
 using namespace GView::Type::SQLite;
 using namespace AppCUI::Controls;
-using nlohmann::json;
 
 std::string_view SQLiteFile::GetTypeName()
 {
@@ -83,10 +81,10 @@ void SQLiteFile::RunCommand(std::string_view commandName)
     }
 }
 
-std::string SQLiteFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
+GView::Utils::JsonBuilderInterface* SQLiteFile::GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt)
 {
-    json context;
-    context["Name"] = obj->GetName();
-    context["ContentSize"] = obj->GetData().GetSize();
-    return context.dump();
+    auto builder = GView::Utils::JsonBuilderInterface::Create();
+    builder->AddU16String("Name", obj->GetName());
+    builder->AddUInt("ContentSize", obj->GetData().GetSize());
+    return builder;
 }
