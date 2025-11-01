@@ -74,7 +74,7 @@ jobs:
         subject-path: GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip
      
   build-macos:
-    runs-on: [macos-13] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
+    runs-on: [macos-15-intel] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
     steps:
     - uses: actions/checkout@v4
       with:
@@ -87,6 +87,12 @@ jobs:
     #     brew update
     #     brew install pkg-config
     #     brew upgrade
+
+    - name: Install build dependencies 
+      run: | 
+        brew update 
+        brew install autoconf autoconf-archive automake libtool make cmake ninja
+        echo "VCPKG_CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
     
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}

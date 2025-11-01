@@ -133,7 +133,7 @@ namespace View
                 current_name_to_initial_name.insert({ initial_name, initial_name });
             }
 
-            bool add_name_change(const std::string& initial_name, const std::string& new_name)
+            bool add_name_change(const std::string& initial_name, const std::string& new_name, AnnoationLineNumberType line)
             {
                 if (current_name_to_initial_name.contains(new_name))
                     return false;
@@ -142,8 +142,26 @@ namespace View
 
                 initial_name_to_current_name[name_link] = new_name;
                 current_name_to_initial_name[new_name]  = name_link;
+                mappings.at(line).first                 = new_name;
                 return true;
             }
+
+            bool contains_annotation_name(const std::string& name) const
+            {
+                return current_name_to_initial_name.contains(name);
+            }
+
+            std::optional<AnnoationLineNumberType> get_line_by_annotation_name(const std::string& name) const
+            {
+                if (!contains_annotation_name(name))
+                    return {};
+                for (const auto& [line, details] : mappings) {
+                    if (details.first == name)
+                        return line;
+                }
+                return {};
+            }
+
 
             std::string get_name_change(const std::string& initial_name) const
             {

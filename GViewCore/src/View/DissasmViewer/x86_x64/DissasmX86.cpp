@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <sstream>
 
+using GView::Utils::GStatus;
+
 // #define DISSASM_DISABLE_STRING_PREVIEW
 
 constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 100;
@@ -572,7 +574,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         if (parent) {
             auto new_name = parent->annotations.get_name_change(fnName.GetText());
             if (!new_name.empty())
-                fnName.Set(new_name.c_str(), (uint32)new_name.size());
+                fnName.Set(new_name.c_str(), (uint32) new_name.size());
         }
 
         op_str      = strdup(fnName.GetText());
@@ -1190,29 +1192,48 @@ DissasmCodeInternalType* GView::View::DissasmViewer::GetRecursiveCollpasedZoneBy
     return GetRecursiveCollpasedZoneByLineRecursive(parent, line);
 }
 
-bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line, std::string_view* newName)
+GStatus DissasmCodeZone::TryRenameLine(
+      uint32 line, Reference<GView::Object> obj, std::string_view* newName, DissasmInsnExtractLineParams* params)
 {
     // TODO: improve, add searching function to search inside types for the current annotation
+    std::string currentName = {};
     auto& annotations = dissasmType.annotations;
-    auto it           = annotations.find(line);
-    if (it != annotations.end()) {
-        if (newName) {
-            it->second.first = newName->data();
-            return true;
+    {
+        auto it = annotations.find(line);
+        if (it != annotations.end()) {
+            if (newName) {
+                it->second.first = newName->data();
+                return GStatus::Ok();
+            }
+            currentName = it->second.first;
         }
-        SingleLineEditWindow dlg(it->second.first, "Edit label");
+    }
+
+    if (currentName.empty()) {
+        auto asmLine = GetCurrentAsmLine(line, obj, params);
+        if (asmLine.flags == DissasmAsmPreCacheLine::InstructionFlag::JmpFlag) {
+            //TODO: change to std::sting_view
+            std::string annotation_name = std::string(asmLine.op_str, asmLine.op_str_size);
+            auto res                    = annotations.get_line_by_annotation_name(annotation_name);
+            if (res.has_value()) {
+                currentName = std::move(annotation_name);
+                line = res.value();
+            }
+        }
+    }
+
+    if (!currentName.empty()) {
+        SingleLineEditWindow dlg(currentName, "Edit label");
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
             if (!res.empty()) {
-                if (!annotations.add_name_change(it->second.first, res)) {
-                    //TODO: do this check inside the SingleLineEditWindow
-                    Dialogs::MessageBox::ShowError("Error", "Name already exists!");
-                    return false;
+                if (!annotations.add_name_change(currentName, res, line)) {
+                    // TODO: do this check inside the SingleLineEditWindow
+                    return GStatus::Error("Name already exists!");
                 }
-                it->second.first = res;
             }
         }
-        return true;
+        return GStatus::Ok();
     }
 
     auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->isCollapsed; };
@@ -1224,10 +1245,10 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line, std
             if (!res.empty())
                 collapsedZone->name = res;
         }
-        return true;
+        return GStatus::Ok();
     }
 
-    return false;
+    return GStatus::Error("Failed to rename line");
 }
 
 bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
@@ -1791,7 +1812,7 @@ void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCo
 {
     Graphics::Character* end   = chars + charsCount;
     Graphics::Character* start = nullptr;
-    //ColorPair col;
+    // ColorPair col;
     while (chars < end) {
         if (chars->Code == '*') // Check for '**'
         {
@@ -2139,7 +2160,7 @@ void Instance::QuerySmartAssistantX86X64(
         auto indexResult = dlg.GetSelectedIndex();
         if (indexResult.has_value()) {
             auto sv = std::string_view(names[indexResult.value()]);
-            codeZone->TryRenameLine(line, &sv);
+            codeZone->TryRenameLine(line, obj, &sv, nullptr);
         }
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         QueryShowCodeDialog dlg(result, "Code explanation", false, true);

@@ -1,5 +1,6 @@
 #pragma once
 #include "AppCUI/include/AppCUI.hpp"
+#include <cstring>
 using AppCUI::uint32;
 
 // ------------------ constexpr bswap for 16/32/64 ------------------

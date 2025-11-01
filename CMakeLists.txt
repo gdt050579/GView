@@ -21,7 +21,7 @@ if (${ENABLE_TESTS})
     set(CURRENT_PROJECT_NAME GViewTesting)
 endif()
 
-project(${CURRENT_PROJECT_NAME} VERSION 1.0)
+project(${CURRENT_PROJECT_NAME} VERSION 1.0 DESCRIPTION "GView - GenericViewer" LANGUAGES C CXX)
 
 include(CheckIPOSupported)
 check_ipo_supported(RESULT supported OUTPUT error)

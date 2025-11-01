@@ -467,8 +467,19 @@ void Instance::RenameLabel()
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     startingLine             = startingLine - 1;
 
-    if (!convertedZone->TryRenameLine(startingLine)) {
-        Dialogs::MessageBox::ShowNotification("Warning", "That line cannot pe renamed!");
+    DissasmInsnExtractLineParams lineParams = {};
+    lineParams.obj                          = obj;
+    lineParams.asmLine                      = startingLine;
+    lineParams.actualLine                   = startingLine;
+    lineParams.zone                         = convertedZone;
+    lineParams.dli                          = nullptr;
+    lineParams.settings                     = settings.get();
+    lineParams.asmData                      = &asmData;
+    lineParams.isCollapsed                  = zone->isCollapsed;
+
+    auto renameResult = convertedZone->TryRenameLine(startingLine, obj, nullptr, &lineParams);
+    if (!renameResult.ok) {
+        Dialogs::MessageBox::ShowNotification("Warning", renameResult.message);
         return;
     }
     selection.Clear();

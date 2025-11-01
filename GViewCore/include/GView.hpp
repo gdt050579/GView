@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.377.0"
+#define GVIEW_VERSION "0.378.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -280,6 +280,19 @@ namespace Utils
 
         virtual std::string ToString() const = 0;
         virtual void* GetData() const        = 0;
+    };
+
+    struct GStatus {
+        bool ok{ true };
+        std::string message;
+        static GStatus Ok()
+        {
+            return GStatus{};
+        }
+        static GStatus Error(std::string msg)
+        {
+            return { .ok = false, .message = std::move(msg) };
+        }
     };
 } // namespace Utils
 
