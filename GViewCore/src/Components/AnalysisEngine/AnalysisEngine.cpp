@@ -580,4 +580,14 @@ bool RuleEngine::TryExecuteSuggestionBySuggestionId(SuggestionId id, bool& shoul
     }
     return false;
 }
+
+Reference<const Suggestion> RuleEngine::GetSuggestionById(SuggestionId id) const
+{
+    for (const auto& s : current_suggestions)
+    {
+        if (s.id == id)
+            return &s;
+    }
+    return nullptr;
+}
 } // namespace GView::Components::AnalysisEngine

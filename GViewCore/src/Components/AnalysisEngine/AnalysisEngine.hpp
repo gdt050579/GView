@@ -57,6 +57,7 @@ class RuleEngine final : public AnalysisEngineInterface
     // Small helpers
     bool TryExecuteSuggestionByArrayIndex(uint32 index, bool& shouldCloseAnalysisWindow);
     bool TryExecuteSuggestionBySuggestionId(SuggestionId id, bool& shouldCloseAnalysisWindow);
+    Reference<const Suggestion> GetSuggestionById(SuggestionId id) const;
   private:
     Status register_rule(const Rule& r) noexcept;
 

@@ -87,9 +87,10 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
 {
     if (!item.IsValid())
         return;
-    auto data = item.GetData<LineData>();
+    auto data = item.GetData<LineData>();//EntryContainerData
     if (!data.IsValid())
         return;
+    ActId action_id                = data->action_id;
     bool shouldCloseAnalysisWindow = false;
     SuggestionId suggestion_id     = data->suggestion_id;
 
@@ -101,11 +102,30 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     item.SetType(TreeViewItem::Type::WarningInformation);
     item.SetData<LineData>(nullptr);
 
+    auto suggestion = engine->GetSuggestionById(suggestion_id);
+    if (!suggestion.IsValid()) {
+        Dialogs::MessageBox::ShowNotification("Suggestion error", "Failed to get suggestion by id");
+        return;
+    }
+    auto parent_subject = new_subject_data[suggestion->subject.value];
+    if (!parent_subject) {
+        Dialogs::MessageBox::ShowNotification("Suggestion error", "Failed to get subject data for suggestion!");
+        return;
+    }
+    auto action_owner = parent_subject->actions.find(action_id);
+    if (action_owner == parent_subject->actions.end()) {
+        Dialogs::MessageBox::ShowNotification("Suggestion error", "Failed to get action data for suggestion!");
+        return;
+    }
+    parent_subject->owner = action_owner->second;
+
     if (!engine->TryExecuteSuggestionBySuggestionId(suggestion_id, shouldCloseAnalysisWindow)) {
-        Dialogs::MessageBox::ShowNotification("Suggestion error", "Found error");
+        Dialogs::MessageBox::ShowNotification("Suggestion error", "Failed to execute suggestion!");
+        parent_subject->ResetOwnerToSelf();
         return;
     }
 
+    //parent_subject->ResetOwnerToSelf();
     predicatesLabel->SetText("Predicates: ");
     DrawSuggestions();
 
@@ -159,11 +179,26 @@ void AnalysisEngineWindow::AddAnalysisNotes(const Subject& currentWindow, std::s
 {
     if (data.empty())
         return;
+
+    auto& subject_data_entry = new_subject_data[currentWindow.value];
+
     auto& window_data_entry = window_data[currentWindow.value];
     LineData line_data      = {};
-    line_data.message       = std::move(data);
-    window_data_entry.data.push_back(std::move(line_data));
+    line_data.message       = data;
+    window_data_entry.data.push_back(line_data);
     tree_data_needs_rebuild = true;
+
+    constexpr const char* opening_string = "Opening ";
+    auto name_it                         = data.find(opening_string);
+    if (name_it != std::string::npos) {
+        auto filename = data.substr(name_it + strlen(opening_string));
+        assert(subject_data_entry->type.index() == 0); // SubjectData
+        std::get<SubjectData>(subject_data_entry->type).name = filename;
+        return;
+    }
+
+    auto line_data_ptr = std::make_shared<LineData>(line_data);
+    subject_data_entry->owner->children.emplace_back(line_data_ptr);
 }
 
 void AnalysisEngineWindow::RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)
@@ -175,10 +210,25 @@ void AnalysisEngineWindow::RegisterSubjectWithParent(const Subject& currentWindo
     info.direct_parent                      = parentWindow ? parentWindow->value : 0;
     info.main_parent                        = parentWindow ? FindMainParent(parentWindow->value) : 0;
     subjects_hierarchy[currentWindow.value] = info;
-    windows[currentWindow.value]            = currentWindow;
+
+    windows[currentWindow.value] = currentWindow;
 
     if (!window_data.contains(currentWindow.value))
         window_data[currentWindow.value] = WindowData();
+
+    auto subject_data_entry    = SubjectData{};
+    subject_data_entry.subject = currentWindow;
+
+    auto container_data_entry   = std::make_shared<EntryContainerData>();
+    container_data_entry->type  = std::move(subject_data_entry);
+    container_data_entry->data  = std::make_shared<EntryLineData>();
+    container_data_entry->owner = container_data_entry->data;
+    new_subject_data.insert({ currentWindow.value, container_data_entry });
+
+    if (parentWindow) {
+        auto& parent_subject_data = new_subject_data[parentWindow->value];
+        parent_subject_data->owner->children.emplace_back(container_data_entry);
+    }
 }
 
 uint64 AnalysisEngineWindow::FindMainParent(uint64 current_subject)
@@ -230,7 +280,26 @@ void AnalysisEngineWindow::GetHint()
             line_data.action        = first_result_name;
             line_data.message       = suggestion.message;
             line_data.suggestion_id = suggestion.id;
-            window_data_entry.data.push_back(std::move(line_data));
+
+            window_data_entry.data.push_back(line_data);
+
+            auto parent_subject_data = new_subject_data[subject->value];
+            if (first_result.type == PredOrAction::PredOrActionType::Action) {
+                ActionData action_data            = {};
+                action_data.id                    = first_result.data.action_id;
+                line_data.action_id               = first_result.data.action_id;
+                action_data.data                  = std::move(line_data);
+                ActionSubjectVariant variant_data = std::move(action_data);
+                auto action_data_ptr              = std::make_shared<EntryContainerData>();
+                action_data_ptr->type             = std::move(variant_data);
+                action_data_ptr->data             = std::make_shared<EntryLineData>();
+                action_data_ptr->owner            = action_data_ptr->data;
+                parent_subject_data->owner->children.emplace_back(action_data_ptr);
+                parent_subject_data->actions[first_result.data.action_id] = action_data_ptr->data;
+            } else {
+                auto line_data_ptr = std::make_shared<LineData>(std::move(line_data));
+                parent_subject_data->owner->children.emplace_back(line_data_ptr);
+            }
         }
         RebuildTreeData();
         DrawSuggestions();
@@ -277,8 +346,28 @@ void AnalysisEngineWindow::DrawPredicatesForCurrentIndex(uint32 index)
     predicatesLabel->SetText(ls.GetText());
 }
 
+void PopulateTreeDataFromLineData(TreeViewItem handle, LineData* data)
+{
+    if (!data->subject.empty())
+        handle.SetText(SUBJECT_COLUMN_INDEX, data->subject);
+    if (!data->action.empty())
+        handle.SetText(ACTION_COLUMN_INDEX, data->action);
+    if (!data->message.empty())
+        handle.SetText(MESSAGE_COLUMN_INDEX, data->message);
+
+    if (data->suggestion_id != 0) {
+        handle.SetType(TreeViewItem::Type::Emphasized_2);
+        handle.SetData<LineData>(data);
+    } else if (data->was_suggestion) {
+        handle.SetType(TreeViewItem::Type::WarningInformation);
+    } else if (!data->subject.empty()) {
+        handle.SetType(TreeViewItem::Type::Category);
+    }
+}
+
 void AnalysisEngineWindow::RebuildTreeData()
 {
+
     std::map<std::string, bool> extended_items = {};
 
     auto selectedItem            = detailsTree->GetCurrentItem();
@@ -295,83 +384,93 @@ void AnalysisEngineWindow::RebuildTreeData()
         }
     }
 
+    // RebuildOldTreeData();
+
     detailsTree->ClearItems();
     tree_data.clear();
+
+    if (new_subject_data.empty())
+        return;
+
+    std::unordered_map<SubjectId, bool> visited = {};
+    std::vector<std::shared_ptr<EntryContainerData>> entries;
+    std::vector<uint32> depths;
+    std::vector<TreeWindowData> tree_window;
+
+    entries.reserve(8);
+    depths.reserve(8);
+    tree_window.reserve(8);
+
+    entries.emplace_back(new_subject_data.begin()->second);
+    depths.emplace_back(0);
+
     uint32 current_index = 0;
-    for (auto& window : window_data) {
-        auto& subject_data              = windows[window.first];
-        std::string initial_val         = std::to_string(subject_data.value);
-        TreeWindowData tree_window_data = {};
-        tree_window_data.parent         = subjects_hierarchy[window.first].direct_parent;
-        if (tree_window_data.parent != 0) {
-            tree_window_data.parent_handle = tree_data[tree_window_data.parent].handle;
-            tree_window_data.handle        = tree_window_data.parent_handle.AddChild(initial_val);
-        } else {
-            tree_window_data.handle = detailsTree->AddItem(initial_val);
-        }
+    while (!entries.empty()) {
+        auto current_depth        = depths.back();
+        const auto& current_entry = entries.back();
 
-        if (selectedIndex == current_index++) {
-            tree_window_data.handle.SetCurrent();
-        }
-
-        tree_window_data.handle.SetData<LineData>(nullptr);
-        const uint32 data_size     = (uint32) window.second.data.size();
-        uint32 starting_data_index = 0;
-
-        if (data_size > 0) {
-            auto& first_item = window.second.data[0];
-            constexpr const char* opening_string = "Opening ";
-            if (first_item.message.starts_with(opening_string)) {
-                tree_window_data.handle.SetText(MESSAGE_COLUMN_INDEX, first_item.message);
-                starting_data_index = 1;
-                tree_window_data.handle.SetType(TreeViewItem::Type::Category);
-                auto name_it = first_item.message.find(opening_string);
-                if (name_it != std::string::npos) {
-                    auto filename = first_item.message.substr(name_it + strlen(opening_string));
-                    tree_window_data.handle.SetText(SUBJECT_COLUMN_INDEX, filename);
-                    initial_val = move(filename);
-                }
-            }
-        }
-
-        if (extended_items.contains(initial_val)) {
-            tree_window_data.handle.SetFolding(true);
-        }
-
-        for (uint32 i = starting_data_index; i < window.second.data.size(); i++) {
-            auto& data = window.second.data[i];
-
-            std::string default_name;
-            if (!data.subject.empty())
-                default_name = data.subject;
-
-            const bool expandable = data.suggestion_id != 0;
-            auto entry            = tree_window_data.handle.AddChild(default_name);
-            /*if (!data.confidence.empty())
-                entry.SetText(1, data.confidence);*/
-            if (!data.action.empty())
-                entry.SetText(ACTION_COLUMN_INDEX, data.action);
-            if (!data.message.empty())
-                entry.SetText(MESSAGE_COLUMN_INDEX, data.message);
-
-            TreeViewItem::Type itemType = TreeViewItem::Type::Normal;
-
-            if (expandable) {
-                entry.SetData<LineData>(&window.second.data[i]);
-                itemType = TreeViewItem::Type::Emphasized_2;
+        if (current_depth == 0) {
+            LineData local_data = {};
+            LineData* line_ptr = &local_data;
+            std::visit(
+                  [&line_ptr](auto&& arg){
+                      using T = std::decay_t<decltype(arg)>;
+                      if constexpr (std::is_same_v<T, SubjectData>) {
+                          line_ptr->subject  = arg.name;
+                          line_ptr->message  = "Opening " + arg.name;
+                          return;
+                      } else if constexpr (std::is_same_v<T, ActionData>) {
+                          line_ptr = &arg.data;
+                          return;
+                      }
+                      assert(false); // Should not happen
+                  },
+                  current_entry->type);
+            TreeWindowData data = {};
+            if (tree_window.empty()) {
+                data.handle = detailsTree->AddItem(line_ptr->subject);
             } else {
-                entry.SetData<LineData>(nullptr);
-                // entry.SetType(TreeViewItem::Type::GrayedOut);
+                data.handle = tree_window.back().handle.AddChild(line_ptr->subject);
             }
+
+            PopulateTreeDataFromLineData(data.handle, line_ptr);
             if (selectedIndex == current_index++) {
-                entry.SetCurrent();
+                data.handle.SetCurrent();
             }
-
-            if (data.was_suggestion)
-                itemType = TreeViewItem::Type::WarningInformation;
-
-            entry.SetType(itemType);
+            if (extended_items.contains(line_ptr->subject)) {
+                data.handle.SetFolding(true);
+            }
+            tree_window.push_back(std::move(data));
         }
-        tree_data[window.first] = std::move(tree_window_data);
+
+        if (current_depth >= current_entry->data->children.size()) {
+            entries.pop_back();
+            depths.pop_back();
+            tree_window.pop_back();
+            continue;
+        }
+
+        auto& current_child = current_entry->data->children[current_depth];
+        depths.back()++;
+        std::visit(
+              [&](auto&& arg) {
+                  using T = std::decay_t<decltype(arg)>;
+                  if constexpr (std::is_same_v<T, std::shared_ptr<LineData>>) {
+                      TreeWindowData data = {};
+                      data.handle         = tree_window.back().handle.AddChild("");
+                      PopulateTreeDataFromLineData(data.handle, arg.get());
+
+                      if (selectedIndex == current_index++) {
+                          data.handle.SetCurrent();
+                      }
+                      if (extended_items.contains(arg->subject)) {
+                          data.handle.SetFolding(true);
+                      }
+                  } else if constexpr (std::is_same_v<T, std::shared_ptr<EntryContainerData>>) {
+                      entries.push_back(arg);
+                      depths.push_back(0);
+                  }
+              },
+              current_child);
     }
 }

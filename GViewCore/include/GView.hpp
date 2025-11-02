@@ -1014,6 +1014,7 @@ namespace Components
         using UserId = uint64;
         using ProcId = uint64;
         using CaseId = uint64;
+        using SubjectId = uint64;
 
         // Subject of a fact: file/user/process or engine itself
         struct CORE_EXPORT Subject {
@@ -1025,7 +1026,7 @@ namespace Components
                 Case    = 4,
             };
             SubjectType kind{ SubjectType::None };
-            uint64 value;
+            SubjectId value;
         };
         inline bool operator==(const Subject& a, const Subject& b) noexcept
         {

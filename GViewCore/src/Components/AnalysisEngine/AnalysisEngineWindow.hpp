@@ -20,12 +20,54 @@ struct LineData
 
     bool was_suggestion;
     SuggestionId suggestion_id;
+    ActId action_id;
 };
 
 struct WindowData
 {
     std::vector<LineData> data;
 };
+
+struct Owner {
+    enum class Type : uint8 {
+        Subject = 0,
+        Action  = 1,
+    };
+    Type type;
+};
+
+struct ActionData
+{
+    ActId id;
+    LineData data;
+};
+
+struct SubjectData
+{
+    Subject subject;
+    std::string name;
+};
+using ActionSubjectVariant = std::variant<SubjectData, ActionData>;
+struct EntryLineData;
+struct EntryContainerData {
+    ActionSubjectVariant type;
+    std::shared_ptr<EntryLineData> data;
+
+    std::shared_ptr<EntryLineData> owner;
+    std::map<ActId, std::shared_ptr<EntryLineData>> actions;
+
+    void ResetOwnerToSelf()
+    {
+        owner = data;
+    }
+};
+
+using EntryLineDataEntry = std::variant<std::shared_ptr<LineData>, std::shared_ptr<EntryContainerData>>;
+struct EntryLineData
+{
+    std::vector<EntryLineDataEntry> children;
+};
+
 
 class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeViewCurrentItemChangedInterface, public Handlers::OnTreeViewItemPressedInterface
 {
@@ -48,6 +90,8 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
     void DrawPredicatesForCurrentIndex(uint32 index);
     void RebuildTreeData();
 
+    void RebuildOldTreeData();
+
     Reference<TreeView> detailsTree;
     bool tree_data_needs_rebuild;
 
@@ -57,10 +101,12 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
     Reference<Label> statusLabel;
     Reference<Label> predicatesLabel;
 
-    std::unordered_map<uint64, SubjectParentInfo> subjects_hierarchy;
-    std::unordered_map<uint64, Subject> windows;
-    std::unordered_map<uint64, WindowData> window_data;
-    std::map<uint64, TreeWindowData> tree_data;
+    std::unordered_map<SubjectId, SubjectParentInfo> subjects_hierarchy;
+    std::unordered_map<SubjectId, Subject> windows;
+    std::unordered_map<SubjectId, WindowData> window_data;
+    std::map<SubjectId, TreeWindowData> tree_data;
+
+    std::map<SubjectId, std::shared_ptr<EntryContainerData>> new_subject_data;
 
 };
 }
