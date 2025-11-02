@@ -90,8 +90,6 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
     void DrawPredicatesForCurrentIndex(uint32 index);
     void RebuildTreeData();
 
-    void RebuildOldTreeData();
-
     Reference<TreeView> detailsTree;
     bool tree_data_needs_rebuild;
 

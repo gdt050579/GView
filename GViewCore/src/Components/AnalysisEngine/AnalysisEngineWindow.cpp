@@ -238,7 +238,7 @@ uint64 AnalysisEngineWindow::FindMainParent(uint64 current_subject)
         auto it = subjects_hierarchy.find(subject);
         if (it == subjects_hierarchy.end())
             break;
-        if (it->first == 1) // First ID
+        if (it->second.main_parent <= 1) // First ID
             break;
         subject = it->first;
     }

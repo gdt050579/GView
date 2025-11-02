@@ -264,7 +264,14 @@ void PCAPFile::OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSug
 
         if (res.data.action_id == actions.ViewScriptFromConnection) // ViewConnectionWithScript
         {
-            shouldDeleteSuggestion = false;
+            // TODO: send args and check if they are received correctly
+            std::vector<uint16> script_connections = streamManager.GetConnectionsWithJSScripts();
+            if (script_connections.empty())
+                return;
+            std::string f    = std::to_string(script_connections[0]) + "\\1";
+            auto initial_pos = utf8_to_u16(f);
+            OnOpenItem(initial_pos, {});
+            closeAnalysisWindow = true;
             break;
         }
     }
