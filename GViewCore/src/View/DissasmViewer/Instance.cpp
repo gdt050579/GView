@@ -467,8 +467,19 @@ void Instance::RenameLabel()
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     startingLine             = startingLine - 1;
 
-    if (!convertedZone->TryRenameLine(startingLine)) {
-        Dialogs::MessageBox::ShowNotification("Warning", "That line cannot pe renamed!");
+    DissasmInsnExtractLineParams lineParams = {};
+    lineParams.obj                          = obj;
+    lineParams.asmLine                      = startingLine;
+    lineParams.actualLine                   = startingLine;
+    lineParams.zone                         = convertedZone;
+    lineParams.dli                          = nullptr;
+    lineParams.settings                     = settings.get();
+    lineParams.asmData                      = &asmData;
+    lineParams.isCollapsed                  = zone->isCollapsed;
+
+    auto renameResult = convertedZone->TryRenameLine(startingLine, obj, nullptr, &lineParams);
+    if (!renameResult.ok) {
+        Dialogs::MessageBox::ShowNotification("Warning", renameResult.message);
         return;
     }
     selection.Clear();
@@ -1518,51 +1529,6 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
         pushesRemaining--;
         pushIndex++;
     }
-}
-
-void DissasmComments::AddOrUpdateComment(uint32 line, std::string comment)
-{
-    comments[line - 1] = std::move(comment);
-}
-
-bool DissasmComments::GetComment(uint32 line, std::string& comment) const
-{
-    const auto it = comments.find(line - 1);
-    if (it != comments.end()) {
-        comment = it->second;
-        return true;
-    }
-    return false;
-}
-
-bool DissasmComments::HasComment(uint32 line) const
-{
-    return comments.contains(line - 1);
-}
-
-void DissasmComments::RemoveComment(uint32 line)
-{
-    const auto it = comments.find(line - 1);
-    if (it != comments.end()) {
-        comments.erase(it);
-        return;
-    }
-    Dialogs::MessageBox::ShowError("Error", "No comments found on the selected line !");
-}
-
-void DissasmComments::AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine)
-{
-    decltype(comments) commentsAjusted = {};
-    for (auto& comment : comments) {
-        if (comment.first >= changedLine) {
-            if (isAddedLine)
-                commentsAjusted.insert({ comment.first + 1, std::move(comment.second) });
-            else
-                commentsAjusted.insert({ comment.first - 1, std::move(comment.second) });
-        }
-    }
-
-    comments = std::move(commentsAjusted);
 }
 
 void Instance::ProcessSpaceKey(bool goToEntryPoint)

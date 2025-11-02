@@ -2025,7 +2025,7 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = config.Keys.DissasmDialog;
         return true;
     case PropertyID::ShowColorNotFocused:
-        value = config.Keys.ShowColorNotFocused;
+        value = showColorNotFocused;
         return true;
     }
     return false;

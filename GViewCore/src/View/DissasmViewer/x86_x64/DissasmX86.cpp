@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <sstream>
 
+using GView::Utils::GStatus;
+
 // #define DISSASM_DISABLE_STRING_PREVIEW
 
 constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT     = 100;
@@ -569,6 +571,12 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         auto fnName = FormatFunctionName(hexValue.value(), prefix);
         // fnName.AddFormat(" (%s)", res.data());
 
+        if (parent) {
+            auto new_name = parent->annotations.get_name_change(fnName.GetText());
+            if (!new_name.empty())
+                fnName.Set(new_name.c_str(), (uint32) new_name.size());
+        }
+
         op_str      = strdup(fnName.GetText());
         op_str_size = static_cast<uint32>(fnName.Len());
     }
@@ -1030,7 +1038,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint32 actualLine       = zone->types.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
 
     const auto annotations = zone->types.back().get().annotations;
-    for (const auto& entry : annotations) // no std::views::keys on mac
+    for (const auto& entry : annotations.mappings) // no std::views::keys on mac
     {
         if (entry.first > diffLines + 1)
             break;
@@ -1184,23 +1192,48 @@ DissasmCodeInternalType* GView::View::DissasmViewer::GetRecursiveCollpasedZoneBy
     return GetRecursiveCollpasedZoneByLineRecursive(parent, line);
 }
 
-bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line, std::string_view* newName)
+GStatus DissasmCodeZone::TryRenameLine(
+      uint32 line, Reference<GView::Object> obj, std::string_view* newName, DissasmInsnExtractLineParams* params)
 {
     // TODO: improve, add searching function to search inside types for the current annotation
+    std::string currentName = {};
     auto& annotations = dissasmType.annotations;
-    auto it           = annotations.find(line);
-    if (it != annotations.end()) {
-        if (newName) {
-            it->second.first = newName->data();
-            return true;
+    {
+        auto it = annotations.find(line);
+        if (it != annotations.end()) {
+            if (newName) {
+                it->second.first = newName->data();
+                return GStatus::Ok();
+            }
+            currentName = it->second.first;
         }
-        SingleLineEditWindow dlg(it->second.first, "Edit label");
+    }
+
+    if (currentName.empty()) {
+        auto asmLine = GetCurrentAsmLine(line, obj, params);
+        if (asmLine.flags == DissasmAsmPreCacheLine::InstructionFlag::JmpFlag) {
+            //TODO: change to std::sting_view
+            std::string annotation_name = std::string(asmLine.op_str, asmLine.op_str_size);
+            auto res                    = annotations.get_line_by_annotation_name(annotation_name);
+            if (res.has_value()) {
+                currentName = std::move(annotation_name);
+                line = res.value();
+            }
+        }
+    }
+
+    if (!currentName.empty()) {
+        SingleLineEditWindow dlg(currentName, "Edit label");
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
-            if (!res.empty())
-                it->second.first = res;
+            if (!res.empty()) {
+                if (!annotations.add_name_change(currentName, res, line)) {
+                    // TODO: do this check inside the SingleLineEditWindow
+                    return GStatus::Error("Name already exists!");
+                }
+            }
         }
-        return true;
+        return GStatus::Ok();
     }
 
     auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->isCollapsed; };
@@ -1212,10 +1245,10 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line, std
             if (!res.empty())
                 collapsedZone->name = res;
         }
-        return true;
+        return GStatus::Ok();
     }
 
-    return false;
+    return GStatus::Error("Failed to rename line");
 }
 
 bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
@@ -1345,7 +1378,7 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, Dissas
 
             AnnotationContainer zoneAnnotations = std::move(zone.annotations);
             zone.annotations                    = {};
-            for (auto& annotation : zoneAnnotations) {
+            for (auto& annotation : zoneAnnotations.mappings) {
                 zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
             }
 
@@ -1459,7 +1492,8 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
 
     // TODO: improve annotations moving
     decltype(annotations) annotationsBefore, annotationCurrent, annotationAfter;
-    for (const auto& zoneVal : parentZone->annotations) {
+    // TODO: check this ??
+    for (const auto& zoneVal : parentZone->annotations.mappings) {
         if (zoneVal.first < zoneLineStart)
             annotationsBefore.insert(zoneVal);
         else if (zoneVal.first >= zoneLineStart && zoneVal.first < zoneLineEnd)
@@ -1507,7 +1541,7 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         firstZone.name                = newZone.name;
         firstZone.indexZoneEnd        = zoneLineEnd;
         firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
-        firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
+        firstZone.annotations.populate_annotations_from_other_storage(newZone.annotations);
         firstZone.commentsData.comments.insert(newZone.commentsData.comments.begin(), newZone.commentsData.comments.end());
         // newZone.UpdateDataLineFromPrevious(firstZone);
         lastZone.UpdateDataLineFromPrevious(firstZone);
@@ -1616,7 +1650,7 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
                 indexesToRemove.push_back(removableDetails.zoneIndex + 1);
                 zoneToUpdate->indexZoneEnd        = nextZone.indexZoneEnd;
                 zoneToUpdate->workingIndexZoneEnd = nextZone.workingIndexZoneEnd;
-                zoneToUpdate->annotations.insert(nextZone.annotations.begin(), nextZone.annotations.end());
+                zoneToUpdate->annotations.populate_annotations_from_other_storage(nextZone.annotations);
             }
         }
     }
@@ -1627,7 +1661,7 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const Dissa
                 indexesToRemove.push_back(removableDetails.zoneIndex);
                 zoneToUpdate->indexZoneStart        = prevZone.indexZoneStart;
                 zoneToUpdate->workingIndexZoneStart = prevZone.workingIndexZoneStart;
-                zoneToUpdate->annotations.insert(prevZone.annotations.begin(), prevZone.annotations.end());
+                zoneToUpdate->annotations.populate_annotations_from_other_storage(prevZone.annotations);
             }
         }
     }
@@ -1778,7 +1812,7 @@ void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCo
 {
     Graphics::Character* end   = chars + charsCount;
     Graphics::Character* start = nullptr;
-    //ColorPair col;
+    // ColorPair col;
     while (chars < end) {
         if (chars->Code == '*') // Check for '**'
         {
@@ -2126,7 +2160,7 @@ void Instance::QuerySmartAssistantX86X64(
         auto indexResult = dlg.GetSelectedIndex();
         if (indexResult.has_value()) {
             auto sv = std::string_view(names[indexResult.value()]);
-            codeZone->TryRenameLine(line, &sv);
+            codeZone->TryRenameLine(line, obj, &sv, nullptr);
         }
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         QueryShowCodeDialog dlg(result, "Code explanation", false, true);

@@ -41,9 +41,6 @@ namespace View
 
         static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
 
-        using AnnotationDetails   = std::pair<std::string, uint64>;
-        using AnnotationContainer = std::map<uint32, AnnotationDetails>;
-
         enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel, FunctionNameAndExplanation, MitreTechiques };
 
         struct QuerySmartAssistantParams {
@@ -61,7 +58,7 @@ namespace View
             uint64 entryPoint;
             DisassemblyLanguage language;
 
-            bool ToBuffer(std::vector<uint8>& buffer, Reference<GView::Object> obj) const;
+            bool ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj) const;
         };
 
         enum class InternalDissasmType : uint8 {
@@ -235,17 +232,6 @@ namespace View
 
             std::string_view functionName;
             std::vector<NameType> params;
-        };
-
-        struct DissasmComments {
-            std::map<uint32, std::string> comments;
-
-            void AddOrUpdateComment(uint32 line, std::string comment);
-
-            bool GetComment(uint32 line, std::string& comment) const;
-            bool HasComment(uint32 line) const;
-            void RemoveComment(uint32 line);
-            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
         };
 
         struct DissasmAsmPreCacheData {

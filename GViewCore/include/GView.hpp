@@ -281,6 +281,19 @@ namespace Utils
         virtual std::string ToString() const = 0;
         virtual void* GetData() const        = 0;
     };
+
+    struct GStatus {
+        bool ok{ true };
+        std::string message;
+        static GStatus Ok()
+        {
+            return GStatus{};
+        }
+        static GStatus Error(std::string msg)
+        {
+            return { .ok = false, .message = std::move(msg) };
+        }
+    };
 } // namespace Utils
 
 namespace CommonInterfaces
