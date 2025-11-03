@@ -29,6 +29,9 @@ constexpr GViewMenuCommand menuFileList[] = {
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 
+constexpr GViewMenuCommand menuOptionsList[] = { { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
+                                                 { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None } };
+
 constexpr GViewMenuCommand menuWindowList[] = {
     { "Arrange &Vertically", MenuCommands::ARRANGE_VERTICALLY, Key::None },
     { "Arrange &Horizontally", MenuCommands::ARRANGE_HORIZONTALLY, Key::None },
@@ -125,6 +128,9 @@ bool Instance::BuildMainMenus()
     for (auto itemHandle : menuFileDisabledCommandsList) {
         CHECK(mnuFile->SetEnable(itemHandle, false), false, "Fail to disable menu item");
     }
+    CHECK(mnuOptions = AppCUI::Application::AddMenu("&Options"), false, "Unable to create 'Options' menu");
+    CHECK(AddMenuCommands(mnuOptions, menuOptionsList, ARRAY_LEN(menuOptionsList)), false, "");
+
     CHECK(mnuWindow = AppCUI::Application::AddMenu("&Windows"), false, "Unable to create 'Windows' menu");
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
@@ -563,6 +569,12 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::ABOUT:
             ShowAboutWindow();
+            return true;
+        case MenuCommands::CHANGE_THEME:
+            ShowChangeThemeWindow();
+            return true;
+        case MenuCommands::OPEN_THEME_EDITOR:
+            AppCUI::Dialogs::ThemeEditor::Show();
             return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
