@@ -197,7 +197,7 @@ namespace View
             bool EnableDeepScanDissasmOnStart;
             bool CacheSameLocationAsAnalyzedFile;
             static void Update(AppCUI::Utils::IniSection sect);
-            void Initialize();
+            void Initialize(const AppCUI::Application::Config& config);
         };
 
         class KeyConfigDisplayWindow : public Controls::Window

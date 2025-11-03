@@ -66,24 +66,19 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     sect.UpdateValue("Config.DeepScanDissasmOnStart", false, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
 }
-void Config::Initialize()
+void Config::Initialize(const AppCUI::Application::Config& config)
 {
-    auto appCUIConfig = AppCUI::Application::GetAppConfig();
-    assert(appCUIConfig && "AppCUI Config is not initialized!");
-    if (!appCUIConfig) {
-        return;
-    }
-    const auto backGroundColor             = appCUIConfig->Text.Normal.Background;
-    this->ConfigColors.Inactive            = appCUIConfig->Text.Inactive;
-    this->ConfigColors.Cursor              = appCUIConfig->Cursor.Normal;
-    this->ConfigColors.Line                = appCUIConfig->Lines.Normal;
-    this->ConfigColors.Normal              = appCUIConfig->Text.Normal;
-    this->ConfigColors.Highlight           = appCUIConfig->Text.Highlighted;
+    const auto backGroundColor             = config.Text.Normal.Background;
+    this->ConfigColors.Inactive            = config.Text.Inactive;
+    this->ConfigColors.Cursor              = config.Cursor.Normal;
+    this->ConfigColors.Line                = config.Lines.Normal;
+    this->ConfigColors.Normal              = config.Text.Focused;
+    this->ConfigColors.Highlight           = config.Text.Highlighted;
     this->ConfigColors.HighlightCursorLine = ColorPair{ Color::Teal, Color::Gray }; // Commented its use for now
-    this->ConfigColors.Selection           = appCUIConfig->Cursor.OverSelection;
+    this->ConfigColors.Selection           = config.Cursor.OverSelection;
     // this->ConfigColors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
     this->ConfigColors.StructureColor                = ColorPair{ Color::Magenta, backGroundColor };
-    this->ConfigColors.DataTypeColor                 = appCUIConfig->Symbol.Arrows;
+    this->ConfigColors.DataTypeColor                 = config.Symbol.Arrows;
     this->ConfigColors.AsmOffsetColor                = ColorPair{ Color::White, backGroundColor };
     this->ConfigColors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, backGroundColor };
     this->ConfigColors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, backGroundColor };
@@ -94,8 +89,8 @@ void Config::Initialize()
     this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, backGroundColor };
     this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, backGroundColor };
     this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, backGroundColor };
-    this->ConfigColors.AsmTitleColor                 = appCUIConfig->Header.Text.Normal;
-    this->ConfigColors.AsmTitleColumnColor           = appCUIConfig->Border.Normal;
+    this->ConfigColors.AsmTitleColor                 = config.Header.Text.Focused;
+    this->ConfigColors.AsmTitleColumnColor           = config.Border.Focused;
 
     this->ConfigColors.CursorNormal      = ConfigColors.Normal;
     this->ConfigColors.CursorHighlighted = ConfigColors.Highlight;
@@ -110,17 +105,17 @@ void Config::Initialize()
                 cmd.get().Key = sect.GetValue(cmd.get().Caption).ToKey(cmd.get().Key);
             }
 
-            this->ShowFileContent              = sect.GetValue("Config.ShowFileContent").ToBool(true);
-            this->ShowOnlyDissasm              = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
-            this->EnableDeepScanDissasmOnStart = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
+            this->ShowFileContent                 = sect.GetValue("Config.ShowFileContent").ToBool(true);
+            this->ShowOnlyDissasm                 = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
+            this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
             this->CacheSameLocationAsAnalyzedFile = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
-            foundSettings                      = true;
+            foundSettings                         = true;
         }
     }
     if (!foundSettings) {
-        this->ShowFileContent              = true;
-        this->ShowOnlyDissasm              = false;
-        this->EnableDeepScanDissasmOnStart = false;
+        this->ShowFileContent                 = true;
+        this->ShowOnlyDissasm                 = false;
+        this->EnableDeepScanDissasmOnStart    = false;
         this->CacheSameLocationAsAnalyzedFile = true;
     }
 
