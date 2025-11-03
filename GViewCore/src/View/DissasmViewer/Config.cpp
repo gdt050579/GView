@@ -1,5 +1,5 @@
 #include "Config.hpp"
-
+#include <cassert>
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 using namespace AppCUI::Graphics;
@@ -26,7 +26,7 @@ void ColorManager::SetAllColorsInactive()
     this->Colors.Cursor                        = this->Colors.Inactive;
     this->Colors.Line                          = this->Colors.Inactive;
     this->Colors.Selection                     = this->Colors.Inactive;
-    this->Colors.OutsideZone                   = this->Colors.Inactive;
+    //this->Colors.OutsideZone                   = this->Colors.Inactive;
     this->Colors.StructureColor                = this->Colors.Inactive;
     this->Colors.DataTypeColor                 = this->Colors.Inactive;
     this->Colors.AsmOffsetColor                = this->Colors.Inactive;
@@ -68,28 +68,34 @@ void Config::Update(AppCUI::Utils::IniSection sect)
 }
 void Config::Initialize()
 {
-    this->ConfigColors.Inactive                      = ColorPair{ Color::Gray, Color::Transparent };
-    this->ConfigColors.Cursor                        = ColorPair{ Color::Black, Color::Yellow };
-    this->ConfigColors.Line                          = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->ConfigColors.Normal                        = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->ConfigColors.Highlight                     = ColorPair{ Color::Yellow, Color::DarkBlue };
-    this->ConfigColors.HighlightCursorLine           = ColorPair{ Color::Teal, Color::Gray };
-    this->ConfigColors.Selection                     = ColorPair{ Color::Black, Color::White };
-    this->ConfigColors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->ConfigColors.StructureColor                = ColorPair{ Color::Magenta, Color::DarkBlue };
-    this->ConfigColors.DataTypeColor                 = ColorPair{ Color::Green, Color::DarkBlue };
-    this->ConfigColors.AsmOffsetColor                = ColorPair{ Color::White, Color::DarkBlue };
-    this->ConfigColors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->ConfigColors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, Color::DarkBlue };
-    this->ConfigColors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, Color::DarkBlue };
-    this->ConfigColors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, Color::DarkBlue };
-    this->ConfigColors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::DarkBlue };
-    this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::DarkBlue };
-    this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
-    this->ConfigColors.AsmTitleColor                 = ColorPair{ Color::Silver, Color::Magenta };
-    this->ConfigColors.AsmTitleColumnColor           = ColorPair{ Color::Yellow, Color::DarkBlue };
+    auto appCUIConfig = AppCUI::Application::GetAppConfig();
+    assert(appCUIConfig && "AppCUI Config is not initialized!");
+    if (!appCUIConfig) {
+        return;
+    }
+    const auto backGroundColor             = appCUIConfig->Text.Normal.Background;
+    this->ConfigColors.Inactive            = appCUIConfig->Text.Inactive;
+    this->ConfigColors.Cursor              = appCUIConfig->Cursor.Normal;
+    this->ConfigColors.Line                = appCUIConfig->Lines.Normal;
+    this->ConfigColors.Normal              = appCUIConfig->Text.Normal;
+    this->ConfigColors.Highlight           = appCUIConfig->Text.Highlighted;
+    this->ConfigColors.HighlightCursorLine = ColorPair{ Color::Teal, Color::Gray }; // Commented its use for now
+    this->ConfigColors.Selection           = appCUIConfig->Cursor.OverSelection;
+    // this->ConfigColors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->ConfigColors.StructureColor                = ColorPair{ Color::Magenta, backGroundColor };
+    this->ConfigColors.DataTypeColor                 = appCUIConfig->Symbol.Arrows;
+    this->ConfigColors.AsmOffsetColor                = ColorPair{ Color::White, backGroundColor };
+    this->ConfigColors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, backGroundColor };
+    this->ConfigColors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, backGroundColor };
+    this->ConfigColors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, backGroundColor };
+    this->ConfigColors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, backGroundColor };
+    this->ConfigColors.AsmFunctionColor              = ColorPair{ Color::Pink, backGroundColor };
+    this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, backGroundColor };
+    this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, backGroundColor };
+    this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, backGroundColor };
+    this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, backGroundColor };
+    this->ConfigColors.AsmTitleColor                 = appCUIConfig->Header.Text.Normal;
+    this->ConfigColors.AsmTitleColumnColor           = appCUIConfig->Border.Normal;
 
     this->ConfigColors.CursorNormal      = ConfigColors.Normal;
     this->ConfigColors.CursorHighlighted = ConfigColors.Highlight;

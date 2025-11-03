@@ -92,8 +92,8 @@ namespace View
             Graphics::ColorPair Cursor;
             Graphics::ColorPair Line;
             Graphics::ColorPair Selection;
-            Graphics::ColorPair OutsideZone;
-            Graphics::ColorPair StructureColor;
+            //Graphics::ColorPair OutsideZone;
+            Graphics::ColorPair StructureColor; // struct definitions
             Graphics::ColorPair DataTypeColor;
             Graphics::ColorPair AsmOffsetColor;                // 0x something
             Graphics::ColorPair AsmIrrelevantInstructionColor; // int3
