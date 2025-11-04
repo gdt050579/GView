@@ -1,5 +1,5 @@
 #include "Config.hpp"
-
+#include <cassert>
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 using namespace AppCUI::Graphics;
@@ -26,7 +26,7 @@ void ColorManager::SetAllColorsInactive()
     this->Colors.Cursor                        = this->Colors.Inactive;
     this->Colors.Line                          = this->Colors.Inactive;
     this->Colors.Selection                     = this->Colors.Inactive;
-    this->Colors.OutsideZone                   = this->Colors.Inactive;
+    //this->Colors.OutsideZone                   = this->Colors.Inactive;
     this->Colors.StructureColor                = this->Colors.Inactive;
     this->Colors.DataTypeColor                 = this->Colors.Inactive;
     this->Colors.AsmOffsetColor                = this->Colors.Inactive;
@@ -66,30 +66,31 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     sect.UpdateValue("Config.DeepScanDissasmOnStart", false, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
 }
-void Config::Initialize()
+void Config::Initialize(const AppCUI::Application::Config& config)
 {
-    this->ConfigColors.Inactive                      = ColorPair{ Color::Gray, Color::Transparent };
-    this->ConfigColors.Cursor                        = ColorPair{ Color::Black, Color::Yellow };
-    this->ConfigColors.Line                          = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->ConfigColors.Normal                        = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->ConfigColors.Highlight                     = ColorPair{ Color::Yellow, Color::DarkBlue };
-    this->ConfigColors.HighlightCursorLine           = ColorPair{ Color::Teal, Color::Gray };
-    this->ConfigColors.Selection                     = ColorPair{ Color::Black, Color::White };
-    this->ConfigColors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->ConfigColors.StructureColor                = ColorPair{ Color::Magenta, Color::DarkBlue };
-    this->ConfigColors.DataTypeColor                 = ColorPair{ Color::Green, Color::DarkBlue };
-    this->ConfigColors.AsmOffsetColor                = ColorPair{ Color::White, Color::DarkBlue };
-    this->ConfigColors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->ConfigColors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, Color::DarkBlue };
-    this->ConfigColors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, Color::DarkBlue };
-    this->ConfigColors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, Color::DarkBlue };
-    this->ConfigColors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::DarkBlue };
-    this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::DarkBlue };
-    this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
-    this->ConfigColors.AsmTitleColor                 = ColorPair{ Color::Silver, Color::Magenta };
-    this->ConfigColors.AsmTitleColumnColor           = ColorPair{ Color::Yellow, Color::DarkBlue };
+    const auto backGroundColor             = config.Text.Normal.Background;
+    this->ConfigColors.Inactive            = config.Text.Inactive;
+    this->ConfigColors.Cursor              = config.Cursor.Normal;
+    this->ConfigColors.Line                = config.Lines.Normal;
+    this->ConfigColors.Normal              = config.Text.Focused;
+    this->ConfigColors.Highlight           = config.Text.Highlighted;
+    this->ConfigColors.HighlightCursorLine = ColorPair{ Color::Teal, Color::Gray }; // Commented its use for now
+    this->ConfigColors.Selection           = config.Cursor.OverSelection;
+    // this->ConfigColors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->ConfigColors.StructureColor                = ColorPair{ Color::Magenta, backGroundColor };
+    this->ConfigColors.DataTypeColor                 = config.Symbol.Arrows;
+    this->ConfigColors.AsmOffsetColor                = ColorPair{ Color::White, backGroundColor };
+    this->ConfigColors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, backGroundColor };
+    this->ConfigColors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, backGroundColor };
+    this->ConfigColors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, backGroundColor };
+    this->ConfigColors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, backGroundColor };
+    this->ConfigColors.AsmFunctionColor              = ColorPair{ Color::Pink, backGroundColor };
+    this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, backGroundColor };
+    this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, backGroundColor };
+    this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, backGroundColor };
+    this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, backGroundColor };
+    this->ConfigColors.AsmTitleColor                 = config.Header.Text.Focused;
+    this->ConfigColors.AsmTitleColumnColor           = config.Border.Focused;
 
     this->ConfigColors.CursorNormal      = ConfigColors.Normal;
     this->ConfigColors.CursorHighlighted = ConfigColors.Highlight;
@@ -104,17 +105,17 @@ void Config::Initialize()
                 cmd.get().Key = sect.GetValue(cmd.get().Caption).ToKey(cmd.get().Key);
             }
 
-            this->ShowFileContent              = sect.GetValue("Config.ShowFileContent").ToBool(true);
-            this->ShowOnlyDissasm              = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
-            this->EnableDeepScanDissasmOnStart = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
+            this->ShowFileContent                 = sect.GetValue("Config.ShowFileContent").ToBool(true);
+            this->ShowOnlyDissasm                 = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
+            this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
             this->CacheSameLocationAsAnalyzedFile = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
-            foundSettings                      = true;
+            foundSettings                         = true;
         }
     }
     if (!foundSettings) {
-        this->ShowFileContent              = true;
-        this->ShowOnlyDissasm              = false;
-        this->EnableDeepScanDissasmOnStart = false;
+        this->ShowFileContent                 = true;
+        this->ShowOnlyDissasm                 = false;
+        this->EnableDeepScanDissasmOnStart    = false;
         this->CacheSameLocationAsAnalyzedFile = true;
     }
 

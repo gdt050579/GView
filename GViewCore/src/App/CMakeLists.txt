@@ -9,4 +9,5 @@ target_sources(GViewCore PRIVATE
     AboutWindow.cpp
     KeyConfiguratorWindow.cpp
     QueryInterface.cpp
+    OptionsWindow.cpp
 )
