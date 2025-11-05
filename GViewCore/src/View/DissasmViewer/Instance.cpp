@@ -177,7 +177,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
 
     queryInterface = nullptr;
     if (config.Loaded == false)
-        config.Initialize();
+        config.Initialize(Cfg);
     this->ColorMan.InitFromConfigColors(config.ConfigColors);
     if (!HasFocus())
         this->ColorMan.OnLostFocus();
@@ -728,14 +728,14 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
     case GView::View::DissasmViewer::InternalDissasmType::Utf32Z:
         break;
     case GView::View::DissasmViewer::InternalDissasmType::UnidimnsionalArray:
-        AddStringToChars(dli, ColorMan.Colors.StructureColor, "Array[%u] ", currentType.width);
-        AddStringToChars(dli, ColorMan.Colors.Normal, "%s", currentType.name.data());
+        AddStringToChars(dli, ColorMan.Colors.StructureColor, "Array[%u]", currentType.width);
+        AddStringToChars(dli, ColorMan.Colors.StructureColor, " %s", currentType.name.data());
         break;
     case GView::View::DissasmViewer::InternalDissasmType::BidimensionalArray:
         break;
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
-        AddStringToChars(dli, ColorMan.Colors.StructureColor, "Structure ");
-        AddStringToChars(dli, ColorMan.Colors.Normal, "%s", currentType.name.data());
+        AddStringToChars(dli, ColorMan.Colors.StructureColor, "Structure");
+        AddStringToChars(dli, ColorMan.Colors.StructureColor, " %s", currentType.name.data());
         RegisterStructureCollapseButton(
               dli.screenLineToDraw + 1, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
         break;

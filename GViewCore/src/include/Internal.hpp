@@ -478,6 +478,9 @@ namespace App
         constexpr int OPEN_PID          = 120002;
         constexpr int OPEN_PROCESS_TREE = 120003;
 
+        constexpr int CHANGE_THEME      = 130000;
+        constexpr int OPEN_THEME_EDITOR = 130001;
+
     }; // namespace MenuCommands
 
     namespace InstanceCommands
@@ -513,6 +516,7 @@ namespace App
         AppCUI::Controls::Menu* mnuWindow;
         AppCUI::Controls::Menu* mnuHelp;
         AppCUI::Controls::Menu* mnuFile;
+        AppCUI::Controls::Menu* mnuOptions;
         std::vector<GView::Type::Plugin> typePlugins;
         std::vector<GView::Generic::Plugin> genericPlugins;
         Pointer<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
@@ -528,6 +532,7 @@ namespace App
         void ShowErrors();
         void ShowTutorial();
         void ShowAboutWindow();
+        void ShowChangeThemeWindow();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
