@@ -81,7 +81,7 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
     void OnTreeViewItemPressed(Reference<Controls::TreeView> tree, TreeViewItem& item) override;
     void BeforeOpen();
     void AddAnalysisNotes(const Subject& currentWindow, std::string data);
-    void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow);
+    void RegisterSubjectWithParent(const Subject& currentWindowSubject, Reference<Window> currentWindow, Reference<Subject> parentWindow);
     uint64 FindMainParent(uint64 current_subject);
 
   private:

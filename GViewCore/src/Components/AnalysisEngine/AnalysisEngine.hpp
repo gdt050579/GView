@@ -17,6 +17,7 @@ namespace GView::Components::AnalysisEngine
 struct SubjectParentInfo {
     uint64 direct_parent;
     uint64 main_parent;
+    Reference<Window> current_window;
 };
 
 class AnalysisEngineWindow;
@@ -37,7 +38,7 @@ class RuleEngine final : public AnalysisEngineInterface
     void ShowAnalysisEngineWindow() override;
     std::vector<bool> RegisterActionTrigger(const std::vector<ActId>& action_ids, Reference<RuleTriggerInterface> trigger) override;
     Subject GetSubjectForNewWindow(Object::Type objectType) override;
-    void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow) override;
+    void RegisterSubjectWithParent(const Subject& currentWindowSubject, Reference<Window> currentWindow, Reference<Subject> parentWindow) override;
     void AddAnalysisNotes(const Subject& currentWindow, std::string data) override;
 
     uint64 FindMainParent(uint64 current_subject);

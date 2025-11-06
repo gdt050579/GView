@@ -423,9 +423,9 @@ Subject RuleEngine::GetSubjectForNewWindow(Object::Type objectType)
     return { type, next_available_subject++ };
 }
 
-void RuleEngine::RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)
+void RuleEngine::RegisterSubjectWithParent(const Subject& currentWindowSubject, Reference<Window> currentWindow, Reference<Subject> parentWindow)
 {
-    engineWindow->RegisterSubjectWithParent(currentWindow, parentWindow);
+    engineWindow->RegisterSubjectWithParent(currentWindowSubject, currentWindow, parentWindow);
 }
 
 void RuleEngine::AddAnalysisNotes(const Subject& currentWindow, std::string data)

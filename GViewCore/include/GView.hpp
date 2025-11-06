@@ -1118,7 +1118,7 @@ namespace Components
             virtual void ShowAnalysisEngineWindow()                                                                                        = 0;
             virtual std::vector<bool> RegisterActionTrigger(const std::vector<ActId>& action_ids, Reference<RuleTriggerInterface> trigger) = 0;
             virtual Subject GetSubjectForNewWindow(Object::Type objectType)                                                                = 0;
-            virtual void RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)                          = 0;
+            virtual void RegisterSubjectWithParent(const Subject& currentWindowSubject, Reference<Window> currentWindow, Reference<Subject> parentWindow) = 0;
             virtual void AddAnalysisNotes(const Subject& currentWindow, std::string data)                                                  = 0;
 
             PredicateStorage RequestPredicateStorage(const std::vector<std::string_view>& predicates) const;

@@ -315,7 +315,7 @@ void FileWindow::InitialiseAnalysisEngineData(Reference<GView::Components::Analy
     auto analysisEngine = GetAnalysisEngine();
     if (!analysisEngine.IsValid())
         return;
-    analysisEngine->RegisterSubjectWithParent(subject, parentSubject);
+    analysisEngine->RegisterSubjectWithParent(subject, this, parentSubject);
     UnicodeStringBuilder sb;
     sb.Add("Opening ");
     sb.Add(obj->GetName());

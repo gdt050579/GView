@@ -13,7 +13,7 @@ AnalysisEngineWindow::AnalysisEngineWindow(Reference<RuleEngine> engine)
     : Window("Analysis Engine", "t:1,l:1,r:1,b:1", Controls::WindowFlags::Sizeable), engine(engine)
 {
     tree_data_needs_rebuild = true;
-    detailsTree = Factory::TreeView::Create(this, "l:0,t:0,r:0,b:5", { "n:Subject,w:30", "n:Action,w:25", "n:Message,w:fill" }, TreeViewFlags::Searchable);
+    detailsTree = Factory::TreeView::Create(this, "l:0,t:0,r:0,b:5", { "n:Subject,w:30", "n:Action,w:25", "n:Assertions,w:fill" }, TreeViewFlags::Searchable);
     detailsTree->Handlers()->OnCurrentItemChanged = this;
     detailsTree->Handlers()->OnItemPressed        = this;
     // windowTree->Handlers()->OnCurrentItemChanged = this;
@@ -83,6 +83,10 @@ void AnalysisEngineWindow::OnTreeViewCurrentItemChanged(Reference<Controls::Tree
     // DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
 }
 
+void SearchForTopEntrySubject(std::shared_ptr<EntryContainerData>& current_entry)
+{
+}
+
 void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> tree, TreeViewItem& item)
 {
     if (!item.IsValid())
@@ -112,6 +116,13 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
         Dialogs::MessageBox::ShowNotification("Suggestion error", "Failed to get subject data for suggestion!");
         return;
     }
+
+    assert(parent_subject->type.index() == 0); // SubjectData
+    auto parent_window = subjects_hierarchy[std::get<SubjectData>(parent_subject->type).subject.value].current_window;
+    if (parent_window.IsValid()) {
+        parent_window->SetFocus();
+    }
+
     auto action_owner = parent_subject->actions.find(action_id);
     if (action_owner == parent_subject->actions.end()) {
         Dialogs::MessageBox::ShowNotification("Suggestion error", "Failed to get action data for suggestion!");
@@ -201,29 +212,30 @@ void AnalysisEngineWindow::AddAnalysisNotes(const Subject& currentWindow, std::s
     subject_data_entry->owner->children.emplace_back(line_data_ptr);
 }
 
-void AnalysisEngineWindow::RegisterSubjectWithParent(const Subject& currentWindow, Reference<Subject> parentWindow)
+void AnalysisEngineWindow::RegisterSubjectWithParent(const Subject& currentWindowSubject, Reference<Window> currentWindow, Reference<Subject> parentWindow)
 {
-    const bool already_inside = subjects_hierarchy.contains(currentWindow.value);
+    const bool already_inside = subjects_hierarchy.contains(currentWindowSubject.value);
     assert(!already_inside); // Should not re-register existing subject
 
     SubjectParentInfo info;
-    info.direct_parent                      = parentWindow ? parentWindow->value : 0;
-    info.main_parent                        = parentWindow ? FindMainParent(parentWindow->value) : 0;
-    subjects_hierarchy[currentWindow.value] = info;
+    info.direct_parent                             = parentWindow ? parentWindow->value : 0;
+    info.main_parent                               = parentWindow ? FindMainParent(parentWindow->value) : 0;
+    info.current_window                            = currentWindow;
+    subjects_hierarchy[currentWindowSubject.value] = info;
 
-    windows[currentWindow.value] = currentWindow;
+    windows[currentWindowSubject.value] = currentWindowSubject;
 
-    if (!window_data.contains(currentWindow.value))
-        window_data[currentWindow.value] = WindowData();
+    if (!window_data.contains(currentWindowSubject.value))
+        window_data[currentWindowSubject.value] = WindowData();
 
     auto subject_data_entry    = SubjectData{};
-    subject_data_entry.subject = currentWindow;
+    subject_data_entry.subject = currentWindowSubject;
 
     auto container_data_entry   = std::make_shared<EntryContainerData>();
     container_data_entry->type  = std::move(subject_data_entry);
     container_data_entry->data  = std::make_shared<EntryLineData>();
     container_data_entry->owner = container_data_entry->data;
-    new_subject_data.insert({ currentWindow.value, container_data_entry });
+    new_subject_data.insert({ currentWindowSubject.value, container_data_entry });
 
     if (parentWindow) {
         auto& parent_subject_data = new_subject_data[parentWindow->value];
