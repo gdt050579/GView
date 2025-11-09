@@ -115,7 +115,7 @@ namespace View
             DissasmColors Colors;
             DissasmColors SavedColors;
 
-            void InitFromConfigColors(DissasmColors& configColors);
+            void InitFromConfigColors(const DissasmColors& configColors, bool hasFocus);
             void OnLostFocus();
             void SetAllColorsInactive();
             void OnGainedFocus();
@@ -197,6 +197,7 @@ namespace View
             bool EnableDeepScanDissasmOnStart;
             bool CacheSameLocationAsAnalyzedFile;
             static void Update(AppCUI::Utils::IniSection sect);
+            void UpdateColors(const AppCUI::Application::Config& config);
             void Initialize(const AppCUI::Application::Config& config);
         };
 

@@ -6,10 +6,12 @@ using namespace AppCUI::Graphics;
 using namespace AppCUI::Controls;
 using AppCUI::Graphics::Color;
 
-void ColorManager::InitFromConfigColors(DissasmColors& configColors)
+void ColorManager::InitFromConfigColors(const DissasmColors& configColors, bool hasFocus)
 {
     this->Colors      = configColors;
     this->SavedColors = configColors;
+    if (!hasFocus)
+        OnLostFocus();
 }
 
 void ColorManager::OnLostFocus()
@@ -66,7 +68,8 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     sect.UpdateValue("Config.DeepScanDissasmOnStart", false, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
 }
-void Config::Initialize(const AppCUI::Application::Config& config)
+
+void Config::UpdateColors(const AppCUI::Application::Config& config)
 {
     const auto backGroundColor             = config.Text.Normal.Background;
     this->ConfigColors.Inactive            = config.Text.Inactive;
@@ -95,7 +98,11 @@ void Config::Initialize(const AppCUI::Application::Config& config)
     this->ConfigColors.CursorNormal      = ConfigColors.Normal;
     this->ConfigColors.CursorHighlighted = ConfigColors.Highlight;
     this->ConfigColors.CursorLine        = ConfigColors.Line;
+}
 
+void Config::Initialize(const AppCUI::Application::Config& config)
+{
+    UpdateColors(config);
     bool foundSettings = false;
     auto ini           = AppCUI::Application::GetAppSettings();
     if (ini) {
