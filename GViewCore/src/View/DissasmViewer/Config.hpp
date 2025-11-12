@@ -97,7 +97,7 @@ namespace View
             Graphics::ColorPair DataTypeColor;
             Graphics::ColorPair AsmOffsetColor;                // 0x something
             Graphics::ColorPair AsmIrrelevantInstructionColor; // int3
-            Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
+            Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx, ecx, edx
             Graphics::ColorPair AsmStackRegisterColor;         // ebp, edi, esi
             Graphics::ColorPair AsmCompareInstructionColor;    // test, cmp
             Graphics::ColorPair AsmFunctionColor;              // ret call
@@ -121,7 +121,7 @@ namespace View
             void OnGainedFocus();
         };
 
-        struct Config {
+        struct Config : public Dialogs::OnThemePreviewWindowDrawInterface {
             DissasmColors ConfigColors;
 
             // TODO: reenable when the functionality is implemented
@@ -199,6 +199,15 @@ namespace View
             static void Update(AppCUI::Utils::IniSection sect);
             void UpdateColors(const AppCUI::Application::Config& config);
             void Initialize(const AppCUI::Application::Config& config);
+
+            ~Config();
+            void OnPreviewWindowDraw(
+                  std::string_view categoryName,
+                  Graphics::Renderer& r,
+                  int startingX,
+                  int startingY,
+                  Graphics::Size sz,
+                  const Application::Config::CustomColorNameStorage& colors) override;
         };
 
         class KeyConfigDisplayWindow : public Controls::Window
