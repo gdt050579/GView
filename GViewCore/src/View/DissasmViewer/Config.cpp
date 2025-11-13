@@ -1,5 +1,7 @@
 #include "Config.hpp"
 #include <cassert>
+
+#include "DissasmViewer.hpp"
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 using namespace AppCUI::Graphics;
@@ -53,7 +55,14 @@ void ColorManager::SetAllColorsInactive()
 
 void ColorManager::OnGainedFocus()
 {
+    if (Instance::ConfigColorsHaveChanges()) {
+        auto& configColors = Instance::GetConfigColors();
+        InitFromConfigColors(configColors, true);
+        configColors.hasChanges = false;
+        return;
+    }
     Colors = SavedColors;
+    
 }
 
 void Config::Update(AppCUI::Utils::IniSection sect)
@@ -68,6 +77,16 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     sect.UpdateValue("Config.ShowOnlyDissasm", false, true);
     sect.UpdateValue("Config.DeepScanDissasmOnStart", false, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
+}
+
+#define LOAD_COLOR_IF_EXISTS(name) \
+{\
+    auto colorIt = colors.find(#name);\
+    if (colorIt != colors.end()) {\
+        auto colorPtr = colorIt->second.TryGetColorPair();\
+        if (colorPtr)\
+            ConfigColors.name = *colorPtr;\
+    }\
 }
 
 void Config::UpdateColors(const AppCUI::Application::Config& config)
@@ -97,7 +116,23 @@ void Config::UpdateColors(const AppCUI::Application::Config& config)
 
     this->ConfigColors.CursorNormal      = ConfigColors.Normal;
     this->ConfigColors.CursorHighlighted = ConfigColors.Highlight;
-    this->ConfigColors.CursorLine        = ConfigColors.Line;   
+    this->ConfigColors.CursorLine        = ConfigColors.Line;
+
+    auto dissamColors = config.CustomColors.find("DissamColors");
+    if (dissamColors!= config.CustomColors.end()) {
+        auto& colors = dissamColors->second.data;
+        LOAD_COLOR_IF_EXISTS(StructureColor);
+        LOAD_COLOR_IF_EXISTS(AsmOffsetColor);
+        LOAD_COLOR_IF_EXISTS(AsmIrrelevantInstructionColor);
+        LOAD_COLOR_IF_EXISTS(AsmWorkRegisterColor);
+        LOAD_COLOR_IF_EXISTS(AsmStackRegisterColor);
+        LOAD_COLOR_IF_EXISTS(AsmCompareInstructionColor);
+        LOAD_COLOR_IF_EXISTS(AsmFunctionColor);
+        LOAD_COLOR_IF_EXISTS(AsmLocationInstruction);
+        LOAD_COLOR_IF_EXISTS(AsmJumpInstruction);
+        LOAD_COLOR_IF_EXISTS(AsmComment);
+        LOAD_COLOR_IF_EXISTS(AsmDefaultColor);
+    }
 }
 
 void Config::Initialize(const AppCUI::Application::Config& config)
@@ -138,17 +173,18 @@ void Config::Initialize(const AppCUI::Application::Config& config)
         { "AsmComment", CustomColor(ConfigColors.AsmComment) },
         { "AsmDefaultColor", CustomColor(ConfigColors.AsmDefaultColor) },
     };
-    if (!Dialogs::ThemeEditor::RegisterCustomColors("Dissam colors", dissamColors, this)) {
+    if (!Dialogs::ThemeEditor::RegisterCustomColors("DissamColors", dissamColors, this)) {
         Dialogs::MessageBox::ShowError("Error", "Failed to register dissasm colors");
         assert(false);//abort on debug
     }
-
+    Dialogs::ThemeEditor::RegisterOnThemeChangeCallback(this);
     this->Loaded = true;
 }
 
 Config::~Config()
 {
     Dialogs::ThemeEditor::RemovePreviewDrawListener(this);
+    Dialogs::ThemeEditor::RemoveOnThemeChangeCallback(this);
 }
 
 void Config::OnPreviewWindowDraw(
@@ -223,6 +259,12 @@ void Config::OnPreviewWindowDraw(
     // ret + call -> AsmFunctionColor
 
     //
+}
+
+void Config::OnThemeChanged(const Application::Config& config)
+{
+    UpdateColors(config);
+    ConfigColors.hasChanges = true;
 }
 
 KeyConfigDisplayWindow::KeyConfigDisplayWindow() : Window("Available keys", "d:c", Controls::WindowFlags::Sizeable)

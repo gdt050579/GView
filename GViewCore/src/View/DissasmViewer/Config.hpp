@@ -109,6 +109,7 @@ namespace View
             Graphics::ColorPair AsmTitleColumnColor;
 
             Graphics::ColorPair CursorNormal, CursorLine, CursorHighlighted;
+            bool hasChanges = false;
         };
 
         struct ColorManager {
@@ -121,7 +122,7 @@ namespace View
             void OnGainedFocus();
         };
 
-        struct Config : public Dialogs::OnThemePreviewWindowDrawInterface {
+        struct Config : public Dialogs::OnThemePreviewWindowDrawInterface, public Dialogs::OnThemeChangedInterface {
             DissasmColors ConfigColors;
 
             // TODO: reenable when the functionality is implemented
@@ -208,6 +209,7 @@ namespace View
                   int startingY,
                   Graphics::Size sz,
                   const Application::Config::CustomColorNameStorage& colors) override;
+            void OnThemeChanged(const Application::Config& config) override;
         };
 
         class KeyConfigDisplayWindow : public Controls::Window
