@@ -667,6 +667,14 @@ namespace View
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
 
+            static DissasmColors& GetConfigColors()
+            {
+                return config.ConfigColors;
+            }
+            static bool ConfigColorsHaveChanges()
+            {
+                return config.ConfigColors.hasChanges;
+            }
             void OnFocus() override;
             void OnLoseFocus() override;
 

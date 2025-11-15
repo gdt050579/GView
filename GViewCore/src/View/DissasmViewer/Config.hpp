@@ -97,7 +97,7 @@ namespace View
             Graphics::ColorPair DataTypeColor;
             Graphics::ColorPair AsmOffsetColor;                // 0x something
             Graphics::ColorPair AsmIrrelevantInstructionColor; // int3
-            Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
+            Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx, ecx, edx
             Graphics::ColorPair AsmStackRegisterColor;         // ebp, edi, esi
             Graphics::ColorPair AsmCompareInstructionColor;    // test, cmp
             Graphics::ColorPair AsmFunctionColor;              // ret call
@@ -109,19 +109,20 @@ namespace View
             Graphics::ColorPair AsmTitleColumnColor;
 
             Graphics::ColorPair CursorNormal, CursorLine, CursorHighlighted;
+            bool hasChanges = false;
         };
 
         struct ColorManager {
             DissasmColors Colors;
             DissasmColors SavedColors;
 
-            void InitFromConfigColors(DissasmColors& configColors);
+            void InitFromConfigColors(const DissasmColors& configColors, bool hasFocus);
             void OnLostFocus();
             void SetAllColorsInactive();
             void OnGainedFocus();
         };
 
-        struct Config {
+        struct Config : public Dialogs::OnThemePreviewWindowDrawInterface, public Dialogs::OnThemeChangedInterface {
             DissasmColors ConfigColors;
 
             // TODO: reenable when the functionality is implemented
@@ -197,7 +198,18 @@ namespace View
             bool EnableDeepScanDissasmOnStart;
             bool CacheSameLocationAsAnalyzedFile;
             static void Update(AppCUI::Utils::IniSection sect);
+            void UpdateColors(const AppCUI::Application::Config& config);
             void Initialize(const AppCUI::Application::Config& config);
+
+            ~Config();
+            void OnPreviewWindowDraw(
+                  std::string_view categoryName,
+                  Graphics::Renderer& r,
+                  int startingX,
+                  int startingY,
+                  Graphics::Size sz,
+                  const Application::Config::CustomColorNameStorage& colors) override;
+            void OnThemeChanged(const Application::Config& config) override;
         };
 
         class KeyConfigDisplayWindow : public Controls::Window
