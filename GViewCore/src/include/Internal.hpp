@@ -613,6 +613,14 @@ namespace App
         virtual void SetCustomPropertyValue(uint32 propertyID) override;
         virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
         virtual const vector<Property> GetPropertiesList() override;
+        virtual std::string_view GetCategoryNameForSerialization() const override
+        {
+            return "GView";
+        }
+        virtual bool AddCategoryBeforePropertyNameWhenSerializing() const override
+        {
+            return true;
+        }
 
         // AppCUI Handlers
         virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
