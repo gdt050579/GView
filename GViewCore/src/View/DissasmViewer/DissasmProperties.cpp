@@ -77,7 +77,7 @@ const vector<Property> Instance::GetPropertiesList()
 {
     return {
         //{ PROP_ID_ADD_NEW_TYPE, "Shortcuts", "Key adding new data type", PropertyType::Key },
-        { PROP_ID_DISSASM_LANGUAGE, "General", "Dissasm language", PropertyType::List, "x86=1,x64=2,JavaByteCode=3,IL=4" },
+        { PROP_ID_DISSASM_LANGUAGE, "General", "Dissasm language", PropertyType::List, true, "x86=1,x64=2,JavaByteCode=3,IL=4" },
         //{ PROP_ID_SHOW_FILE_CONTENT, "General", "Show file content", PropertyType::Boolean },
         //{ PROP_ID_SHOW_FILE_CONTENT_KEY, "General", "Show file content key", PropertyType::Key},
         { PROP_ID_SHOW_ONLY_DISSAM, "General", "Show only dissasm code", PropertyType::Boolean },

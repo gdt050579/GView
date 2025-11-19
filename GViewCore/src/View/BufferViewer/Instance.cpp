@@ -2175,14 +2175,14 @@ const vector<Property> Instance::GetPropertiesList()
 
     return {
         // Display
-        { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
-        { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, "Dec,Hex" },
-        { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
+        { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, false, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+        { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, false, "Dec,Hex" },
+        { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, false, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
         { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
-        { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage::GetPropertyListValues() },
+        { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, false, CodePage::GetPropertyListValues() },
 
         // Address
-        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, addressModesList.ToStringView() },
+        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, false, addressModesList.ToStringView() },
         { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
         { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
         { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
@@ -2190,7 +2190,7 @@ const vector<Property> Instance::GetPropertiesList()
 
         // Selection
         { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
-        { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=1" },
+        { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, false, "Single=0,Multiple=1" },
         { BT(PropertyID::Selection_1), "Selection", "Selection 1", PropertyType::Custom },
         { BT(PropertyID::Selection_2), "Selection", "Selection 2", PropertyType::Custom },
         { BT(PropertyID::Selection_3), "Selection", "Selection 3", PropertyType::Custom },

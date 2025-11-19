@@ -286,7 +286,7 @@ const vector<Property> Instance::GetPropertiesList()
 {
     return {
         { BT(PropertyID::ImagesCount), "General", "Images count", PropertyType::UInt32 },
-        { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
+        { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, false, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
         { BT(PropertyID::CurrentImageIndex), "Current Image", "Index", PropertyType::UInt32 },
         { BT(PropertyID::CurrentImageSize), "Current Image", "Size", PropertyType::Size },
         { BT(PropertyID::ZoomIn), "Shortcuts", "Key for ZoomIn", PropertyType::Key },
