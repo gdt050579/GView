@@ -3,37 +3,78 @@
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
-constexpr uint32 PROP_ID_ADD_NEW_TYPE          = 1;
-constexpr uint32 PROP_ID_DISSASM_LANGUAGE      = 2;
-constexpr uint32 PROP_ID_SHOW_FILE_CONTENT     = 3;
-constexpr uint32 PROP_ID_SHOW_FILE_CONTENT_KEY = 4;
-constexpr uint32 PROP_ID_SHOW_ONLY_DISSAM      = 5;
-constexpr uint32 PROP_ID_SHOW_ONLY_DISSAM_KEY  = 6;
-constexpr uint32 PROP_ID_ENABLE_DEEP_SCAN_DISSASM  = 7;
+enum DissasmProperties : uint32 {
+    // Config properties
+    CacheSameLocationAsAnalyzedFileConfig,
+    DeepScanDissasmOnStartConfig,
+    ShowFileContentConfig,
+    ShowOnlyDissasmConfig,
+
+    // Key properties
+    AddOrEditCommentKey,
+    AsmExportToFileKey,
+    GoToEntrypointKey,
+    JumpBackKey,
+    JumpForwardKey,
+    QueryFunctionNameKey,
+    QueryMITRETechniqueKey,
+    RemoveCommentKey,
+    RenameLabelKey,
+    SaveCacheKey,
+    ShowKeysKey,
+    ShowOnlyDissasmKey
+};
 
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
 {
     switch (propertyID) {
-    // case PROP_ID_ADD_NEW_TYPE:
-    //     value = config.AddNewTypeCommand.Key;
-    //     return true;
-    case PROP_ID_DISSASM_LANGUAGE:
-        value = static_cast<uint64>(settings->defaultLanguage);
+    case ShowFileContentConfig:
+        value = config.ShowFileContent;
         return true;
-        // case PROP_ID_SHOW_FILE_CONTENT:
-        //     value = config.ShowFileContent;
-        //     return true;
-        // case PROP_ID_SHOW_FILE_CONTENT_KEY:
-        //     value = config.ShowOrHideFileContentCommand.Key;
-        //     return true;
-    case PROP_ID_SHOW_ONLY_DISSAM:
+    case ShowOnlyDissasmConfig:
         value = config.ShowOnlyDissasm;
         return true;
-    case PROP_ID_SHOW_ONLY_DISSAM_KEY:
-        value = config.ShowOnlyDissasmCommand.Key;
-        return true;
-    case PROP_ID_ENABLE_DEEP_SCAN_DISSASM:
+    case DeepScanDissasmOnStartConfig:
         value = config.EnableDeepScanDissasmOnStart;
+        return true;
+    case CacheSameLocationAsAnalyzedFileConfig:
+        value = config.CacheSameLocationAsAnalyzedFile;
+        return true;
+    case AddOrEditCommentKey:
+        value = Config::AddOrEditCommentCommand.Key;
+        return true;
+    case AsmExportToFileKey:
+        value = Config::AsmExportFileContentCommand.Key;
+        return true;
+    case GoToEntrypointKey:
+        value = Config::GotoEntrypointCommand.Key;
+        return true;
+    case JumpBackKey:
+        value = Config::JumpBackCommand.Key;
+        return true;
+    case JumpForwardKey:
+        value = Config::JumpForwardCommand.Key;
+        return true;
+    case QueryFunctionNameKey:
+        value = Config::CommandQueryFunctionName.Key;
+        return true;
+    case QueryMITRETechniqueKey:
+        value = Config::CommandQueryMITRETechnique.Key;
+        return true;
+    case RemoveCommentKey:
+        value = Config::RemoveCommentCommand.Key;
+        return true;
+    case RenameLabelKey:
+        value = Config::RenameLabelCommand.Key;
+        return true;
+    case SaveCacheKey:
+        value = Config::SaveCacheCommand.Key;
+        return true;
+    case ShowKeysKey:
+        value = Config::ShowKeysWindowCommand.Key;
+        return true;
+    case ShowOnlyDissasmKey:
+        value = Config::ShowOnlyDissasmCommand.Key;
         return true;
     }
     return false;
@@ -41,26 +82,53 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
 bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, String&)
 {
     switch (propertyID) {
-    // case PROP_ID_ADD_NEW_TYPE:
-    //     config.AddNewTypeCommand.Key = std::get<Key>(value);
-    //     return true;
-    case PROP_ID_DISSASM_LANGUAGE:
-        settings->defaultLanguage = static_cast<DisassemblyLanguage>(std::get<uint64>(value));
+    case ShowFileContentConfig:
+        config.ShowFileContent = std::get<bool>(value);
         return true;
-        // case PROP_ID_SHOW_FILE_CONTENT:
-        //     config.ShowFileContent = std::get<bool>(value);
-        //     return true;
-        // case PROP_ID_SHOW_FILE_CONTENT_KEY:
-        //     config.ShowOrHideFileContentCommand.Key= std::get<Key>(value);
-        //     return true;
-    case PROP_ID_SHOW_ONLY_DISSAM:
+    case ShowOnlyDissasmConfig:
         config.ShowOnlyDissasm = std::get<bool>(value);
         return true;
-    case PROP_ID_SHOW_ONLY_DISSAM_KEY:
-        config.ShowOnlyDissasmCommand.Key = std::get<Key>(value);
-        return true;
-    case PROP_ID_ENABLE_DEEP_SCAN_DISSASM:
+    case DeepScanDissasmOnStartConfig:
         config.EnableDeepScanDissasmOnStart = std::get<bool>(value);
+        return true;
+    case CacheSameLocationAsAnalyzedFileConfig:
+        config.CacheSameLocationAsAnalyzedFile = std::get<bool>(value);
+        return true;
+    case AddOrEditCommentKey:
+        Config::AddOrEditCommentCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case AsmExportToFileKey:
+        Config::AsmExportFileContentCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case GoToEntrypointKey:
+        Config::GotoEntrypointCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case JumpBackKey:
+        Config::JumpBackCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case JumpForwardKey:
+        Config::JumpForwardCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case QueryFunctionNameKey:
+        Config::CommandQueryFunctionName.Key = std::get<Input::Key>(value);
+        return true;
+    case QueryMITRETechniqueKey:
+        Config::CommandQueryMITRETechnique.Key = std::get<Input::Key>(value);
+        return true;
+    case RemoveCommentKey:
+        Config::RemoveCommentCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case RenameLabelKey:
+        Config::RenameLabelCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case SaveCacheKey:
+        Config::SaveCacheCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case ShowKeysKey:
+        Config::ShowKeysWindowCommand.Key = std::get<Input::Key>(value);
+        return true;
+    case ShowOnlyDissasmKey:
+        Config::ShowOnlyDissasmCommand.Key = std::get<Input::Key>(value);
         return true;
     }
     return false;
@@ -76,12 +144,23 @@ bool Instance::IsPropertyValueReadOnly(uint32)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        //{ PROP_ID_ADD_NEW_TYPE, "Shortcuts", "Key adding new data type", PropertyType::Key },
-        { PROP_ID_DISSASM_LANGUAGE, "General", "Dissasm language", PropertyType::List, true, "x86=1,x64=2,JavaByteCode=3,IL=4" },
-        //{ PROP_ID_SHOW_FILE_CONTENT, "General", "Show file content", PropertyType::Boolean },
-        //{ PROP_ID_SHOW_FILE_CONTENT_KEY, "General", "Show file content key", PropertyType::Key},
-        { PROP_ID_SHOW_ONLY_DISSAM, "General", "Show only dissasm code", PropertyType::Boolean },
-        { PROP_ID_SHOW_ONLY_DISSAM_KEY, "General", "Show only dissasm code key", PropertyType::Key },
-        { PROP_ID_ENABLE_DEEP_SCAN_DISSASM, "General", "Enable dissasm deep scan on start", PropertyType::Boolean },
+        //{ PROP_ID_DISSASM_LANGUAGE, "General", "Dissasm language", PropertyType::List, true, "x86=1,x64=2,JavaByteCode=3,IL=4" },
+        { ShowFileContentConfig, "Config", "ShowFileContent", PropertyType::Boolean, true },
+        { ShowOnlyDissasmConfig, "Config", "ShowOnlyDissasm", PropertyType::Boolean, true },
+        { DeepScanDissasmOnStartConfig, "Config", "DeepScanDissasmOnStart", PropertyType::Boolean, true },
+        { CacheSameLocationAsAnalyzedFileConfig, "Config", "CacheSameLocationAsAnalyzedFile", PropertyType::Boolean, true },
+
+        { AddOrEditCommentKey, "Key", "AddOrEditComment", PropertyType::Key, true },
+        { AsmExportToFileKey, "Key", "AsmExportToFile", PropertyType::Key, true },
+        { GoToEntrypointKey, "Key", "GoToEntrypoint", PropertyType::Key, true },
+        { JumpBackKey, "Key", "JumpBack", PropertyType::Key, true },
+        { JumpForwardKey, "Key", "JumpForward", PropertyType::Key, true },
+        { QueryFunctionNameKey, "Key", "QueryFunctionName", PropertyType::Key, true },
+        { QueryMITRETechniqueKey, "Key", "QueryMITRETechnique", PropertyType::Key, true },
+        { RemoveCommentKey, "Key", "RemoveComment", PropertyType::Key, true },
+        { RenameLabelKey, "Key", "RenameLabel", PropertyType::Key, true },
+        { SaveCacheKey, "Key", "SaveCache", PropertyType::Key, true },
+        { ShowKeysKey, "Key", "ShowKeys", PropertyType::Key, true },
+        { ShowOnlyDissasmKey, "Key", "ShowOnlyDissasm", PropertyType::Key, true },
     };
 }

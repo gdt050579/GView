@@ -201,7 +201,7 @@ namespace View
             void UpdateColors(const AppCUI::Application::Config& config);
             void Initialize(const AppCUI::Application::Config& config);
 
-            ~Config();
+            ~Config() override;
             void OnPreviewWindowDraw(
                   std::string_view categoryName,
                   Graphics::Renderer& r,
