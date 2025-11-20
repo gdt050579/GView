@@ -1799,7 +1799,7 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, false, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
         // shortcuts
-        { BT(PropertyID::WrapMethodKey), "Shortcuts", "Change wrap method", PropertyType::Key },
+        { BT(PropertyID::WrapMethodKey), "Key", "WrapMethod", PropertyType::Key, true },
     };
 }
 #undef BT
