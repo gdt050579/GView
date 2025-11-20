@@ -17,6 +17,7 @@ constexpr uint32 COMMAND_SHOW_ONLY_DISSASM      = 109;
 constexpr uint32 COMMAND_SAVE_DISSASM_CACHE     = 110;
 constexpr uint32 COMMAND_QUERY_FUNCTION_NAME    = 111;
 constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
+constexpr uint32 COMMAND_RENAME_LABEL           = 113;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -144,7 +145,7 @@ namespace View
             inline static KeyboardControl GotoEntrypointCommand = {
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
-            inline static KeyboardControl ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
+            //inline static KeyboardControl ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
 
             inline static KeyboardControl CommandQueryFunctionName = {
                 Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
@@ -154,13 +155,13 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 7> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
                 GotoEntrypointCommand,
-                ShowKeysWindowCommand,
+                //ShowKeysWindowCommand,
                 CommandQueryFunctionName,
                 CommandQueryMITRETechnique
             };
@@ -168,7 +169,7 @@ namespace View
             // Other keys
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
-            inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
+            inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_RENAME_LABEL };
             inline static KeyboardControl SaveCacheCommand        = {
                 Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE
             };
@@ -177,7 +178,7 @@ namespace View
                                                                                                      RemoveCommentCommand,
                                                                                                      RenameLabelCommand };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 12> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 11> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -185,7 +186,7 @@ namespace View
                 GotoEntrypointCommand,
                 AddOrEditCommentCommand,
                 RemoveCommentCommand,
-                ShowKeysWindowCommand,
+                //ShowKeysWindowCommand,
                 RenameLabelCommand,
                 SaveCacheCommand,
                 CommandQueryFunctionName,
