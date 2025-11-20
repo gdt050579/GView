@@ -23,6 +23,12 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
         }
     }
 
+    if (auto propObj = Application::GetAppPropertiesObject()) 
+    {
+        auto tp_view = Factory::TabPage::Create(t, "AppCUI");
+        Factory::PropertyList::Create(tp_view, "d:c", Reference<PropertiesInterface>(propObj), PropertyListFlags::Border);
+    }
+
     Factory::Button::Create(this, "&Close", "x:40%,y:22,a:b,w:12", BUTTON_ID_CLOSE);
     Factory::Button::Create(this, "&Go To", "x:60%,y:22,a:b,w:12", BUTTON_ID_GOTO);
 }
