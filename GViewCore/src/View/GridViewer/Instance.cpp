@@ -309,7 +309,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
         }
 
         std::vector<std::pair<uint64, uint64>> lTokens;
-        if (separators.size() == 0) {
+        if (separators.empty()) {
             lTokens.push_back({ lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed });
         }
 
@@ -449,36 +449,22 @@ enum class PropertyID : uint32 { None };
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
-    switch (id) {
-    case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
-        value = ReplaceHeader.Key;
-        return true;
-    case PROP_ID_TOGGLE_HORIZONTAL_LINES:
-        value = ToggleHorizontalLines.Key;
-        return true;
-    case PROP_ID_TOGGLE_VERTICAL_LINES:
-        value = ToggleVerticalLines.Key;
-        return true;
-    default:
-        break;
+    for (const auto& key : Commands::AllGridCommands) {
+        if (key->CommandId == id) {
+            value = key->Key;
+            return true;
+        }
     }
     return false;
 }
 
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
-    switch (id) {
-    case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
-        ReplaceHeader.Key = std::get<Key>(value);
-        return true;
-    case PROP_ID_TOGGLE_HORIZONTAL_LINES:
-        ToggleHorizontalLines.Key = std::get<Key>(value);
-        return true;
-    case PROP_ID_TOGGLE_VERTICAL_LINES:
-        ToggleVerticalLines.Key = std::get<Key>(value);
-        return true;
-    default:
-        break;
+    for (const auto& key : Commands::AllGridCommands) {
+        if (key->CommandId == id) {
+            key->Key = std::get<Key>(value);
+            return true;
+        }
     }
     return false;
 }
@@ -494,11 +480,13 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {
-        { PROP_ID_REPLACE_HEADER_WITH_1ST_ROW, "Content", "Replace header with first row", PropertyType::Key },
-        { PROP_ID_TOGGLE_HORIZONTAL_LINES, "Look", "Hide/Show horizontal lines", PropertyType::Key },
-        { PROP_ID_TOGGLE_VERTICAL_LINES, "Look", "Hide/Show vertical lines", PropertyType::Key },
-    };
+    vector<Property> properties;
+    properties.reserve(AllGridCommands.size());
+
+    for (const auto& key : AllGridCommands) {
+        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
+    }
+    return properties;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)

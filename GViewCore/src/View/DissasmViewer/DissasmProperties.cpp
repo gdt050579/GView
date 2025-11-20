@@ -79,6 +79,8 @@ const vector<Property> Instance::GetPropertiesList()
         { CacheSameLocationAsAnalyzedFileConfig, "Config", "CacheSameLocationAsAnalyzedFile", PropertyType::Boolean, true },
     };
 
+    properties.reserve(properties.size() + Config::AllKeyboardCommands.size());
+
     for (const auto& key : Config::AllKeyboardCommands) {
         const auto& entKey = key.get();
         properties.emplace_back(entKey.CommandId, "Key", entKey.Caption, PropertyType::Key, true);
