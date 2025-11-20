@@ -210,9 +210,7 @@ enum class PropertyID : uint32
     ImagesCount,
     Scale,
     CurrentImageIndex,
-    CurrentImageSize,
-    ZoomIn,
-    ZoomOut
+    CurrentImageSize
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -232,12 +230,12 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::CurrentImageSize:
         value = Size{ img.GetWidth(), img.GetHeight() };
         return true;
-    case PropertyID::ZoomIn:
-        value = ZoomIn.Key;
-        return true;
-    case PropertyID::ZoomOut:
-        value = ZoomOut.Key;
-        return true;
+    }
+    for (const auto& key : ImageViewCommands) {
+        if (key->CommandId == id) {
+            value = key->Key;
+            return true;
+        }
     }
     return false;
 }
@@ -258,14 +256,14 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->currentImageIndex = std::get<uint32>(value);
         LoadImage();
         return true;
-    case PropertyID::ZoomIn:
-        ZoomIn.Key = std::get<Key>(value);
-        return true;
-    case PropertyID::ZoomOut:
-        ZoomOut.Key = std::get<Key>(value);
-        return true;
     }
-    error.SetFormat("Unknown internat ID: %u", id);
+    for (const auto& key : ImageViewCommands) {
+        if (key->CommandId == id) {
+            key->Key = std::get<Key>(value);
+            return true;
+        }
+    }
+    error.SetFormat("Unknown internal ID: %u", id);
     return false;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
@@ -284,15 +282,16 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {
-        { BT(PropertyID::ImagesCount), "General", "Images count", PropertyType::UInt32 },
-        { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, false, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
-        { BT(PropertyID::CurrentImageIndex), "Current Image", "Index", PropertyType::UInt32 },
-        { BT(PropertyID::CurrentImageSize), "Current Image", "Size", PropertyType::Size },
-        { BT(PropertyID::ZoomIn), "Shortcuts", "Key for ZoomIn", PropertyType::Key },
-        { BT(PropertyID::ZoomOut), "Shortcuts", "Key for ZoomOut", PropertyType::Key },
+    vector<Property> properties = { { BT(PropertyID::ImagesCount), "General", "Images count", PropertyType::UInt32 },
+                                    { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, false, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
+                                    { BT(PropertyID::CurrentImageIndex), "Current Image", "Index", PropertyType::UInt32 },
+                                    { BT(PropertyID::CurrentImageSize), "Current Image", "Size", PropertyType::Size } };
+    properties.reserve(properties.size() + ImageViewCommands.size());
+    for (const auto& key : ImageViewCommands) {
+        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
+    }
 
-    };
+    return properties;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
