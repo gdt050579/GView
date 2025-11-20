@@ -80,11 +80,6 @@ Reference<GView::Object> FileWindow::GetObject()
     return Reference<GView::Object>(this->obj.get());
 }
 
-void FileWindow::ShowFilePropertiesDialog()
-{
-    FileWindowProperties dlg(view);
-    dlg.Show();
-}
 void FileWindow::ShowGoToDialog()
 {
     if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog() == false)
