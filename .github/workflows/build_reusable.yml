@@ -1,0 +1,194 @@
+name: "Reusable Build"
+
+on:
+  workflow_call:
+    inputs:
+      build_type:
+        description: "CMake build type"
+        required: false
+        default: "Release"
+        type: string
+      enable_tests:
+        description: "Run tests?"
+        required: false
+        default: false
+        type: boolean
+      use_vcpkg_cache:
+        description: "Cache vcpkg artifacts?"
+        required: false
+        default: true
+        type: boolean
+      os_matrix:
+        description: "JSON array of runners (e.g. [\"ubuntu-24.04\",\"macos-15-intel\",\"windows-latest\"])"
+        required: false
+        default: '["ubuntu-24.04","macos-15-intel","windows-latest"]'
+        type: string
+      upload_artifact:
+        description: "Upload build artifact?"
+        required: false
+        default: false
+        type: boolean
+      artifact_path:
+        description: "Path (glob) to upload when upload_artifact=true. Example: ./bin/Release/**"
+        required: false
+        default: "bin/Release/**"
+        type: string
+      jobs_count:
+        description: "Number of parallel jobs for build (0 = auto)"
+        required: false
+        default: 0
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.os_matrix) }}
+
+    env:
+      BUILD_TYPE: ${{ inputs.build_type }}
+      ENABLE_TESTS: ${{ inputs.enable_tests }}
+      USE_VCPKG_CACHE: ${{ inputs.use_vcpkg_cache }}
+      UPLOAD_ARTIFACT: ${{ inputs.upload_artifact }}
+      ARTIFACT_PATH: ${{ inputs.artifact_path }}
+      JOBS_IN: ${{ inputs.jobs_count }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup JOBS env
+        shell: bash
+        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        run: |
+          if [ "${{ env.JOBS_IN }}" = "0" ]; then
+            echo "JOBS=$(nproc)" >> $GITHUB_ENV
+          else
+            echo "JOBS=${{ env.JOBS_IN }}" >> $GITHUB_ENV
+          fi
+
+      - name: Setup JOBS on Windows
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: |
+          if ($env:JOBS_IN -eq "0") {
+            echo "JOBS=$env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Encoding ASCII -Append
+          } else {
+            echo "JOBS=$env:JOBS_IN" | Out-File -FilePath $env:GITHUB_ENV -Encoding ASCII -Append
+          }
+
+      # Cache vcpkg
+      - name: Cache vcpkg
+        if: ${{ env.USE_VCPKG_CACHE == 'true' }}
+        uses: actions/cache@v3
+        with:
+          path: |
+            build/vcpkg_installed
+            build/vcpkg_downloads
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-
+
+      # OS-specific dependency installation
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y gcc-multilib g++-multilib build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          set -euo pipefail
+          brew update
+          brew install autoconf autoconf-archive automake libtool make cmake ninja
+          echo "VCPKG_CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
+
+      - name: Configure CMake
+        shell: bash
+        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DENABLE_TESTS=${ENABLE_TESTS}
+
+      - name: Configure CMake (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=${env:BUILD_TYPE} -DENABLE_TESTS=${env:ENABLE_TESTS}
+
+      - name: Build
+        shell: bash
+        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        run: |
+          set -euo pipefail
+          cmake --build build --config ${BUILD_TYPE} -- -j ${JOBS}
+
+      - name: Build (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --build build --config ${env:BUILD_TYPE} -- /m:${env:JOBS}
+
+      - name: Run tests (ctest)
+        if: ${{ inputs.enable_tests == 'true' && (startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build --output-on-failure
+
+      - name: Run tests (Windows)
+        if: ${{ inputs.enable_tests == 'true' && startsWith(matrix.os, 'windows') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir build --output-on-failure
+
+      - name: Optionally upload build artifact (Linux/Mac)
+        if: ${{ inputs.upload_artifact == 'true' && (startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')) }}
+        run: |
+          set -euo pipefail
+          # create a zip with maximum compression
+          pushd .
+          cd $(dirname "${{ inputs.artifact_path }}" || echo ".")
+          # archive the produced bin/Release (caller should set ARTIFACT_PATH appropriately)
+          zip_name="build-${{ matrix.os }}-${{ env.BUILD_TYPE }}.zip"
+          # Use zip from repository workspace root (safest)
+          (cd $GITHUB_WORKSPACE && zip -9 -r "$GITHUB_WORKSPACE/$zip_name" ${ARTIFACT_PATH})
+          echo "AZIP=$GITHUB_WORKSPACE/$zip_name" >> $GITHUB_ENV
+
+      - name: Optionally upload build artifact (Windows)
+        if: ${{ inputs.upload_artifact == 'true' && startsWith(matrix.os, 'windows') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zipName = "build-${{ matrix.os }}-${{ env.BUILD_TYPE }}.zip"
+          # Expand the glob in PowerShell
+          $files = Get-ChildItem -Path $Env:GITHUB_WORKSPACE -Recurse -Include $Env:ARTIFACT_PATH -File
+          $dest = Join-Path -Path $Env:GITHUB_WORKSPACE -ChildPath $zipName
+          if (Test-Path $dest) { Remove-Item $dest }
+          if ($files.Count -eq 0) {
+            Write-Host "No files matched artifact path: $Env:ARTIFACT_PATH"
+            exit 0
+          }
+          Compress-Archive -Path ($files | ForEach-Object { $_.FullName }) -DestinationPath $dest -Force
+          echo "AZIP=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload artifact (if produced)
+        if: ${{ inputs.upload_artifact == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}-${{ env.BUILD_TYPE }}
+          path: ${{ env.AZIP }}
+          retention-days: 1
