@@ -10,221 +10,86 @@ on:
   push:
     branches:
       - release
+
   workflow_dispatch:
     inputs:
       isPreRelease:
-        description: 'Is the build pre release?'     
+        description: "Is this a pre-release?"
         required: true
-        default: true 
+        default: true
         type: boolean
 
 env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  
+
 jobs:
-  build-win:
-    runs-on: [windows-latest]
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-      
-    - name: Add tag data to enviroment
-      run: |
-        $output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
-        echo "GVIEW_VERSION=$output" | Out-File -FilePath $env:GITHUB_ENV -Append
-        
-    - name: Copy static libs from VCPKG
-      working-directory: "D:/a/GView/GView/bin/Release"
-      run: cp -R ../../build/vcpkg_installed/x64-windows/lib/*.lib .
-  
-    - name: List bin artefacts
-      shell: cmd
-      run: dir /s "D:/a/GView/GView/bin"
-      
-    - name: Create archive
-      run: |
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.lib)
-        echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.exe)
-        echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.dll)
-        echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.tpl)
-        echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.gpl)
-        echo "$output"
-    
-    - name: Store Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows_artifacts
-        path: "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
-        retention-days: 1
+# --------------------------------------------------
+# Reusable build job (multi-OS matrix inside)
+# --------------------------------------------------
+  build-all:
+    name: "Build all platforms"
+    uses: ./.github/workflows/build_reusable.yml
+    with:
+      build_type: Release
+      enable_tests: false
+      use_vcpkg_cache: true
+      upload_artifact: true
 
-    - name: Generate signed build provenance
-      uses: actions/attest-build-provenance@v2
-      with:
-        subject-path: GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip
-     
-  build-macos:
-    runs-on: [macos-15-intel] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        
-    # https://github.com/dotnet/runtime/issues/82240
-    # temporarily install pkg-config via brew
-    # - name: Install pkg-config
-    #   run: |
-    #     brew update
-    #     brew install pkg-config
-    #     brew upgrade
+      # Matches your reusable input exactly
+      os_matrix: '["ubuntu-24.04","macos-15-intel","windows-latest"]'
 
-    - name: Install build dependencies 
-      run: | 
-        brew update 
-        brew install autoconf autoconf-archive automake libtool make cmake ninja
-        echo "VCPKG_CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
-    
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-      
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-        
-    - name: Add tag data to enviroment
-      run: |
-        output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
-        echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
+      # Adjust if needed
+      artifact_path: "bin/Release/**"
+      jobs_count: 0
 
-    - name: Copy static libs from VCPKG
-      working-directory: /Users/runner/work/GView/GView/bin/Release
-      run: cp -R ../../build/vcpkg_installed/x64-osx/lib/*.a .
-      
-    - name: Copy terminfo from VCPKG
-      working-directory: /Users/runner/work/GView/GView/bin/Release
-      run: cp -R ../../build/vcpkg_installed/x64-osx/share/terminfo .
-      
-    - name: List bin artefacts
-      run: ls -R /Users/runner/work/GView/GView/bin
-      
-    - name: Create archive
-      working-directory: /Users/runner/work/GView/GView/bin/Release
-      run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" .)
-        echo "$output"
-
-    - name: Store Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: apple_artifacts
-        path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
-        retention-days: 1
-
-    - name: Generate signed build provenance
-      uses: actions/attest-build-provenance@v2
-      with:
-        subject-path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
-        
-  build-ubuntu:
-    runs-on: [ubuntu-24.04]
-    env:
-      CC: gcc-10
-      CXX: g++-10
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    
-    - name: Update
-      run: sudo apt-get update
-        
-    - name: Install libx11-dev
-      run: sudo apt-get install libx11-dev
-        
-    - name: GCC & G++ multilib
-      run: sudo apt-get install -y g++-multilib gcc-multilib build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev
-      
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-      
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-      
-    - name: Add tag data to enviroment
-      run: |
-        output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
-        echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
-      
-    - name: Copy static libs from VCPKG
-      working-directory: /home/runner/work/GView/GView/bin/Release
-      run: cp -R ../../build/vcpkg_installed/x64-linux/lib/*.a .
-      
-    - name: Copy terminfo from VCPKG
-      working-directory: /home/runner/work/GView/GView/bin/Release
-      run: cp -R ../../build/vcpkg_installed/x64-linux/share/terminfo .
-      
-    - name: List bin artefacts
-      run: ls -R /home/runner/work/GView/GView/bin
-      
-    - name: Create archive
-      working-directory: /home/runner/work/GView/GView/bin/Release
-      run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" .)
-        echo "$output"
-    
-    - name: Store Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux_artifacts
-        path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
-        retention-days: 1     
-
-    - name: Generate signed build provenance
-      uses: actions/attest-build-provenance@v2
-      with:
-        subject-path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
-      
+# --------------------------------------------------
+# Publish to GitHub Release
+# --------------------------------------------------
   publish_job:
-    name: "Publish to release"
-    runs-on: [ubuntu-latest]
-    needs: [build-win, build-ubuntu, build-macos]
+    name: "Publish to GitHub Release"
+    runs-on: ubuntu-latest
+    needs: [build-all]
+
     steps:
     - uses: actions/checkout@v4
 
-    - name: Add tag data to enviroment
+    - name: Extract version
       run: |
-        output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
-        echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
+        ver=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+        echo "GVIEW_VERSION=$ver" >> $GITHUB_ENV
 
-    - uses: actions/download-artifact@v4.1.7
+    # ------------------------
+    # Download artifacts
+    # ------------------------
+
+    - name: Download Ubuntu artifact
+      uses: actions/download-artifact@v4
       with:
-        name: windows_artifacts
+        name: build-ubuntu-24.04-Release
         path: artifacts
 
-    - uses: actions/download-artifact@v4.1.7
+    - name: Download macOS artifact
+      uses: actions/download-artifact@v4
       with:
-        name: linux_artifacts
+        name: build-macos-15-intel-Release
         path: artifacts
 
-    - uses: actions/download-artifact@v4.1.7
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v4
       with:
-        name: apple_artifacts
+        name: build-windows-latest-Release
         path: artifacts
 
-    - uses: "marvinpinto/action-automatic-releases@latest"
+    # ------------------------
+    # Publish Release
+    # ------------------------
+
+    - name: Publish GitHub release
+      uses: marvinpinto/action-automatic-releases@latest
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "${{env.GVIEW_VERSION}}"
-        prerelease: true # ${{ github.event.inputs.isPreRelease }}
-        title: Build ${{env.GVIEW_VERSION}}
+        automatic_release_tag: "${{ env.GVIEW_VERSION }}"
+        prerelease: ${{ github.event.inputs.isPreRelease }}
+        title: "GView Build ${{ env.GVIEW_VERSION }}"
         files: |
-            artifacts/*.zip
+          artifacts/*.zip
