@@ -83,6 +83,14 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+            std::string_view GetCategoryNameForSerialization() const override
+            {
+                return "View.Image";
+            }
+            bool AddCategoryBeforePropertyNameWhenSerializing() const override
+            {
+                return true;
+            }
             bool UpdateKeys(KeyboardControlsInterface* interface) override;
         };
         class GoToDialog : public Window

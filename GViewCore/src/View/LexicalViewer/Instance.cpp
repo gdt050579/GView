@@ -2205,13 +2205,6 @@ enum class PropertyID : uint32
     ViewWidth,
     MaxTokenWidth,
     MaxTokenHeight,
-    // shortcuts
-    ShowPluginListKey,
-    SaveAsKey,
-    ShowMetaDataKey,
-    ChangeSelectionTypeKey,
-    FoldAllKey,
-    ExpandAllKey,
     // General
     NoOfTokens,
     NoOfBlocks,
@@ -2232,24 +2225,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::ViewWidth:
         value = this->settings->maxWidth;
-        return true;
-    case PropertyID::ShowPluginListKey:
-        value = ShowPluginsCmd.Key;
-        return true;
-    case PropertyID::SaveAsKey:
-        value = SaveAsCmd.Key;
-        return true;
-    case PropertyID::ShowMetaDataKey:
-        value = ShowMetaDataCmd.Key;
-        return true;
-    case PropertyID::ChangeSelectionTypeKey:
-        value = ChangeSelectionTypeCmd.Key;
-        return true;
-    case PropertyID::FoldAllKey:
-        value = FoldAllCmd.Key;
-        return true;
-    case PropertyID::ExpandAllKey:
-        value = ExpandAllCmd.Key;
         return true;
     case PropertyID::NoOfTokens:
         value = static_cast<uint32>(this->tokens.size());
@@ -2276,6 +2251,12 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = this->settings->maxTokenSize.Height;
         return true;
     }
+    for (const auto& key : LexicalViewerCommands) {
+        if (key->CommandId == id) {
+            value = key->Key;
+            return true;
+        }
+    }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
@@ -2289,24 +2270,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ViewWidth:
         this->settings->maxWidth = std::min<>(2000U, std::max<>(8U, std::get<uint32>(value)));
         Parse();
-        return true;
-    case PropertyID::ShowPluginListKey:
-        ShowPluginsCmd.Key = std::get<Input::Key>(value);
-        return true;
-    case PropertyID::SaveAsKey:
-        SaveAsCmd.Key = std::get<Input::Key>(value);
-        return true;
-    case PropertyID::ShowMetaDataKey:
-        ShowMetaDataCmd.Key = std::get<Input::Key>(value);
-        return true;
-    case PropertyID::ChangeSelectionTypeKey:
-        ChangeSelectionTypeCmd.Key = std::get<Input::Key>(value);
-        return true;
-    case PropertyID::FoldAllKey:
-        FoldAllCmd.Key = std::get<Input::Key>(value);
-        return true;
-    case PropertyID::ExpandAllKey:
-        ExpandAllCmd.Key = std::get<Input::Key>(value);
         return true;
     case PropertyID::Pretty:
         this->prettyFormat = std::get<bool>(value);
@@ -2328,6 +2291,12 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         RecomputeTokenPositions();
         return true;
     }
+    for (const auto& key : LexicalViewerCommands) {
+        if (key->CommandId == id) {
+            key->Key = std::get<Key>(value);
+            return true;
+        }
+    }
     error.SetFormat("Unknown internal ID: %u", id);
     return false;
 }
@@ -2348,18 +2317,11 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {
+    std::vector<Property> properties = {
         { BT(PropertyID::IndentWidth), "Sizes", "Indent with", PropertyType::UInt8 },
         { BT(PropertyID::ViewWidth), "Sizes", "View width", PropertyType::UInt32 },
         { BT(PropertyID::MaxTokenWidth), "Sizes", "Max sizeable tokens width", PropertyType::UInt32 },
         { BT(PropertyID::MaxTokenHeight), "Sizes", "Max sizeable tokens height", PropertyType::UInt32 },
-        // shortcuts
-        { BT(PropertyID::ShowPluginListKey), "Shortcuts", "Show plugin list", PropertyType::Key },
-        { BT(PropertyID::SaveAsKey), "Shortcuts", "SaveAs", PropertyType::Key },
-        { BT(PropertyID::ShowMetaDataKey), "Shortcuts", "Show/Hide metadata", PropertyType::Key },
-        { BT(PropertyID::ChangeSelectionTypeKey), "Shortcuts", "Change selection", PropertyType::Key },
-        { BT(PropertyID::FoldAllKey), "Shortcuts", "Fold all", PropertyType::Key },
-        { BT(PropertyID::ExpandAllKey), "Shortcuts", "ExpandAll", PropertyType::Key },
         // General
         { BT(PropertyID::NoOfTokens), "General", "Tokens count", PropertyType::UInt32 },
         { BT(PropertyID::NoOfBlocks), "General", "Blocks count", PropertyType::UInt32 },
@@ -2369,6 +2331,13 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ShowMetaData), "View", "Show/Hide metadate", PropertyType::Boolean },
         { BT(PropertyID::HighlightSimilarTokens), "View", "Highlight similar tokens", PropertyType::Boolean },
     };
+
+    properties.reserve(properties.size() + LexicalViewerCommands.size());
+    for (const auto& key : LexicalViewerCommands) {
+        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
+    }
+
+    return properties;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)

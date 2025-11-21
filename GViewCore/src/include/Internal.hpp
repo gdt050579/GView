@@ -4,6 +4,7 @@
 
 #include <set>
 #include <span>
+#include <array>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
@@ -505,6 +506,10 @@ namespace App
         static GView::KeyboardControl INSTANCE_CHOOSE_TYPE         = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
         static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
         static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE       = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
+
+        static const std::array GViewCommands = {
+            &INSTANCE_CHANGE_VIEW, &INSTANCE_SWITCH_TO_VIEW, &INSTANCE_COMMAND_GOTO, &FILE_WINDOW_COMMAND_FIND, &INSTANCE_CHOOSE_TYPE, &INSTANCE_KEY_CONFIGURATOR
+        };
     }
 
     class Instance : public AppCUI::Utils::PropertiesInterface,
@@ -613,6 +618,14 @@ namespace App
         virtual void SetCustomPropertyValue(uint32 propertyID) override;
         virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
         virtual const vector<Property> GetPropertiesList() override;
+        virtual std::string_view GetCategoryNameForSerialization() const override
+        {
+            return "GView";
+        }
+        virtual bool AddCategoryBeforePropertyNameWhenSerializing() const override
+        {
+            return true;
+        }
 
         // AppCUI Handlers
         virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
@@ -680,7 +693,7 @@ namespace App
     class FileWindowProperties : public Window
     {
       public:
-        FileWindowProperties(Reference<Tab> viewContainer);
+        FileWindowProperties(Reference<Tab> viewContainer, AppCUI::Utils::PropertiesInterface* gviewProperties);
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
 

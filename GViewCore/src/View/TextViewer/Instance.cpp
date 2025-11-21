@@ -1772,7 +1772,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         config.Keys.WordWrap = std::get<AppCUI::Input::Key>(value);
         return true;
     }
-    error.SetFormat("Unknown internat ID: %u", id);
+    error.SetFormat("Unknown internal ID: %u", id);
     return false;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
@@ -1792,14 +1792,14 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
+        { BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, false, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
         { BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
         { BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
         { BT(PropertyID::ShowTabCharacter), "Tabs", "Show tab character", PropertyType::Boolean },
-        { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
+        { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, false, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
         // shortcuts
-        { BT(PropertyID::WrapMethodKey), "Shortcuts", "Change wrap method", PropertyType::Key },
+        { BT(PropertyID::WrapMethodKey), "Key", "WrapMethod", PropertyType::Key, true },
     };
 }
 #undef BT

@@ -83,6 +83,14 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+            std::string_view GetCategoryNameForSerialization() const override
+            {
+                return "View.Container";
+            }
+            bool AddCategoryBeforePropertyNameWhenSerializing() const override
+            {
+                return true;
+            }
         };
 
     } // namespace ContainerViewer

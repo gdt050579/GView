@@ -135,7 +135,7 @@ jobs:
         subject-path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         
   build-ubuntu:
-    runs-on: [ubuntu-22.04]
+    runs-on: [ubuntu-24.04]
     env:
       CC: gcc-10
       CXX: g++-10
@@ -151,7 +151,7 @@ jobs:
       run: sudo apt-get install libx11-dev
         
     - name: GCC & G++ multilib
-      run: sudo apt-get install g++-multilib gcc-multilib -y
+      run: sudo apt-get install -y g++-multilib gcc-multilib build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev
       
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
