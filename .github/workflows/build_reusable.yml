@@ -56,7 +56,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: $${{ fromJson(inputs.os_matrix) }}
+        os: ${{ fromJson(inputs.os_matrix) }}
 
     steps:
       - name: Checkout
