@@ -1,0 +1,36 @@
+# .github/workflows/codeql.yml
+name: CodeQL
+on:
+  push: { branches: [ main ] }
+  pull_request:
+
+permissions:
+  security-events: write
+  packages: read
+  actions: read
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+
+      # Build inside the same job so CodeQL can observe it
+      - uses: ./.github/actions/build
+        with:
+          build_type: RelWithDebInfo
+          enable_tests: "false"
+          use_vcpkg_cache: "true"
+          upload_artifact: "false"
+          jobs_count: "0"
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:c-cpp"
