@@ -1,8 +1,7 @@
-name: "CodeQL"
-
+# .github/workflows/codeql.yml
+name: CodeQL
 on:
-  push:
-    branches: [ main ]
+  push: { branches: [ main ] }
   pull_request:
 
 permissions:
@@ -13,32 +12,25 @@ permissions:
 
 jobs:
   analyze:
-    name: CodeQL Analysis (C/C++)
     runs-on: ubuntu-24.04
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+      - uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
           build-mode: manual
 
-      - name: Build GView using reusable workflow
-        uses: ./.github/workflows/build_reusable.yml
+      # Build inside the same job so CodeQL can observe it
+      - uses: ./.github/actions/build
         with:
-          build_type: "RelWithDebInfo"
-          enable_tests: false
-          use_vcpkg_cache: true
-          upload_artifact: false
-          os_matrix: '["ubuntu-24.04"]'
-          jobs_count: 0
+          build_type: RelWithDebInfo
+          enable_tests: "false"
+          use_vcpkg_cache: "true"
+          upload_artifact: "false"
+          jobs_count: "0"
 
-      - name: Run CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@v4
         with:
           category: "/language:c-cpp"

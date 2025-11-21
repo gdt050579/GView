@@ -23,73 +23,71 @@ env:
   BUILD_TYPE: Release
 
 jobs:
-# --------------------------------------------------
-# Reusable build job (multi-OS matrix inside)
-# --------------------------------------------------
+  # --------------------------------------------------
+  # Build all platforms (matrix)
+  # --------------------------------------------------
   build-all:
-    name: "Build all platforms"
-    uses: ./.github/workflows/build_reusable.yml
-    with:
-      build_type: Release
-      enable_tests: false
-      use_vcpkg_cache: true
-      upload_artifact: true
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15-intel, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      # Matches your reusable input exactly
-      os_matrix: '["ubuntu-24.04","macos-15-intel","windows-latest"]'
+      # Use the composite action (inputs are strings)
+      - name: Build & package
+        uses: ./.github/actions/build
+        with:
+          build_type: ${{ env.BUILD_TYPE }}
+          enable_tests: "false"
+          use_vcpkg_cache: "true"
+          upload_artifact: "true"
+          artifact_path: "bin/Release/**"
+          jobs_count: "0"
 
-      # Adjust if needed
-      artifact_path: "bin/Release/**"
-      jobs_count: 0
-
-# --------------------------------------------------
-# Publish to GitHub Release
-# --------------------------------------------------
+  # --------------------------------------------------
+  # Publish to GitHub Release
+  # --------------------------------------------------
   publish_job:
     name: "Publish to GitHub Release"
     runs-on: ubuntu-latest
     needs: [build-all]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Extract version
-      run: |
-        ver=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
-        echo "GVIEW_VERSION=$ver" >> $GITHUB_ENV
+      - name: Extract version
+        run: |
+          ver=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+          echo "GVIEW_VERSION=$ver" >> "$GITHUB_ENV"
 
-    # ------------------------
-    # Download artifacts
-    # ------------------------
+      # ------------------------
+      # Download all artifacts from the matrix
+      # ------------------------
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # The composite action names artifacts as:
+          #   build-Linux-Release, build-macOS-Release, build-Windows-Release
+          pattern: build-*-Release
+          merge-multiple: true
+          path: artifacts
 
-    - name: Download Ubuntu artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: build-ubuntu-24.04-Release
-        path: artifacts
-
-    - name: Download macOS artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: build-macos-15-intel-Release
-        path: artifacts
-
-    - name: Download Windows artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: build-windows-latest-Release
-        path: artifacts
-
-    # ------------------------
-    # Publish Release
-    # ------------------------
-
-    - name: Publish GitHub release
-      uses: marvinpinto/action-automatic-releases@latest
-      with:
-        repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "${{ env.GVIEW_VERSION }}"
-        prerelease: ${{ github.event.inputs.isPreRelease }}
-        title: "GView Build ${{ env.GVIEW_VERSION }}"
-        files: |
-          artifacts/*.zip
+      # ------------------------
+      # Publish Release
+      # ------------------------
+      - name: Publish GitHub release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "${{ env.GVIEW_VERSION }}"
+          # On workflow_dispatch use the provided input; on push default to false
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.isPreRelease || false }}
+          title: "GView Build ${{ env.GVIEW_VERSION }}"
+          files: |
+            artifacts/*.zip

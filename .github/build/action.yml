@@ -1,0 +1,178 @@
+name: "Reusable Build (composite)"
+description: "Configure, build, (optionally) test and upload artifacts with CMake"
+inputs:
+  build_type:
+    description: "CMake build type"
+    default: "Release"
+  enable_tests:
+    description: "Run tests? ('true'|'false')"
+    default: "false"
+  use_vcpkg_cache:
+    description: "Cache vcpkg artifacts? ('true'|'false')"
+    default: "true"
+  upload_artifact:
+    description: "Upload build artifact? ('true'|'false')"
+    default: "false"
+  artifact_path:
+    description: "Path (glob) to upload when upload_artifact=true"
+    default: "bin/Release/**"
+  jobs_count:
+    description: "Number of parallel jobs for build (string number, '0' = auto)"
+    default: "0"
+runs:
+  using: "composite"
+  steps:
+    # --------------------------
+    # NOTE: Do NOT checkout here.
+    # Let the caller run actions/checkout so this can be used after CodeQL init.
+    # --------------------------
+
+    # --------------------------
+    # Compute JOBS count
+    # --------------------------
+    - name: Set JOBS (Linux/macOS)
+      if: ${{ runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        if [ "${{ inputs.jobs_count }}" = "0" ]; then
+          echo "JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+        else
+          echo "JOBS=${{ inputs.jobs_count }}" >> "$GITHUB_ENV"
+        fi
+
+    - name: Set JOBS (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: pwsh
+      run: |
+        if ("${{ inputs.jobs_count }}" -eq "0") {
+          "JOBS=$env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
+        } else {
+          "JOBS=${{ inputs.jobs_count }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
+        }
+
+    # --------------------------
+    # Cache vcpkg
+    # --------------------------
+    - name: Cache vcpkg
+      if: ${{ inputs.use_vcpkg_cache == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/vcpkg_installed
+          build/vcpkg_downloads
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    # --------------------------
+    # OS dependencies
+    # --------------------------
+    - name: Install dependencies (Linux)
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y \
+          gcc-multilib \
+          g++-multilib \
+          build-essential \
+          ninja-build \
+          libsdl2-dev \
+          libsdl2-ttf-dev \
+          libltdl-dev
+
+    - name: Install dependencies (macOS)
+      if: ${{ runner.os == 'macOS' }}
+      shell: bash
+      run: |
+        brew update
+        brew install autoconf autoconf-archive automake libtool make cmake ninja
+        echo "VCPKG_CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
+
+    # --------------------------
+    # Configure
+    # --------------------------
+    - name: Configure CMake (Linux/macOS)
+      if: ${{ runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+          -DENABLE_TESTS=${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}
+
+    - name: Configure CMake (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: pwsh
+      run: |
+        $enableTests = if ("${{ inputs.enable_tests }}" -eq "true") { "ON" } else { "OFF" }
+        cmake -S . -B build `
+          -DCMAKE_BUILD_TYPE="${{ inputs.build_type }}" `
+          -DENABLE_TESTS="$enableTests"
+
+    # --------------------------
+    # Build
+    # --------------------------
+    - name: Build (Linux/macOS)
+      if: ${{ runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        cmake --build build \
+          --config ${{ inputs.build_type }} \
+          --parallel $JOBS
+
+    - name: Build (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: pwsh
+      run: |
+        cmake --build build `
+          --config "${{ inputs.build_type }}" `
+          --parallel $env:JOBS
+
+    # --------------------------
+    # Tests
+    # --------------------------
+    - name: Run tests (Linux/macOS)
+      if: ${{ inputs.enable_tests == 'true' && runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        ctest --test-dir build --output-on-failure
+
+    - name: Run tests (Windows)
+      if: ${{ inputs.enable_tests == 'true' && runner.os == 'Windows' }}
+      shell: pwsh
+      run: |
+        ctest --test-dir build --output-on-failure
+
+    # --------------------------
+    # Artifact packaging
+    # --------------------------
+    - name: Package artifact (Linux/macOS)
+      if: ${{ inputs.upload_artifact == 'true' && runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        zip_name="build-${{ runner.os }}-${{ inputs.build_type }}.zip"
+        zip -9 -r "$zip_name" ${{ inputs.artifact_path }}
+        echo "AZIP=$PWD/$zip_name" >> "$GITHUB_ENV"
+
+    - name: Package artifact (Windows)
+      if: ${{ inputs.upload_artifact == 'true' && runner.os == 'Windows' }}
+      shell: pwsh
+      run: |
+        $zipName = "build-${{ runner.os }}-${{ inputs.build_type }}.zip"
+        $files = Get-ChildItem -Path $Env:GITHUB_WORKSPACE -Recurse -Include ${{ inputs.artifact_path }} -File
+        if (!$files) { Write-Host "No files matched: ${{ inputs.artifact_path }}"; exit 0 }
+        $dest = Join-Path $Env:GITHUB_WORKSPACE $zipName
+        if (Test-Path $dest) { Remove-Item $dest }
+        Compress-Archive -Path ($files.FullName) -DestinationPath $dest -Force
+        "AZIP=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
+
+    # --------------------------
+    # Upload
+    # --------------------------
+    - name: Upload artifact
+      if: ${{ inputs.upload_artifact == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-${{ runner.os }}-${{ inputs.build_type }}
+        path: ${{ env.AZIP }}
+        retention-days: 1
