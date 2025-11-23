@@ -1,7 +1,8 @@
 # .github/workflows/codeql-analysis.yml
 name: CodeQL
 on:
-  push: { branches: [ main ] }
+  push:
+    branches: [ main ]
   pull_request:
 
 permissions:
@@ -12,18 +13,32 @@ permissions:
 
 jobs:
   analyze:
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: c-cpp
+            build-mode: manual
+          - language: python
+            build-mode: none
+            
     steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - uses: github/codeql-action/init@v4
         with:
-          languages: c-cpp
-          build-mode: manual
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
 
-      # Build inside the same job so CodeQL can observe it
-      - uses: ./.github/actions/build
+      - name: Build C++
+        if: matrix.language == 'c-cpp'
+        uses: ./.github/actions/build
         with:
           build_type: RelWithDebInfo
           enable_tests: "false"
@@ -33,4 +48,4 @@ jobs:
 
       - uses: github/codeql-action/analyze@v4
         with:
-          category: "/language:cpp"
+          category: "/language:${{ matrix.language }}"
