@@ -8,10 +8,11 @@ on:
 
 jobs:
   call-build:
-    uses: ./.github/workflows/build_reusable.yml
+    uses: ./.github/actions/build
     with:
-      build_type: "RelWithDebInfo"
-      enable_tests: true
-      use_vcpkg_cache: true
+      build_type: RelWithDebInfo
+      enable_tests: "true"
+      use_vcpkg_cache: "true"
+      upload_artifact: "false"
       os_matrix: '["windows-latest"]' # TODO: "ubuntu-24.04","macos-15-intel",
-      jobs_count: 0
+      jobs_count: "0"
