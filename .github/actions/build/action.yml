@@ -53,16 +53,32 @@ runs:
     # --------------------------
     # Cache vcpkg
     # --------------------------
-    - name: Cache vcpkg
-      if: ${{ inputs.use_vcpkg_cache == 'true' }}
-      uses: actions/cache@v4
-      with:
-        path: |
-          build/vcpkg_installed
-          build/vcpkg_downloads
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-
+    - name: Compute vcpkg.json hash
+      id: vcpkg_hash
+      shell: bash
+      run: |
+        if [ -f "vcpkg.json" ]; then
+          HASH=$(sha256sum vcpkg.json | cut -d' ' -f1)
+        else
+          HASH="novcpkg"
+        fi
+        echo "HASH=$HASH" >> "$GITHUB_ENV"
+        echo "HASH=$HASH" >> "$GITHUB_OUTPUT"
+      if: runner.os != 'Windows'
+
+    - name: Compute vcpkg.json hash (Windows)
+      id: vcpkg_hash_win
+      shell: pwsh
+      run: |
+        if (Test-Path "vcpkg.json") {
+          $HASH = (Get-FileHash vcpkg.json -Algorithm SHA256).Hash
+        } else {
+          $HASH = "novcpkg"
+        }
+        echo "HASH=$HASH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
+        echo "HASH=$HASH" >> $GITHUB_OUTPUT
+      if: runner.os == 'Windows'
+
 
     # --------------------------
     # OS dependencies
