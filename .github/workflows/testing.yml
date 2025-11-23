@@ -1,5 +1,8 @@
 name: unit testing
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ release, main, dev ]
