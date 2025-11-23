@@ -1,14 +1,14 @@
+# .github/workflows/ci.yml
 name: build
+
+permissions:
+  contents: read
 
 on:
   push:
     branches: [ release, main, dev ]
-  workflow_dispatch:
   pull_request:
-
-env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Release
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,44 +18,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15-intel, windows-latest]
-    
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with: { submodules: recursive }
+      - uses: ./.github/actions/build
         with:
-          submodules: recursive
-      
-      # Cache vcpkg build artifacts (saves lots of time!)
-      - name: Cache vcpkg
-        uses: actions/cache@v3
-        with:
-          path: |
-            build/vcpkg_installed
-            build/vcpkg_downloads
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-
-
-
-      # OS-specific dependencies
-      - name: Install dependencies
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libx11-dev gcc-multilib g++-multilib build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev
-
-      - name: Install dependencies (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: |
-          brew update
-          brew install autoconf autoconf-archive automake libtool make cmake ninja
-          echo "VCPKG_CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
-          # Uncomment if needed later:
-          # brew install pkg-config # https://github.com/dotnet/runtime/issues/82240
-
-      # Configure CMake
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-
-      # Build project
-      - name: Build
-        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+          build_type: Release
+          enable_tests: "false"
+          use_vcpkg_cache: "true"
+          upload_artifact: "false"
+          jobs_count: "0"

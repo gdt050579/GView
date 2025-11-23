@@ -15,7 +15,7 @@ message("CMAKE_C_COMPILER_ARCHITECTURE_ID => ${CMAKE_C_COMPILER_ARCHITECTURE_ID}
 
 option(ENABLE_TESTS "Enable tests" OFF)
 set(CURRENT_PROJECT_NAME GView)
-if (${ENABLE_TESTS})
+if (ENABLE_TESTS)
     message("ENALBED TESTING")
     enable_testing()
     set(CURRENT_PROJECT_NAME GViewTesting)
