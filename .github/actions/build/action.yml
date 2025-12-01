@@ -19,6 +19,9 @@ inputs:
   jobs_count:
     description: "Number of parallel jobs for build (string number, '0' = auto)"
     default: "0"
+  sign_binaries:
+    description: "Sign the binaries using a keyless method"
+    default: "false"
 runs:
   using: "composite"
   steps:
@@ -143,6 +146,64 @@ runs:
         cmake --build build `
           --config "${{ inputs.build_type }}" `
           --parallel $env:JOBS
+
+    # --------------------------
+    # Sign binaries
+    # --------------------------
+    - name: Sign binaries
+      if: ${{ inputs.sign_binaries == 'true' }}
+      uses: sigstore/cosign-installer@v4.0.0
+
+    - name: Sign binaries (Linux/macOS)
+      if: ${{ inputs.sign_binaries == 'true' && runner.os != 'Windows' }}
+      shell: bash
+      env:
+        COSIGN_EXPERIMENTAL: "true"
+      run: |
+        # Directory where CMake puts release binaries (already in your artifact_path)
+        BIN_DIR="bin/Release"
+
+        # Find binaries with the given extensions and sign each
+        find "$BIN_DIR" -type f \( \
+            -name "*.so" -o \
+            -name "*.a" -o \
+            -name "*.dylib" -o \
+            -name "*.tpl" -o \
+            -name "*.gpl" \
+          \) | while read -r f; do
+            echo "Signing $f"
+            # Detached signature + certificate
+            cosign sign-blob \
+              --yes \
+              --oidc-provider="https://token.actions.githubusercontent.com" \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.cert" \
+              "$f"
+          done
+
+    - name: Sign binaries (Windows)
+      if: ${{ inputs.sign_binaries == 'true' && runner.os == 'Windows' }}
+      shell: pwsh
+      env:
+        COSIGN_EXPERIMENTAL: "true"
+      run: |
+        $binDir = "bin\Release"
+        $exts = @("*.dll", "*.exe", "*.tpl", "*.gpl")   # no .so/.dylib on Windows
+        $files = @()
+        foreach ($e in $exts) {
+          $files += Get-ChildItem -Path $binDir -Recurse -Filter $e -File
+        }
+
+        foreach ($f in $files) {
+          Write-Host "Signing $($f.FullName)"
+          cosign sign-blob `
+            --yes `
+            --oidc-provider="https://token.actions.githubusercontent.com" `
+            --output-signature "$($f.FullName).sig" `
+            --output-certificate "$($f.FullName).cert" `
+            "$($f.FullName)"
+        }
+
 
     # --------------------------
     # Tests
