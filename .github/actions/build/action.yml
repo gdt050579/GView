@@ -161,7 +161,7 @@ runs:
         COSIGN_EXPERIMENTAL: "true"
       run: |
         # Directory where CMake puts release binaries (already in your artifact_path)
-        BIN_DIR="bin/Release"
+        BIN_DIR="bin/${{ inputs.build_type }}"
 
         # Find binaries with the given extensions and sign each
         find "$BIN_DIR" -type f \( \
@@ -187,7 +187,7 @@ runs:
       env:
         COSIGN_EXPERIMENTAL: "true"
       run: |
-        $binDir = "bin\Release"
+        $binDir = "bin\${{ inputs.build_type }}"
         $exts = @("*.dll", "*.exe", "*.tpl", "*.gpl")   # no .so/.dylib on Windows
         $files = @()
         foreach ($e in $exts) {
