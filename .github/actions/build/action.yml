@@ -58,6 +58,7 @@ runs:
     # --------------------------
     - name: Compute vcpkg.json hash
       id: vcpkg_hash
+      if: ${{ runner.os != 'Windows' }}
       shell: bash
       run: |
         if [ -f "vcpkg.json" ]; then
@@ -67,10 +68,10 @@ runs:
         fi
         echo "HASH=$HASH" >> "$GITHUB_ENV"
         echo "HASH=$HASH" >> "$GITHUB_OUTPUT"
-      if: runner.os != 'Windows'
 
     - name: Compute vcpkg.json hash (Windows)
       id: vcpkg_hash_win
+      if: ${{ runner.os == 'Windows' }}
       shell: pwsh
       run: |
         if (Test-Path "vcpkg.json") {
@@ -80,7 +81,28 @@ runs:
         }
         echo "HASH=$HASH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
         echo "HASH=$HASH" >> $GITHUB_OUTPUT
-      if: runner.os == 'Windows'
+
+    - name: Cache vcpkg (Linux/macOS)
+      if: ${{ inputs.use_vcpkg_cache == 'true' && runner.os != 'Windows' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/vcpkg_installed
+          build/vcpkg_downloads
+        key: ${{ runner.os }}-vcpkg-${{ steps.vcpkg_hash.outputs.HASH }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    - name: Cache vcpkg (Windows)
+      if: ${{ inputs.use_vcpkg_cache == 'true' && runner.os == 'Windows' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/vcpkg_installed
+          build/vcpkg_downloads
+        key: ${{ runner.os }}-vcpkg-${{ steps.vcpkg_hash_win.outputs.HASH }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
 
 
     # --------------------------
