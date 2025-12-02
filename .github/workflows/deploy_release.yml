@@ -49,6 +49,7 @@ jobs:
           upload_artifact: "true"
           artifact_path: "bin/Release/**"
           jobs_count: "0"
+          sign_binaries: "true"
 
   # --------------------------------------------------
   # Publish to GitHub Release

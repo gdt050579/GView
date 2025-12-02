@@ -3,7 +3,6 @@ name: build
 
 permissions:
   contents: read
-  id-token: write # for sign_binaries
 
 on:
   push:
@@ -29,4 +28,3 @@ jobs:
           use_vcpkg_cache: "true"
           upload_artifact: "false"
           jobs_count: "0"
-          sign_binaries: "true"
