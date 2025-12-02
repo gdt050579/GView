@@ -181,34 +181,37 @@ runs:
       shell: bash
       env:
         COSIGN_EXPERIMENTAL: "true"
+        COSIGN_OIDC_PROVIDER: "github-actions"
       run: |
         # Directory where CMake puts release binaries (already in your artifact_path)
         BIN_DIR="bin/${{ inputs.build_type }}"
 
         # Find binaries with the given extensions and sign each
-        find "$BIN_DIR" -type f \( \
+        while IFS= read -r f; do
+          echo "Signing $f"
+          if ! cosign sign-blob \
+            --yes \
+            --bundle "${f}.bundle" \
+            --output-signature "${f}.sig" \
+            --output-certificate "${f}.cert" \
+            "$f"; then
+            echo "ERROR: cosign failed for $f" >&2
+            exit 1
+          fi
+        done < <(find "$BIN_DIR" -type f \( \
             -name "*.so" -o \
             -name "*.a" -o \
             -name "*.dylib" -o \
             -name "*.tpl" -o \
             -name "*.gpl" \
-          \) | while read -r f; do
-            echo "Signing $f"
-            # Detached signature + certificate
-            cosign sign-blob \
-              --yes \
-              --oidc-provider="https://token.actions.githubusercontent.com" \
-              --output-signature "${f}.sig" \
-              --output-certificate "${f}.cert" \
-              --bundle "${f}.bundle" \
-              "$f"
-          done
+          \))
 
     - name: Sign binaries (Windows)
       if: ${{ inputs.sign_binaries == 'true' && runner.os == 'Windows' }}
       shell: pwsh
       env:
         COSIGN_EXPERIMENTAL: "true"
+        COSIGN_OIDC_PROVIDER: "github-actions"
       run: |
         $binDir = "bin\${{ inputs.build_type }}"
         $exts = @("*.dll", "*.exe", "*.tpl", "*.gpl")   # no .so/.dylib on Windows
@@ -221,11 +224,15 @@ runs:
           Write-Host "Signing $($f.FullName)"
           cosign sign-blob `
             --yes `
-            --oidc-provider="https://token.actions.githubusercontent.com" `
             --output-signature "$($f.FullName).sig" `
             --output-certificate "$($f.FullName).cert" `
             --bundle "$($f.FullName).bundle" `
             "$($f.FullName)"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "cosign failed for $($f.FullName) with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
         }
 
 
