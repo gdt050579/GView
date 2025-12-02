@@ -200,6 +200,7 @@ runs:
               --oidc-provider="https://token.actions.githubusercontent.com" \
               --output-signature "${f}.sig" \
               --output-certificate "${f}.cert" \
+              --bundle "${f}.bundle" \
               "$f"
           done
 
@@ -223,6 +224,7 @@ runs:
             --oidc-provider="https://token.actions.githubusercontent.com" `
             --output-signature "$($f.FullName).sig" `
             --output-certificate "$($f.FullName).cert" `
+            --bundle "$($f.FullName).bundle" `
             "$($f.FullName)"
         }
 
