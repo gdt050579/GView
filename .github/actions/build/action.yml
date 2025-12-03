@@ -19,6 +19,9 @@ inputs:
   jobs_count:
     description: "Number of parallel jobs for build (string number, '0' = auto)"
     default: "0"
+  sign_binaries:
+    description: "Sign the binaries using a keyless method"
+    default: "false"
 runs:
   using: "composite"
   steps:
@@ -55,6 +58,7 @@ runs:
     # --------------------------
     - name: Compute vcpkg.json hash
       id: vcpkg_hash
+      if: ${{ runner.os != 'Windows' }}
       shell: bash
       run: |
         if [ -f "vcpkg.json" ]; then
@@ -64,10 +68,10 @@ runs:
         fi
         echo "HASH=$HASH" >> "$GITHUB_ENV"
         echo "HASH=$HASH" >> "$GITHUB_OUTPUT"
-      if: runner.os != 'Windows'
 
     - name: Compute vcpkg.json hash (Windows)
       id: vcpkg_hash_win
+      if: ${{ runner.os == 'Windows' }}
       shell: pwsh
       run: |
         if (Test-Path "vcpkg.json") {
@@ -77,7 +81,28 @@ runs:
         }
         echo "HASH=$HASH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
         echo "HASH=$HASH" >> $GITHUB_OUTPUT
-      if: runner.os == 'Windows'
+
+    - name: Cache vcpkg (Linux/macOS)
+      if: ${{ inputs.use_vcpkg_cache == 'true' && runner.os != 'Windows' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/vcpkg_installed
+          build/vcpkg_downloads
+        key: ${{ runner.os }}-vcpkg-${{ steps.vcpkg_hash.outputs.HASH }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    - name: Cache vcpkg (Windows)
+      if: ${{ inputs.use_vcpkg_cache == 'true' && runner.os == 'Windows' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/vcpkg_installed
+          build/vcpkg_downloads
+        key: ${{ runner.os }}-vcpkg-${{ steps.vcpkg_hash_win.outputs.HASH }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
 
 
     # --------------------------
@@ -143,6 +168,117 @@ runs:
         cmake --build build `
           --config "${{ inputs.build_type }}" `
           --parallel $env:JOBS
+
+    # --------------------------
+    # Sign binaries
+    # --------------------------
+    - name: Sign binaries
+      if: ${{ inputs.sign_binaries == 'true' }}
+      uses: sigstore/cosign-installer@v4.0.0
+
+    - name: Sign binaries (Linux/macOS)
+      if: ${{ inputs.sign_binaries == 'true' && runner.os != 'Windows' }}
+      shell: bash
+      env:
+        COSIGN_EXPERIMENTAL: "true"
+        COSIGN_OIDC_PROVIDER: "github-actions"
+      run: |
+        set -euo pipefail
+
+        BIN_DIR="bin/${{ inputs.build_type }}"
+        echo "Searching for binaries in: $BIN_DIR"
+
+        # Collect file list
+        mapfile -t FILES < <(find "$BIN_DIR" -type f \( \
+            -name "*.so" -o \
+            -name "*.a" -o \
+            -name "*.dylib" -o \
+            -name "*.tpl" -o \
+            -name "*.gpl" \
+          \))
+
+        if [ "${#FILES[@]}" -eq 0 ]; then
+          echo "No binaries found to sign."
+          exit 0
+        fi
+
+        printf '%s\n' "${FILES[@]}" > files-to-sign.txt # Write list for cosign
+        echo "Signing ${#FILES[@]} binaries with one cosign invocation..."
+
+        # Single cosign command → legal banner printed once
+        cosign sign-blob \
+          --yes \
+          --files files-to-sign.txt \
+          --output-signature-dir sigs \
+          --output-certificate-dir certs \
+          --bundle-dir bundles
+
+        # Move signature outputs next to original binaries
+        for f in "${FILES[@]}"; do
+          base="$(basename "$f")"
+          dir="$(dirname "$f")"
+
+          mv "sigs/$base.sig"       "$dir/$base.sig"
+          mv "certs/$base.cert"     "$dir/$base.cert"
+          mv "bundles/$base.bundle" "$dir/$base.bundle"
+        done
+
+        echo "Signing completed successfully."
+
+
+    - name: Sign binaries (Windows)
+      if: ${{ inputs.sign_binaries == 'true' && runner.os == 'Windows' }}
+      shell: pwsh
+      env:
+        COSIGN_EXPERIMENTAL: "true"
+        COSIGN_OIDC_PROVIDER: "github-actions"
+      run: |
+        $ErrorActionPreference = "Stop"
+
+        $binDir = "bin\${{ inputs.build_type }}"
+        Write-Host "Searching for binaries in $binDir"
+
+        $patterns = @("*.dll", "*.exe", "*.tpl", "*.gpl")
+        $files = @()
+
+        foreach ($pattern in $patterns) {
+          $files += Get-ChildItem -Path $binDir -Recurse -Filter $pattern -File
+        }
+
+        if ($files.Count -eq 0) {
+          Write-Host "No binaries found to sign."
+          exit 0
+        }
+
+        $fileList = "files-to-sign.txt" # Write list for cosign
+        $files.FullName | Out-File -FilePath $fileList -Encoding ascii
+        Write-Host "Signing $($files.Count) binaries with one cosign invocation..."
+
+        cosign sign-blob `
+          --yes `
+          --files $fileList `
+          --output-signature-dir sigs `
+          --output-certificate-dir certs `
+          --bundle-dir bundles
+
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Cosign failed with exit code $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+
+        # Move sig/cert/bundle files next to their binaries
+        foreach ($f in $files) {
+          $base = [System.IO.Path]::GetFileName($f.FullName)
+          $dir  = [System.IO.Path]::GetDirectoryName($f.FullName)
+
+          Move-Item "sigs\$base.sig"       "$dir\$base.sig"
+          Move-Item "certs\$base.cert"     "$dir\$base.cert"
+          Move-Item "bundles\$base.bundle" "$dir\$base.bundle"
+        }
+
+        Write-Host "Signing completed successfully."
+
+
 
     # --------------------------
     # Tests
