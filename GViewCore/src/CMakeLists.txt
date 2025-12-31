@@ -11,6 +11,7 @@ add_subdirectory(Dissasembly)
 add_subdirectory(SQLite3)
 add_subdirectory(Regex)
 add_subdirectory(Entropy)
+add_subdirectory(Yara)
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
     target_sources(GViewCore PRIVATE main.cpp)

@@ -947,6 +947,29 @@ namespace Entropy
     CORE_EXPORT double RenyiEntropy(const BufferView& buffer, double alpha);
 } // namespace Entropy
 
+namespace Yara
+{
+    struct CORE_EXPORT YaraScanner {
+      private:
+        void* compiler{ nullptr }; // YR_COMPILER*
+        void* rules{ nullptr };  // YR_RULES*
+
+      public:
+        bool Init();
+        ~YaraScanner();
+
+        bool CreateCompiler();
+        bool AddRules(const std::string& filePath);
+        bool CompileRules();
+        
+        bool LoadRules(const std::string& filePath);
+        bool SaveRules(const std::string& filePath);
+        
+        bool ScanFile(const std::string& filePath);
+    };
+
+} // namespace Yara
+
 /*
  * Object can be:
  *   - a file
