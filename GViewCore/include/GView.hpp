@@ -952,7 +952,8 @@ namespace Yara
     struct CORE_EXPORT YaraScanner {
       private:
         void* compiler{ nullptr }; // YR_COMPILER*
-        void* rules{ nullptr };  // YR_RULES*
+        void* rules{ nullptr };    // YR_RULES*
+        bool compiled{ false };
 
       public:
         bool Init();

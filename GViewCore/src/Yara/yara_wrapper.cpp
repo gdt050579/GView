@@ -1,11 +1,10 @@
 #include "../include/GView.hpp"
 
-#include <string>
 #include <yara.h>
 
 using YaraScanCallback = int (*)(YR_SCAN_CONTEXT* context, int message, void* message_data, void* user_data);
 
-int callback_function(YR_SCAN_CONTEXT* context, int message, void* message_data, void* user_data) 
+int yara_scan_callback(YR_SCAN_CONTEXT* context, int message, void* message_data, void* user_data) 
 {
     switch (message) {
         case CALLBACK_MSG_RULE_MATCHING: {
@@ -59,6 +58,7 @@ namespace GView::Yara
 
     bool YaraScanner::AddRules(const std::string& filePath) {
         CHECK(compiler, false, "Compiler not created");
+        CHECK(!compiled, false, "Cannot add rules after CompileRules() has been called.");
         
         FILE* file = fopen(filePath.c_str(), "r");
         CHECK(file, false, "Failed to open file: %s", filePath.c_str());
@@ -71,6 +71,7 @@ namespace GView::Yara
 
     bool YaraScanner::CompileRules() {
         CHECK(compiler, false, "Compiler not created");
+        CHECK(!compiled, false, "Rules already compiled");
         
         if (rules != nullptr) {
             yr_rules_destroy(static_cast<YR_RULES*>(rules));
@@ -80,6 +81,9 @@ namespace GView::Yara
         YR_COMPILER* yr_compiler = static_cast<YR_COMPILER*>(compiler);
         YR_RULES** ptr_yr_rules = reinterpret_cast<YR_RULES**>(&rules);
         CHECK(yr_compiler_get_rules(yr_compiler, ptr_yr_rules) == ERROR_SUCCESS, false, "Failed to compile rules");
+        
+        compiled = true;
+
         return true;
     }
 
@@ -110,7 +114,7 @@ namespace GView::Yara
         FILE* yara_matches_file = fopen("yara_matches.txt", "w");
         CHECK(yara_matches_file != nullptr, false, "Failed to open file: yara_matches.txt");
 
-        int result = yr_rules_scan_file(static_cast<YR_RULES*>(rules), filePath.c_str(), flags, callback_function, yara_matches_file, 0);
+        int result = yr_rules_scan_file(static_cast<YR_RULES*>(rules), filePath.c_str(), flags, yara_scan_callback, yara_matches_file, 0);
         fclose(yara_matches_file);
         CHECK(result == ERROR_SUCCESS, false, "Failed to scan file: %s", filePath.c_str());
         
