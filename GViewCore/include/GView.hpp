@@ -986,6 +986,7 @@ namespace Yara
         YaraScanner& operator=(YaraScanner&& other) noexcept;
 
         bool ScanFile(const std::string_view& filePath);
+        bool ScanBuffer(const BufferView& buffer);
     };
 
     class CORE_EXPORT YaraManager;
@@ -993,8 +994,10 @@ namespace Yara
     class CORE_EXPORT YaraCompiler
     {
       private:
+        enum struct CompilerStatus { Initial, Compiled, Broken };
+
         void* compiler{ nullptr }; // YR_COMPILER*
-        bool compiled{ false };
+        CompilerStatus status{ CompilerStatus::Initial };
         YaraCompiler();
 
       public:
@@ -1010,7 +1013,7 @@ namespace Yara
         YaraRules* GetRules();
         bool IsCompiled() const
         {
-            return compiled;
+            return status == CompilerStatus::Compiled;
         }
         friend class YaraManager;
     };
@@ -1777,8 +1780,8 @@ namespace App
           const ConstString& name,
           const ConstString& path,
           OpenMethod method,
-          std::string_view typeName = "",
-          Reference<Window> parent  = nullptr,
+          std::string_view typeName          = "",
+          Reference<Window> parent           = nullptr,
           const ConstString& creationProcess = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
