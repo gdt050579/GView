@@ -1,6 +1,8 @@
 #pragma once
 
 #include "GView.hpp"
+#include <vector>
+#include <filesystem>
 
 namespace GView::GenericPlugins::Yara
 {
@@ -15,11 +17,23 @@ class YaraDialog : public Window, public Handlers::OnButtonPressedInterface
 {
   private:
     Reference<GView::Object> object;
+    Reference<ListView> rulesList;
+    Reference<Button> addButton;
+    Reference<Button> removeButton;
+    Reference<Button> scanButton;
     Reference<Button> closeButton;
+    std::vector<std::filesystem::path> ruleFiles;
 
   public:
     YaraDialog(Reference<GView::Object> object);
     void OnButtonPressed(Reference<Button> b) override;
+    bool OnEvent(Reference<Control> control, Event eventType, int id) override;
+
+  private:
+    void AddRuleFile();
+    void RemoveRuleFile();
+    void ScanWithYara();
+    void UpdateRulesList();
 };
 
 } // namespace GView::GenericPlugins::Yara
