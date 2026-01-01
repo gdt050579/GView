@@ -949,24 +949,85 @@ namespace Entropy
 
 namespace Yara
 {
-    struct CORE_EXPORT YaraScanner {
+    class CORE_EXPORT YaraRules {
+        private:
+          void* rules{ nullptr }; // YR_RULES*
+        public:
+          YaraRules(void* rules) : rules(rules) {}
+          ~YaraRules();
+          
+          YaraRules(const YaraRules&) = delete;
+          YaraRules& operator=(const YaraRules&) = delete;
+          
+          YaraRules(YaraRules&& other) noexcept;
+          YaraRules& operator=(YaraRules&& other) noexcept;
+          
+          void* GetRules() const;
+          bool SaveRulesToFile(const std::string_view& filePath);
+    };
+
+    class CORE_EXPORT YaraScanner {
+        private:
+          void* scanner{ nullptr }; // YR_SCANNER*
+          FILE* callbackFile{ nullptr }; // TODO: replace with a better option
+        public:
+          YaraScanner(YaraRules* rules, const std::string_view& callbackFilePath);
+          ~YaraScanner();
+
+          YaraScanner(const YaraScanner&) = delete;
+          YaraScanner& operator=(const YaraScanner&) = delete;
+          
+          YaraScanner(YaraScanner&& other) noexcept;
+          YaraScanner& operator=(YaraScanner&& other) noexcept;
+          
+          bool ScanFile(const std::string_view& filePath);
+    };
+
+    class CORE_EXPORT YaraManager;
+
+    class CORE_EXPORT YaraCompiler {
+        private:
+          void* compiler{ nullptr }; // YR_COMPILER*
+          bool compiled{ false };
+          YaraCompiler();
+  
+        public:
+          ~YaraCompiler();
+          
+          YaraCompiler(const YaraCompiler&) = delete;
+          YaraCompiler& operator=(const YaraCompiler&) = delete;
+          
+          YaraCompiler(YaraCompiler&& other) noexcept;
+          YaraCompiler& operator=(YaraCompiler&& other) noexcept;
+  
+          bool AddRules(const std::string_view& filePath);
+          YaraRules* GetRules();
+          bool IsCompiled() const { return compiled; }
+          friend class YaraManager;
+    };
+
+    class CORE_EXPORT YaraManager {
       private:
-        void* compiler{ nullptr }; // YR_COMPILER*
-        void* rules{ nullptr };    // YR_RULES*
-        bool compiled{ false };
-
+        static YaraManager* instance;
+        bool initialized{ false };
+        
+        YaraManager() = default;
+  
       public:
-        bool Init();
-        ~YaraScanner();
-
-        bool CreateCompiler();
-        bool AddRules(const std::string& filePath);
-        bool CompileRules();
+        ~YaraManager();
         
-        bool LoadRules(const std::string& filePath);
-        bool SaveRules(const std::string& filePath);
-        
-        bool ScanFile(const std::string& filePath);
+        YaraManager(const YaraManager&) = delete;
+        YaraManager& operator=(const YaraManager&) = delete;
+  
+        static YaraManager* GetInstance();
+        static void DestroyInstance();
+  
+        bool Initialize();
+        void Finalize();
+        bool IsInitialized() const { return initialized; }
+  
+        YaraCompiler* GetNewCompiler() const;
+        YaraRules* LoadRules(const std::string_view& filePath);
     };
 
 } // namespace Yara
