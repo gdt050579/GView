@@ -39,6 +39,10 @@ int yara_scan_callback(YR_SCAN_CONTEXT* context, int message, void* message_data
 
 namespace GView::Yara
 {
+
+using YaraCompilerCallbackInternal = int (*)(int error_level, const char* file_name, int line_number, const YR_RULE* rule, const char* message, void* user_data);
+using YaraScanCallbackInternal = int (*)(YR_SCAN_CONTEXT* context, int message, void* message_data, void* user_data);
+
 // =============== YaraRules ===============    
     YaraRules::YaraRules(YaraRules&& other) noexcept : rules(other.rules) {
         other.rules = nullptr;
@@ -138,17 +142,13 @@ namespace GView::Yara
 
 // =============== YaraScanner ===============
 
-    YaraScanner::YaraScanner(YaraRules* rules, const std::string_view& callbackFilePath) {
+    YaraScanner::YaraScanner(YaraRules* rules, YaraScanCallback scan_callback, void* user_data) {
         YR_SCANNER** ptr_yr_scanner = reinterpret_cast<YR_SCANNER**>(&scanner);
         YR_RULES* yr_rules = reinterpret_cast<YR_RULES*>(rules->GetRules());
         int result = yr_scanner_create(yr_rules, ptr_yr_scanner);
         CHECKRET(result == ERROR_SUCCESS, "Failed to create YARA scanner: %d", result);
 
-        // TODO: replace with a better option
-        callbackFile = fopen(callbackFilePath.data(), "w");
-        CHECKRET(callbackFile, "Failed to open file: %s", callbackFilePath.data());
-        // ==================================
-        yr_scanner_set_callback(*ptr_yr_scanner, yara_scan_callback, callbackFile);
+        yr_scanner_set_callback(*ptr_yr_scanner, reinterpret_cast<YaraScanCallbackInternal>(scan_callback), user_data);
         yr_scanner_set_timeout(*ptr_yr_scanner, 0);
 
         int flags = SCAN_FLAGS_FAST_MODE // flag makes the scanning a little faster by avoiding multiple matches of the same string when not necessary
@@ -162,16 +162,11 @@ namespace GView::Yara
             yr_scanner_destroy(reinterpret_cast<YR_SCANNER*>(scanner));
             scanner = nullptr;
         }
-        if (callbackFile != nullptr) {
-            fclose(callbackFile);
-            callbackFile = nullptr;
-        }
     }
     
     YaraScanner::YaraScanner(YaraScanner&& other) noexcept 
-        : scanner(other.scanner), callbackFile(other.callbackFile) {
+        : scanner(other.scanner) {
         other.scanner = nullptr;
-        other.callbackFile = nullptr;
     }
     
     YaraScanner& YaraScanner::operator=(YaraScanner&& other) noexcept {
@@ -179,25 +174,15 @@ namespace GView::Yara
             if (scanner != nullptr) {
                 yr_scanner_destroy(reinterpret_cast<YR_SCANNER*>(scanner));
             }
-            if (callbackFile != nullptr) {
-                fclose(callbackFile);
-            }
 
             scanner = other.scanner;
-            callbackFile = other.callbackFile;
-
-            YR_SCANNER* yr_scanner = reinterpret_cast<YR_SCANNER*>(scanner);
-            yr_scanner_set_callback(yr_scanner, yara_scan_callback, callbackFile);
-
             other.scanner = nullptr;
-            other.callbackFile = nullptr;
         }
         return *this;
     }
     
     bool YaraScanner::ScanFile(const std::string_view& filePath) {
         CHECK(scanner != nullptr, false, "Scanner not created");
-        CHECK(callbackFile != nullptr, false, "Callback file not created");
 
         YR_SCANNER* yr_scanner = reinterpret_cast<YR_SCANNER*>(scanner);
         int result = yr_scanner_scan_file(yr_scanner, filePath.data());

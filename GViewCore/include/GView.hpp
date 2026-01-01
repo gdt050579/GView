@@ -949,6 +949,8 @@ namespace Entropy
 
 namespace Yara
 {
+    using YaraScanCallback = int (*)(void* context, int message, void* message_data, void* user_data);
+
     class CORE_EXPORT YaraRules {
         private:
           void* rules{ nullptr }; // YR_RULES*
@@ -969,9 +971,8 @@ namespace Yara
     class CORE_EXPORT YaraScanner {
         private:
           void* scanner{ nullptr }; // YR_SCANNER*
-          FILE* callbackFile{ nullptr }; // TODO: replace with a better option
         public:
-          YaraScanner(YaraRules* rules, const std::string_view& callbackFilePath);
+          YaraScanner(YaraRules* rules, YaraScanCallback callback, void* user_data = nullptr);
           ~YaraScanner();
 
           YaraScanner(const YaraScanner&) = delete;
