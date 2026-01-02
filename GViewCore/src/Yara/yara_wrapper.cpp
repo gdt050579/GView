@@ -139,24 +139,17 @@ YaraCompiler& YaraCompiler::operator=(YaraCompiler&& other) noexcept
     return *this;
 }
 
-bool YaraCompiler::AddRules(const std::string_view& filePath)
-{
+bool YaraCompiler::AddRules(const std::string_view& filePath) {
     CHECK(compiler, false, "Compiler not created");
     CHECK(status == CompilerStatus::Initial, false, "Cannot only add rules in the initial state.");
-
-    auto rulesFile = std::make_unique<AppCUI::OS::File>();
-    CHECK(rulesFile->OpenRead(filePath), false, "Failed to open rules file: %s", filePath.data());
-
-    GView::Utils::DataCache cache;
-    cache.Init(std::move(rulesFile), 65536);
-    Buffer rulesContent                        = cache.CopyToBuffer(0, (uint32) cache.GetSize() + 1, false);
-    rulesContent[rulesContent.GetLength() - 1] = 0; // null terminate the rules content
-
-    int errorsCount = yr_compiler_add_string(reinterpret_cast<YR_COMPILER*>(compiler), (const char*) rulesContent.GetData(), nullptr);
-    if (errorsCount != 0) {
-        status = CompilerStatus::Broken;
-    }
-    CHECK(errorsCount == 0, false, "Failed to add rules to compiler: %d errors found", errorsCount);
+    
+    FILE* file = fopen(filePath.data(), "r");
+    CHECK(file, false, "Failed to open file: %s", filePath.data());
+    
+    int result = yr_compiler_add_file(reinterpret_cast<YR_COMPILER*>(compiler), file, nullptr, filePath.data());
+    fclose(file);
+    
+    CHECK(result == ERROR_SUCCESS, false, "Failed to add rules to compiler: %d", result);
     return true;
 }
 
