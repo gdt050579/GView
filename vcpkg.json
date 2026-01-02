@@ -90,7 +90,11 @@
 	{
 		"name": "podofo",
 		"platform": "windows | linux | osx"
-	}
+	},
+    {
+      "name": "yara",
+      "platform": "windows | linux | osx"
+    }
   ],
   "vcpkg-configuration": {
     "overlay-ports": [ "./AppCUI/vcpkg-ports/ncurses"]

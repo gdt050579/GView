@@ -62,6 +62,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
 find_package(nlohmann_json REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
 
+find_package(unofficial-libyara CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::libyara::libyara)
+
 if (MSVC)
     add_compile_options(-W3)
 elseif (APPLE)
