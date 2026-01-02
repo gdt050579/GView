@@ -951,14 +951,17 @@ namespace Yara
 {
     using YaraScanCallback = int (*)(void* context, int message, void* message_data, void* user_data);
 
+    class CORE_EXPORT YaraManager;
+    class CORE_EXPORT YaraCompiler;
+
     class CORE_EXPORT YaraRules
     {
       private:
         void* rules{ nullptr }; // YR_RULES*
-      public:
         YaraRules(void* rules) : rules(rules)
         {
         }
+      public:
         ~YaraRules();
 
         YaraRules(const YaraRules&)            = delete;
@@ -969,6 +972,9 @@ namespace Yara
 
         void* GetRules() const;
         bool SaveRulesToFile(const std::string_view& filePath);
+
+        friend class YaraManager;
+        friend class YaraCompiler;
     };
 
     class CORE_EXPORT YaraScanner
@@ -988,8 +994,6 @@ namespace Yara
         bool ScanFile(const std::string_view& filePath);
         bool ScanBuffer(const BufferView& buffer);
     };
-
-    class CORE_EXPORT YaraManager;
 
     class CORE_EXPORT YaraCompiler
     {
