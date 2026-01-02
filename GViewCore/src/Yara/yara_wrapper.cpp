@@ -17,44 +17,6 @@ void yara_compiler_callback(int error_level, const char* file_name, int line_num
     }
 }
 
-int yara_scan_callback(YR_SCAN_CONTEXT* context, int message, void* message_data, void* user_data)
-{
-    switch (message) {
-    case CALLBACK_MSG_RULE_MATCHING: {
-        YR_RULE* rule = static_cast<YR_RULE*>(message_data);
-        Buffer buffer;
-        buffer.Add("Rule matching: ");
-        buffer.Add(rule->identifier);
-
-        YR_STRING* string;
-
-        yr_rule_strings_foreach(rule, string)
-        {
-            YR_MATCH* match;
-            yr_string_matches_foreach(context, string, match)
-            {
-                std::string_view sv((const char*) string->string, string->length);
-                buffer.Add("\n  String matched: ");
-                buffer.Add(sv);
-            }
-        }
-
-        // TODO: Can do something with the buffer if we want
-
-        return CALLBACK_CONTINUE;
-    } break;
-    case CALLBACK_MSG_TOO_MANY_MATCHES: {
-        return CALLBACK_CONTINUE;
-    }
-    case CALLBACK_MSG_SCAN_FINISHED: {
-        return CALLBACK_CONTINUE;
-    } break;
-    default:
-        break;
-    }
-    return CALLBACK_CONTINUE;
-}
-
 namespace GView::Yara
 {
 

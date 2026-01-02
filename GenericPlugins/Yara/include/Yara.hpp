@@ -18,6 +18,7 @@ class YaraDialog : public Window, public Handlers::OnButtonPressedInterface
   private:
     Reference<GView::Object> object;
     Reference<ListView> rulesList;
+    Reference<TextField> outputFilename;
     Reference<Button> addButton;
     Reference<Button> removeButton;
     Reference<Button> scanButton;

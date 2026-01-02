@@ -1,4 +1,6 @@
 #include "Yara.hpp"
+#include "yara.h"
+#undef MessageBox
 
 namespace GView::GenericPlugins::Yara
 {
@@ -16,10 +18,13 @@ YaraDialog::YaraDialog(Reference<GView::Object> object) : Window("Yara Scanner",
 
     rulesList = Factory::ListView::Create(this, "l:1,t:3,r:1,b:5", { "n:Rule Files,w:100" });
 
-    addButton                              = Factory::Button::Create(this, "&Add Rule File", "x:1,y:18,w:18", CMD_BUTTON_ADD);
+    Factory::Label::Create(this, "Output File:", "x:1,y:16,w:12");
+    outputFilename = Factory::TextField::Create(this, "yara_scan_results.txt", "x:14,y:16,w:65");
+
+    addButton                              = Factory::Button::Create(this, "&Add Rule File", "x:1,y:19,w:18", CMD_BUTTON_ADD);
     addButton->Handlers()->OnButtonPressed = this;
 
-    removeButton                              = Factory::Button::Create(this, "&Remove Selected", "x:21,y:18,w:18", CMD_BUTTON_REMOVE);
+    removeButton                              = Factory::Button::Create(this, "&Remove Selected", "x:21,y:19,w:18", CMD_BUTTON_REMOVE);
     removeButton->Handlers()->OnButtonPressed = this;
 
     scanButton                              = Factory::Button::Create(this, "&Scan", "x:40%,y:23,a:b,w:12", CMD_BUTTON_SCAN);
@@ -86,7 +91,7 @@ void YaraDialog::AddRuleFile()
             ruleFiles.push_back(res.value());
             UpdateRulesList();
         } else {
-            Dialogs::MessageBox::ShowWarning("Yara", "This rule file is already in the list!");
+            AppCUI::Dialogs::MessageBox::ShowWarning("Yara", "This rule file is already in the list!");
         }
     }
 }
@@ -95,7 +100,7 @@ void YaraDialog::RemoveRuleFile()
 {
     auto currentItem = rulesList->GetCurrentItem();
     if (!currentItem.IsValid()) {
-        Dialogs::MessageBox::ShowWarning("Yara", "Please select a rule file to remove!");
+        AppCUI::Dialogs::MessageBox::ShowWarning("Yara", "Please select a rule file to remove!");
         return;
     }
 
@@ -116,9 +121,116 @@ void YaraDialog::RemoveRuleFile()
     }
 }
 
+struct ScanCallbackData
+{
+    Buffer* buffer;
+    bool* scanFinished;
+};
+
+int ScanCallback(void* context, int message, void* message_data, void* user_data)
+{
+    ScanCallbackData* callbackData = static_cast<ScanCallbackData*>(user_data);
+    if (!callbackData)
+        return CALLBACK_CONTINUE;
+
+    YR_SCAN_CONTEXT* scanContext = static_cast<YR_SCAN_CONTEXT*>(context);
+    
+    switch (message) {
+    case CALLBACK_MSG_RULE_MATCHING: {
+        YR_RULE* rule = static_cast<YR_RULE*>(message_data);
+        callbackData->buffer->Add("Rule matching: ");
+        callbackData->buffer->Add(rule->identifier);
+
+        YR_STRING* string;
+
+        yr_rule_strings_foreach(rule, string)
+        {
+            YR_MATCH* match;
+            yr_string_matches_foreach(scanContext, string, match)
+            {
+                std::string_view sv((const char*) string->string, string->length);
+                callbackData->buffer->Add("\n  String matched: ");
+                callbackData->buffer->Add(sv);
+            }
+        }
+        callbackData->buffer->Add("\n");
+
+        break;
+    }
+    case CALLBACK_MSG_TOO_MANY_MATCHES: {
+        break;
+    }
+    case CALLBACK_MSG_SCAN_FINISHED: {
+        if (callbackData->scanFinished) {
+            *callbackData->scanFinished = true;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
+    return CALLBACK_CONTINUE;
+}
+
 void YaraDialog::ScanWithYara()
 {
-    Dialogs::MessageBox::ShowNotification("Yara", "Coming soon!");
+    if (ruleFiles.empty()) {
+        AppCUI::Dialogs::MessageBox::ShowWarning("Yara", "Please add at least one rule file!");
+        return;
+    }
+
+    auto outputFile = outputFilename->GetText();
+    if (outputFile.IsEmpty()) {
+        AppCUI::Dialogs::MessageBox::ShowWarning("Yara", "Please specify an output filename!");
+        return;
+    }
+
+    GView::Yara::YaraManager* yaraManager = GView::Yara::YaraManager::GetInstance();
+    if (!yaraManager->Initialize()) {
+        AppCUI::Dialogs::MessageBox::ShowError("Yara", "Failed to initialize Yara engine!");
+        return;
+    }
+
+    GView::Yara::YaraCompiler* yaraCompiler = yaraManager->GetNewCompiler();
+
+    for (const auto& ruleFile : ruleFiles) {
+        if (!yaraCompiler->AddRules(ruleFile.string())) {
+            AppCUI::Dialogs::MessageBox::ShowError("Yara", "Failed to add rules from file: " + ruleFile.string());
+            delete yaraCompiler;
+            yaraManager->Finalize();
+            yaraManager->DestroyInstance();
+            return;
+        }
+    }
+
+    GView::Yara::YaraRules* yaraRules = yaraCompiler->GetRules();
+
+    Buffer scanResults;
+    bool scanFinished = false;
+    ScanCallbackData callbackData{ &scanResults, &scanFinished };
+    std::string outputFileString(outputFile);
+
+    {
+        GView::Yara::YaraScanner yaraScanner(yaraRules, ScanCallback, &callbackData);
+        yaraScanner.ScanBuffer(object->GetData().GetEntireFile());
+    }
+
+    if (scanResults.GetLength() > 0) {
+        auto file = std::make_unique<AppCUI::OS::File>();
+        file->Create(outputFileString, false);
+        if (file->OpenWrite(outputFileString)) {
+            file->Write(scanResults.GetData(), scanResults.GetLength());
+            file->Close();
+        }
+    }
+
+    delete yaraRules;
+    delete yaraCompiler;
+    yaraManager->Finalize();
+    yaraManager->DestroyInstance();
+
+    AppCUI::Dialogs::MessageBox::ShowNotification("Yara", "Scan completed! Results saved to: " + outputFileString);
 }
 
 void YaraDialog::UpdateRulesList()
