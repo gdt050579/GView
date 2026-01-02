@@ -21,7 +21,7 @@ int yara_scan_callback(YR_SCAN_CONTEXT* context, int message, void* message_data
 {
     switch (message) {
     case CALLBACK_MSG_RULE_MATCHING: {
-        YR_RULE* rule = reinterpret_cast<YR_RULE*>(message_data);
+        YR_RULE* rule = static_cast<YR_RULE*>(message_data);
         Buffer buffer;
         buffer.Add("Rule matching: ");
         buffer.Add(rule->identifier);
@@ -71,7 +71,7 @@ YaraRules::YaraRules(YaraRules&& other) noexcept : rules(other.rules)
 YaraRules::~YaraRules()
 {
     if (rules != nullptr) {
-        yr_rules_destroy(reinterpret_cast<YR_RULES*>(rules));
+        yr_rules_destroy(static_cast<YR_RULES*>(rules));
         rules = nullptr;
     }
 }
@@ -80,7 +80,7 @@ YaraRules& YaraRules::operator=(YaraRules&& other) noexcept
 {
     if (this != &other) {
         if (rules != nullptr) {
-            yr_rules_destroy(reinterpret_cast<YR_RULES*>(rules));
+            yr_rules_destroy(static_cast<YR_RULES*>(rules));
         }
         rules       = other.rules;
         other.rules = nullptr;
@@ -96,7 +96,7 @@ void* YaraRules::GetRules() const
 bool YaraRules::SaveRulesToFile(const std::string_view& filePath)
 {
     CHECK(rules != nullptr, false, "No rules to save");
-    CHECK(yr_rules_save(reinterpret_cast<YR_RULES*>(rules), filePath.data()) == ERROR_SUCCESS, false, "Failed to save rules to file: %s", filePath.data());
+    CHECK(yr_rules_save(static_cast<YR_RULES*>(rules), filePath.data()) == ERROR_SUCCESS, false, "Failed to save rules to file: %s", filePath.data());
     return true;
 }
 
@@ -114,7 +114,7 @@ YaraCompiler::YaraCompiler()
 YaraCompiler::~YaraCompiler()
 {
     if (compiler != nullptr) {
-        yr_compiler_destroy(reinterpret_cast<YR_COMPILER*>(compiler));
+        yr_compiler_destroy(static_cast<YR_COMPILER*>(compiler));
         compiler = nullptr;
     }
 }
@@ -129,7 +129,7 @@ YaraCompiler& YaraCompiler::operator=(YaraCompiler&& other) noexcept
 {
     if (this != &other) {
         if (compiler != nullptr) {
-            yr_compiler_destroy(reinterpret_cast<YR_COMPILER*>(compiler));
+            yr_compiler_destroy(static_cast<YR_COMPILER*>(compiler));
         }
         compiler       = other.compiler;
         status         = other.status;
@@ -146,7 +146,7 @@ bool YaraCompiler::AddRules(const std::string_view& filePath) {
     FILE* file = fopen(filePath.data(), "r");
     CHECK(file, false, "Failed to open file: %s", filePath.data());
     
-    int result = yr_compiler_add_file(reinterpret_cast<YR_COMPILER*>(compiler), file, nullptr, filePath.data());
+    int result = yr_compiler_add_file(static_cast<YR_COMPILER*>(compiler), file, nullptr, filePath.data());
     fclose(file);
     
     CHECK(result == ERROR_SUCCESS, false, "Failed to add rules to compiler: %d", result);
@@ -157,7 +157,7 @@ YaraRules* YaraCompiler::GetRules()
 {
     CHECK(compiler, nullptr, "Compiler not created");
 
-    YR_COMPILER* yr_compiler = reinterpret_cast<YR_COMPILER*>(compiler);
+    YR_COMPILER* yr_compiler = static_cast<YR_COMPILER*>(compiler);
     YR_RULES* yr_rules       = nullptr;
 
     // Each time yr_compiler_get_rules is called it returns a pointer to the same YR_RULES structure.
@@ -173,7 +173,7 @@ YaraRules* YaraCompiler::GetRules()
 YaraScanner::YaraScanner(YaraRules* rules, YaraScanCallback scan_callback, void* user_data)
 {
     YR_SCANNER** ptr_yr_scanner = reinterpret_cast<YR_SCANNER**>(&scanner);
-    YR_RULES* yr_rules          = reinterpret_cast<YR_RULES*>(rules->GetRules());
+    YR_RULES* yr_rules          = static_cast<YR_RULES*>(rules->GetRules());
     int result                  = yr_scanner_create(yr_rules, ptr_yr_scanner);
     CHECKRET(result == ERROR_SUCCESS, "Failed to create YARA scanner: %d", result);
 
@@ -189,7 +189,7 @@ YaraScanner::YaraScanner(YaraRules* rules, YaraScanCallback scan_callback, void*
 YaraScanner::~YaraScanner()
 {
     if (scanner != nullptr) {
-        yr_scanner_destroy(reinterpret_cast<YR_SCANNER*>(scanner));
+        yr_scanner_destroy(static_cast<YR_SCANNER*>(scanner));
         scanner = nullptr;
     }
 }
@@ -203,7 +203,7 @@ YaraScanner& YaraScanner::operator=(YaraScanner&& other) noexcept
 {
     if (this != &other) {
         if (scanner != nullptr) {
-            yr_scanner_destroy(reinterpret_cast<YR_SCANNER*>(scanner));
+            yr_scanner_destroy(static_cast<YR_SCANNER*>(scanner));
         }
 
         scanner       = other.scanner;
@@ -216,7 +216,7 @@ bool YaraScanner::ScanFile(const std::string_view& filePath)
 {
     CHECK(scanner != nullptr, false, "Scanner not created");
 
-    YR_SCANNER* yr_scanner = reinterpret_cast<YR_SCANNER*>(scanner);
+    YR_SCANNER* yr_scanner = static_cast<YR_SCANNER*>(scanner);
     int result             = yr_scanner_scan_file(yr_scanner, filePath.data());
     CHECK(result == ERROR_SUCCESS, false, "Failed to scan file: %s, error: %d", filePath.data(), result);
     return true;
@@ -226,7 +226,7 @@ bool YaraScanner::ScanBuffer(const BufferView& buffer)
 {
     CHECK(scanner != nullptr, false, "Scanner not created");
 
-    YR_SCANNER* yr_scanner = reinterpret_cast<YR_SCANNER*>(scanner);
+    YR_SCANNER* yr_scanner = static_cast<YR_SCANNER*>(scanner);
     int result             = yr_scanner_scan_mem(yr_scanner, buffer.GetData(), buffer.GetLength());
     CHECK(result == ERROR_SUCCESS, false, "Failed to scan buffer, error: %d", result);
     return true;
