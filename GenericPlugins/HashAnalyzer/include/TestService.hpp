@@ -5,7 +5,6 @@
 namespace GView::GenericPlugins::HashAnalyzer
 {
 
-// Aceasta este clasa care simulează serviciul (MOCK)
 class DummyService : public IAnalysisService
 {
   public:
@@ -23,19 +22,17 @@ class DummyService : public IAnalysisService
     }
     AnalysisResult AnalyzeHash(const std::string& hash, HashKind type) override
     {
-        return AnalysisResult(); // Returnează gol
+        return AnalysisResult(); 
     }
 };
 
-// Funcție helper care injectează serviciul de test
 inline void RegisterTestService()
 {
     auto& manager = ServiceManager::Get();
 
-    // Dacă lista e goală, înseamnă că nu avem VirusTotal real, deci băgăm Dummy-ul
     if (manager.GetServices().empty()) {
         manager.RegisterService(std::make_unique<DummyService>());
     }
 }
 
-} // namespace GView::GenericPlugins::HashAnalyzer
+} 

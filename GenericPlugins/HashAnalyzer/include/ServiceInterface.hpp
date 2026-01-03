@@ -10,30 +10,29 @@ namespace GView::GenericPlugins::HashAnalyzer
 {
 
 /**
- * Defineste tipul de hash pe care îl trimitem la analiza.
+ * Defines the type of hash used for the analysis query.
  */
 enum class HashKind { MD5, SHA1, SHA256 };
 
 /**
- * Structura care retine rezultatul analizei primite de la serviciul online (ex: VirusTotal).
- * Aceasta este structura pe care o va afisa UI-ul (Task 6 & 7).
+ * Structure that holds the analysis result retrieved from an online service (VirusTotal).
  */
 struct AnalysisResult {
-    std::string serviceName; // Ex: "VirusTotal"
-    std::string queryHash;   // Hash-ul cautat
+    std::string serviceName; // "VirusTotal"
+    std::string queryHash;   // The hash that was queried
 
-    bool found;   // True daca fisierul a fost gasit în baza de date a serviciului
-    bool success; // True daca apelul API a reusit 
+    bool found;   // True if the file was found in the service's database
+    bool success; // True if the API call was successful (no network errors)
 
-    uint32_t detectionCount; // Numarul de motoare care au detectat fi?ierul ca mali?ios
-    uint32_t totalEngines;   // Numarul total de motoare folosite la scanare
+    uint32_t detectionCount; // Number of engines that detected the file as malicious
+    uint32_t totalEngines;   // Total number of engines used for scanning
 
-    std::string scanDate;     // Data ultimei scanari
-    std::string permalink;    // Link catre raportul web complet
-    std::string errorMessage; // Mesaj de eroare (daca success == false)
+    std::string scanDate;     // Date of the last scan
+    std::string permalink;    // Link to the full web report
+    std::string errorMessage; // Error message (populated if success == false)
 
-    // Rezultate detaliate per vendor (Ex: "Microsoft" -> "Trojan:Win32/Emotet")
-    // Folosim std::map pentru a fi usor de afisat într-un ListView (similar cu Hashes.cpp)
+    // Detailed results per vendor (E.g., "Microsoft" -> "Trojan:Win32/Emotet")
+    // Using std::map for easy display in a ListView (similar to Hashes.cpp)
     std::map<std::string, std::string> vendorResults;
 
     AnalysisResult() : found(false), success(false), detectionCount(0), totalEngines(0)
@@ -41,35 +40,39 @@ struct AnalysisResult {
     }
 };
 
+/**
+ * Abstract Interface (Contract).
+ * Any new service (VirusTotal, HybridAnalysis, etc.) must implement this class.
+ */
 class IAnalysisService
 {
   public:
     virtual ~IAnalysisService() = default;
 
-    // Returneaza ID-ul intern al serviciului (folosit în setari/config)
-    // Ex: "virustotal"
+    // Returns the internal service ID (used in settings/config)
+    // E.g., "virustotal"
     virtual const char* GetID() const = 0;
 
-    // Returneaza numele afisat utilizatorului
-    // Ex: "VirusTotal Public API"
+    // Returns the display name shown to the user
+    // E.g., "VirusTotal Public API"
     virtual const char* GetName() const = 0;
 
-    // Verifica daca serviciul are API Key setat în configura?ie
+    // Checks if the service has an API Key configured
     virtual bool IsConfigured() = 0;
 
-    // Aceasta metoda este blocanta (va fi apelata de pe un thread separat în UI).
+    // This method is blocking (should be called from a worker thread in the UI).
     virtual AnalysisResult AnalyzeHash(const std::string& hash, HashKind type) = 0;
 };
 
 /**
- * Managerul de servicii (Singleton).
- * Gestioneaza lista de servicii disponibile.
+ * Service Manager (Singleton).
+ * Manages the list of available analysis services.
  */
 class ServiceManager
 {
     std::vector<std::unique_ptr<IAnalysisService>> services;
 
-    ServiceManager() = default; 
+    ServiceManager() = default;
 
   public:
     // Singleton access
@@ -79,7 +82,7 @@ class ServiceManager
         return instance;
     }
 
-    // Înregistreaza un serviciu nou 
+    // Registers a new service (used during plugin initialization)
     void RegisterService(std::unique_ptr<IAnalysisService> service)
     {
         if (service) {
@@ -87,12 +90,13 @@ class ServiceManager
         }
     }
 
-    // Returneaza lista de servicii (pentru a popula Dropdown-ul din UI)
+    // Returns the list of services (used to populate the UI Dropdown)
     const std::vector<std::unique_ptr<IAnalysisService>>& GetServices() const
     {
         return services;
     }
 
+    // Retrieves a service by its ID (useful for saving user preference)
     IAnalysisService* GetServiceByID(const std::string& id)
     {
         for (const auto& svc : services) {
@@ -103,4 +107,4 @@ class ServiceManager
     }
 };
 
-} 
+} // namespace GView::GenericPlugins::HashAnalyzer

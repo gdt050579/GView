@@ -17,7 +17,6 @@ HashAnalyzerDialog::HashAnalyzerDialog(Reference<GView::Object> obj) : Window("H
 
     LocalString<128> message;
     if (count > 0) {
-        // Luăm numele serviciului încărcat (ar trebui să fie "Demo Service (Offline)")
         auto* svc = manager.GetServices()[0].get();
         message.Format("SUCCESS! Active: %s", svc->GetName());
     } else {
@@ -34,13 +33,12 @@ void HashAnalyzerDialog::OnButtonPressed(Reference<Button> b)
 {
     Exit();
 }
-} // namespace GView::GenericPlugins::HashAnalyzer
+} 
 
 extern "C" {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == GView::GenericPlugins::HashAnalyzer::CMD_SHORT_NAME) {
-        // Apelăm funcția din TestService.hpp
         GView::GenericPlugins::HashAnalyzer::RegisterTestService();
 
         GView::GenericPlugins::HashAnalyzer::HashAnalyzerDialog dlg(object);
