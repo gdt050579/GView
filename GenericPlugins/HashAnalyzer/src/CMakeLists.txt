@@ -1,2 +1,3 @@
-target_sources(HashAnalyzer PRIVATE HashAnalyzer.cpp)
+target_sources(HashAnalyzer PRIVATE HashAnalyzer.cpp HttpClient.cpp)
+
 
