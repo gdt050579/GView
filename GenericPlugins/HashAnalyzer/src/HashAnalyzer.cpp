@@ -1,5 +1,9 @@
 ﻿#include "HashAnalyzer.hpp"
 #include "ServiceInterface.hpp"
+#include "VirusTotalService.hpp"
+#include "HttpClient.hpp"
+
+#include <mutex>
 
 namespace GView::GenericPlugins::HashAnalyzer
 {
@@ -21,9 +25,24 @@ void HashAnalyzerDialog::OnButtonPressed(Reference<Button> b)
 }
 } // namespace GView::GenericPlugins::HashAnalyzer
 
+// Thread-safe one-time initialization flag
+static std::once_flag g_servicesInitFlag;
+
+static void RegisterServices()
+{
+    std::call_once(g_servicesInitFlag, []() {
+        // Register VirusTotal service provider
+        GView::GenericPlugins::HashAnalyzer::ServiceManager::Get().RegisterService(
+            std::make_unique<GView::GenericPlugins::HashAnalyzer::VirusTotalService>());
+    });
+}
+
 extern "C" {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
+    // Ensure services are registered before any command execution
+    RegisterServices();
+
     if (command == GView::GenericPlugins::HashAnalyzer::CMD_SHORT_NAME) {
         GView::GenericPlugins::HashAnalyzer::HashAnalyzerDialog dlg(object);
         dlg.Show();
