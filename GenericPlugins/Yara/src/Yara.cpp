@@ -186,25 +186,22 @@ void YaraDialog::ScanWithYara()
         return;
     }
 
-    GView::Yara::YaraManager* yaraManager = GView::Yara::YaraManager::GetInstance();
-    if (!yaraManager->Initialize()) {
+    GView::Yara::YaraManager& yaraManager = GView::Yara::YaraManager::GetInstance();
+    if (!yaraManager.Initialize()) {
         AppCUI::Dialogs::MessageBox::ShowError("Yara", "Failed to initialize Yara engine!");
         return;
     }
 
-    GView::Yara::YaraCompiler* yaraCompiler = yaraManager->GetNewCompiler();
+    auto yaraCompiler = yaraManager.GetNewCompiler();
 
     for (const auto& ruleFile : ruleFiles) {
-        if (!yaraCompiler->AddRules(ruleFile.string())) {
+        if (!yaraCompiler->AddRules(ruleFile)) {
             AppCUI::Dialogs::MessageBox::ShowError("Yara", "Failed to add rules from file: " + ruleFile.string());
-            delete yaraCompiler;
-            yaraManager->Finalize();
-            yaraManager->DestroyInstance();
             return;
         }
     }
 
-    GView::Yara::YaraRules* yaraRules = yaraCompiler->GetRules();
+    auto yaraRules = yaraCompiler->GetRules();
 
     Buffer scanResults;
     bool scanFinished = false;
@@ -224,11 +221,6 @@ void YaraDialog::ScanWithYara()
             file->Close();
         }
     }
-
-    delete yaraRules;
-    delete yaraCompiler;
-    yaraManager->Finalize();
-    yaraManager->DestroyInstance();
 
     AppCUI::Dialogs::MessageBox::ShowNotification("Yara", "Scan completed! Results saved to: " + outputFileString);
 }
