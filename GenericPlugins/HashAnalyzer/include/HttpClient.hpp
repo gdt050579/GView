@@ -8,6 +8,7 @@
 #include <string>
 #include <fstream>
 #include <filesystem>
+#include <mutex>
 
 namespace GView::GenericPlugins::HashAnalyzer
 {
@@ -58,19 +59,20 @@ struct HttpResponse
 
 /**
  * @brief Configuration manager for API keys loaded from .env file
+ * 
+ * Thread-safe: Uses std::call_once to ensure keys are loaded exactly once
+ * even when accessed from multiple threads concurrently.
  */
 class ApiKeyManager
 {
     std::unordered_map<std::string, std::string> keys;
     bool loaded = false;
+    mutable std::once_flag loadOnceFlag;
 
-  public:
     /**
-     * @brief Load API keys from a .env file
-     * @param envFilePath Path to the .env file (default: searches common locations)
-     * @return true if file was loaded successfully
+     * @brief Internal implementation of file loading (called once by std::call_once)
      */
-    bool loadFromFile(const std::string& envFilePath = "")
+    void loadFromFileImpl(const std::string& envFilePath)
     {
         std::vector<std::string> searchPaths;
         
@@ -114,10 +116,37 @@ class ApiKeyManager
                     }
                 }
                 loaded = true;
-                return true;
+                return;
             }
         }
-        return false;
+    }
+
+  public:
+    /**
+     * @brief Ensure API keys are loaded from the .env file (thread-safe)
+     * 
+     * This method is idempotent and thread-safe. It will load keys exactly once,
+     * even if called concurrently from multiple threads.
+     * 
+     * @param envFilePath Path to the .env file (default: searches common locations)
+     */
+    void ensureLoaded(const std::string& envFilePath = "")
+    {
+        std::call_once(loadOnceFlag, [this, envFilePath]() {
+            loadFromFileImpl(envFilePath);
+        });
+    }
+
+    /**
+     * @brief Load API keys from a .env file (thread-safe, deprecated)
+     * @deprecated Use ensureLoaded() instead for clearer semantics
+     * @param envFilePath Path to the .env file (default: searches common locations)
+     * @return true if file was loaded successfully
+     */
+    bool loadFromFile(const std::string& envFilePath = "")
+    {
+        ensureLoaded(envFilePath);
+        return loaded;
     }
 
     /**
@@ -136,9 +165,11 @@ class ApiKeyManager
 
     /**
      * @brief Check if a key exists and is not the placeholder value
+     * @note Automatically ensures keys are loaded before checking
      */
-    bool hasValidKey(const std::string& keyName) const
+    bool hasValidKey(const std::string& keyName)
     {
+        ensureLoaded();
         auto key = getKey(keyName);
         return key.has_value() && !key->empty() && *key != "your_api_key_here";
     }
