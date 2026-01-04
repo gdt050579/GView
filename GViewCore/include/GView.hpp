@@ -971,7 +971,7 @@ namespace Yara
         YaraRules& operator=(YaraRules&& other) noexcept;
 
         void* GetRules() const;
-        bool SaveRulesToFile(const std::string_view& filePath);
+        bool SaveRulesToFile(const std::filesystem::path& filePath);
 
         friend class YaraManager;
         friend class YaraCompiler;
@@ -982,7 +982,7 @@ namespace Yara
       private:
         void* scanner{ nullptr }; // YR_SCANNER*
       public:
-        YaraScanner(YaraRules* rules, YaraScanCallback callback, void* user_data = nullptr);
+        YaraScanner(std::shared_ptr<YaraRules> rules, YaraScanCallback callback, void* user_data = nullptr);
         ~YaraScanner();
 
         YaraScanner(const YaraScanner&)            = delete;
@@ -991,7 +991,7 @@ namespace Yara
         YaraScanner(YaraScanner&& other) noexcept;
         YaraScanner& operator=(YaraScanner&& other) noexcept;
 
-        bool ScanFile(const std::string_view& filePath);
+        bool ScanFile(const std::filesystem::path& filePath);
         bool ScanBuffer(const BufferView& buffer);
     };
 
@@ -1013,8 +1013,8 @@ namespace Yara
         YaraCompiler(YaraCompiler&& other) noexcept;
         YaraCompiler& operator=(YaraCompiler&& other) noexcept;
 
-        bool AddRules(const std::string_view& filePath);
-        YaraRules* GetRules();
+        bool AddRules(const std::filesystem::path& filePath);
+        std::shared_ptr<YaraRules> GetRules();
         bool IsCompiled() const
         {
             return status == CompilerStatus::Compiled;
@@ -1025,9 +1025,7 @@ namespace Yara
     class CORE_EXPORT YaraManager
     {
       private:
-        static YaraManager* instance;
         bool initialized{ false };
-
         YaraManager() = default;
 
       public:
@@ -1036,8 +1034,7 @@ namespace Yara
         YaraManager(const YaraManager&)            = delete;
         YaraManager& operator=(const YaraManager&) = delete;
 
-        static YaraManager* GetInstance();
-        static void DestroyInstance();
+        static YaraManager& GetInstance();
 
         bool Initialize();
         void Finalize();
@@ -1046,8 +1043,8 @@ namespace Yara
             return initialized;
         }
 
-        YaraCompiler* GetNewCompiler() const;
-        YaraRules* LoadRules(const std::string_view& filePath);
+        std::unique_ptr<YaraCompiler> GetNewCompiler() const;
+        std::shared_ptr<YaraRules> LoadRules(const std::filesystem::path& filePath);
     };
 
 } // namespace Yara
