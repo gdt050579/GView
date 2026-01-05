@@ -89,10 +89,6 @@ void HashAnalyzerDialog::ComputeHash()
     GView::Hashes::OpenSSLHash sha1(GView::Hashes::OpenSSLHashKind::Sha1);
     GView::Hashes::OpenSSLHash sha256(GView::Hashes::OpenSSLHashKind::Sha256);
 
-    CHECKRET(md5.Init(), "");
-    CHECKRET(sha1.Init(), "");
-    CHECKRET(sha256.Init(), "");
-
     LocalString<512> ls;
     const char* format = "Reading [0x%.8llX/0x%.8llX] bytes...";
     if (objectSize > 0xFFFFFFFF)
@@ -168,7 +164,7 @@ void HashAnalyzerDialog::ComputeHash()
 extern "C" {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
-    RegisterServices();
+    GView::GenericPlugins::HashAnalyzer::RegisterServices();
 
     if (command == GView::GenericPlugins::HashAnalyzer::CMD_SHORT_NAME) {
         GView::GenericPlugins::HashAnalyzer::HashAnalyzerDialog dlg(object);
