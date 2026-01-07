@@ -471,6 +471,10 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
         auto item = this->objectsPlugins->GetCurrentItem();
         auto data = item.GetData<ItemMetadata>();
 
+        if (data == nullptr) {
+            return false;
+        }
+
         if (eventType == Event::ListViewItemChecked) {
             if (data->parent.has_value()) {
                 data->parent->SetCheck(false);
