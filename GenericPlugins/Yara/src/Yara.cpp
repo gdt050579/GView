@@ -56,9 +56,9 @@ RecentRulesDialog::RecentRulesDialog(const std::vector<RecentEntry>& list)
     Factory::Label::Create(this, "Path:", "x:1,y:13,w:5");
     fullPathField = Factory::TextField::Create(this, "(select an item)", "x:7,y:13,w:65", TextFieldFlags::Readonly);
 
-    confirmButton                              = Factory::Button::Create(this, "Confirm", "x:25,y:15,w:12", CMD_RECENT_CONFIRM);
+    confirmButton                              = Factory::Button::Create(this, "Confir&m", "x:25,y:15,w:12", CMD_RECENT_CONFIRM);
     confirmButton->Handlers()->OnButtonPressed = this;
-    cancelButton                               = Factory::Button::Create(this, "Cancel", "x:40,y:15,w:12", CMD_RECENT_CANCEL);
+    cancelButton                               = Factory::Button::Create(this, "Ca&ncel", "x:40,y:15,w:12", CMD_RECENT_CANCEL);
     cancelButton->Handlers()->OnButtonPressed  = this;
 
     if (recentListView->GetItemsCount() > 0) {
@@ -171,23 +171,23 @@ YaraDialog::YaraDialog(Reference<GView::Object> object, ScanContext ctx, const s
     }
 
     Factory::Label::Create(this, "Add Rules:", "x:1,y:3,w:10");
-    addFileButton                                = Factory::Button::Create(this, "Add File", "x:12,y:3,w:12", CMD_BUTTON_ADD_FILE);
+    addFileButton                                = Factory::Button::Create(this, "&Add File", "x:12,y:3,w:12", CMD_BUTTON_ADD_FILE);
     addFileButton->Handlers()->OnButtonPressed   = this;
-    addFolderButton                              = Factory::Button::Create(this, "Add Folder", "x:25,y:3,w:14", CMD_BUTTON_ADD_FOLDER);
+    addFolderButton                              = Factory::Button::Create(this, "Add &Folder", "x:25,y:3,w:14", CMD_BUTTON_ADD_FOLDER);
     addFolderButton->Handlers()->OnButtonPressed = this;
-    addRecentButton                              = Factory::Button::Create(this, "Add Recent", "x:41,y:3,w:16", CMD_BUTTON_ADD_RECENT);
+    addRecentButton                              = Factory::Button::Create(this, "Add &Recent", "x:41,y:3,w:16", CMD_BUTTON_ADD_RECENT);
     addRecentButton->Handlers()->OnButtonPressed = this;
 
     Factory::Label::Create(this, "Rules to apply:", "x:1,y:5,w:15");
     rulesListView = Factory::ListView::Create(this, "l:1,t:6,r:1,b:6", { "n:Rule Files,w:100" });
 
-    removeButton                              = Factory::Button::Create(this, "Remove Selected", "x:1,y:18,w:18", CMD_BUTTON_REMOVE);
+    removeButton                              = Factory::Button::Create(this, "Remove Se&lected", "x:1,y:18,w:18", CMD_BUTTON_REMOVE);
     removeButton->Handlers()->OnButtonPressed = this;
 
-    scanButton                              = Factory::Button::Create(this, "Scan", "x:35%,y:21,w:12", CMD_BUTTON_SCAN);
+    scanButton                              = Factory::Button::Create(this, "&Scan", "x:35%,y:21,w:12", CMD_BUTTON_SCAN);
     scanButton->Handlers()->OnButtonPressed = this;
 
-    closeButton                              = Factory::Button::Create(this, "Close", "x:55%,y:21,w:12", CMD_BUTTON_CLOSE);
+    closeButton                              = Factory::Button::Create(this, "&Close", "x:55%,y:21,w:12", CMD_BUTTON_CLOSE);
     closeButton->Handlers()->OnButtonPressed = this;
 
     addFileButton->SetFocus();
@@ -552,7 +552,8 @@ void YaraDialog::ScanWithYara()
 
     std::string csv = FormatResultsAsCsv(callbackData);
     BufferView resultView(csv.data(), static_cast<uint32>(csv.size()));
-    GView::App::OpenBuffer(resultView, "Yara Scan Results", "yara_results.csv", GView::App::OpenMethod::FirstMatch, "csv");
+    AppCUI::Utils::String filename("yara_results.csv");
+    GView::App::OpenBuffer(resultView, filename, filename, GView::App::OpenMethod::FirstMatch, "csv");
 
     Exit();
 }
