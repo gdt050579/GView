@@ -360,17 +360,17 @@ void YaraDialog::RestoreRecentlyUsed()
     // MOCK DATA for demonstration. Please remove this once you have a proper persistence mechanism.
     time_t now = time(nullptr);
     recentlyUsedList.push_back({
-          "C:/Users/demo/yara-rules/malware_signatures.yar",
+          "C:\\Users\\demo\\yara-rules\\malware_signatures.yar",
           false,
           now - 2 * 3600 // 2 hours ago
     });
     recentlyUsedList.push_back({
-          "C:/Users/demo/yara-rules/crypto_rules",
+          "C:\\Users\\demo\\yara-rules\\crypto_rules",
           true,
           now - 48 * 3600 // 48 hours ago
     });
     recentlyUsedList.push_back({
-          "C:/Users/demo/yara-rules/packer_detection.yar",
+          "C:\\Users\\demo\\yara-rules\\packer_detection.yar",
           false,
           now - 168 * 3600 // 1 week ago
     });
