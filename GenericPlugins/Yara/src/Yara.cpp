@@ -23,7 +23,7 @@ constexpr int32 CMD_RECENT_CANCEL  = 101;
 
 static std::string FormatTimeAgo(time_t lastUsed)
 {
-    auto diff = (time(nullptr) - lastUsed) / 3600; // hours
+    auto diff = (time(nullptr) - lastUsed) / 3600;
     if (diff < 1)
         return "just now";
     if (diff < 24)
@@ -263,7 +263,7 @@ void YaraDialog::AddRuleFile()
 
 void YaraDialog::AddRuleFolder()
 {
-    // TODO: Implement folder selection and recursive .yar/.yara discovery
+    // TODO: Implement folder selection and recursive .yar files discovery
     // - Open a folder picker dialog (similar to file dialog but for directories)
     // - Recursively find all .yar/.yara files in the selected folder
     // - Add discovered files to ruleFiles list (skip duplicates)
@@ -298,7 +298,7 @@ void YaraDialog::AddRecentRules()
         }
 
         if (entry.isFolder) {
-            // TODO: Recursively iterate folder, find all .yar/.yara files, add each to ruleFiles
+            // TODO: Recursively iterate folder, find all .yar files, add each to ruleFiles. I expect the implementation to be very simillar to AddRuleFolder function.
             AppCUI::Dialogs::MessageBox::ShowNotification("Yara", "Loading rules from folder - Not yet implemented");
         } else {
             ruleFiles.push_back(entry.path);
