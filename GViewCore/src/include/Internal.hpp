@@ -480,8 +480,9 @@ namespace App
         constexpr int OPEN_PID          = 120002;
         constexpr int OPEN_PROCESS_TREE = 120003;
 
-        constexpr int CHANGE_THEME      = 130000;
-        constexpr int OPEN_THEME_EDITOR = 130001;
+        constexpr int CHANGE_THEME         = 130000;
+        constexpr int OPEN_THEME_EDITOR    = 130001;
+        constexpr int OPEN_RESTRICTED_MODE = 130002;
 
     }; // namespace MenuCommands
 
@@ -536,6 +537,7 @@ namespace App
         void ShowTutorial();
         void ShowAboutWindow();
         void ShowChangeThemeWindow();
+        void ShowRestrictedModeWindow();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
