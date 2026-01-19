@@ -1,10 +1,3 @@
-/**
- * @file RestrictedModeWindow.cpp
- * @brief Window for CTF/exam mode - connects to server for problems and flag submission
- *
- * Connection string format: base64(base64(userid)#base64(serverlocation))
- */
-
 #include "Internal.hpp"
 
 #include <curl/curl.h>
@@ -26,7 +19,6 @@ namespace
     constexpr int CMD_BUTTON_GET_PROBLEMS = 3;
     constexpr int CMD_BUTTON_CLOSE        = 4;
 
-    // RAII wrapper for CURL handle and headers
     class CurlRequest
     {
         CURL* curl = nullptr;
@@ -124,8 +116,7 @@ namespace
         return totalSize;
     }
 
-    // Decode base64 string using GView's decoder
-    bool DecodeBase64(const std::string& input, std::string& output)
+    inline bool DecodeBase64Helper(const std::string& input, std::string& output)
     {
         Buffer decodedBuffer;
         BufferView inputView(reinterpret_cast<const uint8*>(input.data()), static_cast<uint32>(input.size()));
@@ -143,7 +134,7 @@ namespace
     bool ParseConnectionString(const std::string& connectionString, std::string& userId, std::string& serverLocation)
     {
         std::string outerDecoded;
-        if (!DecodeBase64(connectionString, outerDecoded))
+        if (!DecodeBase64Helper(connectionString, outerDecoded))
             return false;
 
         const size_t separatorPos = outerDecoded.find('#');
@@ -153,7 +144,7 @@ namespace
         const std::string userIdEncoded = outerDecoded.substr(0, separatorPos);
         const std::string serverLocationEncoded = outerDecoded.substr(separatorPos + 1);
 
-        return DecodeBase64(userIdEncoded, userId) && DecodeBase64(serverLocationEncoded, serverLocation);
+        return DecodeBase64Helper(userIdEncoded, userId) && DecodeBase64Helper(serverLocationEncoded, serverLocation);
     }
 
     // Send HTTP POST request and get string response
@@ -516,21 +507,7 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
 
 void Instance::ShowRestrictedModeWindow()
 {
-    // Get the current focused window as parent
-    Reference<Window> parent;
-    auto desktop = AppCUI::Application::GetDesktop();
-    const auto windowsNo = desktop->GetChildrenCount();
-    
-    for (uint32 i = 0; i < windowsNo; i++)
-    {
-        auto window = desktop->GetChild(i);
-        if (window->HasFocus())
-        {
-            parent = window.ToObjectRef<Window>();
-            break;
-        }
-    }
-
+    Reference<Window> parent = AppCUI::Application::GetCurrentWindow();
     RestrictedModeWindow dlg(parent);
     dlg.Show();
 }
