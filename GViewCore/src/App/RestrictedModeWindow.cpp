@@ -205,6 +205,19 @@ namespace
 
 } // anonymous namespace
 
+struct CTFProblem
+{
+    std::string name;
+    std::string title;
+    std::string description;
+};
+inline void from_json(const nlohmann::json& j, CTFProblem& p)
+{
+    j.at("name").get_to(p.name);
+    j.at("title").get_to(p.title);
+    j.at("description").get_to(p.description);
+}
+
 class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInterface
 {
     Reference<TextField> connectionStringField;
@@ -217,20 +230,24 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
 
     std::string userId;
     std::string serverLocation;
+    std::string configConnectionString;
     bool isConnected;
     bool isCurlInitialized;
 
   public:
+    static std::string problemName;
     RestrictedModeWindow(Reference<Window> parent)
         : Window("Restricted Mode", "d:c,w:80,h:16", WindowFlags::Sizeable),
           parentWindow(parent),
           isConnected(false),
           isCurlInitialized(false)
     {
+        TryLoadConnectionStringFromConfig();
+
         // Connection string section
         Factory::Label::Create(this, "Connection String:", "l:1,t:1,w:20,h:1");
-        connectionStringField = Factory::TextField::Create(this, "", "l:22,t:1,r:15");
-        connectButton = Factory::Button::Create(this, "&Connect", "r:1,t:1,w:12", CMD_BUTTON_CONNECT, ButtonFlags::Flat);
+        connectionStringField                      = Factory::TextField::Create(this, configConnectionString, "l:22,t:1,r:15");
+        connectButton                              = Factory::Button::Create(this, "&Connect", "r:1,t:1,w:12", CMD_BUTTON_CONNECT, ButtonFlags::Flat);
         connectButton->Handlers()->OnButtonPressed = this;
 
         // Flag submission section
@@ -250,6 +267,45 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
         Factory::Label::Create(this, "Status: Not connected", "l:1,t:10,w:50,h:1");
         closeButton = Factory::Button::Create(this, "C&lose", "l:33,b:0,w:14", CMD_BUTTON_CLOSE, ButtonFlags::Flat);
         closeButton->Handlers()->OnButtonPressed = this;
+    }
+
+    void OnStart() override
+    {
+        if (!configConnectionString.empty())
+            HandleConnect(false);
+    }
+
+    void TryLoadConnectionStringFromConfig()
+    {
+        auto settings = GetAppSettings();
+        if (!settings)
+            return;
+        auto GViewSection = settings->GetSection("GView");
+        if (!GViewSection.Exists())
+            return;
+        auto connectionStringOptional = GViewSection.GetValue("ServerConnectionString").AsStringView();
+        if (!connectionStringOptional.has_value())
+            return;
+
+        auto connectionStringValue    = connectionStringOptional.value();
+        configConnectionString        = std::string(connectionStringValue.data(), connectionStringValue.size());
+    }
+
+    void TrySaveConnectionStringToConfig()
+    {
+        auto currentConnectionCB = connectionStringField->GetText();
+        if (currentConnectionCB.Len() == 0)
+            return;
+        std::string currentConnectionString;
+        if (!currentConnectionCB.ToString(currentConnectionString) || currentConnectionString == configConnectionString)
+            return;
+        auto settings = GetAppSettings();
+        if (!settings)
+            return;
+        auto& iniObj = *settings;
+        iniObj["GView"]["ServerConnectionString"] = currentConnectionString;
+        configConnectionString                    = currentConnectionString;
+        SaveAppSettings();
     }
 
     void OnButtonPressed(Reference<Button> btn) override
@@ -287,7 +343,7 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
         return true;
     }
 
-    void HandleConnect()
+    void HandleConnect(bool showSuccess = true)
     {
         if (!InitializeCurl())
             return;
@@ -310,12 +366,12 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
         // Parse the connection string
         if (!ParseConnectionString(connectionString, userId, serverLocation))
         {
-            Dialogs::MessageBox::ShowError("Error", "Invalid connection string format.\nExpected: base64(base64(userid)#base64(serverlocation))");
+            Dialogs::MessageBox::ShowError("Error", "Invalid connection string format");
             return;
         }
 
         // Build URL and send request
-        std::string url = serverLocation + "/GView";
+        std::string url = serverLocation + "/GView/";
         std::string response;
         long httpCode = 0;
         std::string errorMessage;
@@ -332,8 +388,12 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
             submitFlagButton->SetEnabled(true);
             getProblemsButton->SetEnabled(true);
             connectButton->SetEnabled(false);
+            TrySaveConnectionStringToConfig();
 
-            Dialogs::MessageBox::ShowNotification("Success", "Connected to server successfully!");
+            if (showSuccess) 
+            {
+                Dialogs::MessageBox::ShowNotification("Success", "Connected to server successfully!");
+            }
         }
         else
         {
@@ -371,6 +431,7 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
         // Create JSON body with flag
         nlohmann::json requestBody;
         requestBody["flag"] = flag;
+        requestBody["problem"] = problemName;
         std::string body = requestBody.dump();
         
         std::string response;
@@ -449,11 +510,10 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
                 return;
             }
 
-            // Get the first problem
-            std::string firstProblem = jsonResponse[0].get<std::string>();
+            auto problem = jsonResponse[0].get<CTFProblem>();
 
             // Download the problem binary
-            std::string problemUrl = serverLocation + "/GView/GetProblems/" + firstProblem;
+            std::string problemUrl = serverLocation + "/GView/GetProblems/" + problem.name;
             std::vector<uint8> binaryBuffer;
             long binaryHttpCode = 0;
 
@@ -484,14 +544,9 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
             Buffer ownedBuffer;
             ownedBuffer.Add(string_view(reinterpret_cast<const char*>(binaryBuffer.data()), binaryBuffer.size()));
             
-            GView::App::OpenBuffer(
-                ownedBuffer,
-                firstProblem,
-                firstProblem,
-                GView::App::OpenMethod::BestMatch,
-                "",
-                parentWindow,
-                "CTF Problem");
+            GView::App::OpenBuffer(ownedBuffer, problem.title, problem.name, GView::App::OpenMethod::BestMatch, "", parentWindow, "CTF Problem");
+            problemName = problem.name;
+            Dialogs::MessageBox::ShowNotification("Requirements", problem.description);
 
             // Close this window after opening the problem
             Exit();
@@ -504,6 +559,8 @@ class RestrictedModeWindow : public Window, public Handlers::OnButtonPressedInte
         }
     }
 };
+
+std::string RestrictedModeWindow::problemName = "";
 
 void Instance::ShowRestrictedModeWindow()
 {
