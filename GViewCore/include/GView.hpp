@@ -4,6 +4,9 @@
 #define GVIEW_VERSION "0.385.0"
 
 #include <AppCUI/include/AppCUI.hpp>
+#include <filesystem>
+#include <vector>
+#include <cstdint>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Utils;
@@ -946,6 +949,53 @@ namespace Entropy
     CORE_EXPORT double ShannonEntropy(const BufferView& buffer);
     CORE_EXPORT double RenyiEntropy(const BufferView& buffer, double alpha);
 } // namespace Entropy
+
+namespace Security
+{
+    namespace RestrictedMode
+    {
+        enum class Feature : uint32 {
+            Copy        = 1u << 0,
+            Export      = 1u << 1,
+            SaveAs      = 1u << 2,
+            Plugins     = 1u << 3,
+            LLMHints    = 1u << 4,
+            Clipboard   = 1u << 5,
+            Screenshots = 1u << 6
+        };
+
+        struct Policy {
+            std::string id;
+            std::string purpose;
+
+            // seconds since epoch
+            uint64_t startsAt{ 0 };
+            uint64_t endsAt{ 0 };
+
+            std::vector<Feature> disabledFeatures;
+            std::vector<std::string> allowedPlugins;
+
+            std::string watermark;
+            bool bestEffortScreenProtect{ true };
+
+            std::vector<uint8_t> contentKeyId;
+        };
+
+        CORE_EXPORT Utils::GStatus LoadPolicyFromFiles(
+              const std::filesystem::path& jsonPath,
+              const std::filesystem::path& signaturePath,
+              const std::vector<uint8_t>& publicKey,
+              Policy& outPolicy) noexcept;
+
+        CORE_EXPORT bool IsActive() noexcept;
+        CORE_EXPORT const Policy* GetCurrentPolicy() noexcept;
+    } // namespace RestrictedMode
+
+    namespace Crypto
+    {
+        struct EncryptedBlob; 
+    }
+} // namespace Security
 
 /*
  * Object can be:

@@ -5,6 +5,7 @@
 #include <set>
 #include <span>
 #include <array>
+#include <filesystem>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
@@ -479,8 +480,9 @@ namespace App
         constexpr int OPEN_PID          = 120002;
         constexpr int OPEN_PROCESS_TREE = 120003;
 
-        constexpr int CHANGE_THEME      = 130000;
-        constexpr int OPEN_THEME_EDITOR = 130001;
+        constexpr int CHANGE_THEME         = 130000;
+        constexpr int OPEN_THEME_EDITOR    = 130001;
+        constexpr int OPEN_RESTRICTED_MODE = 130002;
 
     }; // namespace MenuCommands
 
@@ -535,6 +537,7 @@ namespace App
         void ShowTutorial();
         void ShowAboutWindow();
         void ShowChangeThemeWindow();
+        void ShowRestrictedModeWindow();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
@@ -806,4 +809,90 @@ namespace App
         virtual bool RegisterKey(KeyboardControl* key) override;
     };
 } // namespace App
+
+namespace Security
+{
+    namespace RestrictedMode::Internal
+    {
+        // Internal API - called by GViewCore components
+        Utils::GStatus Activate(const RestrictedMode::Policy& policy) noexcept;
+        void Deactivate() noexcept;
+        bool IsFeatureDisabled(RestrictedMode::Feature feature) noexcept;
+        bool IsPluginAllowed(std::string_view pluginName) noexcept;
+        std::string GetWatermark() noexcept;
+
+        // Window-level screen protection (call with HWND on Windows, or nullptr on other platforms)
+        // Uses SetWindowDisplayAffinity on Windows 10 2004+ to prevent screen capture
+        Utils::GStatus EnableWindowScreenProtection(void* nativeWindowHandle) noexcept;
+        void DisableWindowScreenProtection(void* nativeWindowHandle) noexcept;
+    } // namespace RestrictedMode::Internal
+
+    namespace Crypto
+    {
+        // EncryptedBlob definition for internal use
+        struct EncryptedBlob {
+            std::vector<uint8_t> iv;
+            std::vector<uint8_t> ciphertext;
+            std::vector<uint8_t> tag;
+            std::vector<uint8_t> aad;
+        };
+
+        namespace Internal
+        {
+            // Encryption/Decryption
+            Utils::GStatus EncryptAES256GCM(
+                  const std::vector<uint8_t>& plaintext,
+                  const std::vector<uint8_t>& key,
+                  const std::vector<uint8_t>& aad,
+                  EncryptedBlob& outBlob) noexcept;
+
+            Utils::GStatus DecryptAES256GCM(
+                  const EncryptedBlob& blob,
+                  const std::vector<uint8_t>& key,
+                  std::vector<uint8_t>& outPlaintext) noexcept;
+
+            // Hashing
+            Utils::GStatus ComputeSHA256(
+                  const std::vector<uint8_t>& data,
+                  std::vector<uint8_t>& outHash) noexcept;
+
+            Utils::GStatus ComputeFileSHA256(
+                  const std::filesystem::path& filePath,
+                  std::vector<uint8_t>& outHash) noexcept;
+
+            // Key derivation
+            Utils::GStatus DeriveKeyHKDF(
+                  const std::vector<uint8_t>& inputKey,
+                  const std::vector<uint8_t>& salt,
+                  const std::vector<uint8_t>& info,
+                  size_t outputLength,
+                  std::vector<uint8_t>& outKey) noexcept;
+
+            // Random generation
+            Utils::GStatus GenerateRandomBytes(size_t length, std::vector<uint8_t>& outBytes) noexcept;
+
+            // Memory security
+            void SecureErase(void* ptr, size_t size) noexcept;
+        } // namespace Internal
+    } // namespace Crypto
+
+    namespace PluginVerification
+    {
+        struct PluginHash {
+            std::string pluginName;
+            std::vector<uint8_t> expectedHash; // SHA-256
+        };
+
+        // Verify all loaded plugins against expected hashes
+        Utils::GStatus VerifyPlugins(
+              const std::vector<PluginHash>& expectedHashes,
+              std::vector<std::string>& failedPlugins) noexcept;
+
+        // Compute hash of a plugin file
+        Utils::GStatus ComputePluginHash(
+              const std::filesystem::path& pluginPath,
+              std::vector<uint8_t>& outHash) noexcept;
+    } // namespace PluginVerification
+} // namespace Security
+
 } // namespace GView

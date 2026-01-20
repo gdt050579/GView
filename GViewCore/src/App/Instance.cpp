@@ -31,8 +31,12 @@ constexpr GViewMenuCommand menuFileList[] = {
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 
-constexpr GViewMenuCommand menuOptionsList[] = { { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
-                                                 { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None } };
+constexpr GViewMenuCommand menuOptionsList[] = { 
+    { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
+    { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None },
+    { "", 0, Key::None },
+    { "Open &Restricted Mode", MenuCommands::OPEN_RESTRICTED_MODE, Key::None },
+};
 
 constexpr GViewMenuCommand menuWindowList[] = {
     { "Arrange &Vertically", MenuCommands::ARRANGE_VERTICALLY, Key::None },
@@ -572,6 +576,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::OPEN_THEME_EDITOR:
             AppCUI::Dialogs::ThemeEditor::Show();
+            return true;
+        case MenuCommands::OPEN_RESTRICTED_MODE:
+            ShowRestrictedModeWindow();
             return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
