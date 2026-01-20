@@ -188,8 +188,11 @@ runs:
         BIN_DIR="bin/${{ inputs.build_type }}"
         echo "Searching for binaries in: $BIN_DIR"
 
-        # Collect file list
-        mapfile -t FILES < <(find "$BIN_DIR" -type f \( \
+        # Collect file list (bash 3 compatible for macOS)
+        FILES=()
+        while IFS= read -r f; do
+          FILES+=("$f")
+        done < <(find "$BIN_DIR" -type f \( \
             -name "*.so" -o \
             -name "*.a" -o \
             -name "*.dylib" -o \
@@ -292,8 +295,10 @@ runs:
       shell: pwsh
       run: |
         $zipName = "build-${{ runner.os }}-${{ inputs.build_type }}.zip"
-        $files = Get-ChildItem -Path $Env:GITHUB_WORKSPACE -Recurse -Include ${{ inputs.artifact_path }} -File
-        if (!$files) { Write-Host "No files matched: ${{ inputs.artifact_path }}"; exit 0 }
+        $artifactRoot = Join-Path $Env:GITHUB_WORKSPACE "bin\${{ inputs.build_type }}"
+        if (!(Test-Path $artifactRoot)) { Write-Host "No files matched: $artifactRoot"; exit 1 }
+        $files = Get-ChildItem -Path $artifactRoot -Recurse -File
+        if (!$files) { Write-Host "No files matched: $artifactRoot"; exit 1 }
         $dest = Join-Path $Env:GITHUB_WORKSPACE $zipName
         if (Test-Path $dest) { Remove-Item $dest }
         Compress-Archive -Path ($files.FullName) -DestinationPath $dest -Force
@@ -303,7 +308,7 @@ runs:
     # Upload
     # --------------------------
     - name: Upload artifact
-      if: ${{ inputs.upload_artifact == 'true' }}
+      if: ${{ inputs.upload_artifact == 'true' && env.AZIP != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: build-${{ runner.os }}-${{ inputs.build_type }}
