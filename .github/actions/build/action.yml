@@ -202,25 +202,16 @@ runs:
           exit 0
         fi
 
-        printf '%s\n' "${FILES[@]}" > files-to-sign.txt # Write list for cosign
-        echo "Signing ${#FILES[@]} binaries with one cosign invocation..."
+        echo "Signing ${#FILES[@]} binaries..."
 
-        # Single cosign command → legal banner printed once
-        cosign sign-blob \
-          --yes \
-          --files files-to-sign.txt \
-          --output-signature-dir sigs \
-          --output-certificate-dir certs \
-          --bundle-dir bundles
-
-        # Move signature outputs next to original binaries
+        # cosign sign-blob does not support --files across versions; sign one by one.
         for f in "${FILES[@]}"; do
-          base="$(basename "$f")"
-          dir="$(dirname "$f")"
-
-          mv "sigs/$base.sig"       "$dir/$base.sig"
-          mv "certs/$base.cert"     "$dir/$base.cert"
-          mv "bundles/$base.bundle" "$dir/$base.bundle"
+          cosign sign-blob \
+            --yes \
+            --output-signature "$f.sig" \
+            --output-certificate "$f.cert" \
+            --bundle "$f.bundle" \
+            "$f"
         done
 
         echo "Signing completed successfully."
@@ -250,30 +241,20 @@ runs:
           exit 0
         }
 
-        $fileList = "files-to-sign.txt" # Write list for cosign
-        $files.FullName | Out-File -FilePath $fileList -Encoding ascii
-        Write-Host "Signing $($files.Count) binaries with one cosign invocation..."
+        Write-Host "Signing $($files.Count) binaries..."
 
-        cosign sign-blob `
-          --yes `
-          --files $fileList `
-          --output-signature-dir sigs `
-          --output-certificate-dir certs `
-          --bundle-dir bundles
-
-        if ($LASTEXITCODE -ne 0) {
-          Write-Error "Cosign failed with exit code $LASTEXITCODE"
-          exit $LASTEXITCODE
-        }
-
-        # Move sig/cert/bundle files next to their binaries
         foreach ($f in $files) {
-          $base = [System.IO.Path]::GetFileName($f.FullName)
-          $dir  = [System.IO.Path]::GetDirectoryName($f.FullName)
+          cosign sign-blob `
+            --yes `
+            --output-signature "$($f.FullName).sig" `
+            --output-certificate "$($f.FullName).cert" `
+            --bundle "$($f.FullName).bundle" `
+            $f.FullName
 
-          Move-Item "sigs\$base.sig"       "$dir\$base.sig"
-          Move-Item "certs\$base.cert"     "$dir\$base.cert"
-          Move-Item "bundles\$base.bundle" "$dir\$base.bundle"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Cosign failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
         }
 
         Write-Host "Signing completed successfully."
