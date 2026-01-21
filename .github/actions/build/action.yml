@@ -301,7 +301,9 @@ runs:
         if (!$files) { Write-Host "No files matched: $artifactRoot"; exit 1 }
         $dest = Join-Path $Env:GITHUB_WORKSPACE $zipName
         if (Test-Path $dest) { Remove-Item $dest }
-        Compress-Archive -Path ($files.FullName) -DestinationPath $dest -Force
+        Push-Location $Env:GITHUB_WORKSPACE
+        Compress-Archive -Path ("bin\${{ inputs.build_type }}\*") -DestinationPath $dest -Force
+        Pop-Location
         "AZIP=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
 
     # --------------------------
