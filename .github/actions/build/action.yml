@@ -188,8 +188,11 @@ runs:
         BIN_DIR="bin/${{ inputs.build_type }}"
         echo "Searching for binaries in: $BIN_DIR"
 
-        # Collect file list
-        mapfile -t FILES < <(find "$BIN_DIR" -type f \( \
+        # Collect file list (bash 3 compatible for macOS)
+        FILES=()
+        while IFS= read -r f; do
+          FILES+=("$f")
+        done < <(find "$BIN_DIR" -type f \( \
             -name "*.so" -o \
             -name "*.a" -o \
             -name "*.dylib" -o \
@@ -202,25 +205,16 @@ runs:
           exit 0
         fi
 
-        printf '%s\n' "${FILES[@]}" > files-to-sign.txt # Write list for cosign
-        echo "Signing ${#FILES[@]} binaries with one cosign invocation..."
+        echo "Signing ${#FILES[@]} binaries..."
 
-        # Single cosign command → legal banner printed once
-        cosign sign-blob \
-          --yes \
-          --files files-to-sign.txt \
-          --output-signature-dir sigs \
-          --output-certificate-dir certs \
-          --bundle-dir bundles
-
-        # Move signature outputs next to original binaries
+        # cosign sign-blob does not support --files across versions; sign one by one.
         for f in "${FILES[@]}"; do
-          base="$(basename "$f")"
-          dir="$(dirname "$f")"
-
-          mv "sigs/$base.sig"       "$dir/$base.sig"
-          mv "certs/$base.cert"     "$dir/$base.cert"
-          mv "bundles/$base.bundle" "$dir/$base.bundle"
+          cosign sign-blob \
+            --yes \
+            --output-signature "$f.sig" \
+            --output-certificate "$f.cert" \
+            --bundle "$f.bundle" \
+            "$f"
         done
 
         echo "Signing completed successfully."
@@ -250,30 +244,20 @@ runs:
           exit 0
         }
 
-        $fileList = "files-to-sign.txt" # Write list for cosign
-        $files.FullName | Out-File -FilePath $fileList -Encoding ascii
-        Write-Host "Signing $($files.Count) binaries with one cosign invocation..."
+        Write-Host "Signing $($files.Count) binaries..."
 
-        cosign sign-blob `
-          --yes `
-          --files $fileList `
-          --output-signature-dir sigs `
-          --output-certificate-dir certs `
-          --bundle-dir bundles
-
-        if ($LASTEXITCODE -ne 0) {
-          Write-Error "Cosign failed with exit code $LASTEXITCODE"
-          exit $LASTEXITCODE
-        }
-
-        # Move sig/cert/bundle files next to their binaries
         foreach ($f in $files) {
-          $base = [System.IO.Path]::GetFileName($f.FullName)
-          $dir  = [System.IO.Path]::GetDirectoryName($f.FullName)
+          cosign sign-blob `
+            --yes `
+            --output-signature "$($f.FullName).sig" `
+            --output-certificate "$($f.FullName).cert" `
+            --bundle "$($f.FullName).bundle" `
+            $f.FullName
 
-          Move-Item "sigs\$base.sig"       "$dir\$base.sig"
-          Move-Item "certs\$base.cert"     "$dir\$base.cert"
-          Move-Item "bundles\$base.bundle" "$dir\$base.bundle"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Cosign failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
         }
 
         Write-Host "Signing completed successfully."
@@ -311,18 +295,22 @@ runs:
       shell: pwsh
       run: |
         $zipName = "build-${{ runner.os }}-${{ inputs.build_type }}.zip"
-        $files = Get-ChildItem -Path $Env:GITHUB_WORKSPACE -Recurse -Include ${{ inputs.artifact_path }} -File
-        if (!$files) { Write-Host "No files matched: ${{ inputs.artifact_path }}"; exit 0 }
+        $artifactRoot = Join-Path $Env:GITHUB_WORKSPACE "bin\${{ inputs.build_type }}"
+        if (!(Test-Path $artifactRoot)) { Write-Host "No files matched: $artifactRoot"; exit 1 }
+        $files = Get-ChildItem -Path $artifactRoot -Recurse -File
+        if (!$files) { Write-Host "No files matched: $artifactRoot"; exit 1 }
         $dest = Join-Path $Env:GITHUB_WORKSPACE $zipName
         if (Test-Path $dest) { Remove-Item $dest }
-        Compress-Archive -Path ($files.FullName) -DestinationPath $dest -Force
+        Push-Location $Env:GITHUB_WORKSPACE
+        Compress-Archive -Path ("bin\${{ inputs.build_type }}\*") -DestinationPath $dest -Force
+        Pop-Location
         "AZIP=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
 
     # --------------------------
     # Upload
     # --------------------------
     - name: Upload artifact
-      if: ${{ inputs.upload_artifact == 'true' }}
+      if: ${{ inputs.upload_artifact == 'true' && env.AZIP != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: build-${{ runner.os }}-${{ inputs.build_type }}
