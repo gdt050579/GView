@@ -1,19 +1,59 @@
 ﻿#include "HashAnalyzer.hpp"
-#include "ServiceInterface.hpp"
 #include "VirusTotalService.hpp"
 #include "HttpClient.hpp"
 
 #include <mutex>
 
+#undef MessageBox
+
 namespace GView::GenericPlugins::HashAnalyzer
 {
 constexpr int32 CMD_BUTTON_CLOSE   = 1;
 constexpr int32 CMD_BUTTON_COMPUTE = 2;
+constexpr int32 CMD_BUTTON_ANALYZE = 3;
 
 constexpr std::string_view CMD_SHORT_NAME = "HashAnalyzer";
 constexpr std::string_view CMD_FULL_NAME  = "Command.HashAnalyzer";
 
-HashAnalyzerDialog::HashAnalyzerDialog(Reference<GView::Object> obj) : Window("Hash Analyzer", "d:c,w:70,h:20", WindowFlags::ProcessReturn)
+// ============================================================================
+// AnalysisResultsDialog Implementation
+// ============================================================================
+
+AnalysisResultsDialog::AnalysisResultsDialog(const AnalysisResult& result)
+    : Window("Analysis Results", "d:c,w:80,h:20", WindowFlags::ProcessReturn),
+      storedResult(result)
+{
+    // Status message area (placeholder for future summary info)
+    statusLabel = Factory::Label::Create(this, "Analysis complete. Detailed results will be displayed here.", "x:1,y:1,w:76");
+
+    // Results list area (placeholder for future vendor results)
+    resultsList = Factory::ListView::Create(this, "l:1,t:3,r:1,b:4", { "n:Field,w:25", "n:Value,w:50" });
+    resultsList->AddItem({ "[Placeholder]", "Detection summary will appear here" });
+    resultsList->AddItem({ "[Placeholder]", "Scan date will appear here" });
+    resultsList->AddItem({ "[Placeholder]", "Vendor results will appear here" });
+    resultsList->AddItem({ "[Placeholder]", "..." });
+
+    // Close button
+    closeBtn = Factory::Button::Create(this, "&Close", "d:b,w:15", CMD_BUTTON_CLOSE);
+    closeBtn->Handlers()->OnButtonPressed = this;
+    closeBtn->SetFocus();
+}
+
+void AnalysisResultsDialog::OnButtonPressed(Reference<Button> b)
+{
+    if (b->GetControlID() == CMD_BUTTON_CLOSE)
+    {
+        Exit();
+    }
+}
+
+// ============================================================================
+// HashAnalyzerDialog Implementation
+// ============================================================================
+
+HashAnalyzerDialog::HashAnalyzerDialog(Reference<GView::Object> obj) 
+    : Window("Hash Analyzer", "d:c,w:80,h:16", WindowFlags::ProcessReturn),
+      hashesComputed(false)
 {
     this->object = obj;
 
@@ -22,8 +62,9 @@ HashAnalyzerDialog::HashAnalyzerDialog(Reference<GView::Object> obj) : Window("H
         selectedZones.emplace_back(this->object->GetContentType()->GetSelectionZone(i));
     }
 
-    computeForFile      = Factory::RadioBox::Create(this, "Compute for the &entire file", "x:1,y:1,w:31", 1);
-    computeForSelection = Factory::RadioBox::Create(this, "Compute for the &selection", "x:1,y:2,w:31", 1);
+    // Radio buttons for file/selection choice
+    computeForFile      = Factory::RadioBox::Create(this, "Compute for the &entire file", "x:1,y:1,w:35", 1);
+    computeForSelection = Factory::RadioBox::Create(this, "Compute for the &selection", "x:1,y:2,w:35", 1);
 
     if (selectedZones.empty())
     {
@@ -35,13 +76,37 @@ HashAnalyzerDialog::HashAnalyzerDialog(Reference<GView::Object> obj) : Window("H
         computeForSelection->SetChecked(true);
     }
 
-    hashesList = Factory::ListView::Create(this, "l:1,t:4,r:1,b:4", { "n:Type,w:10", "n:Value,w:55" });
+    // Hash list for computed hashes
+    hashesList = Factory::ListView::Create(this, "l:1,t:4,r:1,h:5", { "n:Type,w:10", "n:Value,w:65" });
 
-    computeBtn                      = Factory::Button::Create(this, "&Compute", "l:1,b:0,w:15", CMD_BUTTON_COMPUTE);
+    // Service selection
+    serviceLabel = Factory::Label::Create(this, "&Service:", "x:1,y:10,w:10");
+    serviceSelector = Factory::ComboBox::Create(this, "x:11,y:10,w:40");
+    PopulateServiceSelector();
+
+    // Buttons
+    computeBtn = Factory::Button::Create(this, "&Compute", "l:1,b:0,w:15", CMD_BUTTON_COMPUTE);
     computeBtn->Handlers()->OnButtonPressed = this;
 
-    close                              = Factory::Button::Create(this, "&Close", "r:1,b:0,w:15", CMD_BUTTON_CLOSE);
-    close->Handlers()->OnButtonPressed = this;
+    analyzeBtn = Factory::Button::Create(this, "&Analyze", "l:18,b:0,w:15", CMD_BUTTON_ANALYZE);
+    analyzeBtn->Handlers()->OnButtonPressed = this;
+    analyzeBtn->SetEnabled(false); // Disabled until hashes are computed
+
+    closeBtn = Factory::Button::Create(this, "C&lose", "r:1,b:0,w:15", CMD_BUTTON_CLOSE);
+    closeBtn->Handlers()->OnButtonPressed = this;
+}
+
+void HashAnalyzerDialog::PopulateServiceSelector()
+{
+    const auto& services = ServiceManager::Get().GetServices();
+    for (const auto& svc : services)
+    {
+        serviceSelector->AddItem(svc->GetName());
+    }
+    if (!services.empty())
+    {
+        serviceSelector->SetCurentItemIndex(0);
+    }
 }
 
 void HashAnalyzerDialog::OnButtonPressed(Reference<Button> b)
@@ -54,6 +119,79 @@ void HashAnalyzerDialog::OnButtonPressed(Reference<Button> b)
     {
         ComputeHash();
     }
+    else if (b->GetControlID() == CMD_BUTTON_ANALYZE)
+    {
+        OnAnalyze();
+    }
+}
+
+bool HashAnalyzerDialog::OnEvent(Reference<Control> c, Event eventType, int id)
+{
+    if (Window::OnEvent(c, eventType, id))
+    {
+        return true;
+    }
+
+    if (eventType == Event::WindowAccept)
+    {
+        if (hashesComputed)
+        {
+            OnAnalyze();
+        }
+        else
+        {
+            ComputeHash();
+        }
+        return true;
+    }
+
+    return false;
+}
+
+void HashAnalyzerDialog::OnAnalyze()
+{
+    if (!hashesComputed)
+    {
+        Dialogs::MessageBox::ShowError("Error", "Please compute hashes first.");
+        return;
+    }
+
+    const auto& services = ServiceManager::Get().GetServices();
+    if (services.empty())
+    {
+        Dialogs::MessageBox::ShowError("Error", "No analysis services available.");
+        return;
+    }
+
+    auto selectedIdx = serviceSelector->GetCurrentItemIndex();
+    if (selectedIdx == ComboBox::NO_ITEM_SELECTED || selectedIdx >= services.size())
+    {
+        Dialogs::MessageBox::ShowError("Error", "Please select an analysis service.");
+        return;
+    }
+
+    IAnalysisService* service = services[selectedIdx].get();
+    
+    if (!service->IsConfigured())
+    {
+        Dialogs::MessageBox::ShowError("Error", "The selected service is not configured. Please set up your API key.");
+        return;
+    }
+
+    // Perform the analysis (this is blocking)
+    AnalysisResult result = service->AnalyzeHash(sha256Hash, HashKind::SHA256);
+
+    if (!result.success)
+    {
+        Dialogs::MessageBox::ShowError("API Error", result.errorMessage);
+        return;
+    }
+
+    // Close this dialog and open the results dialog
+    Exit();
+    
+    AnalysisResultsDialog resultsDialog(result);
+    resultsDialog.Show();
 }
 
 static std::once_flag g_servicesInitFlag;
@@ -150,13 +288,19 @@ void HashAnalyzerDialog::ComputeHash()
         hashesList->DeleteAllItems();
         
         md5.Final();
-        hashesList->AddItem({ "MD5", md5.GetHexValue() });
+        md5Hash = md5.GetHexValue();
+        hashesList->AddItem({ "MD5", md5Hash });
         
         sha1.Final();
-        hashesList->AddItem({ "SHA1", sha1.GetHexValue() });
+        sha1Hash = sha1.GetHexValue();
+        hashesList->AddItem({ "SHA1", sha1Hash });
         
         sha256.Final();
-        hashesList->AddItem({ "SHA256", sha256.GetHexValue() });
+        sha256Hash = sha256.GetHexValue();
+        hashesList->AddItem({ "SHA256", sha256Hash });
+
+        hashesComputed = true;
+        analyzeBtn->SetEnabled(true);
     }
 }
 } // namespace GView::GenericPlugins::HashAnalyzer
