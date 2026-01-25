@@ -233,6 +233,58 @@ bool YaraDialog::OnEvent(Reference<Control> control, Event eventType, int id)
 
 // === Rule Management ===
 
+void YaraDialog::LoadRulesFromFolder(const std::filesystem::path& folderPath, std::vector<std::string>& errors)
+{
+    // Recursively find all .yar/.yara files
+    std::vector<std::filesystem::path> foundRuleFiles;
+
+    try {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(folderPath)) {
+            if (entry.is_regular_file()) {
+                std::string ext = entry.path().extension().string();
+                if (ext == ".yar" || ext == ".yara") {
+                    foundRuleFiles.push_back(entry.path());
+                }
+            }
+        }
+    } catch (const std::filesystem::filesystem_error& e) {
+        errors.push_back("Error scanning directory " + folderPath.string() + ": " + std::string(e.what()));
+        return;
+    }
+
+    if (foundRuleFiles.empty()) {
+        return; // No files found, not an error
+    }
+
+    // Test each file for compilation
+    GView::Yara::YaraManager& yaraManager = GView::Yara::YaraManager::GetInstance();
+    if (!yaraManager.Initialize()) {
+        errors.push_back("Failed to initialize Yara engine!");
+        return;
+    }
+
+    auto yaraCompiler = yaraManager.GetNewCompiler();
+    for (const auto& ruleFile : foundRuleFiles) {
+        if (!yaraCompiler->AddRules(ruleFile)) {
+            errors.push_back("Failed to compile: " + ruleFile.string());
+        }
+    }
+
+    // Add successfully compiled files to the list
+    for (const auto& ruleFile : foundRuleFiles) {
+        bool alreadyExists = false;
+        for (const auto& existingPath : ruleFiles) {
+            if (existingPath == ruleFile) {
+                alreadyExists = true;
+                break;
+            }
+        }
+        if (!alreadyExists) {
+            ruleFiles.push_back(ruleFile);
+        }
+    }
+}
+
 void YaraDialog::AddRuleFile()
 {
     std::filesystem::path initialPath;
@@ -263,12 +315,37 @@ void YaraDialog::AddRuleFile()
 
 void YaraDialog::AddRuleFolder()
 {
-    // TODO: Implement folder selection and recursive .yar files discovery
-    // - Open a folder picker dialog (similar to file dialog but for directories)
-    // - Recursively find all .yar/.yara files in the selected folder
-    // - Add discovered files to ruleFiles list (skip duplicates)
-    // - Update the rules list display
-    AppCUI::Dialogs::MessageBox::ShowNotification("Yara", "Add Rule Folder - Not yet implemented");
+    std::filesystem::path initialPath;
+    if (!ruleFiles.empty()) {
+        initialPath = ruleFiles.back().parent_path();
+    } else if (object.IsValid()) {
+        initialPath = std::filesystem::path(object->GetPath()).parent_path();
+    }
+
+    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "GVIEW:IGNORE-EVERYTHING", initialPath);
+    if (res.has_value()) {
+        std::filesystem::path selectedPath = res.value();
+        if (!std::filesystem::is_directory(selectedPath)) {
+            AppCUI::Dialogs::MessageBox::ShowError("Yara", "Please select a directory, not a file!");
+            return;
+        }
+
+        std::vector<std::string> errors;
+        LoadRulesFromFolder(selectedPath, errors);
+
+        UpdateRulesListView();
+
+        // Report results
+        if (!errors.empty()) {
+            std::string errorMsg = "Some rule files failed to compile:\n\n";
+            for (const auto& error : errors) {
+                errorMsg += error + "\n";
+            }
+            AppCUI::Dialogs::MessageBox::ShowWarning("Yara", errorMsg);
+        } else {
+            AppCUI::Dialogs::MessageBox::ShowNotification("Yara", "Successfully added rule files from folder.");
+        }
+    }
 }
 
 void YaraDialog::AddRecentRules()
@@ -298,8 +375,8 @@ void YaraDialog::AddRecentRules()
         }
 
         if (entry.isFolder) {
-            // TODO: Recursively iterate folder, find all .yar files, add each to ruleFiles. I expect the implementation to be very simillar to AddRuleFolder function.
-            AppCUI::Dialogs::MessageBox::ShowNotification("Yara", "Loading rules from folder - Not yet implemented");
+            std::vector<std::string> errors;
+            LoadRulesFromFolder(entry.path, errors);
         } else {
             ruleFiles.push_back(entry.path);
         }
@@ -519,14 +596,43 @@ void YaraDialog::ScanWithYara()
     }
 
     auto yaraCompiler = yaraManager.GetNewCompiler();
+
+    std::string compilationErrors;
+    int successCount = 0;
+    int failCount = 0;
+
     for (const auto& ruleFile : ruleFiles) {
-        if (!yaraCompiler->AddRules(ruleFile)) {
-            AppCUI::Dialogs::MessageBox::ShowError("Yara", "Failed to add rules from file: " + ruleFile.string());
+        auto validator = yaraManager.GetNewCompiler();
+        if (validator->AddRules(ruleFile)) {
+            if (yaraCompiler->AddRules(ruleFile)) {
+                successCount++;
+            } else {
+                compilationErrors += ruleFile.filename().string() + " (Unknown Error)\n";
+                failCount++;
+            }
+        } else {
+            compilationErrors += ruleFile.filename().string() + "\n";
+            failCount++;
+        }
+    }
+
+    if (failCount > 0) {
+        std::string msg = "Failed to compile " + std::to_string(failCount) + " rule file(s):\n" + compilationErrors;
+        
+        if (successCount == 0) {
+            AppCUI::Dialogs::MessageBox::ShowError("Compilation Failed", msg + "\nNo valid rules to scan.");
             return;
+        } else {
+            AppCUI::Dialogs::MessageBox::ShowWarning("Partial Compilation", msg + "\nScanning will continue with " + std::to_string(successCount) + " valid rules.");
         }
     }
 
     auto yaraRules = yaraCompiler->GetRules();
+
+    if (!yaraRules) {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Critical: YARA compiler refused to generate rules due to previous errors.\nCannot proceed with scanning.");
+        return;
+    }
 
     ScanCallbackData callbackData;
     callbackData.fileName = scanTarget.filename().string();
