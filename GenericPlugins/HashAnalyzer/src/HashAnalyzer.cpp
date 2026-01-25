@@ -29,27 +29,19 @@ AnalysisResultsDialog::AnalysisResultsDialog(const AnalysisResult& result)
     : Window("Analysis Results", "d:c,w:80,h:24", WindowFlags::ProcessReturn),
       storedResult(result)
 {
-    // Summary List
-    Factory::Label::Create(this, "Summary", "x:1,y:1,w:10");
-    auto summaryList = Factory::ListView::Create(this, "l:1,t:2,r:1,h:7", { "n:Property,w:20", "n:Value,w:54" });
-    
-    summaryList->AddItem({ "Service", result.serviceName });
-    
-    std::string detectionStr = std::to_string(result.detectionCount) + " / " + std::to_string(result.totalEngines);
-    if (result.detectionCount > 0) detectionStr += " (DETECTED)";
-    summaryList->AddItem({ "Detection", detectionStr });
+    // Summary - Line 1: Service & Detection
+    std::string line1 = "Service: " + result.serviceName + "  |  Detection: " + 
+                        std::to_string(result.detectionCount) + " / " + std::to_string(result.totalEngines);
+    if (result.detectionCount > 0) line1 += " (DETECTED)";
+    Factory::Label::Create(this, line1, "x:1,y:1,w:78");
 
-    summaryList->AddItem({ "Scan Date", result.scanDate });
-    summaryList->AddItem({ "File Type", result.fileType });
-    summaryList->AddItem({ "File Size", std::to_string(result.fileSize) + " bytes" });
-    if (!result.permalink.empty())
-    {
-        summaryList->AddItem({ "Link", result.permalink });
-    }
+    // Summary - Line 2: Date & File Info
+    std::string line2 = "Date: " + result.scanDate + "  |  Type: " + result.fileType + 
+                        "  |  Size: " + std::to_string(result.fileSize) + " bytes";
+    Factory::Label::Create(this, line2, "x:1,y:2,w:78");
 
-    // Vendor Results List
-    Factory::Label::Create(this, "Vendor Results", "x:1,y:10,w:20");
-    resultsList = Factory::ListView::Create(this, "l:1,t:11,r:1,b:4", { "n:Vendor,w:20", "n:Result,w:54" });
+    // Vendor Results List - Taking up more space now
+    resultsList = Factory::ListView::Create(this, "l:1,t:4,r:1,b:4", { "n:Vendor,w:20", "n:Result,w:54" });
     
     if (result.found)
     {
