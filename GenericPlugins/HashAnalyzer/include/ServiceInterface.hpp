@@ -35,7 +35,11 @@ struct AnalysisResult {
     // Using std::map for easy display in a ListView (similar to Hashes.cpp)
     std::map<std::string, std::string> vendorResults;
 
-    AnalysisResult() : found(false), success(false), detectionCount(0), totalEngines(0)
+    // Generic file metadata
+    uint64_t fileSize;
+    std::string fileType; // e.g., "Win32 DLL"
+
+    AnalysisResult() : found(false), success(false), detectionCount(0), totalEngines(0), fileSize(0)
     {
     }
 };

@@ -79,17 +79,27 @@ class ApiKeyManager
         if (!envFilePath.empty()) {
             searchPaths.push_back(envFilePath);
         } else {
-            // Search common locations
+            // Search common locations relative to CWD
             searchPaths.push_back(".env");
             searchPaths.push_back("GenericPlugins/HashAnalyzer/.env");
             
-            // Try to find relative to executable
+            
             #ifdef _WIN32
             char buffer[MAX_PATH];
             if (GetModuleFileNameA(nullptr, buffer, MAX_PATH)) {
                 std::filesystem::path exePath(buffer);
-                searchPaths.push_back((exePath.parent_path() / ".env").string());
-                searchPaths.push_back((exePath.parent_path() / "GenericPlugins" / "HashAnalyzer" / ".env").string());
+                std::filesystem::path currentDir = exePath.parent_path();
+                
+                // Search up to 5 levels up
+                for (int i = 0; i < 5; i++) {
+                     searchPaths.push_back((currentDir / ".env").string());
+                     searchPaths.push_back((currentDir / "GenericPlugins" / "HashAnalyzer" / ".env").string());
+                     
+                     if (currentDir.has_parent_path())
+                        currentDir = currentDir.parent_path();
+                     else
+                        break;
+                }
             }
             #endif
         }
