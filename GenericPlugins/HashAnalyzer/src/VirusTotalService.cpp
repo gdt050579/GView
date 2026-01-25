@@ -144,6 +144,10 @@ AnalysisResult VirusTotalService::parseResponse(const HttpResponse& response, co
             result.scanDate = formatTimestamp(timestamp);
         }
 
+        // Parse file metadata
+        result.fileSize = attributes.value("size", 0ULL);
+        result.fileType = attributes.value("type_description", "Unknown");
+
         // Parse permalink from links
         if (jsonResponse["data"].contains("links") && jsonResponse["data"]["links"].contains("self")) {
             // Convert API URL to GUI URL

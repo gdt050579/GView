@@ -2,6 +2,11 @@
 #include "VirusTotalService.hpp"
 #include "HttpClient.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 #include <mutex>
 
 #undef MessageBox
@@ -11,6 +16,7 @@ namespace GView::GenericPlugins::HashAnalyzer
 constexpr int32 CMD_BUTTON_CLOSE   = 1;
 constexpr int32 CMD_BUTTON_COMPUTE = 2;
 constexpr int32 CMD_BUTTON_ANALYZE = 3;
+constexpr int32 CMD_BUTTON_OPEN_LINK = 4;
 
 constexpr std::string_view CMD_SHORT_NAME = "HashAnalyzer";
 constexpr std::string_view CMD_FULL_NAME  = "Command.HashAnalyzer";
@@ -20,21 +26,41 @@ constexpr std::string_view CMD_FULL_NAME  = "Command.HashAnalyzer";
 // ============================================================================
 
 AnalysisResultsDialog::AnalysisResultsDialog(const AnalysisResult& result)
-    : Window("Analysis Results", "d:c,w:80,h:20", WindowFlags::ProcessReturn),
+    : Window("Analysis Results", "d:c,w:80,h:24", WindowFlags::ProcessReturn),
       storedResult(result)
 {
-    // Status message area (placeholder for future summary info)
-    statusLabel = Factory::Label::Create(this, "Analysis complete. Detailed results will be displayed here.", "x:1,y:1,w:76");
+    // Summary - Line 1: Service & Detection
+    std::string line1 = "Service: " + result.serviceName + "  |  Detection: " + 
+                        std::to_string(result.detectionCount) + " / " + std::to_string(result.totalEngines);
+    if (result.detectionCount > 0) line1 += " (DETECTED)";
+    Factory::Label::Create(this, line1, "x:1,y:1,w:78");
 
-    // Results list area (placeholder for future vendor results)
-    resultsList = Factory::ListView::Create(this, "l:1,t:3,r:1,b:4", { "n:Field,w:25", "n:Value,w:50" });
-    resultsList->AddItem({ "[Placeholder]", "Detection summary will appear here" });
-    resultsList->AddItem({ "[Placeholder]", "Scan date will appear here" });
-    resultsList->AddItem({ "[Placeholder]", "Vendor results will appear here" });
-    resultsList->AddItem({ "[Placeholder]", "..." });
+    // Summary - Line 2: Date & File Info
+    std::string line2 = "Date: " + result.scanDate + "  |  Type: " + result.fileType + 
+                        "  |  Size: " + std::to_string(result.fileSize) + " bytes";
+    Factory::Label::Create(this, line2, "x:1,y:2,w:78");
 
-    // Close button
-    closeBtn = Factory::Button::Create(this, "&Close", "d:b,w:15", CMD_BUTTON_CLOSE);
+    // Vendor Results List - Taking up more space now
+    resultsList = Factory::ListView::Create(this, "l:1,t:4,r:1,b:4", { "n:Vendor,w:20", "n:Result,w:54" });
+    
+    if (result.found)
+    {
+        for (const auto& [vendor, detection] : result.vendorResults)
+        {
+            resultsList->AddItem({ vendor, detection });
+        }
+    }
+    else
+    {
+         resultsList->AddItem({ "Info", "No results found or file not in database." });
+    }
+
+    // Buttons
+    if (!result.permalink.empty())
+    {
+        Factory::Button::Create(this, "Open &Report", "l:1,b:0,w:15", CMD_BUTTON_OPEN_LINK)->Handlers()->OnButtonPressed = this;
+    }
+    closeBtn = Factory::Button::Create(this, "&Close", "r:1,b:0,w:15", CMD_BUTTON_CLOSE);
     closeBtn->Handlers()->OnButtonPressed = this;
     closeBtn->SetFocus();
 }
@@ -44,6 +70,12 @@ void AnalysisResultsDialog::OnButtonPressed(Reference<Button> b)
     if (b->GetControlID() == CMD_BUTTON_CLOSE)
     {
         Exit();
+    }
+    else if (b->GetControlID() == CMD_BUTTON_OPEN_LINK)
+    {
+#ifdef _WIN32
+        ShellExecuteA(NULL, "open", storedResult.permalink.c_str(), NULL, NULL, SW_SHOWNORMAL);
+#endif
     }
 }
 

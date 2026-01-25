@@ -18,8 +18,7 @@ class AnalysisResultsDialog : public Window, public Handlers::OnButtonPressedInt
 {
   private:
     AnalysisResult storedResult;  // Store result for future detailed display
-    Reference<Label> statusLabel;
-    Reference<ListView> resultsList;  // Placeholder for future detailed results
+    Reference<ListView> resultsList;
     Reference<Button> closeBtn;
 
   public:
