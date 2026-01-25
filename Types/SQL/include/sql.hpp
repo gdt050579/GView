@@ -8,8 +8,60 @@ namespace Type
 {
     namespace SQL
     {
-        class SQLFile : public TypeInterface
+        namespace TokenType
         {
+            constexpr uint32 None = 0xFFFFFFFF;
+
+            constexpr uint32 Comment    = 0;
+            constexpr uint32 Whitespace = 1;
+
+            constexpr uint32 ExpressionOpen  = 2; // (
+            constexpr uint32 ExpressionClose = 3; // )
+            constexpr uint32 Comma           = 4; // ,
+            constexpr uint32 Semicolumn      = 5; // ;
+            constexpr uint32 Dot             = 6; // .
+            constexpr uint32 Wildcard        = 7; // *
+
+            constexpr uint32 Number         = 8;
+            constexpr uint32 String         = 9;
+            constexpr uint32 BooleanLiteral = 10;
+            constexpr uint32 NullLiteral    = 11;
+
+            constexpr uint32 Identifier       = 12;
+            constexpr uint32 QuotedIdentifier = 13;
+
+            constexpr uint32 Parameter = 14; // ?, :name, @name, $1
+
+            constexpr uint32 Operator           = 15;
+            constexpr uint32 ComparisonOperator = 16;
+            constexpr uint32 LogicalOperator    = 17;
+
+            constexpr uint32 Keyword  = 18;
+            constexpr uint32 Datatype = 19;
+            constexpr uint32 Constant = 20;
+
+            constexpr uint32 BlockOpen  = 21; // BEGIN
+            constexpr uint32 BlockClose = 22; // END
+        } // namespace TokenType
+
+        class SQLFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
+        {
+            uint32 TokenizeWord(const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
+            uint32 TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
+            void BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax);
+            void Tokenize(
+                  uint32 start,
+                  uint32 end,
+                  const GView::View::LexicalViewer::TextParser& text,
+                  GView::View::LexicalViewer::TokensList& list,
+                  GView::View::LexicalViewer::BlocksList& blocks);
+            void Tokenize(
+                  const GView::View::LexicalViewer::TextParser& text,
+                  GView::View::LexicalViewer::TokensList& list,
+                  GView::View::LexicalViewer::BlocksList& blocks);
+            void RemoveLineContinuityCharacter(GView::View::LexicalViewer::TextEditor& editor);
+            void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str);
+
           public:
             SQLFile();
 
@@ -26,8 +78,53 @@ namespace Type
             {
                 return true;
             }
+
+            virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
+            virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
+            virtual bool StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result) override;
+            virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
+
             GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+            uint32 GetSelectionZonesCount() override
+            {
+                CHECK(selectionZoneInterface.IsValid(), 0, "");
+                return selectionZoneInterface->GetSelectionZonesCount();
+            }
+
+            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+            {
+                static auto d = TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(selectionZoneInterface.IsValid(), d, "");
+                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+                return selectionZoneInterface->GetSelectionZone(index);
+            }
         };
+        namespace Panels
+        {
+            class Information : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::SQL::SQLFile> cpp;
+                Reference<AppCUI::Controls::ListView> general;
+                Reference<AppCUI::Controls::ListView> issues;
+
+                void UpdateGeneralInformation();
+                void UpdateIssues();
+                void RecomputePanelsPositions();
+
+              public:
+                Information(Reference<GView::Type::SQL::SQLFile> cpp);
+
+                void Update();
+                virtual void OnAfterResize(int newWidth, int newHeight) override
+                {
+                    RecomputePanelsPositions();
+                }
+            };
+        }; // namespace Panels
     } // namespace SQL
 } // namespace Type
 } // namespace GView
