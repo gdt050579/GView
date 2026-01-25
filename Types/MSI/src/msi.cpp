@@ -1,6 +1,3 @@
-// msi.cpp
-// GView plugin exports for MSI type (Validate, CreateInstance, PopulateWindow, UpdateSettings)
-
 #include "msi.hpp"
 
 using namespace AppCUI;
@@ -12,74 +9,59 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-
 extern "C" {
-    // Small helper to create a buffer view (header + body zones) and assign selection interface
-    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MSI::MSIFile> msi)
-    {
-        BufferViewer::Settings settings;
-        // CFB header (first 512 bytes)
-        settings.AddZone(0, 512, ColorPair{ Color::Magenta, Color::DarkBlue }, "CFB Header");
+PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
+{
+    // Check for OLE Signature: D0 CF 11 E0 A1 B1 1A E1
+    if (buf.GetLength() < 8)
+        return false;
+    uint64 sig = *(uint64*) buf.GetData();
+    if (sig != MSI::OLE_SIGNATURE)
+        return false;
 
-        msi->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
-    }
+    // Optionally check extension for strict MSI handling,
+    // though OLE signature covers MST/MSP/DOC/XLS too.
+    // GView priority settings usually handle the disambiguation.
+    return true;
+}
 
-    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
-    {
-        // quick size check
-        if (buf.GetLength() < 512)
-            return false;
+PLUGIN_EXPORT TypeInterface* CreateInstance()
+{
+    return new MSI::MSIFile();
+}
 
-        const uint8_t* data = reinterpret_cast<const uint8_t*>(buf.GetData());
+PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
+{
+    auto msi = win->GetObject()->GetContentType<MSI::MSIFile>();
 
-        // check CFB signature
-        if (!MSI::CFBHelper::HasCFBSignature(data, buf.GetLength()))
-            return false;
-
-        // quick heuristic: presence of SummaryInformation or Property streams
-        MSI::CFBHelper helper(data, buf.GetLength());
-        std::string summary;
-        summary.push_back(char(0x05));
-        summary += "SummaryInformation";
-
-        if (helper.ContainsNameASCII("Property") || helper.ContainsNameASCII(summary) || helper.ContainsNameUTF16("Property"))
-            return true;
-
-        // fallback: extension hint
-        if (!extension.empty()) {
-            std::string ext(extension);
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (ext == ".msi")
-                return true;
-        }
-
+    if (!msi->Update()) {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to parse MSI file structure.");
         return false;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance()
-    {
-        return new GView::Type::MSI::MSIFile();
-    }
+    // 1. Create Container View (Tree view of streams)
+    ContainerViewer::Settings settings;
+    settings.SetIcon(
+          "16,16,00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"); // Placeholder
+                                                                                                                                                     // icon
+    settings.SetColumns({ "n:&Name,a:l,w:40", "n:&Type,a:l,w:10", "n:&Size,a:r,w:15" });
 
-    PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
-    {
-        auto msi = win->GetObject()->GetContentType<MSI::MSIFile>();
-        // msi->Update();
+    settings.SetEnumerateCallback(msi.ToObjectRef<ContainerViewer::EnumerateInterface>());
+    settings.SetOpenItemCallback(msi.ToObjectRef<ContainerViewer::OpenItemInterface>());
+    win->CreateViewer(settings);
 
-        // add viewer
-        CreateBufferView(win, msi);
+    // 2. Add Information Panel
+    win->AddPanel(Pointer<TabPage>(new MSI::Panels::Information(msi)), true);
 
-        return true;
-    }
+    return true;
+}
 
-    PLUGIN_EXPORT void UpdateSettings(IniSection sect)
-    {
-        sect["Pattern"] = {
-            "magic:D0 CF 11 E0 A1 B1 1A E1", // CFB signature
-        };
-        sect["Priority"]    = 1;
-        sect["Description"] = "MSI Installer Package (*.msi) - Compound File Binary (CFB/OLE)";
-    }
+PLUGIN_EXPORT void UpdateSettings(IniSection sect)
+{
+    sect["Pattern"]     = "magic:D0 CF 11 E0 A1 B1 1A E1";
+    sect["Priority"]    = 1;
+    sect["Description"] = "Windows Installer Database (*.msi)";
+}
 }
 
 int main()
