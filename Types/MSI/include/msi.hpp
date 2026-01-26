@@ -47,8 +47,13 @@ namespace GView::Type::MSI
 {
 // Constants for OLE/CFBF format
 constexpr uint64 OLE_SIGNATURE = 0xE11AB1A1E011CFD0;
-constexpr uint32 NOSTREAM      = 0xffffffff;
-constexpr uint32 ENDOFCHAIN    = 0xfffffffe;
+
+// FAT Special Values
+constexpr uint32 FREESECT   = 0xFFFFFFFF; // Unallocated sector
+constexpr uint32 ENDOFCHAIN = 0xFFFFFFFE; // End of linked chain
+constexpr uint32 FATSECT    = 0xFFFFFFFD; // Sector belongs to FAT
+constexpr uint32 DIFSECT    = 0xFFFFFFFC; // Sector belongs to DIFAT
+constexpr uint32 NOSTREAM   = 0xFFFFFFFF; // Invalid ID / Empty
 
 #pragma pack(push, 1)
 struct OLEHeader {
@@ -129,6 +134,10 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     DirEntry rootDir;
     std::vector<DirEntry*> linearDirList; // For easier indexing if needed
 
+    // Iteration State
+    DirEntry* currentIterFolder = nullptr;
+    size_t currentIterIndex     = 0;
+
     // Internal parsing methods
     bool LoadFAT();
     bool LoadMiniFAT();
@@ -141,9 +150,16 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     MSIFile();
     virtual ~MSIFile() override
     {
+        // Cleanup memory allocated in LoadDirectory
+        for (auto* entry : linearDirList) {
+            delete entry;
+        }
+        linearDirList.clear();
     }
 
     bool Update(); // Main entry to parse the file
+
+    void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
 
     // TypeInterface Implementation
     virtual std::string_view GetTypeName() override
