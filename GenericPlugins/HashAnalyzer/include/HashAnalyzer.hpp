@@ -2,6 +2,7 @@
 
 #include "GView.hpp"
 #include "ServiceInterface.hpp"
+#include "Config.hpp"
 
 namespace GView::GenericPlugins::HashAnalyzer
 {
@@ -17,7 +18,7 @@ using namespace AppCUI::Controls;
 class AnalysisResultsDialog : public Window, public Handlers::OnButtonPressedInterface
 {
   private:
-    AnalysisResult storedResult;  // Store result for future detailed display
+    AnalysisResult storedResult; // Store result for future detailed display
     Reference<ListView> resultsList;
     Reference<Button> closeBtn;
 
@@ -33,22 +34,22 @@ class HashAnalyzerDialog : public Window, public Handlers::OnButtonPressedInterf
 {
   private:
     Reference<GView::Object> object;
-    
+
     // UI components
     Reference<RadioBox> computeForFile;
     Reference<RadioBox> computeForSelection;
     Reference<ListView> hashesList;
     Reference<Button> computeBtn;
-    
+
     // Service selection components
     Reference<Label> serviceLabel;
     Reference<ComboBox> serviceSelector;
     Reference<Button> analyzeBtn;
-    
+
     Reference<Button> closeBtn;
-    
+
     std::vector<TypeInterface::SelectionZone> selectedZones;
-    
+
     // Stored hash values after computation
     std::string md5Hash;
     std::string sha1Hash;
@@ -66,5 +67,3 @@ class HashAnalyzerDialog : public Window, public Handlers::OnButtonPressedInterf
 };
 
 } // namespace GView::GenericPlugins::HashAnalyzer
-
-

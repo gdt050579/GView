@@ -1,4 +1,5 @@
 #include "VirusTotalService.hpp"
+#include "Config.hpp"
 
 #include <ctime>
 #include <iomanip>
@@ -19,7 +20,12 @@ const char* VirusTotalService::GetName() const
 
 bool VirusTotalService::IsConfigured()
 {
-    // hasValidKey() automatically ensures keys are loaded (thread-safe)
+    // Check config first
+    auto& configKey = GetPluginConfig().VirusTotal.ApiKey;
+    if (!configKey.empty() && configKey != "your_api_key_here") {
+        return true;
+    }
+    // Fallback to .env
     return getApiKeyManager().hasValidKey(API_KEY_ENV_NAME);
 }
 
@@ -27,16 +33,27 @@ AnalysisResult VirusTotalService::AnalyzeHash(const std::string& hash, HashKind 
 {
     AnalysisResult result;
     result.serviceName = SERVICE_NAME;
-    result.queryHash = hash;
+    result.queryHash   = hash;
 
-    // Check if API key is configured (ensureLoaded is thread-safe)
-    auto& keyManager = getApiKeyManager();
-    keyManager.ensureLoaded();
+    // Check if API key is configured (Config first, then .env)
+    std::string apiKey;
 
-    auto apiKeyOpt = keyManager.getKey(API_KEY_ENV_NAME);
-    if (!apiKeyOpt.has_value() || apiKeyOpt->empty() || *apiKeyOpt == "your_api_key_here") {
-        result.success = false;
-        result.errorMessage = "VirusTotal API key not configured. Please set VIRUSTOTAL_API_KEY in .env file.";
+    // Check Config
+    auto& configKey = GetPluginConfig().VirusTotal.ApiKey;
+    if (!configKey.empty() && configKey != "your_api_key_here") {
+        apiKey = configKey;
+    } else {
+        // Check .env
+        auto& keyManager = getApiKeyManager();
+        keyManager.ensureLoaded();
+        auto apiKeyOpt = keyManager.getKey(API_KEY_ENV_NAME);
+        if (apiKeyOpt.has_value())
+            apiKey = *apiKeyOpt;
+    }
+
+    if (apiKey.empty() || apiKey == "your_api_key_here") {
+        result.success      = false;
+        result.errorMessage = "VirusTotal API key not configured. Please set it in Settings or VIRUSTOTAL_API_KEY in .env file.";
         return result;
     }
 
@@ -44,10 +61,10 @@ AnalysisResult VirusTotalService::AnalyzeHash(const std::string& hash, HashKind 
     // VirusTotal API v3 accepts MD5, SHA1, or SHA256 for file lookups
     HttpRequest request;
     request.setUrl(std::string(API_BASE_URL) + hash)
-           .setMethod("GET")
-           .addHeader("Accept", "application/json")
-           .addHeader("User-Agent", "GView-HashAnalyzer/1.0")
-           .addHeader(API_KEY_HEADER, *apiKeyOpt);
+          .setMethod("GET")
+          .addHeader("Accept", "application/json")
+          .addHeader("User-Agent", "GView-HashAnalyzer/1.0")
+          .addHeader(API_KEY_HEADER, apiKey);
 
     // Send the request
     HttpResponse response = sendHttpRequest(request);
@@ -60,12 +77,12 @@ AnalysisResult VirusTotalService::parseResponse(const HttpResponse& response, co
 {
     AnalysisResult result;
     result.serviceName = SERVICE_NAME;
-    result.queryHash = hash;
+    result.queryHash   = hash;
 
     // Handle network/CURL errors
     if (!response.success) {
-        result.success = false;
-        result.found = false;
+        result.success      = false;
+        result.found        = false;
         result.errorMessage = response.error.empty() ? "Network error occurred" : response.error;
         return result;
     }
@@ -73,32 +90,32 @@ AnalysisResult VirusTotalService::parseResponse(const HttpResponse& response, co
     // Handle HTTP error codes
     if (response.isNotFound()) {
         // 404 - File not in VirusTotal database
-        result.success = true;
-        result.found = false;
+        result.success      = true;
+        result.found        = false;
         result.errorMessage = "File not found in VirusTotal database";
         return result;
     }
 
     if (response.isRateLimited()) {
         // 429 - Rate limited
-        result.success = false;
-        result.found = false;
+        result.success      = false;
+        result.found        = false;
         result.errorMessage = "Rate limited. Please wait before making more requests. (VirusTotal free API: 4 requests/minute)";
         return result;
     }
 
     if (response.isAuthError()) {
         // 401/403 - Authentication error
-        result.success = false;
-        result.found = false;
-        result.errorMessage = "Invalid API key. Please check your VIRUSTOTAL_API_KEY in .env file.";
+        result.success      = false;
+        result.found        = false;
+        result.errorMessage = "Invalid API key. Please check your API key in Settings or .env file.";
         return result;
     }
 
     if (!response.isSuccess()) {
         // Other HTTP errors
-        result.success = false;
-        result.found = false;
+        result.success      = false;
+        result.found        = false;
         result.errorMessage = "HTTP error: " + std::to_string(response.statusCode);
         return result;
     }
@@ -108,12 +125,12 @@ AnalysisResult VirusTotalService::parseResponse(const HttpResponse& response, co
         nlohmann::json jsonResponse = nlohmann::json::parse(response.body);
 
         result.success = true;
-        result.found = true;
+        result.found   = true;
 
         // Navigate to data.attributes
         if (!jsonResponse.contains("data") || !jsonResponse["data"].contains("attributes")) {
-            result.success = false;
-            result.found = false;
+            result.success      = false;
+            result.found        = false;
             result.errorMessage = "Invalid response format from VirusTotal";
             return result;
         }
@@ -123,25 +140,24 @@ AnalysisResult VirusTotalService::parseResponse(const HttpResponse& response, co
         // Parse last_analysis_stats for detection counts
         if (attributes.contains("last_analysis_stats")) {
             const auto& stats = attributes["last_analysis_stats"];
-            
-            uint32_t malicious = stats.value("malicious", 0);
-            uint32_t suspicious = stats.value("suspicious", 0);
-            uint32_t undetected = stats.value("undetected", 0);
-            uint32_t harmless = stats.value("harmless", 0);
-            uint32_t timeout = stats.value("timeout", 0);
+
+            uint32_t malicious        = stats.value("malicious", 0);
+            uint32_t suspicious       = stats.value("suspicious", 0);
+            uint32_t undetected       = stats.value("undetected", 0);
+            uint32_t harmless         = stats.value("harmless", 0);
+            uint32_t timeout          = stats.value("timeout", 0);
             uint32_t confirmedTimeout = stats.value("confirmed-timeout", 0);
-            uint32_t failure = stats.value("failure", 0);
-            uint32_t typeunsupported = stats.value("type-unsupported", 0);
+            uint32_t failure          = stats.value("failure", 0);
+            uint32_t typeunsupported  = stats.value("type-unsupported", 0);
 
             result.detectionCount = malicious + suspicious;
-            result.totalEngines = malicious + suspicious + undetected + harmless + 
-                                  timeout + confirmedTimeout + failure + typeunsupported;
+            result.totalEngines   = malicious + suspicious + undetected + harmless + timeout + confirmedTimeout + failure + typeunsupported;
         }
 
         // Parse scan date
         if (attributes.contains("last_analysis_date")) {
             int64_t timestamp = attributes["last_analysis_date"].get<int64_t>();
-            result.scanDate = formatTimestamp(timestamp);
+            result.scanDate   = formatTimestamp(timestamp);
         }
 
         // Parse file metadata
@@ -169,8 +185,8 @@ AnalysisResult VirusTotalService::parseResponse(const HttpResponse& response, co
         }
 
     } catch (const nlohmann::json::exception& e) {
-        result.success = false;
-        result.found = false;
+        result.success      = false;
+        result.found        = false;
         result.errorMessage = std::string("JSON parsing error: ") + e.what();
     }
 
@@ -181,10 +197,10 @@ void VirusTotalService::parseVendorResults(const nlohmann::json& analysisResults
 {
     for (auto it = analysisResults.begin(); it != analysisResults.end(); ++it) {
         const std::string& vendorName = it.key();
-        const auto& vendorData = it.value();
+        const auto& vendorData        = it.value();
 
         std::string category = vendorData.value("category", "unknown");
-        
+
         // Get the detection result (malware name) if present
         std::string detectionResult;
         if (vendorData.contains("result") && !vendorData["result"].is_null()) {
@@ -217,7 +233,7 @@ std::string VirusTotalService::formatTimestamp(int64_t timestamp)
 {
     std::time_t time = static_cast<std::time_t>(timestamp);
     std::tm tmBuffer{};
-    
+
     // Use thread-safe variants of gmtime
 #ifdef _WIN32
     // Windows: gmtime_s has reversed parameter order and returns errno_t
@@ -237,4 +253,3 @@ std::string VirusTotalService::formatTimestamp(int64_t timestamp)
 }
 
 } // namespace GView::GenericPlugins::HashAnalyzer
-
