@@ -58,7 +58,7 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
 extern "C" {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
-    return true;
+    return false;
 }
 PLUGIN_EXPORT TypeInterface* CreateInstance()
 {
