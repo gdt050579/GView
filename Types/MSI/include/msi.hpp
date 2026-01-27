@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "GView.hpp"
 #include <vector>
@@ -100,7 +100,21 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
         std::string comments;
         std::string revisionNumber;
         std::string creatingApp;
-        uint64 totalSize;
+
+        uint16_t codepage = 0;
+        std::string templateStr;
+        std::string lastSavedBy;
+
+        std::time_t createTime      = 0;
+        std::time_t lastSaveTime    = 0;
+        std::time_t lastPrintedTime = 0;
+
+        uint32_t pageCount      = 0;
+        uint32_t wordCount      = 0;
+        uint32_t characterCount = 0;
+        uint32_t security       = 0;
+
+        uint64_t totalSize = 0;
     } msiMeta;
 
     uint32 sectorSize;
@@ -188,6 +202,97 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
     virtual GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
+
+    static inline bool read_u16_le(const uint8_t* p, size_t n, uint16_t& out)
+    {
+        if (n < 2)
+            return false;
+        out = uint16_t(p[0]) | (uint16_t(p[1]) << 8);
+        return true;
+    }
+
+    static inline bool read_u32_le(const uint8_t* p, size_t n, uint32_t& out)
+    {
+        if (n < 4)
+            return false;
+        out = uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+        return true;
+    }
+
+    static inline bool read_u64_le(const uint8_t* p, size_t n, uint64_t& out)
+    {
+        if (n < 8)
+            return false;
+        out = uint64_t(p[0]) | (uint64_t(p[1]) << 8) | (uint64_t(p[2]) << 16) | (uint64_t(p[3]) << 24) | (uint64_t(p[4]) << 32) | (uint64_t(p[5]) << 40) |
+              (uint64_t(p[6]) << 48) | (uint64_t(p[7]) << 56);
+        return true;
+    }
+
+    static inline bool filetime_to_time_t(uint64_t ft100ns, std::time_t& out)
+    {
+        constexpr uint64_t EPOCH_DIFF = 116444736000000000ULL; // 1601 -> 1970
+        if (ft100ns < EPOCH_DIFF)
+            return false;
+
+        uint64_t seconds = (ft100ns - EPOCH_DIFF) / 10000000ULL;
+        if (seconds > uint64_t(std::numeric_limits<std::time_t>::max()))
+            return false;
+
+        out = static_cast<std::time_t>(seconds);
+        return true;
+    }
+    std::string parse_lpstr(const uint8_t* ptr, size_t avail)
+    {
+        if (avail < 8)
+            return "";
+
+        uint32_t stringLen = 0;
+        if (!read_u32_le(ptr + 4, avail - 4, stringLen))
+            return "";
+
+        if (stringLen == 0)
+            return "";
+
+        if (stringLen > (avail - 8))
+            stringLen = static_cast<uint32_t>(avail - 8);
+
+        std::string s(reinterpret_cast<const char*>(ptr + 8), stringLen);
+
+        // MSI/OLE include adesea terminatorul \0 în lungime.
+        while (!s.empty() && s.back() == '\0') {
+            s.pop_back();
+        }
+
+        return s;
+    }
+    std::string parse_lpwstr(const uint8_t* ptr, size_t avail)
+    {
+        if (avail < 8)
+            return "";
+
+        uint32_t charCount = 0;
+        if (!read_u32_le(ptr + 4, avail - 4, charCount))
+            return "";
+
+        if (charCount == 0)
+            return "";
+
+        size_t bytesNeeded = charCount * 2;
+        if (bytesNeeded > (avail - 8))
+            bytesNeeded = (avail - 8) & ~1; // 2 byte alignment
+
+        std::u16string tempW;
+        tempW.resize(bytesNeeded / 2);
+        memcpy(tempW.data(), ptr + 8, bytesNeeded);
+
+        while (!tempW.empty() && tempW.back() == u'\0') {
+            tempW.pop_back();
+        }
+
+        AppCUI::Utils::String utf8;
+        utf8.Set(tempW);
+        return std::string(utf8.GetText());
+    }
 };
 
 namespace Panels

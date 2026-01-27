@@ -222,67 +222,208 @@ void MSIFile::BuildTree(DirEntry& parent)
 void MSIFile::ParseSummaryInformation()
 {
     for (auto* entry : linearDirList) {
-        if (entry->name.find(u"SummaryInformation") != std::u16string::npos) {
-            bool isMini = entry->data.streamSize < header.miniStreamCutoffSize;
-            
-            Buffer buf  = GetStream(entry->data.startingSectorLocation, entry->data.streamSize, isMini);
-            
-            if (buf.GetLength() < 48)
-                return;
+        if (entry->name.find(u"SummaryInformation") == std::u16string::npos)
+            continue;
 
-            const uint8* data    = buf.GetData();
-            uint32 sectionOffset = *(uint32*) (data + 44);
-            if (sectionOffset > buf.GetLength())
-                return;
+        bool isMini = entry->data.streamSize < header.miniStreamCutoffSize;
+        Buffer buf  = GetStream(entry->data.startingSectorLocation, entry->data.streamSize, isMini);
 
-            const uint8* sectionStart = data + sectionOffset;
-            uint32 propertyCount      = *(uint32*) (sectionStart + 4);
-            
-            const uint8* propertyList = sectionStart + 8;
+        size_t bufLen       = buf.GetLength();
+        const uint8_t* data = buf.GetData();
+        if (bufLen < 48) {
+            return;
+        }
 
-            for (uint32 i = 0; i < propertyCount; i++) {
-                uint32 propID         = *(uint32*) (propertyList + (i * 8));
-                uint32 propOffset     = *(uint32*) (propertyList + (i * 8) + 4);
-                const uint8* valuePtr = sectionStart + propOffset;
-                uint32 type           = *(uint32*) valuePtr;
+        msiMeta.totalSize = static_cast<uint64_t>(bufLen);
 
-                if (type == 30) { // VT_LPSTR
-                    uint32 len          = *(uint32*) (valuePtr + 4);
-                    const char* strData = (const char*) (valuePtr + 8);
-                    
-                    if ((const uint8*) (strData + len) > data + buf.GetLength())
-                        continue;
-                    
-                    std::string value(strData, len > 0 ? len - 1 : 0);
+        uint32_t sectionOffset = 0;
+        if (!read_u32_le(data + 44, (bufLen >= 44) ? (bufLen - 44) : 0, sectionOffset))
+            return;
+        if (sectionOffset >= bufLen)
+            return;
 
-                    switch (propID) {
-                    case 2:
-                        msiMeta.title = value;
-                        break;
-                    case 3:
-                        msiMeta.subject = value;
-                        break;
-                    case 4:
-                        msiMeta.author = value;
-                        break;
-                    case 5:
-                        msiMeta.keywords = value;
-                        break;
-                    case 6:
-                        msiMeta.comments = value;
-                        break;
-                    case 9:
-                        msiMeta.revisionNumber = value;
-                        break;
-                    case 18:
-                        msiMeta.creatingApp = value;
-                        break;
+        const uint8_t* sectionStart = data + sectionOffset;
+        size_t sectionAvail         = bufLen - sectionOffset;
+        if (sectionAvail < 8)
+            return;
+
+        uint32_t propertyCount = 0;
+        if (!read_u32_le(sectionStart + 4, sectionAvail >= 4 ? (sectionAvail - 4) : 0, propertyCount))
+            return;
+
+        const uint8_t* propertyList = sectionStart + 8;
+        size_t propertyListAvail    = (sectionAvail > 8) ? (sectionAvail - 8) : 0;
+
+        if (propertyCount > (propertyListAvail / 8)) {
+            propertyCount = static_cast<uint32_t>(propertyListAvail / 8);
+        }
+
+        for (uint32_t i = 0; i < propertyCount; ++i) {
+            size_t plOffset = static_cast<size_t>(i) * 8;
+            if (plOffset + 8 > propertyListAvail)
+                break; // safety
+
+            const uint8_t* plEntry = propertyList + plOffset;
+            uint32_t propID        = 0;
+            uint32_t propOffset    = 0;
+            if (!read_u32_le(plEntry, propertyListAvail - plOffset, propID))
+                continue;
+            if (!read_u32_le(plEntry + 4, propertyListAvail - plOffset - 4, propOffset))
+                continue;
+
+            // valuePtr = sectionStart + propOffset
+            if (propOffset >= sectionAvail)
+                continue;
+            const uint8_t* valuePtr = sectionStart + propOffset;
+            size_t valueAvail       = sectionAvail - propOffset;
+            if (valueAvail < 4) // minimum 4 bytes for type
+                continue;
+
+            uint32_t rawType = 0;
+            if (!read_u32_le(valuePtr, valueAvail, rawType))
+                continue;
+            uint32_t type = rawType & 0xFFFFu;
+
+            switch (type) {
+            case 30: { // VT_LPSTR (ANSI bytes)
+                std::string value = parse_lpstr(valuePtr, valueAvail);
+                switch (propID) {
+                case 2:
+                    msiMeta.title = value;
+                    break;
+                case 3:
+                    msiMeta.subject = value;
+                    break;
+                case 4:
+                    msiMeta.author = value;
+                    break;
+                case 5:
+                    msiMeta.keywords = value;
+                    break;
+                case 6:
+                    msiMeta.comments = value;
+                    break;
+                case 7:
+                    msiMeta.templateStr = value;
+                    break;
+                case 8:
+                    msiMeta.lastSavedBy = value;
+                    break;
+                case 9:
+                    msiMeta.revisionNumber = value;
+                    break;
+                case 18:
+                    msiMeta.creatingApp = value;
+                    break;
+                default:
+                    break;
+                }
+                break;
+            }
+
+            case 31: { // VT_LPWSTR (UTF-16LE)
+                std::string value = parse_lpwstr(valuePtr, valueAvail);
+                switch (propID) {
+                case 2:
+                    msiMeta.title = value;
+                    break;
+                case 3:
+                    msiMeta.subject = value;
+                    break;
+                case 4:
+                    msiMeta.author = value;
+                    break;
+                case 5:
+                    msiMeta.keywords = value;
+                    break;
+                case 6:
+                    msiMeta.comments = value;
+                    break;
+                case 7:
+                    msiMeta.templateStr = value;
+                    break;
+                case 8:
+                    msiMeta.lastSavedBy = value;
+                    break;
+                case 9:
+                    msiMeta.revisionNumber = value;
+                    break;
+                case 18:
+                    msiMeta.creatingApp = value;
+                    break;
+                default:
+                    break;
+                }
+                break;
+            }
+
+            case 2: { // VT_I2 (usually Codepage)
+                if (valueAvail >= 6) {
+                    uint16_t v16 = 0;
+                    if (read_u16_le(valuePtr + 4, valueAvail - 4, v16)) {
+                        msiMeta.codepage = v16;
                     }
                 }
+                break;
             }
-            break;
-        }
-    }
+
+            case 3: { // VT_I4 (32-bit integer)
+                if (valueAvail >= 8) {
+                    uint32_t v32 = 0;
+                    if (read_u32_le(valuePtr + 4, valueAvail - 4, v32)) {
+                        switch (propID) {
+                        case 14:
+                            msiMeta.pageCount = v32;
+                            break;
+                        case 15:
+                            msiMeta.wordCount = v32;
+                            break;
+                        case 16:
+                            msiMeta.characterCount = v32;
+                            break;
+                        case 19:
+                            msiMeta.security = v32;
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+
+            case 64: { // VT_FILETIME (64-bit at offset+4)
+                if (valueAvail >= 12) {
+                    uint64_t ft = 0;
+                    if (read_u64_le(valuePtr + 4, valueAvail - 4, ft)) {
+                        std::time_t t = 0;
+                        if (filetime_to_time_t(ft, t)) {
+                            switch (propID) {
+                            case 11:
+                                msiMeta.lastPrintedTime = t;
+                                break;
+                            case 12:
+                                msiMeta.createTime = t;
+                                break;
+                            case 13:
+                                msiMeta.lastSaveTime = t;
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+
+            default:
+                break;
+            } 
+        } 
+
+        break;
+    } 
 }
 
 // --- MSI Decoding Helper ---
@@ -300,24 +441,18 @@ std::u16string MSIFile::MsiDecompressName(std::u16string_view encoded)
     for (size_t i = 0; i < encoded.length(); ++i) {
         uint16_t val = (uint16_t) encoded[i];
 
-        // Range 1: Two characters packed (0x3800 - 0x47FF)
         if (val >= 0x3800 && val <= 0x47FF) {
             uint16_t packed = val - 0x3800;
             result += charset[packed & 0x3F];        // Lower 6 bits
             result += charset[(packed >> 6) & 0x3F]; // Upper 6 bits
         }
-        // Range 2: One character packed (0x4800 - 0x483F)
-        // This was the missing piece causing "garbage" characters at the end of strings.
         else if (val >= 0x4800 && val <= 0x483F) {
             uint16_t index = val - 0x4800;
             result += charset[index];
         }
-        // Range 3: Special Sentinel (0x4840) -> '!'
-        // Used for table names like "!Property" or "!_Columns"
         else if (val == 0x4840) {
             result += u'!';
         }
-        // Range 4: Raw Characters (Pass-through)
         else {
             result += (char16_t) val;
         }

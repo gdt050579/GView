@@ -134,13 +134,55 @@ void Information::UpdateGeneralInformation()
     }
 
     // Metadata
+    // helper local pentru time_t -> string
+    auto TimeToString = [](std::time_t t) -> std::string {
+        if (t == 0)
+            return "";
+
+        std::tm tm{};
+#if defined(_WIN32)
+        localtime_s(&tm, &t);
+#else
+        localtime_r(&t, &tm);
+#endif
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%d.%m.%Y %H:%M:%S", &tm);
+        return buf;
+    };
+
+    // --- SummaryInformation ---
     general->AddItem({ "Title", msi->msiMeta.title });
     general->AddItem({ "Subject", msi->msiMeta.subject });
     general->AddItem({ "Author", msi->msiMeta.author });
     general->AddItem({ "Keywords", msi->msiMeta.keywords });
     general->AddItem({ "Comments", msi->msiMeta.comments });
-    general->AddItem({ "UUID (Rev)", msi->msiMeta.revisionNumber });
+
+    general->AddItem({ "Template", msi->msiMeta.templateStr });
+    general->AddItem({ "Last Saved By", msi->msiMeta.lastSavedBy });
+
+    general->AddItem({ "UUID (Revision)", msi->msiMeta.revisionNumber });
     general->AddItem({ "Creating Application", msi->msiMeta.creatingApp });
+
+    general->AddItem({ "Codepage", msi->msiMeta.codepage ? std::to_string(msi->msiMeta.codepage) : "" });
+
+    // --- Timestamps ---
+    general->AddItem({ "Created", TimeToString(msi->msiMeta.createTime) });
+    general->AddItem({ "Last Saved", TimeToString(msi->msiMeta.lastSaveTime) });
+    general->AddItem({ "Last Printed", TimeToString(msi->msiMeta.lastPrintedTime) });
+
+    // --- Counters ---
+    general->AddItem({ "Page Count", msi->msiMeta.pageCount ? std::to_string(msi->msiMeta.pageCount) : "" });
+    general->AddItem({ "Word Count", msi->msiMeta.wordCount ? std::to_string(msi->msiMeta.wordCount) : "" });
+    general->AddItem({ "Character Count", msi->msiMeta.characterCount ? std::to_string(msi->msiMeta.characterCount) : "" });
+
+    // --- Security ---
+    general->AddItem({ "Security",
+                       msi->msiMeta.security == 0   ? "None"
+                       : msi->msiMeta.security == 2 ? "Read-only recommended"
+                                                    : std::to_string(msi->msiMeta.security) });
+
+    // --- Stream info ---
+    general->AddItem({ "SummaryInformation Size", std::to_string(msi->msiMeta.totalSize) + " bytes" });
 }
 
 void Information::RecomputePanelsPositions()
