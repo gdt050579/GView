@@ -32,10 +32,10 @@ bool MSIFile::Update()
     BuildTree(this->rootDir);
     ParseSummaryInformation();
 
-    // Database Loading - Fail softly if not a valid MSI DB (e.g., just a DOC file)
+    // Database Loading
     if (LoadStringPool()) {
-        LoadTables();
-        LoadDatabase();
+        LoadDatabase(); // 1. Load Schema first
+        LoadTables();   // 2. Then build UI list based on Schema
     }
 
     return true;

@@ -143,7 +143,6 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     bool LoadDatabase();
 
     std::string GetString(uint32 index);
-    std::vector<std::vector<AppCUI::Utils::String>> ReadTableData(const std::string& tableName);
 
   public:
     MSIFile();
@@ -160,6 +159,9 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     {
         return stringPool;
     }
+
+    std::vector<std::vector<AppCUI::Utils::String>> ReadTableData(const std::string& tableName);
+    const MsiTableDef* GetTableDefinition(const std::string& tableName) const;
 
     // TypeInterface
     virtual std::string_view GetTypeName() override
@@ -207,7 +209,7 @@ namespace Panels
         }
     };
 
-    class Tables : public AppCUI::Controls::TabPage
+    class Tables : public AppCUI::Controls::TabPage, public AppCUI::Controls::Handlers::OnListViewItemPressedInterface
     {
         Reference<MSIFile> msi;
         Reference<AppCUI::Controls::ListView> list;
@@ -215,6 +217,7 @@ namespace Panels
       public:
         Tables(Reference<MSIFile> msi);
         void Update();
+        void OnListViewItemPressed(Reference<ListView> lv, ListViewItem item) override;
         virtual void OnAfterResize(int newWidth, int newHeight) override
         {
             if (list.IsValid())
@@ -222,4 +225,20 @@ namespace Panels
         }
     };
 } // namespace Panels
+
+namespace Dialogs
+{
+    class TableViewer : public AppCUI::Controls::Window
+    {
+        AppCUI::Utils::Reference<AppCUI::Controls::ListView> list;
+
+      public:
+        TableViewer(AppCUI::Utils::Reference<MSIFile> msi, const std::string& tableName);
+        virtual bool OnEvent(AppCUI::Utils::Reference<AppCUI::Controls::Control>, AppCUI::Controls::Event eventType, int ID) override;
+        virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 UnicodeChar) override;
+    };
+} // namespace Dialogs
+
 } // namespace GView::Type::MSI
+
+

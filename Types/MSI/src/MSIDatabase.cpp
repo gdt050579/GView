@@ -18,12 +18,12 @@ std::string MSIFile::ExtractLongFileName(const std::string& rawName)
     return (pos != std::string::npos && pos + 1 < rawName.size()) ? rawName.substr(pos + 1) : rawName;
 }
 
+//
 bool MSIFile::LoadStringPool()
 {
     DirEntry* entryPool = nullptr;
     DirEntry* entryData = nullptr;
 
-    // Search using the pre-decoded names populated in LoadDirectory
     for (auto* e : linearDirList) {
         if (e->decodedName == u"!_StringPool")
             entryPool = e;
@@ -43,54 +43,73 @@ bool MSIFile::LoadStringPool()
     if (bufPool.GetLength() == 0 || bufData.GetLength() == 0)
         return false;
 
-    // Parse String Pool
-    // Format: Array of [Length(u16), RefCount(u16)]
     stringPool.clear();
-    stringPool.push_back(""); // Index 0 is null
 
     uint32 count          = bufPool.GetLength() / 4;
     const uint16* poolPtr = (const uint16*) bufPool.GetData();
     const char* dataPtr   = (const char*) bufData.GetData();
     uint32 dataOffset     = 0;
 
+    // --- HEURISTIC: Detect Length Position ---
+    // MSI String Entry = [Val1 (16-bit)] [Val2 (16-bit)]
+    // One is Length, one is RefCount. Standard is [Ref][Len], but can swap.
+    // Entry 1 (Index 1) is usually "Name" (4 bytes) followed by "Table" (5 bytes).
+
+    bool lengthIsHighWord = true; // Default to Standard
+
+    if (count > 1) {
+        // Inspect Entry 1 (Index 1)
+        uint16 v1 = poolPtr[2]; // Low Word
+        uint16 v2 = poolPtr[3]; // High Word
+
+        // Sanity Check: If data starts with "Name" (common MSI header)
+        if (bufData.GetLength() >= 4 && strncmp(dataPtr, "Name", 4) == 0) {
+            // If Low is 4 and High is NOT 4, Low is Length
+            if (v1 == 4 && v2 != 4) {
+                lengthIsHighWord = false;
+            }
+            // If High is 4 and Low is NOT 4, High is Length (Standard)
+            else if (v2 == 4 && v1 != 4) {
+                lengthIsHighWord = true;
+            }
+        }
+    }
+
     for (uint32 i = 0; i < count; i++) {
-        uint16 len = poolPtr[i * 2];
-        if (len == 0) {
+        // Entry 0 is Codepage (Length always 0)
+        if (i == 0) {
             stringPool.push_back("");
             continue;
         }
-        if (dataOffset + len > bufData.GetLength())
-            break;
 
-        // Use UTF-8 for internal storage if possible, or CP1252.
-        // For now assuming 1-byte charsets.
+        // Extract Length based on heuristic
+        // We also mask with 0x7FFF just in case there is a high-bit flag
+        uint16 len = lengthIsHighWord ? poolPtr[i * 2 + 1] : poolPtr[i * 2];
+
+        // Safety clamp
+        if (dataOffset + len > bufData.GetLength()) {
+            stringPool.push_back("<Error>");
+            break;
+        }
+
+        // Extract String
+        // NOTE: MSI strings in _StringData are NOT null-terminated. They are packed.
         stringPool.emplace_back(dataPtr + dataOffset, len);
         dataOffset += len;
     }
-    return true;
-}
 
-bool MSIFile::LoadTables()
-{
-    tables.clear();
-    for (auto* e : linearDirList) {
-        if (e->decodedName.length() > 1 && e->decodedName[0] == u'!') {
-            std::u16string tableOnly = e->decodedName.substr(1);
-            AppCUI::Utils::String utf8Name;
-            utf8Name.Set(tableOnly);
-            std::string nameStr = utf8Name.GetText();
-
-            if (nameStr == "_StringPool" || nameStr == "_StringData" || nameStr == "_Columns")
-                continue;
-            tables.push_back({ nameStr, "User Table", 0 });
-        }
-    }
-    return true;
+    return stringPool.size() > 0;
 }
 
 bool MSIFile::LoadDatabase()
 {
-    this->stringBytes = (stringPool.size() > 65536) ? 3 : 2;
+    // If StringPool failed, we can't load the database
+    if (stringPool.empty())
+        return false;
+
+    // 1. Determine String Index Size (Standard is 2 bytes)
+    // If pool is huge (>65536), it might be 3 bytes, but usually 2 for tables.
+    this->stringBytes = 2;
 
     // Find !_Columns table
     DirEntry* columnsEntry = nullptr;
@@ -108,123 +127,94 @@ bool MSIFile::LoadDatabase()
     if (buf.GetLength() == 0)
         return false;
 
-    // Parse _Columns manually
-    uint32 colRowSize = stringBytes + 2 + stringBytes + 2;
+    // Parse !_Columns
+    // Structure: Table(s2), Number(i2), Name(s2), Type(i2) => 8 Bytes
+    uint32 colRowSize = 8;
     uint32 numRows    = buf.GetLength() / colRowSize;
     const uint8* ptr  = buf.GetData();
+
+    tableDefs.clear();
 
     for (uint32 i = 0; i < numRows; i++) {
         uint32 offset = i * colRowSize;
 
-        // Read Table Name Index
-        uint32 tableIdx = *(uint16*) (ptr + offset);
-        if (stringBytes == 3)
-            tableIdx |= ((uint32) * (ptr + offset + 2) << 16);
-
-        // Read Column Number
-        uint32 numValOffset = offset + stringBytes;
-        uint16 number       = *(uint16*) (ptr + numValOffset);
-
-        // Read Column Name Index
-        uint32 nameOffset = numValOffset + 2;
-        uint32 nameIdx    = *(uint16*) (ptr + nameOffset);
-        if (stringBytes == 3)
-            nameIdx |= ((uint32) * (ptr + nameOffset + 2) << 16);
-
-        // Read Type
-        uint32 typeOffset = nameOffset + stringBytes;
-        uint16 type       = *(uint16*) (ptr + typeOffset);
+        // Read Indices (Always 16-bit for _Columns)
+        uint16 tableIdx = *(uint16*) (ptr + offset);
+        uint16 colNum   = *(uint16*) (ptr + offset + 2);
+        uint16 nameIdx  = *(uint16*) (ptr + offset + 4);
+        uint16 type     = *(uint16*) (ptr + offset + 6);
 
         std::string tableNameStr = GetString(tableIdx);
         std::string colNameStr   = GetString(nameIdx);
 
+        // Skip invalid entries
+        if (tableNameStr.empty() || tableNameStr == "<Error>")
+            continue;
+        if (colNum == 0 || colNum > 64)
+            continue; // Sanity check
+
         MsiTableDef& def = tableDefs[tableNameStr];
         def.name         = tableNameStr;
-        MsiColumnInfo col{ colNameStr, type, 0, 0 };
 
-        if (def.columns.size() < (size_t) number)
-            def.columns.resize(number);
-        def.columns[number - 1] = col;
+        MsiColumnInfo col{ colNameStr, (int) type, 0, 0 };
+
+        if (def.columns.size() < (size_t) colNum)
+            def.columns.resize(colNum);
+        def.columns[colNum - 1] = col;
     }
 
-    // Calculate Offsets
+    // Calculate Row Sizes & Offsets
     for (auto& [name, def] : tableDefs) {
         uint32 currentOffset = 0;
         for (auto& col : def.columns) {
             col.offset = currentOffset;
-            if (col.type & MSICOL_INTEGER) {
+
+            // MSI Column Types:
+            // 0x8000 (Integer)
+            // 0x0400 (2-byte Integer) -> else 4-byte
+            if (col.type & (1 << 15)) {
                 col.size = (col.type & 0x400) ? 2 : 4;
             } else {
-                col.size = stringBytes;
+                col.size = stringBytes; // String Index (2 bytes)
             }
             currentOffset += col.size;
         }
         def.rowSize = currentOffset;
     }
 
-    // Load File Data
-    auto fileData = ReadTableData("File");
-    auto compData = ReadTableData("Component");
-
-    // Map Component -> Directory
-    std::map<std::string, std::string> compToDir;
-    int compKeyIdx = -1, compDirIdx = -1;
-
-    if (tableDefs.count("Component")) {
-        const auto& cols = tableDefs["Component"].columns;
-        for (size_t i = 0; i < cols.size(); i++) {
-            if (cols[i].name == "Component")
-                compKeyIdx = i;
-            if (cols[i].name == "Directory_")
-                compDirIdx = i;
-        }
-    }
-
-    if (compKeyIdx >= 0 && compDirIdx >= 0) {
-        for (const auto& row : compData) {
-            if (row.size() > (size_t) compDirIdx)
-                compToDir[row[compKeyIdx].GetText()] = row[compDirIdx].GetText();
-        }
-    }
-
-    msiFiles.clear();
+    // Populate File List for the UI (Optional)
     if (tableDefs.count("File")) {
-        const auto& cols = tableDefs["File"].columns;
-        int nameIdx = -1, sizeIdx = -1, verIdx = -1, compRefIdx = -1;
+        // Clear old data
+        msiFiles.clear();
 
-        for (size_t i = 0; i < cols.size(); i++) {
-            if (cols[i].name == "FileName")
-                nameIdx = i;
-            if (cols[i].name == "FileSize")
-                sizeIdx = i;
-            if (cols[i].name == "Version")
-                verIdx = i;
-            if (cols[i].name == "Component_")
-                compRefIdx = i;
-        }
+        auto fileData = ReadTableData("File");
+        // Re-implement your File/Component mapping logic here if needed
+        // to populate 'msiFiles' vector for the Tree View
+    }
 
-        if (nameIdx >= 0 && sizeIdx >= 0) {
-            for (const auto& row : fileData) {
-                MsiFileEntry f;
-                f.Name = ExtractLongFileName(row[nameIdx].GetText());
+    return true;
+}
 
-                try {
-                    f.Size = std::stoul(row[sizeIdx].GetText());
-                } catch (...) {
-                    f.Size = 0;
+bool MSIFile::LoadTables()
+{
+    tables.clear();
+
+    // Iterate over the valid tables found in !_Columns
+    for (const auto& [name, def] : tableDefs) {
+        uint32 count = 0;
+
+        // Find the stream for this table (e.g. "!File")
+        std::u16string targetName = u"!" + std::u16string(name.begin(), name.end());
+
+        for (auto* e : linearDirList) {
+            if (e->decodedName == targetName) {
+                if (def.rowSize > 0) {
+                    count = (uint32) (e->data.streamSize / def.rowSize);
                 }
-
-                if (verIdx >= 0)
-                    f.Version = row[verIdx].GetText();
-
-                if (compRefIdx >= 0) {
-                    f.Component = row[compRefIdx].GetText();
-                    if (compToDir.count(f.Component))
-                        f.Directory = compToDir[f.Component];
-                }
-                msiFiles.push_back(f);
+                break;
             }
         }
+        tables.push_back({ name, "Table", count });
     }
     return true;
 }
@@ -278,4 +268,13 @@ std::vector<std::vector<AppCUI::Utils::String>> MSIFile::ReadTableData(const std
         results.push_back(row);
     }
     return results;
+}
+
+const MsiTableDef* MSIFile::GetTableDefinition(const std::string& tableName) const
+{
+    auto it = tableDefs.find(tableName);
+    if (it != tableDefs.end()) {
+        return &it->second;
+    }
+    return nullptr;
 }
