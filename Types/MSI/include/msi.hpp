@@ -1,8 +1,9 @@
 #pragma once
 
 #include "GView.hpp"
+#include <vector>
+#include <string>
 
-// Minimal ByteStream definition for MSI parsing (adapted from DOC/ByteStream)
 class ByteStream
 {
   private:
@@ -11,13 +12,17 @@ class ByteStream
     size_t cursor;
 
   public:
-    ByteStream(void* ptr, size_t size) : ptr(ptr), size(size), cursor(0) {}
-    ByteStream(AppCUI::Utils::BufferView view) : ptr((void*) view.GetData()), size(view.GetLength()), cursor(0) {}
+    ByteStream(void* ptr, size_t size) : ptr(ptr), size(size), cursor(0)
+    {
+    }
+    ByteStream(AppCUI::Utils::BufferView view) : ptr((void*) view.GetData()), size(view.GetLength()), cursor(0)
+    {
+    }
 
     AppCUI::Utils::BufferView Read(size_t count)
     {
         size_t available = (cursor + count > size) ? (size - cursor) : count;
-        AppCUI::Utils::BufferView bv((uint8*)ptr + cursor, available);
+        AppCUI::Utils::BufferView bv((uint8*) ptr + cursor, available);
         cursor += available;
         return bv;
     }
@@ -39,8 +44,14 @@ class ByteStream
         return *this;
     }
 
-    size_t GetCursor() const { return cursor; }
-    size_t GetSize() const { return size; }
+    size_t GetCursor() const
+    {
+        return cursor;
+    }
+    size_t GetSize() const
+    {
+        return size;
+    }
 };
 
 namespace GView::Type::MSI
@@ -78,7 +89,7 @@ struct OLEHeader {
 };
 
 struct DirectoryEntryData {
-    char16 name[32]; // Fixed size in structure, but name length is defined
+    char16 name[32]; // Fixed size in structure
     uint16 nameLength;
     uint8 objectType; // 1=Storage, 2=Stream, 5=Root
     uint8 colorFlag;
@@ -100,6 +111,13 @@ struct DirEntry {
     DirectoryEntryData data;
     std::vector<DirEntry> children;
     std::u16string name;
+};
+
+// Database specific structures
+struct MSITableInfo {
+    std::string name;
+    std::string type; // "System" or "User"
+    uint32 rowCount;  // Approximate/Detected
 };
 
 class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
@@ -134,6 +152,10 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     DirEntry rootDir;
     std::vector<DirEntry*> linearDirList; // For easier indexing if needed
 
+    // MSI Database Internals
+    std::vector<std::string> stringPool;
+    std::vector<MSITableInfo> tables;
+
     // Iteration State
     DirEntry* currentIterFolder = nullptr;
     size_t currentIterIndex     = 0;
@@ -145,6 +167,10 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     void BuildTree(DirEntry& parent);
     AppCUI::Utils::Buffer GetStream(uint32 startSector, uint64 size, bool isMini);
     void ParseSummaryInformation();
+
+    // New Database Methods
+    bool LoadStringPool();
+    bool LoadTables();
 
   public:
     MSIFile();
@@ -160,6 +186,15 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     bool Update(); // Main entry to parse the file
 
     void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
+
+    const std::vector<MSITableInfo>& GetTableList() const
+    {
+        return tables;
+    }
+    const std::vector<std::string>& GetStringPool() const
+    {
+        return stringPool;
+    }
 
     // TypeInterface Implementation
     virtual std::string_view GetTypeName() override
@@ -183,14 +218,11 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
         return { 0, 0 };
     }
 
-    // ContainerViewer::EnumerateInterface
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item) override;
 
-    // ContainerViewer::OpenItemInterface
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
-    // Smart Assistant
     virtual GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
@@ -209,6 +241,21 @@ namespace Panels
         virtual void OnAfterResize(int newWidth, int newHeight) override
         {
             RecomputePanelsPositions();
+        }
+    };
+
+    class Tables : public AppCUI::Controls::TabPage
+    {
+        Reference<MSIFile> msi;
+        Reference<AppCUI::Controls::ListView> list;
+
+      public:
+        Tables(Reference<MSIFile> msi);
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            if (list.IsValid())
+                list->Resize(GetWidth(), GetHeight());
         }
     };
 } // namespace Panels

@@ -21,7 +21,7 @@ constexpr std::string_view MSI_ICON = "1111111111111111"
                                       "w1ww1w1www1111w1"
                                       "w1111w111www11w1"
                                       "w1111w11111w11w1"
-                                      "w1111w1wwwww1www" 
+                                      "w1111w1wwwww1www"
                                       "1111111111111111"
                                       "1111111111111111"
                                       "wwwwwwwwwwwwwwww"
@@ -31,29 +31,24 @@ constexpr std::string_view MSI_ICON = "1111111111111111"
 extern "C" {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
-    // 1. Basic Header Size Check
+    // Basic Header Size Check
     if (buf.GetLength() < sizeof(MSI::OLEHeader))
         return false;
 
-    // 2. Signature Check
+    // Signature Check
     auto h = buf.GetObject<MSI::OLEHeader>(0);
     if (h->signature != MSI::OLE_SIGNATURE)
         return false;
 
-    // 3. Strict Size Calculation
-    // Calculate the minimum required size based on the header fields
+    // Strict Size Calculation
     uint32 sectorSize = 1 << h->sectorShift;
-
-    // Sanity check for sector size (usually 512 or 4096)
     if (sectorSize < 512 || sectorSize > 4096)
         return false;
 
-    uint64 minFileSize = 512; // Header is always 512 bytes
+    uint64 minFileSize = 512;
     minFileSize += (uint64) h->numFatSectors * sectorSize;
-    minFileSize += (uint64) h->numDirSectors * sectorSize; // Can be 0 in v3
+    minFileSize += (uint64) h->numDirSectors * sectorSize;
     minFileSize += (uint64) h->numMiniFatSectors * sectorSize;
-    // Note: We don't check DIFAT sectors count here to keep it simple,
-    // but this is already a much stronger check.
 
     if (buf.GetLength() < minFileSize)
         return false;
@@ -69,10 +64,7 @@ PLUGIN_EXPORT TypeInterface* CreateInstance()
 void CreateBufferView(Reference<WindowInterface> win, Reference<MSI::MSIFile> msi)
 {
     BufferViewer::Settings settings;
-
-    // Delegate zone creation to the class logic
     msi->UpdateBufferViewZones(settings);
-
     win->CreateViewer(settings);
 }
 
@@ -85,23 +77,21 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
         return false;
     }
 
-    // 1. Create Container View
+    // Container View
     ContainerViewer::Settings settings;
     settings.SetIcon(MSI_ICON);
-    settings.SetColumns(
-          { "n:&Name,a:l,w:60", // Increased width for better name visibility
-            "n:&Type,a:l,w:10",
-            "n:&Size,a:r,w:15" });
-    
+    settings.SetColumns({ "n:&Name,a:l,w:60", "n:&Type,a:l,w:10", "n:&Size,a:r,w:15" });
+
     settings.SetEnumerateCallback(msi.ToObjectRef<ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(msi.ToObjectRef<ContainerViewer::OpenItemInterface>());
     win->CreateViewer(settings);
 
-    // 2. Create Buffer View (NEW)
+    // Buffer View
     CreateBufferView(win, msi);
 
-    // 3. Add Information Panel
+    // Panels
     win->AddPanel(Pointer<TabPage>(new MSI::Panels::Information(msi)), true);
+    win->AddPanel(Pointer<TabPage>(new MSI::Panels::Tables(msi)), true);
 
     return true;
 }
@@ -114,7 +104,64 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 }
 }
 
-int main()
+// Information Panel Implementation
+namespace GView::Type::MSI::Panels
 {
-    return 0;
+Information::Information(Reference<MSIFile> _msi) : TabPage("&Information")
+{
+    msi     = _msi;
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:100%", { "n:Field,w:20", "n:Value,w:80" }, ListViewFlags::None);
+    UpdateGeneralInformation();
 }
+
+void Information::UpdateGeneralInformation()
+{
+    general->DeleteAllItems();
+    general->AddItem({ "Type", "MSI (Compound File)" });
+    general->AddItem({ "Sector Size", std::to_string(msi->sectorSize) });
+    general->AddItem({ "Mini Sector Size", std::to_string(msi->miniSectorSize) });
+
+    if (msi->GetStringPool().size() > 1) {
+        general->AddItem({ "Strings in Pool", std::to_string(msi->GetStringPool().size()) });
+    }
+
+    // Metadata
+    general->AddItem({ "Title", msi->msiMeta.title });
+    general->AddItem({ "Subject", msi->msiMeta.subject });
+    general->AddItem({ "Author", msi->msiMeta.author });
+    general->AddItem({ "Keywords", msi->msiMeta.keywords });
+    general->AddItem({ "Comments", msi->msiMeta.comments });
+    general->AddItem({ "UUID (Rev)", msi->msiMeta.revisionNumber });
+    general->AddItem({ "Creating Application", msi->msiMeta.creatingApp });
+}
+
+void Information::RecomputePanelsPositions()
+{
+    if (general.IsValid())
+        general->Resize(GetWidth(), GetHeight());
+}
+
+// Tables Panel Implementation 
+Tables::Tables(Reference<MSIFile> _msi) : TabPage("&Tables")
+{
+    msi  = _msi;
+    list = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:100%", { "n:Table Name,w:30", "n:Type,w:15", "n:Rows (Approx),w:15,a:r" }, ListViewFlags::None);
+    Update();
+}
+
+void Tables::Update()
+{
+    list->DeleteAllItems();
+    const auto& dbTables = msi->GetTableList();
+
+    for (const auto& tbl : dbTables) {
+        LocalString<32> rowStr;
+        if (tbl.rowCount == 0)
+            rowStr.Set("Unknown");
+        else
+            rowStr.Format("%u", tbl.rowCount);
+
+        list->AddItem({ tbl.name, tbl.type, rowStr });
+    }
+}
+} // namespace GView::Type::MSI::Panels
