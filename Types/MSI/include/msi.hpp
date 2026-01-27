@@ -3,68 +3,16 @@
 #include "GView.hpp"
 #include <vector>
 #include <string>
-
-class ByteStream
-{
-  private:
-    void* ptr;
-    size_t size;
-    size_t cursor;
-
-  public:
-    ByteStream(void* ptr, size_t size) : ptr(ptr), size(size), cursor(0)
-    {
-    }
-    ByteStream(AppCUI::Utils::BufferView view) : ptr((void*) view.GetData()), size(view.GetLength()), cursor(0)
-    {
-    }
-
-    AppCUI::Utils::BufferView Read(size_t count)
-    {
-        size_t available = (cursor + count > size) ? (size - cursor) : count;
-        AppCUI::Utils::BufferView bv((uint8*) ptr + cursor, available);
-        cursor += available;
-        return bv;
-    }
-
-    template <typename T>
-    T ReadAs()
-    {
-        size_t count = sizeof(T);
-        if (cursor + count > size)
-            count = size - cursor;
-        T value = *(T*) ((uint8*) ptr + cursor);
-        cursor += count;
-        return value;
-    }
-
-    ByteStream& Seek(size_t count)
-    {
-        cursor = (count > size) ? size : count;
-        return *this;
-    }
-
-    size_t GetCursor() const
-    {
-        return cursor;
-    }
-    size_t GetSize() const
-    {
-        return size;
-    }
-};
+#include <map>
+#include <functional>
 
 namespace GView::Type::MSI
 {
-// Constants for OLE/CFBF format
+// Constants
 constexpr uint64 OLE_SIGNATURE = 0xE11AB1A1E011CFD0;
-
-// FAT Special Values
-constexpr uint32 FREESECT   = 0xFFFFFFFF; // Unallocated sector
-constexpr uint32 ENDOFCHAIN = 0xFFFFFFFE; // End of linked chain
-constexpr uint32 FATSECT    = 0xFFFFFFFD; // Sector belongs to FAT
-constexpr uint32 DIFSECT    = 0xFFFFFFFC; // Sector belongs to DIFAT
-constexpr uint32 NOSTREAM   = 0xFFFFFFFF; // Invalid ID / Empty
+constexpr uint32 FREESECT      = 0xFFFFFFFF;
+constexpr uint32 ENDOFCHAIN    = 0xFFFFFFFE;
+constexpr uint32 NOSTREAM      = 0xFFFFFFFF;
 
 #pragma pack(push, 1)
 struct OLEHeader {
@@ -89,7 +37,7 @@ struct OLEHeader {
 };
 
 struct DirectoryEntryData {
-    char16 name[32]; // Fixed size in structure
+    char16 name[32];
     uint16 nameLength;
     uint8 objectType; // 1=Storage, 2=Stream, 5=Root
     uint8 colorFlag;
@@ -105,32 +53,52 @@ struct DirectoryEntryData {
 };
 #pragma pack(pop)
 
-// Helper class to manage Directory Entries tree
 struct DirEntry {
     uint32 id;
     DirectoryEntryData data;
     std::vector<DirEntry> children;
-    std::u16string name;
+    std::u16string name;        // Raw name from Entry (potentially encoded)
+    std::u16string decodedName; // Decoded MSI name for display/lookup
 };
 
-// Database specific structures
+// Database Structures
+struct MsiFileEntry {
+    std::string Name;
+    std::string Directory;
+    std::string Component;
+    uint32 Size;
+    std::string Version;
+};
+
+struct MsiColumnInfo {
+    std::string name;
+    int type;
+    int offset;
+    int size;
+};
+
+struct MsiTableDef {
+    std::string name;
+    std::vector<MsiColumnInfo> columns;
+    uint32 rowSize;
+};
+
 struct MSITableInfo {
     std::string name;
-    std::string type; // "System" or "User"
-    uint32 rowCount;  // Approximate/Detected
+    std::string type;
+    uint32 rowCount;
 };
 
 class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
-    // Metadata fields for the Information Panel
     struct Metadata {
         std::string title;
         std::string subject;
         std::string author;
         std::string keywords;
-        std::string comments;       // Often contains the Installer description
-        std::string revisionNumber; // The Package Code (UUID)
+        std::string comments;
+        std::string revisionNumber;
         std::string creatingApp;
         uint64 totalSize;
     } msiMeta;
@@ -139,28 +107,26 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     uint32 miniSectorSize;
 
   private:
-    AppCUI::Utils::Buffer fileBuffer; // The entire file
-
-    // OLE Parsing internals
     OLEHeader header;
-
-    // Caches for FAT tables
     std::vector<uint32> FAT;
     std::vector<uint32> miniFAT;
     AppCUI::Utils::Buffer miniStream;
 
     DirEntry rootDir;
-    std::vector<DirEntry*> linearDirList; // For easier indexing if needed
+    std::vector<DirEntry*> linearDirList;
 
-    // MSI Database Internals
+    // Database
     std::vector<std::string> stringPool;
     std::vector<MSITableInfo> tables;
+    std::vector<MsiFileEntry> msiFiles;
+    std::map<std::string, MsiTableDef> tableDefs;
+    uint32 stringBytes = 2;
 
     // Iteration State
     DirEntry* currentIterFolder = nullptr;
     size_t currentIterIndex     = 0;
 
-    // Internal parsing methods
+    // Internal methods
     bool LoadFAT();
     bool LoadMiniFAT();
     bool LoadDirectory();
@@ -168,23 +134,22 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     AppCUI::Utils::Buffer GetStream(uint32 startSector, uint64 size, bool isMini);
     void ParseSummaryInformation();
 
-    // New Database Methods
+    // Database Methods
+    static std::u16string MsiDecompressName(std::u16string_view encoded);
+    static std::string ExtractLongFileName(const std::string& rawName);
+
     bool LoadStringPool();
     bool LoadTables();
+    bool LoadDatabase();
+
+    std::string GetString(uint32 index);
+    std::vector<std::vector<AppCUI::Utils::String>> ReadTableData(const std::string& tableName);
 
   public:
     MSIFile();
-    virtual ~MSIFile() override
-    {
-        // Cleanup memory allocated in LoadDirectory
-        for (auto* entry : linearDirList) {
-            delete entry;
-        }
-        linearDirList.clear();
-    }
+    virtual ~MSIFile() override;
 
-    bool Update(); // Main entry to parse the file
-
+    bool Update();
     void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
 
     const std::vector<MSITableInfo>& GetTableList() const
@@ -196,7 +161,7 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
         return stringPool;
     }
 
-    // TypeInterface Implementation
+    // TypeInterface
     virtual std::string_view GetTypeName() override
     {
         return "MSI";
@@ -218,11 +183,10 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
         return { 0, 0 };
     }
 
+    // Viewer
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item) override;
-
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
-
     virtual GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
 };
 
@@ -232,7 +196,6 @@ namespace Panels
     {
         Reference<MSIFile> msi;
         Reference<AppCUI::Controls::ListView> general;
-
         void UpdateGeneralInformation();
         void RecomputePanelsPositions();
 

@@ -36,7 +36,7 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
         return false;
 
     // Signature Check
-    auto h = buf.GetObject<MSI::OLEHeader>(0);
+    auto h = buf.GetObject<MSI::OLEHeader>();
     if (h->signature != MSI::OLE_SIGNATURE)
         return false;
 
@@ -45,13 +45,13 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
     if (sectorSize < 512 || sectorSize > 4096)
         return false;
 
-    uint64 minFileSize = 512;
+    /*uint64 minFileSize = 512;
     minFileSize += (uint64) h->numFatSectors * sectorSize;
     minFileSize += (uint64) h->numDirSectors * sectorSize;
     minFileSize += (uint64) h->numMiniFatSectors * sectorSize;
 
     if (buf.GetLength() < minFileSize)
-        return false;
+        return false;*/
 
     return true;
 }
@@ -80,7 +80,15 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     // Container View
     ContainerViewer::Settings settings;
     settings.SetIcon(MSI_ICON);
-    settings.SetColumns({ "n:&Name,a:l,w:60", "n:&Type,a:l,w:10", "n:&Size,a:r,w:15" });
+
+    // Updated Columns for MSI Files
+    settings.SetColumns({ 
+        "n:&Name,a:l,w:40", 
+        "n:&Directory,a:l,w:20", 
+        "n:&Component,a:l,w:20", 
+        "n:&Size,a:r,w:10", 
+        "n:&Version,a:l,w:15" 
+    });
 
     settings.SetEnumerateCallback(msi.ToObjectRef<ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(msi.ToObjectRef<ContainerViewer::OpenItemInterface>());

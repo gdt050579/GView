@@ -1,4 +1,5 @@
 target_sources(MSI PRIVATE 
-	msi.cpp 
+	msi.cpp
+	MSIDatabase.cpp
 	MSIFile.cpp
 	PanelInformation.cpp)
