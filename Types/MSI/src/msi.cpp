@@ -9,6 +9,7 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
+
 // 1 = Transparent/Background
 // w = White/Foreground
 constexpr std::string_view MSI_ICON = "1111111111111111"
@@ -150,10 +151,15 @@ void Information::RecomputePanelsPositions()
 }
 
 // Tables Panel Implementation 
-Tables::Tables(Reference<MSIFile> _msi) : TabPage("&Tables")
+Tables::Tables(Reference<MSIFile> msi) : TabPage("&Tables")
 {
-    msi  = _msi;
-    list = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:100%", { "n:Table Name,w:30", "n:Type,w:15", "n:Rows (Approx),w:15,a:r" }, ListViewFlags::None);
+    this->msi = msi;
+    this->list =
+          Factory::ListView::Create(this, "x:0,y:0,w:100%,h:100%", { "n:Table Name,w:30", "n:Type,w:15", "n:Rows (Approx),w:15,a:r" }, ListViewFlags::None);
+
+    // 2. Set the handler
+    this->list->Handlers()->OnItemPressed = this;
+
     Update();
 }
 
@@ -172,4 +178,15 @@ void Tables::Update()
         list->AddItem({ tbl.name, tbl.type, rowStr });
     }
 }
+
+void Tables::OnListViewItemPressed(Reference<ListView> lv, ListViewItem item)
+{
+    // Get the table name from the first column (index 0)
+    std::string tableName = (std::string) item.GetText(0);
+
+    // Create and show the viewer
+    auto viewer = new GView::Type::MSI::Dialogs::TableViewer(msi, tableName);
+    viewer->Show();
+}
+
 } // namespace GView::Type::MSI::Panels
