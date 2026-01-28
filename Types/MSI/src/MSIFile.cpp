@@ -1,4 +1,4 @@
-#include "msi.hpp"
+﻿#include "msi.hpp"
 
 using namespace GView::Type::MSI;
 using namespace AppCUI::Utils;
@@ -550,51 +550,95 @@ GView::Utils::JsonBuilderInterface* MSIFile::GetSmartAssistantContext(const std:
 
 void MSIFile::UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings)
 {
-    settings.AddZone(0, 512, ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
+    // Header (Sector 0)
+    settings.AddZone(0, 512, ColorPair{ Color::White, Color::Magenta }, "Header");
 
     auto addSectorZone = [&](uint32 sect, ColorPair col, std::string_view name) {
+        if (sect == ENDOFCHAIN || sect == NOSTREAM || sect >= 0xFFFFFFFA)
+            return;
         uint64 offset = (uint64) (sect + 1) * sectorSize;
         settings.AddZone(offset, sectorSize, col, name);
     };
 
-    // FAT & DIFAT
-    std::vector<uint32> fatSectorLocations;
+    // DIFAT & FAT
+    std::vector<uint32> fatSectors;
     for (int i = 0; i < 109; i++) {
-        if (header.difat[i] == ENDOFCHAIN || header.difat[i] == NOSTREAM)
-            break;
-        fatSectorLocations.push_back(header.difat[i]);
+        if (header.difat[i] != ENDOFCHAIN && header.difat[i] != NOSTREAM)
+            fatSectors.push_back(header.difat[i]);
     }
 
     uint32 currDifatSect = header.firstDifatSector;
-    while (currDifatSect != ENDOFCHAIN && currDifatSect != NOSTREAM) {
-        addSectorZone(currDifatSect, ColorPair{ Color::DarkRed, Color::DarkBlue }, "DIFAT");
+    uint32 safetyLimit   = 0;
+    while (currDifatSect != ENDOFCHAIN && currDifatSect != NOSTREAM && safetyLimit++ < 1000) {
+        addSectorZone(currDifatSect, ColorPair{ Color::Red, Color::Black }, "DIFAT Sector");
+
         uint64 offset = (uint64) (currDifatSect + 1) * sectorSize;
         auto view     = this->obj->GetData().Get(offset, sectorSize, true);
         if (!view.IsValid())
             break;
+
         const uint32* ptr = reinterpret_cast<const uint32*>(view.GetData());
         uint32 count      = sectorSize / 4;
+
         for (uint32 k = 0; k < count - 1; k++) {
             if (ptr[k] != ENDOFCHAIN && ptr[k] != NOSTREAM)
-                fatSectorLocations.push_back(ptr[k]);
+                fatSectors.push_back(ptr[k]);
         }
         currDifatSect = ptr[count - 1];
     }
-    for (auto sect : fatSectorLocations) {
-        addSectorZone(sect, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "FAT");
+
+    for (auto sect : fatSectors) {
+        addSectorZone(sect, ColorPair{ Color::Green, Color::Black }, "FAT Sector");
     }
 
-    // Directory
+    // Directory Chain
     uint32 dirSect = header.firstDirSector;
-    while (dirSect != ENDOFCHAIN && dirSect != NOSTREAM && dirSect < FAT.size()) {
-        addSectorZone(dirSect, ColorPair{ Color::Olive, Color::DarkBlue }, "Directory");
+    safetyLimit    = 0;
+    while (dirSect != ENDOFCHAIN && dirSect != NOSTREAM && safetyLimit++ < 5000) {
+        addSectorZone(dirSect, ColorPair{ Color::Olive, Color::Black }, "Directory Sector");
+        if (dirSect >= FAT.size())
+            break;
         dirSect = FAT[dirSect];
     }
 
-    // MiniFAT
+    // MiniFAT Chain
     uint32 minifatSect = header.firstMiniFatSector;
-    while (minifatSect != ENDOFCHAIN && minifatSect != NOSTREAM && minifatSect < FAT.size()) {
-        addSectorZone(minifatSect, ColorPair{ Color::Teal, Color::DarkBlue }, "MiniFAT");
+    safetyLimit        = 0;
+    while (minifatSect != ENDOFCHAIN && minifatSect != NOSTREAM && safetyLimit++ < 5000) {
+        addSectorZone(minifatSect, ColorPair{ Color::Teal, Color::Black }, "MiniFAT Sector");
+        if (minifatSect >= FAT.size())
+            break;
         minifatSect = FAT[minifatSect];
+    }
+
+    // Streams
+    for (auto* entry : linearDirList) {
+        if (entry->data.streamSize == 0)
+            continue;
+
+        std::u16string decodedName = MsiDecompressName(entry->name);
+        AppCUI::Utils::LocalString<256> label;
+        AppCUI::Utils::String tempStr;
+        tempStr.Set(decodedName);
+        label.Set(tempStr.GetText());
+
+        ColorPair cp = { Color::White, Color::DarkBlue };
+        if (decodedName.find(u"SummaryInformation") != std::u16string::npos)
+            cp = { Color::Yellow, Color::Black };
+        else if (!decodedName.empty() && decodedName[0] == u'!')
+            cp = { Color::Aqua, Color::Black };
+        else if (decodedName == u"Root Entry")
+            cp = { Color::Gray, Color::Black };
+
+        if (entry->data.streamSize >= header.miniStreamCutoffSize) {
+            uint32 s             = entry->data.startingSectorLocation;
+            uint32 internalLimit = 0;
+            while (s != ENDOFCHAIN && s != NOSTREAM && internalLimit++ < 10000) {
+                addSectorZone(s, cp, label.GetText());
+                if (s >= FAT.size())
+                    break;
+                s = FAT[s];
+            }
+        }
     }
 }
