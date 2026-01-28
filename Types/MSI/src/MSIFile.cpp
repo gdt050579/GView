@@ -550,95 +550,136 @@ GView::Utils::JsonBuilderInterface* MSIFile::GetSmartAssistantContext(const std:
 
 void MSIFile::UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings)
 {
-    // Header (Sector 0)
-    settings.AddZone(0, 512, ColorPair{ Color::White, Color::Magenta }, "Header");
+    struct SectorTranslator : public GView::View::BufferViewer::OffsetTranslateInterface {
+        uint32 sSize;
+        SectorTranslator(uint32 size) : sSize(size)
+        {
+        }
+
+        uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override
+        {
+            return (uint64_t) (value + 1) * sSize;
+        }
+
+        uint64_t TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override
+        {
+            if (value < 512)
+                return 0;
+            return (value / sSize) - 1;
+        }
+    };
+
+    settings.SetName("MSI Structure");
+    settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+    settings.SetOffsetTranslationList({ "Sector" }, new SectorTranslator(this->sectorSize));
+
+    // ID 0: Header
+    settings.AddBookmark(0, 0);
+
+    // ID 1: Directory
+    if (header.firstDirSector != ENDOFCHAIN)
+        settings.AddBookmark(1, (uint64) (header.firstDirSector + 1) * sectorSize);
+
+    // ID 2: FAT 
+    if (header.difat[0] != ENDOFCHAIN && header.difat[0] != NOSTREAM) {
+        settings.AddBookmark(2, (uint64) (header.difat[0] + 1) * sectorSize);
+    } else if (header.firstDifatSector != ENDOFCHAIN) {
+        settings.AddBookmark(2, (uint64) (header.firstDifatSector + 1) * sectorSize);
+    }
+
+    // ID 3: MiniFAT
+    if (header.firstMiniFatSector != ENDOFCHAIN)
+        settings.AddBookmark(3, (uint64) (header.firstMiniFatSector + 1) * sectorSize);
+
+    // ID 4: Root Entry Data (MiniStream Storage)
+    if (!linearDirList.empty() && linearDirList[0]->data.startingSectorLocation != ENDOFCHAIN) {
+        // Verificați că Root Entry are date
+        uint32 rootSect = linearDirList[0]->data.startingSectorLocation;
+        if (rootSect < 0xFFFFFFFA) {
+            settings.AddBookmark(4, (uint64) (rootSect + 1) * sectorSize);
+        }
+    }
+
+    // ID 5+: Only Big Streams
+    for (auto* entry : linearDirList) {
+        if (entry->data.streamSize < header.miniStreamCutoffSize || entry->data.streamSize == 0)
+            continue;
+
+        std::u16string dName = MsiDecompressName(entry->name);
+
+        if (dName.find(u"DigitalSignature") != std::u16string::npos) {
+            settings.AddBookmark(5, (uint64) (entry->data.startingSectorLocation + 1) * sectorSize);
+        }
+    }
 
     auto addSectorZone = [&](uint32 sect, ColorPair col, std::string_view name) {
-        if (sect == ENDOFCHAIN || sect == NOSTREAM || sect >= 0xFFFFFFFA)
+        if (sect >= 0xFFFFFFFA)
             return;
-        uint64 offset = (uint64) (sect + 1) * sectorSize;
-        settings.AddZone(offset, sectorSize, col, name);
+        settings.AddZone((uint64) (sect + 1) * sectorSize, sectorSize, col, name);
     };
+
+    settings.AddZone(0, 512, ColorPair{ Color::White, Color::Magenta }, "Header");
 
     // DIFAT & FAT
     std::vector<uint32> fatSectors;
-    for (int i = 0; i < 109; i++) {
-        if (header.difat[i] != ENDOFCHAIN && header.difat[i] != NOSTREAM)
+    for (int i = 0; i < 109; i++)
+        if (header.difat[i] < 0xFFFFFFFA)
             fatSectors.push_back(header.difat[i]);
-    }
 
-    uint32 currDifatSect = header.firstDifatSector;
-    uint32 safetyLimit   = 0;
-    while (currDifatSect != ENDOFCHAIN && currDifatSect != NOSTREAM && safetyLimit++ < 1000) {
-        addSectorZone(currDifatSect, ColorPair{ Color::Red, Color::Black }, "DIFAT Sector");
-
-        uint64 offset = (uint64) (currDifatSect + 1) * sectorSize;
-        auto view     = this->obj->GetData().Get(offset, sectorSize, true);
+    uint32 currDifat = header.firstDifatSector;
+    uint32 safety    = 0;
+    while (currDifat < 0xFFFFFFFA && safety++ < 1000) {
+        addSectorZone(currDifat, ColorPair{ Color::Red, Color::Black }, "DIFAT Sector");
+        auto view = this->obj->GetData().Get((uint64) (currDifat + 1) * sectorSize, sectorSize, true);
         if (!view.IsValid())
             break;
-
         const uint32* ptr = reinterpret_cast<const uint32*>(view.GetData());
-        uint32 count      = sectorSize / 4;
-
-        for (uint32 k = 0; k < count - 1; k++) {
-            if (ptr[k] != ENDOFCHAIN && ptr[k] != NOSTREAM)
+        for (uint32 k = 0; k < (sectorSize / 4) - 1; k++)
+            if (ptr[k] < 0xFFFFFFFA)
                 fatSectors.push_back(ptr[k]);
-        }
-        currDifatSect = ptr[count - 1];
+        currDifat = ptr[(sectorSize / 4) - 1];
     }
 
-    for (auto sect : fatSectors) {
+    for (auto sect : fatSectors)
         addSectorZone(sect, ColorPair{ Color::Green, Color::Black }, "FAT Sector");
+
+    // Directory & MiniFAT
+    uint32 ds = header.firstDirSector;
+    safety    = 0;
+    while (ds < FAT.size() && safety++ < 5000) {
+        addSectorZone(ds, ColorPair{ Color::Olive, Color::Black }, "Directory Sector");
+        ds = FAT[ds];
     }
 
-    // Directory Chain
-    uint32 dirSect = header.firstDirSector;
-    safetyLimit    = 0;
-    while (dirSect != ENDOFCHAIN && dirSect != NOSTREAM && safetyLimit++ < 5000) {
-        addSectorZone(dirSect, ColorPair{ Color::Olive, Color::Black }, "Directory Sector");
-        if (dirSect >= FAT.size())
-            break;
-        dirSect = FAT[dirSect];
-    }
-
-    // MiniFAT Chain
-    uint32 minifatSect = header.firstMiniFatSector;
-    safetyLimit        = 0;
-    while (minifatSect != ENDOFCHAIN && minifatSect != NOSTREAM && safetyLimit++ < 5000) {
-        addSectorZone(minifatSect, ColorPair{ Color::Teal, Color::Black }, "MiniFAT Sector");
-        if (minifatSect >= FAT.size())
-            break;
-        minifatSect = FAT[minifatSect];
+    uint32 mfs = header.firstMiniFatSector;
+    safety     = 0;
+    while (mfs < FAT.size() && safety++ < 5000) {
+        addSectorZone(mfs, ColorPair{ Color::Teal, Color::Black }, "MiniFAT Sector");
+        mfs = FAT[mfs];
     }
 
     // Streams
     for (auto* entry : linearDirList) {
-        if (entry->data.streamSize == 0)
+        if (entry->data.streamSize < header.miniStreamCutoffSize)
             continue;
 
-        std::u16string decodedName = MsiDecompressName(entry->name);
-        AppCUI::Utils::LocalString<256> label;
-        AppCUI::Utils::String tempStr;
-        tempStr.Set(decodedName);
-        label.Set(tempStr.GetText());
+        std::u16string dName = MsiDecompressName(entry->name);
+        AppCUI::Utils::String temp;
+        temp.Set(dName);
 
         ColorPair cp = { Color::White, Color::DarkBlue };
-        if (decodedName.find(u"SummaryInformation") != std::u16string::npos)
+        if (dName.find(u"SummaryInformation") != std::u16string::npos)
             cp = { Color::Yellow, Color::Black };
-        else if (!decodedName.empty() && decodedName[0] == u'!')
+        else if (!dName.empty() && dName[0] == u'!')
             cp = { Color::Aqua, Color::Black };
-        else if (decodedName == u"Root Entry")
+        else if (dName == u"Root Entry")
             cp = { Color::Gray, Color::Black };
 
-        if (entry->data.streamSize >= header.miniStreamCutoffSize) {
-            uint32 s             = entry->data.startingSectorLocation;
-            uint32 internalLimit = 0;
-            while (s != ENDOFCHAIN && s != NOSTREAM && internalLimit++ < 10000) {
-                addSectorZone(s, cp, label.GetText());
-                if (s >= FAT.size())
-                    break;
-                s = FAT[s];
-            }
+        uint32 s     = entry->data.startingSectorLocation;
+        uint32 limit = 0;
+        while (s < FAT.size() && limit++ < 10000) {
+            addSectorZone(s, cp, temp.GetText());
+            s = FAT[s];
         }
     }
 }
