@@ -82,6 +82,16 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     ContainerViewer::Settings settings;
     settings.SetIcon(MSI_ICON);
 
+    settings.AddProperty("Type", "MSI (Compound File)");
+    settings.AddProperty("Title", msi->msiMeta.title);
+    settings.AddProperty("Author", msi->msiMeta.author);
+    settings.AddProperty("Path", msi->obj->GetPath());
+
+    std::string sizeAsString;
+    MSI::MSIFile::size_to_string(msi->obj->GetData().GetSize(), sizeAsString);
+
+    settings.AddProperty("Size", sizeAsString);
+
     // Updated Columns for MSI Files
     settings.SetColumns({ 
         "n:&Name,a:l,w:40", 
