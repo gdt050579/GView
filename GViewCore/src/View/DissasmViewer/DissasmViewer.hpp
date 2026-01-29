@@ -666,7 +666,23 @@ namespace View
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
+            virtual std::string_view GetCategoryNameForSerialization() const override
+            {
+                return "View.Dissasm";
+            }
+            virtual bool AddCategoryBeforePropertyNameWhenSerializing() const override
+            {
+                return true;
+            }
 
+            static DissasmColors& GetConfigColors()
+            {
+                return config.ConfigColors;
+            }
+            static bool ConfigColorsHaveChanges()
+            {
+                return config.ConfigColors.hasChanges;
+            }
             void OnFocus() override;
             void OnLoseFocus() override;
 

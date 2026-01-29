@@ -6,11 +6,10 @@ using namespace GView::View;
 constexpr int32 BUTTON_ID_CLOSE = 1;
 constexpr int32 BUTTON_ID_GOTO  = 2;
 
-FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Window("Properties", "d:c,w:78,h:24", WindowFlags::None)
+FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer, AppCUI::Utils::PropertiesInterface* gviewProperties)
+    : Window("Properties", "d:c,w:78,h:24", WindowFlags::None)
 {
     auto t = Factory::Tab::Create(this, "l:1,t:1,r:1,b:3", TabFlags::LeftTabs | TabFlags::TabsBar);
-
-    Factory::TabPage::Create(t, "General");
 
     // process all view modes
     for (uint32 idx = 0; idx < viewContainer->GetChildrenCount(); idx++)
@@ -21,6 +20,15 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
             auto tp_view = Factory::TabPage::Create(t, viewObject->GetName());
             Factory::PropertyList::Create(tp_view, "d:c", viewObject.ToBase<PropertiesInterface>(), PropertyListFlags::Border);
         }
+    }
+
+    auto gviewTabPage = Factory::TabPage::Create(t, "GView");
+    Factory::PropertyList::Create(gviewTabPage, "d:c", Reference<PropertiesInterface>(gviewProperties), PropertyListFlags::Border);
+
+    if (auto propObj = Application::GetAppPropertiesObject()) 
+    {
+        auto tp_view = Factory::TabPage::Create(t, "AppCUI");
+        Factory::PropertyList::Create(tp_view, "d:c", Reference<PropertiesInterface>(propObj), PropertyListFlags::Border);
     }
 
     Factory::Button::Create(this, "&Close", "x:40%,y:22,a:b,w:12", BUTTON_ID_CLOSE);

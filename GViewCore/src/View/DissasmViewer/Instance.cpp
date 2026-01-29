@@ -178,9 +178,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     queryInterface = nullptr;
     if (config.Loaded == false)
         config.Initialize(Cfg);
-    this->ColorMan.InitFromConfigColors(config.ConfigColors);
-    if (!HasFocus())
-        this->ColorMan.OnLostFocus();
+    this->ColorMan.InitFromConfigColors(config.ConfigColors, HasFocus());
     // this->selection.EnableMultiSelection(true);
 
     this->Cursor.lineInView    = 0;

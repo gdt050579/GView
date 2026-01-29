@@ -2,6 +2,7 @@
 
 #include "DropperUI.hpp"
 #include "Artefacts.hpp"
+#include <cassert>
 
 constexpr std::string_view BINARY_PAGE_NAME             = "Binary";
 constexpr std::string_view OBJECTS_PAGE_NAME            = "Objects";
@@ -472,6 +473,11 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
         auto data = item.GetData<ItemMetadata>();
 
         if (eventType == Event::ListViewItemChecked) {
+            if (data == nullptr) {
+                assert(false);
+                return false;
+            }
+
             if (data->parent.has_value()) {
                 data->parent->SetCheck(false);
                 for (auto& c : data->parent->GetData<ItemMetadata>()->children) {
@@ -490,6 +496,10 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
         }
 
         if (eventType == Event::ListViewCurrentItemChanged) {
+            if (data == nullptr) {
+                this->currentObjectDescription->SetText("");
+                return true;
+            }
             const auto& description = data->parent.has_value()
                                             ? TYPES_MAP.at(data->subcategory).description
                                             : OBJECT_DECRIPTION_MAP.at(this->objectsPlugins->GetCurrentItem().GetData<ItemMetadata>()->category);

@@ -184,6 +184,12 @@ uint32 CORE_EXPORT GView::App::GetTypePluginsCount()
     return gviewAppInstance->GetTypePluginsCount();
 }
 
+void FileWindow::ShowFilePropertiesDialog()
+{
+    FileWindowProperties dlg(view, gviewAppInstance);
+    dlg.Show();
+}
+
 class AddNoteWindow : public Controls::Window
 {
     constexpr static int BUTTON_ID_OK    = 10000;

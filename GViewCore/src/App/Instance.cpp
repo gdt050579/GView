@@ -15,6 +15,8 @@ constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
 constexpr uint32 GENERIC_PLUGINS_CMDID = 40000000;
 constexpr uint32 GENERIC_PLUGINS_FRAME = 100;
 
+constexpr uint32 CACHE_SIZE_PROPERTY_ID = 1;
+
 struct GViewMenuCommand {
     std::string_view name;
     int commandID;
@@ -31,8 +33,12 @@ constexpr GViewMenuCommand menuFileList[] = {
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 
-constexpr GViewMenuCommand menuOptionsList[] = { { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
-                                                 { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None } };
+constexpr GViewMenuCommand menuOptionsList[] = { 
+    { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
+    { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None },
+    { "", 0, Key::None },
+    { "Open &Restricted Mode", MenuCommands::OPEN_RESTRICTED_MODE, Key::None },
+};
 
 constexpr GViewMenuCommand menuWindowList[] = {
     { "Arrange &Vertically", MenuCommands::ARRANGE_VERTICALLY, Key::None },
@@ -109,17 +115,12 @@ bool Instance::LoadSettings()
 
     // read instance settings
     auto sect                                  = ini->GetSection("GView");
-    this->defaultCacheSize                     = std::max<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
-
-    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
-        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
-        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
-    };
+    this->defaultCacheSize                     = std::max<>(sect.GetValue("Config.CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
 
     LocalString<64> keyCommand;
-    for (auto& k : localKeys) {
-        keyCommand.SetFormat("Key.%s", k.get().Caption);
-        k.get().Key = sect.GetValue(keyCommand.GetText()).ToKey(k.get().Key);
+    for (auto& k : GViewCommands) {
+        keyCommand.SetFormat("Key.%s", k->Caption);
+        k->Key = sect.GetValue(keyCommand.GetText()).ToKey(k->Key);
     }
     return true;
 }
@@ -592,6 +593,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         case MenuCommands::OPEN_THEME_EDITOR:
             AppCUI::Dialogs::ThemeEditor::Show();
             return true;
+        case MenuCommands::OPEN_RESTRICTED_MODE:
+            ShowRestrictedModeWindow();
+            return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
             auto packedValue = ((uint32) ID) - GENERIC_PLUGINS_CMDID;
@@ -610,11 +614,38 @@ void Instance::OnStart(Reference<Control> control)
 //===============================[PROPERTIES]==================================
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
 {
-    NOT_IMPLEMENTED(false);
+    if (propertyID == CACHE_SIZE_PROPERTY_ID) 
+    {
+        value = this->defaultCacheSize;
+        return true;
+    }
+    for (const auto& key : GViewCommands) {
+        if (key->CommandId == propertyID) {
+            value = key->Key;
+            return true;
+        }
+    }
+
+    return false;
 }
 bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error)
 {
-    NOT_IMPLEMENTED(false);
+    if (propertyID == CACHE_SIZE_PROPERTY_ID) {
+        const uint32 newCacheSize    = std::get<uint32>(value);
+        if (newCacheSize < MIN_CACHE_SIZE) {
+            error.SetFormat("Cache size must be at least %u bytes", MIN_CACHE_SIZE);
+            return false;
+        }
+        this->defaultCacheSize = newCacheSize;
+        return true;
+    }
+    for (const auto& key : GViewCommands) {
+        if (key->CommandId == propertyID) {
+            key->Key = std::get<Key>(value);
+            return true;
+        }
+    }
+    return true;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
 {
@@ -625,5 +656,14 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {};
+    std::vector<Property> properties = {
+        { CACHE_SIZE_PROPERTY_ID, "Config", "CacheSize", PropertyType::UInt32 },
+    };
+
+    properties.reserve(properties.size() + GViewCommands.size());
+    for (const auto& key : GViewCommands) {
+        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
+    }
+
+    return properties;
 }

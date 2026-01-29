@@ -371,6 +371,14 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     void SetCustomPropertyValue(uint32 propertyID) override;
     bool IsPropertyValueReadOnly(uint32 propertyID) override;
     const vector<Property> GetPropertiesList() override;
+    std::string_view GetCategoryNameForSerialization() const override
+    {
+        return "View.Buffer";
+    }
+    bool AddCategoryBeforePropertyNameWhenSerializing() const override
+    {
+        return true;
+    }
 
     uint32 GetSelectionZonesCount() const override
     {

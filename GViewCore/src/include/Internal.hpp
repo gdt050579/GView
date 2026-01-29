@@ -4,6 +4,8 @@
 
 #include <set>
 #include <span>
+#include <array>
+#include <filesystem>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
@@ -478,8 +480,9 @@ namespace App
         constexpr int OPEN_PID          = 120002;
         constexpr int OPEN_PROCESS_TREE = 120003;
 
-        constexpr int CHANGE_THEME      = 130000;
-        constexpr int OPEN_THEME_EDITOR = 130001;
+        constexpr int CHANGE_THEME         = 130000;
+        constexpr int OPEN_THEME_EDITOR    = 130001;
+        constexpr int OPEN_RESTRICTED_MODE = 130002;
 
     }; // namespace MenuCommands
 
@@ -507,6 +510,10 @@ namespace App
         static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR  = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
         static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE     = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
         static GView::KeyboardControl INSTANCE_ANALYSIS_ENGINE   = { Input::Key::Alt | Input::Key::F12, "AnalysisEngine", "Show the AnalysisEngine", CMD_ANALYSIS_ENGINE };
+
+        static const std::array GViewCommands = {
+    &INSTANCE_CHANGE_VIEW, &INSTANCE_SWITCH_TO_VIEW, &INSTANCE_COMMAND_GOTO, &FILE_WINDOW_COMMAND_FIND, &INSTANCE_CHOOSE_TYPE, &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_ANALYSIS_ENGINE
+        };
     }
 
     class Instance : public AppCUI::Utils::PropertiesInterface,
@@ -533,6 +540,7 @@ namespace App
         void ShowTutorial();
         void ShowAboutWindow();
         void ShowChangeThemeWindow();
+        void ShowRestrictedModeWindow();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
@@ -616,6 +624,14 @@ namespace App
         virtual void SetCustomPropertyValue(uint32 propertyID) override;
         virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
         virtual const vector<Property> GetPropertiesList() override;
+        virtual std::string_view GetCategoryNameForSerialization() const override
+        {
+            return "GView";
+        }
+        virtual bool AddCategoryBeforePropertyNameWhenSerializing() const override
+        {
+            return true;
+        }
 
         // AppCUI Handlers
         virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
@@ -687,7 +703,7 @@ namespace App
     class FileWindowProperties : public Window
     {
       public:
-        FileWindowProperties(Reference<Tab> viewContainer);
+        FileWindowProperties(Reference<Tab> viewContainer, AppCUI::Utils::PropertiesInterface* gviewProperties);
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
 
@@ -803,4 +819,90 @@ namespace App
         virtual bool RegisterKey(KeyboardControl* key) override;
     };
 } // namespace App
+
+namespace Security
+{
+    namespace RestrictedMode::Internal
+    {
+        // Internal API - called by GViewCore components
+        Utils::GStatus Activate(const RestrictedMode::Policy& policy) noexcept;
+        void Deactivate() noexcept;
+        bool IsFeatureDisabled(RestrictedMode::Feature feature) noexcept;
+        bool IsPluginAllowed(std::string_view pluginName) noexcept;
+        std::string GetWatermark() noexcept;
+
+        // Window-level screen protection (call with HWND on Windows, or nullptr on other platforms)
+        // Uses SetWindowDisplayAffinity on Windows 10 2004+ to prevent screen capture
+        Utils::GStatus EnableWindowScreenProtection(void* nativeWindowHandle) noexcept;
+        void DisableWindowScreenProtection(void* nativeWindowHandle) noexcept;
+    } // namespace RestrictedMode::Internal
+
+    namespace Crypto
+    {
+        // EncryptedBlob definition for internal use
+        struct EncryptedBlob {
+            std::vector<uint8_t> iv;
+            std::vector<uint8_t> ciphertext;
+            std::vector<uint8_t> tag;
+            std::vector<uint8_t> aad;
+        };
+
+        namespace Internal
+        {
+            // Encryption/Decryption
+            Utils::GStatus EncryptAES256GCM(
+                  const std::vector<uint8_t>& plaintext,
+                  const std::vector<uint8_t>& key,
+                  const std::vector<uint8_t>& aad,
+                  EncryptedBlob& outBlob) noexcept;
+
+            Utils::GStatus DecryptAES256GCM(
+                  const EncryptedBlob& blob,
+                  const std::vector<uint8_t>& key,
+                  std::vector<uint8_t>& outPlaintext) noexcept;
+
+            // Hashing
+            Utils::GStatus ComputeSHA256(
+                  const std::vector<uint8_t>& data,
+                  std::vector<uint8_t>& outHash) noexcept;
+
+            Utils::GStatus ComputeFileSHA256(
+                  const std::filesystem::path& filePath,
+                  std::vector<uint8_t>& outHash) noexcept;
+
+            // Key derivation
+            Utils::GStatus DeriveKeyHKDF(
+                  const std::vector<uint8_t>& inputKey,
+                  const std::vector<uint8_t>& salt,
+                  const std::vector<uint8_t>& info,
+                  size_t outputLength,
+                  std::vector<uint8_t>& outKey) noexcept;
+
+            // Random generation
+            Utils::GStatus GenerateRandomBytes(size_t length, std::vector<uint8_t>& outBytes) noexcept;
+
+            // Memory security
+            void SecureErase(void* ptr, size_t size) noexcept;
+        } // namespace Internal
+    } // namespace Crypto
+
+    namespace PluginVerification
+    {
+        struct PluginHash {
+            std::string pluginName;
+            std::vector<uint8_t> expectedHash; // SHA-256
+        };
+
+        // Verify all loaded plugins against expected hashes
+        Utils::GStatus VerifyPlugins(
+              const std::vector<PluginHash>& expectedHashes,
+              std::vector<std::string>& failedPlugins) noexcept;
+
+        // Compute hash of a plugin file
+        Utils::GStatus ComputePluginHash(
+              const std::filesystem::path& pluginPath,
+              std::vector<uint8_t>& outHash) noexcept;
+    } // namespace PluginVerification
+} // namespace Security
+
 } // namespace GView
