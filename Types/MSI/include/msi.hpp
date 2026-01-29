@@ -39,7 +39,7 @@ struct OLEHeader {
 struct DirectoryEntryData {
     char16 name[32];
     uint16 nameLength;
-    uint8 objectType; // 1=Storage, 2=Stream, 5=Root
+    uint8 objectType; // 0=Unknown 1=Storage, 2=Stream, 5=Root
     uint8 colorFlag;
     uint32 leftSiblingId;
     uint32 rightSiblingId;
