@@ -4,6 +4,9 @@ using namespace GView::Type::MSI;
 using namespace AppCUI::Utils;
 
 MSIFile::MSIFile()
+    : header{},
+      sectorSize{0},
+      miniSectorSize{0}
 {
 }
 
@@ -79,6 +82,7 @@ bool MSIFile::LoadFAT()
 
     // 3. Load FAT Sectors
     for (uint32 sect : difatList) {
+        // The xth sector AFTER the header (header is sector -1)
         uint64 offset = (uint64) (sect + 1) * sectorSize;
         auto view     = this->obj->GetData().Get(offset, sectorSize, true);
         if (view.IsValid()) {
@@ -96,14 +100,12 @@ bool MSIFile::LoadDirectory()
     Buffer dirStream = GetStream(header.firstDirSector, 0, false);
     CHECK(dirStream.GetLength() > 0, false, "Failed to read Directory stream");
 
+    // The directory entry size is fixed at 128 bytes
     uint32 count = (uint32) dirStream.GetLength() / 128;
     linearDirList.clear();
 
     if (count > 0) {
         const DirectoryEntryData* d = (const DirectoryEntryData*) dirStream.GetData();
-
-        // [REMOVED] The manual parsing of d[0] (Root Entry) here was useless
-        // because the loop below starts at i=0 and does the exact same thing.
 
         for (uint32 i = 0; i < count; i++) {
             DirEntry* e = new DirEntry();
@@ -113,14 +115,12 @@ bool MSIFile::LoadDirectory()
             if (e->data.nameLength > 0) {
                 size_t charCount = e->data.nameLength / 2;
 
-                // Safety clamp (OLE name max is 32 chars)
+                // Safety clamp
                 if (charCount > 32)
                     charCount = 32;
 
-                // Strip the null terminator if present
-                if (charCount > 0 && d[i].name[charCount - 1] == 0) {
-                    charCount--;
-                }
+                // Strip the null terminator
+                charCount--;
 
                 e->name.assign(d[i].name, charCount);
                 e->decodedName = MsiDecompressName(e->name);
@@ -168,10 +168,12 @@ AppCUI::Utils::Buffer MSIFile::GetStream(uint32 startSector, uint64 size, bool i
             break;
 
         if (isMini) {
+            // Sector 0 is at offset 0 of the MiniStream
             uint64 fileOffset = (uint64) sect * sSize;
             if (fileOffset + sSize <= miniStream.GetLength())
                 result.Add(BufferView(miniStream.GetData() + fileOffset, sSize));
         } else {
+            // Logical "Sector 0" starts at Physical Block 1
             uint64 fileOffset = (uint64) (sect + 1) * sSize;
             auto chunk        = this->obj->GetData().CopyToBuffer(fileOffset, sSize);
             if (chunk.IsValid())
@@ -461,12 +463,33 @@ std::u16string MSIFile::MsiDecompressName(std::u16string_view encoded)
     return result;
 }
 
-// Update PopulateItem to use SanitizeName
+// --- Viewer Interface ---
+
+bool MSIFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+{
+    // Mode 1: Database View
+    if (!msiFiles.empty()) {
+        if (path.empty()) {
+            currentIterIndex = 0;
+            return true;
+        }
+        return false;
+    }
+
+    // Mode 2: Raw Stream View
+    currentIterIndex = 0;
+    if (path.empty())
+        currentIterFolder = &rootDir;
+    else
+        currentIterFolder = parent.GetData<DirEntry*>();
+
+    return currentIterFolder != nullptr;
+}
+
 bool MSIFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
 {
     // Mode 1: Parsed Files
     if (!msiFiles.empty()) {
-        // ... (Same as before) ...
         if (currentIterIndex >= msiFiles.size())
             return false;
         const auto& file = msiFiles[currentIterIndex];
@@ -502,31 +525,8 @@ bool MSIFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
         item.SetExpandable(false);
     }
 
-    if (child->id < linearDirList.size()) {
-        item.SetData<DirEntry>(linearDirList[child->id]);
-    }
+    item.SetData<DirEntry>(child);
     return true;
-}
-
-// --- Viewer Interface ---
-
-bool MSIFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
-{
-    if (!msiFiles.empty()) {
-        if (path.empty()) {
-            currentIterIndex = 0;
-            return true;
-        }
-        return false;
-    }
-
-    currentIterIndex = 0;
-    if (path.empty())
-        currentIterFolder = &rootDir;
-    else
-        currentIterFolder = parent.GetData<DirEntry*>();
-
-    return currentIterFolder != nullptr;
 }
 
 void MSIFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
