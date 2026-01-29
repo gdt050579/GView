@@ -295,6 +295,27 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
         utf8.Set(tempW);
         return std::string(utf8.GetText());
     }
+    
+    static inline void size_to_string(uint64 value, std::string& result)
+    {
+        const char* units[] = { "Bytes", "KB", "MB", "GB", "TB", "PB" };
+        int unitIndex       = 0;
+        double doubleValue  = static_cast<double>(value);
+
+        while (doubleValue >= 1024.0 && unitIndex < 5) {
+            doubleValue /= 1024.0;
+            unitIndex++;
+        }
+
+        char buffer[32];
+        if (unitIndex == 0) {
+            snprintf(buffer, sizeof(buffer), "%llu %s", value, units[unitIndex]);
+        } else {
+            snprintf(buffer, sizeof(buffer), "%.2f %s", doubleValue, units[unitIndex]);
+        }
+
+        result = buffer;
+    }
 };
 
 namespace Panels
