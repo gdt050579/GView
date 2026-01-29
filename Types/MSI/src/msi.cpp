@@ -9,7 +9,6 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-
 // 1 = Transparent/Background
 // w = White/Foreground
 constexpr std::string_view MSI_ICON = "1111111111111111"
@@ -93,13 +92,7 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     settings.AddProperty("Size", sizeAsString);
 
     // Updated Columns for MSI Files
-    settings.SetColumns({ 
-        "n:&Name,a:l,w:40", 
-        "n:&Directory,a:l,w:20", 
-        "n:&Component,a:l,w:20", 
-        "n:&Size,a:r,w:10", 
-        "n:&Version,a:l,w:15" 
-    });
+    settings.SetColumns({ "n:&Name,a:l,w:40", "n:&Directory,a:l,w:20", "n:&Component,a:l,w:20", "n:&Size,a:r,w:10", "n:&Version,a:l,w:15" });
 
     settings.SetEnumerateCallback(msi.ToObjectRef<ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(msi.ToObjectRef<ContainerViewer::OpenItemInterface>());
@@ -110,6 +103,7 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 
     // Panels
     win->AddPanel(Pointer<TabPage>(new MSI::Panels::Information(msi)), true);
+    win->AddPanel(Pointer<TabPage>(new MSI::Panels::Files(msi)), true);
     win->AddPanel(Pointer<TabPage>(new MSI::Panels::Tables(msi)), true);
 
     return true;
@@ -187,10 +181,11 @@ void Information::UpdateGeneralInformation()
     general->AddItem({ "Character Count", msi->msiMeta.characterCount ? std::to_string(msi->msiMeta.characterCount) : "" });
 
     // --- Security ---
-    general->AddItem({ "Security",
-                       msi->msiMeta.security == 0   ? "None"
-                       : msi->msiMeta.security == 2 ? "Read-only recommended"
-                                                    : std::to_string(msi->msiMeta.security) });
+    general->AddItem(
+          { "Security",
+            msi->msiMeta.security == 0   ? "None"
+            : msi->msiMeta.security == 2 ? "Read-only recommended"
+                                         : std::to_string(msi->msiMeta.security) });
 
     // --- Stream info ---
     general->AddItem({ "SummaryInformation Size", std::to_string(msi->msiMeta.totalSize) + " bytes" });
@@ -202,7 +197,7 @@ void Information::RecomputePanelsPositions()
         general->Resize(GetWidth(), GetHeight());
 }
 
-// Tables Panel Implementation 
+// Tables Panel Implementation
 Tables::Tables(Reference<MSIFile> msi) : TabPage("&Tables")
 {
     this->msi = msi;
@@ -239,6 +234,29 @@ void Tables::OnListViewItemPressed(Reference<ListView> lv, ListViewItem item)
     // Create and show the viewer
     auto viewer = new GView::Type::MSI::Dialogs::TableViewer(msi, tableName);
     viewer->Show();
+}
+
+// Files Panel Implementation
+Files::Files(Reference<MSIFile> msi) : TabPage("&Files")
+{
+    this->msi  = msi;
+    this->list = Factory::ListView::Create(
+          this,
+          "x:0,y:0,w:100%,h:100%",
+          { "n:Name,w:30", "n:Directory,w:40", "n:Size,w:10,a:r", "n:Version,w:15", "n:Component,w:20" },
+          ListViewFlags::AllowMultipleItemsSelection);
+
+    Update();
+}
+
+void Files::Update()
+{
+    list->DeleteAllItems();
+    const auto& files = msi->GetMsiFiles();
+
+    for (const auto& f : files) {
+        list->AddItem({ f.Name, f.Directory, std::to_string(f.Size), f.Version, f.Component });
+    }
 }
 
 } // namespace GView::Type::MSI::Panels

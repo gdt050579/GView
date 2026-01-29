@@ -173,6 +173,10 @@ class MSIFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     {
         return stringPool;
     }
+    const std::vector<MsiFileEntry>& GetMsiFiles() const
+    {
+        return msiFiles;
+    }
 
     std::vector<std::vector<AppCUI::Utils::String>> ReadTableData(const std::string& tableName);
     const MsiTableDef* GetTableDefinition(const std::string& tableName) const;
@@ -344,6 +348,21 @@ namespace Panels
         Tables(Reference<MSIFile> msi);
         void Update();
         void OnListViewItemPressed(Reference<ListView> lv, ListViewItem item) override;
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            if (list.IsValid())
+                list->Resize(GetWidth(), GetHeight());
+        }
+    };
+
+    class Files : public AppCUI::Controls::TabPage
+    {
+        Reference<MSIFile> msi;
+        Reference<AppCUI::Controls::ListView> list;
+
+      public:
+        Files(Reference<MSIFile> msi);
+        void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
         {
             if (list.IsValid())
