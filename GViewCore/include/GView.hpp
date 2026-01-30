@@ -1623,6 +1623,25 @@ namespace View
         };
     }; // namespace GridViewer
 
+    namespace DumpViewer
+    {
+
+        struct CORE_EXPORT Settings {
+            void* data;
+            Settings();
+            void SetLeftColumnName(String lName);
+            void SetRightColumnName(String rName);
+            void AddLeftColumnInfo(std::vector<String> lColumn);
+            void AddRightColumnInfo(std::vector<String> rColumn);
+            void AddThreadInfo(std::vector<String> ti);
+            void AddModuleInfo(std::vector<String> mi);
+            void AddHighlightedInfo(std::vector<String> hi);
+            void AddHighlightedInfoLeft(std::vector<String> hlColumn);
+            void AddHighlightedInfoRight(std::vector<String> hrColumn);
+        };
+    }; // namespace ImageViewer
+
+
     namespace DissasmViewer // StructureViewer
     {
         using TypeID = uint32;
