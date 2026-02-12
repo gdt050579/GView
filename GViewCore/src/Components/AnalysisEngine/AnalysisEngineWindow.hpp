@@ -98,6 +98,7 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
     //Reference<ListView> listView;
     Reference<Label> statusLabel;
     Reference<Label> predicatesLabel;
+    Reference<CheckBox> closeWindowForNewSubject;
 
     std::unordered_map<SubjectId, SubjectParentInfo> subjects_hierarchy;
     std::unordered_map<SubjectId, Subject> windows;

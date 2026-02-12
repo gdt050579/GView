@@ -21,14 +21,12 @@ AnalysisEngineWindow::AnalysisEngineWindow(Reference<RuleEngine> engine)
     // listView = Factory::ListView::Create(
     //       this, "x:1,y:1,w:99%,h:70%", { "n:RuleID,w:10%", "n:Confidence,w:10%", "n:Action,w:20%", "n:Message,w:59%" }, ListViewFlags::PopupSearchBar);
 
-    auto y = detailsTree->GetHeight() + 1;
-    LocalString<128> ls;
-    ls.Format("x:1,y:%d, w:99", y);
-    statusLabel = Factory::Label::Create(this, "Press F12 to get hints", ls.GetText());
-
-    y += 1;
-    ls.Format("x:1,y:%d, w:99", y);
-    predicatesLabel = Factory::Label::Create(this, "Predicates: ", ls.GetText());
+    statusLabel = Factory::Label::Create(this, "Press F12 to get hints", "l:1,b:3,w:99%");
+    predicatesLabel = Factory::Label::Create(this, "Predicates: ", "l:1,b:2,w:99%");
+    closeWindowForNewSubject = Factory::CheckBox::Create(this, "Close window when opening new subject", "l:1,b:1,w:99%");
+#ifndef _DEBUG
+    closeWindowForNewSubject->SetChecked(true);
+#endif
 
     // listView->Handlers()->OnItemPressed        = this;
     // listView->Handlers()->OnCurrentItemChanged = this;
@@ -95,7 +93,6 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     if (!data.IsValid())
         return;
     ActId action_id                = data->action_id;
-    bool shouldCloseAnalysisWindow = false;
     SuggestionId suggestion_id     = data->suggestion_id;
 
     data->subject        = "";
@@ -130,6 +127,7 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     }
     parent_subject->owner = action_owner->second;
 
+    bool shouldCloseAnalysisWindow = false;
     if (!engine->TryExecuteSuggestionBySuggestionId(suggestion_id, shouldCloseAnalysisWindow)) {
         Dialogs::MessageBox::ShowNotification("Suggestion error", "Failed to execute suggestion!");
         parent_subject->ResetOwnerToSelf();
@@ -140,7 +138,7 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
     predicatesLabel->SetText("Predicates: ");
     DrawSuggestions();
 
-    if (shouldCloseAnalysisWindow) {
+    if (shouldCloseAnalysisWindow && closeWindowForNewSubject->IsChecked()) {
         tree_data_needs_rebuild = true;
         Exit(Dialogs::Result::Ok);
     }

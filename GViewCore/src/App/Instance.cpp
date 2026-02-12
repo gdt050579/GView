@@ -82,6 +82,7 @@ Instance::Instance() : analysisEngine(new RuleEngine())
     this->mnuWindow                = nullptr;
     this->mnuHelp                  = nullptr;
     this->mnuFile                  = nullptr;
+    this->mnuOptions               = nullptr;
     this->lastOpenedFolderLocation = ".";
 }
 bool Instance::LoadSettings()
