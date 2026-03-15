@@ -5,7 +5,7 @@ GView is configured via ``GView.ini`` file (that should be located next to GView
 
 The following section should be seen in a ``GView.ini`` file:
 
-* ``[GView]`` - a section with the general configuration for GView. Tipically it contains associated key for changing the view, cache size, etc.
+* ``[GView]`` - a section with the general configuration for GView. Typically it contains associated key for changing the view, cache size, etc.
 * ``[AppCUI]`` - a section with the general configuration for AppCUI framework (color, frontend, etc)
 * ``[Type.<XXX>]`` - various sections that describe characteristics of each supported type in GView
 * ``[View.<xxx>]`` - various section for each smart view
@@ -13,7 +13,7 @@ The following section should be seen in a ``GView.ini`` file:
 Types
 -----
 
-A ``[Type.xxx]``` section usually contains the following:
+A ``[Type.xxx]`` section usually contains the following:
 
 * a `Description` field that explains the type of the plugin
 * a `Extension` field that can be a simple string or a list of strings containing the list of extensions associated with this field.
@@ -37,7 +37,7 @@ A ``[Type.xxx]``` section usually contains the following:
 | Rule             | Type    | Usage                                            | Example                        |
 +==================+=========+==================================================+================================+
 | magic            | Binary  | Identifies a binary magic from the start of the  | **magic**:FF 20 30             |
-|                  | Files   | file. A magic must be foollowed by a list of hex |                                |
+|                  | Files   | file. A magic must be followed by a list of hex  |                                |
 |                  |         | values separated with spaces                     |                                |
 +------------------+---------+--------------------------------------------------+--------------------------------+
 | startswith       | Text    | Checks if a file starts with a specific text     | **startswith**:#include        |
@@ -57,6 +57,6 @@ A ``[Type.xxx]``` section usually contains the following:
   
   ..  code-block:: ini
 
-      Pattern = ["startswith:ABC","linestartswith:test"] ; identifies a text file where either the firs line starts with `ABC`  
+      Pattern = ["startswith:ABC","linestartswith:test"] ; identifies a text file where either the first line starts with `ABC`  
                                                          ; or there is a line within the first 10 lines that starts with `test`
 
