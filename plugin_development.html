@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plugin development &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="GView Core" href="core.html" />
+    <link rel="prev" title="Security and restricted mode" href="security.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GView
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Plugin development</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#public-vs-internal-api">Public vs internal API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#type-plugin-contract">Type plugin contract</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#smart-viewers">Smart viewers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#key-interfaces">Key interfaces</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#adding-a-new-type-plugin">Adding a new Type plugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#coding-conventions">Coding conventions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#common-patterns">Common patterns</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#creating-viewers-in-populatewindow">Creating viewers in PopulateWindow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#reading-file-data">Reading file data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#positiontocolorinterface-buffer-highlighting">PositionToColorInterface (buffer highlighting)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#generic-plugins">Generic plugins</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quick-reference">Quick reference</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GView</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Plugin development</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/plugin_development.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="plugin-development">
+<h1>Plugin development<a class="headerlink" href="#plugin-development" title="Permalink to this heading"></a></h1>
+<p>This page is for developers who want to add new file format support (Type plugins) or
+extend GView. Use the public API only; internal APIs are not stable for plugins.</p>
+<section id="public-vs-internal-api">
+<h2>Public vs internal API<a class="headerlink" href="#public-vs-internal-api" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>GView.hpp</strong> (<code class="docutils literal notranslate"><span class="pre">GViewCore/include/GView.hpp</span></code>) — Public API. All types, interfaces,
+and utilities for plugins live here. Plugins must rely only on this header.</p></li>
+<li><p><strong>Internal.hpp</strong> (<code class="docutils literal notranslate"><span class="pre">GViewCore/src/include/Internal.hpp</span></code>) — Private implementation.
+Used only inside GViewCore. Do not use in Type or Generic plugins.</p></li>
+</ul>
+</section>
+<section id="type-plugin-contract">
+<h2>Type plugin contract<a class="headerlink" href="#type-plugin-contract" title="Permalink to this heading"></a></h2>
+<p>Every Type plugin must export these C functions (<code class="docutils literal notranslate"><span class="pre">extern</span> <span class="pre">&quot;C&quot;</span></code>):</p>
+<ul class="simple">
+<li><p><strong>Validate</strong> — Return whether a buffer matches this file type (magic, extension, etc.).</p></li>
+<li><p><strong>CreateInstance</strong> — Return a new instance of your TypeInterface implementation.</p></li>
+<li><p><strong>PopulateWindow</strong> — Configure viewers and panels for the opened file.</p></li>
+<li><p><strong>UpdateSettings</strong> — Register patterns, priority, and commands in the INI layer.</p></li>
+</ul>
+<p>Your plugin class must inherit <code class="docutils literal notranslate"><span class="pre">GView::TypeInterface</span></code> and implement:</p>
+<ul class="simple">
+<li><p><strong>GetTypeName()</strong> — Plugin display name.</p></li>
+<li><p><strong>RunCommand(string_view)</strong> — Handle custom commands (e.g. from menus).</p></li>
+<li><p><strong>UpdateKeys(KeyboardControlsInterface*)</strong> — Register keyboard shortcuts.</p></li>
+<li><p><strong>GetSmartAssistantContext(…)</strong> — Provide context for the smart assistant (can return minimal JSON).</p></li>
+</ul>
+</section>
+<section id="smart-viewers">
+<h2>Smart viewers<a class="headerlink" href="#smart-viewers" title="Permalink to this heading"></a></h2>
+<p>Each Type plugin chooses which viewers to create in <code class="docutils literal notranslate"><span class="pre">PopulateWindow</span></code>. Available
+viewers and their settings classes:</p>
+<ul class="simple">
+<li><p><strong>BufferViewer</strong> — Hex/binary with zones, colors, bookmarks. Settings:
+<code class="docutils literal notranslate"><span class="pre">GView::View::BufferViewer::Settings</span></code></p></li>
+<li><p><strong>TextViewer</strong> — Plain text with line wrapping. Settings:
+<code class="docutils literal notranslate"><span class="pre">GView::View::TextViewer::Settings</span></code></p></li>
+<li><p><strong>LexicalViewer</strong> — Syntax-highlighted code with folding. Settings:
+<code class="docutils literal notranslate"><span class="pre">GView::View::LexicalViewer::Settings</span></code></p></li>
+<li><p><strong>ImageViewer</strong> — Image display. Settings: <code class="docutils literal notranslate"><span class="pre">GView::View::ImageViewer::Settings</span></code></p></li>
+<li><p><strong>GridViewer</strong> — Tabular data (CSV, etc.). Settings:
+<code class="docutils literal notranslate"><span class="pre">GView::View::GridViewer::Settings</span></code></p></li>
+<li><p><strong>DissasmViewer</strong> — Disassembly (Capstone) with type annotations. Settings:
+<code class="docutils literal notranslate"><span class="pre">GView::View::DissasmViewer::Settings</span></code></p></li>
+<li><p><strong>ContainerViewer</strong> — Tree view for archives / container content. Settings:
+<code class="docutils literal notranslate"><span class="pre">GView::View::ContainerViewer::Settings</span></code></p></li>
+</ul>
+</section>
+<section id="key-interfaces">
+<h2>Key interfaces<a class="headerlink" href="#key-interfaces" title="Permalink to this heading"></a></h2>
+<p><strong>Object</strong> — The opened file, buffer, or process. From <code class="docutils literal notranslate"><span class="pre">TypeInterface</span></code> you get
+<code class="docutils literal notranslate"><span class="pre">obj</span></code> (pointer to Object). Use <code class="docutils literal notranslate"><span class="pre">obj-&gt;GetData()</span></code> for a <code class="docutils literal notranslate"><span class="pre">DataCache&amp;</span></code> and
+<code class="docutils literal notranslate"><span class="pre">obj-&gt;GetName()</span></code> / <code class="docutils literal notranslate"><span class="pre">obj-&gt;GetPath()</span></code> for identification.</p>
+<p><strong>DataCache</strong> — Cached access to file/buffer data. Use <code class="docutils literal notranslate"><span class="pre">Get(offset,</span> <span class="pre">size,</span> <span class="pre">failIfCannotRead)</span></code>
+for a <code class="docutils literal notranslate"><span class="pre">BufferView</span></code>, <code class="docutils literal notranslate"><span class="pre">CopyToBuffer(...)</span></code> for a copy, and <code class="docutils literal notranslate"><span class="pre">Copy&lt;T&gt;(offset,</span> <span class="pre">object)</span></code> to
+read a struct. <code class="docutils literal notranslate"><span class="pre">GetSize()</span></code> gives the total size.</p>
+<p><strong>WindowInterface</strong> — In <code class="docutils literal notranslate"><span class="pre">PopulateWindow</span></code> you receive a <code class="docutils literal notranslate"><span class="pre">Reference&lt;WindowInterface&gt;</span></code>.
+Call <code class="docutils literal notranslate"><span class="pre">GetObject()</span></code> to get the Object, <code class="docutils literal notranslate"><span class="pre">CreateViewer(settings)</span></code> for each viewer,
+and <code class="docutils literal notranslate"><span class="pre">AddPanel(Pointer&lt;TabPage&gt;(...),</span> <span class="pre">vertical)</span></code> for custom panels.</p>
+</section>
+<section id="adding-a-new-type-plugin">
+<h2>Adding a new Type plugin<a class="headerlink" href="#adding-a-new-type-plugin" title="Permalink to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Create a directory under <code class="docutils literal notranslate"><span class="pre">Types/YOUR_PLUGIN/</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">Types/MyFormat/</span></code>).</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">include/your_plugin.hpp</span></code> with your TypeInterface implementation.</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">src/your_plugin.cpp</span></code> (and optional panels) with the exported functions
+(Validate, CreateInstance, PopulateWindow, UpdateSettings).</p></li>
+<li><p>Add a <code class="docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code> (copy from an existing Type such as <code class="docutils literal notranslate"><span class="pre">Types/PREFETCH</span></code>).</p></li>
+<li><p>In the repository root <code class="docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code>, add <code class="docutils literal notranslate"><span class="pre">add_subdirectory(Types/YOUR_PLUGIN)</span></code>.</p></li>
+</ol>
+</section>
+<section id="coding-conventions">
+<h2>Coding conventions<a class="headerlink" href="#coding-conventions" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>C++20</strong> — Required (set in CMake).</p></li>
+<li><p><strong>Naming</strong> — PascalCase for types and functions, camelCase for variables.</p></li>
+<li><p><strong>Strings</strong> — Prefer <code class="docutils literal notranslate"><span class="pre">std::string_view</span></code>; use <code class="docutils literal notranslate"><span class="pre">FixSizeString&lt;N&gt;</span></code> or
+<code class="docutils literal notranslate"><span class="pre">LocalString&lt;N&gt;</span></code> for fixed/stack buffers.</p></li>
+<li><p><strong>Pointers</strong> — Use <code class="docutils literal notranslate"><span class="pre">Reference&lt;T&gt;</span></code> (non-owning) and <code class="docutils literal notranslate"><span class="pre">Pointer&lt;T&gt;</span></code> (owning) from
+AppCUI; avoid raw <code class="docutils literal notranslate"><span class="pre">new</span></code>/<code class="docutils literal notranslate"><span class="pre">delete</span></code>.</p></li>
+<li><p><strong>Errors</strong> — Use <code class="docutils literal notranslate"><span class="pre">CHECK(condition,</span> <span class="pre">returnValue,</span> <span class="pre">&quot;message&quot;)</span></code> for validation;
+<code class="docutils literal notranslate"><span class="pre">GView::Utils::ErrorList</span></code> for multiple errors; <code class="docutils literal notranslate"><span class="pre">GView::Utils::GStatus</span></code> when
+returning a status message.</p></li>
+<li><p><strong>Data access</strong> — Use <code class="docutils literal notranslate"><span class="pre">DataCache</span></code> and <code class="docutils literal notranslate"><span class="pre">BufferView</span></code>; avoid unnecessary copies.</p></li>
+</ul>
+</section>
+<section id="common-patterns">
+<h2>Common patterns<a class="headerlink" href="#common-patterns" title="Permalink to this heading"></a></h2>
+<section id="creating-viewers-in-populatewindow">
+<h3>Creating viewers in PopulateWindow<a class="headerlink" href="#creating-viewers-in-populatewindow" title="Permalink to this heading"></a></h3>
+<p>Get your type from the window, configure the settings (zones, callbacks), then create
+the viewer and add panels:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">PLUGIN_EXPORT</span> <span class="nb">bool</span> <span class="n">PopulateWindow</span><span class="p">(</span><span class="n">Reference</span><span class="o">&lt;</span><span class="n">GView</span><span class="p">::</span><span class="n">View</span><span class="p">::</span><span class="n">WindowInterface</span><span class="o">&gt;</span> <span class="n">win</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">auto</span> <span class="n">myType</span> <span class="o">=</span> <span class="n">win</span><span class="o">-&gt;</span><span class="n">GetObject</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">GetContentType</span><span class="o">&lt;</span><span class="n">MyTypeFile</span><span class="o">&gt;</span><span class="p">();</span>
+
+    <span class="n">BufferViewer</span><span class="p">::</span><span class="n">Settings</span> <span class="n">settings</span><span class="p">;</span>
+    <span class="n">settings</span><span class="o">.</span><span class="n">AddZone</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">sizeof</span><span class="p">(</span><span class="n">Header</span><span class="p">),</span> <span class="n">ColorPair</span><span class="p">{</span><span class="n">Color</span><span class="p">::</span><span class="n">White</span><span class="p">,</span> <span class="n">Color</span><span class="p">::</span><span class="n">DarkBlue</span><span class="p">},</span> <span class="s2">&quot;Header&quot;</span><span class="p">);</span>
+    <span class="n">settings</span><span class="o">.</span><span class="n">SetPositionToColorCallback</span><span class="p">(</span><span class="n">myType</span><span class="o">.</span><span class="n">ToBase</span><span class="o">&lt;</span><span class="n">BufferViewer</span><span class="p">::</span><span class="n">PositionToColorInterface</span><span class="o">&gt;</span><span class="p">());</span>
+    <span class="n">win</span><span class="o">-&gt;</span><span class="n">CreateViewer</span><span class="p">(</span><span class="n">settings</span><span class="p">);</span>
+
+    <span class="n">win</span><span class="o">-&gt;</span><span class="n">AddPanel</span><span class="p">(</span><span class="n">Pointer</span><span class="o">&lt;</span><span class="n">TabPage</span><span class="o">&gt;</span><span class="p">(</span><span class="n">new</span> <span class="n">MyPanel</span><span class="p">(</span><span class="n">myType</span><span class="p">,</span> <span class="n">win</span><span class="p">)),</span> <span class="n">true</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">true</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="reading-file-data">
+<h3>Reading file data<a class="headerlink" href="#reading-file-data" title="Permalink to this heading"></a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">Object::GetData()</span></code> to get a <code class="docutils literal notranslate"><span class="pre">DataCache&amp;</span></code>. Use <code class="docutils literal notranslate"><span class="pre">Copy&lt;T&gt;</span></code> for structs and
+<code class="docutils literal notranslate"><span class="pre">Get()</span></code> for variable-length data:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>bool MyTypeFile::Update() {
+    auto&amp; data = obj-&gt;GetData();
+    if (!data.Copy&lt;MyHeader&gt;(0, header)) return false;
+    auto buf = data.Get(offset, size, true);
+    if (!buf.IsValid()) return false;
+    return true;
+}
+</pre></div>
+</div>
+</section>
+<section id="positiontocolorinterface-buffer-highlighting">
+<h3>PositionToColorInterface (buffer highlighting)<a class="headerlink" href="#positiontocolorinterface-buffer-highlighting" title="Permalink to this heading"></a></h3>
+<p>Implement this interface so the buffer viewer can color ranges by offset:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">bool</span> <span class="n">MyTypeFile</span><span class="p">::</span><span class="n">GetColorForBuffer</span><span class="p">(</span><span class="n">uint64</span> <span class="n">offset</span><span class="p">,</span> <span class="n">BufferView</span> <span class="n">buf</span><span class="p">,</span> <span class="n">BufferColor</span><span class="o">&amp;</span> <span class="n">result</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">offset</span> <span class="o">&gt;=</span> <span class="n">section</span><span class="o">.</span><span class="n">start</span> <span class="o">&amp;&amp;</span> <span class="n">offset</span> <span class="o">&lt;</span> <span class="n">section</span><span class="o">.</span><span class="n">end</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">start</span> <span class="o">=</span> <span class="n">section</span><span class="o">.</span><span class="n">start</span><span class="p">;</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">end</span> <span class="o">=</span> <span class="n">section</span><span class="o">.</span><span class="n">end</span><span class="p">;</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">color</span> <span class="o">=</span> <span class="n">ColorPair</span><span class="p">{</span><span class="n">Color</span><span class="p">::</span><span class="n">Yellow</span><span class="p">,</span> <span class="n">Color</span><span class="p">::</span><span class="n">DarkRed</span><span class="p">};</span>
+        <span class="k">return</span> <span class="n">true</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">result</span><span class="o">.</span><span class="n">Reset</span><span class="p">();</span>
+    <span class="k">return</span> <span class="n">false</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="generic-plugins">
+<h2>Generic plugins<a class="headerlink" href="#generic-plugins" title="Permalink to this heading"></a></h2>
+<p>Generic plugins work with any file type and are registered via <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code>
+(see <a class="reference internal" href="configuration.html"><span class="doc">GView configuration file</span></a>). They usually provide dialogs or operations (e.g. hashes,
+entropy, comparison). Implement them under <code class="docutils literal notranslate"><span class="pre">GenericPlugins/</span></code> and register in INI;
+they do not implement the Type plugin contract above.</p>
+</section>
+<section id="quick-reference">
+<h2>Quick reference<a class="headerlink" href="#quick-reference" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Add new file format</strong> — <code class="docutils literal notranslate"><span class="pre">Types/NEW_TYPE/</span></code> — TypeInterface, Validate, PopulateWindow</p></li>
+<li><p><strong>Add generic operation</strong> — <code class="docutils literal notranslate"><span class="pre">GenericPlugins/</span></code> — Window-based dialogs</p></li>
+<li><p><strong>Add hash algorithm</strong> — <code class="docutils literal notranslate"><span class="pre">GViewCore/src/Hashes/</span></code> — Hash classes in GView.hpp</p></li>
+<li><p><strong>Add decoding</strong> — <code class="docutils literal notranslate"><span class="pre">GViewCore/src/Decoding/</span></code> — Decoding namespace</p></li>
+<li><p><strong>Modify viewer behavior</strong> — <code class="docutils literal notranslate"><span class="pre">GViewCore/src/View/</span></code> — ViewControl, Settings</p></li>
+<li><p><strong>Add keyboard shortcut</strong> — TypeInterface — UpdateKeys(), KeyboardControl</p></li>
+<li><p><strong>Add panel to Type</strong> — <code class="docutils literal notranslate"><span class="pre">Types/*/src/Panel*.cpp</span></code> — TabPage, ListView</p></li>
+<li><p><strong>AI assistant context</strong> — TypeInterface — GetSmartAssistantContext()</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="security.html" class="btn btn-neutral float-left" title="Security and restricted mode" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="core.html" class="btn btn-neutral float-right" title="GView Core" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Gavriluț Dragoș, Mutu Gheorghiță, Andrei Damian, Raul Zaharia.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

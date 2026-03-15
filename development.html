@@ -1,22 +1,28 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GView development &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="GView contributing" href="contributing.html" />
-    <link rel="prev" title="Global Plugins Prefetch" href="prefetch.html" /> 
+    <link rel="prev" title="GView Specific Plugin: Prefetch" href="prefetch.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -38,16 +44,21 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">GView development</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#github-workflows">Github workflows</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#testing">Testing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#github-workflows">GitHub workflows</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
@@ -77,21 +88,32 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="gview-development">
-<h1>GView development<a class="headerlink" href="#gview-development" title="Permalink to this headline">¶</a></h1>
-<div class="section" id="github-workflows">
-<h2>Github workflows<a class="headerlink" href="#github-workflows" title="Permalink to this headline">¶</a></h2>
-<p>Github workflows will be automatically triggered on push to <code class="docutils literal notranslate"><span class="pre">main</span></code> and on <code class="docutils literal notranslate"><span class="pre">pull_request</span></code>.</p>
-<p>If any workflows need to be triggered for other branches, one could create a draft PR to start testing or manually trigger the workflows from the <cite>Actions</cite> page, while selecting the required workflow.
-The contributor will be greeted with a <code class="docutils literal notranslate"><span class="pre">This</span> <span class="pre">workflow</span> <span class="pre">has</span> <span class="pre">a</span> <span class="pre">workflow_dispatch</span> <span class="pre">event</span> <span class="pre">trigger</span></code> and a <code class="docutils literal notranslate"><span class="pre">Run</span> <span class="pre">workflow</span></code> button.</p>
-</div>
-</div>
+  <section id="gview-development">
+<h1>GView development<a class="headerlink" href="#gview-development" title="Permalink to this heading"></a></h1>
+<section id="testing">
+<h2>Testing<a class="headerlink" href="#testing" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Tests are enabled with <code class="docutils literal notranslate"><span class="pre">-DENABLE_TESTS=ON</span></code> at configure time.</p></li>
+<li><p>Unit tests are in files matching <code class="docutils literal notranslate"><span class="pre">**/tests_*.cpp</span></code>.</p></li>
+<li><p>The testing build produces a <code class="docutils literal notranslate"><span class="pre">GViewTesting</span></code> executable instead of <code class="docutils literal notranslate"><span class="pre">GView</span></code>.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">run_core_tests()</span></code> macro from <code class="docutils literal notranslate"><span class="pre">cmake/core_testing.cmake</span></code> is used to
+register test sources.</p></li>
+</ul>
+<p>Run the test executable from your build directory after building with tests enabled.</p>
+</section>
+<section id="github-workflows">
+<h2>GitHub workflows<a class="headerlink" href="#github-workflows" title="Permalink to this heading"></a></h2>
+<p>Workflows run on push to <code class="docutils literal notranslate"><span class="pre">main</span></code> and on <code class="docutils literal notranslate"><span class="pre">pull_request</span></code>. To run them for other
+branches, create a draft PR or trigger manually from the Actions page: choose the
+workflow and use <strong>Run workflow</strong> when it has a <code class="docutils literal notranslate"><span class="pre">workflow_dispatch</span></code> trigger.</p>
+</section>
+</section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="prefetch.html" class="btn btn-neutral float-left" title="Global Plugins Prefetch" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="prefetch.html" class="btn btn-neutral float-left" title="GView Specific Plugin: Prefetch" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="contributing.html" class="btn btn-neutral float-right" title="GView contributing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

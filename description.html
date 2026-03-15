@@ -1,17 +1,23 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GView description &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -38,14 +44,23 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">GView description</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GView description</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#general-description">General description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#use-cases">Use cases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#see-gview-in-action">See GView in action</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
 </ul>
@@ -74,9 +89,43 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="gview-description">
-<h1>GView description<a class="headerlink" href="#gview-description" title="Permalink to this headline">¶</a></h1>
-</div>
+  <section id="gview-description">
+<h1>GView description<a class="headerlink" href="#gview-description" title="Permalink to this heading"></a></h1>
+<section id="general-description">
+<h2>General description<a class="headerlink" href="#general-description" title="Permalink to this heading"></a></h2>
+<p><strong>GView</strong> is a powerful tool for examining files or any data with a defined structure,
+such as buffers or memory zones. Users can leverage the diverse range of available
+visualization options to effectively analyze and interpret the information.</p>
+<p>From a developer perspective, GView offers a flexible platform to create plugins that
+parse various data structures. Developers can create customized views and enhance
+analysis capabilities by writing Type plugins (for specific file formats) or Generic
+plugins (for operations that apply to any file).</p>
+</section>
+<section id="use-cases">
+<h2>Use cases<a class="headerlink" href="#use-cases" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Malware analysis and incident response</p></li>
+<li><p>File format reverse engineering</p></li>
+<li><p>Network traffic analysis (PCAP)</p></li>
+<li><p>Binary executable analysis (PE, ELF, Mach-O)</p></li>
+<li><p>Document forensics (PDF, DOC, EML)</p></li>
+<li><p>Archive inspection (ZIP, ISO)</p></li>
+</ul>
+</section>
+<section id="see-gview-in-action">
+<h2>See GView in action<a class="headerlink" href="#see-gview-in-action" title="Permalink to this heading"></a></h2>
+<p><strong>Scenario 1: Malicious infection</strong>
+A screencast shows how GView can analyze the contents of a compromised system. By
+examining network traffic, security analysts can uncover how malicious actors gained
+unauthorized access. GView’s visualization helps identify suspicious hints and
+understand the attack’s impact. (<a class="reference external" href="https://youtu.be/Z1nTRKPewCg">Open video</a>)</p>
+<p><strong>Scenario 2: Suspicious email</strong>
+GView is used to analyze the impact of a breach after a victim has been infected.
+The cause was a suspicious email. By analyzing email headers, attachments, and
+embedded content, analysts can uncover hidden malicious code or phishing attempts.
+(<a class="reference external" href="https://youtu.be/LpsvcgCkII8">Open video</a>)</p>
+</section>
+</section>
 
 
            </div>

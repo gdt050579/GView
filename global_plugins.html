@@ -1,21 +1,27 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GView Global Plugins &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="&lt;no title&gt;" href="character_table.html" />
+    <link rel="next" title="Character table" href="character_table.html" />
     <link rel="prev" title="GView Core" href="core.html" /> 
 </head>
 
@@ -38,19 +44,22 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">GView Global Plugins</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#global-plugins">Global Plugins</a><ul class="simple">
+<li class="toctree-l2"><a class="reference internal" href="character_table.html">Character table</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hashes.html">Hashes</a></li>
 </ul>
 </li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
 </ul>
@@ -79,21 +88,34 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="gview-global-plugins">
-<h1>GView Global Plugins<a class="headerlink" href="#gview-global-plugins" title="Permalink to this headline">¶</a></h1>
-<div class="section" id="global-plugins">
-<h2>Global Plugins<a class="headerlink" href="#global-plugins" title="Permalink to this headline">¶</a></h2>
+  <section id="gview-global-plugins">
+<h1>GView Global Plugins<a class="headerlink" href="#gview-global-plugins" title="Permalink to this heading"></a></h1>
+<p>Generic plugins work with any file type and are registered via INI configuration.
+They provide dialogs or operations that apply universally, such as:</p>
+<ul class="simple">
+<li><p><strong>Hashes</strong> — Compute MD5, SHA, CRC and other hashes over selection or file</p></li>
+<li><p><strong>Entropy</strong> — Entropy analysis and visualization</p></li>
+<li><p><strong>Dropper</strong> — Extract artifacts from buffers</p></li>
+<li><p><strong>Sync Compare</strong> — File comparison</p></li>
+<li><p><strong>Unpacker</strong> — Decompression utilities</p></li>
+</ul>
+<p>These plugins are configured in <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> under <code class="docutils literal notranslate"><span class="pre">[Generic.*]</span></code> sections.
+See <a class="reference internal" href="configuration.html"><span class="doc">GView configuration file</span></a> for the configuration file format.</p>
 <div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="character_table.html">Character table</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hashes.html">Hashes</a></li>
+</ul>
 </div>
-</div>
-</div>
+</section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="core.html" class="btn btn-neutral float-left" title="GView Core" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="character_table.html" class="btn btn-neutral float-right" title="&lt;no title&gt;" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="character_table.html" class="btn btn-neutral float-right" title="Character table" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

@@ -1,22 +1,28 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Global Plugins Prefetch &mdash; GView  documentation</title>
+  <title>GView Specific Plugin: Prefetch &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="GView development" href="development.html" />
-    <link rel="prev" title="GView Specific Plugin Mach-O" href="macho.html" /> 
+    <link rel="prev" title="GView Specific Plugin: Mach-O" href="macho.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -38,20 +44,21 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1 current"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a><ul class="current">
-<li class="toctree-l2 current"><a class="reference internal" href="specific_plugins.html#specific-plugins">Specific Plugins</a><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="macho.html">GView Specific Plugin Mach-O</a></li>
-<li class="toctree-l3 current"><a class="current reference internal" href="#">Global Plugins Prefetch</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#prefetch">Prefetch</a></li>
-</ul>
-</li>
+<li class="toctree-l1 current"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="macho.html">GView Specific Plugin: Mach-O</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">GView Specific Plugin: Prefetch</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#references">References</a></li>
 </ul>
 </li>
 </ul>
@@ -74,8 +81,8 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="specific_plugins.html">GView Specific Plugins</a></li>
-      <li class="breadcrumb-item active">Global Plugins Prefetch</li>
+          <li class="breadcrumb-item"><a href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
+      <li class="breadcrumb-item active">GView Specific Plugin: Prefetch</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/prefetch.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -85,20 +92,25 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="global-plugins-prefetch">
-<h1>Global Plugins Prefetch<a class="headerlink" href="#global-plugins-prefetch" title="Permalink to this headline">¶</a></h1>
-<div class="section" id="prefetch">
-<h2>Prefetch<a class="headerlink" href="#prefetch" title="Permalink to this headline">¶</a></h2>
-<p><a class="reference external" href="https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc">https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc</a>
-<a class="reference external" href="https://github.com/MathildeVenault/SysMainView">https://github.com/MathildeVenault/SysMainView</a></p>
-</div>
-</div>
+  <section id="gview-specific-plugin-prefetch">
+<h1>GView Specific Plugin: Prefetch<a class="headerlink" href="#gview-specific-plugin-prefetch" title="Permalink to this heading"></a></h1>
+<p>The Prefetch plugin parses Windows Prefetch (<code class="docutils literal notranslate"><span class="pre">.pf</span></code>) files, extracting paths,
+volumes, and dependencies in an organized view. MAM (compressed Prefetch) is
+also supported via the MAM plugin.</p>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc">Windows Shell Item format (libyal/libfwsi)</a></p></li>
+<li><p><a class="reference external" href="https://github.com/MathildeVenault/SysMainView">SysMainView</a></p></li>
+</ul>
+</section>
+</section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="macho.html" class="btn btn-neutral float-left" title="GView Specific Plugin Mach-O" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="macho.html" class="btn btn-neutral float-left" title="GView Specific Plugin: Mach-O" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="development.html" class="btn btn-neutral float-right" title="GView development" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

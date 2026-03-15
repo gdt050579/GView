@@ -1,20 +1,28 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GView configuration file &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" /> 
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Security and restricted mode" href="security.html" />
+    <link rel="prev" title="GView architecture" href="architecture.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -36,14 +44,21 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
-<ul>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GView configuration file</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#types">Types</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
 </ul>
@@ -72,27 +87,27 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="gview-configuration-file">
-<h1>GView configuration file<a class="headerlink" href="#gview-configuration-file" title="Permalink to this headline">¶</a></h1>
+  <section id="gview-configuration-file">
+<h1>GView configuration file<a class="headerlink" href="#gview-configuration-file" title="Permalink to this heading"></a></h1>
 <p>GView is configured via <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> file (that should be located next to GView executable). If the file is missing, running a simple <code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">reset</span></code> command from the CLI should restore it.</p>
 <p>The following section should be seen in a <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> file:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">[GView]</span></code> - a section with the general configuration for GView. Tipically it contains associated key for changing the view, cache size, etc.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[GView]</span></code> - a section with the general configuration for GView. Typically it contains associated key for changing the view, cache size, etc.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">[AppCUI]</span></code> - a section with the general configuration for AppCUI framework (color, frontend, etc)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">[Type.&lt;XXX&gt;]</span></code> - various sections that describe characteristics of each supported type in GView</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">[View.&lt;xxx&gt;]</span></code> - various section for each smart view</p></li>
 </ul>
-<div class="section" id="types">
-<h2>Types<a class="headerlink" href="#types" title="Permalink to this headline">¶</a></h2>
-<p>A <code class="docutils literal notranslate"><span class="pre">[Type.xxx]`</span></code> section usually contains the following:</p>
+<section id="types">
+<h2>Types<a class="headerlink" href="#types" title="Permalink to this heading"></a></h2>
+<p>A <code class="docutils literal notranslate"><span class="pre">[Type.xxx]</span></code> section usually contains the following:</p>
 <ul>
 <li><p>a <cite>Description</cite> field that explains the type of the plugin</p></li>
 <li><p>a <cite>Extension</cite> field that can be a simple string or a list of strings containing the list of extensions associated with this field.</p>
-<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Extension</span> <span class="o">=</span> <span class="s">exe</span>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Extension</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">exe</span>
 </pre></div>
 </div>
 <p>or</p>
-<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Extension</span> <span class="o">=</span> <span class="s">[&quot;h&quot;,&quot;hpp&quot;,&quot;cpp&quot;,&quot;c&quot;]</span>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Extension</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[&quot;h&quot;,&quot;hpp&quot;,&quot;cpp&quot;,&quot;c&quot;]</span>
 </pre></div>
 </div>
 </li>
@@ -100,12 +115,6 @@
 A pattern is a string with the following format: <strong>rule</strong>:<cite>parameters</cite>, where <strong>rule</strong> can be one of the following:</p></li>
 </ul>
 <table class="docutils align-default">
-<colgroup>
-<col style="width: 17%" />
-<col style="width: 8%" />
-<col style="width: 46%" />
-<col style="width: 29%" />
-</colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Rule</p></th>
 <th class="head"><p>Type</p></th>
@@ -118,7 +127,7 @@ A pattern is a string with the following format: <strong>rule</strong>:<cite>par
 <td><p>Binary
 Files</p></td>
 <td><p>Identifies a binary magic from the start of the
-file. A magic must be foollowed by a list of hex
+file. A magic must be followed by a list of hex
 values separated with spaces</p></td>
 <td><p><strong>magic</strong>:FF 20 30</p></td>
 </tr>
@@ -139,22 +148,25 @@ file starts with a specific text</p></td>
 </table>
 <blockquote>
 <div><p>Examples:</p>
-<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Pattern</span> <span class="o">=</span> <span class="s">&quot;magic:4D 5A&quot; ; identifies possible Windows binary files (that starts with a ``MZ``)</span>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Pattern</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;magic:4D 5A&quot;</span><span class="w"> </span><span class="c1">; identifies possible Windows binary files (that starts with a ``MZ``)</span>
 </pre></div>
 </div>
 <p>or</p>
-<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Pattern</span> <span class="o">=</span> <span class="s">[&quot;startswith:ABC&quot;,&quot;linestartswith:test&quot;] ; identifies a text file where either the firs line starts with `ABC`</span>
-<span class="s">                                                   ; or there is a line within the first 10 lines that starts with `test`</span>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Pattern</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[&quot;startswith:ABC&quot;,&quot;linestartswith:test&quot;]</span><span class="w"> </span><span class="c1">; identifies a text file where either the first line starts with `ABC`</span>
+<span class="w">                                                   </span><span class="c1">; or there is a line within the first 10 lines that starts with `test`</span>
 </pre></div>
 </div>
 </div></blockquote>
-</div>
-</div>
+</section>
+</section>
 
 
            </div>
           </div>
-          <footer>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="architecture.html" class="btn btn-neutral float-left" title="GView architecture" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="security.html" class="btn btn-neutral float-right" title="Security and restricted mode" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
 
   <hr/>
 

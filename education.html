@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GView use in education &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="GView architecture" href="architecture.html" />
+    <link rel="prev" title="GView usage" href="usage.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GView
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GView use in education</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#use-case">Use case</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#step-by-step-workflow">Step-by-step workflow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#why-this-use-case-is-important-in-education">Why this use case is important in education</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#security-and-limitations">Security and limitations</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GView</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">GView use in education</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/education.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="gview-use-in-education">
+<h1>GView use in education<a class="headerlink" href="#gview-use-in-education" title="Permalink to this heading"></a></h1>
+<p>This page describes how GView can be used in educational settings for learning and
+evaluation, including the Learning and Evaluation Mode (built on <a class="reference internal" href="security.html"><span class="doc">Security and restricted mode</span></a>),
+the typical workflow, and security considerations.</p>
+<section id="use-case">
+<h2>Use case<a class="headerlink" href="#use-case" title="Permalink to this heading"></a></h2>
+<section id="step-by-step-workflow">
+<h3>Step-by-step workflow<a class="headerlink" href="#step-by-step-workflow" title="Permalink to this heading"></a></h3>
+<p><strong>Step 1: Launch GView and connect to the course server.</strong></p>
+<p>The student launches GView and selects the Learning and Evaluation Mode from the
+menu options. Then the student connects securely to the course server using a
+unique login token. Each student is assigned a unique token used to identify them.
+If the server accepts the connection, it returns the policy in JSON format.</p>
+<p><strong>Step 2: Load and apply the policy in GView.</strong></p>
+<p>After the policy is received, it is automatically loaded in GView: features that
+are disabled by the policy become unusable (e.g., save, copy, export), and plugins
+that are disabled become unavailable. From this point on, the student works in a
+controlled environment that allows a fair evaluation of their skills. The features
+needed for the student to perform the analysis remain accessible, so their
+workflow is not impacted.</p>
+<p><strong>Step 3: Request a task.</strong></p>
+<p>The student can now request problems to work on. GView uses the student’s token and
+sends a secure request to the server for a specific task (or for the next available
+task, depending on the policy).</p>
+<p>If the server accepts the request, it streams back binary content to GView along
+with the task requirements. Typically this is binary executable files (e.g., PE
+files). That content is opened inside GView either as a buffer (from memory only) or
+from a file (depending on the policy), enabling the student to start their analysis.</p>
+<p><strong>Step 4: Perform the analysis.</strong></p>
+<p>The student follows the usual process used in laboratories. First, the student
+inspects the raw bytes from a binary perspective using the Buffer Viewer. This
+helps get a bigger picture and understand the global structure and the kind of data
+involved.</p>
+<p>If working with an executable file, the student then analyzes the content using the
+Disassembly Viewer to observe the disassembled code. The student can follow jump and
+call instructions to see control flow and destinations. To keep track of
+information, they can add comments to the code.</p>
+<p>In an example scenario, the requirement might be to identify the value of the third
+variable from the stack. Upon inspection, the student can determine that the
+correct value is 3.</p>
+<p><strong>Step 5: Submit the solution.</strong></p>
+<p>The student submits the solution directly from GView:</p>
+<ul class="simple">
+<li><p>If the solution is wrong, the server returns a failure response, and the student
+can try again.</p></li>
+<li><p>If the solution is correct, the server returns a success response and the number
+of points assigned for that task.</p></li>
+</ul>
+<p>This immediate feedback lets students receive grading instantly, without waiting for
+human evaluation and intervention.</p>
+<p><strong>Step 6: Send telemetry.</strong></p>
+<p>At the end of the task, telemetry data is securely sent to the server. It is used
+for course improvement only. No invasive data is collected. In this use case, the
+focus is on the following metrics:</p>
+<ul class="simple">
+<li><p>time to solve;</p></li>
+<li><p>number of attempts;</p></li>
+<li><p>feature usage of GView.</p></li>
+</ul>
+</section>
+<section id="why-this-use-case-is-important-in-education">
+<h3>Why this use case is important in education<a class="headerlink" href="#why-this-use-case-is-important-in-education" title="Permalink to this heading"></a></h3>
+<p>One main advantage of this approach is that it supports both learning and
+evaluation in the same way. During labs, students learn to use GView and its
+features (e.g., following jumps, annotating code) and gain confidence. Because the
+same process is used for evaluation, when the evaluation starts we can measure
+reverse engineering skills rather than tool setup skills.</p>
+<p>Telemetry is useful from a teaching perspective. We monitor whether features are
+used and how often. If some features are not used, this can mean one of three
+things:</p>
+<ol class="arabic simple">
+<li><p>The feature was not properly explained.</p></li>
+<li><p>The student is not yet familiar with it.</p></li>
+<li><p>The student prefers not to use it (e.g., personal preference).</p></li>
+</ol>
+<p>This information helps improve the entire course. Depending on how students behave
+in certain situations, we can see which topics need clearer explanations, which
+tasks are confusing, or which GView features need better integration in the
+learning workflow. We also track whether the tool reaches invalid states (e.g.,
+crashes). In this way, we can better understand where students struggle and where
+support is needed, even when that is not explicitly communicated to the teachers.</p>
+</section>
+</section>
+<section id="security-and-limitations">
+<h2>Security and limitations<a class="headerlink" href="#security-and-limitations" title="Permalink to this heading"></a></h2>
+<p>The Learning and Evaluation Mode is designed to reduce the risk of leakage, improve
+fairness, and make cheating harder during evaluation, but it cannot achieve that
+perfectly.</p>
+<p>The mode provides a secure way to send tasks and receive metrics and responses over
+a secured network connection. Leaking binaries is harder when they are kept in
+secured memory only (not on disk). This is reinforced by disabling copy, save, and
+export. On Windows, the screen is protected from screenshots.</p>
+<p>However, students can still bypass these protections: for example, by taking a
+photo of the screen with a phone, typing the content manually into another
+application, patching GView (since it is open source), or using an external tool.</p>
+<p>We treat the Learning and Evaluation Mode as a best-effort protection that
+substantially raises the effort required to cheat, rather than as a perfect
+solution. In an educational environment, students might be tempted to copy
+binaries to use other tools or to share them. The goal is to reduce easy access
+without making the tool so restrictive that students fight the tool instead of
+working with it.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="usage.html" class="btn btn-neutral float-left" title="GView usage" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="architecture.html" class="btn btn-neutral float-right" title="GView architecture" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Gavriluț Dragoș, Mutu Gheorghiță, Andrei Damian, Raul Zaharia.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

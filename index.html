@@ -1,17 +1,23 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome to GView’s documentation! &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -37,14 +43,18 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
 </ul>
@@ -73,43 +83,96 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="welcome-to-gview-s-documentation">
-<h1>Welcome to GView’s documentation!<a class="headerlink" href="#welcome-to-gview-s-documentation" title="Permalink to this headline">¶</a></h1>
+  <section id="welcome-to-gview-s-documentation">
+<h1>Welcome to GView’s documentation!<a class="headerlink" href="#welcome-to-gview-s-documentation" title="Permalink to this heading"></a></h1>
+<p><strong>GView</strong> is a cross-platform reverse engineering and data analysis framework.
+It lets you examine files, buffers, or memory through multiple visualization options
+and a plugin-based architecture for file formats and generic operations.</p>
 <div class="toctree-wrapper compound">
-<p class="caption"><span class="caption-text">Contents:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
-<li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="description.html#general-description">General description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="description.html#use-cases">Use cases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="description.html#see-gview-in-action">See GView in action</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="usage.html#first-run">First run</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage.html#building-from-source">Building from source</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage.html#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="usage.html#dependencies">Dependencies</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="education.html#use-case">Use case</a></li>
+<li class="toctree-l2"><a class="reference internal" href="education.html#security-and-limitations">Security and limitations</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#architecture-flow">Architecture flow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#directory-structure">Directory structure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#code-structure">Code structure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="architecture.html#diagrams">Diagrams</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html#types">Types</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="security.html#public-api-gview-hpp">Public API (GView.hpp)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="security.html#limitations">Limitations</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#public-vs-internal-api">Public vs internal API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#type-plugin-contract">Type plugin contract</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#smart-viewers">Smart viewers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#key-interfaces">Key interfaces</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#adding-a-new-type-plugin">Adding a new Type plugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#coding-conventions">Coding conventions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#common-patterns">Common patterns</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#generic-plugins">Generic plugins</a></li>
+<li class="toctree-l2"><a class="reference internal" href="plugin_development.html#quick-reference">Quick reference</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="core.html#core">Core</a></li>
-<li class="toctree-l2"><a class="reference internal" href="core.html#golang">Golang</a></li>
+<li class="toctree-l2"><a class="reference internal" href="core.html#golang-binary-support-references">Golang binary support (references)</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="global_plugins.html#global-plugins">Global Plugins</a></li>
+<li class="toctree-l2"><a class="reference internal" href="character_table.html">Character table</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hashes.html">Hashes</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="specific_plugins.html#specific-plugins">Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="macho.html">GView Specific Plugin: Mach-O</a></li>
+<li class="toctree-l2"><a class="reference internal" href="prefetch.html">GView Specific Plugin: Prefetch</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="development.html#github-workflows">Github workflows</a></li>
+<li class="toctree-l2"><a class="reference internal" href="development.html#testing">Testing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="development.html#github-workflows">GitHub workflows</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="contributing.html#start-contributing">Start contributing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="contributing.html#reporting-issues">Reporting issues</a></li>
+</ul>
+</li>
 </ul>
 </div>
-</div>
-<div class="section" id="indices-and-tables">
-<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
+</section>
+<section id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this heading"></a></h1>
 <ul class="simple">
 <li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
 <li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
 <li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
 </ul>
-</div>
+</section>
 
 
            </div>

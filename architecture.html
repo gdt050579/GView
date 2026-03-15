@@ -1,22 +1,28 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GView architecture &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="GView Core" href="core.html" />
-    <link rel="prev" title="GView usage" href="usage.html" /> 
+    <link rel="next" title="GView configuration file" href="configuration.html" />
+    <link rel="prev" title="GView use in education" href="education.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -38,14 +44,24 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GView architecture</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#architecture-flow">Architecture flow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#directory-structure">Directory structure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#code-structure">Code structure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#diagrams">Diagrams</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
 </ul>
@@ -74,16 +90,74 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="gview-architecture">
-<h1>GView architecture<a class="headerlink" href="#gview-architecture" title="Permalink to this headline">¶</a></h1>
+  <section id="gview-architecture">
+<h1>GView architecture<a class="headerlink" href="#gview-architecture" title="Permalink to this heading"></a></h1>
+<section id="architecture-flow">
+<h2>Architecture flow<a class="headerlink" href="#architecture-flow" title="Permalink to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><strong>Content type</strong> — Determine whether the content is binary or textual. For text,
+detect encoding and decode to a standardized format (e.g. UTF-16).</p></li>
+<li><p><strong>Plugin selection</strong> — Search available data identifier (Type) plugins for one that
+can interpret the data. If none matches, fall back to a generic plugin that only
+distinguishes binary vs. text.</p></li>
+<li><p><strong>Viewers and extraction</strong> — The chosen Type plugin selects suitable smart viewers.
+Users can switch viewers and use them to extract artifacts or data from the content.</p></li>
+<li><p><strong>Iteration</strong> — Repeat steps 1–3 for extracted components, using artifacts from
+previous steps to drive further analysis.</p></li>
+</ol>
+</section>
+<section id="directory-structure">
+<h2>Directory structure<a class="headerlink" href="#directory-structure" title="Permalink to this heading"></a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>GView/
+├── AppCUI/              # UI framework (subproject, separate repo)
+├── GViewCore/           # Core library
+│   ├── include/
+│   │   └── GView.hpp    # Public API for plugins
+│   └── src/
+│       ├── include/Internal.hpp
+│       ├── App/         # Application logic, dialogs
+│       ├── View/        # Smart viewers (Buffer, Text, Lexical, Image, Grid, Dissasm, Container)
+│       ├── Utils/       # DataCache, ZonesList, ErrorList, etc.
+│       ├── Hashes/      # Hash implementations
+│       ├── Decoding/    # Base64, ZLIB, etc.
+│       ├── DigitalSignature/
+│       ├── Dissasembly/ # Capstone wrapper
+│       ├── Security/    # Restricted mode, crypto
+│       └── Type/        # Plugin loading and type matching
+├── GView/               # Main executable
+├── Types/               # Type plugins (PE, ELF, MACHO, PDF, PCAP, ZIP, CSV, etc.)
+├── GenericPlugins/      # Generic plugins (Hashes, EntropyVisualizer, Dropper, SyncCompare, Unpacker, etc.)
+├── cmake/
+├── docs/
+└── build/ / bin/
+</pre></div>
 </div>
+</section>
+<section id="code-structure">
+<h2>Code structure<a class="headerlink" href="#code-structure" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>GViewCore</strong> — Core library: application logic, smart viewers, hashes, decoding,
+digital signatures, disassembly, plugin loading. Plugins use only <code class="docutils literal notranslate"><span class="pre">GView.hpp</span></code>.</p></li>
+<li><p><strong>GView</strong> — Main executable.</p></li>
+<li><p><strong>Types/</strong> — Type-specific plugins (PE, ELF, Mach-O, PDF, PCAP, ZIP, CSV, INI, JS, etc.).</p></li>
+<li><p><strong>GenericPlugins/</strong> — Generic plugins (Hashes, EntropyVisualizer, Dropper, SyncCompare,
+Unpacker, CharacterTable, FileDownloader).</p></li>
+<li><p><strong>AppCUI</strong> — Terminal UI framework (subproject).</p></li>
+</ul>
+</section>
+<section id="diagrams">
+<h2>Diagrams<a class="headerlink" href="#diagrams" title="Permalink to this heading"></a></h2>
+<p>High-level architecture:</p>
+<img alt="GView high-level architecture" src="_images/GView.svg" /><p>Core (GViewCore) architecture:</p>
+<img alt="GViewCore architecture" src="_images/GViewCore.svg" /></section>
+</section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="usage.html" class="btn btn-neutral float-left" title="GView usage" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="core.html" class="btn btn-neutral float-right" title="GView Core" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="education.html" class="btn btn-neutral float-left" title="GView use in education" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="configuration.html" class="btn btn-neutral float-right" title="GView configuration file" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

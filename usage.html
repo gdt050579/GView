@@ -1,21 +1,27 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GView usage &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="GView architecture" href="architecture.html" />
+    <link rel="next" title="GView use in education" href="education.html" />
     <link rel="prev" title="GView description" href="description.html" /> 
 </head>
 
@@ -38,14 +44,29 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">GView usage</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GView usage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#first-run">First run</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#windows">Windows</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#linux">Linux</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#macos-os-x">macOS / OS X</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#building-from-source">Building from source</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#dependencies">Dependencies</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
 </ul>
@@ -74,16 +95,75 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="gview-usage">
-<h1>GView usage<a class="headerlink" href="#gview-usage" title="Permalink to this headline">¶</a></h1>
+  <section id="gview-usage">
+<h1>GView usage<a class="headerlink" href="#gview-usage" title="Permalink to this heading"></a></h1>
+<section id="first-run">
+<h2>First run<a class="headerlink" href="#first-run" title="Permalink to this heading"></a></h2>
+<p>Pre-built archives are produced by the CI/CD pipeline for each supported operating
+system. Download the archive for your platform and run the main binary (<code class="docutils literal notranslate"><span class="pre">GView</span></code> or
+<code class="docutils literal notranslate"><span class="pre">GView.exe</span></code> on Windows).</p>
+<section id="windows">
+<h3>Windows<a class="headerlink" href="#windows" title="Permalink to this heading"></a></h3>
+<p>Unzip the release archive and run <code class="docutils literal notranslate"><span class="pre">GView.exe</span></code> (tested on Windows 10 x64).</p>
+</section>
+<section id="linux">
+<h3>Linux<a class="headerlink" href="#linux" title="Permalink to this heading"></a></h3>
+<p>Builds are made on Ubuntu 20.04 (Intel). Precompiled binaries run on Ubuntu 20.04 and
+Ubuntu 22.04. Older images (e.g. Ubuntu 18.04) may have incompatible GLIBC.</p>
+</section>
+<section id="macos-os-x">
+<h3>macOS / OS X<a class="headerlink" href="#macos-os-x" title="Permalink to this heading"></a></h3>
+<p>You may see a warning that macOS cannot verify the app. Until binaries are digitally
+signed and notarized, you must manually allow each binary to run in System Preferences
+→ Security &amp; Privacy. Do not disable Gatekeeper system-wide.</p>
+</section>
+</section>
+<section id="building-from-source">
+<h2>Building from source<a class="headerlink" href="#building-from-source" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>CMake</strong> is used to build the project on all platforms.</p></li>
+<li><p><strong>vcpkg</strong> is used for dependencies; see the repository <cite>.github/workflows/ci.yml</cite>
+for the build pipeline.</p></li>
+</ul>
+<p>Clone with submodules:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">git</span> <span class="n">clone</span> <span class="o">--</span><span class="n">recurse</span><span class="o">-</span><span class="n">submodules</span> <span class="o">&lt;</span><span class="n">repo</span><span class="o">-</span><span class="n">url</span><span class="o">&gt;/</span><span class="n">GView</span><span class="o">.</span><span class="n">git</span>
+</pre></div>
 </div>
+<p>Configure and build:</p>
+<p><strong>Windows (Visual Studio):</strong></p>
+<blockquote>
+<div><p>cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake –build build –config Release</p>
+</div></blockquote>
+<p><strong>Linux / macOS:</strong></p>
+<blockquote>
+<div><p>cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake –build build</p>
+</div></blockquote>
+<p><strong>With tests:</strong> add <code class="docutils literal notranslate"><span class="pre">-DENABLE_TESTS=ON</span></code>. The build produces a <code class="docutils literal notranslate"><span class="pre">GViewTesting</span></code>
+executable; unit tests live in <code class="docutils literal notranslate"><span class="pre">**/tests_*.cpp</span></code> and are driven by
+<code class="docutils literal notranslate"><span class="pre">cmake/core_testing.cmake</span></code>.</p>
+</section>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Permalink to this heading"></a></h2>
+<p>GView is configured via <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> next to the executable. If the file is missing,
+run <code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">reset</span></code> from the CLI to create a default one. See <a class="reference internal" href="configuration.html"><span class="doc">GView configuration file</span></a>
+for the INI format and options.</p>
+</section>
+<section id="dependencies">
+<h2>Dependencies<a class="headerlink" href="#dependencies" title="Permalink to this heading"></a></h2>
+<p>Dependencies are managed via vcpkg (<code class="docutils literal notranslate"><span class="pre">vcpkg.json</span></code>). Main third-party libraries:
+AppCUI (terminal UI, subproject), Capstone (disassembly), OpenSSL (crypto), SQLite3,
+zlib, PCRE2, LLVMDemangle (symbol demangling).</p>
+</section>
+</section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="description.html" class="btn btn-neutral float-left" title="GView description" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="architecture.html" class="btn btn-neutral float-right" title="GView architecture" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="education.html" class="btn btn-neutral float-right" title="GView use in education" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

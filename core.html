@@ -1,22 +1,28 @@
-
-
 <!DOCTYPE html>
 <html class="writer-html5" lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GView Core &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
 
   
-      <script src="_static/jquery.js"></script>
-      <script src="_static/underscore.js"></script>
-      <script src="_static/doctools.js"></script>
-      <script src="_static/language_data.js"></script>
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="GView Global Plugins" href="global_plugins.html" />
-    <link rel="prev" title="GView architecture" href="architecture.html" /> 
+    <link rel="prev" title="Plugin development" href="plugin_development.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -38,18 +44,22 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">GView Core</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#core">Core</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#golang">Golang</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#golang-binary-support-references">Golang binary support (references)</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
 </ul>
@@ -78,32 +88,34 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="section" id="gview-core">
-<h1>GView Core<a class="headerlink" href="#gview-core" title="Permalink to this headline">¶</a></h1>
-<div class="section" id="core">
-<h2>Core<a class="headerlink" href="#core" title="Permalink to this headline">¶</a></h2>
-<p>// TODO:</p>
-</div>
-<div class="section" id="golang">
-<h2>Golang<a class="headerlink" href="#golang" title="Permalink to this headline">¶</a></h2>
-<p><a class="reference external" href="https://go.dev/src/runtime/symtab.go">https://go.dev/src/runtime/symtab.go</a>
-<a class="reference external" href="https://go.dev/src/runtime/runtime2.go">https://go.dev/src/runtime/runtime2.go</a>
-<a class="reference external" href="https://github.com/0xjiayu/go_parser/blob/master/pclntbl.py">https://github.com/0xjiayu/go_parser/blob/master/pclntbl.py</a>
-<a class="reference external" href="https://github.com/strazzere/golang_loader_assist/blob/master/golang_loader_assist.py#L200">https://github.com/strazzere/golang_loader_assist/blob/master/golang_loader_assist.py#L200</a>
-<a class="reference external" href="https://www.freebuf.com/articles/others-articles/176803.html">https://www.freebuf.com/articles/others-articles/176803.html</a>
-<a class="reference external" href="https://gist.github.com/matteobertozzi/1521947">https://gist.github.com/matteobertozzi/1521947</a>
-<a class="reference external" href="https://docs.google.com/document/d/1lyPIbmsYbXnpNj57a261hgOYVpNRcgydurVQIyZOz_o/pub">https://docs.google.com/document/d/1lyPIbmsYbXnpNj57a261hgOYVpNRcgydurVQIyZOz_o/pub</a>
-<a class="reference external" href="https://github.com/dutchcoders/jupyter-radare2/blob/master/Annotating%20Go%20Binaries%20using%20Cutter.ipynb">https://github.com/dutchcoders/jupyter-radare2/blob/master/Annotating%20Go%20Binaries%20using%20Cutter.ipynb</a>
-<a class="reference external" href="https://go.dev/src/debug/gosym/pclntab.go">https://go.dev/src/debug/gosym/pclntab.go</a>
-<a class="reference external" href="https://www.mandiant.com/resources/golang-internals-symbol-recovery">https://www.mandiant.com/resources/golang-internals-symbol-recovery</a></p>
-</div>
-</div>
+  <section id="gview-core">
+<h1>GView Core<a class="headerlink" href="#gview-core" title="Permalink to this heading"></a></h1>
+<section id="core">
+<h2>Core<a class="headerlink" href="#core" title="Permalink to this heading"></a></h2>
+<p>This section covers internal and format-specific details used by GViewCore and
+various Type plugins. Content is expanded over time.</p>
+</section>
+<section id="golang-binary-support-references">
+<h2>Golang binary support (references)<a class="headerlink" href="#golang-binary-support-references" title="Permalink to this heading"></a></h2>
+<p>Type plugins (e.g. PE, ELF, Mach-O) use the following references for Go symbol and
+runtime parsing:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://go.dev/src/runtime/symtab.go">Go runtime symtab</a></p></li>
+<li><p><a class="reference external" href="https://go.dev/src/runtime/runtime2.go">Go runtime2</a></p></li>
+<li><p><a class="reference external" href="https://go.dev/src/debug/gosym/pclntab.go">gosym/pclntab</a></p></li>
+<li><p><a class="reference external" href="https://github.com/0xjiayu/go_parser/blob/master/pclntbl.py">go_parser pclntbl</a></p></li>
+<li><p><a class="reference external" href="https://github.com/strazzere/golang_loader_assist">golang_loader_assist</a></p></li>
+<li><p><a class="reference external" href="https://www.mandiant.com/resources/golang-internals-symbol-recovery">Mandiant: Golang internals - symbol recovery</a></p></li>
+<li><p><a class="reference external" href="https://github.com/dutchcoders/jupyter-radare2">Go binaries in Cutter</a></p></li>
+</ul>
+</section>
+</section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="architecture.html" class="btn btn-neutral float-left" title="GView architecture" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="plugin_development.html" class="btn btn-neutral float-left" title="Plugin development" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="global_plugins.html" class="btn btn-neutral float-right" title="GView Global Plugins" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

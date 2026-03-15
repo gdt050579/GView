@@ -1,20 +1,22 @@
 GView Core
-===================
+==========
 
 Core
------------------
+----
 
-// TODO:
+This section covers internal and format-specific details used by GViewCore and
+various Type plugins. Content is expanded over time.
 
-Golang
------------------
-https://go.dev/src/runtime/symtab.go
-https://go.dev/src/runtime/runtime2.go
-https://github.com/0xjiayu/go_parser/blob/master/pclntbl.py
-https://github.com/strazzere/golang_loader_assist/blob/master/golang_loader_assist.py#L200
-https://www.freebuf.com/articles/others-articles/176803.html
-https://gist.github.com/matteobertozzi/1521947
-https://docs.google.com/document/d/1lyPIbmsYbXnpNj57a261hgOYVpNRcgydurVQIyZOz_o/pub
-https://github.com/dutchcoders/jupyter-radare2/blob/master/Annotating%20Go%20Binaries%20using%20Cutter.ipynb
-https://go.dev/src/debug/gosym/pclntab.go
-https://www.mandiant.com/resources/golang-internals-symbol-recovery
+Golang binary support (references)
+------------------------------------
+
+Type plugins (e.g. PE, ELF, Mach-O) use the following references for Go symbol and
+runtime parsing:
+
+* `Go runtime symtab <https://go.dev/src/runtime/symtab.go>`__
+* `Go runtime2 <https://go.dev/src/runtime/runtime2.go>`__
+* `gosym/pclntab <https://go.dev/src/debug/gosym/pclntab.go>`__
+* `go_parser pclntbl <https://github.com/0xjiayu/go_parser/blob/master/pclntbl.py>`__
+* `golang_loader_assist <https://github.com/strazzere/golang_loader_assist>`__
+* `Mandiant: Golang internals - symbol recovery <https://www.mandiant.com/resources/golang-internals-symbol-recovery>`__
+* `Go binaries in Cutter <https://github.com/dutchcoders/jupyter-radare2>`__
