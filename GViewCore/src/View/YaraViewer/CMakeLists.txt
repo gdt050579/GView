@@ -1,0 +1,1 @@
+target_sources(GViewCore PRIVATE YaraViewer.hpp Config.cpp GoToDialog.cpp Instance.cpp Settings.cpp)

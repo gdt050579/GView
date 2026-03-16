@@ -6,6 +6,7 @@
 #include "TextViewer.hpp"
 #include "ContainerViewer.hpp"
 #include "LexicalViewer.hpp"
+#include "YaraViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::App::InstanceCommands;
@@ -156,6 +157,11 @@ bool FileWindow::CreateViewer(GView::View::LexicalViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
+}
+
+bool FileWindow::CreateViewer(GView::View::YaraViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::YaraViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 
 Reference<ViewControl> FileWindow::GetCurrentView()

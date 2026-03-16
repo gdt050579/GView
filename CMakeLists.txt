@@ -23,6 +23,15 @@ endif()
 
 project(${CURRENT_PROJECT_NAME} VERSION 1.0 DESCRIPTION "GView - GenericViewer" LANGUAGES C CXX)
 
+# --- Capstone static library ---
+add_library(Capstone STATIC IMPORTED)
+
+# Path către lib-ul static
+set_target_properties(Capstone PROPERTIES
+    IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/3rdPartyLibs/capstone/lib/capstone.lib"
+    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdPartyLibs/capstone/include"
+)
+
 include(CheckIPOSupported)
 check_ipo_supported(RESULT supported OUTPUT error)
 
@@ -155,6 +164,9 @@ add_subdirectory(3rdPartyLibs/LLVMDemangle)
 
 add_subdirectory(AppCUI)
 add_subdirectory(GViewCore)
+
+target_link_libraries(GViewCore PRIVATE Capstone)
+
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(GView)

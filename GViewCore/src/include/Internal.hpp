@@ -772,6 +772,8 @@ namespace App
         bool CreateViewer(View::TextViewer::Settings& settings) override;
         bool CreateViewer(View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(View::LexicalViewer::Settings& settings) override;
+        bool CreateViewer(View::YaraViewer::Settings& settings) override;
+
         CommonInterfaces::QueryInterface* GetQueryInterface() override;
 
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;

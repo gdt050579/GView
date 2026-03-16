@@ -1194,6 +1194,18 @@ namespace View
         };
     }; // namespace ImageViewer
 
+    namespace YaraViewer
+    {
+
+        struct CORE_EXPORT Settings {
+            void* data;
+
+            Settings();
+            void SetAnalysisLevel(int analysisLevel);
+
+        };
+    }; // namespace YaraViewer
+
     namespace ContainerViewer
     {
         struct CORE_EXPORT EnumerateInterface {
@@ -1679,7 +1691,7 @@ namespace View
 
             Settings();
         };
-    }; // namespace DissasmViewer
+    }; // namespace DissasmViewer 
 
     struct CORE_EXPORT WindowInterface {
         virtual Reference<Object> GetObject()                          = 0;
@@ -1691,6 +1703,8 @@ namespace View
         virtual bool CreateViewer(TextViewer::Settings& settings)      = 0;
         virtual bool CreateViewer(ContainerViewer::Settings& settings) = 0;
         virtual bool CreateViewer(LexicalViewer::Settings& settings)   = 0;
+        virtual bool CreateViewer(YaraViewer::Settings& settings)      = 0;
+
         virtual Reference<ViewControl> GetCurrentView()                = 0;
         virtual uint32 GetViewsCount()                                 = 0;
         virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
