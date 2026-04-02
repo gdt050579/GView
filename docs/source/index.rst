@@ -1,25 +1,28 @@
-.. GView documentation master file, created by
-   sphinx-quickstart on Wed Jun  8 22:21:07 2022.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. GView documentation master file.
 
 Welcome to GView's documentation!
 =================================
 
+**GView** is a cross-platform reverse engineering and data analysis framework.
+It lets you examine files, buffers, or memory through multiple visualization options
+and a plugin-based architecture for file formats and generic operations.
+
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Contents
 
    description
    usage
+   education
    architecture
+   configuration
+   security
+   plugin_development
    core
    global_plugins
    specific_plugins
    development
    contributing
-
-
 
 Indices and tables
 ==================
