@@ -579,6 +579,8 @@ namespace Type
             Components::AnalysisEngine::PredId IsPe, /*IsPacked,*/ HasOverlayData;//, HasObfuscatedStrings, ContainsEmbeddedArchive, ContainsEmbeddedExecutable, ContainsEmbeddedScript;
 
             Components::AnalysisEngine::PredId IsSigned, SignatureValid;
+
+            Components::AnalysisEngine::PredId IsLikelyPacked, HasRWXSection, HasTLSCallbacks, UsesDynamicApiResolution, ImportsProcessInjectionAPIs;
             //Components::AnalysisEngine::PredId ContainsUrl, ContainsIpLiteral, ContainsEmailAddress, ContainsSuspiciousKeywords, ContainsBase64Blobs,
                   //ContainsPersistenceArtifacts;
 
@@ -843,6 +845,9 @@ namespace Type
             bool BuildImport();
             bool BuildTLS();
             bool BuildDebugData();
+
+            void EmitAnalysisEngineStaticHeuristics(
+                  Reference<Components::AnalysisEngine::AnalysisEngineInterface> engine, Reference<Components::AnalysisEngine::Subject> subject);
             bool BuildSymbols();
 
             // GO

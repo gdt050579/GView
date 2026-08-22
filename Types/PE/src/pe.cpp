@@ -209,6 +209,11 @@ bool InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE:
         //&pe->predicates.ContainsEmbeddedScript,
         &pe->predicates.IsSigned,
         &pe->predicates.SignatureValid,
+        &pe->predicates.IsLikelyPacked,
+        &pe->predicates.HasRWXSection,
+        &pe->predicates.HasTLSCallbacks,
+        &pe->predicates.UsesDynamicApiResolution,
+        &pe->predicates.ImportsProcessInjectionAPIs,
         //&pe->predicates.ContainsUrl,
         //&pe->predicates.ContainsIpLiteral,
         //&pe->predicates.ContainsEmailAddress,
@@ -226,6 +231,11 @@ bool InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE:
         //"ContainsEmbeddedScript",
         "IsSigned",
         "SignatureValid",
+        "IsLikelyPacked",
+        "HasRWXSection",
+        "HasTLSCallbacks",
+        "UsesDynamicApiResolution",
+        "ImportsProcessInjectionAPIs",
         //"ContainsUrl",
         //"ContainsIpLiteral",
         //"ContainsEmailAddress",
@@ -279,6 +289,8 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
                 LOG_ERROR("Failed to add HasOverlayData fact");
             }
         }
+
+        pe->EmitAnalysisEngineStaticHeuristics(pe->analysisEngine, subject);
     }
 
 #ifdef DISSASM_DEV

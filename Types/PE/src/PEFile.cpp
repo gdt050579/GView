@@ -1,7 +1,13 @@
 #include "pe.hpp"
 #include "DigitalSignature.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <sstream>
+#include <string>
+
 using namespace GView::Type::PE;
+using namespace GView::Components::AnalysisEngine;
 
 struct CV_INFO_PDB20 {
     uint32 CvSignature;   // NBxx
@@ -1965,6 +1971,295 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
     }
 
     return false;
+}
+
+namespace
+{
+    constexpr double ENTROPY_PACKED_THRESHOLD        = 7.2;
+    constexpr uint32 MIN_SECTION_BYTES_FOR_ENTROPY   = 256;
+    constexpr uint32 TINY_CODE_SECTION_VIRTUAL_LIMIT = 0x1000;
+    constexpr uint32 SMALL_IAT_IMPORT_THRESHOLD      = 48;
+
+    constexpr uint32 RWX_MASK = __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE | __IMAGE_SCN_MEM_EXECUTE;
+
+    static bool ImportNameEqualsI(const char* a, const char* b)
+    {
+        if (a == nullptr || b == nullptr)
+            return false;
+        while (*a && *b) {
+            if (std::tolower(static_cast<unsigned char>(*a)) != std::tolower(static_cast<unsigned char>(*b)))
+                return false;
+            ++a;
+            ++b;
+        }
+        return *a == *b;
+    }
+
+    static bool SectionNameLooksLikePacker(std::string_view raw)
+    {
+        std::string s(raw.begin(), raw.end());
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        static constexpr std::string_view hints[] = {
+              "upx",     ".aspack", "aspack", ".petite", "petite", ".mpress", "mpress", "nsp0",     "nsp1",
+              ".nsp",    ".packed", "themida", "vmp",     ".arch",  "enigma",  ".upx",  "packed",   "aspack",
+              "petite",  "mpress",  "upack",   ".adata",  ".udata", "pec",     "pklite"
+        };
+        for (auto h : hints) {
+            if (s.find(h) != std::string::npos)
+                return true;
+        }
+        return false;
+    }
+
+    static uint32 CountTlsCallbacksForPe(PEFile& pe)
+    {
+        auto& dir = pe.GetDirectory(DirectoryType::TLS);
+        if (dir.VirtualAddress == 0 || dir.Size == 0)
+            return 0;
+        const uint64 faddr = pe.RVAToFA(dir.VirtualAddress);
+        if (faddr == PE_INVALID_ADDRESS)
+            return 0;
+
+        uint64 callbacksVA = 0;
+        if (pe.hdr64) {
+            if (pe.obj->GetData().Copy<uint64>(faddr + 24u, callbacksVA) == false)
+                return 0;
+        } else {
+            uint32 cb = 0;
+            if (pe.obj->GetData().Copy<uint32>(faddr + 12u, cb) == false)
+                return 0;
+            callbacksVA = cb;
+        }
+        if (callbacksVA == 0)
+            return 0;
+
+        uint64 fa = pe.VAtoFA(callbacksVA);
+        if (fa == PE_INVALID_ADDRESS)
+            return 0;
+
+        uint32 count = 0;
+        if (pe.hdr64) {
+            while (true) {
+                uint64 p = 0;
+                if (pe.obj->GetData().Copy<uint64>(fa, p) == false)
+                    break;
+                if (p == 0)
+                    break;
+                count++;
+                fa += 8;
+            }
+        } else {
+            while (true) {
+                uint32 p = 0;
+                if (pe.obj->GetData().Copy<uint32>(fa, p) == false)
+                    break;
+                if (p == 0)
+                    break;
+                count++;
+                fa += 4;
+            }
+        }
+        return count;
+    }
+
+    static const char* DYNAMIC_RESOLUTION_APIS[] = {
+        "LoadLibraryA", "LoadLibraryW", "LoadLibraryExA", "LoadLibraryExW", "GetProcAddress", "LdrLoadDll", "LdrGetProcedureAddress"
+    };
+
+    static const char* PROCESS_INJECTION_APIS[] = { "OpenProcess",
+                                                    "VirtualAllocEx",
+                                                    "WriteProcessMemory",
+                                                    "CreateRemoteThread",
+                                                    "NtUnmapViewOfSection",
+                                                    "SetThreadContext",
+                                                    "ResumeThread",
+                                                    "QueueUserAPC",
+                                                    "NtQueueApcThread",
+                                                    "CreateToolhelp32Snapshot",
+                                                    "RtlCreateUserThread",
+                                                    "NtCreateThreadEx" };
+
+    static void AppendCsvUnique(std::vector<std::string>& out, std::string_view add)
+    {
+        for (const auto& e : out) {
+            if (e == add)
+                return;
+        }
+        out.emplace_back(std::string{ add });
+    }
+
+} // namespace
+
+void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterface> engine, Reference<Subject> subject)
+{
+    if (!engine.IsValid())
+        return;
+
+    auto submit = [&](PredId pid, std::vector<Arg> args, std::string_view details) {
+        if (!AnalysisEngineInterface::IsValidPredicateId(pid))
+            return;
+        auto fact = AnalysisEngineInterface::CreateFactFromPredicateAndSubject(pid, subject, "static analysis", details, std::move(args));
+        engine->SubmitFact(fact);
+    };
+
+    // --- RWX: first section only (one fact; rule engine stores latest per predicate)
+    std::string firstRwxName;
+    uint64 firstRwxVirtSize = 0;
+    for (uint32 i = 0; i < nrSections; i++) {
+        if ((sect[i].Characteristics & RWX_MASK) == RWX_MASK) {
+            String sn;
+            CopySectionName(i, sn);
+            firstRwxName    = sn.GetText() != nullptr ? sn.GetText() : "";
+            firstRwxVirtSize = sect[i].Misc.VirtualSize;
+            if (firstRwxName.empty())
+                firstRwxName = "(unnamed)";
+            submit(predicates.HasRWXSection,
+                  { { "section_name", firstRwxName }, { "size", firstRwxVirtSize } },
+                  "Section has RWX characteristics");
+            break;
+        }
+    }
+
+    // --- TLS callbacks
+    const uint32 tlsCb = CountTlsCallbacksForPe(*this);
+    if (tlsCb > 0 && AnalysisEngineInterface::IsValidPredicateId(predicates.HasTLSCallbacks))
+        submit(predicates.HasTLSCallbacks, { { "callback_count", static_cast<uint64>(tlsCb) } }, "TLS callback array present");
+
+    // --- Imports: dynamic resolution & injection
+    std::vector<std::string> dynHits;
+    std::vector<std::string> injHits;
+
+    for (const auto& f : impFunc) {
+        const char* n = f.Name.GetText();
+        if (n == nullptr || n[0] == '\0')
+            continue;
+
+        for (auto* api : DYNAMIC_RESOLUTION_APIS) {
+            if (ImportNameEqualsI(n, api))
+                AppendCsvUnique(dynHits, api);
+        }
+        for (auto* api : PROCESS_INJECTION_APIS) {
+            if (ImportNameEqualsI(n, api))
+                AppendCsvUnique(injHits, api);
+        }
+    }
+
+    std::ostringstream dynSample;
+    for (size_t i = 0; i < dynHits.size() && i < 6; i++) {
+        if (i)
+            dynSample << ", ";
+        dynSample << dynHits[i];
+    }
+    if (!dynHits.empty() && AnalysisEngineInterface::IsValidPredicateId(predicates.UsesDynamicApiResolution)) {
+        submit(predicates.UsesDynamicApiResolution,
+              { { "indicator_count", static_cast<uint64>(dynHits.size()) }, { "apis_sample", dynSample.str() } },
+              "Imports suggest dynamic API resolution");
+    }
+
+    std::ostringstream injSample;
+    for (size_t i = 0; i < injHits.size() && i < 8; i++) {
+        if (i)
+            injSample << ", ";
+        injSample << injHits[i];
+    }
+    if (!injHits.empty() && AnalysisEngineInterface::IsValidPredicateId(predicates.ImportsProcessInjectionAPIs)) {
+        submit(predicates.ImportsProcessInjectionAPIs,
+              { { "api_count", static_cast<uint64>(injHits.size()) }, { "apis_sample", injSample.str() } },
+              "Imports process-injection-related APIs");
+    }
+
+    // --- Packing heuristics: entropy, section names, small IAT + dynamic load, tiny EP code section
+    double maxEntropy       = 0.0;
+    uint32 maxEntropySect   = 0;
+    bool highEntropy        = false;
+    bool nameHint           = false;
+    std::string hintSection = ".text";
+
+    for (uint32 i = 0; i < nrSections; i++) {
+        String sn;
+        CopySectionName(i, sn);
+        const char* st = sn.GetText();
+        if (st != nullptr && SectionNameLooksLikePacker(st))
+            nameHint = true;
+
+        if (sect[i].SizeOfRawData < MIN_SECTION_BYTES_FOR_ENTROPY || sect[i].PointerToRawData == 0)
+            continue;
+
+        auto buf = obj->GetData().Get(sect[i].PointerToRawData, sect[i].SizeOfRawData, false);
+        if (!buf.IsValid() || buf.Empty())
+            continue;
+
+        const double e = GView::Entropy::ShannonEntropy(buf);
+        if (e > maxEntropy) {
+            maxEntropy     = e;
+            maxEntropySect = i;
+        }
+        if (e >= ENTROPY_PACKED_THRESHOLD)
+            highEntropy = true;
+    }
+
+    if (maxEntropy > 0.0) {
+        String maxSn;
+        CopySectionName(maxEntropySect, maxSn);
+        if (maxSn.GetText() != nullptr && maxSn.GetText()[0] != '\0')
+            hintSection = maxSn.GetText();
+    }
+
+    const bool hasLoadLib =
+          std::any_of(impFunc.begin(), impFunc.end(), [](const ImportFunctionInformation& f) {
+              const char* n = f.Name.GetText();
+              return n && (ImportNameEqualsI(n, "LoadLibraryA") || ImportNameEqualsI(n, "LoadLibraryW") || ImportNameEqualsI(n, "LoadLibraryExA")
+                             || ImportNameEqualsI(n, "LoadLibraryExW"));
+          });
+    const bool hasGPA = std::any_of(impFunc.begin(), impFunc.end(), [](const ImportFunctionInformation& f) {
+        const char* n = f.Name.GetText();
+        return n && ImportNameEqualsI(n, "GetProcAddress");
+    });
+    const bool smallIatDynamic = impFunc.size() < SMALL_IAT_IMPORT_THRESHOLD && hasLoadLib && hasGPA;
+
+    bool tinyTextEp = false;
+    const int epIdx = RVAToSectionIndex(static_cast<uint32>(rvaEntryPoint));
+    if (epIdx >= 0) {
+        String epSn;
+        CopySectionName(static_cast<uint32>(epIdx), epSn);
+        const char* es = epSn.GetText();
+        std::string epName = es ? es : "";
+        std::transform(epName.begin(), epName.end(), epName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (epName.find("text") != std::string::npos && sect[static_cast<uint32>(epIdx)].Misc.VirtualSize < TINY_CODE_SECTION_VIRTUAL_LIMIT)
+            tinyTextEp = true;
+    }
+
+    const bool likelyPacked = highEntropy || nameHint || smallIatDynamic || tinyTextEp;
+
+    if (!likelyPacked || !AnalysisEngineInterface::IsValidPredicateId(predicates.IsLikelyPacked))
+        return;
+
+    std::ostringstream ph;
+    if (highEntropy)
+        ph << "high_entropy>=" << ENTROPY_PACKED_THRESHOLD;
+    if (nameHint) {
+        if (ph.tellp() > 0)
+            ph << '+';
+        ph << "packer_section_name";
+    }
+    if (smallIatDynamic) {
+        if (ph.tellp() > 0)
+            ph << '+';
+        ph << "small_IAT+dynamic_load";
+    }
+    if (tinyTextEp) {
+        if (ph.tellp() > 0)
+            ph << '+';
+        ph << "tiny_code_EP";
+    }
+
+    std::string sectionReport = hintSection;
+    if (!firstRwxName.empty())
+        sectionReport = firstRwxName;
+
+    submit(predicates.IsLikelyPacked,
+          { { "packer_hint", ph.str() }, { "section_name", sectionReport }, { "entropy", maxEntropy } },
+          "Heuristic packing/protection signals");
 }
 
 void PEFile::RunCommand(std::string_view commandName)
