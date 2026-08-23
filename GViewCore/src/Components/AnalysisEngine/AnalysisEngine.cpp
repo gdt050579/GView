@@ -1,14 +1,15 @@
 #include "AnalysisEngine.hpp"
 #include "AnalysisEngineWindow.hpp"
+#include "KnowledgeBase.hpp"
+#include "PatternMatcher.hpp"
 
 #include <cassert>
 #include <algorithm>
-#include <mutex>
-#include <shared_mutex>
-#include <unordered_map>
-#include <unordered_set>
 #include <fstream>
-#include <regex>
+#include <mutex>
+#include <stdexcept>
+#include <unordered_set>
+
 using nlohmann::json;
 
 namespace GView::Components::AnalysisEngine
@@ -43,7 +44,6 @@ bool AnalysisEngineInterface::RequestPredicate(PredicateStorage& predicateStorag
     return false;
 }
 
-// Implementation from GView::Components::AnalysisEngine::AnalysisEngineInterface
 Atom AnalysisEngineInterface::CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::vector<Arg> args)
 {
     return Atom{ pred, subject, std::move(args) };
@@ -56,111 +56,24 @@ Fact AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
     return Fact{ .atom = atom, .time = now(), .source = std::string(source), .details = std::string(details) };
 }
 
-// ------------------------- Internal Structures ----------------------------- //
 namespace
 {
-
-    struct SubjectHash {
-        size_t operator()(const Subject& s) const noexcept
-        {
-            if (s.kind == Subject::SubjectType::None)
-                return 0u;
-            return std::hash<uint64_t>{}(s.value) ^ 0x9e3779b97f4a7c15ULL;
-        }
-    };
-
-    class FactStore
-    {
-      public:
-        Status add(const Fact& f) noexcept
-        {
-            try {
-                std::unique_lock lk(mu_);
-                facts_.emplace_back(f);
-                by_pred_[f.atom.pred].push_back(facts_.size() - 1);
-                by_subject_[f.atom.subject].push_back(facts_.size() - 1);
-                return Status::OK();
-            } catch (const std::exception& e) {
-                const auto err = std::format("FactStore::add: {}", e.what());
-                return Status::Error(err);
-            } catch (...) {
-                return Status::Error("FactStore::add: unknown");
-            }
-        }
-
-        bool exists(PredId p, const Subject& s) const noexcept
-        {
-            return last_time(p, s).has_value();
-        }
-
-        // Retrieve latest fact timestamps for a given predicate+subject
-        std::optional<TimePoint> last_time(PredId p, const Subject& s) const noexcept
-        {
-            try {
-                std::shared_lock lk(mu_);
-                auto it = by_pred_.find(p);
-                if (it == by_pred_.end())
-                    return std::nullopt;
-                for (auto rit = it->second.rbegin(); rit != it->second.rend(); ++rit) {
-                    const Fact& f = facts_.at(*rit);
-                    if (subject_eq(f.atom.subject, s))
-                        return f.time;
-                }
-                return std::nullopt;
-            } catch (...) {
-                return std::nullopt;
-            }
-        }
-
-        std::optional<Reference<const Fact>> get_fact(PredId p, const Subject& s) const noexcept
-        {
-            try {
-                std::shared_lock lk(mu_);
-                auto it = by_pred_.find(p);
-                if (it == by_pred_.end())
-                    return std::nullopt;
-                for (auto rit = it->second.rbegin(); rit != it->second.rend(); ++rit) {
-                    const Fact& f = facts_[*rit];
-                    if (subject_eq(f.atom.subject, s)) {
-                        return { &f };
-                    }
-                }
-                return std::nullopt;
-            } catch (...) {
-                return std::nullopt;
-            }
-        }
-
-      private:
-        static bool subject_eq(const Subject& a, const Subject& b) noexcept
-        {
-            if (a.kind != b.kind)
-                return false;
-            return a.value == b.value;
-        }
-
-        mutable std::shared_mutex mu_;
-        std::vector<Fact> facts_;
-        std::unordered_map<PredId, std::vector<size_t>> by_pred_;
-        std::unordered_map<Subject, std::vector<size_t>, SubjectHash> by_subject_;
-    };
-
     class SuggestionBus
     {
       public:
-        // Returns true if suggestion should be emitted (not suppressed)
-        bool should_emit(const std::vector<PredOrAction>& results, std::chrono::milliseconds cooldown, const Subject& s) noexcept
+        [[nodiscard]] bool ShouldEmit(
+              RuleId rule_id, const std::vector<PredOrAction>& results, std::chrono::milliseconds cooldown, const Subject& s) noexcept
         {
             try {
-                auto key = make_key(results, s);
-                auto t   = now();
+                const auto key = MakeKey(rule_id, results, s);
+                const auto t   = now();
                 std::unique_lock lk(mu_);
                 auto it = last_.find(key);
                 if (it == last_.end()) {
                     last_[key] = t;
                     return true;
                 }
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t - it->second);
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t - it->second);
                 if (elapsed >= cooldown) {
                     it->second = t;
                     return true;
@@ -172,77 +85,58 @@ namespace
         }
 
       private:
-        using Key = std::string; // derived from action key + subject
-        static Key make_key(const std::vector<PredOrAction>& results, const Subject& s)
+        using Key = std::string;
+        static Key MakeKey(RuleId rule_id, const std::vector<PredOrAction>& results, const Subject& s)
         {
             LocalString<256> buffer;
+            buffer.AddFormat("r%ull#", rule_id);
             for (const auto& res : results) {
-                buffer.AddFormat("%ull#", res.data.action_id);
+                if (res.type == PredOrAction::PredOrActionType::Action)
+                    buffer.AddFormat("a%ull#", res.data.action_id);
+                else
+                    buffer.AddFormat("p%ull#", res.data.pred_id);
             }
-            buffer.AddFormat("%u#%ull", (uint32) s.kind, s.value);
+            buffer.AddFormat("%u#%ull", static_cast<uint32>(s.kind), s.value);
             return { buffer.GetText() };
         }
         std::mutex mu_;
         std::unordered_map<Key, TimePoint> last_;
     };
 
-    struct RuleEngineState {
-        FactStore facts;
-        SuggestionBus bus;
-        std::vector<Rule> rules;
-        std::mutex mu_rules; // protects rules
-    };
-
+    [[nodiscard]] bool IsAssertionRule(const Rule& rule) noexcept
+    {
+        if (rule.head.empty())
+            return false;
+        return rule.head[0].type == PredOrAction::PredOrActionType::Predicate;
+    }
 } // anonymous namespace
 
-// ------------------------------ RuleEngine --------------------------------- //
 struct RuleEngine::Impl {
-    RuleEngineState st;
-
-    bool holds(const ConjClause& c, const Subject& s, std::vector<Reference<const Fact>>& facts) const noexcept
-    {
-        facts.reserve(c.all_of.size());
-        const auto t_now = now();
-        for (const auto& L : c.all_of) {
-            auto optional_fact = st.facts.get_fact(L.pred, s);
-            const bool present = optional_fact.has_value();
-            if (!L.negated) {
-                if (!present)
-                    return false;
-                if (c.window.count() > 0) {
-                    auto last = st.facts.last_time(L.pred, s);
-                    if (!last.has_value())
-                        return false;
-                    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(t_now - *last);
-                    if (age > c.window)
-                        return false;
-                }
-            } else {
-                if (present)
-                    return false;
-            }
-            if (present)
-                facts.emplace_back(optional_fact.value());
-        }
-        return true;
-    }
+    KnowledgeBase knowledge;
+    SuggestionBus bus;
+    std::vector<Rule> all_rules;
+    std::vector<Rule> assertion_rules;
+    std::vector<Rule> action_rules;
+    std::mutex mu_rules;
 };
 
 RuleEngine::RuleEngine() : engineWindow(nullptr), impl_(std::make_unique<Impl>())
 {
     current_suggestions.reserve(8);
 }
+
 RuleEngine::~RuleEngine() noexcept = default;
 
 bool RuleEngine::Init()
 {
+    AnalysisEngineConfig::Initialize(config_);
+
     std::ifstream analysis_engine("AnalysisEngine.json");
     if (!analysis_engine.is_open()) {
-
         auto current_app_path = AppCUI::OS::GetCurrentApplicationPath();
         if (!current_app_path.has_filename())
             return false;
-        current_app_path      = current_app_path.remove_filename();
+        current_app_path = current_app_path.remove_filename();
         current_app_path /= "AnalysisEngine.json";
         analysis_engine.open(current_app_path);
         if (!analysis_engine.is_open())
@@ -254,6 +148,31 @@ bool RuleEngine::Init()
     try {
         predicates.ExtractPredicates(analysis_data, "predicates");
         actions.ExtractPredicates(analysis_data, "actions");
+
+        for (const auto& pair_names : config_.contradiction_names) {
+            ContradictionPair pair;
+            auto a_it = predicates.name_to_id.find(pair_names.predicate_a);
+            auto b_it = predicates.name_to_id.find(pair_names.predicate_b);
+            if (a_it != predicates.name_to_id.end() && b_it != predicates.name_to_id.end()) {
+                pair.predicate_a = a_it->second;
+                pair.predicate_b = b_it->second;
+                config_.contradictions.push_back(pair);
+            }
+        }
+
+        if (analysis_data.contains("contradictions") && analysis_data["contradictions"].is_array()) {
+            for (const auto& entry : analysis_data["contradictions"]) {
+                if (!entry.is_array() || entry.size() != 2)
+                    continue;
+                const auto a_name = entry[0].get<std::string>();
+                const auto b_name = entry[1].get<std::string>();
+                auto a_it         = predicates.name_to_id.find(a_name);
+                auto b_it         = predicates.name_to_id.find(b_name);
+                if (a_it != predicates.name_to_id.end() && b_it != predicates.name_to_id.end()) {
+                    config_.contradictions.push_back({ a_it->second, b_it->second });
+                }
+            }
+        }
 
         auto ctx = std::make_tuple<SpecificationStorage<PredId, PredicateSpecification>*, SpecificationStorage<ActId, PredicateSpecification>*>(
               &predicates, &actions);
@@ -298,17 +217,17 @@ bool RuleEngine::Init()
                 }
                 throw std::runtime_error(std::format("RuleEngine::Init: rule '{}' uses unknown predicate/action '{}'", rule.second.name, result));
             }
-            
+
             Rule converted_rule = {
                 rule.first, rule.second.name, rule_clause, results_parsed, rule.second.confidence, rule.second.variable_mapping, rule.second.explanation
             };
-            register_rule(converted_rule);
+            const bool is_assertion = IsAssertionRule(converted_rule);
+            register_rule(converted_rule, is_assertion);
             rules.name_to_id[rule.second.name]    = rule.first;
             rules.id_to_specification[rule.first] = converted_rule;
         }
         rules.next_available_id = rules_specification_storage.next_available_id;
         engineWindow            = { new AnalysisEngineWindow(this) };
-
         return true;
     } catch (const std::exception& e) {
         AppCUI::Dialogs::MessageBox::ShowError("Found err", e.what());
@@ -316,9 +235,43 @@ bool RuleEngine::Init()
     }
 }
 
+void RuleEngine::CheckContradictions(const Fact& fact) const
+{
+    for (const auto& pair : config_.contradictions) {
+        const PredId other =
+              (fact.atom.pred == pair.predicate_a) ? pair.predicate_b :
+              (fact.atom.pred == pair.predicate_b) ? pair.predicate_a :
+                                                     INVALID_PRED_ID;
+        if (other == INVALID_PRED_ID)
+            continue;
+        if (impl_->knowledge.Exists(other, fact.atom.subject))
+            throw std::logic_error("Knowledge base contradiction detected (Gamma |- False)");
+    }
+}
+
+void RuleEngine::RecordInitialDerivation(const Fact& fact)
+{
+    const auto key = MakeFactKey(fact);
+    if (impl_->knowledge.GetDerivationIndex().contains(key))
+        return;
+    auto node                 = std::make_shared<DerivationNode>();
+    node->derived_key         = key;
+    node->source_type         = DerivationSourceType::InitialExtraction;
+    impl_->knowledge.GetDerivationIndex()[key] = std::move(node);
+}
+
+void RuleEngine::MaybeRunClosureAfterFact()
+{
+    if (config_.closure_mode == ClosureMode::Auto) {
+        const auto status = ComputeAssertionClosure();
+        if (!status.ok)
+            AppCUI::Dialogs::MessageBox::ShowError("Closure error", status.message);
+    }
+}
+
 bool RuleEngine::SubmitFact(const Fact& fact)
 {
-    auto pred_id = fact.atom.pred;
+    auto pred_id        = fact.atom.pred;
     auto pred_specif_it = predicates.id_to_specification.find(pred_id);
     if (pred_specif_it == predicates.id_to_specification.end())
         return false;
@@ -331,8 +284,19 @@ bool RuleEngine::SubmitFact(const Fact& fact)
             return false;
     }
 
+    try {
+        CheckContradictions(fact);
+    } catch (const std::logic_error& e) {
+        AppCUI::Dialogs::MessageBox::ShowError("Consistency violation", e.what());
+        return false;
+    }
+
     if (!set_fact(fact).ok)
         return false;
+
+    RecordInitialDerivation(fact);
+    MaybeRunClosureAfterFact();
+
     if constexpr (DISPLAY_FACTS_AS_ANALYSIS_NOTES) {
         auto fact_message = FormatFactMessage(fact, pred_specif_it->second);
         AddAnalysisNotes(fact.atom.subject, std::move(fact_message));
@@ -353,12 +317,12 @@ PredId RuleEngine::GetPredId(std::string_view name) const
     auto it = predicates.name_to_id.find(name);
     if (it != predicates.name_to_id.end())
         return it->second;
-    return INVALID_ACT_ID;
+    return INVALID_PRED_ID;
 }
 
 std::string_view RuleEngine::GetPredName(PredId p) const
 {
-    if (p == INVALID_ACT_ID)
+    if (p == INVALID_PRED_ID)
         return "";
     auto it = predicates.id_to_specification.find(p);
     if (it != predicates.id_to_specification.end())
@@ -392,7 +356,6 @@ std::vector<bool> RuleEngine::RegisterActionTrigger(const std::vector<ActId>& ac
             results[i] = false;
             continue;
         }
-        // TODO: check if already registered?
         action_handlers[action].push_back(trigger);
         results[i] = true;
     }
@@ -410,14 +373,13 @@ Subject RuleEngine::GetSubjectForNewWindow(Object::Type objectType)
         type = Subject::SubjectType::Process;
         break;
     case Object::Type::Folder:
-        type = Subject::SubjectType::File; // Treat folders as files for now
+        type = Subject::SubjectType::File;
         break;
     case Object::Type::MemoryBuffer:
-        type = Subject::SubjectType::File; // Treat memory buffers as files for now
+        type = Subject::SubjectType::File;
         break;
     default:
         assert(false);
-        // Should be implemented -> report to @rzaharia
         break;
     }
     return { type, next_available_subject++ };
@@ -438,13 +400,11 @@ uint64 RuleEngine::FindMainParent(uint64 current_subject)
     return engineWindow->FindMainParent(current_subject);
 }
 
-// Set a fact; threadsafe. Returns Status.
 Status RuleEngine::set_fact(const Fact& f) noexcept
 {
-    return impl_->st.facts.add(f);
+    return impl_->knowledge.Add(f);
 }
 
-// Set a fact; threadsafe. Returns Status.
 Status RuleEngine::set_fact(PredId p, const Subject& s, std::string source) noexcept
 {
     Fact f;
@@ -455,30 +415,144 @@ Status RuleEngine::set_fact(PredId p, const Subject& s, std::string source) noex
     return set_fact(f);
 }
 
-// Evaluate rules for a given subject; return emitted suggestions
-std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
+std::span<const Fact> RuleEngine::GetFactsSpan() const noexcept
 {
-    std::vector<Suggestion> out;
-    try {
-        std::unique_lock lk(impl_->st.mu_rules, std::defer_lock);
-        lk.lock();
-        for (const auto& r : impl_->st.rules) {
-            std::vector<Reference<const Fact>> matched_facts;
-            if (impl_->holds(r.body, s, matched_facts)) {
-                if (impl_->st.bus.should_emit(r.head, r.cooldown, s)) {
-                    Suggestion sug;
-                    sug.subject    = s;
-                    sug.results    = r.head;
-                    sug.confidence = r.confidence;
-                    sug.message    = FillRuleTemplate(r, matched_facts);
-                    // sug.cooldown     = r.cooldown;
-                    sug.last_emitted = now();
-                    sug.rule_id      = r.id;
-                    sug.id           = next_suggestion_id++;
-                    current_suggestions.push_back(sug);
-                    out.push_back(std::move(sug));
+    return impl_->knowledge.FactsSpan();
+}
+
+std::shared_ptr<const SnapshotNode> RuleEngine::CurrentSnapshot() const noexcept
+{
+    return impl_->knowledge.CurrentSnapshot();
+}
+
+std::span<const StateTransition> RuleEngine::DisclosureTraceSpan() const noexcept
+{
+    return impl_->knowledge.GetDisclosureTrace().TraceSpan();
+}
+
+const DerivationIndex& RuleEngine::GetDerivationIndex() const noexcept
+{
+    return impl_->knowledge.GetDerivationIndex();
+}
+
+Status RuleEngine::ComputeAssertionClosure() noexcept
+{
+    // Theory Note: max_closure_iterations caps the fixed-point loop; cyclic rule sets would
+    // otherwise fail to terminate, restricting theoretical Cl_R(Gamma) completeness.
+    uint32 iterations = 0;
+    bool changed      = true;
+
+    while (changed && iterations < config_.max_closure_iterations) {
+        changed = false;
+        ++iterations;
+
+        std::unique_lock lk(impl_->mu_rules);
+
+        std::vector<Subject> subjects;
+        subjects.reserve(16);
+        for (const auto& fact : impl_->knowledge.FactsSpan()) {
+            const auto found = std::find_if(subjects.begin(), subjects.end(), [&](const Subject& s) {
+                return s.kind == fact.atom.subject.kind && s.value == fact.atom.subject.value;
+            });
+            if (found == subjects.end())
+                subjects.push_back(fact.atom.subject);
+        }
+
+        for (const auto& rule : impl_->assertion_rules) {
+            for (const auto& subject : subjects) {
+                std::vector<Reference<const Fact>> matched_facts;
+                if (!PatternMatcher::Holds(rule.body, subject, impl_->knowledge, matched_facts))
+                    continue;
+
+                for (const auto& head : rule.head) {
+                    if (head.type != PredOrAction::PredOrActionType::Predicate)
+                        continue;
+
+                    Fact inferred;
+                    inferred.atom.pred    = head.data.pred_id;
+                    inferred.atom.subject = subject;
+                    inferred.source       = "inference";
+                    inferred.details      = rule.explanation;
+                    inferred.time         = now();
+
+                    const auto key = MakeFactKey(inferred);
+                    if (impl_->knowledge.HasFactKey(key))
+                        continue;
+
+                    try {
+                        CheckContradictions(inferred);
+                    } catch (const std::logic_error& e) {
+                        return Status::Error(e.what());
+                    }
+
+                    if (!impl_->knowledge.Add(inferred).ok)
+                        continue;
+
+                    auto node              = std::make_shared<DerivationNode>();
+                    node->derived_key      = key;
+                    node->source_type      = DerivationSourceType::Rule;
+                    node->source_rule_id   = rule.id;
+                    for (auto& mf : matched_facts) {
+                        if (!mf.IsValid())
+                            continue;
+                        auto dep         = std::make_shared<DerivationNode>();
+                        dep->derived_key = MakeFactKey(static_cast<const Fact&>(mf));
+                        dep->source_type = DerivationSourceType::InitialExtraction;
+                        node->dependencies.push_back(std::move(dep));
+                    }
+                    impl_->knowledge.GetDerivationIndex()[key] = std::move(node);
+                    changed = true;
+
+                    if constexpr (DISPLAY_FACTS_AS_ANALYSIS_NOTES) {
+                        const auto pred_it = predicates.id_to_specification.find(inferred.atom.pred);
+                        if (pred_it != predicates.id_to_specification.end()) {
+                            auto msg = FormatFactMessage(inferred, pred_it->second);
+                            AddAnalysisNotes(inferred.atom.subject, std::move(msg));
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    if (iterations >= config_.max_closure_iterations && changed)
+        return Status::Error("Assertion closure reached max iteration limit");
+
+    return Status::OK();
+}
+
+Status RuleEngine::RunClosure() noexcept
+{
+    return ComputeAssertionClosure();
+}
+
+std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
+{
+    if (config_.closure_mode == ClosureMode::Manual) {
+        const auto status = RunClosure();
+        (void)status;
+    }
+
+    std::vector<Suggestion> out;
+    try {
+        std::unique_lock lk(impl_->mu_rules);
+        for (const auto& r : impl_->action_rules) {
+            std::vector<Reference<const Fact>> matched_facts;
+            if (!PatternMatcher::Holds(r.body, s, impl_->knowledge, matched_facts))
+                continue;
+            if (!impl_->bus.ShouldEmit(r.id, r.head, r.cooldown, s))
+                continue;
+
+            Suggestion sug;
+            sug.subject    = s;
+            sug.results    = r.head;
+            sug.confidence = r.confidence;
+            sug.message    = FillRuleTemplate(r, matched_facts);
+            sug.last_emitted = now();
+            sug.rule_id      = r.id;
+            sug.id           = next_suggestion_id++;
+            current_suggestions.push_back(sug);
+            out.push_back(std::move(sug));
         }
         return out;
     } catch (...) {
@@ -487,15 +561,18 @@ std::vector<Suggestion> RuleEngine::evaluate(const Subject& s) noexcept
     }
 }
 
-Status RuleEngine::register_rule(const Rule& r) noexcept
+Status RuleEngine::register_rule(const Rule& r, bool is_assertion_rule) noexcept
 {
     try {
-        std::unique_lock lk(impl_->st.mu_rules);
-        impl_->st.rules.push_back(r);
+        std::unique_lock lk(impl_->mu_rules);
+        impl_->all_rules.push_back(r);
+        if (is_assertion_rule)
+            impl_->assertion_rules.push_back(r);
+        else
+            impl_->action_rules.push_back(r);
         return Status::OK();
     } catch (const std::exception& e) {
-        const auto err = std::format("register_rule: {}", e.what());
-        return Status::Error(err);
+        return Status::Error(std::format("register_rule: {}", e.what()));
     } catch (...) {
         return Status::Error("register_rule: unknown");
     }
@@ -503,41 +580,43 @@ Status RuleEngine::register_rule(const Rule& r) noexcept
 
 std::string RuleEngine::GetRulePredicates(RuleId rule_id) const
 {
-    // TODO --> implement this properly
-    // std::shared_lock lk(impl_->st.mu_rules);
+    std::lock_guard lk(impl_->mu_rules);
 
     const auto& rule_it = rules.id_to_specification.find(rule_id);
-    if (rule_it == rules.id_to_specification.end()) {
-        Dialogs::MessageBox::ShowError("Err", "Invalid rule, not found!");
+    if (rule_it == rules.id_to_specification.end())
         return "";
-    }
-    auto& r = rule_it->second;
+
+    const auto& r     = rule_it->second;
     LocalString<1024> buf = {};
-    bool first_add        = true;
-    const char* and_str   = "";
-    try {
-        for (const auto& L : r.body.all_of) {
-            auto pred_name = GetPredName(L.pred);
-            buf.AddFormat(" %s%s%.*s", and_str, L.negated ? "NOT-" : "", pred_name.size(), pred_name.data());
-            if (first_add) {
-                first_add = false;
-                and_str   = "AND ";
-            }
+    bool first_add    = true;
+    const char* and_str = "";
+    for (const auto& L : r.body.all_of) {
+        auto pred_name = GetPredName(L.pred);
+        buf.AddFormat(" %s%s%.*s", and_str, L.negated ? "NOT-" : "", static_cast<int>(pred_name.size()), pred_name.data());
+        if (first_add) {
+            first_add = false;
+            and_str   = "AND ";
         }
-        return std::string(buf.GetText());
-    } catch (...) {
-        return "";
     }
-    return "";
+    return std::string(buf.GetText());
 }
 
 bool RuleEngine::TryExecuteSuggestionByArrayIndex(uint32 index, bool& shouldCloseAnalysisWindow)
 {
-    if (current_suggestions.empty())
-        return false;
-    if (index >= current_suggestions.size())
+    if (current_suggestions.empty() || index >= current_suggestions.size())
         return false;
     const auto& s = current_suggestions[index];
+
+    std::optional<GroundAction> ground_action;
+    for (const auto& res : s.results) {
+        if (res.type == PredOrAction::PredOrActionType::Action) {
+            ground_action = GroundAction{ res.data.action_id, {} };
+            break;
+        }
+    }
+
+    impl_->knowledge.BeginTransitionCollection();
+    const auto from_snapshot = impl_->knowledge.CurrentSnapshot();
 
     std::vector<Reference<RuleTriggerInterface>> handlers;
     for (const auto& res : s.results) {
@@ -552,9 +631,6 @@ bool RuleEngine::TryExecuteSuggestionByArrayIndex(uint32 index, bool& shouldClos
         }
     }
 
-    /*if (handlers.empty())//TODO: consider reenable this check?
-        return true; */
-
     bool final_delete_rule = true;
     for (auto& h : handlers) {
         if (!h.IsValid())
@@ -563,31 +639,33 @@ bool RuleEngine::TryExecuteSuggestionByArrayIndex(uint32 index, bool& shouldClos
         h->OnRuleTrigger(s, delete_rule, shouldCloseAnalysisWindow);
         final_delete_rule = final_delete_rule && delete_rule;
     }
-    if (final_delete_rule) {
+
+    impl_->knowledge.EndTransitionCollection();
+    auto new_indices = impl_->knowledge.StealCollectedIndices();
+    impl_->knowledge.RecordTransition(from_snapshot, std::move(ground_action), std::move(new_indices));
+    MaybeRunClosureAfterFact();
+
+    if (final_delete_rule)
         current_suggestions.erase(current_suggestions.begin() + index);
-    }
     return true;
 }
 
 bool RuleEngine::TryExecuteSuggestionBySuggestionId(SuggestionId id, bool& shouldCloseAnalysisWindow)
 {
-    for (uint32 i=0;i<current_suggestions.size();i++)
-    {
+    for (uint32 i = 0; i < current_suggestions.size(); i++) {
         if (current_suggestions[i].id == id)
-        {
             return TryExecuteSuggestionByArrayIndex(i, shouldCloseAnalysisWindow);
-        }
     }
     return false;
 }
 
 Reference<const Suggestion> RuleEngine::GetSuggestionById(SuggestionId id) const
 {
-    for (const auto& s : current_suggestions)
-    {
+    for (const auto& s : current_suggestions) {
         if (s.id == id)
             return &s;
     }
     return nullptr;
 }
+
 } // namespace GView::Components::AnalysisEngine

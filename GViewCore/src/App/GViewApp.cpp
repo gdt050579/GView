@@ -5,6 +5,7 @@
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
 #include "LexicalViewer.hpp"
+#include "../Components/AnalysisEngine/AnalysisEngineInternal.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -78,6 +79,7 @@ bool GView::App::ResetConfiguration()
     GView::View::GridViewer::Config::Update(ini["View.Grid"]);
     GView::View::DissasmViewer::Config::Update(ini["View.Dissasm"]);
     GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
+    GView::Components::AnalysisEngine::AnalysisEngineConfig::Update(ini["AnalysisEngine"]);
 
     // parse types and add specs
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();

@@ -1,9 +1,13 @@
 #include "AnalysisEngineWindow.hpp"
+#include "ActionViewProvider.hpp"
+#include "ReportGenerator.hpp"
+#include "SummaryController.hpp"
 
 using namespace GView::Components::AnalysisEngine;
 
-constexpr int32 COMMAND_CLOSE    = 0;
-constexpr int32 COMMAND_GET_HINT = 1;
+constexpr int32 COMMAND_CLOSE         = 0;
+constexpr int32 COMMAND_GET_HINT      = 1;
+constexpr int32 COMMAND_REFRESH_SUMMARY = 2;
 
 constexpr uint32 SUBJECT_COLUMN_INDEX = 0;
 constexpr uint32 ACTION_COLUMN_INDEX  = 1;
@@ -13,13 +17,23 @@ AnalysisEngineWindow::AnalysisEngineWindow(Reference<RuleEngine> engine)
     : Window("Analysis Engine", "t:1,l:1,r:1,b:1", Controls::WindowFlags::Sizeable), engine(engine)
 {
     tree_data_needs_rebuild = true;
-    detailsTree = Factory::TreeView::Create(this, "l:0,t:0,r:0,b:5", { "n:Subject,w:30", "n:Action,w:25", "n:Assertions,w:fill" }, TreeViewFlags::Searchable);
+
+    viewTabs = Factory::Tab::Create(this, "l:0,t:0,r:0,b:5");
+    auto subjectPage = Factory::TabPage::Create(viewTabs, "&Subject");
+    auto actionsPage = Factory::TabPage::Create(viewTabs, "&Actions");
+    auto summaryPage = Factory::TabPage::Create(viewTabs, "&Summary");
+    auto reportPage  = Factory::TabPage::Create(viewTabs, "&Report");
+
+    detailsTree = Factory::TreeView::Create(
+          subjectPage, "l:0,t:0,r:0,b:0", { "n:Subject,w:30", "n:Action,w:25", "n:Assertions,w:fill" }, TreeViewFlags::Searchable);
     detailsTree->Handlers()->OnCurrentItemChanged = this;
     detailsTree->Handlers()->OnItemPressed        = this;
-    // windowTree->Handlers()->OnCurrentItemChanged = this;
 
-    // listView = Factory::ListView::Create(
-    //       this, "x:1,y:1,w:99%,h:70%", { "n:RuleID,w:10%", "n:Confidence,w:10%", "n:Action,w:20%", "n:Message,w:59%" }, ListViewFlags::PopupSearchBar);
+    actionsList = Factory::ListView::Create(
+          actionsPage, "l:0,t:0,r:0,b:0", { "n:Action,w:30%", "n:Facts,w:fill" }, ListViewFlags::PopupSearchBar);
+
+    summaryLabel = Factory::Label::Create(summaryPage, "Press Refresh Summary to request an LLM analysis.", "l:0,t:0,r:0,b:0");
+    reportLabel  = Factory::Label::Create(reportPage, "Select a fact in Subject view to see the derivation report.", "l:0,t:0,r:0,b:0");
 
     statusLabel = Factory::Label::Create(this, "Press F12 to get hints", "l:1,b:3,w:99%");
     predicatesLabel = Factory::Label::Create(this, "Predicates: ", "l:1,b:2,w:99%");
@@ -27,13 +41,6 @@ AnalysisEngineWindow::AnalysisEngineWindow(Reference<RuleEngine> engine)
 #ifndef _DEBUG
     closeWindowForNewSubject->SetChecked(true);
 #endif
-
-    // listView->Handlers()->OnItemPressed        = this;
-    // listView->Handlers()->OnCurrentItemChanged = this;
-
-    // listView->DeleteAllItems();
-
-    DrawSuggestions();
 }
 
 bool AnalysisEngineWindow::OnEvent(AppCUI::Utils::Reference<Control> reference, AppCUI::Controls::Event eventType, int ID)
@@ -46,6 +53,9 @@ bool AnalysisEngineWindow::OnEvent(AppCUI::Utils::Reference<Control> reference, 
             return true;
         case COMMAND_GET_HINT:
             GetHint();
+            return true;
+        case COMMAND_REFRESH_SUMMARY:
+            RefreshSummary();
             return true;
         default:
             break;
@@ -68,6 +78,7 @@ bool AnalysisEngineWindow::OnUpdateCommandBar(Application::CommandBar& commandBa
 {
     commandBar.SetCommand(Input::Key::Escape, "Close", COMMAND_CLOSE);
     commandBar.SetCommand(Input::Key::F12, "GetHint", COMMAND_GET_HINT);
+    commandBar.SetCommand(Input::Key::Ctrl | Input::Key::R, "RefreshSummary", COMMAND_REFRESH_SUMMARY);
     return true;
 }
 
@@ -75,10 +86,17 @@ void AnalysisEngineWindow::OnTreeViewCurrentItemChanged(Reference<Controls::Tree
 {
     if (!item.IsValid())
         return;
-    const auto data = item.GetData<LineData>();
+    auto data = item.GetData<LineData>();
     if (!data.IsValid())
         return;
-    // DrawPredicatesForCurrentIndex(static_cast<uint32>(index));
+    const SuggestionId suggestion_id = data->suggestion_id;
+    for (uint32 i = 0; i < engine->GetAllAvailableSuggestions().size(); ++i) {
+        if (engine->GetAllAvailableSuggestions()[i].id == suggestion_id) {
+            DrawPredicatesForCurrentIndex(i);
+            break;
+        }
+    }
+    RefreshReportView();
 }
 
 void SearchForTopEntrySubject(std::shared_ptr<EntryContainerData>& current_entry)
@@ -136,7 +154,7 @@ void AnalysisEngineWindow::OnTreeViewItemPressed(Reference<Controls::TreeView> t
 
     //parent_subject->ResetOwnerToSelf();
     predicatesLabel->SetText("Predicates: ");
-    DrawSuggestions();
+    RefreshActionsView();
 
     if (shouldCloseAnalysisWindow && closeWindowForNewSubject->IsChecked()) {
         tree_data_needs_rebuild = true;
@@ -180,8 +198,7 @@ void AnalysisEngineWindow::BeforeOpen()
         return;
     tree_data_needs_rebuild = false;
     RebuildTreeData();
-
-    // DrawSuggestions();
+    RefreshActionsView();
 }
 
 void AnalysisEngineWindow::AddAnalysisNotes(const Subject& currentWindow, std::string data)
@@ -248,9 +265,9 @@ uint64 AnalysisEngineWindow::FindMainParent(uint64 current_subject)
         auto it = subjects_hierarchy.find(subject);
         if (it == subjects_hierarchy.end())
             break;
-        if (it->second.main_parent <= 1) // First ID
-            break;
-        subject = it->first;
+        if (it->second.direct_parent == 0 || it->second.direct_parent == subject)
+            return subject;
+        subject = it->second.direct_parent;
     }
     return subject;
 }
@@ -312,32 +329,84 @@ void AnalysisEngineWindow::GetHint()
             }
         }
         RebuildTreeData();
-        DrawSuggestions();
+    }
+    RefreshActionsView();
+}
+
+void AnalysisEngineWindow::RefreshActionsView()
+{
+    if (!actionsList.IsValid() || !engine.IsValid())
+        return;
+    actionsList->DeleteAllItems();
+    const auto formatted = ActionViewProvider::FormatTrace(
+          engine->DisclosureTraceSpan(), engine->GetFactsSpan(), engine->GetPredicateStorage(), engine->GetActionStorage());
+    for (const auto& entry : formatted) {
+        std::string facts_joined;
+        for (size_t i = 0; i < entry.formatted_facts.size(); ++i) {
+            if (i > 0)
+                facts_joined += "; ";
+            facts_joined += entry.formatted_facts[i];
+        }
+        actionsList->AddItem({ entry.formatted_action, facts_joined });
     }
 }
 
-void AnalysisEngineWindow::DrawSuggestions()
+void AnalysisEngineWindow::RefreshSummary()
 {
-    /*listView->DeleteAllItems();
-    auto available_suggestions = engine->GetAllAvailableSuggestions();
-    if (available_suggestions.empty())
+    if (!summaryLabel.IsValid() || !engine.IsValid())
         return;
-    for (uint32 i = 0; i < available_suggestions.size(); i++) {
-        const auto& s                = available_suggestions[i];
-        std::string_view action_name = "NoAction!!";
-        for (const auto& result : s.results) {
-            if (result.type == PredOrAction::PredOrActionType::Action) {
-                action_name = engine->GetActName(result.data.action_id);
-                break;
-            }
-        }
-        std::string rule_id                            = std::to_string(s.rule_id);
-        const auto confidence                          = std::to_string(s.confidence);
-        const std::initializer_list<ConstString> items = { rule_id, confidence, action_name, s.message };
-        auto new_item                                  = listView->AddItem(items);
-        new_item.SetData(i);
+
+    auto w           = Application::GetCurrentWindow();
+    auto w_interface = w.ToObjectRef<View::WindowInterface>();
+    if (!w_interface.IsValid()) {
+        summaryLabel->SetText("No active window for summary context.");
+        return;
     }
-    DrawPredicatesForCurrentIndex(0);*/
+
+    auto query = w_interface->GetQueryInterface();
+    if (!query.IsValid()) {
+        summaryLabel->SetText("Query interface unavailable.");
+        return;
+    }
+
+    auto assistant = query->GetSmartAssistantInterface();
+    const auto result = SummaryController::RequestSummary(engine, assistant);
+    if (!result.success) {
+        summaryLabel->SetText("Summary request failed or LLM hints are restricted.");
+        return;
+    }
+    summaryLabel->SetText(result.narrative);
+}
+
+void AnalysisEngineWindow::RefreshReportView()
+{
+    if (!reportLabel.IsValid() || !engine.IsValid())
+        return;
+
+    const auto facts = engine->GetFactsSpan();
+    if (facts.empty()) {
+        reportLabel->SetText("No facts available for report.");
+        return;
+    }
+
+    const auto& last_fact = facts.back();
+    const auto verdict_key = MakeFactKey(last_fact);
+    Subject subject{};
+    Reference<Controls::Window> active_window = Application::GetCurrentWindow();
+    if (active_window.IsValid()) {
+        auto w_interface = active_window.ToObjectRef<View::WindowInterface>();
+        if (w_interface.IsValid() && w_interface->GetCurrentWindowSubject().IsValid())
+            subject = static_cast<const Subject&>(w_interface->GetCurrentWindowSubject());
+    }
+
+    const auto report = ReportGenerator::GenerateReport(
+          subject,
+          engine->DisclosureTraceSpan(),
+          facts,
+          verdict_key,
+          engine->GetDerivationIndex(),
+          engine->GetPredicateStorage());
+    reportLabel->SetText(report);
 }
 
 void AnalysisEngineWindow::DrawPredicatesForCurrentIndex(uint32 index)

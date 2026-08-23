@@ -75,8 +75,6 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
     AnalysisEngineWindow(Reference<RuleEngine> engine);
     bool OnEvent(AppCUI::Utils::Reference<Control>, AppCUI::Controls::Event eventType, int ID) override;
     bool OnUpdateCommandBar(Application::CommandBar& commandBar) override;
-    //void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
-    //void OnListViewCurrentItemChanged(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
     void OnTreeViewCurrentItemChanged(Reference<Controls::TreeView> tree, TreeViewItem& item) override;
     void OnTreeViewItemPressed(Reference<Controls::TreeView> tree, TreeViewItem& item) override;
     void BeforeOpen();
@@ -86,16 +84,20 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
 
   private:
     void GetHint();
-    void DrawSuggestions();
+    void RefreshSummary();
+    void RefreshActionsView();
+    void RefreshReportView();
     void DrawPredicatesForCurrentIndex(uint32 index);
     void RebuildTreeData();
 
+    Reference<Tab> viewTabs;
     Reference<TreeView> detailsTree;
+    Reference<ListView> actionsList;
+    Reference<Label> summaryLabel;
+    Reference<Label> reportLabel;
     bool tree_data_needs_rebuild;
 
-
     Reference<RuleEngine> engine;
-    //Reference<ListView> listView;
     Reference<Label> statusLabel;
     Reference<Label> predicatesLabel;
     Reference<CheckBox> closeWindowForNewSubject;
@@ -108,4 +110,4 @@ class AnalysisEngineWindow : public Controls::Window, public Handlers::OnTreeVie
     std::map<SubjectId, std::shared_ptr<EntryContainerData>> new_subject_data;
 
 };
-}
+} // namespace GView::Components::AnalysisEngine

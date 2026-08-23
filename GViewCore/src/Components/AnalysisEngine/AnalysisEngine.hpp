@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "AnalysisEngineData.hpp"
+#include "AnalysisEngineInternal.hpp"
 #include "GView.hpp"
 
 constexpr bool DISPLAY_FACTS_AS_ANALYSIS_NOTES = true;
@@ -21,8 +22,8 @@ struct SubjectParentInfo {
 };
 
 class AnalysisEngineWindow;
-// ----------------------- Concrete RuleEngine Impl -------------------------- //
-// RuleEngine: simple rule-based engine with built-in rules.
+class KnowledgeBase;
+
 class RuleEngine final : public AnalysisEngineInterface
 {
   public:
@@ -43,24 +44,46 @@ class RuleEngine final : public AnalysisEngineInterface
 
     uint64 FindMainParent(uint64 current_subject);
 
-    std::vector<Suggestion> evaluate(const Subject& s) noexcept;
+    [[nodiscard]] std::vector<Suggestion> evaluate(const Subject& s) noexcept;
+    [[nodiscard]] Status RunClosure() noexcept;
 
     Status set_fact(const Fact& f) noexcept;
     Status set_fact(PredId p, const Subject& s, std::string source) noexcept;
-    
+
     std::string GetRulePredicates(RuleId rule_id) const;
 
-    const std::vector<Suggestion>& GetAllAvailableSuggestions() const
+    [[nodiscard]] const std::vector<Suggestion>& GetAllAvailableSuggestions() const noexcept
     {
         return current_suggestions;
     }
 
-    // Small helpers
+    [[nodiscard]] std::span<const Fact> GetFactsSpan() const noexcept;
+    [[nodiscard]] const SpecificationStorage<PredId, PredicateSpecification>& GetPredicateStorage() const noexcept
+    {
+        return predicates;
+    }
+    [[nodiscard]] const SpecificationStorage<ActId, PredicateSpecification>& GetActionStorage() const noexcept
+    {
+        return actions;
+    }
+    [[nodiscard]] const AnalysisEngineConfig& GetConfig() const noexcept
+    {
+        return config_;
+    }
+    [[nodiscard]] std::shared_ptr<const SnapshotNode> CurrentSnapshot() const noexcept;
+    [[nodiscard]] std::span<const StateTransition> DisclosureTraceSpan() const noexcept;
+    [[nodiscard]] const DerivationIndex& GetDerivationIndex() const noexcept;
+
     bool TryExecuteSuggestionByArrayIndex(uint32 index, bool& shouldCloseAnalysisWindow);
     bool TryExecuteSuggestionBySuggestionId(SuggestionId id, bool& shouldCloseAnalysisWindow);
     Reference<const Suggestion> GetSuggestionById(SuggestionId id) const;
+
   private:
-    Status register_rule(const Rule& r) noexcept;
+    Status register_rule(const Rule& r, bool is_assertion_rule) noexcept;
+    [[nodiscard]] Status ComputeAssertionClosure() noexcept;
+    void CheckContradictions(const Fact& fact) const;
+    void RecordInitialDerivation(const Fact& fact);
+    void MaybeRunClosureAfterFact();
 
     static PredLiteral lit(PredId p, bool neg = false) noexcept
     {
@@ -81,7 +104,6 @@ class RuleEngine final : public AnalysisEngineInterface
         return c;
     }
 
-
     struct Impl;
     Reference<AnalysisEngineWindow> engineWindow;
     std::unique_ptr<Impl> impl_;
@@ -91,12 +113,12 @@ class RuleEngine final : public AnalysisEngineInterface
     std::unordered_map<ActId, std::vector<Reference<RuleTriggerInterface>>> action_handlers;
     std::atomic<uint32> next_available_subject{ 1 };
 
+    AnalysisEngineConfig config_;
     SpecificationStorage<PredId, PredicateSpecification> predicates;
     SpecificationStorage<ActId, PredicateSpecification> actions;
     SpecificationStorage<RuleId, Rule> rules;
 };
 
-// Convenience helpers
 inline Subject FileSubject(FileId id)
 {
     return { Subject::SubjectType::File, id };
