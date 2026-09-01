@@ -1,18 +1,12 @@
 [package]
-name = "gview-app"
-description = "GView terminal binary-analysis application"
+name = "gview-view"
+description = "GView view layer: ViewControl, SmartViewer traits, renderers"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "gview"
-path = "src/main.rs"
-
 [dependencies]
 appcui = { path = "../../../AppCUI-rs/appcui" }
 gview-core = { path = "../gview-core" }
-gview-view = { path = "../gview-view" }
-regex = "1"

@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
     "crates/gview-core",
+    "crates/gview-view",
     "crates/gview-app",
 ]
 

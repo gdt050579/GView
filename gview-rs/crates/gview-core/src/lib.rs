@@ -14,6 +14,7 @@
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
 pub mod cache;
+pub mod config;
 pub mod constants;
 pub mod object;
 pub mod offset;

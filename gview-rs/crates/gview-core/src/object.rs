@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::cache::DataCache;
-use crate::source::FileSource;
+use crate::source::{FileSource, MemorySource};
 
 /// Kind of data backing an [`Object`]
 /// (C++ `Object::Type`, spec §2.1).
@@ -66,6 +66,28 @@ impl Object {
             pid: 0,
             kind: ObjectType::File,
         })
+    }
+
+    /// Creates a [`ObjectType::MemoryBuffer`] object by **copying**
+    /// `buf` into an owned allocation.
+    ///
+    /// Copy policy (C++ `MemoryFile::Create(buffer, size)`,
+    /// `MemoryFile.cpp:63-73`): the input is copied at creation time,
+    /// so later mutation or deallocation of the caller's buffer never
+    /// affects the object. The C++ 32-byte over-allocation
+    /// (`(size | 0x1F) + 1`) is an allocator detail, not behavior, and
+    /// is not replicated; the logical size equals `buf.len()`.
+    #[must_use]
+    pub fn from_buffer(buf: &[u8], name: impl Into<String>, cache_size: u32) -> Self {
+        let source = MemorySource::from_slice(buf);
+        let cache = DataCache::new(Box::new(source), cache_size);
+        Self {
+            cache,
+            name: name.into(),
+            path: PathBuf::new(),
+            pid: 0,
+            kind: ObjectType::MemoryBuffer,
+        }
     }
 
     /// Data access (C++ `GetData` returns a mutable `DataCache&`;
@@ -147,5 +169,33 @@ mod file {
         let dir = tempfile::tempdir().expect("create temp dir");
         let missing = dir.path().join("does-not-exist.bin");
         assert!(Object::open_file(&missing, 0).is_err());
+    }
+}
+
+#[cfg(test)]
+mod memory {
+    use super::*;
+
+    #[test]
+    fn from_buffer_copies_input() {
+        let mut original = vec![0x11_u8, 0x22, 0x33, 0x44];
+        let mut obj = Object::from_buffer(&original, "buf", 0);
+        assert_eq!(obj.object_type(), ObjectType::MemoryBuffer);
+        assert_eq!(obj.name(), "buf");
+        assert_eq!(obj.path(), Path::new(""));
+        assert_eq!(obj.data().size(), 4);
+
+        // Mutating the original after creation must not affect the
+        // object (MemoryFile::Create copy semantics).
+        original[0] = 0xFF;
+        original.clear();
+        let bytes = obj.data_mut().get(0, 4, true).expect("read");
+        assert_eq!(bytes, &[0x11, 0x22, 0x33, 0x44]);
+    }
+
+    #[test]
+    fn from_buffer_empty() {
+        let obj = Object::from_buffer(&[], "empty", 0);
+        assert_eq!(obj.data().size(), 0);
     }
 }

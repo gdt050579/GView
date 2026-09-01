@@ -14,6 +14,11 @@
 )]
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
+pub mod buffer_find;
+pub mod file_window;
+pub mod find_dialog;
+pub mod keyboard;
+
 fn main() {
     println!("GView-rs {}", env!("CARGO_PKG_VERSION"));
 }
