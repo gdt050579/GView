@@ -10,6 +10,7 @@ members = [
     "crates/gview-entropy",
     "crates/gview-decoding",
     "crates/gview-security",
+    "crates/gview-plugin",
 ]
 
 [workspace.package]

@@ -881,6 +881,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gview-plugin"
+version = "0.1.0"
+dependencies = [
+ "appcui",
+ "gview-core",
+ "gview-view",
+ "serde_json",
+]
+
+[[package]]
 name = "gview-security"
 version = "0.1.0"
 dependencies = [
