@@ -1,0 +1,12 @@
+[package]
+name = "gview-decoding"
+description = "GView decoders: Base64, ZLIB, ZIP and LZXPRESS (MS-XCA XPRESS Huffman)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+flate2 = "1"
+zip = { version = "8", default-features = false, features = ["deflate-flate2", "aes-crypto"] }

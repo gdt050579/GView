@@ -1,0 +1,18 @@
+[package]
+name = "gview-disasm"
+description = "GView disassembler wrapper (iced-x86 backend) and Intel function heuristics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["disasm-iced"]
+# Pure-Rust x86/x64 backend.
+disasm-iced = ["dep:iced-x86"]
+# Reserved for the capstone backend (ARM / AArch64); not wired yet.
+disasm-capstone = []
+
+[dependencies]
+iced-x86 = { version = "1.21", optional = true, default-features = false, features = ["std", "decoder", "intel", "instr_info"] }

@@ -1,0 +1,21 @@
+[package]
+name = "gview-hashes"
+description = "GView streaming hash calculators: CRC family, Adler-32 and the OpenSSL digest set"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["md5"]
+# MD5 is feature-gated (legacy digest; needed for the dissasm cache fingerprint).
+md5 = ["dep:md-5"]
+
+[dependencies]
+digest = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+sha3 = "0.10"
+blake2 = "0.10"
+md-5 = { version = "0.10", optional = true }

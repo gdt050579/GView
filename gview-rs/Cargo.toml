@@ -5,6 +5,11 @@ members = [
     "crates/gview-core",
     "crates/gview-view",
     "crates/gview-app",
+    "crates/gview-disasm",
+    "crates/gview-hashes",
+    "crates/gview-entropy",
+    "crates/gview-decoding",
+    "crates/gview-security",
 ]
 
 [workspace.package]

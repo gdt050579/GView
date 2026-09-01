@@ -1,0 +1,16 @@
+[package]
+name = "gview-security"
+description = "GView security services: signed RestrictedMode policies (Ed25519) and crypto primitives"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ed25519-dalek = "2"
+serde_json = "1"
+zeroize = "1"
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"

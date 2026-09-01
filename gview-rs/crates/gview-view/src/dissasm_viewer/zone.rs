@@ -461,6 +461,57 @@ pub fn total_lines(parse_zones: &[ZoneEntry]) -> u32 {
         .map_or(0, |z| z.header().ending_line_index.saturating_sub(1))
 }
 
+// ---------------------------------------------------------------------
+// Raw-key helpers used by the collapse and cache-persistence engines
+// (they need the stored `line - 1` keys, not the display lines).
+// ---------------------------------------------------------------------
+
+impl DissasmComments {
+    /// Inserts directly at a **stored** key (no `line - 1` shift) —
+    /// the cache loader (`DissasmDataTypes.cpp:83`) and the collapse
+    /// re-key loop (`DissasmX86.cpp:1385`) write raw keys.
+    pub fn insert_stored(&mut self, stored_key: u32, comment: String) {
+        self.comments.insert(stored_key, comment);
+    }
+
+    /// C++ collapse re-key (`DissasmX86.cpp:1382-1387`): rebuilds the
+    /// map with every stored key shifted by `difference` (wrapping,
+    /// like the C++ `uint32 + int32`).
+    pub fn shift_stored_keys(&mut self, difference: i32) {
+        let old = std::mem::take(&mut self.comments);
+        for (key, text) in old {
+            self.comments
+                .insert(key.wrapping_add_signed(difference), text);
+        }
+    }
+}
+
+impl AnnotationContainer {
+    /// C++ collapse re-key (`DissasmX86.cpp:1376-1380`): the container
+    /// is reset (`zone.annotations = {}`) and only the **mappings** are
+    /// re-inserted shifted by `difference` — the rename link maps are
+    /// dropped (intentional parity).
+    pub fn shift_mappings_dropping_name_links(&mut self, difference: i32) {
+        let old = std::mem::take(&mut self.mappings);
+        self.initial_name_to_current_name.clear();
+        self.current_name_to_initial_name.clear();
+        for (line, details) in old {
+            self.mappings
+                .insert(line.wrapping_add_signed(difference), details);
+        }
+    }
+
+    /// C++ `add_initial_name` (`DissasmDataTypes.hpp:132-136`).
+    pub fn add_initial_name(&mut self, initial_name: &str) {
+        self.initial_name_to_current_name
+            .entry(initial_name.to_owned())
+            .or_insert_with(|| initial_name.to_owned());
+        self.current_name_to_initial_name
+            .entry(initial_name.to_owned())
+            .or_insert_with(|| initial_name.to_owned());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,3 +10,4 @@ repository.workspace = true
 [dependencies]
 appcui = { path = "../../../AppCUI-rs/appcui" }
 gview-core = { path = "../gview-core" }
+gview-disasm = { path = "../gview-disasm" }
