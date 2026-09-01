@@ -12,6 +12,9 @@
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
 pub mod buffer_viewer;
+pub mod container_viewer;
+pub mod dissasm_viewer;
+pub mod grid_viewer;
 pub mod image_viewer;
 pub mod lexical_viewer;
 pub mod renderer;
