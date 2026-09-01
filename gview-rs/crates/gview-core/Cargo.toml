@@ -1,0 +1,16 @@
+[package]
+name = "gview-core"
+description = "GView core data model: Object, DataCache, Selection, ZonesList"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+appcui = { path = "../../../AppCUI-rs/appcui" }
+zerocopy = "0.8"
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"

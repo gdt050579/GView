@@ -1,0 +1,15 @@
+[package]
+name = "gview-app"
+description = "GView terminal binary-analysis application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "gview"
+path = "src/main.rs"
+
+[dependencies]
+gview-core = { path = "../gview-core" }
