@@ -18,6 +18,8 @@ the discrepancy is noted in `specs/IMPLEMENTATION_TASK_MATRIX.md`.
 | 4 | `TextViewer::ShowFindDialog` is a `NOT_IMPLEMENTED` stub | `View/TextViewer/Instance.cpp:1487-1490` | `gview-view/src/text_viewer/input.rs` | `gview-view` `cpp_parity_quirks::quirk_4_*` |
 | 5 | Grid `ProcessContent` splits rows at the cache-window boundary (**deliberately fixed** in Rust) | `View/GridViewer/Instance.cpp` `ProcessContent` | `gview-view/src/grid_viewer/parse.rs` | `gview-view` `cpp_parity_quirks::quirk_5_*` |
 | 6 | `INSTANCE_CHOOSE_TYPE.CommandId` is `CMD_SWITCH_TO_VIEW` but the handler uses `CMD_CHOSE_NEW_TYPE` | `src/include/Internal.hpp:509`, `App/FileWindow.cpp:289` | `gview-app/src/file_window/events.rs`, `command_bar.rs` | `gview-app` `cpp_parity_quirks::quirk_6_*` |
+| 7 | The `updateConfig` command is unreachable: the table entry is lowercase and `main` has no `case` for it (**deliberately fixed** in Rust) | `GView/src/GView.cpp` `commands[]`, `main` switch | `gview-app/src/cli.rs` | `gview-app` `cpp_parity_quirks::quirk_7_*` |
+| 8 | The cache size is written as `CacheSize` but read as `Config.CacheSize`; `Key.AnalysisEngine` is read but never written | `App/GViewApp.cpp` `ResetConfiguration` L109, `App/Instance.cpp` `LoadSettings` L117, `Internal.hpp:514` | `gview-app/src/settings.rs` | `gview-app` `cpp_parity_quirks::quirk_8_*` |
 
 ## 1. `FunctionNameAndExplanation` prompt is never assigned
 
@@ -73,6 +75,52 @@ with `CMD_CHOSE_NEW_TYPE` and `OnEvent` dispatches on `CMD_CHOSE_NEW_TYPE`. The
 Rust `INSTANCE_CHOOSE_TYPE` keeps `CMD_SWITCH_TO_VIEW` as its `command_id`
 while `build_command_bar` registers Alt+F1 as `CMD_CHOSE_NEW_TYPE`, exactly as
 the C++ does. Only the key-configurator listing shows the mismatched id.
+
+## 7. `updateConfig` is unreachable in C++ (deliberate deviation)
+
+Two independent defects make the documented `updateConfig` command impossible to
+invoke:
+
+1. `commands[]` registers the name as `"updateconfig"` and `GetCommandID`
+   compares string views directly, so the spelling printed in the help text
+   (`GView updateConfig`) never matches. It falls through to `CommandID::Unknown`
+   and is opened as a **file name**.
+2. Even the exact lowercase `updateconfig` maps to `CommandID::UpdateConfig`,
+   which has **no `case`** in the `main` switch. It reaches `default:` and prints
+   `Unable to process command: updateconfig` before returning 1.
+
+`cli::parse` reports `CliCommand::UpdateConfig` for the lowercase spelling
+(faithful to `commands[]`) and treats `updateConfig` as a path (faithful to the
+case-sensitive comparison). Unlike C++, the Rust `main` **dispatches** the
+command to the settings updater; the help text advertises it, and leaving a
+documented command dead serves nobody. This is the second entry, after quirk 5,
+where the port intentionally does not replicate the C++ behaviour.
+
+## 8. Settings written under one key and read under another
+
+`ResetConfiguration` writes the default cache size as
+
+```ini
+[GView]
+CacheSize = 10485760
+```
+
+but `LoadSettings` reads `sect.GetValue("Config.CacheSize")`. A freshly
+generated file therefore never supplies the value it was meant to seed, and the
+cache size silently falls back to `DEFAULT_CACHE_SIZE` until a user adds the
+`Config.CacheSize` key by hand.
+
+The same asymmetry affects the key bindings. `ResetConfiguration` writes the six
+entries of its local `localKeys` array, while `LoadSettings` walks the seven
+entries of `GViewCommands` (`Internal.hpp:514`), which also contains
+`INSTANCE_ANALYSIS_ENGINE`. `Key.AnalysisEngine` is therefore read from every
+file and written to none.
+
+Rust keeps both halves visible: `render_gview_section` writes exactly the six
+`WRITTEN_KEY_COMMANDS` under `CacheSize`, and the loader walks the seven
+`READ_KEY_COMMANDS`. `read_cache_size` accepts **either** key, preferring the
+documented read key `Config.CacheSize`, so a generated file behaves the way the
+C++ author intended without breaking a hand-written one.
 
 ## Related non-truncation notes (not bugs, but spec discrepancies)
 

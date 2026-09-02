@@ -15,11 +15,15 @@
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
 pub mod buffer_find;
+pub mod cli;
+pub mod error;
 pub mod file_window;
 pub mod find_dialog;
 pub mod instance;
 pub mod keyboard;
 pub mod open_file;
+pub mod registry;
+pub mod settings;
 
 #[cfg(test)]
 mod cpp_parity_quirks;

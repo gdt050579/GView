@@ -11,10 +11,25 @@ repository.workspace = true
 name = "gview"
 path = "src/main.rs"
 
+[features]
+default = []
+# Loading legacy C++ `.tpl` / `.gpl` shared objects through
+# `gview-plugin-ffi`. Off by default: static registration keeps the
+# whole open path free of `unsafe` (spec `00_APP` D1). No registry
+# adapter is wired yet (task `ffi-plugin-registry-adapter`).
+legacy-ffi-plugins = []
+
 [dependencies]
 appcui = { path = "../../../AppCUI-rs/appcui" }
 gview-core = { path = "../gview-core" }
 gview-view = { path = "../gview-view" }
 gview-plugin = { path = "../gview-plugin" }
+gview-types-pe = { path = "../../plugins/type/gview-types-pe" }
+gview-types-elf = { path = "../../plugins/type/gview-types-elf" }
+gview-types-macho = { path = "../../plugins/type/gview-types-macho" }
+gview-types-zip = { path = "../../plugins/type/gview-types-zip" }
+gview-types-pcap = { path = "../../plugins/type/gview-types-pcap" }
+gview-generic-hashes = { path = "../../plugins/generic/gview-generic-hashes" }
+gview-generic-entropy = { path = "../../plugins/generic/gview-generic-entropy" }
 regex = "1"
 serde_json = "1"
