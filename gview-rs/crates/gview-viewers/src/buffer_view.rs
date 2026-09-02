@@ -1154,6 +1154,7 @@ mod tests {
             Paint('buffer view with the MZ fixture')
             CheckHash(0xA45EBE85D85CD1B0)
         ";
+        let _ui = crate::UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::debug(100, 14, script).build().expect("debug app");
         let mut window = Window::new("Test", layout!("a:c,w:96,h:12"), window::Flags::None);
         window.add(view(Size::new(96, 10)));

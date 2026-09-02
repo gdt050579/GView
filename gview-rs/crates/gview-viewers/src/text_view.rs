@@ -1114,6 +1114,7 @@ mod tests {
             Paint('text view with three lines')
             CheckHash(0xE92A877705555804)
         ";
+        let _ui = crate::UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::debug(60, 10, script).build().expect("debug app");
         let mut window = Window::new("Test", layout!("a:c,w:56,h:8"), window::Flags::None);
         window.add(view_of(b"alpha\nbeta\ngamma\n", Size::new(54, 6)));

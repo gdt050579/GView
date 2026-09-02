@@ -178,6 +178,7 @@ mod tests {
             Paint('Grid page states it is unavailable')
             CheckHash(0xEE121D19FCF47385)
         ";
+        let _ui = crate::UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::debug(60, 10, script).build().expect("debug app");
         let mut window = Window::new("Test", layout!("a:c,w:50,h:8"), window::Flags::None);
         window.add(UnavailableView::new("Grid", SharedCursorInfo::new()));

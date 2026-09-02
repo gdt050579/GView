@@ -115,6 +115,21 @@ pub trait ViewControl {
     fn objects_highlighting_zones(&self) -> Option<&ZonesList> {
         None
     }
+
+    /// Host-side downcast hook (`00_APP §5.3`).
+    ///
+    /// The window keeps its viewers as `Box<dyn ViewControl>`, but the
+    /// mounting step has to reach the *concrete* placeholder viewer to
+    /// move the plugin's `ViewerRequest` (and with it a `ZonesList`)
+    /// into the real `AppCUI` control instead of cloning it. The C++
+    /// analogue is the `Reference<T>` cast on the tab child.
+    ///
+    /// The base returns `None`: only viewers that a host must downcast
+    /// override it, and a caller that gets `None` simply has nothing to
+    /// take.
+    fn as_any_mut(&mut self) -> Option<&mut dyn core::any::Any> {
+        None
+    }
 }
 
 #[cfg(test)]

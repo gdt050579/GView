@@ -88,6 +88,14 @@ impl ViewContainer {
         self.viewers.get(index).map(AsRef::as_ref)
     }
 
+    /// Mutable access to a viewer by creation index.
+    ///
+    /// The mounting step (`00_APP §5.3`) uses it to take each
+    /// placeholder's `ViewerRequest` before the real control is built.
+    pub fn view_by_index_mut(&mut self, index: usize) -> Option<&mut (dyn ViewControl + 'static)> {
+        self.viewers.get_mut(index).map(AsMut::as_mut)
+    }
+
     /// Switches the active viewer (C++ `SetViewByIndex`,
     /// `FileWindow.cpp:178-182`: out-of-range is rejected).
     pub fn set_view_by_index(&mut self, index: usize) -> bool {

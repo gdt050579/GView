@@ -167,6 +167,7 @@ mod tests {
             Paint.Enable(false)
             Paint('layout built')
         ";
+        let _ui = crate::UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::debug(80, 30, script).build().expect("debug app");
         let mut window = window!("Test,a:c,w:70,h:25,flags: Sizeable");
         let layout = build_layout(&mut window);

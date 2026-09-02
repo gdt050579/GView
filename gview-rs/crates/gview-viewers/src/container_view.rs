@@ -1081,6 +1081,7 @@ mod tests {
             Paint('container view with the mock VFS')
             CheckHash(0x90B4F9C13485A788)
         ";
+        let _ui = crate::UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::debug(80, 24, script).build().expect("debug app");
         let mut window = Window::new("Test", layout!("a:c,w:76,h:22"), window::Flags::None);
         let mut fixture = fixture(Size::new(74, 20));

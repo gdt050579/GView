@@ -23,6 +23,7 @@ legacy-ffi-plugins = []
 appcui = { path = "../../../AppCUI-rs/appcui" }
 gview-core = { path = "../gview-core" }
 gview-view = { path = "../gview-view" }
+gview-viewers = { path = "../gview-viewers" }
 gview-plugin = { path = "../gview-plugin" }
 gview-types-pe = { path = "../../plugins/type/gview-types-pe" }
 gview-types-elf = { path = "../../plugins/type/gview-types-elf" }

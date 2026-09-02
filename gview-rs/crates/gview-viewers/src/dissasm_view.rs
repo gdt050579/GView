@@ -1102,6 +1102,7 @@ mod tests {
             Paint('dissasm view with one x86 zone')
             CheckHash(0x910715AEBEF1FC7B)
         ";
+        let _ui = crate::UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::debug(100, 16, script).build().expect("debug app");
         let mut window = Window::new("Test", layout!("a:c,w:96,h:14"), window::Flags::None);
         window.add(one_zone(Size::new(94, 12)));

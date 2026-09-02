@@ -13,6 +13,22 @@
 
 use super::layout::CMD_SHOW_HORIZONTAL_PANEL;
 
+/// Panel id of the built-in cursor-information page: it belongs to the
+/// window, not to a plugin, so no `panel_content` lookup applies.
+pub const CURSOR_INFO_PANEL_ID: &str = "";
+
+/// One registered panel: what the tab shows and which plugin panel
+/// fills it (C++ `AddPanel(TabPage*)`, where the `TabPage` subclass is
+/// both).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PanelEntry {
+    /// Tab caption; `&` marks the hot key (`&Information`).
+    pub caption: String,
+    /// `PanelRequest::panel_id` — the key the shell passes to
+    /// `TypePlugin::panel_content` (`00_APP §5.4`).
+    pub panel_id: String,
+}
+
 /// One bottom-bar single-choice item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BottomBarItem {
@@ -33,8 +49,8 @@ pub enum PanelCommand {
 
 /// Panel bookkeeping for one `FileWindow`.
 pub struct PanelDock {
-    vertical_captions: Vec<String>,
-    horizontal_captions: Vec<String>,
+    vertical: Vec<PanelEntry>,
+    horizontal: Vec<PanelEntry>,
     bottom_bar: Vec<BottomBarItem>,
     last_horizontal_panel_id: u32,
     current_horizontal: usize,
@@ -55,8 +71,11 @@ impl PanelDock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            vertical_captions: Vec::new(),
-            horizontal_captions: vec!["<->".to_owned()],
+            vertical: Vec::new(),
+            horizontal: vec![PanelEntry {
+                caption: "<->".to_owned(),
+                panel_id: CURSOR_INFO_PANEL_ID.to_owned(),
+            }],
             bottom_bar: vec![BottomBarItem {
                 caption: "<->".to_owned(),
                 command_id: CMD_SHOW_HORIZONTAL_PANEL,
@@ -73,14 +92,18 @@ impl PanelDock {
     /// `vertical == true`: sidebar list tab only. `vertical == false`:
     /// bottom tab plus a bottom-bar item whose id is
     /// `lastHorizontalPanelID++`.
-    pub fn add_panel(&mut self, caption: &str, vertical: bool) -> bool {
+    pub fn add_panel(&mut self, caption: &str, panel_id: &str, vertical: bool) -> bool {
+        let entry = PanelEntry {
+            caption: caption.to_owned(),
+            panel_id: panel_id.to_owned(),
+        };
         if vertical {
-            self.vertical_captions.push(caption.to_owned());
+            self.vertical.push(entry);
             return true;
         }
         let id = self.last_horizontal_panel_id;
         self.last_horizontal_panel_id = id.saturating_add(1);
-        self.horizontal_captions.push(caption.to_owned());
+        self.horizontal.push(entry);
         self.bottom_bar.push(BottomBarItem {
             caption: caption.to_owned(),
             command_id: id,
@@ -97,7 +120,7 @@ impl PanelDock {
             return PanelCommand::NotHandled;
         }
         let index = (id.saturating_sub(CMD_SHOW_HORIZONTAL_PANEL)) as usize;
-        if index < self.horizontal_captions.len() {
+        if index < self.horizontal.len() {
             self.current_horizontal = index;
             self.cursor_info_checked = index == 0;
         }
@@ -130,34 +153,65 @@ impl PanelDock {
         &self.bottom_bar
     }
 
+    /// The vertical (sidebar) panels, in creation order.
+    #[must_use]
+    pub fn vertical_panels(&self) -> &[PanelEntry] {
+        &self.vertical
+    }
+
+    /// The horizontal panels, cursor information first.
+    #[must_use]
+    pub fn horizontal_panels(&self) -> &[PanelEntry] {
+        &self.horizontal
+    }
+
     /// Captions of the vertical (sidebar) panels, in creation order.
     #[must_use]
-    pub fn vertical_captions(&self) -> &[String] {
-        &self.vertical_captions
+    pub fn vertical_captions(&self) -> Vec<String> {
+        self.vertical.iter().map(|p| p.caption.clone()).collect()
     }
 
     /// Captions of the horizontal panels (cursor info `<->` first).
     #[must_use]
-    pub fn horizontal_captions(&self) -> &[String] {
-        &self.horizontal_captions
+    pub fn horizontal_captions(&self) -> Vec<String> {
+        self.horizontal.iter().map(|p| p.caption.clone()).collect()
     }
 
     /// Number of vertical (sidebar) panels.
     #[must_use]
     pub const fn vertical_count(&self) -> usize {
-        self.vertical_captions.len()
+        self.vertical.len()
     }
 
     /// Number of horizontal panels including cursor info.
     #[must_use]
     pub const fn horizontal_count(&self) -> usize {
-        self.horizontal_captions.len()
+        self.horizontal.len()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panel_ids_are_kept_for_the_mounting_step() {
+        let mut dock = PanelDock::new();
+        dock.add_panel("&Information", "pe.information", true);
+        dock.add_panel("&Sections", "pe.sections", false);
+        assert_eq!(
+            dock.vertical_panels(),
+            [PanelEntry {
+                caption: "&Information".to_owned(),
+                panel_id: "pe.information".to_owned(),
+            }]
+        );
+        // Cursor information keeps the empty (window-owned) id.
+        assert_eq!(dock.horizontal_panels()[0].panel_id, CURSOR_INFO_PANEL_ID);
+        assert_eq!(dock.horizontal_panels()[1].panel_id, "pe.sections");
+        assert_eq!(dock.vertical_captions(), ["&Information"]);
+        assert_eq!(dock.horizontal_captions(), ["<->", "&Sections"]);
+    }
 
     #[test]
     fn cursor_info_is_horizontal_index_zero() {
@@ -177,7 +231,7 @@ mod tests {
     #[test]
     fn vertical_panel_adds_no_bottom_bar_item() {
         let mut dock = PanelDock::new();
-        assert!(dock.add_panel("Sections", true));
+        assert!(dock.add_panel("Sections", "pe.sections", true));
         assert_eq!(dock.vertical_count(), 1);
         assert_eq!(dock.bottom_bar_items().len(), 1); // still only "<->"
     }
@@ -185,8 +239,8 @@ mod tests {
     #[test]
     fn horizontal_panel_adds_bottom_bar_item_with_incrementing_id() {
         let mut dock = PanelDock::new();
-        assert!(dock.add_panel("Strings", false));
-        assert!(dock.add_panel("Hashes", false));
+        assert!(dock.add_panel("Strings", "pe.strings", false));
+        assert!(dock.add_panel("Hashes", "pe.hashes", false));
         let items = dock.bottom_bar_items();
         assert_eq!(items.len(), 3);
         // lastHorizontalPanelID starts at base + 1 and increments.
@@ -200,7 +254,7 @@ mod tests {
     #[test]
     fn command_range_switches_horizontal_tab() {
         let mut dock = PanelDock::new();
-        dock.add_panel("Strings", false);
+        dock.add_panel("Strings", "pe.strings", false);
         assert_eq!(
             dock.handle_command(CMD_SHOW_HORIZONTAL_PANEL + 1),
             PanelCommand::ShowHorizontalPanel(1)
@@ -237,7 +291,7 @@ mod tests {
     #[test]
     fn auto_collapse_resets_to_cursor_info() {
         let mut dock = PanelDock::new();
-        dock.add_panel("Strings", false);
+        dock.add_panel("Strings", "pe.strings", false);
         dock.handle_command(CMD_SHOW_HORIZONTAL_PANEL + 1);
         assert_eq!(dock.current_horizontal(), 1);
         dock.on_horizontal_auto_collapse();

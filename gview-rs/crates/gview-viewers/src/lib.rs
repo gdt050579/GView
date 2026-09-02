@@ -51,3 +51,12 @@ pub use dissasm_view::{DissasmView, DissasmViewSettings};
 pub use surface_sink::{ByteColors, RowColors, SurfaceRowSink, HEX_DIGITS};
 pub use text_view::{TextView, TextViewSettings};
 pub use unavailable::{UnavailableView, UNAVAILABLE_SUFFIX};
+
+/// Serialises the tests that build an `AppCUI` application.
+///
+/// `App` is a process-wide singleton (`AppCUI-rs`
+/// `system/app.rs::APP_CREATED_MUTEX`, released only by `App::run`),
+/// while `cargo test` runs tests on parallel threads — two UI tests
+/// overlapping would fail with "App has already been created".
+#[cfg(test)]
+pub(crate) static UI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

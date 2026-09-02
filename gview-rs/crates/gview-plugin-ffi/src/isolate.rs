@@ -15,10 +15,11 @@
 //!
 //! Signal strategy (Linux): the handler runs on the faulting thread.
 //! When that thread is a plugin worker started by [`run_isolated`],
-//! the handler stores the fault into a lock-free slot and then parks
-//! the thread forever in `pause()` — nothing unwinds through Rust
-//! frames, no `longjmp`, so the host stays sound; the waiting caller
-//! sees the fault flag (or the watchdog fires) and reports
+//! the handler stores the fault into the lock-free slot that call
+//! owns and then parks the thread forever in `pause()` — nothing
+//! unwinds through Rust frames, no `longjmp`, so the host stays
+//! sound; the waiting caller sees the fault flag (or the watchdog
+//! fires) and reports
 //! [`IsolationError::Fault`]. A fault on any other thread (the UI
 //! thread running `PopulateWindow` through [`run_guarded`]) cannot be
 //! recovered in-process: the handler logs it, restores the default
@@ -31,10 +32,20 @@
 //! `UpdateSettings` probes of untrusted plugins are watchdog-guarded.
 //! A timed-out worker is abandoned (it cannot be killed safely); its
 //! plugin is invalid from then on.
+//!
+//! Fault slots are **per call**, not per process: each guarded or
+//! isolated call reserves one entry of [`FAULT_SLOT_COUNT`] and binds
+//! it to the thread that runs the plugin code, so concurrent calls
+//! never clear each other's pending flag or steal each other's
+//! attribution. Slots are recycled when a call finishes; the slot of
+//! a watchdog-timed-out call is abandoned with its worker (that
+//! thread may still write to it). Once every slot is taken, further
+//! calls run without fault attribution — panics and hangs are still
+//! reported, a hardware fault is not.
 
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
@@ -46,6 +57,9 @@ pub const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 /// Capacity of the fault-slot plugin-name buffer (async-signal-safe
 /// copy target).
 pub const FAULT_NAME_CAPACITY: usize = 64;
+/// Number of plugin calls that can be fault-attributed at the same
+/// time (one slot per in-flight [`run_guarded`] / [`run_isolated`]).
+pub const FAULT_SLOT_COUNT: usize = 64;
 
 /// What went wrong in a plugin call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,65 +189,132 @@ pub fn registry() -> &'static FaultRegistry {
 }
 
 /// Lock-free slot the signal handler writes and the waiter reads.
+/// One slot belongs to at most one in-flight call at a time.
 struct FaultSlot {
+    /// Reserved by a call that has not released it yet.
+    in_use: AtomicBool,
     pending: AtomicBool,
     signal: AtomicI32,
     address: AtomicUsize,
     name_len: AtomicUsize,
-    name: [std::sync::atomic::AtomicU8; FAULT_NAME_CAPACITY],
+    name: [AtomicU8; FAULT_NAME_CAPACITY],
 }
 
-static FAULT_SLOT: FaultSlot = FaultSlot {
-    pending: AtomicBool::new(false),
-    signal: AtomicI32::new(0),
-    address: AtomicUsize::new(0),
-    name_len: AtomicUsize::new(0),
-    name: [const { std::sync::atomic::AtomicU8::new(0) }; FAULT_NAME_CAPACITY],
-};
+impl FaultSlot {
+    const fn new() -> Self {
+        Self {
+            in_use: AtomicBool::new(false),
+            pending: AtomicBool::new(false),
+            signal: AtomicI32::new(0),
+            address: AtomicUsize::new(0),
+            name_len: AtomicUsize::new(0),
+            name: [const { AtomicU8::new(0) }; FAULT_NAME_CAPACITY],
+        }
+    }
+}
+
+static FAULT_SLOTS: [FaultSlot; FAULT_SLOT_COUNT] = [const { FaultSlot::new() }; FAULT_SLOT_COUNT];
+
+/// Slot index meaning "this thread runs no fault-attributed call".
+/// Out of range for [`FAULT_SLOTS`], so every lookup with it misses.
+const NO_SLOT: usize = usize::MAX;
 
 thread_local! {
     /// Set while this thread is a plugin worker inside a call
     /// (read by the signal handler to decide recoverability).
     static PLUGIN_WORKER: AtomicBool = const { AtomicBool::new(false) };
+    /// The fault slot the call currently running on this thread owns,
+    /// or [`NO_SLOT`]. Read by the signal handler to attribute a fault
+    /// to the right call.
+    static ACTIVE_SLOT: AtomicUsize = const { AtomicUsize::new(NO_SLOT) };
 }
 
-/// Publishes the plugin name the handler will attribute a fault to.
-fn arm_fault_slot(plugin: &str) {
-    let bytes = plugin.as_bytes();
-    let len = bytes.len().min(FAULT_NAME_CAPACITY);
-    for (slot, byte) in FAULT_SLOT.name.iter().zip(bytes.iter().take(len)) {
-        slot.store(*byte, Ordering::Relaxed);
+/// Reserves a free slot and publishes the plugin name a fault on it is
+/// attributed to. `None` when all [`FAULT_SLOT_COUNT`] are taken.
+fn claim_fault_slot(plugin: &str) -> Option<usize> {
+    for (index, slot) in FAULT_SLOTS.iter().enumerate() {
+        if slot
+            .in_use
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            continue;
+        }
+        let bytes = plugin.as_bytes();
+        let len = bytes.len().min(FAULT_NAME_CAPACITY);
+        for (cell, byte) in slot.name.iter().zip(bytes.iter().take(len)) {
+            cell.store(*byte, Ordering::Relaxed);
+        }
+        slot.name_len.store(len, Ordering::Relaxed);
+        slot.signal.store(0, Ordering::Relaxed);
+        slot.address.store(0, Ordering::Relaxed);
+        slot.pending.store(false, Ordering::Release);
+        return Some(index);
     }
-    FAULT_SLOT.name_len.store(len, Ordering::Relaxed);
-    FAULT_SLOT.pending.store(false, Ordering::Release);
+    None
 }
 
-/// Reads and clears a pending fault, if any.
-fn take_pending_fault(export: &'static str) -> Option<FaultRecord> {
-    if !FAULT_SLOT.pending.swap(false, Ordering::AcqRel) {
+/// Returns a finished call's slot to the pool. Never called for the
+/// slot of an abandoned (timed-out) worker, which may still write.
+fn release_fault_slot(index: usize) {
+    if let Some(slot) = FAULT_SLOTS.get(index) {
+        slot.pending.store(false, Ordering::Relaxed);
+        slot.in_use.store(false, Ordering::Release);
+    }
+}
+
+/// Reads and clears the pending fault of `index`, if any.
+fn take_pending_fault(index: usize, export: &'static str) -> Option<FaultRecord> {
+    let slot = FAULT_SLOTS.get(index)?;
+    if !slot.pending.swap(false, Ordering::AcqRel) {
         return None;
     }
-    let len = FAULT_SLOT.name_len.load(Ordering::Relaxed).min(FAULT_NAME_CAPACITY);
-    let bytes: Vec<u8> = FAULT_SLOT
-        .name
-        .iter()
-        .take(len)
-        .map(|b| b.load(Ordering::Relaxed))
-        .collect();
+    let len = slot.name_len.load(Ordering::Relaxed).min(FAULT_NAME_CAPACITY);
+    let bytes: Vec<u8> = slot.name.iter().take(len).map(|b| b.load(Ordering::Relaxed)).collect();
     Some(FaultRecord {
         plugin: String::from_utf8_lossy(&bytes).into_owned(),
         export,
-        kind: FaultKind::Signal(FAULT_SLOT.signal.load(Ordering::Relaxed)),
-        address: FAULT_SLOT.address.load(Ordering::Relaxed),
+        kind: FaultKind::Signal(slot.signal.load(Ordering::Relaxed)),
+        address: slot.address.load(Ordering::Relaxed),
     })
 }
 
+/// The slot owned by the call running on the current thread.
+fn active_slot() -> usize {
+    ACTIVE_SLOT.try_with(|cell| cell.load(Ordering::Acquire)).unwrap_or(NO_SLOT)
+}
+
+/// Binds `index` as the calling thread's active fault slot until it is
+/// dropped, restoring the previous binding (nested guarded calls).
+struct ActiveSlotGuard {
+    previous: usize,
+}
+
+impl ActiveSlotGuard {
+    fn new(index: usize) -> Self {
+        let previous = ACTIVE_SLOT
+            .try_with(|cell| cell.swap(index, Ordering::AcqRel))
+            .unwrap_or(NO_SLOT);
+        Self { previous }
+    }
+}
+
+impl Drop for ActiveSlotGuard {
+    fn drop(&mut self) {
+        // Thread-local teardown may already have run: nothing to restore.
+        let _ = ACTIVE_SLOT.try_with(|cell| cell.store(self.previous, Ordering::Release));
+    }
+}
+
 /// Simulates a hardware fault report (what the signal handler does),
-/// for hosts without signal support and for tests.
+/// for hosts without signal support and for tests. Records into the
+/// slot of the call running on this thread; a no-op outside one.
 pub fn report_fault(signal: i32, address: usize) {
-    FAULT_SLOT.signal.store(signal, Ordering::Relaxed);
-    FAULT_SLOT.address.store(address, Ordering::Relaxed);
-    FAULT_SLOT.pending.store(true, Ordering::Release);
+    if let Some(slot) = FAULT_SLOTS.get(active_slot()) {
+        slot.signal.store(signal, Ordering::Relaxed);
+        slot.address.store(address, Ordering::Relaxed);
+        slot.pending.store(true, Ordering::Release);
+    }
 }
 
 /// Same-thread guard (`PopulateWindow` and other UI-thread calls):
@@ -250,9 +331,14 @@ pub fn run_guarded<R>(plugin: &str, export: &'static str, call: impl FnOnce() ->
     if registry.is_invalid(plugin) {
         return Err(IsolationError::Invalid);
     }
-    arm_fault_slot(plugin);
-    let outcome = catch_unwind(AssertUnwindSafe(call));
-    if let Some(record) = take_pending_fault(export) {
+    let index = claim_fault_slot(plugin).unwrap_or(NO_SLOT);
+    let outcome = {
+        let _active = ActiveSlotGuard::new(index);
+        catch_unwind(AssertUnwindSafe(call))
+    };
+    let pending = take_pending_fault(index, export);
+    release_fault_slot(index);
+    if let Some(record) = pending {
         registry.record(record.clone());
         return Err(IsolationError::Fault(record));
     }
@@ -287,21 +373,28 @@ pub fn run_isolated<R: Send + 'static>(
     if registry.is_invalid(plugin) {
         return Err(IsolationError::Invalid);
     }
-    arm_fault_slot(plugin);
+    let index = claim_fault_slot(plugin).unwrap_or(NO_SLOT);
 
     let (tx, rx) = mpsc::channel::<Result<R, ()>>();
     let spawned = std::thread::Builder::new()
         .name(format!("gview-plugin-{plugin}"))
         .spawn(move || {
             PLUGIN_WORKER.with(|flag| flag.store(true, Ordering::Release));
+            // The worker, not the caller, runs the plugin code: bind the
+            // call's slot here so the handler attributes faults to it.
+            let active = ActiveSlotGuard::new(index);
             signal::install_alternate_stack();
             let outcome = catch_unwind(AssertUnwindSafe(call)).map_err(|_| ());
+            // Unbind before signalling completion: a fault during thread
+            // teardown must not land in a slot the caller may recycle.
+            drop(active);
             PLUGIN_WORKER.with(|flag| flag.store(false, Ordering::Release));
             // The receiver may be gone after a timeout: ignore.
             let _ = tx.send(outcome);
         });
     if spawned.is_err() {
         // No worker thread: fall back to the same-thread guard.
+        release_fault_slot(index);
         return Err(IsolationError::Fault(FaultRecord {
             plugin: plugin.to_owned(),
             export,
@@ -312,7 +405,10 @@ pub fn run_isolated<R: Send + 'static>(
 
     let deadline = Instant::now().checked_add(timeout).unwrap_or_else(Instant::now);
     loop {
-        if let Some(record) = take_pending_fault(export) {
+        if let Some(record) = take_pending_fault(index, export) {
+            // The worker is parked in the handler and will not write
+            // again; the slot is safe to recycle.
+            release_fault_slot(index);
             registry.record(record.clone());
             return Err(IsolationError::Fault(record));
         }
@@ -321,13 +417,16 @@ pub fn run_isolated<R: Send + 'static>(
         match rx.recv_timeout(step) {
             Ok(Ok(value)) => {
                 // A fault flagged just before the worker returned wins.
-                if let Some(record) = take_pending_fault(export) {
+                let pending = take_pending_fault(index, export);
+                release_fault_slot(index);
+                if let Some(record) = pending {
                     registry.record(record.clone());
                     return Err(IsolationError::Fault(record));
                 }
                 return Ok(value);
             }
             Ok(Err(())) => {
+                release_fault_slot(index);
                 let record = FaultRecord {
                     plugin: plugin.to_owned(),
                     export,
@@ -338,19 +437,22 @@ pub fn run_isolated<R: Send + 'static>(
                 return Err(IsolationError::Fault(record));
             }
             Err(RecvTimeoutError::Disconnected) => {
-                // Worker vanished without sending (parked in the signal
-                // handler or killed): treat as a fault unless recorded.
-                let record = take_pending_fault(export).unwrap_or_else(|| FaultRecord {
+                // Worker vanished without sending (killed after dropping
+                // the sender): treat as a fault unless one was recorded.
+                let record = take_pending_fault(index, export).unwrap_or_else(|| FaultRecord {
                     plugin: plugin.to_owned(),
                     export,
                     kind: FaultKind::Timeout,
                     address: 0,
                 });
+                release_fault_slot(index);
                 registry.record(record.clone());
                 return Err(IsolationError::Fault(record));
             }
             Err(RecvTimeoutError::Timeout) => {
                 if remaining.is_zero() {
+                    // The worker is abandoned but still running: it may
+                    // write to the slot, so the slot is abandoned too.
                     let record = FaultRecord {
                         plugin: plugin.to_owned(),
                         export,
@@ -376,7 +478,7 @@ pub fn install_signal_handlers() -> bool {
 
 #[cfg(target_os = "linux")]
 mod signal {
-    use super::{FAULT_SLOT, PLUGIN_WORKER};
+    use super::{active_slot, FAULT_SLOTS, PLUGIN_WORKER};
     use std::sync::atomic::Ordering;
     use std::sync::OnceLock;
 
@@ -422,9 +524,13 @@ mod signal {
             // fault signals.
             unsafe { (*info).si_addr() as usize }
         };
-        FAULT_SLOT.signal.store(signal, Ordering::Relaxed);
-        FAULT_SLOT.address.store(address, Ordering::Relaxed);
-        FAULT_SLOT.pending.store(true, Ordering::Release);
+        // Attribute to the slot of the call running on this thread;
+        // outside one there is nobody waiting to read the fault.
+        if let Some(slot) = FAULT_SLOTS.get(active_slot()) {
+            slot.signal.store(signal, Ordering::Relaxed);
+            slot.address.store(address, Ordering::Relaxed);
+            slot.pending.store(true, Ordering::Release);
+        }
 
         let worker = PLUGIN_WORKER.try_with(|flag| flag.load(Ordering::Acquire)).unwrap_or(false);
         if worker {
@@ -615,6 +721,74 @@ mod tests {
             })
         ));
         assert!(registry().is_invalid("iso-fault"));
+    }
+
+    #[test]
+    fn concurrent_calls_do_not_steal_each_other_s_fault_attribution() {
+        // Every call owns its own slot, so a neighbour arming or
+        // draining a slot can neither clear this call's pending flag
+        // nor make it report the neighbour's plugin name.
+        let workers: Vec<_> = (0..16_u32)
+            .map(|id| {
+                std::thread::spawn(move || {
+                    let plugin = format!("concurrent-{id}");
+                    let signal = i32::try_from(id).unwrap_or(0).saturating_add(1);
+                    let address = id as usize;
+                    let isolated = run_isolated(&plugin, "Validate", DEFAULT_CALL_TIMEOUT, move || {
+                        report_fault(signal, address);
+                        0_u32
+                    });
+                    let guarded = run_guarded(&plugin, "CreateInstance", || {
+                        report_fault(signal, address);
+                    });
+                    (plugin, signal, address, isolated, guarded)
+                })
+            })
+            .collect();
+
+        for worker in workers {
+            let (plugin, signal, address, isolated, guarded) = worker.join().expect("worker");
+            assert_eq!(
+                isolated,
+                Err(IsolationError::Fault(FaultRecord {
+                    plugin: plugin.clone(),
+                    export: "Validate",
+                    kind: FaultKind::Signal(signal),
+                    address,
+                }))
+            );
+            // Isolated fault already marked it invalid: the second call
+            // is refused rather than run.
+            assert_eq!(guarded, Err(IsolationError::Invalid));
+            assert!(registry().is_invalid(&plugin));
+        }
+    }
+
+    #[test]
+    fn fault_slots_are_recycled_across_calls() {
+        // More sequential faulting calls than there are slots: without
+        // recycling the pool would be exhausted and attribution lost.
+        for id in 0..FAULT_SLOT_COUNT.saturating_mul(2) {
+            let plugin = format!("recycled-{id}");
+            let err = run_guarded(&plugin, "Validate", || report_fault(11, id)).expect_err("fault");
+            assert_eq!(
+                err,
+                IsolationError::Fault(FaultRecord {
+                    plugin,
+                    export: "Validate",
+                    kind: FaultKind::Signal(11),
+                    address: id,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn report_fault_outside_a_call_is_ignored() {
+        report_fault(9, 0x0bad_c0de);
+        let value = run_guarded("no-active-slot", "Validate", || 3_u32).expect("no fault leaks in");
+        assert_eq!(value, 3);
+        assert!(!registry().is_invalid("no-active-slot"));
     }
 
     #[test]

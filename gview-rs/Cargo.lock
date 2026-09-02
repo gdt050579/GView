@@ -856,6 +856,7 @@ dependencies = [
  "gview-types-pe",
  "gview-types-zip",
  "gview-view",
+ "gview-viewers",
  "regex",
  "serde_json",
 ]

@@ -756,6 +756,7 @@ mod tests {
             Key.Pressed(Escape)
             Paint('closed')
         ";
+        let _ui = crate::UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut app = App::debug(100, 40, script).build().expect("debug app");
         let types = registry();
         let plugins: Vec<&RegisteredTypePlugin> = types.plugins().iter().collect();

@@ -252,6 +252,23 @@ pub struct ViewerSlotSettings {
     custom_name: Option<String>,
 }
 
+impl ViewerSlotSettings {
+    /// Settings carrying the plugin's request
+    /// (C++ `CreateViewer(Settings&)`).
+    #[must_use]
+    pub const fn for_request(request: ViewerRequest) -> Self {
+        Self {
+            request: Some(request),
+            custom_name: None,
+        }
+    }
+
+    /// Replaces the carried request.
+    pub fn set_request(&mut self, request: ViewerRequest) {
+        self.request = Some(request);
+    }
+}
+
 impl ViewerSettings for ViewerSlotSettings {
     fn custom_name(&self) -> Option<&str> {
         self.custom_name.as_deref()
@@ -293,10 +310,21 @@ impl ViewerSlot {
     }
 
     /// The creating request (settings the shell needs when it builds
-    /// the real control).
+    /// the real control); `None` once the mounting step took it.
     #[must_use]
     pub const fn request(&self) -> Option<&ViewerRequest> {
         self.request.as_ref()
+    }
+
+    /// Moves the creating request out, leaving the slot empty
+    /// (`00_APP §5.3.1`).
+    ///
+    /// The C++ `CreateViewer` moves its `SettingsData` into the viewer
+    /// instance; mounting does the same here, so a plugin's
+    /// `ZonesList` is handed over instead of cloned. A second call
+    /// yields `None`, which mounts the control with its defaults.
+    pub const fn take_request(&mut self) -> Option<ViewerRequest> {
+        self.request.take()
     }
 }
 
@@ -320,6 +348,11 @@ impl ViewControl for ViewerSlot {
         false
     }
     fn paint_cursor_information(&mut self, _surface: &mut Surface, _width: u32, _height: u32) {}
+
+    /// The mounting step downcasts to this type to take the request.
+    fn as_any_mut(&mut self) -> Option<&mut dyn core::any::Any> {
+        Some(self)
+    }
 }
 
 impl SmartViewer for ViewerSlot {
@@ -430,15 +463,12 @@ impl WindowHandle for FileWindowModel {
     }
 
     fn add_panel(&mut self, panel: PanelRequest, vertical: bool) -> bool {
-        self.panels.add_panel(&panel.caption, vertical)
+        self.panels.add_panel(&panel.caption, &panel.panel_id, vertical)
     }
 
     fn create_viewer(&mut self, request: ViewerRequest) -> Result<u32, PluginError> {
         let kind = request.kind;
-        let settings = ViewerSlotSettings {
-            request: Some(request),
-            custom_name: None,
-        };
+        let settings = ViewerSlotSettings::for_request(request);
         if !self.views.create_viewer::<ViewerSlot>(settings) {
             return Err(PluginError::Window(format!(
                 "cannot create {kind:?} viewer: view tab is full"
