@@ -36,16 +36,21 @@ use appcui::graphics::{CharAttribute, CharFlags, Color};
 use appcui::input::{Key, KeyCode, KeyModifier};
 use gview_core::zones::ZonesList;
 use gview_disasm::{Architecture, Design, Endianess};
+use gview_plugin::panel::{fmt, PanelContent};
 use gview_plugin::type_plugin::{
     BufferViewerRequest, CommandDef, DissasmViewerRequest, KeyRegistry, PanelRequest, Pattern,
     PluginError, PluginMetadata, TypePlugin, ViewerRequest, WindowHandle,
 };
+use gview_view::buffer_viewer::color::{BufferColor, PositionToColorCallback};
 use gview_view::buffer_viewer::dissasm_dialog::DissasmSettings;
 use gview_view::dissasm_viewer::zone::{DisassemblyLanguage, DisassemblyZone};
 use gview_view::traits::SharedObject;
 use serde_json::Value as JsonValue;
 
-use crate::header::{DirectoryType, PeError, PeFile, INSPECTED_DIRECTORIES, PE_INVALID_ADDRESS};
+use crate::header::{
+    DirectoryType, PeError, PeFile, IMAGE_FILE_DLL, IMAGE_SCN_MEM_EXECUTE, INSPECTED_DIRECTORIES,
+    PE_INVALID_ADDRESS,
+};
 use crate::validate::{validate, IMAGE_DOS_HEADER_SIZE, IMAGE_NT_HEADERS32_SIZE, IMAGE_SECTION_HEADER_SIZE};
 
 /// C++ `OVERLAY_BOOKMARK_VALUE`.
@@ -426,12 +431,207 @@ impl PanelId {
     }
 }
 
+/// `GView::Dissasembly::Opcodes` bits (`GView.hpp:816`), as read by
+/// the `OpCodes` panel from `Type.PE` / `OpCodes.Mask`.
+pub mod opcodes {
+    /// `Header`.
+    pub const HEADER: u32 = 1;
+    /// `Call`.
+    pub const CALL: u32 = 2;
+    /// `Jmp`.
+    pub const JMP: u32 = 8;
+    /// `Breakpoint`.
+    pub const BREAKPOINT: u32 = 32;
+    /// `FunctionStart`.
+    pub const FUNCTION_START: u32 = 64;
+    /// `FunctionEnd`.
+    pub const FUNCTION_END: u32 = 128;
+    /// `All` — the value `UpdateSettings` writes for `OpCodes.Mask`.
+    pub const ALL: u32 = 0xFFFF_FFFF;
+}
+
+/// `pe.hpp:685-690` opcode colours.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PeOpcodeColors {
+    /// `INS_CALL_COLOR` (White on Silver).
+    pub call: CharAttribute,
+    /// `INS_JUMP_COLOR` (Yellow on `DarkRed`).
+    pub jump: CharAttribute,
+    /// `INS_BREAKPOINT_COLOR` (Green on `DarkBlue`).
+    pub breakpoint: CharAttribute,
+    /// `START_FUNCTION_COLOR` (Yellow on Olive).
+    pub function_start: CharAttribute,
+    /// `END_FUNCTION_COLOR` (Black on Olive).
+    pub function_end: CharAttribute,
+    /// `EXE_MARKER_COLOR` (Yellow on `DarkRed`).
+    pub exe_marker: CharAttribute,
+}
+
+fn pair(fore: Color, back: Color) -> CharAttribute {
+    CharAttribute::new(fore, back, CharFlags::None)
+}
+
+impl Default for PeOpcodeColors {
+    fn default() -> Self {
+        Self {
+            call: pair(Color::White, Color::Silver),
+            jump: pair(Color::Yellow, Color::DarkRed),
+            breakpoint: pair(Color::Green, Color::DarkBlue),
+            function_start: pair(Color::Yellow, Color::Olive),
+            function_end: pair(Color::Black, Color::Olive),
+            exe_marker: pair(Color::Yellow, Color::DarkRed),
+        }
+    }
+}
+
+/// C++ `PEFile::executableZonesFAs` (`PEFile.cpp:1556-1561`): the raw
+/// ranges of every `IMAGE_SCN_MEM_EXECUTE` section.
+#[must_use]
+pub fn executable_zones(pe: &PeFile) -> Vec<(u64, u64)> {
+    pe.sections
+        .iter()
+        .filter(|s| s.characteristics & IMAGE_SCN_MEM_EXECUTE == IMAGE_SCN_MEM_EXECUTE)
+        .map(|s| {
+            let start = u64::from(s.pointer_to_raw_data);
+            (start, start.saturating_add(u64::from(s.size_of_raw_data)))
+        })
+        .collect()
+}
+
+/// An owned snapshot of `PEFile::GetColorForBuffer` state
+/// (`PEFile.cpp:1866-1974`): the machine, the executable section
+/// ranges, the image-base window used to recognise API calls and
+/// `showOpcodesMask`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PeOpcodeColorizer {
+    /// `nth32.FileHeader.Machine`.
+    pub machine: u16,
+    /// `executableZonesFAs`.
+    pub executable_zones: Vec<(u64, u64)>,
+    /// `imageBase`.
+    pub image_base: u64,
+    /// `virtualComputedSize`.
+    pub virtual_computed_size: u64,
+    /// `showOpcodesMask` (0 until the `OpCodes` panel reads
+    /// `Type.PE` / `OpCodes.Mask`).
+    pub show_opcodes_mask: u32,
+    /// Colours.
+    pub colors: PeOpcodeColors,
+}
+
+impl PeOpcodeColorizer {
+    /// Colorizer for a parsed file with the given mask.
+    #[must_use]
+    pub fn new(pe: &PeFile, show_opcodes_mask: u32) -> Self {
+        Self {
+            machine: pe.file_header.machine,
+            executable_zones: executable_zones(pe),
+            image_base: pe.image_base,
+            virtual_computed_size: pe.virtual_computed_size,
+            show_opcodes_mask,
+            colors: PeOpcodeColors::default(),
+        }
+    }
+
+    /// Whether `offset` lies in an executable section
+    /// (`offset >= start && offset < end`).
+    #[must_use]
+    pub fn is_executable(&self, offset: u64) -> bool {
+        self.executable_zones
+            .iter()
+            .any(|&(start, end)| offset >= start && offset < end)
+    }
+
+    /// C++ `addr >= imageBase && addr <= imageBase + virtualComputedSize`
+    /// — the window an absolute operand must fall in to read as an API
+    /// call / jump.
+    fn addresses_image(&self, addr: u32) -> bool {
+        let addr = u64::from(addr);
+        addr >= self.image_base && addr <= self.image_base.saturating_add(self.virtual_computed_size)
+    }
+
+    /// C++ `GetColorForBufferIntel` (`PEFile.cpp:1866-1923`); no mask
+    /// bits are consulted there either.
+    #[must_use]
+    pub fn color_for_buffer_intel(&self, offset: u64, buf: &[u8]) -> Option<BufferColor> {
+        let first = *buf.first()?;
+        let range = |len: u64, color: CharAttribute| {
+            Some(BufferColor {
+                start: offset,
+                end: offset.wrapping_add(len),
+                color,
+            })
+        };
+        // C++ `*reinterpret_cast<const uint32_t*>(p + 2)`.
+        let operand = || -> Option<u32> {
+            let bytes = buf.get(2..6)?;
+            Some(u32::from_le_bytes([
+                *bytes.first()?,
+                *bytes.get(1)?,
+                *bytes.get(2)?,
+                *bytes.get(3)?,
+            ]))
+        };
+        match first {
+            0xFF if buf.len() >= 6 => match *buf.get(1)? {
+                0x15 if self.addresses_image(operand()?) => range(5, self.colors.call),
+                0x25 if self.addresses_image(operand()?) => range(5, self.colors.jump),
+                _ => None,
+            },
+            0xCC => range(0, self.colors.breakpoint),
+            0x55 if buf.len() >= 3 && buf.get(1..3)? == [0x8B, 0xEC] => range(2, self.colors.function_start),
+            0x8B if buf.len() >= 4 && buf.get(1..4)? == [0xE5, 0x5D, 0xC3] => range(3, self.colors.function_end),
+            _ => None,
+        }
+    }
+}
+
+impl PositionToColorCallback for PeOpcodeColorizer {
+    /// C++ `GetColorForBuffer` (`PEFile.cpp:1925-1974`): the `MZ` and
+    /// `PE` header markers (gated on the `Header` mask bit; the C++
+    /// `switch` cases fall through on purpose — "do not break"), then
+    /// the Intel opcode heuristics inside an executable section.
+    fn color_for_buffer(&mut self, offset: u64, buf: &[u8]) -> Option<BufferColor> {
+        let first = *buf.first()?;
+        if self.show_opcodes_mask == 0 {
+            return None;
+        }
+        let marker = || {
+            Some(BufferColor {
+                start: offset,
+                end: offset.wrapping_add(3),
+                color: self.colors.exe_marker,
+            })
+        };
+        if self.show_opcodes_mask & opcodes::HEADER == opcodes::HEADER && buf.len() >= 4 {
+            // `case 0x4D:` — `MZ`, `e_cblp` low byte 0x00 / 0x90 / 0x78
+            // and high byte 0x00.
+            if first == 0x4D && buf.get(..2)? == [0x4D, 0x5A] && matches!(*buf.get(2)?, 0x00 | 0x90 | 0x78) && *buf.get(3)? == 0x00
+            {
+                return marker();
+            }
+            // `case 0x50:` — `PE\0\0`, reached directly or by the
+            // 0x4D fallthrough.
+            if matches!(first, 0x4D | 0x50) && buf.get(..4)? == [0x50, 0x45, 0x00, 0x00] {
+                return marker();
+            }
+        }
+        // `default:` — the machine switch; a 0x4D / 0x50 first byte
+        // that matched no marker falls through into it as well.
+        if colors_opcodes(self.machine) && self.is_executable(offset) {
+            return self.color_for_buffer_intel(offset, buf);
+        }
+        None
+    }
+}
+
 /// The PE `TypeInterface` (C++ `PE::PEFile` as a type instance).
 pub struct PePlugin {
     colors: PeColors,
     state: Mutex<Option<PeFile>>,
     object: Mutex<Option<SharedObject>>,
     last_command: Mutex<Option<String>>,
+    show_opcodes_mask: Mutex<u32>,
 }
 
 impl Default for PePlugin {
@@ -441,6 +641,7 @@ impl Default for PePlugin {
             state: Mutex::new(None),
             object: Mutex::new(None),
             last_command: Mutex::new(None),
+            show_opcodes_mask: Mutex::new(0),
         }
     }
 }
@@ -463,6 +664,28 @@ impl PePlugin {
     #[must_use]
     pub fn last_command(&self) -> Option<String> {
         self.last_command.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// `showOpcodesMask`.
+    #[must_use]
+    pub fn show_opcodes_mask(&self) -> u32 {
+        *self.show_opcodes_mask.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Sets `showOpcodesMask` (the `OpCodes` panel's `Update`).
+    pub fn set_show_opcodes_mask(&self, mask: u32) {
+        *self.show_opcodes_mask.lock().unwrap_or_else(PoisonError::into_inner) = mask;
+    }
+
+    /// The `PositionToColorInterface` for the current file, or `None`
+    /// when nothing is parsed yet or the machine is not one of the
+    /// three `SetPositionToColorCallback` gates on (C++
+    /// `pe.cpp` `CreateBufferView`).
+    #[must_use]
+    pub fn colorizer(&self) -> Option<PeOpcodeColorizer> {
+        self.file()
+            .filter(|pe| colors_opcodes(pe.file_header.machine))
+            .map(|pe| PeOpcodeColorizer::new(&pe, self.show_opcodes_mask()))
     }
 
     /// C++ `PE_COMMANDS`.
@@ -555,6 +778,73 @@ impl TypePlugin for PePlugin {
 
     fn run_command(&mut self, command: &str) {
         *self.last_command.lock().unwrap_or_else(PoisonError::into_inner) = Some(command.to_owned());
+    }
+
+
+    /// C++ `Panels::Information::UpdateGeneralInformation`
+    /// (`Types/PE/src/Panels/Information.cpp:20-83`), in order: the
+    /// `PE Info` category, `File`, `Size`, `Computed`,
+    /// `Computed(Cert)`, `Memory`, the `Overlay` / `Missing` row when
+    /// the computed size disagrees with the file size, `Type` and
+    /// `Machine`.
+    ///
+    /// `Language`, `Certificate`, the `Version` string table,
+    /// `ExportName` and `PDB File` need the resource / export / debug
+    /// directory parsers, which are not part of this port yet; the
+    /// rows they would add are simply absent, never wrong.
+    fn panel_content(&self, panel_id: &str) -> Option<PanelContent> {
+        if panel_id != PanelId::Information.panel_id() {
+            return None;
+        }
+        let pe = self.file()?;
+        let object = self.object.lock().unwrap_or_else(PoisonError::into_inner).clone()?;
+        let (name, size) = {
+            let guard = object.lock().unwrap_or_else(PoisonError::into_inner);
+            (guard.name().to_owned(), guard.data().size())
+        };
+        let bytes = |value: u64| format!("{} ({}) bytes", value, fmt::hex(value));
+        let mut rows = vec![
+            (String::from("PE Info"), String::new()),
+            (String::from("File"), name),
+            (String::from("Size"), format!("{} bytes", fmt::dec(size))),
+            (String::from("Computed"), bytes(pe.computed_size)),
+            (String::from("Computed(Cert)"), bytes(pe.computed_with_certificate)),
+            (String::from("Memory"), bytes(pe.virtual_computed_size)),
+        ];
+        // C++ `%lld (0x%llX) [%3d%%] bytes` with `(sz * 100) / size`.
+        let percent = |part: u64| part.saturating_mul(100).checked_div(size).unwrap_or(0);
+        if pe.computed_size < size {
+            let sz = size.saturating_sub(pe.computed_size);
+            rows.push((
+                String::from("Overlay"),
+                format!("{sz} ({}) [{:>3}%] bytes", fmt::hex(sz), percent(sz)),
+            ));
+        }
+        if pe.computed_size > size {
+            let sz = pe.computed_size.saturating_sub(size);
+            rows.push((
+                String::from("Missing"),
+                format!("{sz} ({}) [{:>3}%] bytes", fmt::hex(sz), percent(sz)),
+            ));
+        }
+        let subsystem = subsystem_name(pe.optional.subsystem);
+        let kind = if pe.is_metro_app {
+            format!("Metro APP ({subsystem})")
+        } else if pe.file_header.characteristics & IMAGE_FILE_DLL != 0 {
+            format!("DLL ({subsystem})")
+        } else {
+            format!("EXE ({subsystem})")
+        };
+        rows.push((String::from("Type"), kind));
+        rows.push((String::from("Machine"), String::from(machine_name(pe.file_header.machine))));
+        Some(PanelContent::KeyValue(rows))
+    }
+
+    /// C++ `SetPositionToColorCallback(pe)` (`pe.cpp`
+    /// `CreateBufferView`): only for I386 / IA64 / AMD64.
+    fn position_to_color(&self) -> Option<Box<dyn PositionToColorCallback + Send>> {
+        self.colorizer()
+            .map(|c| Box::new(c) as Box<dyn PositionToColorCallback + Send>)
     }
 
     fn register_keys(&self, keys: &mut dyn KeyRegistry) {
@@ -657,6 +947,168 @@ mod tests {
             object: Some(Arc::new(StdMutex::new(Object::from_buffer(image, name, 0)))),
             ..MockWindow::default()
         }
+    }
+
+
+    /// Field list and value formatting of C++
+    /// `Panels::Information::UpdateGeneralInformation`
+    /// (`Types/PE/src/Panels/Information.cpp`).
+    #[test]
+    fn information_panel_matches_cpp_field_list() {
+        let plugin = PePlugin::create_instance();
+        assert!(
+            plugin.panel_content(PanelId::Information.panel_id()).is_none(),
+            "no panel before populate_window"
+        );
+
+        // 0x20 overlay bytes past the last section.
+        let image = build_image(false, 0x40_0000, 0x1010, &[TEXT, DATA], 0x20);
+        let mut win = window_for(&image, "app.exe");
+        plugin.populate_window(&mut win).expect("populate");
+        let content = plugin.panel_content(PanelId::Information.panel_id()).expect("panel");
+        let PanelContent::KeyValue(rows) = &content else {
+            panic!("Information is a key/value panel");
+        };
+        let fields: Vec<&str> = rows.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(
+            fields,
+            [
+                "PE Info",
+                "File",
+                "Size",
+                "Computed",
+                "Computed(Cert)",
+                "Memory",
+                "Overlay",
+                "Type",
+                "Machine",
+            ]
+        );
+        let value = |field: &str| {
+            rows.iter()
+                .find(|(f, _)| f == field)
+                .map(|(_, v)| v.clone())
+                .expect("field")
+        };
+        let pe = plugin.file().expect("parsed");
+        let size = image.len() as u64;
+        assert_eq!(value("File"), "app.exe");
+        assert_eq!(value("Size"), format!("{} bytes", fmt::dec(size)));
+        assert_eq!(
+            value("Computed"),
+            format!("{} ({}) bytes", pe.computed_size, fmt::hex(pe.computed_size))
+        );
+        let overlay = size - pe.computed_size;
+        assert_eq!(overlay, 0x20);
+        assert_eq!(
+            value("Overlay"),
+            format!("{overlay} (0x20) [{:>3}%] bytes", overlay * 100 / size)
+        );
+        assert_eq!(value("Type"), format!("EXE ({})", subsystem_name(pe.optional.subsystem)));
+        assert_eq!(value("Machine"), machine_name(pe.file_header.machine));
+        // Only the Information id has content.
+        assert!(plugin.panel_content(PanelId::Sections.panel_id()).is_none());
+        assert!(plugin.panel_content("").is_none());
+    }
+
+    /// A truncated image whose `populate_window` failed leaves the
+    /// plugin without state; the panel answers `None`, never panics.
+    #[test]
+    fn information_panel_without_state_is_none() {
+        let plugin = PePlugin::create_instance();
+        let mut win = window_for(b"MZ", "tiny.exe");
+        assert!(plugin.populate_window(&mut win).is_err());
+        assert!(plugin.panel_content(PanelId::Information.panel_id()).is_none());
+    }
+
+    /// `00_APP §5.3.3`: the colour hook is `None` before
+    /// `populate_window` ran, `Some` for an Intel machine and `None`
+    /// for ARM64 (C++ `pe.cpp` `CreateBufferView` gates
+    /// `SetPositionToColorCallback` on I386 / IA64 / AMD64).
+    #[test]
+    fn position_to_color_hooks_follow_machine() {
+        let plugin = PePlugin::create_instance();
+        assert!(plugin.position_to_color().is_none(), "before populate_window");
+        assert!(plugin.container_enumerator().is_none());
+        assert!(plugin.container_opener().is_none());
+
+        let mut amd64 = build_image(true, 0x1_4000_0000, 0x1010, &[TEXT], 0);
+        amd64[0x84..0x86].copy_from_slice(&machine::AMD64.to_le_bytes());
+        let mut win = window_for(&amd64, "amd64.exe");
+        plugin.populate_window(&mut win).expect("populate");
+        assert!(plugin.position_to_color().is_some(), "AMD64 colours opcodes");
+
+        let mut arm = build_image(false, 0x40_0000, 0x1010, &[TEXT], 0);
+        arm[0x84..0x86].copy_from_slice(&machine::ARM64.to_le_bytes());
+        let mut win = window_for(&arm, "arm64.exe");
+        plugin.populate_window(&mut win).expect("populate");
+        assert!(plugin.position_to_color().is_none(), "ARM64 does not");
+    }
+
+    /// The colorizer reproduces `GetColorForBuffer` /
+    /// `GetColorForBufferIntel` (`PEFile.cpp:1866-1974`).
+    #[test]
+    fn colorizer_hooks_match_cpp_heuristics() {
+        let mut image = build_image(false, 0x40_0000, 0x1010, &[TEXT], 0);
+        image[0x84..0x86].copy_from_slice(&machine::AMD64.to_le_bytes());
+        let plugin = PePlugin::create_instance();
+        let mut win = window_for(&image, "amd64.exe");
+        plugin.populate_window(&mut win).expect("populate");
+        plugin.set_show_opcodes_mask(opcodes::ALL);
+
+        let mut c = plugin.colorizer().expect("colorizer");
+        // `.text` is the only executable section: raw 0x400..0xC00.
+        assert!(c.is_executable(0x400));
+        assert!(!c.is_executable(0xC00));
+
+        // `CC` (INT 3) inside the code: a one-byte range.
+        let bp = c.color_for_buffer(0x400, &[0xCC, 0x00]).expect("breakpoint");
+        assert_eq!((bp.start, bp.end), (0x400, 0x400));
+        assert_eq!(bp.color, c.colors.breakpoint);
+
+        // `push ebp; mov ebp, esp` — three bytes, two-byte range.
+        let start = c.color_for_buffer(0x410, &[0x55, 0x8B, 0xEC]).expect("prologue");
+        assert_eq!((start.start, start.end), (0x410, 0x412));
+        assert_eq!(start.color, c.colors.function_start);
+
+        // `mov esp, ebp; pop ebp; ret`.
+        let end = c.color_for_buffer(0x420, &[0x8B, 0xE5, 0x5D, 0xC3]).expect("epilogue");
+        assert_eq!((end.start, end.end), (0x420, 0x423));
+        assert_eq!(end.color, c.colors.function_end);
+
+        // `call [imm32]` inside the image window → call colour…
+        let in_image = 0x40_1000_u32.to_le_bytes();
+        let mut call = vec![0xFF, 0x15];
+        call.extend_from_slice(&in_image);
+        let hit = c.color_for_buffer(0x430, &call).expect("call");
+        assert_eq!((hit.start, hit.end), (0x430, 0x435));
+        assert_eq!(hit.color, c.colors.call);
+        // …and `jmp [imm32]` the jump colour.
+        let mut jump = vec![0xFF, 0x25];
+        jump.extend_from_slice(&in_image);
+        assert_eq!(c.color_for_buffer(0x430, &jump).map(|b| b.color), Some(c.colors.jump));
+        // An operand outside `[imageBase, imageBase + virtualComputedSize]`
+        // is not an API call.
+        let mut far = vec![0xFF, 0x15];
+        far.extend_from_slice(&0xFFFF_0000_u32.to_le_bytes());
+        assert!(c.color_for_buffer(0x430, &far).is_none());
+
+        // Outside every executable section nothing is coloured.
+        assert!(c.color_for_buffer(0xC00, &[0xCC, 0x00]).is_none());
+
+        // The `MZ` / `PE\0\0` header markers are gated on `Header`.
+        let mz = c.color_for_buffer(0, &[0x4D, 0x5A, 0x90, 0x00]).expect("MZ");
+        assert_eq!((mz.start, mz.end), (0, 3));
+        assert_eq!(mz.color, c.colors.exe_marker);
+        let pe = c.color_for_buffer(0x80, &[0x50, 0x45, 0x00, 0x00]).expect("PE");
+        assert_eq!(pe.color, c.colors.exe_marker);
+
+        // A zero mask disables everything (C++ `CHECK(showOpcodesMask != 0)`).
+        c.show_opcodes_mask = 0;
+        assert!(c.color_for_buffer(0x400, &[0xCC]).is_none());
+        // Empty context never panics.
+        c.show_opcodes_mask = opcodes::ALL;
+        assert!(c.color_for_buffer(0x400, &[]).is_none());
     }
 
     #[test]

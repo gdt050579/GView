@@ -1,0 +1,15 @@
+[package]
+name = "gview-viewers"
+description = "GView smart-viewer controls: AppCUI-rs controls over the gview-view state machines"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+appcui = { path = "../../../AppCUI-rs/appcui" }
+gview-core = { path = "../gview-core" }
+gview-disasm = { path = "../gview-disasm" }
+gview-plugin = { path = "../gview-plugin" }
+gview-view = { path = "../gview-view" }

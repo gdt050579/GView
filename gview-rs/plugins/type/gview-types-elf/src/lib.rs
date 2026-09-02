@@ -17,6 +17,7 @@
 )]
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
+pub mod names;
 pub mod parse;
 pub mod populate;
 pub mod validate;

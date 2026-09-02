@@ -53,6 +53,14 @@ pub const EI_NIDENT: usize = 16;
 pub const EI_CLASS: usize = 4;
 /// `EI_DATA` index into `e_ident`.
 pub const EI_DATA: usize = 5;
+/// `EI_VERSION` index into `e_ident`.
+pub const EI_VERSION: usize = 6;
+/// `EI_OSABI` index into `e_ident`.
+pub const EI_OSABI: usize = 7;
+/// `EI_ABIVERSION` index into `e_ident`.
+pub const EI_ABIVERSION: usize = 8;
+/// `EI_PAD`: start of the `e_ident` padding bytes.
+pub const EI_PAD: usize = 9;
 /// `ELFCLASS32`.
 pub const ELFCLASS32: u8 = 1;
 /// `ELFCLASS64`.

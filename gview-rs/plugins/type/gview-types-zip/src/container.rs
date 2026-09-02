@@ -43,20 +43,27 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use gview_decoding::zip::{safe_extract_path, EntryType, ZipEntry, ZipError, ZipInfo, ZipLimits};
+use gview_plugin::panel::{fmt, PanelContent};
 use gview_plugin::type_plugin::{
     BufferViewerRequest, ContainerViewerRequest, KeyRegistry, PanelRequest, Pattern, PluginError, PluginMetadata,
     TypePlugin, ViewerRequest, WindowHandle,
 };
+use gview_view::container_viewer::open::{EntryKind, OpenItemInterface, OpenRequest};
 use gview_view::container_viewer::tree::{EnumerateInterface, TreeItemId, TreeNode};
 use gview_view::traits::SharedObject;
 use serde_json::Value as JsonValue;
 
 use crate::validate::{validate, MAGIC_BYTES};
 
+/// C++ `App::OpenBuffer(..., "extraction and decompression")`
+/// (`ZIPFile.cpp:246`) — the `creationProcess` of an opened entry.
+pub const CREATION_PROCESS: &str = "extraction and decompression";
 /// `UpdateSettings` `Description`.
 pub const DESCRIPTION: &str = "Archive file format (*.zip)";
 /// `UpdateSettings` `Extension`.
 pub const EXTENSION: &str = "zip";
+/// Panel id of the C++ `Panels::Information` tab page.
+pub const INFORMATION_PANEL_ID: &str = "zip.information";
 /// `UpdateSettings` `Priority`.
 pub const PRIORITY: u32 = 1;
 /// `SetPathSeparator('/')`.
@@ -97,7 +104,7 @@ pub const CONTAINER_COLUMNS: [&str; 8] = [
 
 /// The panels `PopulateWindow` adds, in order: `(caption, id, vertical)`.
 pub const PANELS: [(&str, &str, bool); 2] = [
-    ("Informa&tion", "zip.information", true),
+    ("Informa&tion", INFORMATION_PANEL_ID, true),
     ("&Objects", "zip.objects", false),
 ];
 
@@ -359,40 +366,15 @@ impl ZipPlugin {
         });
     }
 
-    /// The whole archive bytes for a nested container
-    /// (`obj->GetData().GetEntireFile()`).
-    fn entire_file(&self) -> Result<Vec<u8>, OpenError> {
-        let object = self
-            .object
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .ok_or(OpenError::NotLoaded)?;
-        let mut guard = object.lock().unwrap_or_else(PoisonError::into_inner);
-        let size = u32::try_from(guard.data().size()).map_err(|e| OpenError::Source(e.to_string()))?;
-        if size == 0 {
-            return Err(OpenError::Source(String::from("empty archive")));
-        }
-        guard
-            .data_mut()
-            .copy_to_vec(0, size, true)
-            .map_err(|e| OpenError::Source(e.to_string()))
+    /// The object the archive was listed from, when `PopulateWindow`
+    /// already ran.
+    fn shared_object(&self) -> Option<SharedObject> {
+        self.object.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
     /// Decompresses entry `index` with `password` from disk or cache.
     fn decompress(&self, state: &ZipState, index: u32, password: &str) -> Result<Vec<u8>, OpenError> {
-        if state.is_top_container {
-            state
-                .info
-                .decompress_from_path(&state.path, index, password, self.limits)
-                .map_err(OpenError::Decompress)
-        } else {
-            let bytes = self.entire_file()?;
-            state
-                .info
-                .decompress(&bytes, index, password, self.limits)
-                .map_err(OpenError::Decompress)
-        }
+        decompress_entry(state, self.shared_object().as_ref(), self.limits, index, password)
     }
 
     /// C++ `OnOpenItem` up to the password dialog: decompresses entry
@@ -407,28 +389,28 @@ impl ZipPlugin {
     /// [`OpenError::UnsafePath`] for a zip-slip name.
     pub fn open_item(&self, index: u32) -> Result<OpenedEntry, OpenError> {
         let state = self.state().ok_or(OpenError::NotLoaded)?;
-        let entry = state
-            .info
-            .entry(index)
-            .cloned()
-            .ok_or(OpenError::Decompress(ZipError::InvalidIndex { index }))?;
-        let password = self.password();
-        if entry.is_encrypted() && password.is_empty() {
-            return Err(OpenError::PasswordRequired);
-        }
-        let path = drop_path(&state.path, &entry.filename)?;
-        match self.decompress(&state, index, &password) {
-            Ok(bytes) => Ok(OpenedEntry {
-                name: entry.filename,
-                path,
-                bytes,
-            }),
-            Err(e) if entry.is_encrypted() => match e {
-                OpenError::Decompress(ZipError::Archive(_)) => Err(OpenError::WrongPassword),
-                other => Err(other),
-            },
-            Err(e) => Err(e),
-        }
+        open_entry(
+            &state,
+            self.shared_object().as_ref(),
+            self.limits,
+            &self.password(),
+            index,
+        )
+    }
+
+    /// The `SetEnumerateCallback` snapshot for the container viewer,
+    /// or `None` before `PopulateWindow` listed the archive.
+    #[must_use]
+    pub fn enumerator(&self) -> Option<ZipEnumerator> {
+        self.state().map(ZipEnumerator::new)
+    }
+
+    /// The `SetOpenItemCallback` snapshot for the container viewer,
+    /// or `None` before `PopulateWindow` listed the archive.
+    #[must_use]
+    pub fn opener(&self) -> Option<ZipOpener> {
+        self.state()
+            .map(|state| ZipOpener::new(state, self.shared_object(), self.limits, self.password()))
     }
 
     /// C++ `OnOpenItem` password-dialog loop body: one attempt with
@@ -472,6 +454,199 @@ impl ZipPlugin {
     }
 }
 
+/// C++ `BeginIteration` over a state snapshot; shared by
+/// [`ZipPlugin`] and [`ZipEnumerator`].
+fn begin_iteration_over(state: &mut ZipState, path: &str) -> bool {
+    if state.info.count() == 0 {
+        return false;
+    }
+    state.current_item_index = 0;
+    state.child_indexes = children_of(&state.info, path);
+    state.current_item_index != state.child_indexes.len()
+}
+
+/// C++ `PopulateItem` over a state snapshot; shared by [`ZipPlugin`]
+/// and [`ZipEnumerator`].
+fn populate_item_from(state: &mut ZipState, child: &mut TreeNode) -> bool {
+    let Some(&real_index) = state.child_indexes.get(state.current_item_index) else {
+        return false;
+    };
+    let Some(entry) = state.info.entry(real_index) else {
+        return false;
+    };
+    let is_dir = entry.entry_type == EntryType::Directory;
+    child.priority = is_dir;
+    child.expandable = is_dir;
+    for (col, text) in entry_columns(entry).iter().enumerate() {
+        child.set_text(col, text);
+    }
+    child.data = u64::from(real_index);
+    state.current_item_index = state.current_item_index.saturating_add(1);
+    state.current_item_index != state.child_indexes.len()
+}
+
+/// `obj->GetData().GetEntireFile()` for a nested archive.
+fn entire_file_of(object: Option<&SharedObject>) -> Result<Vec<u8>, OpenError> {
+    let object = object.ok_or(OpenError::NotLoaded)?;
+    let mut guard = object.lock().unwrap_or_else(PoisonError::into_inner);
+    let size = u32::try_from(guard.data().size()).map_err(|e| OpenError::Source(e.to_string()))?;
+    if size == 0 {
+        return Err(OpenError::Source(String::from("empty archive")));
+    }
+    guard
+        .data_mut()
+        .copy_to_vec(0, size, true)
+        .map_err(|e| OpenError::Source(e.to_string()))
+}
+
+/// C++ `info.Decompress(...)`: from the archive on disk for a top
+/// container, from the cached bytes for a nested one.
+fn decompress_entry(
+    state: &ZipState,
+    object: Option<&SharedObject>,
+    limits: ZipLimits,
+    index: u32,
+    password: &str,
+) -> Result<Vec<u8>, OpenError> {
+    if state.is_top_container {
+        state
+            .info
+            .decompress_from_path(&state.path, index, password, limits)
+            .map_err(OpenError::Decompress)
+    } else {
+        let bytes = entire_file_of(object)?;
+        state
+            .info
+            .decompress(&bytes, index, password, limits)
+            .map_err(OpenError::Decompress)
+    }
+}
+
+/// C++ `OnOpenItem` up to the password dialog, over a state snapshot.
+fn open_entry(
+    state: &ZipState,
+    object: Option<&SharedObject>,
+    limits: ZipLimits,
+    password: &str,
+    index: u32,
+) -> Result<OpenedEntry, OpenError> {
+    let entry = state
+        .info
+        .entry(index)
+        .cloned()
+        .ok_or(OpenError::Decompress(ZipError::InvalidIndex { index }))?;
+    if entry.is_encrypted() && password.is_empty() {
+        return Err(OpenError::PasswordRequired);
+    }
+    let path = drop_path(&state.path, &entry.filename)?;
+    match decompress_entry(state, object, limits, index, password) {
+        Ok(bytes) => Ok(OpenedEntry {
+            name: entry.filename,
+            path,
+            bytes,
+        }),
+        Err(e) if entry.is_encrypted() => match e {
+            OpenError::Decompress(ZipError::Archive(_)) => Err(OpenError::WrongPassword),
+            other => Err(other),
+        },
+        Err(e) => Err(e),
+    }
+}
+
+/// `SetEnumerateCallback` snapshot handed to the container viewer
+/// (spec `00_APP §5.3.3`): an owned copy of the listing with its own
+/// iteration cursor, so the control never borrows the plugin.
+#[derive(Clone, Debug, Default)]
+pub struct ZipEnumerator {
+    state: ZipState,
+}
+
+impl ZipEnumerator {
+    /// Enumerator over an already-listed archive.
+    #[must_use]
+    pub const fn new(state: ZipState) -> Self {
+        Self { state }
+    }
+}
+
+impl EnumerateInterface for ZipEnumerator {
+    fn begin_iteration(&mut self, path: &str, _parent: TreeItemId) -> bool {
+        begin_iteration_over(&mut self.state, path)
+    }
+
+    fn populate_item(&mut self, child: &mut TreeNode) -> bool {
+        populate_item_from(&mut self.state, child)
+    }
+}
+
+/// `SetOpenItemCallback` snapshot handed to the container viewer
+/// (spec `00_APP §5.3.3`).
+///
+/// The C++ `OnOpenItem` runs the password dialog itself; here an
+/// encrypted entry without a usable password yields `None` and the
+/// shell decides whether to prompt (`ZipPlugin::open_item_with_password`).
+pub struct ZipOpener {
+    state: ZipState,
+    object: Option<SharedObject>,
+    limits: ZipLimits,
+    password: String,
+}
+
+impl core::fmt::Debug for ZipOpener {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ZipOpener")
+            .field("entries", &self.state.info.count())
+            .finish_non_exhaustive()
+    }
+}
+
+impl ZipOpener {
+    /// Opener over an already-listed archive.
+    #[must_use]
+    pub const fn new(state: ZipState, object: Option<SharedObject>, limits: ZipLimits, password: String) -> Self {
+        Self {
+            state,
+            object,
+            limits,
+            password,
+        }
+    }
+
+    /// The error of the last failed [`OpenItemInterface::on_open_item`]
+    /// shape, exposed for the shell's message box.
+    ///
+    /// # Errors
+    ///
+    /// The same errors as [`ZipPlugin::open_item`].
+    pub fn open_index(&self, index: u32) -> Result<OpenedEntry, OpenError> {
+        open_entry(&self.state, self.object.as_ref(), self.limits, &self.password, index)
+    }
+}
+
+impl OpenItemInterface for ZipOpener {
+    /// C++ `OnOpenItem(path, item)`: the entry index is the tree node's
+    /// `data`; a successful decompression becomes the shell's
+    /// `App::OpenBuffer(buffer, name, path, BestMatch, …,
+    /// "extraction and decompression")`.
+    fn on_open_item(&mut self, _path: &str, _item: TreeItemId, node: &TreeNode) -> Option<OpenRequest> {
+        let index = u32::try_from(node.data).ok()?;
+        let kind = match self.state.info.entry(index).map(|e| e.entry_type) {
+            Some(EntryType::File) => EntryKind::File,
+            Some(EntryType::Directory) => EntryKind::Directory,
+            Some(EntryType::Symlink) => EntryKind::Symlink,
+            _ => EntryKind::Unknown,
+        };
+        let opened = self.open_index(index).ok()?;
+        Some(OpenRequest {
+            name: opened.name,
+            path: opened.path,
+            bytes: opened.bytes,
+            creation_process: String::from(CREATION_PROCESS),
+            kind,
+        })
+    }
+}
+
 // The state lock is held for the whole enumeration step on purpose:
 // `begin_iteration` / `populate_item` read and advance the cursor
 // atomically (the C++ members are plain fields of the same object).
@@ -480,38 +655,13 @@ impl EnumerateInterface for ZipPlugin {
     /// C++ `BeginIteration`.
     fn begin_iteration(&mut self, path: &str, _parent: TreeItemId) -> bool {
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(state) = guard.as_mut() else {
-            return false;
-        };
-        if state.info.count() == 0 {
-            return false;
-        }
-        state.current_item_index = 0;
-        state.child_indexes = children_of(&state.info, path);
-        state.current_item_index != state.child_indexes.len()
+        guard.as_mut().is_some_and(|state| begin_iteration_over(state, path))
     }
 
     /// C++ `PopulateItem`.
     fn populate_item(&mut self, child: &mut TreeNode) -> bool {
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(state) = guard.as_mut() else {
-            return false;
-        };
-        let Some(&real_index) = state.child_indexes.get(state.current_item_index) else {
-            return false;
-        };
-        let Some(entry) = state.info.entry(real_index) else {
-            return false;
-        };
-        let is_dir = entry.entry_type == EntryType::Directory;
-        child.priority = is_dir;
-        child.expandable = is_dir;
-        for (col, text) in entry_columns(entry).iter().enumerate() {
-            child.set_text(col, text);
-        }
-        child.data = u64::from(real_index);
-        state.current_item_index = state.current_item_index.saturating_add(1);
-        state.current_item_index != state.child_indexes.len()
+        guard.as_mut().is_some_and(|state| populate_item_from(state, child))
     }
 }
 
@@ -566,6 +716,40 @@ impl TypePlugin for ZipPlugin {
 
     /// C++ `UpdateKeys`: nothing registered.
     fn register_keys(&self, _keys: &mut dyn KeyRegistry) {}
+
+
+    /// C++ `Panels::Information::UpdateGeneralInformation`
+    /// (`Types/ZIP/src/Panels/Information.cpp:16-33`): the `Info`
+    /// category, `File`, `Size` and `Items`, each numeric value
+    /// formatted `"%-14s (%s)"`.
+    fn panel_content(&self, panel_id: &str) -> Option<PanelContent> {
+        if panel_id != INFORMATION_PANEL_ID {
+            return None;
+        }
+        let state = self.state()?;
+        let object = self.shared_object()?;
+        let (name, size) = {
+            let guard = object.lock().unwrap_or_else(PoisonError::into_inner);
+            (guard.name().to_owned(), guard.data().size())
+        };
+        Some(PanelContent::KeyValue(vec![
+            (String::from("Info"), String::new()),
+            (String::from("File"), name),
+            (String::from("Size"), fmt::dec_and_hex(size, 14)),
+            (String::from("Items"), fmt::dec_and_hex(u64::from(state.info.count()), 14)),
+        ]))
+    }
+
+    /// C++ `SetEnumerateCallback(this)` (`zip.cpp` `CreateContainerView`).
+    fn container_enumerator(&self) -> Option<Box<dyn EnumerateInterface + Send>> {
+        self.enumerator()
+            .map(|e| Box::new(e) as Box<dyn EnumerateInterface + Send>)
+    }
+
+    /// C++ `SetOpenItemCallback(this)` (`zip.cpp` `CreateContainerView`).
+    fn container_opener(&self) -> Option<Box<dyn OpenItemInterface + Send>> {
+        self.opener().map(|o| Box::new(o) as Box<dyn OpenItemInterface + Send>)
+    }
 
     /// C++ `GetSmartAssistantContext`: `Name`, `ContentSize`,
     /// `EntriesCount`.
@@ -704,6 +888,112 @@ mod tests {
             .iter()
             .filter_map(|c| tree.node(*c).map(|n| n.name().to_owned()))
             .collect()
+    }
+
+    /// Field list and value formatting of C++
+    /// `Panels::Information::UpdateGeneralInformation`
+    /// (`Types/ZIP/src/Panels/Information.cpp:16-33`).
+    #[test]
+    fn information_panel_matches_cpp_field_list() {
+        let plugin = ZipPlugin::create_instance();
+        assert!(
+            plugin.panel_content(INFORMATION_PANEL_ID).is_none(),
+            "no panel before populate_window"
+        );
+
+        let image = sample();
+        let (plugin, _) = loaded(&image);
+        let content = plugin.panel_content(INFORMATION_PANEL_ID).expect("panel");
+        assert_eq!(
+            content,
+            PanelContent::KeyValue(vec![
+                (String::from("Info"), String::new()),
+                (String::from("File"), String::from("sample.zip")),
+                (String::from("Size"), fmt::dec_and_hex(image.len() as u64, 14)),
+                (String::from("Items"), fmt::dec_and_hex(5, 14)),
+            ])
+        );
+        assert!(plugin.panel_content("zip.objects").is_none());
+        assert!(plugin.panel_content("").is_none());
+    }
+
+    /// `00_APP §5.3.3`: both container hooks are `None` before
+    /// `populate_window`; afterwards the boxed enumerator lists the
+    /// golden archive's single root entry and the boxed opener
+    /// decompresses it into an `OpenRequest`.
+    #[test]
+    fn container_hooks_enumerate_and_open_the_golden_archive() {
+        let plugin = ZipPlugin::create_instance();
+        assert!(plugin.container_enumerator().is_none(), "before populate_window");
+        assert!(plugin.container_opener().is_none(), "before populate_window");
+        assert!(plugin.position_to_color().is_none(), "ZIP has no colour hook");
+        assert!(plugin.panel_content("zip.information").is_none());
+
+        // A single stored entry — the golden one-entry archive.
+        let image = build(&[("only.txt", b"only one", stored())], &[]);
+        let (plugin, _) = loaded(&image);
+
+        let mut enumerator = plugin.container_enumerator().expect("enumerate hook");
+        assert!(enumerator.begin_iteration("", 0), "the root has one child");
+        let mut node = TreeNode::default();
+        assert!(!enumerator.populate_item(&mut node), "no further children");
+        assert_eq!(node.name(), "only.txt");
+        assert!(!node.expandable, "a file is a leaf");
+        assert_eq!(node.data, u64::from(index_of(&plugin, "only.txt")));
+        assert!(!enumerator.populate_item(&mut TreeNode::default()), "exhausted");
+
+        let mut opener = plugin.container_opener().expect("open hook");
+        let request = opener.on_open_item("", 0, &node).expect("opened");
+        assert_eq!(request.name, "only.txt");
+        assert_eq!(request.bytes, b"only one");
+        assert_eq!(request.creation_process, CREATION_PROCESS);
+        assert_eq!(request.kind, EntryKind::File);
+        assert!(request.path.ends_with("only.txt"));
+
+        // An index no entry carries is refused, not panicked on.
+        let mut bogus = TreeNode::default();
+        bogus.data = u64::MAX;
+        assert!(opener.on_open_item("", 0, &bogus).is_none());
+    }
+
+    /// The enumerator hook has its own cursor and walks the nested
+    /// sample the same way the plugin's own `EnumerateInterface` does.
+    #[test]
+    fn enumerator_hooks_snapshot_the_listing() {
+        let image = sample();
+        let (plugin, _) = loaded(&image);
+        let mut hook = plugin.container_enumerator().expect("enumerate hook");
+
+        assert!(hook.begin_iteration("", 0), "root has two children");
+        let mut first = TreeNode::default();
+        assert!(hook.populate_item(&mut first));
+        assert_eq!(first.name(), "dir");
+        assert!(first.expandable && first.priority, "a directory");
+        let mut second = TreeNode::default();
+        assert!(!hook.populate_item(&mut second), "last root child");
+        assert_eq!(second.name(), "top.bin");
+
+        // Re-entering under a subdirectory resets the cursor.
+        assert!(hook.begin_iteration("dir/sub", 0), "one child");
+        let mut deep = TreeNode::default();
+        assert!(!hook.populate_item(&mut deep));
+        assert_eq!(deep.name(), "deep.txt");
+
+        // An encrypted entry without a default password yields no
+        // request (the C++ opens its password dialog there).
+        let encrypted_image = build(&[("secret.txt", b"classified", encrypted("hunter2"))], &[]);
+        let (plugin, _) = loaded(&encrypted_image);
+        let mut hook = plugin.container_enumerator().expect("enumerate hook");
+        let mut node = TreeNode::default();
+        assert!(hook.begin_iteration("", 0));
+        assert!(!hook.populate_item(&mut node), "the only entry");
+        let mut opener = plugin.container_opener().expect("open hook");
+        assert!(opener.on_open_item("", 0, &node).is_none(), "password required");
+        let typed = plugin.opener().expect("typed opener");
+        assert!(matches!(
+            typed.open_index(node.data as u32),
+            Err(OpenError::PasswordRequired)
+        ));
     }
 
     #[test]

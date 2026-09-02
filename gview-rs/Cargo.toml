@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "crates/gview-core",
     "crates/gview-view",
+    "crates/gview-viewers",
     "crates/gview-app",
     "crates/gview-disasm",
     "crates/gview-hashes",

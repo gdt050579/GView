@@ -33,6 +33,7 @@ use std::sync::{Mutex, PoisonError};
 
 use appcui::graphics::{CharAttribute, CharFlags, Color};
 use gview_core::zones::ZonesList;
+use gview_plugin::panel::{fmt, PanelContent};
 use gview_plugin::type_plugin::{
     BufferViewerRequest, KeyRegistry, PanelRequest, Pattern, PluginError, PluginMetadata, TypePlugin,
     ViewerRequest, WindowHandle,
@@ -43,6 +44,8 @@ use gview_view::traits::SharedObject;
 use serde_json::Value as JsonValue;
 
 use crate::parse::{is_intel_machine, ElfError, ElfFile, PanelId, ELF32_EHDR_SIZE, ELF64_EHDR_SIZE};
+use crate::names;
+use crate::parse::{EI_ABIVERSION, EI_CLASS, EI_DATA, EI_OSABI, EI_PAD, EI_VERSION};
 use crate::validate::{validate, MAGIC, MAGIC_BYTES};
 
 /// `GView::Dissasembly::Opcodes` bits (`GView.hpp:816`).
@@ -443,6 +446,111 @@ impl TypePlugin for ElfPlugin {
     /// C++ `UpdateKeys`: nothing registered.
     fn register_keys(&self, _keys: &mut dyn KeyRegistry) {}
 
+
+    /// C++ `Panels::Information::UpdateGeneralInformation` +
+    /// `UpdateHeader` (`Types/ELF/src/Panels/Information.cpp:17-158`):
+    /// the `Info` category (`File`, `Size`), the `Header` category and
+    /// then every `e_ident` / `Elf_Ehdr` field, each rendered
+    /// `"%-16s (%s)"` (decimal padded to 16, then hex) — or
+    /// `"%-16s (%s) %s"` for `Type`, which appends the description.
+    ///
+    /// The C++ has two identical branches for 32- and 64-bit headers;
+    /// the Rust parser already widens both into one [`ElfHeader`], so
+    /// one branch reproduces both.
+    fn panel_content(&self, panel_id: &str) -> Option<PanelContent> {
+        if panel_id != Panel::Information.panel_id() {
+            return None;
+        }
+        let elf = self.file()?;
+        let object = self.object.lock().unwrap_or_else(PoisonError::into_inner).clone()?;
+        let (name, size) = {
+            let guard = object.lock().unwrap_or_else(PoisonError::into_inner);
+            (guard.name().to_owned(), guard.data().size())
+        };
+        let header = &elf.header;
+        let ident = |index: usize| header.ident.get(index).copied().unwrap_or(0);
+        // `*(uint32*) header.e_ident` and the two `EI_PAD` words, read
+        // little-endian like the C++ `reinterpret_cast` on x86.
+        let word_at = |index: usize| -> u32 {
+            u32::from_le_bytes([
+                ident(index),
+                ident(index.saturating_add(1)),
+                ident(index.saturating_add(2)),
+                ident(index.saturating_add(3)),
+            ])
+        };
+        let row = |caption: &str, value: u64| (String::from(caption), fmt::dec_and_hex(value, 16));
+        // `"%-16s (%s)"` with a name instead of the decimal form.
+        let named = |caption: &str, text: &str, value: u64| {
+            (String::from(caption), format!("{} ({})", fmt::pad(text, 16), fmt::hex(value)))
+        };
+        let (type_name, type_description) = names::type_name_and_description(header.e_type);
+        let os_abi = ident(EI_OSABI);
+        let mut rows = vec![
+            (String::from("Info"), String::new()),
+            (String::from("File"), name),
+            row("Size", size),
+            (String::from("Header"), String::new()),
+            row("Magic", u64::from(word_at(0))),
+            named("Class", names::class_name(ident(EI_CLASS)), u64::from(ident(EI_CLASS))),
+            named("Data", names::data_name(ident(EI_DATA)), u64::from(ident(EI_DATA))),
+            named(
+                "Version",
+                names::version_name(ident(EI_VERSION)),
+                u64::from(ident(EI_VERSION)),
+            ),
+            // C++ quirk: the OS ABI row prints the *version* byte in
+            // its hex column (`nf.ToString(header.e_ident[EI_VERSION], hex)`).
+            named("OS ABI", names::os_abi_name(os_abi), u64::from(ident(EI_VERSION))),
+            named(
+                "ABI Version",
+                names::abi_version_name(os_abi, ident(EI_ABIVERSION)),
+                u64::from(ident(EI_ABIVERSION)),
+            ),
+            row("PAD1", u64::from(word_at(EI_PAD))),
+            // C++ `(*(uint32*)(e_ident + EI_PAD + 4)) << 8`.
+            row("PAD2", u64::from(word_at(EI_PAD.saturating_add(4)) << 8)),
+            (
+                String::from("Type"),
+                format!(
+                    "{} ({}) {type_description}",
+                    fmt::pad(type_name, 16),
+                    fmt::hex(u64::from(header.e_type))
+                ),
+            ),
+            named(
+                "Machine",
+                names::machine_description(header.machine),
+                u64::from(header.machine),
+            ),
+            named(
+                "Version",
+                names::version_name(header.version as u8),
+                u64::from(header.version),
+            ),
+            row("Entry Point", header.entry),
+            row("PHT File Offset", header.phoff),
+            row("SHT File Offset", header.shoff),
+            row("Processor Flags", u64::from(header.flags)),
+            row("ELF Header Size", u64::from(header.ehsize)),
+            row("PHT Entry Size", u64::from(header.phentsize)),
+            row("PHT # Entries", u64::from(header.phnum)),
+            row("SH Size", u64::from(header.shentsize)),
+            row("SHT # Entries", u64::from(header.shnum)),
+            row("SHT String Index", u64::from(header.shstrndx)),
+        ];
+        rows.shrink_to_fit();
+        Some(PanelContent::KeyValue(rows))
+    }
+
+    /// C++ `SetPositionToColorCallback(elf)` (`elf.cpp`
+    /// `CreateBufferView`, gated on an Intel machine).
+    fn position_to_color(&self) -> Option<Box<dyn PositionToColorCallback + Send>> {
+        self.colorizer()
+            .filter(|c| is_intel_machine(c.machine))
+            .map(|c| Box::new(c) as Box<dyn PositionToColorCallback + Send>)
+    }
+
     /// C++ `GetSmartAssistantContext` (`ELFFile.cpp`): `Name`,
     /// `ContentSize` and, when present, `SectionNames`.
     fn smart_assistant_context(&self, _prompt: &str, _display: &str) -> Result<JsonValue, PluginError> {
@@ -658,6 +766,147 @@ mod tests {
         assert!(plugin.file().is_none());
         assert!(plugin.colorizer().is_none());
         assert!(format!("{plugin:?}").contains("parsed: false"));
+    }
+
+
+    /// Field list and value formatting of C++
+    /// `Panels::Information::UpdateGeneralInformation` +
+    /// `UpdateHeader` (`Types/ELF/src/Panels/Information.cpp`).
+    #[test]
+    fn information_panel_matches_cpp_field_list() {
+        let plugin = ElfPlugin::create_instance();
+        assert!(
+            plugin.panel_content(Panel::Information.panel_id()).is_none(),
+            "no panel before populate_window"
+        );
+
+        let image = typical(true, machine::EM_X86_64);
+        let mut win = window_for(&image, "bin");
+        plugin.populate_window(&mut win).expect("populate");
+        let content = plugin.panel_content(Panel::Information.panel_id()).expect("panel");
+        let PanelContent::KeyValue(rows) = &content else {
+            panic!("Information is a key/value panel");
+        };
+        let fields: Vec<&str> = rows.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(
+            fields,
+            [
+                "Info",
+                "File",
+                "Size",
+                "Header",
+                "Magic",
+                "Class",
+                "Data",
+                "Version",
+                "OS ABI",
+                "ABI Version",
+                "PAD1",
+                "PAD2",
+                "Type",
+                "Machine",
+                "Version",
+                "Entry Point",
+                "PHT File Offset",
+                "SHT File Offset",
+                "Processor Flags",
+                "ELF Header Size",
+                "PHT Entry Size",
+                "PHT # Entries",
+                "SH Size",
+                "SHT # Entries",
+                "SHT String Index",
+            ]
+        );
+        let elf = plugin.file().expect("parsed");
+        assert_eq!(rows[1].1, "bin");
+        assert_eq!(rows[2].1, fmt::dec_and_hex(image.len() as u64, 16));
+        // `*(uint32*) e_ident` = 0x464C457F little-endian.
+        assert_eq!(rows[4].1, fmt::dec_and_hex(0x464C_457F, 16));
+        assert_eq!(rows[5].1, format!("{} (0x2)", fmt::pad("64", 16)), "ELFCLASS64");
+        assert_eq!(rows[6].1, format!("{} (0x1)", fmt::pad("2LSB (Little)", 16)));
+        assert_eq!(
+            rows[12].1,
+            format!(
+                "{} ({}) {}",
+                fmt::pad(names::type_name_and_description(elf.header.e_type).0, 16),
+                fmt::hex(u64::from(elf.header.e_type)),
+                names::type_name_and_description(elf.header.e_type).1
+            )
+        );
+        assert_eq!(
+            rows[13].1,
+            format!(
+                "{} ({})",
+                fmt::pad(names::machine_description(machine::EM_X86_64), 16),
+                fmt::hex(u64::from(machine::EM_X86_64))
+            )
+        );
+        assert_eq!(
+            names::machine_description(machine::EM_X86_64),
+            "Advanced Micro Devices X86-64 processor",
+            "verbatim from GetNameFromElfMachine"
+        );
+        assert_eq!(rows[15].1, fmt::dec_and_hex(elf.header.entry, 16), "Entry Point");
+        assert!(plugin.panel_content(Panel::Sections.panel_id()).is_none());
+    }
+
+    /// A header that fails to parse leaves no state: `None`, no panic.
+    #[test]
+    fn information_panel_without_state_is_none() {
+        let plugin = ElfPlugin::create_instance();
+        let mut win = window_for(b"\x7fELF\x02\x01\x01", "tiny");
+        assert!(plugin.populate_window(&mut win).is_err());
+        assert!(plugin.panel_content(Panel::Information.panel_id()).is_none());
+    }
+
+    /// `00_APP §5.3.3`: the boxed hook is `None` before
+    /// `populate_window`, and afterwards colours exactly what
+    /// [`ElfOpcodeColorizer`] colours (same ranges as
+    /// `opcode_colorizer_matches_cpp_heuristics`).
+    #[test]
+    fn position_to_color_hooks_wrap_the_colorizer() {
+        let plugin = ElfPlugin::create_instance();
+        assert!(plugin.position_to_color().is_none(), "before populate_window");
+        assert!(plugin.container_enumerator().is_none());
+        assert!(plugin.container_opener().is_none());
+        assert!(plugin.panel_content("elf.information").is_none());
+
+        let image = typical(true, machine::EM_X86_64);
+        let mut win = window_for(&image, "ops");
+        plugin.populate_window(&mut win).expect("populate");
+        plugin.set_show_opcodes_mask(opcodes::ALL);
+
+        let elf = plugin.file().expect("parsed");
+        let text_offset = elf.sections[1].offset;
+        let colors = OpcodeColors::default();
+        let mut hook = plugin.position_to_color().expect("hook");
+        let mut direct = plugin.colorizer().expect("colorizer");
+        for (offset, bytes) in [
+            (0_u64, b"\x7fELF\x02".as_slice()),
+            (text_offset, &[0xCC, 0, 0, 0]),
+            (text_offset, &[0x55, 0x8B, 0xEC]),
+            (text_offset, &[0x8B, 0xE5, 0x5D, 0xC3]),
+            (text_offset, &[0x90, 0x90]),
+        ] {
+            let boxed = hook.color_for_buffer(offset, bytes).map(|b| (b.start, b.end, b.color));
+            assert_eq!(
+                boxed,
+                cb(&mut direct, offset, bytes),
+                "hook and colorizer disagree at {offset:#x}"
+            );
+        }
+        assert_eq!(
+            hook.color_for_buffer(0, b"\x7fELF\x02").map(|b| b.color),
+            Some(colors.exe_marker)
+        );
+
+        // A non-Intel machine gets no callback at all (the C++
+        // `SetPositionToColorCallback` gate).
+        let arm = typical(true, machine::EM_AARCH64);
+        let mut win = window_for(&arm, "arm");
+        plugin.populate_window(&mut win).expect("populate");
+        assert!(plugin.position_to_color().is_none(), "AArch64 does not colour opcodes");
     }
 
     #[test]

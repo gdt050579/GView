@@ -34,6 +34,7 @@ use std::sync::{Mutex, PoisonError};
 
 use appcui::graphics::{CharAttribute, CharFlags, Color};
 use gview_core::zones::ZonesList;
+use gview_plugin::panel::{fmt, PanelContent};
 use gview_plugin::type_plugin::{
     BufferViewerRequest, ContainerViewerRequest, KeyRegistry, PanelRequest, Pattern, PluginError, PluginMetadata,
     TypePlugin, ViewerRequest, WindowHandle,
@@ -43,7 +44,8 @@ use gview_view::container_viewer::tree::{EnumerateInterface, TreeItemId, TreeNod
 use gview_view::traits::SharedObject;
 use serde_json::Value as JsonValue;
 
-use crate::parse::{format_timestamp, PcapError, PcapFile, HEADER_SIZE};
+use crate::link_descriptions::link_type_description;
+use crate::parse::{format_timestamp, link_type_name, magic_name, PcapError, PcapFile, HEADER_SIZE};
 use crate::validate::{validate, MAGIC_IDENTICAL, MAGIC_SWAPPED};
 
 /// `UpdateSettings` `Description`.
@@ -256,6 +258,35 @@ impl PcapPlugin {
     pub fn packet_rows(&self, hex: bool) -> Vec<Vec<String>> {
         self.file().map(|p| packet_rows(&p, hex)).unwrap_or_default()
     }
+
+    /// The `SetEnumerateCallback` snapshot for the container
+    /// viewer, or `None` before `PopulateWindow` parsed the
+    /// capture.
+    #[must_use]
+    pub fn stream_enumerator(&self) -> Option<PcapStreamEnumerator> {
+        self.file().map(|_| PcapStreamEnumerator)
+    }
+}
+
+/// `SetEnumerateCallback` snapshot handed to the container viewer
+/// (spec `00_APP §5.3.3`).
+///
+/// The C++ `BeginIteration` returns `streamManager.empty() == false`;
+/// the `StreamManager` port is a later task, so the enumerator exists
+/// for a parsed capture but yields no children.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PcapStreamEnumerator;
+
+impl EnumerateInterface for PcapStreamEnumerator {
+    /// C++ `BeginIteration` with an empty `streamManager`.
+    fn begin_iteration(&mut self, _path: &str, _parent: TreeItemId) -> bool {
+        false
+    }
+
+    /// C++ `PopulateItem`: never reached without streams.
+    fn populate_item(&mut self, _child: &mut TreeNode) -> bool {
+        false
+    }
 }
 
 impl EnumerateInterface for PcapPlugin {
@@ -329,6 +360,75 @@ impl TypePlugin for PcapPlugin {
 
     /// C++ `UpdateKeys`: nothing registered.
     fn register_keys(&self, _keys: &mut dyn KeyRegistry) {}
+
+
+    /// C++ `Panels::Information::UpdateGeneralInformation` +
+    /// `UpdatePcapHeader` (`Types/PCAP/src/Panels/Information.cpp:18-56`):
+    /// the `Info` category (`File`, `Size`), the `Header` category with
+    /// every `pcap_hdr_t` field, and finally `Packets #`. Numeric rows
+    /// use `"%-20s (%s)"`; `Magic` and `Network` substitute the name
+    /// for the decimal form, and `Network` appends the link-type
+    /// description.
+    fn panel_content(&self, panel_id: &str) -> Option<PanelContent> {
+        if panel_id != PANELS[0].1 {
+            return None;
+        }
+        let pcap = self.file()?;
+        let object = self.object.lock().unwrap_or_else(PoisonError::into_inner).clone()?;
+        let (name, size) = {
+            let guard = object.lock().unwrap_or_else(PoisonError::into_inner);
+            (guard.name().to_owned(), guard.data().size())
+        };
+        let header = &pcap.header;
+        let row = |caption: &str, value: u64| (String::from(caption), fmt::dec_and_hex(value, 20));
+        // `nf.ToString((uint32) v, hexUint32)` — `{ HexPrefix, 16, 0, ' ', 4 }`.
+        let hex32 = |value: u32| fmt::hex_digits(u64::from(value), 4);
+        // `thiszone` is `int32`: base 10 keeps the sign, base 16
+        // reinterprets the (sign-extended) bits, as `ToStringSigned` does.
+        let thiszone = (
+            String::from("Thiszone"),
+            format!(
+                "{} ({})",
+                fmt::pad(&fmt::dec_signed(i64::from(header.thiszone)), 20),
+                fmt::hex(i64::from(header.thiszone).cast_unsigned())
+            ),
+        );
+        Some(PanelContent::KeyValue(vec![
+            (String::from("Info"), String::new()),
+            (String::from("File"), name),
+            row("Size", size),
+            (String::from("Header"), String::new()),
+            (
+                String::from("Magic"),
+                format!("{} ({})", fmt::pad(magic_name(header.magic), 20), hex32(header.magic)),
+            ),
+            row("Version Major", u64::from(header.version_major)),
+            row("Version Minor", u64::from(header.version_minor)),
+            thiszone,
+            row("Sigfigs", u64::from(header.sigfigs)),
+            row("Snaplen", u64::from(header.snaplen)),
+            (
+                String::from("Network"),
+                format!(
+                    "{} ({}) {}",
+                    fmt::pad(link_type_name(header.network), 20),
+                    hex32(header.network),
+                    link_type_description(header.network)
+                ),
+            ),
+            row("Packets #", pcap.packet_count() as u64),
+        ]))
+    }
+
+    /// C++ `SetEnumerateCallback(pcap)` (`PCAP.cpp`
+    /// `CreateContainerView`). The enumerator exists as soon as
+    /// the capture is parsed; it lists nothing until the
+    /// `StreamManager` port lands, exactly like the C++
+    /// `BeginIteration` returning `streamManager.empty() == false`.
+    fn container_enumerator(&self) -> Option<Box<dyn EnumerateInterface + Send>> {
+        self.stream_enumerator()
+            .map(|e| Box::new(e) as Box<dyn EnumerateInterface + Send>)
+    }
 
     /// C++ `GetSmartAssistantContext`: `Name`, `ContentSize`,
     /// `TotalPackets`, `TotalStreams`.
@@ -452,6 +552,101 @@ mod tests {
         assert_eq!(win.panels, [(String::from("Informa&tion"), true), (String::from("&Packets"), false)]);
         assert_eq!(plugin.file().map(|p| p.packet_count()), Some(3));
         assert!(format!("{plugin:?}").contains("packets: Some(3)"));
+    }
+
+
+    /// Field list and value formatting of C++
+    /// `Panels::Information::UpdateGeneralInformation` +
+    /// `UpdatePcapHeader` (`Types/PCAP/src/Panels/Information.cpp`).
+    #[test]
+    fn information_panel_matches_cpp_field_list() {
+        let plugin = PcapPlugin::create_instance();
+        assert!(
+            plugin.panel_content(PANELS[0].1).is_none(),
+            "no panel before populate_window"
+        );
+
+        let image = sample();
+        let mut win = window_for(&image, "cap.pcap");
+        plugin.populate_window(&mut win).expect("populate");
+        let content = plugin.panel_content(PANELS[0].1).expect("panel");
+        let PanelContent::KeyValue(rows) = &content else {
+            panic!("Information is a key/value panel");
+        };
+        let fields: Vec<&str> = rows.iter().map(|(f, _)| f.as_str()).collect();
+        assert_eq!(
+            fields,
+            [
+                "Info",
+                "File",
+                "Size",
+                "Header",
+                "Magic",
+                "Version Major",
+                "Version Minor",
+                "Thiszone",
+                "Sigfigs",
+                "Snaplen",
+                "Network",
+                "Packets #",
+            ]
+        );
+        let pcap = plugin.file().expect("parsed");
+        assert_eq!(rows[1].1, "cap.pcap");
+        assert_eq!(rows[2].1, fmt::dec_and_hex(image.len() as u64, 20));
+        assert_eq!(
+            rows[4].1,
+            format!(
+                "{} ({})",
+                fmt::pad(magic_name(pcap.header.magic), 20),
+                fmt::hex_digits(u64::from(pcap.header.magic), 4)
+            )
+        );
+        assert_eq!(rows[5].1, fmt::dec_and_hex(2, 20), "Version Major");
+        assert_eq!(rows[6].1, fmt::dec_and_hex(4, 20), "Version Minor");
+        assert_eq!(
+            rows[10].1,
+            format!(
+                "{} ({}) {}",
+                fmt::pad(link_type_name(pcap.header.network), 20),
+                fmt::hex_digits(u64::from(pcap.header.network), 4),
+                link_type_description(pcap.header.network)
+            )
+        );
+        assert!(rows[10].1.contains("ETHERNET"));
+        assert_eq!(rows[11].1, fmt::dec_and_hex(3, 20), "three packets");
+        assert!(plugin.panel_content(PANELS[1].1).is_none());
+    }
+
+    /// A capture that fails to parse leaves no state: `None`, no panic.
+    #[test]
+    fn information_panel_without_state_is_none() {
+        let plugin = PcapPlugin::create_instance();
+        let mut win = window_for(b"\xd4\xc3\xb2", "tiny.pcap");
+        assert!(plugin.populate_window(&mut win).is_err());
+        assert!(plugin.panel_content(PANELS[0].1).is_none());
+    }
+
+    /// `00_APP §5.3.3`: the enumerate hook is `None` before
+    /// `populate_window` and `Some` afterwards, listing nothing until
+    /// the `StreamManager` port lands (C++ `BeginIteration` over an
+    /// empty `streamManager`). PCAP has no colour or open hook.
+    #[test]
+    fn container_hooks_exist_only_after_populate() {
+        let plugin = PcapPlugin::create_instance();
+        assert!(plugin.container_enumerator().is_none(), "before populate_window");
+        assert!(plugin.position_to_color().is_none(), "PCAP has no colour hook");
+        assert!(plugin.container_opener().is_none(), "PCAP has no open hook");
+        assert!(plugin.panel_content("pcap.information").is_none());
+
+        let image = sample();
+        let mut win = window_for(&image, "cap.pcap");
+        plugin.populate_window(&mut win).expect("populate");
+
+        let mut hook = plugin.container_enumerator().expect("enumerate hook");
+        assert!(!hook.begin_iteration("", 0), "no streams yet");
+        assert!(!hook.populate_item(&mut TreeNode::default()), "never reached");
+        assert!(plugin.container_opener().is_none());
     }
 
     #[test]

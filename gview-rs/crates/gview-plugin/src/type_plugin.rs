@@ -27,13 +27,17 @@
 
 use appcui::input::Key;
 use gview_core::zones::ZonesList;
+use gview_view::buffer_viewer::color::PositionToColorCallback;
 use gview_view::buffer_viewer::dissasm_dialog::DissasmSettings;
+use gview_view::container_viewer::open::OpenItemInterface;
+use gview_view::container_viewer::tree::EnumerateInterface;
 use gview_view::dissasm_viewer::zone::DisassemblyZone;
 use gview_view::traits::SharedObject;
 use serde_json::Value as JsonValue;
 
 use crate::fnv::{extension_hash, EXTENSION_EMPTY_HASH};
 use crate::matcher::{Matcher, TextParser};
+use crate::panel::PanelContent;
 
 /// C++ `Plugin::Init` priority clamp: `max(value, 0xFFFF)` — only
 /// values above 65535 differentiate plugin order (spec §7.4).
@@ -471,6 +475,57 @@ pub trait TypePlugin: Send + Sync {
     fn selection_zone(&self, _index: u32) -> SelectionZone {
         SelectionZone::default()
     }
+
+    /// C++ `BufferViewer::Settings::SetPositionToColorCallback`
+    /// (spec `00_APP §5.3.3`).
+    ///
+    /// Returns an **owned snapshot** of the plugin's colouring state,
+    /// which the mount function moves into the `BufferView` control.
+    /// The C++ passes `this` (the `TypeInterface` itself implements
+    /// `PositionToColorInterface`); the Rust control cannot borrow the
+    /// plugin, so the plugin hands out a value instead.
+    ///
+    /// `None` when the format does not colour opcodes, when the file's
+    /// machine is not supported, or before `populate_window` parsed
+    /// anything.
+    fn position_to_color(&self) -> Option<Box<dyn PositionToColorCallback + Send>> {
+        None
+    }
+
+    /// C++ `ContainerViewer::Settings::SetEnumerateCallback`
+    /// (spec `00_APP §5.3.3`).
+    ///
+    /// Same ownership rule as [`Self::position_to_color`]: an owned
+    /// enumerator over the already-parsed listing. `None` for
+    /// non-container formats and before `populate_window`.
+    fn container_enumerator(&self) -> Option<Box<dyn EnumerateInterface + Send>> {
+        None
+    }
+
+    /// C++ `ContainerViewer::Settings::SetOpenItemCallback`
+    /// (spec `00_APP §5.3.3`).
+    ///
+    /// `None` for formats whose entries cannot be opened, and before
+    /// `populate_window`.
+    fn container_opener(&self) -> Option<Box<dyn OpenItemInterface + Send>> {
+        None
+    }
+
+    /// Content for the plugin panel `panel_id` (spec `00_APP §5.4.1`).
+    ///
+    /// The C++ counterpart is the `TabPage` subclass built in
+    /// `PopulateWindow` (`Types/*/src/Panels/*.cpp`); here the plugin
+    /// only produces the *data* and the shell renders it (design
+    /// decision `§0.3 D3`).
+    ///
+    /// Ids are `"<format>.<panel>"` in lowercase ASCII, e.g.
+    /// `"pe.information"`. The vtable default is `None`, which makes
+    /// the shell fall back to the generic `Information` panel; a plugin
+    /// whose parse never ran must also answer `None` rather than
+    /// panicking.
+    fn panel_content(&self, _panel_id: &str) -> Option<PanelContent> {
+        None
+    }
 }
 
 /// Function-pointer view of a [`TypePlugin`] implementation: what a
@@ -688,6 +743,19 @@ pub mod tests {
     use appcui::input::{KeyCode, KeyModifier};
     use gview_core::object::Object;
     use std::sync::{Arc, Mutex};
+
+    /// The three viewer-service hooks of `00_APP §5.3.3` default to
+    /// `None`, so a plugin that implements none of them (and any
+    /// plugin before `populate_window` ran) never hands the shell a
+    /// callback.
+    #[test]
+    fn viewer_service_hooks_default_to_none() {
+        let plugin = MockPe::create_instance();
+        assert!(plugin.position_to_color().is_none(), "hooks");
+        assert!(plugin.container_enumerator().is_none(), "hooks");
+        assert!(plugin.container_opener().is_none(), "hooks");
+        assert!(plugin.panel_content("pe.information").is_none(), "hooks");
+    }
 
     /// A PE-like mock plugin.
     pub struct MockPe {

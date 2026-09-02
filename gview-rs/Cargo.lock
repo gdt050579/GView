@@ -1035,6 +1035,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gview-viewers"
+version = "0.1.0"
+dependencies = [
+ "appcui",
+ "gview-core",
+ "gview-disasm",
+ "gview-plugin",
+ "gview-view",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

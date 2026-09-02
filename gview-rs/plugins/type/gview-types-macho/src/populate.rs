@@ -43,6 +43,7 @@ use std::sync::{Mutex, PoisonError};
 use appcui::graphics::{CharAttribute, CharFlags, Color};
 use appcui::input::{Key, KeyCode, KeyModifier};
 use gview_core::zones::ZonesList;
+use gview_plugin::panel::{fmt, PanelContent};
 use gview_plugin::type_plugin::{
     BufferViewerRequest, CommandDef, ContainerViewerRequest, KeyRegistry, PanelRequest, Pattern, PluginError,
     PluginMetadata, TypePlugin, ViewerRequest, WindowHandle,
@@ -53,9 +54,10 @@ use gview_view::container_viewer::tree::{EnumerateInterface, TreeItemId, TreeNod
 use gview_view::traits::SharedObject;
 use serde_json::Value as JsonValue;
 
+use crate::names;
 use crate::parse::{
-    is_intel_cpu, Arch, MachoError, MachoFile, PanelId, FAT_HEADER_SIZE, MACH_HEADER_64_SIZE, MH_CIGAM, MH_CIGAM_64,
-    MH_MAGIC, MH_MAGIC_64,
+    arch_info, is_intel_cpu, Arch, MachoError, MachoFile, PanelId, FAT_HEADER_SIZE, MACH_HEADER_64_SIZE, MH_CIGAM,
+    MH_CIGAM_64, MH_MAGIC, MH_MAGIC_64,
 };
 use crate::validate::{validate, FAT_CIGAM, FAT_CIGAM_64, FAT_MAGIC, FAT_MAGIC_64};
 
@@ -506,6 +508,10 @@ pub fn arch_columns(arch: &Arch) -> Vec<String> {
     ]
 }
 
+/// Lower-case hex digits for the `%.2x` UUID formatting of
+/// `Panels::Information::UpdateUUID`.
+const HEX_NIBBLES: [u8; 16] = *b"0123456789abcdef";
+
 /// The Mach-O `TypeInterface` (C++ `MachO::MachOFile` as a type
 /// instance).
 pub struct MachoPlugin {
@@ -568,6 +574,13 @@ impl MachoPlugin {
         self.file().map(|m| MachoOpcodeColorizer::new(&m, self.show_opcodes_mask()))
     }
 
+    /// The `SetEnumerateCallback` snapshot for the container
+    /// viewer, or `None` before `PopulateWindow` parsed the file.
+    #[must_use]
+    pub fn fat_enumerator(&self) -> Option<MachoFatEnumerator> {
+        self.file().map(|m| MachoFatEnumerator::new(m.archs))
+    }
+
     /// C++ `MACHO_COMMANDS`.
     #[must_use]
     pub fn commands() -> Vec<CommandDef> {
@@ -596,6 +609,45 @@ impl MachoPlugin {
             guard.data_mut().copy_to_vec(arch.offset, size, true).ok()?
         };
         Some((arch.info.name, bytes))
+    }
+}
+
+/// `SetEnumerateCallback` snapshot handed to the container viewer
+/// (spec `00_APP §5.3.3`): an owned copy of the fat-binary
+/// architecture list with its own cursor, so the control never
+/// borrows the plugin.
+#[derive(Clone, Debug, Default)]
+pub struct MachoFatEnumerator {
+    archs: Vec<Arch>,
+    cursor: usize,
+}
+
+impl MachoFatEnumerator {
+    /// Enumerator over the parsed fat members.
+    #[must_use]
+    pub const fn new(archs: Vec<Arch>) -> Self {
+        Self { archs, cursor: 0 }
+    }
+}
+
+impl EnumerateInterface for MachoFatEnumerator {
+    /// C++ `BeginIteration`: `archs.size() > 0`.
+    fn begin_iteration(&mut self, _path: &str, _parent: TreeItemId) -> bool {
+        self.cursor = 0;
+        !self.archs.is_empty()
+    }
+
+    /// C++ `PopulateItem`: one fat member per call.
+    fn populate_item(&mut self, child: &mut TreeNode) -> bool {
+        let Some(arch) = self.archs.get(self.cursor) else {
+            return false;
+        };
+        for (col, text) in arch_columns(arch).iter().enumerate() {
+            child.set_text(col, text);
+        }
+        child.data = self.cursor as u64;
+        self.cursor = self.cursor.saturating_add(1);
+        self.cursor != self.archs.len()
     }
 }
 
@@ -692,6 +744,246 @@ impl TypePlugin for MachoPlugin {
     /// signature dialog is not ported).
     fn run_command(&mut self, command: &str) {
         *self.last_command.lock().unwrap_or_else(PoisonError::into_inner) = Some(command.to_owned());
+    }
+
+    /// C++ `Panels::Information::Update`
+    /// (`Types/MachO/src/Panels/Information.cpp:241-259`): a thin
+    /// Mach-O renders `UpdateBasicInfo` + `UpdateEntryPoint` +
+    /// `UpdateSourceVersion` + `UpdateUUID` + `UpdateVersionMin`; a fat
+    /// binary renders `UpdateFatInfo` instead. Rows the C++ guards with
+    /// `CHECKRET(...has_value())` are absent when the load command is.
+    // One function per C++ `Update*` helper would not match the
+    // panel's single `Update()` entry point; the row list follows the
+    // C++ call order top to bottom.
+    #[allow(clippy::too_many_lines)]
+    fn panel_content(&self, panel_id: &str) -> Option<PanelContent> {
+        if panel_id != Panel::Information.panel_id() {
+            return None;
+        }
+        let macho = self.file()?;
+        let object = self.object.lock().unwrap_or_else(PoisonError::into_inner).clone()?;
+        let (name, size) = {
+            let guard = object.lock().unwrap_or_else(PoisonError::into_inner);
+            (guard.name().to_owned(), guard.data().size())
+        };
+        if macho.is_fat && !macho.is_macho {
+            // `UpdateFatInfo` (`Information.cpp:224-240`).
+            return Some(PanelContent::KeyValue(vec![
+                (String::from("Fat Binary Info"), String::new()),
+                (String::from("File"), name),
+                (String::from("Size"), format!("{} bytes", fmt::dec(size))),
+                (
+                    String::from("Arch"),
+                    String::from(if macho.is64 { "x64" } else { "x86" }),
+                ),
+                // `{ NumericFormatFlags::None, 10 }` — no grouping here.
+                (String::from("Objects"), macho.fat_arch_count.to_string()),
+            ]));
+        }
+        if !macho.is_macho {
+            return Some(PanelContent::KeyValue(Vec::new()));
+        }
+
+        let header = &macho.header;
+        let info = arch_info(header.cputype, header.cpusubtype.cast_unsigned());
+        // `"%-14s (%s)"` and `"%-14s (0x%X)"`; `%X` is upper case with
+        // no padding, i.e. the same text `fmt::hex` produces.
+        let wide = |text: &str, value: u64| format!("{} ({})", fmt::pad(text, 14), fmt::hex(value));
+        let mut rows = vec![
+            (String::from("Info"), String::new()),
+            (String::from("File"), name),
+            (String::from("Size"), fmt::dec_and_hex(size, 14)),
+            (
+                String::from("Byte Order"),
+                String::from(names::byte_order_name(info.byteorder)),
+            ),
+            (
+                String::from("Magic"),
+                wide(
+                    if macho.is64 { "MH_MAGIC_64" } else { "MH_MAGIC" },
+                    u64::from(header.magic),
+                ),
+            ),
+            (
+                String::from("CPU Type"),
+                wide(&info.name, u64::from(header.cputype.cast_unsigned())),
+            ),
+            (
+                String::from("CPU Subtype"),
+                wide(&info.description, u64::from(header.cpusubtype.cast_unsigned())),
+            ),
+            (
+                String::from("File Type"),
+                wide(file_type_name(header.filetype), u64::from(header.filetype)),
+            ),
+            (
+                String::from("Load Commands"),
+                wide(&fmt::dec(u64::from(header.ncmds)), u64::from(header.ncmds)),
+            ),
+            (
+                String::from("Size of Commands"),
+                fmt::dec_and_hex(u64::from(header.sizeofcmds), 14),
+            ),
+            (
+                String::from("Flags"),
+                wide(&fmt::dec(u64::from(header.flags)), u64::from(header.flags)),
+            ),
+        ];
+        // One caption-less row per set flag: `"%-20s %-12s %s"`.
+        for (bit, flag_name, description) in names::set_header_flags(header.flags) {
+            rows.push((
+                String::new(),
+                format!(
+                    "{} {} {description}",
+                    fmt::pad(flag_name, 20),
+                    fmt::pad(&format!("({})", fmt::hex(u64::from(*bit))), 12)
+                ),
+            ));
+        }
+        if macho.is64 {
+            rows.push((
+                String::from("Reserved"),
+                wide(&fmt::dec(u64::from(header.reserved)), u64::from(header.reserved)),
+            ));
+        }
+
+        // `UpdateEntryPoint` (`Information.cpp:70-95`).
+        if let Some(main) = macho.main {
+            rows.push((String::from("Entry Point"), String::new()));
+            rows.push((
+                String::from("Command"),
+                wide(names::load_command_name(main.cmd), u64::from(main.cmd)),
+            ));
+            rows.push((String::from("Cmd Size"), fmt::dec_and_hex(u64::from(main.cmdsize), 14)));
+            rows.push((String::from("EP offset"), fmt::dec_and_hex(main.entryoff, 14)));
+            rows.push((String::from("Stack Size"), fmt::dec_and_hex(main.stacksize, 14)));
+        }
+
+        // `UpdateSourceVersion` (`Information.cpp:97-124`): the packed
+        // `a.b.c.d.e` version, `%-22s (%s)`.
+        if let Some(source) = macho.source_version {
+            rows.push((String::from("Source Version"), String::new()));
+            rows.push((
+                String::from("Command"),
+                format!(
+                    "{} ({})",
+                    fmt::pad(names::load_command_name(source.cmd), 22),
+                    fmt::hex(u64::from(source.cmd))
+                ),
+            ));
+            rows.push((
+                String::from("Cmd Size"),
+                format!(
+                    "{} ({})",
+                    fmt::pad(&fmt::dec(u64::from(source.cmdsize)), 22),
+                    fmt::hex(u64::from(source.cmdsize))
+                ),
+            ));
+            let v = source.version;
+            let text = format!(
+                "{}.{}.{}.{}.{}",
+                (v >> 40) & 0x00FF_FFFF,
+                (v >> 30) & 0x3FF,
+                (v >> 20) & 0x3FF,
+                (v >> 10) & 0x3FF,
+                v & 0x3FF
+            );
+            rows.push((
+                String::from("Version"),
+                format!("{} ({})", fmt::pad(&text, 22), fmt::hex(v)),
+            ));
+        }
+
+        // `UpdateUUID` (`Information.cpp:126-186`): `%-35s (%s)` with
+        // the lower-case `%.2x` UUID text and its `0x…` concatenation.
+        if let Some(uuid) = macho.uuid {
+            rows.push((String::from("UUID"), String::new()));
+            rows.push((
+                String::from("Command"),
+                format!(
+                    "{} ({})",
+                    fmt::pad(names::load_command_name(uuid.cmd), 35),
+                    fmt::hex(u64::from(uuid.cmd))
+                ),
+            ));
+            rows.push((
+                String::from("Cmd Size"),
+                format!(
+                    "{} ({})",
+                    fmt::pad(&fmt::dec(u64::from(uuid.cmdsize)), 35),
+                    fmt::hex(u64::from(uuid.cmdsize))
+                ),
+            ));
+            let mut plain = String::with_capacity(36);
+            let mut packed = String::from("0x");
+            for (index, byte) in uuid.uuid.iter().enumerate() {
+                if matches!(index, 4 | 8 | 12) {
+                    plain.push('-');
+                }
+                // `%.2x`: two lower-case nibbles, no allocation.
+                for nibble in [byte >> 4, byte & 0x0F] {
+                    let digit = char::from(HEX_NIBBLES.get(nibble as usize).copied().unwrap_or(b'0'));
+                    plain.push(digit);
+                    packed.push(digit);
+                }
+            }
+            rows.push((
+                String::from("UUID"),
+                format!("{} ({packed})", fmt::pad(&plain, 35)),
+            ));
+        }
+
+        // `UpdateVersionMin` (`Information.cpp:188-216`).
+        if let Some(min) = macho.version_min {
+            rows.push((String::from("Version Min"), String::new()));
+            rows.push((
+                String::from("Command"),
+                format!(
+                    "{} ({})",
+                    fmt::pad(names::load_command_name(min.cmd), 22),
+                    fmt::hex(u64::from(min.cmd))
+                ),
+            ));
+            rows.push((
+                String::from("Cmd Size"),
+                format!(
+                    "{} ({})",
+                    fmt::pad(&fmt::dec(u64::from(min.cmdsize)), 22),
+                    fmt::hex(u64::from(min.cmdsize))
+                ),
+            ));
+            let triple = |packed: u32| {
+                format!("{}.{}.{}", packed >> 16, (packed >> 8) & 0xFF, packed & 0xFF)
+            };
+            rows.push((
+                String::from("Version"),
+                format!(
+                    "{} ({})",
+                    fmt::pad(&triple(min.version), 22),
+                    fmt::hex(u64::from(min.version))
+                ),
+            ));
+            rows.push((
+                String::from("SDK"),
+                format!("{} ({})", fmt::pad(&triple(min.sdk), 22), fmt::hex(u64::from(min.sdk))),
+            ));
+        }
+        rows.shrink_to_fit();
+        Some(PanelContent::KeyValue(rows))
+    }
+
+    /// C++ `SetPositionToColorCallback(macho)` (`MachO.cpp`
+    /// `CreateBufferView`).
+    fn position_to_color(&self) -> Option<Box<dyn PositionToColorCallback + Send>> {
+        self.colorizer()
+            .map(|c| Box::new(c) as Box<dyn PositionToColorCallback + Send>)
+    }
+
+    /// C++ `SetEnumerateCallback(macho)` — the fat-binary
+    /// architecture list (`MachO.cpp` `CreateContainerView`).
+    fn container_enumerator(&self) -> Option<Box<dyn EnumerateInterface + Send>> {
+        self.fat_enumerator()
+            .map(|e| Box::new(e) as Box<dyn EnumerateInterface + Send>)
     }
 
     /// C++ `UpdateKeys`.
@@ -907,6 +1199,150 @@ mod tests {
         plugin.populate_window(&mut win).expect("populate");
         let z = zones(win.viewers[1].buffer.as_ref().expect("buffer"));
         assert_eq!(z[1], (String::from("Arch #0"), 32, 63));
+    }
+
+
+    /// Field list and value formatting of C++
+    /// `Panels::Information::UpdateBasicInfo` and, for a fat binary,
+    /// `UpdateFatInfo` (`Types/MachO/src/Panels/Information.cpp`).
+    #[test]
+    fn information_panel_matches_cpp_field_list() {
+        let plugin = MachoPlugin::create_instance();
+        assert!(
+            plugin.panel_content(Panel::Information.panel_id()).is_none(),
+            "no panel before populate_window"
+        );
+
+        let (image, _) = typical(true, false);
+        let mut win = window_for(&image, "thin");
+        plugin.populate_window(&mut win).expect("populate");
+        let content = plugin.panel_content(Panel::Information.panel_id()).expect("panel");
+        let PanelContent::KeyValue(rows) = &content else {
+            panic!("Information is a key/value panel");
+        };
+        let fields: Vec<&str> = rows.iter().map(|(f, _)| f.as_str()).collect();
+        // The fixed head of `UpdateBasicInfo`, then one caption-less
+        // row per set header flag, then the optional load-command
+        // blocks.
+        assert_eq!(
+            &fields[..11],
+            [
+                "Info",
+                "File",
+                "Size",
+                "Byte Order",
+                "Magic",
+                "CPU Type",
+                "CPU Subtype",
+                "File Type",
+                "Load Commands",
+                "Size of Commands",
+                "Flags",
+            ]
+        );
+        let macho = plugin.file().expect("parsed");
+        assert_eq!(rows[1].1, "thin");
+        assert_eq!(rows[2].1, fmt::dec_and_hex(image.len() as u64, 14));
+        assert_eq!(rows[3].1, "LittleEndian");
+        assert_eq!(
+            rows[4].1,
+            format!("{} ({})", fmt::pad("MH_MAGIC_64", 14), fmt::hex(u64::from(macho.header.magic)))
+        );
+        assert!(rows[5].1.starts_with("x86_64"), "CPU Type: {}", rows[5].1);
+        // 64-bit headers end with the `Reserved` row of `UpdateBasicInfo`.
+        assert!(fields.contains(&"Reserved"), "{fields:?}");
+        // Every flag row is caption-less and names its bit.
+        for (index, (caption, value)) in rows.iter().enumerate().skip(11) {
+            if caption.is_empty() {
+                assert!(value.contains("(0x"), "flag row {index}: {value}");
+            }
+        }
+        assert!(plugin.panel_content(Panel::Segments.panel_id()).is_none());
+    }
+
+    /// A fat binary renders `UpdateFatInfo` instead of the header rows.
+    #[test]
+    fn information_panel_of_a_fat_binary_matches_update_fat_info() {
+        let (x86, _) = typical(true, false);
+        let plugin = MachoPlugin::create_instance();
+        let image = fat(false, true, &[(CPU_TYPE_X86_64, 3, x86)]);
+        let mut win = window_for(&image, "universal");
+        plugin.populate_window(&mut win).expect("populate");
+        let content = plugin.panel_content(Panel::Information.panel_id()).expect("panel");
+        assert_eq!(
+            content,
+            PanelContent::KeyValue(vec![
+                (String::from("Fat Binary Info"), String::new()),
+                (String::from("File"), String::from("universal")),
+                (
+                    String::from("Size"),
+                    format!("{} bytes", fmt::dec(image.len() as u64))
+                ),
+                (String::from("Arch"), String::from("x86")),
+                (String::from("Objects"), String::from("1")),
+            ])
+        );
+    }
+
+    /// `00_APP §5.3.3`: both hooks are `None` before
+    /// `populate_window`; afterwards the boxed colorizer colours the
+    /// same ranges the plugin's own colorizer does, and the boxed
+    /// enumerator lists the same fat members the plugin does.
+    #[test]
+    fn viewer_service_hooks_snapshot_the_plugin() {
+        let plugin = MachoPlugin::create_instance();
+        assert!(plugin.position_to_color().is_none(), "before populate_window");
+        assert!(plugin.container_enumerator().is_none());
+        assert!(plugin.container_opener().is_none(), "Mach-O has no open hook");
+        assert!(plugin.panel_content("macho.information").is_none());
+
+        let (x86, _) = typical(true, false);
+        let arm = thin(true, false, CPU_TYPE_ARM64, &[], &[]);
+        let image = fat(false, true, &[(CPU_TYPE_X86_64, 3, x86), (CPU_TYPE_ARM64, 0, arm)]);
+        let mut win = window_for(&image, "universal");
+        plugin.populate_window(&mut win).expect("populate");
+        plugin.set_show_opcodes_mask(opcodes::ALL);
+
+        let mut hook = plugin.position_to_color().expect("colour hook");
+        let mut direct = plugin.colorizer().expect("colorizer");
+        for (offset, bytes) in [
+            (0_u64, [0xCA, 0xFE, 0xBA, 0xBE].as_slice()),
+            (0x1000, &[0xCC, 0x00]),
+            (0x1000, &[0x55, 0x8B, 0xEC]),
+            (0x1000, &[0x90, 0x90]),
+        ] {
+            let boxed = hook.color_for_buffer(offset, bytes).map(|b| (b.start, b.end, b.color));
+            assert_eq!(
+                boxed,
+                cb(&mut direct, offset, bytes),
+                "hook and colorizer disagree at {offset:#x}"
+            );
+        }
+
+        // The enumerator snapshot walks the same two members, and has
+        // its own cursor: the plugin's own iteration is unaffected.
+        let mut enumerator = plugin.container_enumerator().expect("enumerate hook");
+        assert!(enumerator.begin_iteration("", 0));
+        let mut first = TreeNode::default();
+        assert!(enumerator.populate_item(&mut first), "one member follows");
+        assert_eq!(first.texts[0], "x86_64 (0x1000007)");
+        assert_eq!(first.data, 0);
+        let mut second = TreeNode::default();
+        assert!(!enumerator.populate_item(&mut second), "last member");
+        assert_eq!(second.texts[0], "arm64 (0x100000c)");
+        assert_eq!(second.data, 1);
+        assert!(!enumerator.populate_item(&mut TreeNode::default()), "exhausted");
+        // Restartable.
+        assert!(enumerator.begin_iteration("", 0));
+        assert!(enumerator.populate_item(&mut TreeNode::default()));
+
+        // A thin file has no members: the hook exists, it lists nothing.
+        let (thin_image, _) = typical(true, false);
+        let mut win = window_for(&thin_image, "thin");
+        plugin.populate_window(&mut win).expect("populate");
+        let mut enumerator = plugin.container_enumerator().expect("enumerate hook");
+        assert!(!enumerator.begin_iteration("", 0));
+        assert!(!enumerator.populate_item(&mut TreeNode::default()));
     }
 
     #[test]

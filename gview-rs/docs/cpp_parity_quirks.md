@@ -122,6 +122,55 @@ Rust keeps both halves visible: `render_gview_section` writes exactly the six
 documented read key `Config.CacheSize`, so a generated file behaves the way the
 C++ author intended without breaking a hand-written one.
 
+## 9. `UpdateViewSizes` never re-fits the column count to the width
+
+`00_APP` (matrix task `buffer-view-control`) says a `BufferView` resized to 40
+columns "switches to 8 data columns per `update_view_sizes`". The C++ anchor
+does not do that.
+
+`Instance::OnAfterResize` (`BufferViewer/Instance.cpp:1057-1060`) calls
+`UpdateViewSizes` and nothing else, and `UpdateViewSizes`
+(`Instance.cpp:617-653`) recomputes only the derived geometry — `xName`,
+`xAddress`, `xNumbers`, `xText`, `charactersPerLine` and `visibleRows`. It reads
+`Layout.nrCols` but never writes it. The only writer is
+`BUFFERVIEW_CMD_CHANGECOL` (F6), which cycles `0 → 8 → 16 → 32 → 0`.
+
+A narrow terminal therefore keeps its 16 columns in the C++ and simply clips the
+right-hand bands, and `charactersPerLine` stays at `nrCols`. Rust reproduces
+that: `BufferView::on_resize` calls `BufferLayout::update_view_sizes` and
+re-clamps the cursor, and only `NavAction::ChangeColumnsCount` moves `nr_cols`
+through `next_columns_count`. **C++ wins over the matrix wording**
+(`CLAUDE.md §3`, anchor-first).
+
+## 10. `ContainerView` cannot be an `AppCUI-rs` `TreeView<TreeNode>`
+
+`00_APP §5.3.2` sketches the container page as an `AppCUI` `TreeView<TreeNode>`
+plus a `ListView` of the plugin's properties, mirroring the C++ constructor
+(`ContainerViewer/Instance.cpp:40-76`).
+
+That does not translate. The C++ builds its columns at runtime —
+
+```cpp
+for (uint32 idx = 0; idx < settings->columnsCount; idx++)
+    this->items->AddColumn(settings->columns[idx].layout);
+```
+
+— from the layout strings a plugin ships in `ContainerViewerRequest::columns`
+(`"n:&Filename,a:l,w:80"`, …). `AppCUI-rs` `TreeView<T>` instead reads its
+columns from `ListItem::columns_count()` / `ListItem::column(i)`, which are
+**associated** functions: the column set is fixed per Rust type at compile time,
+and there is no `TreeView::add_column`. A plugin's runtime column list cannot
+reach it.
+
+`CLAUDE.md §3` puts `AppCUI-rs/` source above the guide and the spec on UI API
+questions, so `ContainerView` is a `#[CustomControl]` that owns the
+`ContainerTree` and paints the tree, the column header and the property block
+itself. This keeps the plugin's runtime columns, keeps one copy of the tree
+(the C++ duplicates state between `TreeView` items and the enumerator), and
+matches the pattern the other six viewers already use. Lazy population,
+idempotence and the leaf-only open rule are unchanged — they live in
+`ContainerTree::populate_item` / `on_tree_view_item_pressed`.
+
 ## Related non-truncation notes (not bugs, but spec discrepancies)
 
 - `AppCUI::LocalString<N>` grows on the heap when `AddFormat` overflows; the

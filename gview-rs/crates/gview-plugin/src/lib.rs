@@ -24,4 +24,5 @@ pub mod fnv;
 pub mod generic_plugin;
 pub mod ini_emit;
 pub mod matcher;
+pub mod panel;
 pub mod type_plugin;
