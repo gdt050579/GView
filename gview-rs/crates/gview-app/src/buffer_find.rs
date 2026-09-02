@@ -13,9 +13,12 @@
 //! align-to-upper-corner option is set, else `MoveTo`) and, with the
 //! select option, replaces the selection with the match range.
 
+use std::sync::{Arc, Mutex, PoisonError};
+
 use gview_core::cache::DataCache;
 use gview_core::selection::Selection;
 use gview_view::buffer_viewer::layout::{move_scroll_to, move_to, BufferCursor};
+use gview_viewers::FindProvider;
 
 use crate::find_dialog::{FindEngine, Match};
 
@@ -59,6 +62,13 @@ impl BufferFindSession {
     #[must_use]
     pub const fn new(engine: FindEngine, options: BufferFindOptions) -> Self {
         Self { engine, options }
+    }
+
+    /// The compiled engine (the `FindProvider` adapter searches with
+    /// it without touching the cursor).
+    #[must_use]
+    pub const fn engine(&self) -> &FindEngine {
+        &self.engine
     }
 
     fn apply_match(
@@ -144,6 +154,95 @@ impl BufferFindSession {
             matched,
             same_position: previous_pos == matched.offset,
         }
+    }
+}
+
+/// The `BufferView` find hook (`00_APP §5.6`).
+///
+/// A viewer is mounted long before the user types a pattern, so the
+/// window installs this slot at mount time and fills it when its Find
+/// dialog compiles one. `Ctrl+F7` / `Ctrl+Shift+F7` in the control then
+/// repeat the search without the control ever depending on `gview-app`
+/// (`§6.3`).
+///
+/// `Arc<Mutex<_>>` rather than the shell's usual `Rc`: `FindProvider`
+/// is `Send`, because the settings struct that carries it into the
+/// control is.
+#[derive(Clone, Debug, Default)]
+pub struct SharedFindSession {
+    slot: Arc<Mutex<Option<BufferFindSession>>>,
+}
+
+impl SharedFindSession {
+    /// An empty (unarmed) slot.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Installs the session the Find dialog just compiled, replacing
+    /// any previous one (C++ `findDialog.UpdateData`).
+    pub fn arm(&self, session: BufferFindSession) {
+        *self.slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(session);
+    }
+
+    /// `true` once a pattern has been compiled.
+    #[must_use]
+    pub fn is_armed(&self) -> bool {
+        self.slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+    }
+
+    /// The navigation options of the installed session, if any.
+    #[must_use]
+    pub fn options(&self) -> Option<BufferFindOptions> {
+        self.slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(|session| session.options)
+    }
+
+    /// A boxed handle for `BufferViewSettings::find`; every clone
+    /// searches with the same compiled pattern.
+    #[must_use]
+    pub fn provider(&self) -> Box<dyn FindProvider> {
+        Box::new(self.clone())
+    }
+
+    fn search(&self, cache: &mut DataCache, forward: bool, from: u64) -> Option<(u64, u64)> {
+        let size = cache.size();
+        let found = {
+            let guard = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
+            let found = guard.as_ref().and_then(|session| {
+                if forward {
+                    session.engine().find_forward(cache, from, size)
+                } else {
+                    // C++ `GetPreviousMatch(pos - 1)`: matches must
+                    // start before the cursor.
+                    session.engine().find_backward(cache, 0, from)
+                }
+            });
+            drop(guard);
+            found
+        };
+        found.map(|matched| (matched.offset, matched.length))
+    }
+}
+
+impl FindProvider for SharedFindSession {
+    fn find_next(&mut self, cache: &mut DataCache, from: u64) -> Option<(u64, u64)> {
+        self.search(cache, true, from)
+    }
+
+    fn find_previous(&mut self, cache: &mut DataCache, before: u64) -> Option<(u64, u64)> {
+        self.search(cache, false, before)
+    }
+
+    fn is_armed(&self) -> bool {
+        Self::is_armed(self)
     }
 }
 

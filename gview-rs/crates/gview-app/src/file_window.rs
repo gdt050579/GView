@@ -46,6 +46,7 @@ pub mod mount;
 pub mod panel_mount;
 pub mod panels;
 pub mod view_container;
+pub mod view_dialogs;
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -64,6 +65,8 @@ use gview_viewers::dissasm_view::{dissasmview, DissasmView};
 use gview_viewers::text_view::{textview, TextView};
 use gview_viewers::{CursorSnapshot, SharedCursorInfo};
 
+use crate::buffer_find::{BufferFindOptions, BufferFindSession, SharedFindSession};
+use crate::find_dialog::FindEngine;
 use crate::instance::window_lifecycle::{FileWindowModel, ViewerSlot};
 use command_bar::{build_command_bar, TypePluginCommand};
 use events::{cmd, dispatch_command, CommandAction};
@@ -72,6 +75,7 @@ use layout::{
     CMD_SHOW_VIEW_CONFIG_PANEL,
 };
 use mount::{mount_viewer, MountContext, MountedViewer};
+use view_dialogs::GoToDialog;
 use panel_mount::{mount_panel, InformationFallback, MountedPanel};
 use panels::PanelEntry;
 
@@ -104,6 +108,9 @@ pub const ERR_NO_GOTO: &str = "This view has no implementation for GoTo command 
 pub const ERR_NO_FIND: &str = "This view has no implementation for Find command !";
 /// Copy counterpart.
 pub const ERR_NO_COPY: &str = "This view has no implementation for Copy command !";
+/// C++ `FindDialog` rejects an empty or unparsable pattern
+/// (`FindDialog.cpp` `Validate`).
+pub const ERR_BAD_PATTERN: &str = "The search pattern is empty or invalid !";
 /// `CMD_CHOSE_NEW_TYPE` on a non-file object (`FileWindow.cpp:244-246`).
 pub const ERR_CHOOSE_TYPE_UNSUPPORTED: &str = "Not implemented yet for this type of object (buffer/PID/Folder)";
 
@@ -311,6 +318,9 @@ pub struct FileWindow {
     view_hosts: Vec<MountedViewer>,
     /// Bottom-bar slot of each mounted view (`§5.3.5`).
     cursor_slots: Vec<SharedCursorInfo>,
+    /// The window's Find engine, shared with every mounted
+    /// `BufferView` (`§5.6`).
+    find_session: SharedFindSession,
     /// Mounted sidebar panels, in `verticalPanels` tab order (`§5.4`).
     vertical_panel_hosts: Vec<MountedPanel>,
     /// Mounted bottom panels, in `horizontalPanels` tab order; index 0
@@ -472,6 +482,7 @@ impl FileWindow {
             layout,
             view_hosts: Vec::new(),
             cursor_slots: Vec::new(),
+            find_session: SharedFindSession::new(),
             vertical_panel_hosts: Vec::new(),
             horizontal_panel_hosts: Vec::new(),
             plugin_commands,
@@ -605,6 +616,7 @@ impl FileWindow {
                 plugin_hooks(guard.content(), kind)
             };
             let cursor = SharedCursorInfo::new();
+            let find = (kind == ViewerKind::Buffer).then(|| self.find_session.provider());
             let mut guard = model.lock().unwrap_or_else(PoisonError::into_inner);
             let object = guard.object();
             let Some(slot) = slot_at(&mut guard, index) else {
@@ -619,6 +631,7 @@ impl FileWindow {
                 colorizer,
                 enumerator,
                 opener,
+                find,
                 cursor: cursor.clone(),
                 index,
             };
@@ -729,9 +742,136 @@ impl FileWindow {
         self.cursor_slots.get(index)
     }
 
-    /// A view accepted a dialog request; the shell opens it (`§5.6`).
-    fn on_view_dialog_requested(&mut self, dialog: ViewDialog) {
-        self.requests.push(ShellRequest::ShowViewDialog(dialog));
+    /// A view accepted a dialog request; the window opens it
+    /// (C++ `FileWindow::ShowGoToDialog` / `ShowFindDialog`, `§5.6`).
+    ///
+    /// Headless windows record the request instead: a modal would block
+    /// a scripted session for ever.
+    pub fn service_view_dialog(&mut self, dialog: ViewDialog) {
+        let opened = match dialog {
+            ViewDialog::GoTo => self.open_goto_dialog(),
+            ViewDialog::Find => self.open_find_dialog(),
+            // C++ `ShowCopyDialog` copies the selection to the
+            // clipboard; no viewer implements it yet, so the request
+            // reaches the shell.
+            ViewDialog::Copy => false,
+        };
+        if !opened {
+            self.requests.push(ShellRequest::ShowViewDialog(dialog));
+        }
+    }
+
+    /// The cursor snapshot of the current view (offset and object
+    /// size), as published for the bottom bar.
+    #[must_use]
+    pub fn current_snapshot(&self) -> CursorSnapshot {
+        self.cursor_slots
+            .get(self.current_view_index())
+            .map(SharedCursorInfo::read)
+            .unwrap_or_default()
+    }
+
+    /// `ViewControl::go_to` on the mounted control (C++
+    /// `GoToDialog` result → `MoveTo`).
+    pub fn go_to_current_view(&mut self, offset: u64) -> bool {
+        let index = self.current_view_index();
+        match self.view_hosts.get(index).copied() {
+            Some(MountedViewer::Buffer(handle)) => {
+                self.control_mut(handle).is_some_and(|view| view.go_to(offset))
+            }
+            Some(MountedViewer::Text(handle)) => {
+                self.control_mut(handle).is_some_and(|view| view.go_to(offset))
+            }
+            Some(MountedViewer::Container(handle)) => {
+                self.control_mut(handle).is_some_and(|view| view.go_to(offset))
+            }
+            Some(MountedViewer::Dissasm(handle)) => {
+                self.control_mut(handle).is_some_and(|view| view.go_to(offset))
+            }
+            Some(MountedViewer::Unavailable(handle)) => {
+                self.control_mut(handle).is_some_and(|view| view.go_to(offset))
+            }
+            None => false,
+        }
+    }
+
+    /// C++ `GoToDialog`: ask for an offset, then move the view there.
+    ///
+    /// `false` when nothing was opened (headless), so the caller can
+    /// surface the request instead.
+    fn open_goto_dialog(&mut self) -> bool {
+        if !self.interactive {
+            return false;
+        }
+        let snapshot = self.current_snapshot();
+        let methods = self.translation_methods();
+        let Some(offset) = GoToDialog::new(snapshot.offset, snapshot.size, &methods, true).show() else {
+            return true;
+        };
+        self.go_to_current_view(offset);
+        true
+    }
+
+    /// C++ `FindDialog`: ask for a pattern, arm the window's search
+    /// session and jump to the first hit after the cursor.
+    fn open_find_dialog(&mut self) -> bool {
+        if !self.interactive {
+            return false;
+        }
+        let Some(pattern) = dialogs::input::<String>("Find", "&Text to find", None, None) else {
+            return true;
+        };
+        if !self.arm_find(&pattern, BufferFindOptions::default()) {
+            dialogs::error("Error", ERR_BAD_PATTERN);
+            return true;
+        }
+        self.find_next_in_current_view();
+        true
+    }
+
+    /// Compiles `pattern` into the window's shared session
+    /// (C++ `findDialog.UpdateData`); `false` when it does not compile.
+    pub fn arm_find(&mut self, pattern: &str, options: BufferFindOptions) -> bool {
+        match FindEngine::new_text(pattern, false, false) {
+            Ok(engine) => {
+                self.find_session.arm(BufferFindSession::new(engine, options));
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// The window's search session, shared with every `BufferView`.
+    #[must_use]
+    pub fn find_session(&self) -> SharedFindSession {
+        self.find_session.clone()
+    }
+
+    /// Repeats the armed search in the current view (C++
+    /// `BUFFERVIEW_CMD_FINDNEXT` right after the dialog closes).
+    pub fn find_next_in_current_view(&mut self) -> bool {
+        let index = self.current_view_index();
+        let Some(MountedViewer::Buffer(handle)) = self.view_hosts.get(index).copied() else {
+            return false;
+        };
+        let Some(view) = self.control_mut(handle) else {
+            return false;
+        };
+        OnKeyPressed::on_key_pressed(view, Key::new(KeyCode::F7, KeyModifier::Ctrl), '\0');
+        true
+    }
+
+    /// The current view's address-column captions, for the `GoTo`
+    /// dialog's type combo.
+    fn translation_methods(&self) -> Vec<String> {
+        let index = self.current_view_index();
+        match self.view_hosts.get(index).copied() {
+            Some(MountedViewer::Buffer(handle)) => self
+                .control(handle)
+                .map(|view| view.translation_methods().to_vec())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
     }
 
     /// A view holds a pending "open as a new object" request.
@@ -925,9 +1065,9 @@ impl CommandBarEvents for FileWindow {
 impl BufferViewEvents for FileWindow {
     fn on_event(&mut self, _handle: Handle<BufferView>, event: bufferview::Events) -> EventProcessStatus {
         match event {
-            bufferview::Events::ShowGoTo => self.on_view_dialog_requested(ViewDialog::GoTo),
-            bufferview::Events::ShowFind => self.on_view_dialog_requested(ViewDialog::Find),
-            bufferview::Events::ShowCopy => self.on_view_dialog_requested(ViewDialog::Copy),
+            bufferview::Events::ShowGoTo => self.service_view_dialog(ViewDialog::GoTo),
+            bufferview::Events::ShowFind => self.service_view_dialog(ViewDialog::Find),
+            bufferview::Events::ShowCopy => self.service_view_dialog(ViewDialog::Copy),
             bufferview::Events::FocusView => self.focus_view(),
         }
         EventProcessStatus::Processed
@@ -937,9 +1077,9 @@ impl BufferViewEvents for FileWindow {
 impl TextViewEvents for FileWindow {
     fn on_event(&mut self, handle: Handle<TextView>, event: textview::Events) -> EventProcessStatus {
         match event {
-            textview::Events::ShowGoTo => self.on_view_dialog_requested(ViewDialog::GoTo),
-            textview::Events::ShowFind => self.on_view_dialog_requested(ViewDialog::Find),
-            textview::Events::ShowCopy => self.on_view_dialog_requested(ViewDialog::Copy),
+            textview::Events::ShowGoTo => self.service_view_dialog(ViewDialog::GoTo),
+            textview::Events::ShowFind => self.service_view_dialog(ViewDialog::Find),
+            textview::Events::ShowCopy => self.service_view_dialog(ViewDialog::Copy),
             textview::Events::FocusView => self.focus_view(),
             textview::Events::OpenSelection => self.on_open_requested(handle),
         }
@@ -960,9 +1100,9 @@ impl ContainerViewEvents for FileWindow {
 impl DissasmViewEvents for FileWindow {
     fn on_event(&mut self, handle: Handle<DissasmView>, event: dissasmview::Events) -> EventProcessStatus {
         match event {
-            dissasmview::Events::ShowGoTo => self.on_view_dialog_requested(ViewDialog::GoTo),
-            dissasmview::Events::ShowFind => self.on_view_dialog_requested(ViewDialog::Find),
-            dissasmview::Events::ShowCopy => self.on_view_dialog_requested(ViewDialog::Copy),
+            dissasmview::Events::ShowGoTo => self.service_view_dialog(ViewDialog::GoTo),
+            dissasmview::Events::ShowFind => self.service_view_dialog(ViewDialog::Find),
+            dissasmview::Events::ShowCopy => self.service_view_dialog(ViewDialog::Copy),
             dissasmview::Events::FocusView => self.focus_view(),
             dissasmview::Events::OpenSelection => self.on_open_requested(handle),
         }

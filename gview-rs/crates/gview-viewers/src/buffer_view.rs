@@ -71,6 +71,24 @@ const CURSOR_BAR_CAPACITY: usize = 96;
 pub trait FindProvider: Send {
     /// Next match at or after `from`, as `(offset, length)`.
     fn find_next(&mut self, cache: &mut DataCache, from: u64) -> Option<(u64, u64)>;
+
+    /// Last match that ends before `before`, as `(offset, length)`
+    /// (C++ `FindDialog::GetPreviousMatch`). The default has no
+    /// backward search.
+    fn find_previous(&mut self, cache: &mut DataCache, before: u64) -> Option<(u64, u64)> {
+        let _ = (cache, before);
+        None
+    }
+
+    /// `false` while no pattern has been compiled yet.
+    ///
+    /// The window installs the provider at mount time, long before the
+    /// user types anything (`00_APP §5.6`); until then `Ctrl+F7` has
+    /// nothing to repeat and must open the Find dialog instead, exactly
+    /// as the C++ does with an unused `FindDialog`.
+    fn is_armed(&self) -> bool {
+        true
+    }
 }
 
 /// Everything the `FileWindow` hands a [`BufferView`] at mount
@@ -195,9 +213,52 @@ impl BufferView {
         snapshot
     }
 
+    /// Repeats the installed search from the cursor
+    /// (C++ `Instance::OnKeyEvent` `BUFFERVIEW_CMD_FINDNEXT` /
+    /// `FINDPREVIOUS`, `Instance.cpp:1361-1410`): a hit moves the
+    /// cursor and selects the match; a miss leaves the view alone.
+    fn repeat_find(&mut self, backwards: bool) -> bool {
+        let from = self.cursor.current_pos;
+        let visible = self.layout.visible_bytes();
+        let mut guard = self.object.lock().unwrap_or_else(PoisonError::into_inner);
+        let file_size = guard.data().size();
+        let Some(find) = self.find.as_mut() else {
+            return false;
+        };
+        let hit = if backwards {
+            // A cursor at offset 0 has nothing before it.
+            if from == 0 {
+                None
+            } else {
+                find.find_previous(guard.data_mut(), from)
+            }
+        } else {
+            find.find_next(guard.data_mut(), from.saturating_add(1))
+        };
+        drop(guard);
+        let Some((offset, length)) = hit else {
+            return false;
+        };
+        move_to(&mut self.cursor, &mut self.selection, offset, false, file_size, visible);
+        // C++ `bufferSelect`: the match range becomes selection 0.
+        self.selection.clear();
+        self.selection.begin_selection(offset);
+        self.selection
+            .update_selection(0, offset.saturating_add(length.saturating_sub(1)));
+        true
+    }
+
     /// Publishes the cursor to the window's bottom bar.
     fn publish(&self) {
         self.cursor_info.write(self.snapshot());
+    }
+
+    /// The plugin's address-column captions after `FileOffset`
+    /// (C++ `settings->translationMethods`), for the window's `GoTo`
+    /// dialog.
+    #[must_use]
+    pub fn translation_methods(&self) -> &[String] {
+        &self.translation_methods
     }
 
     /// The column ruler for the current numeric mode
@@ -719,8 +780,15 @@ impl OnKeyPressed for BufferView {
             // service (find, dissasm dialog, open selection) become
             // window events.
             match action {
+                // C++ `BUFFERVIEW_CMD_FINDNEXT` / `FINDPREVIOUS` repeat
+                // the dialog's pattern; with nothing compiled yet the
+                // window opens the dialog instead.
                 NavAction::FindNext | NavAction::FindPrevious => {
-                    self.raise_event(bufferview::Events::ShowFind);
+                    if self.find.as_ref().is_some_and(|find| find.is_armed()) {
+                        self.repeat_find(matches!(action, NavAction::FindPrevious));
+                    } else {
+                        self.raise_event(bufferview::Events::ShowFind);
+                    }
                     true
                 }
                 _ => false,

@@ -233,9 +233,14 @@ mod tests {
     }
 
     /// A directory under the system temp dir, unique per test.
+    ///
+    /// Created, never deleted: on Windows `remove_dir_all` can return
+    /// before the directory is really gone, and the following
+    /// `create_dir_all` + `write` then race with the pending deletion
+    /// (observed as a fixture that exists but cannot be opened).
+    /// Fixtures are overwritten instead.
     fn fixture_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join("gview_open_pipeline").join(name);
-        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("fixture dir");
         dir
     }

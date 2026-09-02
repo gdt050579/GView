@@ -16,6 +16,7 @@
 
 pub mod buffer_find;
 pub mod cli;
+pub mod desktop;
 pub mod error;
 pub mod error_dialog;
 pub mod file_window;

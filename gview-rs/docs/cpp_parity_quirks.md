@@ -171,6 +171,41 @@ matches the pattern the other six viewers already use. Lazy population,
 idempotence and the leaf-only open rule are unchanged — they live in
 `ContainerTree::populate_item` / `on_tree_view_item_pressed`.
 
+## 11. `Close All except current` closes every window
+
+**C++:** `GViewCore/src/App/Instance.cpp:63-73` — `menuWindowList`.
+
+```cpp
+{ "Close", MenuCommands::CLOSE, Key::None },
+{ "Close &All", MenuCommands::CLOSE_ALL, Key::None },
+{ "Close All e&xcept current", MenuCommands::CLOSE_ALL, Key::None },
+```
+
+The third entry is bound to `MenuCommands::CLOSE_ALL`, not to
+`MenuCommands::CLOSE_ALL_EXCEPT_CURRENT` (which the enum does define,
+`Internal.hpp:462-487`). Picking it therefore closes **every** window,
+including the current one, and `CLOSE_ALL_EXCEPT_CURRENT` is never
+dispatched by any menu item. `Instance::OnEvent` handles neither id, so
+in the C++ both entries are in fact inert.
+
+**Port:** `gview-app/src/desktop.rs` `build_menus` binds the same
+`Commands::CloseAll` to both entries, so the observable behaviour
+matches. `Commands::CloseAllExceptCurrent` still exists and still maps
+to `MenuCommands::CLOSE_ALL_EXCEPT_CURRENT` in `menu_id_for_command`,
+so the id is preserved for a future fix; `run_desktop_command` routes it
+to `close_all` as well.
+
+Unlike the C++, the port *implements* `Close` and `Close All` (the C++
+`OnEvent` switch has no case for either, so the entries do nothing at
+all). That is a deliberate deviation: an unimplemented menu entry is
+indistinguishable from a hang, and `00_APP §5.1.4` specifies both
+actions.
+
+Numbering note: `00_APP §5.1.2` calls this "quirk #8" and the matrix
+task calls it "#9"; both numbers were already taken by
+`settings-bootstrap` and `grid-view-control`, so it is recorded here as
+#11.
+
 ## Related non-truncation notes (not bugs, but spec discrepancies)
 
 - `AppCUI::LocalString<N>` grows on the heap when `AddFormat` overflows; the

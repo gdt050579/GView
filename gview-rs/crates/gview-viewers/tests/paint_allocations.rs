@@ -7,7 +7,7 @@
 //! library's guarantee is untouched.
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::cell::Cell;
 
 use appcui::prelude::*;
 use gview_core::cache::DataCache;
@@ -22,19 +22,30 @@ use gview_viewers::{BufferView, BufferViewSettings, RowColors, SurfaceRowSink};
 use std::sync::{Arc, Mutex as StdMutex};
 
 /// Forwards every allocation to the system allocator, counting the
-/// ones made while [`COUNTING`] is armed.
+/// ones made on the current thread while [`COUNTING`] is armed.
+///
+/// The counters are **thread-local**: `cargo test` runs the tests of a
+/// binary in parallel, and the test harness itself allocates while
+/// reporting results, so a process-wide counter would charge one
+/// test's frames with another thread's allocations. `const`-initialised
+/// so that reading them never allocates.
 struct CountingAllocator;
 
-static COUNTING: AtomicBool = AtomicBool::new(false);
-static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static COUNTING: Cell<bool> = const { Cell::new(false) };
+    static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+}
 
 // SAFETY: every method forwards its arguments unchanged to the system
 // allocator, which is the only allocator this binary uses; the counter
 // is a plain relaxed atomic and does not itself allocate.
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNTING.load(Ordering::Relaxed) {
-            ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        // `try_with` because a thread tearing its TLS down still
+        // allocates, and accessing a destroyed slot would panic.
+        let counting = COUNTING.try_with(Cell::get).unwrap_or(false);
+        if counting {
+            let _ = ALLOCATIONS.try_with(|count| count.set(count.get().saturating_add(1)));
         }
         // SAFETY: `layout` is forwarded unchanged; the caller upholds
         // `GlobalAlloc::alloc`'s contract.
@@ -50,6 +61,16 @@ unsafe impl GlobalAlloc for CountingAllocator {
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+/// Arms the counter for the duration of `body` and returns how many
+/// allocations this thread made inside it.
+fn count_allocations(body: impl FnOnce()) -> usize {
+    ALLOCATIONS.with(|count| count.set(0));
+    COUNTING.with(|armed| armed.set(true));
+    body();
+    COUNTING.with(|armed| armed.set(false));
+    ALLOCATIONS.with(Cell::get)
+}
 
 fn colors() -> RowColors {
     let attr = CharAttribute::with_color(Color::White, Color::Black);
@@ -83,20 +104,15 @@ fn one_hundred_painted_frames_allocate_nothing() {
         paint_rows(&layout, cursor, &mut cache, &mut zones, &mut sink);
     }
 
-    ALLOCATIONS.store(0, Ordering::Relaxed);
-    COUNTING.store(true, Ordering::Relaxed);
-    for _ in 0..100 {
-        let mut sink = SurfaceRowSink::new(&mut surface, layout, colors());
-        let summary = paint_rows(&layout, cursor, &mut cache, &mut zones, &mut sink);
-        assert_eq!(summary.rows_painted, layout.visible_rows);
-    }
-    COUNTING.store(false, Ordering::Relaxed);
+    let allocations = count_allocations(|| {
+        for _ in 0..100 {
+            let mut sink = SurfaceRowSink::new(&mut surface, layout, colors());
+            let summary = paint_rows(&layout, cursor, &mut cache, &mut zones, &mut sink);
+            assert_eq!(summary.rows_painted, layout.visible_rows);
+        }
+    });
 
-    assert_eq!(
-        ALLOCATIONS.load(Ordering::Relaxed),
-        0,
-        "100 painted frames must not allocate"
-    );
+    assert_eq!(allocations, 0, "100 painted frames must not allocate");
 }
 
 
@@ -114,18 +130,13 @@ fn one_hundred_buffer_view_frames_allocate_nothing() {
     // Warm the cache page and the zone viewport cache first.
     OnPaint::on_paint(&view, &mut surface, &theme);
 
-    ALLOCATIONS.store(0, Ordering::Relaxed);
-    COUNTING.store(true, Ordering::Relaxed);
-    for _ in 0..100 {
-        OnPaint::on_paint(&view, &mut surface, &theme);
-    }
-    COUNTING.store(false, Ordering::Relaxed);
+    let allocations = count_allocations(|| {
+        for _ in 0..100 {
+            OnPaint::on_paint(&view, &mut surface, &theme);
+        }
+    });
 
-    assert_eq!(
-        ALLOCATIONS.load(Ordering::Relaxed),
-        0,
-        "100 BufferView frames must not allocate"
-    );
+    assert_eq!(allocations, 0, "100 BufferView frames must not allocate");
 }
 
 /// The bottom bar formats into an inline scratch, so it does not
@@ -139,11 +150,10 @@ fn the_cursor_information_bar_allocates_nothing() {
     let mut bar = Surface::new(80, 1);
     view.paint_cursor_information(&mut bar, 80, 1);
 
-    ALLOCATIONS.store(0, Ordering::Relaxed);
-    COUNTING.store(true, Ordering::Relaxed);
-    for _ in 0..100 {
-        view.paint_cursor_information(&mut bar, 80, 1);
-    }
-    COUNTING.store(false, Ordering::Relaxed);
-    assert_eq!(ALLOCATIONS.load(Ordering::Relaxed), 0);
+    let allocations = count_allocations(|| {
+        for _ in 0..100 {
+            view.paint_cursor_information(&mut bar, 80, 1);
+        }
+    });
+    assert_eq!(allocations, 0, "100 cursor bars must not allocate");
 }

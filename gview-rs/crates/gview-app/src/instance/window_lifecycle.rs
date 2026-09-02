@@ -747,6 +747,31 @@ impl Instance {
         Ok(index as u32)
     }
 
+    /// C++ `IdentifyTypePlugin` (`Instance.cpp:206-367`) as a caller
+    /// outside the open pipeline sees it: the name of the plugin that
+    /// claims `probe`, or `None` for the default plugin.
+    ///
+    /// `probe` is the same `0x8800`-byte window [`Self::add`] reads;
+    /// the UTF-16 text view the content matchers need is derived here,
+    /// exactly as `add` derives it.
+    ///
+    /// # Errors
+    ///
+    /// [`InstanceError::OpenCanceled`] when the selector cancels.
+    pub fn identify_type(
+        &self,
+        probe: &[u8],
+        extension: &str,
+        method: OpenMethod,
+        type_name: &str,
+        selector: &mut dyn TypeSelector,
+    ) -> Result<Option<&'static str>, InstanceError> {
+        let text = probe_text(probe);
+        let mut parser = TextParser::new(&text);
+        self.identify_type_plugin(probe, &mut parser, extension, method, type_name, selector)
+            .map(|plugin| plugin.map(RegisteredTypePlugin::name))
+    }
+
     /// C++ `IdentifyTypePlugin` (§F.2): `None` means the default
     /// plugin.
     fn identify_type_plugin(
@@ -848,7 +873,8 @@ fn extension_of_path(path: &Path) -> Option<String> {
 
 /// C++ `IdentifyTypePlugin`: the probe as UTF-16 when it is text,
 /// empty when binary (`ConvertToUnicode16`).
-fn probe_text(probe: &[u8]) -> Vec<u16> {
+#[must_use]
+pub fn probe_text(probe: &[u8]) -> Vec<u16> {
     let info = analyze_encoding(probe);
     let body = probe.get(info.bom_size as usize..).unwrap_or(&[]);
     match info.encoding {
@@ -1290,6 +1316,411 @@ mod tests {
             ViewerKind::Container,
         ] {
             assert!(ViewerSlot::default_name(kind).ends_with(" View"));
+        }
+    }
+
+    /// Type matching against the **real** plugin registry
+    /// (spec `00_APP §4`, `03_DUAL_PLUGIN §7.3`; C++
+    /// `Instance::IdentifyTypePlugin*`, `Instance.cpp:206-367`).
+    ///
+    /// The mock plugins above cover the algorithm; these cover the
+    /// composition root's five plugins and the boundaries the spec
+    /// calls out.
+    #[cfg(test)]
+    // The fixture builders index and add on fixed-size buffers, exactly
+    // as `registry.rs`'s own `minimal_*` helpers do.
+    #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+    mod identify {
+        use super::*;
+        use gview_core::constants::TYPE_IDENTIFICATION_PROBE_SIZE;
+        use std::sync::Mutex as StdMutex;
+
+        fn real_instance() -> Instance {
+            let registries = crate::registry::build().expect("registry");
+            Instance::new(registries.types, registries.generics, DEFAULT_CACHE_SIZE)
+        }
+
+        fn minimal_pe() -> Vec<u8> {
+            const E_LFANEW_OFFSET: usize = 60;
+            const NT_HEADERS32_SIZE: usize = 4 + 20 + 224;
+            let lfanew: u32 = 0x80;
+            let mut image = vec![0_u8; lfanew as usize + NT_HEADERS32_SIZE];
+            image[0..2].copy_from_slice(b"MZ");
+            image[E_LFANEW_OFFSET..E_LFANEW_OFFSET + 4].copy_from_slice(&lfanew.to_le_bytes());
+            let nt = lfanew as usize;
+            image[nt..nt + 4].copy_from_slice(b"PE\0\0");
+            let opt = nt + 4 + 20;
+            image[opt..opt + 2].copy_from_slice(&0x010B_u16.to_le_bytes());
+            image
+        }
+
+        fn minimal_elf() -> Vec<u8> {
+            let mut buf = vec![0_u8; 64];
+            buf[0..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
+            buf[4] = 2; // ELFCLASS64
+            buf
+        }
+
+        fn minimal_macho() -> Vec<u8> {
+            let mut buf = vec![0_u8; 32];
+            buf[0..4].copy_from_slice(&0xFEED_FACF_u32.to_le_bytes());
+            buf
+        }
+
+        fn minimal_zip() -> Vec<u8> {
+            let mut buf = vec![0_u8; 32];
+            buf[0..4].copy_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
+            buf
+        }
+
+        fn minimal_pcap() -> Vec<u8> {
+            let mut buf = vec![0_u8; 32];
+            buf[0..4].copy_from_slice(&0xA1B2_C3D4_u32.to_le_bytes());
+            buf
+        }
+
+        fn goldens() -> Vec<(&'static str, Vec<u8>)> {
+            vec![
+                ("PE", minimal_pe()),
+                ("ELF", minimal_elf()),
+                ("Mach-O", minimal_macho()),
+                ("ZIP", minimal_zip()),
+                ("PCAP", minimal_pcap()),
+            ]
+        }
+
+        /// Counts how often the selector was asked and what it saw.
+        struct Recording {
+            asked: usize,
+            offered: Vec<String>,
+            choice: Option<usize>,
+        }
+
+        impl Recording {
+            const fn cancelling() -> Self {
+                Self {
+                    asked: 0,
+                    offered: Vec::new(),
+                    choice: None,
+                }
+            }
+
+            const fn picking(index: usize) -> Self {
+                Self {
+                    asked: 0,
+                    offered: Vec::new(),
+                    choice: Some(index),
+                }
+            }
+        }
+
+        impl TypeSelector for Recording {
+            fn select(&mut self, candidates: &[&RegisteredTypePlugin]) -> Option<usize> {
+                self.asked = self.asked.saturating_add(1);
+                self.offered = candidates.iter().map(|p| p.name().to_owned()).collect();
+                self.choice
+            }
+        }
+
+        /// A second plugin claiming the ZIP signature, so `BestMatch`
+        /// has something to disambiguate. The real registry alone never
+        /// produces two candidates (see
+        /// `identify_extension_alone_never_makes_a_candidate`).
+        struct MockJar;
+
+        impl TypePlugin for MockJar {
+            fn name(&self) -> &'static str {
+                "JAR"
+            }
+            fn validate(buf: &[u8], _extension: &str) -> bool {
+                buf.starts_with(&[0x50, 0x4B, 0x03, 0x04])
+            }
+            fn create_instance() -> Box<Self> {
+                Box::new(Self)
+            }
+            fn metadata() -> PluginMetadata {
+                PluginMetadata {
+                    pattern: vec![Pattern::Magic(vec![0x50, 0x4B, 0x03, 0x04])],
+                    extensions: vec![String::from("jar")],
+                    ..PluginMetadata::default()
+                }
+            }
+            fn populate_window(&self, win: &mut dyn WindowHandle) -> Result<(), PluginError> {
+                win.create_viewer(ViewerRequest::new(ViewerKind::Buffer))?;
+                Ok(())
+            }
+            fn run_command(&mut self, _command: &str) {}
+            fn register_keys(&self, _keys: &mut dyn KeyRegistry) {}
+            fn smart_assistant_context(&self, _p: &str, _d: &str) -> Result<JsonValue, PluginError> {
+                Ok(JsonValue::Null)
+            }
+        }
+
+        /// Widest probe any `validate` was handed, in bytes.
+        static WIDEST_PROBE: StdMutex<usize> = StdMutex::new(0);
+
+        /// Records the probe length its `validate` receives, then
+        /// declines, so the open falls through to the default plugin.
+        struct ProbeWatcher;
+
+        impl TypePlugin for ProbeWatcher {
+            fn name(&self) -> &'static str {
+                "PROBE"
+            }
+            fn validate(buf: &[u8], _extension: &str) -> bool {
+                let mut widest = WIDEST_PROBE.lock().unwrap_or_else(PoisonError::into_inner);
+                *widest = (*widest).max(buf.len());
+                drop(widest);
+                false
+            }
+            fn create_instance() -> Box<Self> {
+                Box::new(Self)
+            }
+            fn metadata() -> PluginMetadata {
+                PluginMetadata {
+                    pattern: vec![Pattern::Magic(b"PRB!".to_vec())],
+                    ..PluginMetadata::default()
+                }
+            }
+            fn populate_window(&self, win: &mut dyn WindowHandle) -> Result<(), PluginError> {
+                win.create_viewer(ViewerRequest::new(ViewerKind::Buffer))?;
+                Ok(())
+            }
+            fn run_command(&mut self, _command: &str) {}
+            fn register_keys(&self, _keys: &mut dyn KeyRegistry) {}
+            fn smart_assistant_context(&self, _p: &str, _d: &str) -> Result<JsonValue, PluginError> {
+                Ok(JsonValue::Null)
+            }
+        }
+
+        /// C++ `IdentifyTypePlugin_FirstMatch`: the first plugin whose
+        /// content pattern **and** `Validate` accept the probe.
+        #[test]
+        fn identify_golden_magics_pick_their_own_plugin() {
+            let inst = real_instance();
+            for (name, bytes) in goldens() {
+                let chosen = inst
+                    .identify_type(&bytes, "", OpenMethod::FirstMatch, "", &mut CancelSelector)
+                    .expect("no selector is needed for FirstMatch");
+                assert_eq!(chosen, Some(name), "{name} golden magic");
+                // The same file under BestMatch has exactly one
+                // candidate, so the selector is not consulted either.
+                let mut selector = Recording::cancelling();
+                let chosen = inst
+                    .identify_type(&bytes, "", OpenMethod::BestMatch, "", &mut selector)
+                    .expect("a single candidate needs no dialog");
+                assert_eq!(chosen, Some(name), "{name} under BestMatch");
+                assert_eq!(selector.asked, 0, "{name} was unambiguous");
+            }
+        }
+
+        /// C++ falls back to `defaultPlugin` when nothing matches.
+        #[test]
+        fn identify_random_bytes_fall_back_to_the_default_plugin() {
+            let inst = real_instance();
+            let noise: Vec<u8> = (0..256_u32).map(|i| (i.wrapping_mul(37) ^ 0x5A) as u8).collect();
+            let mut selector = Recording::cancelling();
+            assert_eq!(
+                inst.identify_type(&noise, "", OpenMethod::FirstMatch, "", &mut CancelSelector)
+                    .expect("FirstMatch never asks"),
+                None
+            );
+            assert_eq!(
+                inst.identify_type(&noise, "bin", OpenMethod::BestMatch, "", &mut selector)
+                    .expect("no candidates, no dialog"),
+                None
+            );
+            assert_eq!(selector.asked, 0, "no candidates means no dialog");
+            // Empty and one-byte probes are equally harmless.
+            assert_eq!(
+                inst.identify_type(&[], "", OpenMethod::BestMatch, "", &mut CancelSelector)
+                    .expect("an empty probe matches nothing"),
+                None
+            );
+            assert_eq!(
+                inst.identify_type(&[0x4D], "exe", OpenMethod::BestMatch, "", &mut CancelSelector)
+                    .expect("one byte matches nothing"),
+                None
+            );
+        }
+
+        /// C++ `IdentifyTypePlugin_BestMatch`: two claimants open the
+        /// `SelectTypeDialog` exactly once, and its answer wins.
+        #[test]
+        fn identify_best_match_asks_the_selector_once_when_two_plugins_claim_the_file() {
+            let registries = crate::registry::build().expect("registry");
+            let mut types = registries.types;
+            types.register_type::<MockJar>("JAR").expect("jar");
+            let inst = Instance::new(types, registries.generics, DEFAULT_CACHE_SIZE);
+            let zip = minimal_zip();
+
+            let mut selector = Recording::picking(1);
+            let chosen = inst
+                .identify_type(&zip, "jar", OpenMethod::BestMatch, "", &mut selector)
+                .expect("the selector picked");
+            assert_eq!(selector.asked, 1, "the dialog is shown exactly once");
+            // JAR matches by extension (checked first), ZIP by content.
+            assert_eq!(selector.offered, ["JAR", "ZIP"]);
+            assert_eq!(chosen, Some("ZIP"));
+
+            // An index past the candidate list is C++
+            // `GetSelectedPlugin(&defaultPlugin)`.
+            let mut selector = Recording::picking(2);
+            assert_eq!(
+                inst.identify_type(&zip, "jar", OpenMethod::BestMatch, "", &mut selector)
+                    .expect("the selector picked the default entry"),
+                None
+            );
+
+            // Cancel aborts the whole open with the C++ wording.
+            let mut selector = Recording::cancelling();
+            let error = inst
+                .identify_type(&zip, "jar", OpenMethod::BestMatch, "", &mut selector)
+                .expect_err("cancel aborts");
+            assert_eq!(error.to_string(), "Unable to identify a valid plugin open canceled !");
+            assert_eq!(selector.asked, 1);
+        }
+
+        /// `Select` always shows the dialog with every registered
+        /// plugin, whatever the content is.
+        #[test]
+        fn identify_select_always_offers_every_plugin() {
+            let inst = real_instance();
+            let mut selector = Recording::picking(0);
+            let chosen = inst
+                .identify_type(&minimal_elf(), "", OpenMethod::Select, "", &mut selector)
+                .expect("the selector picked");
+            assert_eq!(selector.asked, 1);
+            assert_eq!(selector.offered, ["PE", "ELF", "Mach-O", "ZIP", "PCAP"]);
+            assert_eq!(chosen, Some("PE"), "the dialog's answer wins over the content");
+        }
+
+        /// C++ `IdentifyTypePlugin_WithSelectedType`: an exact,
+        /// case-insensitive name that also accepts the data wins;
+        /// anything else falls through to the dialog.
+        #[test]
+        fn identify_force_type_is_case_insensitive_and_falls_back() {
+            let inst = real_instance();
+            let pe = minimal_pe();
+
+            for name in ["PE", "pe", "Pe"] {
+                let mut selector = Recording::cancelling();
+                assert_eq!(
+                    inst.identify_type(&pe, "", OpenMethod::ForceType, name, &mut selector)
+                        .expect("PE accepts the data"),
+                    Some("PE"),
+                    "--type:{name}"
+                );
+                assert_eq!(selector.asked, 0, "an accepted forced type shows no dialog");
+            }
+
+            // A name no plugin carries: C++ shows an error and then the
+            // selection dialog.
+            let mut selector = Recording::cancelling();
+            let error = inst
+                .identify_type(&pe, "", OpenMethod::ForceType, "PDF", &mut selector)
+                .expect_err("the fallback dialog was cancelled");
+            assert!(matches!(error, InstanceError::OpenCanceled), "{error:?}");
+            assert_eq!(selector.asked, 1);
+            assert_eq!(selector.offered, ["PE", "ELF", "Mach-O", "ZIP", "PCAP"]);
+
+            // A known name whose `Validate` refuses the data: same
+            // fallback.
+            let mut selector = Recording::picking(3);
+            assert_eq!(
+                inst.identify_type(&pe, "", OpenMethod::ForceType, "ZIP", &mut selector)
+                    .expect("the selector picked"),
+                Some("ZIP"),
+                "the dialog's answer wins"
+            );
+            assert_eq!(selector.asked, 1);
+
+            // C++ compares the *whole* name: a prefix is not a match.
+            let mut selector = Recording::cancelling();
+            assert!(inst
+                .identify_type(&pe, "", OpenMethod::ForceType, "P", &mut selector)
+                .is_err());
+            assert_eq!(selector.asked, 1);
+        }
+
+        /// **Documented discrepancy** with `00_APP §4`, which expects
+        /// `foo.exe` holding `PK\x03\x04` to yield two candidates
+        /// ("extension PE, content ZIP").
+        ///
+        /// Both the C++ (`Plugin::MatchExtension` followed by
+        /// `IsOfType`, `Instance.cpp:266-286`) and this port require the
+        /// plugin's `Validate` to accept the data before it becomes a
+        /// candidate, and the shipped PE plugin declares **no**
+        /// extensions at all. So that file has exactly one candidate,
+        /// ZIP, and no dialog is shown.
+        #[test]
+        fn identify_extension_alone_never_makes_a_candidate() {
+            let inst = real_instance();
+            let mut selector = Recording::cancelling();
+            assert_eq!(
+                inst.identify_type(&minimal_zip(), "exe", OpenMethod::BestMatch, "", &mut selector)
+                    .expect("ZIP is the only candidate"),
+                Some("ZIP")
+            );
+            assert_eq!(selector.asked, 0, "one candidate, so no dialog");
+
+            // The shipped PE plugin matches on content only.
+            assert!(
+                inst.type_plugins()
+                    .by_name("PE")
+                    .expect("PE is registered")
+                    .metadata()
+                    .extensions
+                    .is_empty(),
+                "PE declares no extensions"
+            );
+
+            // A `.zip` file whose content is a PE image: the extension
+            // match is dropped by ZIP's `Validate`, the content match
+            // picks PE.
+            assert_eq!(
+                inst.identify_type(&minimal_pe(), "zip", OpenMethod::BestMatch, "", &mut selector)
+                    .expect("PE is the only candidate"),
+                Some("PE")
+            );
+            assert_eq!(selector.asked, 0);
+        }
+
+        /// The identification probe is capped at `0x8800` bytes however
+        /// large the file is (C++ `Instance::Add` reads exactly that
+        /// window before matching).
+        #[test]
+        fn identify_probe_never_exceeds_the_identification_window() {
+            *WIDEST_PROBE.lock().expect("probe log") = 0;
+
+            let registries = crate::registry::build().expect("registry");
+            let mut types = registries.types;
+            types.register_type::<ProbeWatcher>("PROBE").expect("probe watcher");
+            let mut inst = Instance::new(types, registries.generics, DEFAULT_CACHE_SIZE);
+
+            // Four times the probe window, so a naive full read would
+            // be visible.
+            let size = (TYPE_IDENTIFICATION_PROBE_SIZE as usize) * 4;
+            let mut data = vec![0x41_u8; size];
+            data[0..4].copy_from_slice(b"PRB!");
+            let path = golden_file("probe_window.bin", &data);
+
+            let index = inst
+                .add_file_window(&path, OpenMethod::BestMatch, "", &mut CancelSelector)
+                .expect("the watcher declines, so the default plugin opens it");
+            assert_eq!(inst.window(index).and_then(FileWindowModel::type_plugin_name), None);
+
+            let widest = *WIDEST_PROBE.lock().expect("probe log");
+            assert_eq!(
+                widest, TYPE_IDENTIFICATION_PROBE_SIZE as usize,
+                "the matcher sees exactly the identification window"
+            );
+            // The object itself still knows its full size: only the
+            // probe is bounded, not the cache.
+            let object = inst.current_object().expect("object");
+            assert_eq!(object.lock().expect("object").data().size(), size as u64);
+            drop(object);
+            let _ = std::fs::remove_file(&path);
         }
     }
 }

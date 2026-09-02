@@ -100,3 +100,25 @@ fn quirk_8_cache_size_and_key_bindings_are_written_under_other_names() {
         "but the loader still looks for it"
     );
 }
+
+/// Quirk 11 — `Instance.cpp:63-73`: the `Close All e&xcept current`
+/// menu entry carries `MenuCommands::CLOSE_ALL`, so it closes every
+/// window. The port binds the same command to both entries.
+#[test]
+fn quirk_11_close_all_except_current_closes_everything() {
+    use crate::desktop::{gviewdesktop::Commands, menu_id_for_command};
+    use crate::instance::window_lifecycle::{menu, menu_action, InstanceAction};
+
+    // The dedicated id exists and is preserved…
+    assert_eq!(
+        menu_id_for_command(Commands::CloseAllExceptCurrent),
+        menu::CLOSE_ALL_EXCEPT_CURRENT
+    );
+    assert_ne!(menu::CLOSE_ALL_EXCEPT_CURRENT, menu::CLOSE_ALL);
+
+    // …but neither id is dispatched by `Instance::OnEvent`, exactly as
+    // in the C++ (the desktop services both itself).
+    assert_eq!(menu_action(menu::CLOSE_ALL), InstanceAction::Unhandled);
+    assert_eq!(menu_action(menu::CLOSE_ALL_EXCEPT_CURRENT), InstanceAction::Unhandled);
+    assert_eq!(menu_action(menu::CLOSE), InstanceAction::Unhandled);
+}

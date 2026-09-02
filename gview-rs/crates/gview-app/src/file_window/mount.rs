@@ -41,7 +41,7 @@ use gview_view::traits::{SharedObject, SmartViewer};
 use gview_view::view_control::ViewControl;
 use gview_viewers::{
     BufferView, BufferViewSettings, ContainerView, ContainerViewSettings, DissasmView, DissasmViewSettings,
-    SharedCursorInfo, TextView, TextViewSettings, UnavailableView,
+    FindProvider, SharedCursorInfo, TextView, TextViewSettings, UnavailableView,
 };
 
 use crate::instance::window_lifecycle::ViewerSlot;
@@ -97,6 +97,9 @@ pub struct MountContext<'a> {
     pub enumerator: Option<Box<dyn EnumerateInterface + Send>>,
     /// `SetOpenItemCallback` (`Container` only).
     pub opener: Option<Box<dyn OpenItemInterface + Send>>,
+    /// The window's Find engine (`Buffer` only, `§5.6`): installed at
+    /// mount, armed when the Find dialog compiles a pattern.
+    pub find: Option<Box<dyn FindProvider>>,
     /// The bottom-bar slot this page publishes into (`§5.3.5`).
     pub cursor: SharedCursorInfo,
     /// Page index in the `view` tab.
@@ -110,6 +113,7 @@ impl core::fmt::Debug for MountContext<'_> {
             .field("has_colorizer", &self.colorizer.is_some())
             .field("has_enumerator", &self.enumerator.is_some())
             .field("has_opener", &self.opener.is_some())
+            .field("has_find", &self.find.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -124,6 +128,7 @@ impl MountContext<'_> {
             colorizer: None,
             enumerator: None,
             opener: None,
+            find: None,
             cursor,
             index,
         }
@@ -192,12 +197,13 @@ pub fn mount_viewer(tab: &mut Tab, page: u32, slot: &mut ViewerSlot, ctx: MountC
         colorizer,
         enumerator,
         opener,
+        find,
         cursor,
         index: _,
     } = ctx;
     match kind {
         ViewerKind::Buffer => {
-            let settings = buffer_settings(request, colorizer, cursor, name);
+            let settings = buffer_settings(request, colorizer, find, cursor, name);
             let view = BufferView::from_settings(SharedObject::clone(object), settings);
             MountedViewer::Buffer(tab.add(page, view))
         }
@@ -247,6 +253,7 @@ pub fn mount_viewer(tab: &mut Tab, page: u32, slot: &mut ViewerSlot, ctx: MountC
 fn buffer_settings(
     request: Option<ViewerRequest>,
     colorizer: Option<Box<dyn PositionToColorCallback + Send>>,
+    find: Option<Box<dyn FindProvider>>,
     cursor: SharedCursorInfo,
     name: String,
 ) -> BufferViewSettings {
@@ -256,10 +263,10 @@ fn buffer_settings(
         request,
         colorizer,
         cursor_info: cursor,
-        // The Find engine is installed by `file-window-shell-integration`
-        // (`§5.6`): it needs the pattern compiled by the Find dialog,
-        // which does not exist yet.
-        find: None,
+        // Installed unarmed: `Ctrl+F` compiles the pattern into the
+        // window's shared session and `Ctrl+F7` then repeats it
+        // (`§5.6`).
+        find,
         custom_name: Some(name),
     }
 }
@@ -330,6 +337,7 @@ mod tests {
                     colorizer: Some(Box::new(AllRed)),
                     enumerator: None,
                     opener: None,
+                    find: None,
                     cursor: SharedCursorInfo::new(),
                     index: 0,
                 },
@@ -390,6 +398,7 @@ mod tests {
         let settings = buffer_settings(
             Some(ViewerRequest::buffer(BufferViewerRequest::default())),
             Some(Box::new(AllRed)),
+            None,
             SharedCursorInfo::new(),
             String::from("Buffer View"),
         );
@@ -401,6 +410,7 @@ mod tests {
                 ..BufferViewerRequest::default()
             })),
             Some(Box::new(AllRed)),
+            None,
             SharedCursorInfo::new(),
             String::from("Buffer View"),
         );

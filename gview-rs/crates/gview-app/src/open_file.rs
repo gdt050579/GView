@@ -31,6 +31,8 @@
 //! last used folder, then `AddFileWindow(BestMatch)`; the folder is
 //! remembered on success ([`OpenFileFlow`]).
 
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use appcui::prelude::*;
@@ -39,7 +41,7 @@ use gview_plugin::fnv::extension_hash;
 use gview_plugin::matcher::TextParser;
 use gview_plugin::type_plugin::RegisteredTypePlugin;
 
-use crate::instance::window_lifecycle::{Instance, InstanceError, OpenMethod, TypeSelector};
+use crate::instance::window_lifecycle::{probe_text, Instance, InstanceError, OpenMethod, TypeSelector};
 
 /// C++ `DEFAULT_PLUGIN_INDEX` combo user data.
 pub const DEFAULT_PLUGIN_INDEX: u32 = 0xFF_FFFF;
@@ -429,6 +431,48 @@ pub fn open_buffer(
     instance.add_buffer_window(buf, name, method, type_name, selector)
 }
 
+/// Builds the `SelectTypeDialog` seam for `path` (`00_APP §4`).
+///
+/// The C++ creates the dialog inside `Instance::Add`, where the probe
+/// is already in hand; the Rust desktop creates the selector *before*
+/// calling the open pipeline, so it reads the same bounded
+/// `TYPE_IDENTIFICATION_PROBE_SIZE` window itself. Nothing beyond that
+/// window is read, and a path that cannot be read yields an empty
+/// probe — the open then fails with the real I/O error.
+#[must_use]
+pub fn selector_for_path(path: &Path, interactive: bool) -> ModalTypeSelector {
+    let mut probe = vec![0_u8; TYPE_IDENTIFICATION_PROBE_SIZE as usize];
+    let read = File::open(path)
+        .and_then(|mut file| read_probe(&mut file, &mut probe))
+        .unwrap_or(0);
+    probe.truncate(read);
+    let size = std::fs::metadata(path).map_or(0, |m| m.len());
+    let text = probe_text(&probe);
+    let display = path.display().to_string();
+    let extension = gview_plugin::fnv::extension_of(&display).unwrap_or("").to_owned();
+    let name = path
+        .file_name()
+        .map_or_else(|| display.clone(), |n| n.to_string_lossy().into_owned());
+    ModalTypeSelector::new(probe, text, &extension, &name, &display, size, interactive)
+}
+
+/// Fills `buf` from `file`, tolerating short reads.
+fn read_probe(file: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut filled = 0_usize;
+    while filled < buf.len() {
+        let Some(slot) = buf.get_mut(filled..) else {
+            break;
+        };
+        match file.read(slot) {
+            Ok(0) => break,
+            Ok(n) => filled = filled.saturating_add(n),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
+}
+
 /// C++ `Instance::OpenFile()` menu flow state
 /// (`lastOpenedFolderLocation`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -460,6 +504,12 @@ impl OpenFileFlow {
             .as_deref()
             .map_or(dialogs::Location::Last, dialogs::Location::Path);
         dialogs::open("Open", "", location, None, dialogs::OpenFileDialogFlags::CheckIfFileExists)
+    }
+
+    /// Records `path`'s folder as the dialog's next starting point
+    /// (C++ `lastOpenedFolderLocation`).
+    pub fn remember_folder(&mut self, path: &Path) {
+        self.last_opened_folder = path.parent().map(Path::to_path_buf);
     }
 
     /// Opens `path` with `BestMatch` (the menu path) and remembers its
@@ -672,6 +722,31 @@ mod tests {
                 MatchGroup::NotMatched
             ]
         );
+    }
+
+    /// The selector seam of `00_APP §4`: without a terminal the
+    /// `SelectTypeDialog` is never built — the request is recorded and
+    /// the open is cancelled with the C++ wording.
+    #[test]
+    fn identify_headless_selector_records_the_request_and_cancels() {
+        let mut inst = instance();
+        let mut selector = ModalTypeSelector::new(b"MZxx".to_vec(), Vec::new(), ".exe", "a.exe", "a.exe", 4, false);
+        assert_eq!(selector.dialog_requested(), 0);
+        assert!(selector.filename().is_none());
+
+        // `Select` always needs the dialog; headless answers `None`.
+        let error = open_buffer(&mut inst, b"MZxx", "a.exe", OpenMethod::Select, "", &mut selector)
+            .expect_err("headless cancels");
+        assert!(matches!(error, InstanceError::OpenCanceled));
+        assert_eq!(error.to_string(), "Unable to identify a valid plugin open canceled !");
+        assert_eq!(selector.dialog_requested(), 1, "the request is recorded");
+        assert!(!selector.last_choices().is_empty(), "the choices are still built");
+        assert!(selector.filename().is_none(), "no dialog, no new name");
+        assert_eq!(inst.objects_count(), 0);
+
+        // A second cancelled open increments the counter again.
+        let _ = open_buffer(&mut inst, b"MZxx", "a.exe", OpenMethod::Select, "", &mut selector);
+        assert_eq!(selector.dialog_requested(), 2);
     }
 
     #[test]
