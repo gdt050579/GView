@@ -1,0 +1,19 @@
+[package]
+name = "gview-assistant"
+description = "GView SmartAssistant LLM engine: GPT-4o / Gemini clients, tab chat context ranking, disassembly prompts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["http-client"]
+# Real HTTPS transport (`ureq`, rustls). Disable to build the pure
+# prompt / parser logic without a TLS stack.
+http-client = ["dep:ureq"]
+
+[dependencies]
+gview-security = { path = "../gview-security" }
+serde_json = "1"
+ureq = { version = "3", optional = true }

@@ -1,6 +1,6 @@
 [package]
-name = "gview-types-elf"
-description = "GView type plugin: ELF"
+name = "gview-generic-entropy"
+description = "GView generic plugin: sliding-block entropy visualizer (Shannon / Renyi / data-type / embedded objects)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,5 @@ repository.workspace = true
 [dependencies]
 appcui = { path = "../../../../AppCUI-rs/appcui" }
 gview-core = { path = "../../../crates/gview-core" }
-gview-disasm = { path = "../../../crates/gview-disasm" }
+gview-entropy = { path = "../../../crates/gview-entropy" }
 gview-plugin = { path = "../../../crates/gview-plugin" }
-gview-view = { path = "../../../crates/gview-view" }
-serde_json = "1"

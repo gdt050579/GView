@@ -11,3 +11,7 @@ repository.workspace = true
 appcui = { path = "../../../AppCUI-rs/appcui" }
 gview-core = { path = "../gview-core" }
 gview-disasm = { path = "../gview-disasm" }
+gview-assistant = { path = "../gview-assistant", default-features = false }
+
+[dev-dependencies]
+serde_json = "1"

@@ -286,6 +286,35 @@ impl core::fmt::Debug for BufferViewerRequest {
     }
 }
 
+/// `ContainerViewer::Settings` as a plugin fills it.
+///
+/// Covers `SetIcon`, `SetPathSeparator`, `SetColumns` and
+/// `AddProperty` (spec `02_VIEWER_CONTAINER` §2.1); the
+/// `EnumerateInterface` / `OpenItemInterface` callbacks are the plugin
+/// instance itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContainerViewerRequest {
+    /// `SetIcon`: the 16×16 image string (256 chars), when set.
+    pub icon: Option<String>,
+    /// `SetPathSeparator` (`/` by default).
+    pub path_separator: char,
+    /// `SetColumns`: `AppCUI` column layout strings (`n:…,a:…,w:…`).
+    pub columns: Vec<String>,
+    /// `AddProperty`: `(name, value)` rows for the property grid.
+    pub properties: Vec<(String, String)>,
+}
+
+impl Default for ContainerViewerRequest {
+    fn default() -> Self {
+        Self {
+            icon: None,
+            path_separator: '/',
+            columns: Vec::new(),
+            properties: Vec::new(),
+        }
+    }
+}
+
 /// A viewer creation request (`WindowInterface::CreateViewer`).
 #[derive(Debug)]
 pub struct ViewerRequest {
@@ -297,6 +326,8 @@ pub struct ViewerRequest {
     pub buffer: Option<BufferViewerRequest>,
     /// Dissasm-viewer specifics; ignored for other kinds.
     pub dissasm: Option<DissasmViewerRequest>,
+    /// Container-viewer specifics; ignored for other kinds.
+    pub container: Option<ContainerViewerRequest>,
 }
 
 impl ViewerRequest {
@@ -308,6 +339,7 @@ impl ViewerRequest {
             custom_name: None,
             buffer: None,
             dissasm: None,
+            container: None,
         }
     }
 
@@ -319,6 +351,7 @@ impl ViewerRequest {
             custom_name: None,
             buffer: Some(settings),
             dissasm: None,
+            container: None,
         }
     }
 
@@ -330,6 +363,19 @@ impl ViewerRequest {
             custom_name: None,
             buffer: None,
             dissasm: Some(settings),
+            container: None,
+        }
+    }
+
+    /// A container-viewer request carrying its settings.
+    #[must_use]
+    pub const fn container(settings: ContainerViewerRequest) -> Self {
+        Self {
+            kind: ViewerKind::Container,
+            custom_name: None,
+            buffer: None,
+            dissasm: None,
+            container: Some(settings),
         }
     }
 

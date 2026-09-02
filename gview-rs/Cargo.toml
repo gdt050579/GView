@@ -10,10 +10,16 @@ members = [
     "crates/gview-entropy",
     "crates/gview-decoding",
     "crates/gview-security",
+    "crates/gview-assistant",
     "crates/gview-plugin",
     "crates/gview-plugin-ffi",
     "plugins/type/gview-types-pe",
     "plugins/type/gview-types-elf",
+    "plugins/type/gview-types-macho",
+    "plugins/type/gview-types-zip",
+    "plugins/type/gview-types-pcap",
+    "plugins/generic/gview-generic-hashes",
+    "plugins/generic/gview-generic-entropy",
 ]
 
 [workspace.package]

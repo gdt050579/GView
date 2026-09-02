@@ -21,6 +21,9 @@ pub mod instance;
 pub mod keyboard;
 pub mod open_file;
 
+#[cfg(test)]
+mod cpp_parity_quirks;
+
 fn main() {
     println!("GView-rs {}", env!("CARGO_PKG_VERSION"));
 }

@@ -41,13 +41,12 @@ use gview_core::object::Object;
 use gview_plugin::generic_plugin::GenericPluginRegistry;
 use gview_plugin::matcher::{utf16, TextParser};
 use gview_plugin::type_plugin::{
-    KeyRegistry, PanelRequest, PluginError, PluginMetadata, RegisteredTypePlugin, TypePlugin,
-    TypePluginRegistry, ViewerKind, ViewerRequest, WindowHandle,
+    PanelRequest, PluginError, RegisteredTypePlugin, TypePlugin, TypePluginRegistry, ViewerKind, ViewerRequest,
+    WindowHandle,
 };
 use gview_view::text_viewer::line_index::{analyze_encoding, Encoding};
 use gview_view::traits::{SharedObject, SmartViewer, ViewerSettings};
 use gview_view::view_control::ViewControl;
-use serde_json::Value as JsonValue;
 
 use crate::file_window::panels::PanelDock;
 use crate::file_window::view_container::ViewContainer;
@@ -463,90 +462,9 @@ impl WindowHandle for FileWindowModel {
     }
 }
 
-/// C++ `DefaultType` / `DefaultTypePlugin` (spec §F.3): the `GENERIC`
-/// fallback used when no plugin claims the data.
-#[derive(Default)]
-pub struct DefaultTypePlugin {
-    object: Mutex<Option<SharedObject>>,
-}
-
-impl core::fmt::Debug for DefaultTypePlugin {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let bound = self.object.lock().is_ok_and(|o| o.is_some());
-        f.debug_struct("DefaultTypePlugin").field("object_bound", &bound).finish()
-    }
-}
-
-impl DefaultTypePlugin {
-    /// Bytes probed to decide on a text viewer (`Get(0, 4096, false)`).
-    pub const TEXT_PROBE_SIZE: u32 = 4096;
-}
-
-impl TypePlugin for DefaultTypePlugin {
-    fn name(&self) -> &'static str {
-        "GENERIC"
-    }
-
-    fn validate(_buf: &[u8], _extension: &str) -> bool {
-        true
-    }
-
-    fn create_instance() -> Box<Self> {
-        Box::default()
-    }
-
-    fn metadata() -> PluginMetadata {
-        PluginMetadata::default()
-    }
-
-    fn populate_window(&self, win: &mut dyn WindowHandle) -> Result<(), PluginError> {
-        let object = win.object();
-        *self.object.lock().unwrap_or_else(PoisonError::into_inner) = Some(SharedObject::clone(&object));
-
-        // 1. info panel
-        win.add_panel(
-            PanelRequest {
-                caption: String::from("&Information"),
-                panel_id: String::from("default.information"),
-            },
-            true,
-        );
-
-        // 2. views: text viewer when the head is not binary
-        let probe = {
-            let mut guard = object.lock().unwrap_or_else(PoisonError::into_inner);
-            guard
-                .data_mut()
-                .copy_to_vec(0, Self::TEXT_PROBE_SIZE, false)
-                .unwrap_or_default()
-        };
-        if analyze_encoding(&probe).encoding != Encoding::Binary {
-            win.create_viewer(ViewerRequest::new(ViewerKind::Text))?;
-        }
-        // 3. buffer viewer as the default view
-        win.create_viewer(ViewerRequest::new(ViewerKind::Buffer))?;
-        Ok(())
-    }
-
-    fn run_command(&mut self, _command: &str) {}
-
-    fn register_keys(&self, _keys: &mut dyn KeyRegistry) {}
-
-    fn smart_assistant_context(&self, _prompt: &str, _display: &str) -> Result<JsonValue, PluginError> {
-        let bound = self
-            .object
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .map(SharedObject::clone)
-            .ok_or_else(|| PluginError::Assistant(String::from("no object bound")))?;
-        let object = bound.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(serde_json::json!({
-            "Name": object.name(),
-            "ContentSize": object.data().size(),
-        }))
-    }
-}
+/// The `GENERIC` fallback (C++ `DefaultTypePlugin.cpp`), owned by the
+/// plugin crate.
+pub use gview_plugin::default_type::DefaultTypePlugin;
 
 /// C++ `Instance` orchestration state (spec §G.4).
 pub struct Instance {
@@ -924,6 +842,8 @@ fn probe_text(probe: &[u8]) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gview_plugin::type_plugin::{KeyRegistry, PluginMetadata};
+    use serde_json::Value as JsonValue;
     use gview_core::constants::DEFAULT_CACHE_SIZE;
     use gview_core::object::ObjectType;
     use gview_plugin::type_plugin::{CommandDef, Pattern};

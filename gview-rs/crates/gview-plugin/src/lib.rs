@@ -6,7 +6,8 @@
 //! (`Plugin.cpp` `ExtensionToHash`), the native [`type_plugin`] /
 //! [`generic_plugin`] traits and metadata that replace the C++
 //! `.tpl` / `.gpl` exports, and [`ini_emit`] (the `UpdateSettings`
-//! INI regeneration in `GViewApp.cpp`).
+//! INI regeneration in `GViewApp.cpp`), plus [`default_type`] (the
+//! `GENERIC` fallback of `DefaultTypePlugin.cpp`).
 
 #![forbid(unsafe_code)]
 #![warn(
@@ -18,6 +19,7 @@
 )]
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
+pub mod default_type;
 pub mod fnv;
 pub mod generic_plugin;
 pub mod ini_emit;

@@ -1,6 +1,6 @@
 [package]
-name = "gview-types-elf"
-description = "GView type plugin: ELF"
+name = "gview-generic-hashes"
+description = "GView generic plugin: streaming hash calculator (Hashes / ComputeMD5 / ComputeSHA256 commands)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,5 @@ repository.workspace = true
 [dependencies]
 appcui = { path = "../../../../AppCUI-rs/appcui" }
 gview-core = { path = "../../../crates/gview-core" }
-gview-disasm = { path = "../../../crates/gview-disasm" }
+gview-hashes = { path = "../../../crates/gview-hashes" }
 gview-plugin = { path = "../../../crates/gview-plugin" }
-gview-view = { path = "../../../crates/gview-view" }
-serde_json = "1"

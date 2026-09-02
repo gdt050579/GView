@@ -21,3 +21,6 @@ pub mod renderer;
 pub mod text_viewer;
 pub mod traits;
 pub mod view_control;
+
+#[cfg(test)]
+mod cpp_parity_quirks;
