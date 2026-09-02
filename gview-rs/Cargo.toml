@@ -11,6 +11,9 @@ members = [
     "crates/gview-decoding",
     "crates/gview-security",
     "crates/gview-plugin",
+    "crates/gview-plugin-ffi",
+    "plugins/type/gview-types-pe",
+    "plugins/type/gview-types-elf",
 ]
 
 [workspace.package]

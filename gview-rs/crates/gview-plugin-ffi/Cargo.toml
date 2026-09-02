@@ -1,0 +1,24 @@
+[package]
+name = "gview-plugin-ffi"
+description = "GView C-ABI shim: loads legacy C++ .tpl/.gpl plugins with catch_unwind and crash isolation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gview-plugin = { path = "../gview-plugin" }
+libloading = "0.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+gview-core = { path = "../gview-core" }
+gview-view = { path = "../gview-view" }
+
+[[example]]
+name = "gview_ffi_test_plugin"
+crate-type = ["cdylib"]
+path = "examples/gview_ffi_test_plugin.rs"

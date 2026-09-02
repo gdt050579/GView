@@ -835,8 +835,10 @@ version = "0.1.0"
 dependencies = [
  "appcui",
  "gview-core",
+ "gview-plugin",
  "gview-view",
  "regex",
+ "serde_json",
 ]
 
 [[package]]
@@ -891,6 +893,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gview-plugin-ffi"
+version = "0.1.0"
+dependencies = [
+ "gview-core",
+ "gview-plugin",
+ "gview-view",
+ "libc",
+ "libloading",
+]
+
+[[package]]
 name = "gview-security"
 version = "0.1.0"
 dependencies = [
@@ -900,6 +913,22 @@ dependencies = [
  "serde_json",
  "sha2",
  "zeroize",
+]
+
+[[package]]
+name = "gview-types-elf"
+version = "0.1.0"
+
+[[package]]
+name = "gview-types-pe"
+version = "0.1.0"
+dependencies = [
+ "appcui",
+ "gview-core",
+ "gview-disasm",
+ "gview-plugin",
+ "gview-view",
+ "serde_json",
 ]
 
 [[package]]

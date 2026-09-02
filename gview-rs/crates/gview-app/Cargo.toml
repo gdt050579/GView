@@ -15,4 +15,6 @@ path = "src/main.rs"
 appcui = { path = "../../../AppCUI-rs/appcui" }
 gview-core = { path = "../gview-core" }
 gview-view = { path = "../gview-view" }
+gview-plugin = { path = "../gview-plugin" }
 regex = "1"
+serde_json = "1"

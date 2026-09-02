@@ -130,6 +130,18 @@ impl PanelDock {
         &self.bottom_bar
     }
 
+    /// Captions of the vertical (sidebar) panels, in creation order.
+    #[must_use]
+    pub fn vertical_captions(&self) -> &[String] {
+        &self.vertical_captions
+    }
+
+    /// Captions of the horizontal panels (cursor info `<->` first).
+    #[must_use]
+    pub fn horizontal_captions(&self) -> &[String] {
+        &self.horizontal_captions
+    }
+
     /// Number of vertical (sidebar) panels.
     #[must_use]
     pub const fn vertical_count(&self) -> usize {

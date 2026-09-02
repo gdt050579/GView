@@ -27,6 +27,8 @@
 
 use appcui::input::Key;
 use gview_core::zones::ZonesList;
+use gview_view::buffer_viewer::dissasm_dialog::DissasmSettings;
+use gview_view::dissasm_viewer::zone::DisassemblyZone;
 use gview_view::traits::SharedObject;
 use serde_json::Value as JsonValue;
 
@@ -57,7 +59,7 @@ pub enum PluginError {
     Unsupported(String),
     /// A command name is unknown to the plugin.
     UnknownCommand(String),
-    /// The SmartAssistant context could not be produced.
+    /// The `SmartAssistant` context could not be produced.
     Assistant(String),
 }
 
@@ -223,10 +225,12 @@ pub enum ViewerKind {
     Container,
 }
 
-/// `BufferViewer::Settings` as a plugin fills it in `PopulateWindow`
-/// (`AddZone`, `AddBookmark`, `SetEntryPointOffset`,
-/// `SetOffsetTranslationList`).
-#[derive(Debug, Default)]
+/// `BufferViewer::Settings` as a plugin fills it in `PopulateWindow`.
+///
+/// Covers `AddZone`, `AddBookmark`, `SetEntryPointOffset`,
+/// `SetOffsetTranslationList`, `SetArchitecture` / `SetDesign` /
+/// `SetEndianess` and `SetPositionToColorCallback`.
+#[derive(Default)]
 pub struct BufferViewerRequest {
     /// Colored regions (section headers, tables, …).
     pub zones: ZonesList,
@@ -236,6 +240,50 @@ pub struct BufferViewerRequest {
     pub entry_point: Option<u64>,
     /// Address-column names after `FileOffset` (RVA, VA, …).
     pub translation_methods: Vec<String>,
+    /// Dissasm dialog defaults (`SetArchitecture` & co.).
+    pub dissasm_settings: DissasmSettings,
+    /// `SetPositionToColorCallback`: the plugin colours executable
+    /// bytes (opcode highlighting).
+    pub position_to_color: bool,
+}
+
+/// A `DissasmViewer::Settings::AddMemoryMapping` entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MemoryMapping {
+    /// Virtual address (RVA) of the mapped symbol.
+    pub address: u64,
+    /// Symbol name.
+    pub name: String,
+}
+
+/// `DissasmViewer::Settings` as a plugin fills it (`AddDisassemblyZone`,
+/// `AddMemoryMapping`, `SetOffsetTranslationList`, `AddType` /
+/// `AddVariable`).
+#[derive(Clone, Debug, Default)]
+pub struct DissasmViewerRequest {
+    /// Code zones to disassemble.
+    pub zones: Vec<DisassemblyZone>,
+    /// Import / export symbol mappings.
+    pub memory_mappings: Vec<MemoryMapping>,
+    /// Address-column names after `FileOffset`.
+    pub translation_methods: Vec<String>,
+    /// `(name, definition)` structure types (`AddType`).
+    pub types: Vec<(String, String)>,
+    /// `(offset, type name)` variables (`AddVariable`).
+    pub variables: Vec<(u64, String)>,
+}
+
+impl core::fmt::Debug for BufferViewerRequest {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BufferViewerRequest")
+            .field("zones", &self.zones.count())
+            .field("bookmarks", &self.bookmarks)
+            .field("entry_point", &self.entry_point)
+            .field("translation_methods", &self.translation_methods)
+            .field("dissasm_settings", &self.dissasm_settings)
+            .field("position_to_color", &self.position_to_color)
+            .finish()
+    }
 }
 
 /// A viewer creation request (`WindowInterface::CreateViewer`).
@@ -247,6 +295,8 @@ pub struct ViewerRequest {
     pub custom_name: Option<String>,
     /// Buffer-viewer specifics; ignored for other kinds.
     pub buffer: Option<BufferViewerRequest>,
+    /// Dissasm-viewer specifics; ignored for other kinds.
+    pub dissasm: Option<DissasmViewerRequest>,
 }
 
 impl ViewerRequest {
@@ -257,6 +307,7 @@ impl ViewerRequest {
             kind,
             custom_name: None,
             buffer: None,
+            dissasm: None,
         }
     }
 
@@ -267,6 +318,18 @@ impl ViewerRequest {
             kind: ViewerKind::Buffer,
             custom_name: None,
             buffer: Some(settings),
+            dissasm: None,
+        }
+    }
+
+    /// A dissasm-viewer request carrying its settings.
+    #[must_use]
+    pub const fn dissasm(settings: DissasmViewerRequest) -> Self {
+        Self {
+            kind: ViewerKind::Dissasm,
+            custom_name: None,
+            buffer: None,
+            dissasm: Some(settings),
         }
     }
 
@@ -380,7 +443,9 @@ pub struct TypePluginDescriptor {
 
 impl core::fmt::Debug for TypePluginDescriptor {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("TypePluginDescriptor").field("name", &self.name).finish()
+        f.debug_struct("TypePluginDescriptor")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
     }
 }
 
@@ -571,7 +636,7 @@ impl TypePluginRegistry {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub mod tests {
     use super::*;
     use crate::matcher::utf16;
     use appcui::input::{KeyCode, KeyModifier};
@@ -579,7 +644,7 @@ pub(crate) mod tests {
     use std::sync::{Arc, Mutex};
 
     /// A PE-like mock plugin.
-    pub(crate) struct MockPe {
+    pub struct MockPe {
         last_command: Mutex<Option<String>>,
     }
 
@@ -664,7 +729,7 @@ pub(crate) mod tests {
     }
 
     /// A script-like plugin matched by text.
-    pub(crate) struct MockShell;
+    pub struct MockShell;
 
     impl TypePlugin for MockShell {
         fn name(&self) -> &'static str {
@@ -727,11 +792,11 @@ pub(crate) mod tests {
     }
 
     #[derive(Default)]
-    pub(crate) struct MockWindow {
-        pub(crate) panels: Vec<(PanelRequest, bool)>,
-        pub(crate) viewers: Vec<ViewerRequest>,
-        pub(crate) current: Option<u32>,
-        pub(crate) fail_viewers: bool,
+    pub struct MockWindow {
+        pub panels: Vec<(PanelRequest, bool)>,
+        pub viewers: Vec<ViewerRequest>,
+        pub current: Option<u32>,
+        pub fail_viewers: bool,
     }
 
     impl WindowHandle for MockWindow {
@@ -747,7 +812,7 @@ pub(crate) mod tests {
                 return Err(PluginError::Window(String::from("no viewers")));
             }
             self.viewers.push(request);
-            let index = self.viewers.len() as u32 - 1;
+            let index = (self.viewers.len() as u32).saturating_sub(1);
             self.current = Some(index);
             Ok(index)
         }
@@ -888,7 +953,7 @@ pub(crate) mod tests {
         assert_eq!(names, ["SH", "PE"]);
         assert_eq!(registry.len(), 2);
         assert!(!registry.is_empty());
-        assert_eq!(registry.by_name("PE").map(|p| p.priority()), Some(0xFFFF));
+        assert_eq!(registry.by_name("PE").map(RegisteredTypePlugin::priority), Some(0xFFFF));
         assert!(registry.by_name("ZIP").is_none());
 
         let pe = registry.by_name("PE").expect("pe");

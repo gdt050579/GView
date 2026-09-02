@@ -19,4 +19,7 @@
 #![allow(clippy::module_name_repetitions, clippy::cast_possible_truncation)]
 
 pub mod fnv;
+pub mod generic_plugin;
+pub mod ini_emit;
 pub mod matcher;
+pub mod type_plugin;

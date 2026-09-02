@@ -17,7 +17,9 @@
 pub mod buffer_find;
 pub mod file_window;
 pub mod find_dialog;
+pub mod instance;
 pub mod keyboard;
+pub mod open_file;
 
 fn main() {
     println!("GView-rs {}", env!("CARGO_PKG_VERSION"));
