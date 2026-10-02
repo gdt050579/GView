@@ -301,6 +301,10 @@ namespace Generic
         bool Init(AppCUI::Utils::IniSection section);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
         void Run(uint32 commandIndex, Reference<GView::Object> currentObject);
+        inline std::string_view GetName() const
+        {
+            return (std::string_view) Name;
+        }
     };
 }; // namespace Generic
 
@@ -496,6 +500,7 @@ namespace App
         constexpr int CMD_COPY_DIALOG           = 30012350;
         constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
         constexpr int CMD_OPEN_ADD_NOTE         = 30012352;
+        constexpr int CMD_LEARNING_SUBMIT_FLAG  = 30012353;
 
         static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
         static GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
@@ -508,10 +513,12 @@ namespace App
         static GView::KeyboardControl INSTANCE_CHOOSE_TYPE         = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
         static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
         static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE       = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
-
-        static const std::array GViewCommands = {
-            &INSTANCE_CHANGE_VIEW, &INSTANCE_SWITCH_TO_VIEW, &INSTANCE_COMMAND_GOTO, &FILE_WINDOW_COMMAND_FIND, &INSTANCE_CHOOSE_TYPE, &INSTANCE_KEY_CONFIGURATOR
+        static GView::KeyboardControl INSTANCE_LEARNING_SUBMIT_FLAG = {
+            Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for this learning task", CMD_LEARNING_SUBMIT_FLAG
         };
+
+        static const std::array GViewCommands = { &INSTANCE_CHANGE_VIEW,  &INSTANCE_SWITCH_TO_VIEW,   &INSTANCE_COMMAND_GOTO,         &FILE_WINDOW_COMMAND_FIND,
+                                                  &INSTANCE_CHOOSE_TYPE, &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_LEARNING_SUBMIT_FLAG };
     }
 
     class Instance : public AppCUI::Utils::PropertiesInterface,
@@ -601,6 +608,15 @@ namespace App
               const ConstString& creationProcess = "");
         bool AddBufferWindow(
               BufferView buf,
+              const ConstString& name,
+              const ConstString& path,
+              OpenMethod method,
+              string_view typeName,
+              Reference<Window> parent,
+              const ConstString& creationProcess = "");
+        // opens a memory object that owns its storage (e.g. learning-mode content kept in locked memory)
+        bool AddDataObjectWindow(
+              std::unique_ptr<AppCUI::OS::DataObject> data,
               const ConstString& name,
               const ConstString& path,
               OpenMethod method,
@@ -784,7 +800,28 @@ namespace App
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
+        bool OnFrameUpdate() override;
+        void Paint(AppCUI::Graphics::Renderer& renderer) override;
+        ~FileWindow() override;
+
+        // title = object name [+ " - " + course watermark]
+        void RefreshTitle();
+        std::string_view GetCurrentViewerKind();
     };
+
+    // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
+    void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect);
+    void ShowLearningSubmitDialog(std::string_view problemName);
+    void RefreshAllFileWindowTitles();
+    bool TakeStartupLearningConnection(std::string& out);
+    bool OpenDataObject(
+          std::unique_ptr<AppCUI::OS::DataObject> data,
+          const ConstString& name,
+          const ConstString& path,
+          OpenMethod method,
+          std::string_view typeName,
+          Reference<Window> parent,
+          const ConstString& creationProcess);
 
     class ErrorDialog : public AppCUI::Controls::Window
     {
@@ -814,18 +851,79 @@ namespace Security
 {
     namespace RestrictedMode::Internal
     {
-        // Internal API - called by GViewCore components
-        Utils::GStatus Activate(const RestrictedMode::Policy& policy) noexcept;
+        // Result of applying a validated policy (plans/PLAN_GVIEW_CLIENT.md Task 1)
+        struct ActivationReport {
+            bool screenProtectRequested{ false };
+            bool screenProtectApplied{ false }; // capture exclusion applied to at least one GView-owned window
+            bool keyboardHookInstalled{ false }; // PrintScreen / Win+Shift+S blocker (Windows only)
+            std::vector<RestrictedMode::Feature> applied;
+            std::string platformNote;
+        };
+
+        // Internal API - called by GViewCore components (UI thread)
+        // Re-entrant: an active policy is replaced atomically by a newer validated one.
+        Utils::GStatus Activate(const RestrictedMode::Policy& policy, ActivationReport& report) noexcept;
         void Deactivate() noexcept;
         bool IsFeatureDisabled(RestrictedMode::Feature feature) noexcept;
         bool IsPluginAllowed(std::string_view pluginName) noexcept;
-        std::string GetWatermark() noexcept;
+        std::string GetWatermark();
 
         // Window-level screen protection (call with HWND on Windows, or nullptr on other platforms)
         // Uses SetWindowDisplayAffinity on Windows 10 2004+ to prevent screen capture
         Utils::GStatus EnableWindowScreenProtection(void* nativeWindowHandle) noexcept;
         void DisableWindowScreenProtection(void* nativeWindowHandle) noexcept;
+
+        // Building blocks (exposed for unit tests)
+        Utils::GStatus VerifyEd25519(BufferView message, BufferView signature, BufferView publicKey) noexcept;
+        Utils::GStatus ParsePolicyDocument(BufferView json, bool requireSchema2, RestrictedMode::Policy& out) noexcept;
+        Utils::GStatus VerifyPolicyDigest(BufferView rawJson, std::string_view digestHex) noexcept;
+        bool ParseFeature(std::string_view name, RestrictedMode::Feature& out) noexcept;
     } // namespace RestrictedMode::Internal
+
+    namespace Learning::Hooks
+    {
+        // Thin, UI-thread facade used by viewers/windows to report learning-relevant actions.
+        // Every function is a cheap no-op when no learning session is active and never throws.
+        enum class SimpleEvent : uint8 {
+            JumpBack,
+            JumpForward,
+            GotoEntrypoint,
+            GotoDialog,
+            CommentAdd,
+            CommentEdit,
+            CommentRemove,
+            LabelRename,
+            NoteAdd,
+        };
+        bool IsSessionActive() noexcept;
+        void OnSimpleEvent(const GView::Object* obj, SimpleEvent ev) noexcept;
+        void OnJumpFollow(const GView::Object* obj, uint64 from, uint64 to, std::string_view mnemonic) noexcept;
+        void OnFileWindowCreated(const GView::Object* obj) noexcept;
+        void OnFileWindowClosed(const GView::Object* obj) noexcept;
+        // called from FileWindow::OnFrameUpdate (~30 Hz); viewerKind is one of the closed telemetry viewer names
+        void OnFileWindowFrame(const GView::Object* obj, std::string_view viewerKind, bool focused) noexcept;
+        void NoteUserActivity() noexcept;
+        // true for objects delivered in memory-only mode: nothing derived from them may be written to disk
+        bool IsMemoryOnlyObject(const GView::Object* obj) noexcept;
+        bool IsLearningProblem(const GView::Object* obj) noexcept;
+        void ReportClientError(std::string_view constantMessage, bool fatal) noexcept;
+        void ShowSubmitDialogForObject(const GView::Object* obj);
+        void Shutdown() noexcept;
+
+        // convenience overloads for viewers that hold a Reference<GView::Object>
+        inline void OnSimpleEvent(Reference<GView::Object> obj, SimpleEvent ev) noexcept
+        {
+            OnSimpleEvent(static_cast<const GView::Object*>(obj.operator->()), ev);
+        }
+        inline void OnJumpFollow(Reference<GView::Object> obj, uint64 from, uint64 to, std::string_view mnemonic) noexcept
+        {
+            OnJumpFollow(static_cast<const GView::Object*>(obj.operator->()), from, to, mnemonic);
+        }
+        inline bool IsMemoryOnlyObject(Reference<GView::Object> obj) noexcept
+        {
+            return IsMemoryOnlyObject(static_cast<const GView::Object*>(obj.operator->()));
+        }
+    } // namespace Learning::Hooks
 
     namespace Crypto
     {
@@ -870,9 +968,25 @@ namespace Security
 
             // Random generation
             Utils::GStatus GenerateRandomBytes(size_t length, std::vector<uint8_t>& outBytes) noexcept;
+            Utils::GStatus GenerateRandomBytes(uint8_t* out, size_t length) noexcept;
 
             // Memory security
             void SecureErase(void* ptr, size_t size) noexcept;
+
+            // Span-based variants: never allocate, so plaintext/key material can live in caller-locked memory.
+            // outCapacity must be >= ciphertext size; outLen receives the plaintext size.
+            Utils::GStatus DecryptAES256GCMInto(
+                  BufferView iv,
+                  BufferView ciphertext,
+                  BufferView tag,
+                  BufferView key,
+                  BufferView aad,
+                  uint8_t* out,
+                  size_t outCapacity,
+                  size_t& outLen) noexcept;
+            Utils::GStatus ComputeSHA256(BufferView data, uint8_t (&outHash)[32]) noexcept;
+            Utils::GStatus DeriveKeyHKDF(BufferView inputKey, BufferView salt, BufferView info, uint8_t* outKey, size_t outLen) noexcept;
+            bool ConstantTimeEquals(const void* a, const void* b, size_t size) noexcept;
         } // namespace Internal
     } // namespace Crypto
 

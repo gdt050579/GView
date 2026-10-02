@@ -10,6 +10,7 @@ enum class CommandID
     ListTypes,
     UpdateConfig,
     Test,
+    Learn,
 };
 
 struct CommandInfo
@@ -39,6 +40,7 @@ CommandInfo commands[] = {
     { CommandID::ListTypes, _U("list-types") },
     { CommandID::UpdateConfig, _U("updateconfig") },
     { CommandID::Test, _U("test") },
+    { CommandID::Learn, _U("learn") },
 };
 
 std::string_view help = R"HELP(
@@ -62,6 +64,11 @@ Where <command> is on of:
                             Ex: 'GView updateConfig'
    
    test [fileName|path]     Opens a script for testing                     
+
+   learn <connectionString> Opens the Learning and Evaluation Mode window and
+                            connects with the connection string provided by
+                            the teacher.
+                            Ex: 'GView learn ZXhhbXBsZQ=='
 
    list-types               List all available types (as loaded from gview.ini).
                             Ex: 'GView list-types' 
@@ -219,6 +226,25 @@ int main(int argc, const char** argv)
         return 0;
     case CommandID::Open:
         return ProcessOpenCommand(argc, argv, 2);
+    case CommandID::Learn: {
+        if (argc != 3) {
+            std::cout << "Use: GView learn <connectionString>" << std::endl;
+            return 1;
+        }
+        // connection strings are base64 (ASCII): reject anything else before it reaches the application
+        std::string cs;
+        for (const auto* p = argv[2]; *p; p++) {
+            if (*p < 0x21 || *p > 0x7E) {
+                std::cout << "Invalid connection string" << std::endl;
+                return 1;
+            }
+            cs.push_back(static_cast<char>(*p));
+        }
+        CHECK(GView::App::Init(false), 1, "");
+        GView::App::OpenLearningModeOnStart(cs);
+        GView::App::Run("");
+        return 0;
+    }
     case CommandID::Test: {
         if (argc < 4) {
             std::cout << "The program should have 3 arguments: test <fileToAnalyze> <scriptToRun>\n";

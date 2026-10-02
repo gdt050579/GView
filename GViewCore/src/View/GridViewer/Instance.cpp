@@ -131,7 +131,11 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    const bool exportRestricted = GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export);
     for (const auto& cmd : AllGridCommands) {
+        // export commands are hidden while the course policy restricts exports
+        if (exportRestricted && (cmd->CommandId == COMMAND_ID_EXPORT_CELL_CONTENT || cmd->CommandId == COMMAND_ID_EXPORT_COLUMN_CONTENT))
+            continue;
         commandBar.SetCommand(cmd->Key, cmd->Caption, (int32)cmd->CommandId);
     }
     return false;
@@ -160,6 +164,8 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             }
 
         } else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT) {
+            if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Export, "exporting cell content"))
+                return true;
             auto content = grid->GetSelectedCellContent();
 
             if (content.has_value()) {
@@ -175,6 +181,8 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                 AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to export cell content!");
             }
         } else if (ID == COMMAND_ID_EXPORT_COLUMN_CONTENT) {
+            if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Export, "exporting column content"))
+                return true;
             auto data = grid->GetSelectedColumnContent();
             if (data.has_value()) {
                 auto index = 0;

@@ -20,6 +20,9 @@ extern "C" {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "Dropper") {
+        // the Dropper writes extracted artifacts to disk: an export in Learning and Evaluation Mode
+        if (GView::App::IsExportBlockedFor(object, "dropping artifacts to disk"))
+            return true;
         auto ui = DropperUI(object);
 
         switch (ui.Show()) {

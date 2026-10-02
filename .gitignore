@@ -5,6 +5,7 @@
 *.vcxproj.user
 .vscode
 build
+build-test
 bin
 *.log
 .idea/

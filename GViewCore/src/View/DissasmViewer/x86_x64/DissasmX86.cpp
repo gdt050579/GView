@@ -891,6 +891,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
 void Instance::CommandExportAsmFile()
 {
+    if (GView::App::IsExportBlockedFor(obj, "exporting the disassembly to .asm files"))
+        return;
     int zoneIndex = 0;
     LocalString<128> string;
     for (const auto& zone : settings->parseZones) {
@@ -959,6 +961,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint32 diffLines     = 0;
     uint64 computedValue = 0;
     cs_insn* insn;
+    // learning telemetry: source address + mnemonic of a followed jump/call (never operands or bytes)
+    uint64 jumpFromAddress = 0;
+    char jumpMnemonic[16]  = {};
     if (!offsetToReach) {
         if (line <= 1)
             return;
@@ -982,6 +987,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             return;
         }
         if (insn->mnemonic[0] == 'j' || insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP) {
+            jumpFromAddress = insn->address;
+            for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
+                jumpMnemonic[i] = insn->mnemonic[i];
             if (insn->op_str[0] == '0' && insn->op_str[1] == 'x') {
                 char* val = &insn->op_str[2];
 
@@ -1058,6 +1066,10 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     Cursor.lineInView    = std::min<uint32>(5, diffLines);
     Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
     Cursor.hasMovedView  = true;
+    if (offsetToReach != nullptr)
+        GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
+    else
+        GView::Security::Learning::Hooks::OnJumpFollow(obj, jumpFromAddress, computedValue, jumpMnemonic);
 }
 
 void Instance::EditDissasmCodeZoneCommand()
@@ -1231,6 +1243,7 @@ GStatus DissasmCodeZone::TryRenameLine(
                     // TODO: do this check inside the SingleLineEditWindow
                     return GStatus::Error("Name already exists!");
                 }
+                return GStatus{ .ok = true, .message = "renamed" };
             }
         }
         return GStatus::Ok();
@@ -1242,8 +1255,10 @@ GStatus DissasmCodeZone::TryRenameLine(
         SingleLineEditWindow dlg(collapsedZone->name, "Edit collapsed zone label");
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
-            if (!res.empty())
+            if (!res.empty()) {
                 collapsedZone->name = res;
+                return GStatus{ .ok = true, .message = "renamed" };
+            }
         }
         return GStatus::Ok();
     }

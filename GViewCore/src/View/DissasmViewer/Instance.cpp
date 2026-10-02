@@ -400,12 +400,16 @@ void Instance::AddComment()
 
     std::string comment = {};
     convertedZone->GetComment(startingLine, comment);
+    const bool hadComment = !comment.empty();
 
     selection.Clear();
     SingleLineEditWindow dlg(comment, "Add Comment");
     if (dlg.Show() == Dialogs::Result::Ok) {
         comment = dlg.GetResult();
         convertedZone->AddOrUpdateComment(startingLine, dlg.GetResult());
+        // creation and edit are distinct telemetry events; the comment text itself is never recorded
+        GView::Security::Learning::Hooks::OnSimpleEvent(
+              obj, hadComment ? GView::Security::Learning::Hooks::SimpleEvent::CommentEdit : GView::Security::Learning::Hooks::SimpleEvent::CommentAdd);
     }
 }
 
@@ -435,7 +439,11 @@ void Instance::RemoveComment()
     startingLine -= 2;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    std::string existing     = {};
+    convertedZone->GetComment(startingLine, existing);
     convertedZone->RemoveComment(startingLine);
+    if (!existing.empty())
+        GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::CommentRemove);
 }
 
 void Instance::RenameLabel()
@@ -480,6 +488,8 @@ void Instance::RenameLabel()
         Dialogs::MessageBox::ShowNotification("Warning", renameResult.message);
         return;
     }
+    if (renameResult.message == "renamed") // the dialog was confirmed (TryRenameLine also returns Ok on cancel)
+        GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::LabelRename);
     selection.Clear();
     convertedZone->asmPreCacheData.Clear();
 }
@@ -1390,11 +1400,13 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Copy, "copying from the disassembly view"))
+        return true;
     UnicodeStringBuilder usb{};
     if (!ProcessSelectedDataToPrintable(usb))
         return false;
 
-    if (AppCUI::OS::Clipboard::SetText(usb) == false) {
+    if (GView::App::SetClipboardText(usb) == false) {
         LocalString<128> message;
         CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", obj->GetData().GetSize(), 100), false, "");
         Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);

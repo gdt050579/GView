@@ -1980,10 +1980,22 @@ void PEFile::RunCommand(std::string_view commandName)
 
             CHECKBK(GView::DigitalSignature::VerifyEmbeddedSignature(data, obj->GetData()), "");
 #ifdef BUILD_FOR_WINDOWS
-            data.winTrust.callSuccessful = GView::DigitalSignature::VerifySignatureForPE(obj->GetPath(), obj->GetData(), data);
-            CHECKBK(data.winTrust.errorCode != GView::DigitalSignature::SIGNATURE_NOT_FOUND, "");
+            // WinVerifyTrust needs a file: for in-memory objects VerifySignatureForPE drops the content next to its container.
+            // That is never allowed for Learning and Evaluation Mode memory-only content (and is skipped when exports are
+            // restricted), the embedded OpenSSL verification above still runs.
+            if (obj->GetObjectType() == GView::Object::Type::File ||
+                (!GView::App::IsLearningMemoryOnly(obj) && !GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export)))
+            {
+                data.winTrust.callSuccessful = GView::DigitalSignature::VerifySignatureForPE(obj->GetPath(), obj->GetData(), data);
+                CHECKBK(data.winTrust.errorCode != GView::DigitalSignature::SIGNATURE_NOT_FOUND, "");
 
-            GView::DigitalSignature::GetSignaturesInformation(obj->GetPath(), data);
+                GView::DigitalSignature::GetSignaturesInformation(obj->GetPath(), data);
+            }
+            else
+            {
+                data.winTrust.callSuccessful = false;
+                data.winTrust.errorMessage.Set("WinTrust verification is not available for memory-only learning content");
+            }
 #endif
 
             while (!signatureChecked) {

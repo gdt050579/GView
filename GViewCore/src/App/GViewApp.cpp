@@ -63,6 +63,8 @@ void GView::App::Run(std::string_view testing_script)
         else
             AppCUI::Application::RunTestScript(testing_script);
     }
+    // learning session: final session_end + bounded telemetry flush, remove restrictions, wipe secrets
+    GView::Security::Learning::Hooks::Shutdown();
 }
 bool GView::App::ResetConfiguration()
 {
@@ -102,9 +104,19 @@ bool GView::App::ResetConfiguration()
     // generic GView settings
     ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
 
-    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
+    // Learning and Evaluation Mode (see docs/source/learning_mode_protocol.rst)
+    //   ServerConnectionString          - saved after the first verified connect
+    //   PolicyPublicKey                 - 64 hex chars, used when the connection string has no public key (v1)
+    //   LearningAllowPlainHttpLocalhost - allow http:// for localhost/127.0.0.1 only (teacher-laptop labs)
+    //   LearningDownloadFolder          - default folder for file-mode deliveries (empty = <Documents>/GView/<week>)
+    ini["GView"]["PolicyPublicKey"]                 = "";
+    ini["GView"]["LearningAllowPlainHttpLocalhost"] = false;
+    ini["GView"]["LearningDownloadFolder"]          = "";
+
+    const std::array<std::reference_wrapper<KeyboardControl>, 7> localKeys = {
         InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
-        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
+        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR,
+        InstanceCommands::INSTANCE_LEARNING_SUBMIT_FLAG
     };
 
     LocalString<64> keyCommand;
@@ -156,6 +168,31 @@ void GView::App::OpenBuffer(
 {
     if (gviewAppInstance)
         gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName, parent, creationProcess);
+}
+static std::string g_startupConnectionString;
+void GView::App::OpenLearningModeOnStart(std::string_view connectionString)
+{
+    g_startupConnectionString.assign(connectionString);
+}
+bool GView::App::TakeStartupLearningConnection(std::string& out)
+{
+    if (g_startupConnectionString.empty())
+        return false;
+    out = std::move(g_startupConnectionString);
+    g_startupConnectionString.clear();
+    return true;
+}
+bool GView::App::OpenDataObject(
+      std::unique_ptr<AppCUI::OS::DataObject> data,
+      const ConstString& name,
+      const ConstString& path,
+      OpenMethod method,
+      std::string_view typeName,
+      Reference<Window> parent,
+      const ConstString& creationProcess)
+{
+    CHECK(gviewAppInstance, false, "GView was not initialized !");
+    return gviewAppInstance->AddDataObjectWindow(std::move(data), name, path, method, typeName, parent, creationProcess);
 }
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)
@@ -248,6 +285,10 @@ bool CORE_EXPORT GView::App::ShowAddNoteDialog()
     std::u16string newNodeStr;
     if (!win.GetNote().ToString(newNodeStr))
         return false;
-    GetCurrentWindow()->AddNote(newNodeStr);
+    auto current = GetCurrentWindow();
+    current->AddNote(newNodeStr);
+    // telemetry records only that a note was added (never its content)
+    if (auto* fw = dynamic_cast<FileWindow*>(current.operator->()); fw != nullptr)
+        GView::Security::Learning::Hooks::OnSimpleEvent(fw->GetObject(), GView::Security::Learning::Hooks::SimpleEvent::NoteAdd);
     return true;
 }

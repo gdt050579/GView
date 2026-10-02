@@ -69,11 +69,65 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     this->defaultVerticalPanelsSize   = 8;
     this->defaultHorizontalPanelsSize = 40;
 
-    // set the name
-    this->SetText(obj->GetName());
+    // set the name (+ course watermark when Learning and Evaluation Mode is active)
+    RefreshTitle();
     this->SetTag(obj->GetContentType()->GetTypeName(), "");
 
     queryInterface.fileWindow = this;
+    // binds the window to the learning item being opened (if any)
+    GView::Security::Learning::Hooks::OnFileWindowCreated(this->obj.get());
+}
+FileWindow::~FileWindow()
+{
+    GView::Security::Learning::Hooks::OnFileWindowClosed(this->obj.get());
+}
+void FileWindow::RefreshTitle()
+{
+    const auto watermark = GView::Security::RestrictedMode::Internal::GetWatermark();
+    if (watermark.empty())
+    {
+        this->SetText(obj->GetName());
+        return;
+    }
+    LocalUnicodeStringBuilder<512> title;
+    title.Set(obj->GetName());
+    title.Add(u" - ");
+    title.Add(std::u8string_view(reinterpret_cast<const char8_t*>(watermark.data()), watermark.size()));
+    this->SetText(title);
+}
+std::string_view FileWindow::GetCurrentViewerKind()
+{
+    // closed set of names (telemetry never reports custom viewer captions)
+    auto v = GetCurrentView();
+    if (!v.IsValid())
+        return "Other";
+    ViewControl* p = v.operator->();
+    if (dynamic_cast<GView::View::DissasmViewer::Instance*>(p))
+        return "Dissasm";
+    if (dynamic_cast<GView::View::BufferViewer::Instance*>(p))
+        return "Buffer";
+    if (dynamic_cast<GView::View::LexicalViewer::Instance*>(p))
+        return "Lexical";
+    if (dynamic_cast<GView::View::TextViewer::Instance*>(p))
+        return "Text";
+    if (dynamic_cast<GView::View::ImageViewer::Instance*>(p))
+        return "Image";
+    if (dynamic_cast<GView::View::GridViewer::Instance*>(p))
+        return "Grid";
+    if (dynamic_cast<GView::View::ContainerViewer::Instance*>(p))
+        return "Container";
+    return "Other";
+}
+bool FileWindow::OnFrameUpdate()
+{
+    GView::Security::Learning::Hooks::OnFileWindowFrame(this->obj.get(), GetCurrentViewerKind(), this->HasFocus());
+    return false; // never request a repaint by itself (keeps idle detection meaningful)
+}
+void FileWindow::Paint(Renderer& renderer)
+{
+    Window::Paint(renderer);
+    // GView only repaints in response to user input: a repaint is the activity signal used for idle detection
+    GView::Security::Learning::Hooks::NoteUserActivity();
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -82,6 +136,7 @@ Reference<GView::Object> FileWindow::GetObject()
 
 void FileWindow::ShowGoToDialog()
 {
+    GView::Security::Learning::Hooks::OnSimpleEvent(this->obj.get(), GView::Security::Learning::Hooks::SimpleEvent::GotoDialog);
     if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
@@ -96,6 +151,8 @@ void FileWindow::ShowFindDialog()
 }
 void FileWindow::ShowCopyDialog()
 {
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Copy, "copying from the viewer"))
+        return;
     if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowCopyDialog() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Copy command !");
@@ -215,6 +272,10 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
         ShowCopyDialog();
         return true;
     }
+    if (keyCode == INSTANCE_LEARNING_SUBMIT_FLAG.Key && GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get())) {
+        GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
+        return true;
+    }
     return false;
 }
 bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
@@ -254,6 +315,9 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         case CMD_OPEN_ADD_NOTE:
             GView::App::ShowAddNoteDialog();
             return true;
+        case CMD_LEARNING_SUBMIT_FLAG:
+            GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
+            return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
@@ -287,6 +351,8 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(INSTANCE_CHOOSE_TYPE.Key, INSTANCE_CHOOSE_TYPE.Caption, CMD_CHOSE_NEW_TYPE);
     commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, INSTANCE_KEY_CONFIGURATOR.Caption, CMD_SHOW_KEY_CONFIGURATOR);
     commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE.Key, INSTANCE_OPEN_ADD_NOTE.Caption, CMD_OPEN_ADD_NOTE);
+    if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()))
+        commandBar.SetCommand(INSTANCE_LEARNING_SUBMIT_FLAG.Key, "SubmitFlag", CMD_LEARNING_SUBMIT_FLAG);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {
@@ -322,5 +388,6 @@ bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
     impl->RegisterKey(&INSTANCE_CHOOSE_TYPE);
     impl->RegisterKey(&INSTANCE_KEY_CONFIGURATOR);
     impl->RegisterKey(&INSTANCE_OPEN_ADD_NOTE);
+    impl->RegisterKey(&INSTANCE_LEARNING_SUBMIT_FLAG);
     return true;
 }

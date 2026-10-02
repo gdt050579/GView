@@ -345,13 +345,17 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Collapse);
             return true;
         case COMMAND_JUMP_BACK: {
-            if (const auto [canJump, location] = jumps_holder.JumpBack(); canJump)
+            if (const auto [canJump, location] = jumps_holder.JumpBack(); canJump) {
                 Cursor.restorePosition(location);
+                GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::JumpBack);
+            }
             return true;
         }
         case COMMAND_JUMP_FORWARD: {
-            if (const auto [canJump, location] = jumps_holder.JumpFront(); canJump)
+            if (const auto [canJump, location] = jumps_holder.JumpFront(); canJump) {
                 Cursor.restorePosition(location);
+                GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::JumpForward);
+            }
             return true;
         }
         case COMMAND_DISSAM_GOTO_ENTRYPOINT: {

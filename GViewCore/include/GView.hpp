@@ -964,22 +964,54 @@ namespace Security
             Screenshots = 1u << 6
         };
 
+        // Where task content may live on the student's machine (see plans/LEARNING_MODE_PROTOCOL_SPEC.md §0)
+        enum class StorageMode : uint8 { File, Memory };
+
+        struct TelemetrySettings {
+            bool enabled{ false }; // privacy-preserving default: nothing is collected unless the signed policy asks for it
+            uint32 flushIntervalSeconds{ 60 };
+            uint32 maxBatchEvents{ 500 };
+            uint32 idleThresholdSeconds{ 120 };
+            bool eventLevel{ true };
+        };
+
+        struct SubmissionSettings {
+            bool allowInTool{ true };
+            bool requireExplanation{ false };
+            uint32 explanationMaxChars{ 2000 };
+        };
+
         struct Policy {
+            uint32 schema{ 1 };
             std::string id;
+            std::string digest; // hex sha256 of the document with "digest":"" (schema 2)
             std::string purpose;
 
             // seconds since epoch
+            uint64_t issuedAt{ 0 };
             uint64_t startsAt{ 0 };
             uint64_t endsAt{ 0 };
+
+            std::string subject;   // hex(sha256(token))[0:16] (schema 2)
+            std::string serverUrl; // schema 2
 
             std::vector<Feature> disabledFeatures;
             std::vector<std::string> allowedPlugins;
 
+            StorageMode storageMode{ StorageMode::File };
             std::string watermark;
             bool bestEffortScreenProtect{ true };
+            bool requireScreenProtect{ false };
 
-            std::vector<uint8_t> contentKeyId;
+            TelemetrySettings telemetry;
+            SubmissionSettings submission;
+
+            std::vector<uint8_t> contentKeyId; // 8 bytes when present
+            std::string contentEncryption;     // "" or "aes-256-gcm-hkdf-v1"
         };
+
+        // Maximum clock skew (seconds) tolerated when validating startsAt/endsAt
+        constexpr uint64_t POLICY_CLOCK_SKEW_SECONDS = 120;
 
         CORE_EXPORT Utils::GStatus LoadPolicyFromFiles(
               const std::filesystem::path& jsonPath,
@@ -987,8 +1019,27 @@ namespace Security
               const std::vector<uint8_t>& publicKey,
               Policy& outPolicy) noexcept;
 
+        /**
+         * Verifies and parses a schema-2 policy delivered by a course server.
+         * Validation order (spec §2.2): Ed25519 signature over the raw bytes -> schema -> digest -> subject -> server URL ->
+         * time window (POLICY_CLOCK_SKEW_SECONDS). Nothing is parsed before the signature verifies. Any failure leaves
+         * outPolicy untouched and returns an error whose message starts with a stable code (e.g. "POLICY_EXPIRED: ...").
+         */
+        CORE_EXPORT Utils::GStatus VerifyAndParsePolicy(
+              BufferView rawJson,
+              BufferView signature,
+              BufferView publicKey,
+              std::string_view expectedSubjectHex,
+              std::string_view expectedServerUrl,
+              uint64_t nowSeconds,
+              Policy& outPolicy) noexcept;
+
         CORE_EXPORT bool IsActive() noexcept;
-        CORE_EXPORT const Policy* GetCurrentPolicy() noexcept;
+        // Returns a snapshot of the active policy (empty when restricted mode is inactive)
+        CORE_EXPORT std::optional<Policy> GetCurrentPolicy();
+        // Lock-free query usable from any thread and from plugins
+        CORE_EXPORT bool IsFeatureDisabled(Feature feature) noexcept;
+        CORE_EXPORT std::string_view FeatureToString(Feature feature) noexcept;
     } // namespace RestrictedMode
 
     namespace Crypto
@@ -1738,6 +1789,41 @@ namespace App
     std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
     uint32 CORE_EXPORT GetTypePluginsCount();
     bool CORE_EXPORT ShowAddNoteDialog();
+    // CLI "GView learn <connectionString>": opens the Learning and Evaluation Mode window at startup and connects
+    void CORE_EXPORT OpenLearningModeOnStart(std::string_view connectionString);
+
+    /**
+     * Policy gate for features restricted by Learning and Evaluation Mode.
+     * Returns true when the feature is blocked by the active course policy; in that case the user receives a
+     * rate-limited "Blocked by course policy" notification and a feature_blocked telemetry event is recorded.
+     * Returns false (allowed) when no policy is active. Must be called from the UI thread.
+     */
+    bool CORE_EXPORT IsBlockedByPolicy(Security::RestrictedMode::Feature feature, std::string_view what);
+
+    /**
+     * Side-effect free variant of IsBlockedByPolicy (no notification, no telemetry), e.g. to hide commands.
+     * Export and SaveAs are also restricted while a memory-only storage policy is active.
+     */
+    bool CORE_EXPORT IsFeatureRestricted(Security::RestrictedMode::Feature feature) noexcept;
+
+    /**
+     * True when the object holds Learning and Evaluation Mode content delivered in memory-only mode (or any object while
+     * a memory-only storage policy is active): nothing derived from it may be written to disk.
+     */
+    bool CORE_EXPORT IsLearningMemoryOnly(Reference<GView::Object> object) noexcept;
+
+    /**
+     * Gate for every operation that writes content derived from an object to disk (save as, export, drop, dump):
+     * blocked when the object is memory-only learning content or when the policy restricts Export.
+     * Notifies the user and records feature_blocked exactly once per attempt.
+     */
+    bool CORE_EXPORT IsExportBlockedFor(Reference<GView::Object> object, std::string_view what);
+
+    /**
+     * Writes text to the system clipboard unless the active policy disables Clipboard (or Copy, when
+     * isSelectionCopy is true). Use this instead of AppCUI::OS::Clipboard::SetText everywhere in GView.
+     */
+    bool CORE_EXPORT SetClipboardText(const ConstString& text, bool isSelectionCopy = true);
 
 }; // namespace App
 }; // namespace GView

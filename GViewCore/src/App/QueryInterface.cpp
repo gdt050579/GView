@@ -296,6 +296,15 @@ namespace GView::App::QueryInterfaceImpl
 
 std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess)
 {
+    // single choke point for every LLM prompt (chat tab, disassembly queries, plugins)
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::LLMHints, "asking the smart assistant (LLM hints)")) {
+        isSuccess = false;
+        return "Blocked by course policy: LLM hints are disabled.";
+    }
+    if (smartAssistants.empty()) {
+        isSuccess = false;
+        return "No smart assistant is available.";
+    }
     uint16 indexToUse = prefferedChatIndex;
     if (prefferedChatIndex == UINT16_MAX) {
         indexToUse = prefferedIndex;

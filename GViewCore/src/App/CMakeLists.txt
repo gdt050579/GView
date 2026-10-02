@@ -10,5 +10,6 @@ target_sources(GViewCore PRIVATE
     KeyConfiguratorWindow.cpp
     QueryInterface.cpp
     OptionsWindow.cpp
-    RestrictedModeWindow.cpp
+    LearningModeWindow.cpp
+    LearningSubmitDialog.cpp
 )
