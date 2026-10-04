@@ -135,6 +135,7 @@ class LearningSession
     Dependencies deps;
     BackgroundWorker worker;
     std::atomic<bool> frameUpdatesSeen{ false };
+    std::atomic<bool> cancelJobs{ false }; // aborts the running network job (session end / exit)
     uint64 generation{ 0 };
 
     SessionState state{ SessionState::Disconnected };
@@ -173,6 +174,7 @@ class LearningSession
     std::string lastFocusedItem;
 
     void RunJob(BackgroundWorker::Job job);
+    void StopJobs() noexcept;
     void SetState(SessionState s, std::string message);
     void ConfigureTelemetry();
     void RecordSessionEnd(std::string_view reason);
@@ -183,17 +185,25 @@ class LearningSession
     uint64 NowMs() const;
 
   public:
-    explicit LearningSession(Dependencies d = {});
+    // two constructors instead of `Dependencies d = {}`: a default argument that value-initializes a nested class with
+    // default member initializers is ill-formed inside the enclosing class (GCC/Clang reject it, MSVC accepts it)
+    LearningSession();
+    explicit LearningSession(Dependencies d);
     ~LearningSession();
     LearningSession(const LearningSession&)            = delete;
     LearningSession& operator=(const LearningSession&) = delete;
 
     // ---------------- pure network operations (any thread) ----------------
-    static ConnectResult PerformConnect(IHttpTransport& t, const ConnectionInfo& info, uint64 now);
-    static CatalogueResult PerformFetchCatalogue(IHttpTransport& t);
+    // cancel (optional): when it becomes true the transfer is aborted (see HttpRequest::cancel)
+    static ConnectResult PerformConnect(IHttpTransport& t, const ConnectionInfo& info, uint64 now, const std::atomic<bool>* cancel = nullptr);
+    static CatalogueResult PerformFetchCatalogue(IHttpTransport& t, const std::atomic<bool>* cancel = nullptr);
     static DownloadResult PerformDownload(
-          IHttpTransport& t, const CatalogueItem& item, const std::optional<RestrictedMode::Policy>& policy, const SecureString& token);
-    static SubmitOutcome PerformSubmit(IHttpTransport& t, const SubmitRequest& req);
+          IHttpTransport& t,
+          const CatalogueItem& item,
+          const std::optional<RestrictedMode::Policy>& policy,
+          const SecureString& token,
+          const std::atomic<bool>* cancel = nullptr);
+    static SubmitOutcome PerformSubmit(IHttpTransport& t, const SubmitRequest& req, const std::atomic<bool>* cancel = nullptr);
 
     // ---------------- UI thread state machine ----------------
     // Parses the connection string and starts the connect job. done() runs on the UI thread.

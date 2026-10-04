@@ -98,6 +98,16 @@ DeliveryMode ResolveDeliveryMode(const Policy* policy, const CatalogueItem& item
 
 Utils::GStatus ProcessDownloadResponse(HttpResponse& response, const CatalogueItem& item, const DeliveryContext& ctx, DeliveredContent& out)
 {
+    // the ciphertext / plaintext copy in the HTTP buffer is wiped on every return path (success and failure):
+    // the swapped-out storage is released (and zeroed by SecureAllocator) without any throwing call
+    struct BodyWiper {
+        SecureBytes& body;
+        ~BodyWiper()
+        {
+            SecureBytes().swap(body);
+        }
+    } wiper{ response.body };
+
     const bool v2 = ctx.policy != nullptr;
     DeliveryHeaders headers;
     auto st = ParseDeliveryHeaders(response.headers, v2, headers);
@@ -141,7 +151,7 @@ Utils::GStatus ProcessDownloadResponse(HttpResponse& response, const CatalogueIt
             return Utils::GStatus::Error("failed to allocate memory for the delivered content");
         std::memcpy(result.data.Data(), response.body.data(), response.body.size());
     }
-    // the ciphertext / plaintext copy in the HTTP buffer is no longer needed
+    // no longer needed: release it now rather than at return
     response.body.clear();
     response.body.shrink_to_fit();
 

@@ -102,7 +102,8 @@ only reach the configured server), the Windows certificate store is trusted (``C
 ``caPem`` is supplied, in which case it is the only trust anchor (``CURLOPT_CAINFO_BLOB``). Timeouts: connect 10 s,
 JSON requests 60 s, downloads 300 s, telemetry 15 s (2 s for the final flush at exit). Response caps: Connect 256 KiB
 (decoded policy 64 KiB), JSON 4 MiB, binaries 256 MiB, telemetry/submit replies 64 KiB. All network I/O runs on a
-worker thread; results are applied on the UI thread.
+worker thread; results are applied on the UI thread. Ending the session or exiting cancels the running request
+(checked about every second) instead of waiting for its timeout.
 
 4. Endpoints
 ------------
@@ -534,7 +535,8 @@ Limitations
 * Screen capture cannot be prevented on the Windows console frontend, Linux or macOS (`8. Screen protection`_).
 * Frontends without frame updates (ncurses on Linux/macOS) run network operations synchronously on the UI thread,
   bounded by the timeouts above. GView enables AppCUI's FPS mode so that the Windows console and SDL frontends
-  deliver ``OnFrameUpdate`` (~30 Hz, no repaint unless something changed).
+  deliver ``OnFrameUpdate`` (~30 Hz, no repaint unless something changed); on those frontends the automatic connect
+  when the Learning window opens is deferred to its first frame so that it runs on the worker.
 * Idle/active time is derived from repaints (approximation).
 * ``Retry-After`` is shown to the user but telemetry retries simply wait for the next flush interval.
 * Plugins outside GViewCore can still write files through code paths not listed in the matrix; the plugin

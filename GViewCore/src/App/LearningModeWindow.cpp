@@ -50,6 +50,27 @@ Learning::LearningSettings LoadLearningSettings()
     return s;
 }
 
+// Whether AppCUI will deliver OnFrameUpdate on this frontend (FPS mode is enabled by Instance::Init). On Windows both
+// frontends (console and SDL) honour FPS mode; on Linux/macOS only SDL does (ncurses never delivers frame updates).
+bool FrontendDeliversFrameUpdates()
+{
+#ifdef BUILD_FOR_WINDOWS
+    return true;
+#else
+    auto ini = AppCUI::Application::GetAppSettings();
+    if (!ini)
+        return false;
+    auto sect = ini->GetSection("AppCUI");
+    if (!sect.Exists())
+        return false;
+    auto frontend = sect.GetValue("Frontend").AsStringView();
+    if (!frontend.has_value() || frontend->size() != 3)
+        return false;
+    const auto lower = [](char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; };
+    return lower((*frontend)[0]) == 's' && lower((*frontend)[1]) == 'd' && lower((*frontend)[2]) == 'l';
+#endif
+}
+
 std::string LoadSavedConnectionString()
 {
     auto ini = AppCUI::Application::GetAppSettings();
@@ -205,6 +226,7 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
     uint64 lastStatusSecond{ 0 };
     bool needsRefresh{ true };
     bool treeFocused{ false };
+    bool startDeferred{ false };
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
 
     Learning::LearningSession& Session()
@@ -252,16 +274,23 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
 
     void OnStart() override
     {
-        if (autoConnect && !Session().HasSession())
-            StartConnect();
-        else if (Session().HasSession() && !Session().IsCatalogueLoaded())
-            StartRefresh();
+        // OnStart runs before the first frame: a job started here would not yet know that frame updates (and thus the
+        // background worker) are available and would block the UI inline. Defer it to the first frame when one will come.
+        if (FrontendDeliversFrameUpdates())
+            startDeferred = true;
+        else
+            RunStartActions();
     }
 
     bool OnFrameUpdate() override
     {
         auto& s = Session();
         s.NotifyFrameUpdatesAvailable();
+        if (startDeferred)
+        {
+            startDeferred = false;
+            RunStartActions();
+        }
         bool repaint = s.DrainCompletions() > 0;
         s.Tick();
         const uint64 now = Learning::NowUnix();
@@ -485,6 +514,14 @@ class LearningModeWindow : public Window, public Handlers::OnTreeViewItemPressed
         if (weekName)
             *weekName = week.name;
         return &list[r.index];
+    }
+
+    void RunStartActions()
+    {
+        if (autoConnect && !Session().HasSession())
+            StartConnect();
+        else if (Session().HasSession() && !Session().IsCatalogueLoaded())
+            StartRefresh();
     }
 
     void StartConnect()

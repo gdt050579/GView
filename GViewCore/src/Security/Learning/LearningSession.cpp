@@ -92,12 +92,13 @@ void SubmissionTracker::Consume(std::string_view problem)
 }
 
 // ============================================================================ static network operations
-ConnectResult LearningSession::PerformConnect(IHttpTransport& t, const ConnectionInfo& ci, uint64 now)
+ConnectResult LearningSession::PerformConnect(IHttpTransport& t, const ConnectionInfo& ci, uint64 now, const std::atomic<bool>* cancel)
 {
     ConnectResult r;
     HttpRequest req;
     req.path             = "/GView/Connect";
     req.maxResponseBytes = MAX_CONNECT_RESPONSE_BYTES;
+    req.cancel           = cancel;
     auto resp            = t.Post(req);
     if (resp.transportOk && (resp.status == 404 || resp.status == 405))
     {
@@ -151,12 +152,13 @@ ConnectResult LearningSession::PerformConnect(IHttpTransport& t, const Connectio
     return r;
 }
 
-CatalogueResult LearningSession::PerformFetchCatalogue(IHttpTransport& t)
+CatalogueResult LearningSession::PerformFetchCatalogue(IHttpTransport& t, const std::atomic<bool>* cancel)
 {
     CatalogueResult r;
     HttpRequest req;
     req.path             = "/GView/GetWeeks";
     req.maxResponseBytes = MAX_JSON_RESPONSE_BYTES;
+    req.cancel           = cancel;
     auto resp            = t.Post(req);
     bool legacy          = false;
     if (resp.transportOk && (resp.status == 404 || resp.status == 405))
@@ -177,7 +179,8 @@ CatalogueResult LearningSession::PerformFetchCatalogue(IHttpTransport& t)
     return r;
 }
 
-DownloadResult LearningSession::PerformDownload(IHttpTransport& t, const CatalogueItem& item, const std::optional<Policy>& pol, const SecureString& token)
+DownloadResult LearningSession::PerformDownload(
+      IHttpTransport& t, const CatalogueItem& item, const std::optional<Policy>& pol, const SecureString& token, const std::atomic<bool>* cancel)
 {
     DownloadResult r;
     r.item = item;
@@ -191,6 +194,7 @@ DownloadResult LearningSession::PerformDownload(IHttpTransport& t, const Catalog
     req.path                = (item.IsProblem() ? "/GView/GetProblems/" : "/GView/GetResource/") + item.name;
     req.maxResponseBytes    = MAX_BINARY_RESPONSE_BYTES;
     req.totalTimeoutSeconds = DOWNLOAD_TIMEOUT_SECONDS;
+    req.cancel              = cancel;
     auto resp               = t.Post(req);
     if (!resp.IsSuccess())
     {
@@ -207,13 +211,14 @@ DownloadResult LearningSession::PerformDownload(IHttpTransport& t, const Catalog
     return r;
 }
 
-SubmitOutcome LearningSession::PerformSubmit(IHttpTransport& t, const SubmitRequest& sr)
+SubmitOutcome LearningSession::PerformSubmit(IHttpTransport& t, const SubmitRequest& sr, const std::atomic<bool>* cancel)
 {
     SubmitOutcome o;
     HttpRequest req;
     req.path             = "/GView/SubmitFlag";
     req.body             = BuildSubmitBody(sr);
     req.maxResponseBytes = 64 * 1024;
+    req.cancel           = cancel;
     auto resp            = t.Post(req);
     if (!resp.transportOk)
     {
@@ -231,6 +236,10 @@ SubmitOutcome LearningSession::PerformSubmit(IHttpTransport& t, const SubmitRequ
 }
 
 // ============================================================================ lifecycle
+LearningSession::LearningSession() : LearningSession(Dependencies{})
+{
+}
+
 LearningSession::LearningSession(Dependencies d) : deps(std::move(d)), telemetry([this]() { return Now(); })
 {
     if (!deps.transportFactory)
@@ -274,7 +283,17 @@ void LearningSession::RunJob(BackgroundWorker::Job job)
 {
     pendingJobs++;
     BackgroundWorker::Job wrapped = [this, job = std::move(job)]() -> BackgroundWorker::Completion {
-        BackgroundWorker::Completion c = job();
+        // the completion must always be produced: it is the only place pendingJobs is released, so a throwing job
+        // (e.g. bad_alloc) must not leave the session permanently busy
+        BackgroundWorker::Completion c;
+        try
+        {
+            c = job();
+        }
+        catch (...)
+        {
+            c = nullptr;
+        }
         return [this, c = std::move(c)]() {
             if (pendingJobs > 0)
                 pendingJobs--;
@@ -297,6 +316,14 @@ void LearningSession::RunJob(BackgroundWorker::Job job)
         if (c)
             c();
     }
+}
+
+void LearningSession::StopJobs() noexcept
+{
+    // abort the running transfer (libcurl checks the flag ~ every second) instead of waiting for its timeout
+    cancelJobs.store(true, std::memory_order_release);
+    worker.Stop();
+    cancelJobs.store(false, std::memory_order_release);
 }
 
 void LearningSession::SetState(SessionState s, std::string message)
@@ -402,7 +429,7 @@ Utils::GStatus LearningSession::Connect(std::string_view connectionString, const
     auto sharedInfo = std::make_shared<ConnectionInfo>(std::move(ci));
     const uint64 now = Now();
     RunJob([this, gen, previous, sharedInfo, newTransport, now, done]() -> BackgroundWorker::Completion {
-        auto result = std::make_shared<ConnectResult>(PerformConnect(*newTransport, *sharedInfo, now));
+        auto result = std::make_shared<ConnectResult>(PerformConnect(*newTransport, *sharedInfo, now, &cancelJobs));
         return [this, gen, previous, sharedInfo, newTransport, result, done]() {
             if (gen != generation)
                 return; // superseded
@@ -518,7 +545,7 @@ Utils::GStatus LearningSession::RefreshCatalogue(StatusCallback done)
     auto t           = transport;
     const uint64 gen = generation;
     RunJob([this, t, gen, done]() -> BackgroundWorker::Completion {
-        auto result = std::make_shared<CatalogueResult>(PerformFetchCatalogue(*t));
+        auto result = std::make_shared<CatalogueResult>(PerformFetchCatalogue(*t, &cancelJobs));
         return [this, gen, result, done]() {
             if (gen != generation)
                 return;
@@ -547,7 +574,7 @@ Utils::GStatus LearningSession::Download(const CatalogueItem& item, DownloadCall
     auto token       = std::make_shared<SecureString>(info.token);
     const uint64 gen = generation;
     RunJob([this, t, pol, token, item, gen, done]() -> BackgroundWorker::Completion {
-        auto result = std::make_shared<DownloadResult>(PerformDownload(*t, item, pol, *token));
+        auto result = std::make_shared<DownloadResult>(PerformDownload(*t, item, pol, *token, &cancelJobs));
         return [this, gen, result, done]() {
             if (gen != generation)
                 return;
@@ -610,7 +637,7 @@ Utils::GStatus LearningSession::Submit(std::string_view problem, SecureString fl
     auto shared      = std::make_shared<SubmitRequest>(std::move(req));
     const uint64 gen = generation;
     RunJob([this, t, shared, gen, done]() -> BackgroundWorker::Completion {
-        auto outcome = std::make_shared<SubmitOutcome>(PerformSubmit(*t, *shared));
+        auto outcome = std::make_shared<SubmitOutcome>(PerformSubmit(*t, *shared, &cancelJobs));
         return [this, gen, shared, outcome, done]() {
             if (gen != generation)
                 return;
@@ -661,7 +688,7 @@ Utils::GStatus LearningSession::EndSession(std::string_view reason)
     generation++;
     RecordSessionEnd(reason);
     flusher.StopAndFlush(FINAL_FLUSH_TIMEOUT_S);
-    worker.Stop();
+    StopJobs();
     telemetry.Disable();
     if (restrictionsActive)
         deps.deactivate();
@@ -687,7 +714,7 @@ void LearningSession::Shutdown() noexcept
     try
     {
         generation++;
-        worker.Stop(); // running network jobs are bounded by their timeouts
+        StopJobs();
         RecordSessionEnd("exit");
         flusher.StopAndFlush(FINAL_FLUSH_TIMEOUT_S);
         telemetry.Disable();
