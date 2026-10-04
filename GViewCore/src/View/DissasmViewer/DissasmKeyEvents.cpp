@@ -215,7 +215,8 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
         MoveTo(-static_cast<int32>(Cursor.offset), 0, Key::Home, select);
         return true;
     case COMMAND_NAV_END:
-        MoveTo(this->Layout.textSize - 1 - Cursor.offset, select);
+        // move to the last character of the line (offset relative to the cursor; lines = 0)
+        MoveTo(static_cast<int32>(this->Layout.textSize) - 1 - static_cast<int32>(Cursor.offset), 0, Key::End, select);
         return true;
     case COMMAND_NAV_SCROLL_UP:
         if (this->Cursor.lineInView + this->Cursor.startViewLine > 0)
