@@ -1063,19 +1063,19 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     // columns
     switch (this->Layout.nrCols) {
     case 0:
-        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:FullScr", BUFFERVIEW_CMD_CHANGECOL);
+        commandBar.SetCommand(ChangeColumnsCount.Key, "Cols:FullScr", BUFFERVIEW_CMD_CHANGECOL);
         break;
     case 8:
-        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:8", BUFFERVIEW_CMD_CHANGECOL);
+        commandBar.SetCommand(ChangeColumnsCount.Key, "Cols:8", BUFFERVIEW_CMD_CHANGECOL);
         break;
     case 16:
-        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:16", BUFFERVIEW_CMD_CHANGECOL);
+        commandBar.SetCommand(ChangeColumnsCount.Key, "Cols:16", BUFFERVIEW_CMD_CHANGECOL);
         break;
     case 32:
-        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:32", BUFFERVIEW_CMD_CHANGECOL);
+        commandBar.SetCommand(ChangeColumnsCount.Key, "Cols:32", BUFFERVIEW_CMD_CHANGECOL);
         break;
     default:
-        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Change Cols", BUFFERVIEW_CMD_CHANGECOL);
+        commandBar.SetCommand(ChangeColumnsCount.Key, "Change Cols", BUFFERVIEW_CMD_CHANGECOL);
         break;
     }
 
@@ -1083,20 +1083,20 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     if (this->Layout.nrCols == 0) {
         LocalString<64> tmp;
         commandBar.SetCommand(
-              config.Keys.ChangeValueFormatOrCP, tmp.Format("CP:%s", CodePage::GetCodePageName(this->codePage).data()), BUFFERVIEW_CMD_CHANGECODEPAGE);
+              ChangeValueFormatOrCP.Key, tmp.Format("CP:%s", CodePage::GetCodePageName(this->codePage).data()), BUFFERVIEW_CMD_CHANGECODEPAGE);
     } else {
         switch (this->Layout.charFormatMode) {
         case CharacterFormatMode::Hex:
-            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(ChangeValueFormatOrCP.Key, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::Octal:
-            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Oct", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(ChangeValueFormatOrCP.Key, "Oct", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::SignedDecimal:
-            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Sign", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(ChangeValueFormatOrCP.Key, "Sign", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::UnsignedDecimal:
-            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Dec", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(ChangeValueFormatOrCP.Key, "Dec", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         }
     }
@@ -1104,44 +1104,145 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     // address mode
     if ((this->settings) && (this->settings->translationMethodsCount > 0)) {
         commandBar.SetCommand(
-              config.Keys.ChangeAddressMode, this->settings->translationMethods[this->currentAdrressMode].name, BUFFERVIEW_CMD_CHANGEADDRESSMODE);
+              ChangeAddressMode.Key, this->settings->translationMethods[this->currentAdrressMode].name, BUFFERVIEW_CMD_CHANGEADDRESSMODE);
     }
 
     // Entry point
-    commandBar.SetCommand(config.Keys.GoToEntryPoint, "EntryPoint", BUFFERVIEW_CMD_GOTOEP);
+    commandBar.SetCommand(GoToEntryPoint.Key, "EntryPoint", BUFFERVIEW_CMD_GOTOEP);
 
     // Selection
     if (this->selection.IsSingleSelectionEnabled())
-        commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Single", BUFFERVIEW_CMD_CHANGESELECTION);
+        commandBar.SetCommand(ChangeSelectionType.Key, "Select:Single", BUFFERVIEW_CMD_CHANGESELECTION);
     else
-        commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Multiple", BUFFERVIEW_CMD_CHANGESELECTION);
+        commandBar.SetCommand(ChangeSelectionType.Key, "Select:Multiple", BUFFERVIEW_CMD_CHANGESELECTION);
 
     // Strings
     if (this->StringInfo.showAscii) {
         if (this->StringInfo.showUnicode)
-            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:ON", BUFFERVIEW_CMD_HIDESTRINGS);
+            commandBar.SetCommand(ShowHideStrings.Key, "Strings:ON", BUFFERVIEW_CMD_HIDESTRINGS);
         else
-            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Ascii", BUFFERVIEW_CMD_HIDESTRINGS);
+            commandBar.SetCommand(ShowHideStrings.Key, "Strings:Ascii", BUFFERVIEW_CMD_HIDESTRINGS);
     } else {
         if (this->StringInfo.showUnicode)
-            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Unicode", BUFFERVIEW_CMD_HIDESTRINGS);
+            commandBar.SetCommand(ShowHideStrings.Key, "Strings:Unicode", BUFFERVIEW_CMD_HIDESTRINGS);
         else
-            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:OFF", BUFFERVIEW_CMD_HIDESTRINGS);
+            commandBar.SetCommand(ShowHideStrings.Key, "Strings:OFF", BUFFERVIEW_CMD_HIDESTRINGS);
     }
 
     if (findDialog.HasResults()) {
-        commandBar.SetCommand(config.Keys.FindNext, "FindNext", BUFFERVIEW_CMD_FINDNEXT);
-        commandBar.SetCommand(config.Keys.FindPrevious, "FindPrevious", BUFFERVIEW_CMD_FINDPREVIOUS);
+        commandBar.SetCommand(FindNext.Key, "FindNext", BUFFERVIEW_CMD_FINDNEXT);
+        commandBar.SetCommand(FindPrevious.Key, "FindPrevious", BUFFERVIEW_CMD_FINDPREVIOUS);
     }
 
-    commandBar.SetCommand(config.Keys.DissasmDialog, "Dissasm", BUFFERVIEW_CMD_DISSASM_DIALOG);
+    commandBar.SetCommand(DissasmDialogCmd.Key, "Dissasm", BUFFERVIEW_CMD_DISSASM_DIALOG);
 
     if (this->showColorNotFocused) {
-        commandBar.SetCommand(config.Keys.ShowColorNotFocused, "ShowColorWhenNotFocused:ON", BUFFERVIEW_CMD_SHOW_COLOR);
+        commandBar.SetCommand(ShowColorNotFocused.Key, "ShowColorWhenNotFocused:ON", BUFFERVIEW_CMD_SHOW_COLOR);
     } else {
-        commandBar.SetCommand(config.Keys.ShowColorNotFocused, "ShowColorWhenNotFocused:OFF", BUFFERVIEW_CMD_SHOW_COLOR);
+        commandBar.SetCommand(ShowColorNotFocused.Key, "ShowColorWhenNotFocused:OFF", BUFFERVIEW_CMD_SHOW_COLOR);
     }
 
+    return false;
+}
+bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
+{
+    switch (commandId) {
+    case BUFFERVIEW_NAV_DOWN:
+        MoveTo(this->cursor.GetCurrentPosition() + this->Layout.charactersPerLine, select);
+        return true;
+    case BUFFERVIEW_NAV_UP:
+        if (this->cursor.GetCurrentPosition() > this->Layout.charactersPerLine)
+            MoveTo(this->cursor.GetCurrentPosition() - this->Layout.charactersPerLine, select);
+        else
+            MoveTo(0, select);
+        return true;
+    case BUFFERVIEW_NAV_LEFT:
+        if (this->cursor.GetCurrentPosition() > 0)
+            MoveTo(this->cursor.GetCurrentPosition() - 1, select);
+        return true;
+    case BUFFERVIEW_NAV_RIGHT:
+        MoveTo(this->cursor.GetCurrentPosition() + 1, select);
+        return true;
+    case BUFFERVIEW_NAV_PAGE_DOWN:
+        MoveTo(this->cursor.GetCurrentPosition() + (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows, select);
+        return true;
+    case BUFFERVIEW_NAV_PAGE_UP:
+        if (this->cursor.GetCurrentPosition() > (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows)
+            MoveTo(this->cursor.GetCurrentPosition() - ((uint64) this->Layout.charactersPerLine * this->Layout.visibleRows), select);
+        else
+            MoveTo(0, select);
+        return true;
+    case BUFFERVIEW_NAV_LINE_START:
+        MoveTo(this->cursor.GetCurrentPosition() - (this->cursor.GetCurrentPosition() - this->cursor.GetStartView()) % this->Layout.charactersPerLine, select);
+        return true;
+    case BUFFERVIEW_NAV_LINE_END:
+        MoveTo(
+              this->cursor.GetCurrentPosition() - (this->cursor.GetCurrentPosition() - this->cursor.GetStartView()) % this->Layout.charactersPerLine +
+                    this->Layout.charactersPerLine - 1,
+              select);
+        return true;
+
+    case BUFFERVIEW_NAV_SCROLL_UP:
+        if (this->cursor.GetStartView() > this->Layout.charactersPerLine)
+            MoveScrollTo(this->cursor.GetStartView() - this->Layout.charactersPerLine);
+        else
+            MoveScrollTo(0);
+        return true;
+    case BUFFERVIEW_NAV_SCROLL_DOWN:
+        MoveScrollTo(this->cursor.GetStartView() + this->Layout.charactersPerLine);
+        return true;
+    case BUFFERVIEW_NAV_SCROLL_LEFT:
+        if (this->cursor.GetStartView() >= 1)
+            MoveScrollTo(this->cursor.GetStartView() - 1);
+        return true;
+    case BUFFERVIEW_NAV_SCROLL_RIGHT:
+        MoveScrollTo(this->cursor.GetStartView() + 1);
+        return true;
+
+    case BUFFERVIEW_NAV_FILE_START:
+        MoveTo(0, select);
+        return true;
+    case BUFFERVIEW_NAV_FILE_END:
+        MoveTo(this->obj->GetData().GetSize(), select);
+        return true;
+    case BUFFERVIEW_NAV_PREVIOUS_ZONE:
+        MoveToZone(true, select);
+        return true;
+    case BUFFERVIEW_NAV_NEXT_ZONE:
+        MoveToZone(false, select);
+        return true;
+
+    case BUFFERVIEW_NAV_PREVIOUS_BLOCK:
+        MoveTillNextBlock(select, -1);
+        return true;
+    case BUFFERVIEW_NAV_NEXT_BLOCK:
+        MoveTillNextBlock(select, 1);
+        return true;
+
+    case BUFFERVIEW_NAV_SELECTION_1:
+        MoveToSelection(0);
+        return true;
+    case BUFFERVIEW_NAV_SELECTION_2:
+        MoveToSelection(1);
+        return true;
+    case BUFFERVIEW_NAV_SELECTION_3:
+        MoveToSelection(2);
+        return true;
+    case BUFFERVIEW_NAV_SELECTION_4:
+        MoveToSelection(3);
+        return true;
+
+    case BUFFERVIEW_NAV_TILL_END_OF_BLOCK:
+        MoveTillEndBlock(select);
+        return true;
+    case BUFFERVIEW_NAV_SKIP_CHARACTER:
+        SkipCurentCaracter(select);
+        return true;
+
+    case BUFFERVIEW_NAV_OPEN_SELECTION:
+        OpenCurrentSelection();
+        return true;
+    }
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
@@ -1175,106 +1276,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     //    }
     //}
 
-    switch (keyCode) {
-    case Key::Down:
-        MoveTo(this->cursor.GetCurrentPosition() + this->Layout.charactersPerLine, select);
+    const auto action = Map.Resolve(select ? (keyCode | Key::Shift) : keyCode);
+    if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
         return true;
-    case Key::Up:
-        if (this->cursor.GetCurrentPosition() > this->Layout.charactersPerLine)
-            MoveTo(this->cursor.GetCurrentPosition() - this->Layout.charactersPerLine, select);
-        else
-            MoveTo(0, select);
-        return true;
-    case Key::Left:
-        if (this->cursor.GetCurrentPosition() > 0)
-            MoveTo(this->cursor.GetCurrentPosition() - 1, select);
-        return true;
-    case Key::Right:
-        MoveTo(this->cursor.GetCurrentPosition() + 1, select);
-        return true;
-    case Key::PageDown:
-        MoveTo(this->cursor.GetCurrentPosition() + (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows, select);
-        return true;
-    case Key::PageUp:
-        if (this->cursor.GetCurrentPosition() > (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows)
-            MoveTo(this->cursor.GetCurrentPosition() - ((uint64) this->Layout.charactersPerLine * this->Layout.visibleRows), select);
-        else
-            MoveTo(0, select);
-        return true;
-    case Key::Home:
-        MoveTo(this->cursor.GetCurrentPosition() - (this->cursor.GetCurrentPosition() - this->cursor.GetStartView()) % this->Layout.charactersPerLine, select);
-        return true;
-    case Key::End:
-        MoveTo(
-              this->cursor.GetCurrentPosition() - (this->cursor.GetCurrentPosition() - this->cursor.GetStartView()) % this->Layout.charactersPerLine +
-                    this->Layout.charactersPerLine - 1,
-              select);
-        return true;
-
-    case Key::Ctrl | Key::Up:
-        if (this->cursor.GetStartView() > this->Layout.charactersPerLine)
-            MoveScrollTo(this->cursor.GetStartView() - this->Layout.charactersPerLine);
-        else
-            MoveScrollTo(0);
-        return true;
-    case Key::Ctrl | Key::Down:
-        MoveScrollTo(this->cursor.GetStartView() + this->Layout.charactersPerLine);
-        return true;
-    case Key::Ctrl | Key::Left:
-        if (this->cursor.GetStartView() >= 1)
-            MoveScrollTo(this->cursor.GetStartView() - 1);
-        return true;
-    case Key::Ctrl | Key::Right:
-        MoveScrollTo(this->cursor.GetStartView() + 1);
-        return true;
-
-    case Key::Ctrl | Key::Home:
-        MoveTo(0, select);
-        return true;
-    case Key::Ctrl | Key::End:
-        MoveTo(this->obj->GetData().GetSize(), select);
-        return true;
-    case Key::Ctrl | Key::PageUp:
-        MoveToZone(true, select);
-        return true;
-    case Key::Ctrl | Key::PageDown:
-        MoveToZone(false, select);
-        return true;
-
-    case Key::Ctrl | Key::Alt | Key::PageUp:
-        MoveTillNextBlock(select, -1);
-        return true;
-    case Key::Ctrl | Key::Alt | Key::PageDown:
-        MoveTillNextBlock(select, 1);
-        return true;
-
-    case Key::Alt | Key::N1:
-        MoveToSelection(0);
-        return true;
-    case Key::Alt | Key::N2:
-        MoveToSelection(1);
-        return true;
-    case Key::Alt | Key::N3:
-        MoveToSelection(2);
-        return true;
-    case Key::Alt | Key::N4:
-        MoveToSelection(3);
-        return true;
-    /*case Key::Alt | Key::N0:// removed due to key duplication
-        MoveToSelection(4);
-        return true;*/
-
-    case Key::E:
-        MoveTillEndBlock(select);
-        return true;
-    case Key::S:
-        SkipCurentCaracter(select);
-        return true;
-
-    case Key::Enter:
-        OpenCurrentSelection();
-        return true;
-    };
 
     if ((charCode >= '0') && (charCode <= '9')) {
         auto addr = this->settings->bookmarks[charCode - '0'];
@@ -1471,16 +1475,7 @@ void Instance::OnLoseFocus()
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    interface->RegisterKey(&ChangeColumnsCount);
-    interface->RegisterKey(&ChangeValueFormatOrCP);
-    interface->RegisterKey(&ChangeAddressMode);
-    interface->RegisterKey(&GoToEntryPoint);
-    interface->RegisterKey(&ChangeSelectionType);
-    interface->RegisterKey(&ShowHideStrings);
-    interface->RegisterKey(&FindNext);
-    interface->RegisterKey(&FindPrevious);
-    interface->RegisterKey(&DissasmDialogCmd);
-    interface->RegisterKey(&ShowColorNotFocused);
+    Commands::RegisterKeys(interface);
     return true;
 }
 
@@ -1880,13 +1875,13 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, I
 {
     switch (direction) {
     case MouseWheel::Up:
-        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+        return ExecuteNavigationCommand(BUFFERVIEW_NAV_SCROLL_UP, false);
     case MouseWheel::Down:
-        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+        return ExecuteNavigationCommand(BUFFERVIEW_NAV_SCROLL_DOWN, false);
     case MouseWheel::Left:
-        return OnKeyEvent(Key::PageUp, false);
+        return ExecuteNavigationCommand(BUFFERVIEW_NAV_PAGE_UP, false);
     case MouseWheel::Right:
-        return OnKeyEvent(Key::PageDown, false);
+        return ExecuteNavigationCommand(BUFFERVIEW_NAV_PAGE_DOWN, false);
     }
 
     return false;

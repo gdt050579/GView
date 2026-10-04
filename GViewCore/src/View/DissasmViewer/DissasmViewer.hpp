@@ -649,6 +649,7 @@ namespace View
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
             virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
+            bool ExecuteNavigationCommand(uint32 commandId, bool select);
 
             // Mouse events
             virtual void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override;

@@ -217,3 +217,19 @@ const vector<Property> Instance::GetPropertiesList()
     return {};
 }
 #undef BT
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    RegisterKeys(interface);
+    return true;
+}
+void GView::View::ContainerViewer::RegisterKeys(KeyboardControlsInterface* interface)
+{
+    interface->BeginCategory("Navigation & editing");
+    interface->RegisterKeyText("Up / Down / PageUp / PageDown / Home / End", "Move", "Move in the tree");
+    interface->RegisterKeyText("Space / Enter", "ToggleOrOpen", "Expand / collapse the current item (or open it if it has no children)");
+    interface->RegisterKeyText("Shift+Space / Shift+Enter", "Open", "Open the current item");
+    interface->RegisterKeyText("Ctrl+Space", "ToggleRecursive", "Expand / collapse the current item and all its children");
+    interface->RegisterKeyText("<type text>", "Search", "Search in the tree (Escape clears the search)");
+    interface->RegisterKeyText("Ctrl+Enter / Ctrl+Shift+Enter", "SearchNextPrevious", "Go to the next / previous search match");
+    interface->RegisterKeyText("Ctrl+Insert", "CopyRow", "Copy the current row");
+}

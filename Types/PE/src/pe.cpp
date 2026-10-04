@@ -247,7 +247,7 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     for (const auto& command : PE::PE_COMMANDS) {
 
         buffer.SetFormat("Command.%s", command.Caption);
-        sect[buffer.GetText()] = command.Key;
+        sect[buffer.GetText()] = command.DefaultKey;
     }
 }
 }

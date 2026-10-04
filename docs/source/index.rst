@@ -13,6 +13,7 @@ and a plugin-based architecture for file formats and generic operations.
 
    description
    usage
+   keyboard_shortcuts
    education
    architecture
    configuration

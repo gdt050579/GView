@@ -65,8 +65,8 @@ void Panels::Resources::Update()
 bool Panels::Resources::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PE_RES_GOTO);
-    commandBar.SetCommand(Key::F2, "Save", PE_RES_SAVE);
-    commandBar.SetCommand(Key::F9, "Select", PE_RES_SELECT);
+    commandBar.SetCommand(PANEL_SAVE_RESOURCE.Key, "Save", PE_RES_SAVE);
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", PE_RES_SELECT);
     return true;
 }
 void Panels::Resources::SaveCurrentResource()

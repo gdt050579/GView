@@ -11,6 +11,8 @@ using namespace GView::View;
 
 namespace GView::Type::JT
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
 class JTFile : public TypeInterface
 {
   public:
@@ -34,6 +36,7 @@ class JTFile : public TypeInterface
     }
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
         return true;
     }
 

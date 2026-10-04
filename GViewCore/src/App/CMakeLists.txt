@@ -8,7 +8,11 @@ target_sources(GViewCore PRIVATE
     TutorialWindow.cpp
     AboutWindow.cpp
     KeyConfiguratorWindow.cpp
+    KeyBindings.cpp
+    ViewerKeys.cpp
     QueryInterface.cpp
     OptionsWindow.cpp
     RestrictedModeWindow.cpp
 )
+
+add_testing_sources(GViewCore tests_keybindings.cpp)

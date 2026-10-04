@@ -4,6 +4,13 @@
 
 namespace GView::Type::SQLite
 {
+static constexpr uint32 SQLITE_COMMAND_SHOW_TABLES_DIALOG = 0;
+// plugin commands (the caption is the name used in the "Command.<name>" setting and in RunCommand)
+inline KeyboardControl SQLITE_COMMANDS[] = {
+    { Input::Key::Shift | Input::Key::F10, "ShowTablesDialog", "Show the tables / SQL query dialog", SQLITE_COMMAND_SHOW_TABLES_DIALOG },
+};
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline KeyboardControl PANEL_PROCESS_DATA = { Input::Key::Ctrl | Input::Key::A, "PanelProcessData", "Open the data processing dialog (Information panel)", 0 };
 constexpr uint8_t SQLITE3_MAGIC[]      = "SQLite format 3";
 constexpr char BUFFER_VIEW_SEPARATOR[] = ",";
 constexpr char separator               = ',';
@@ -27,6 +34,10 @@ class SQLiteFile : public TypeInterface
 
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        for (auto& entry : SQLITE_COMMANDS)
+            interface->RegisterKey(&entry);
+        interface->BeginCategory("Panels");
+        interface->RegisterKey(&PANEL_PROCESS_DATA);
         return true;
     }
 

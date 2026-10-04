@@ -757,6 +757,10 @@ bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
 {
     for (auto& entry : PE_COMMANDS)
         interface->RegisterKey(&entry);
+    PANEL_KEYS.Register(interface);
+    interface->RegisterKey(&PANEL_EDIT);
+    interface->BeginCategory("Panel: Resources");
+    interface->RegisterKey(&PANEL_SAVE_RESOURCE);
     return true;
 }
 

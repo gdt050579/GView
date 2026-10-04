@@ -75,23 +75,24 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     if (this->settings->imgList.size() > 1)
     {
         //prev/next image
-        commandBar.SetCommand(NextImage.Key, NextImage.Caption, NextImage.CommandId);
         commandBar.SetCommand(PrevImage.Key, PrevImage.Caption, PrevImage.CommandId);
+        commandBar.SetCommand(NextImage.Key, NextImage.Caption, NextImage.CommandId);
     }
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
-    switch (keyCode)
+    if (PrevImage.Matches(keyCode))
     {
-    case Key::PageUp:
         if (this->currentImageIndex > 0)
         {
             this->currentImageIndex--;
             LoadImage();
         }
         return true;
-    case Key::PageDown:
+    }
+    if (NextImage.Matches(keyCode))
+    {
         if ((size_t) this->currentImageIndex + 1 < this->settings->imgList.size())
         {
             this->currentImageIndex++;
@@ -231,12 +232,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = Size{ img.GetWidth(), img.GetHeight() };
         return true;
     }
-    for (const auto& key : ImageViewCommands) {
-        if (key->CommandId == id) {
-            value = key->Key;
-            return true;
-        }
-    }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
@@ -256,12 +251,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->currentImageIndex = std::get<uint32>(value);
         LoadImage();
         return true;
-    }
-    for (const auto& key : ImageViewCommands) {
-        if (key->CommandId == id) {
-            key->Key = std::get<Key>(value);
-            return true;
-        }
     }
     error.SetFormat("Unknown internal ID: %u", id);
     return false;
@@ -286,19 +275,12 @@ const vector<Property> Instance::GetPropertiesList()
                                     { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, false, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
                                     { BT(PropertyID::CurrentImageIndex), "Current Image", "Index", PropertyType::UInt32 },
                                     { BT(PropertyID::CurrentImageSize), "Current Image", "Size", PropertyType::Size } };
-    properties.reserve(properties.size() + ImageViewCommands.size());
-    for (const auto& key : ImageViewCommands) {
-        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
-    }
-
     return properties;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (const auto& cmd : ImageViewCommands) {
-        interface->RegisterKey(cmd);
-    }
+    Commands::RegisterKeys(interface);
     return true;
 }
 #undef BT

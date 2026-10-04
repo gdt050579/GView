@@ -6,6 +6,8 @@
 
 namespace GView::Type::Prefetch
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
 
 template <typename T>
 static const std::string BinaryToHexString(const T number, const size_t length)
@@ -113,6 +115,7 @@ class PrefetchFile : public TypeInterface
     }
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
         return true;
     }
 

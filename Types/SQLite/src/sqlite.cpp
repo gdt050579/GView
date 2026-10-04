@@ -49,7 +49,12 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
     sect["Description"]              = "SQLite database format";
     sect["Pattern"]                  = "magic:53 51 4C 69 74 65 20 66 6F 72 6D 61 74 20 33 00"; // UTF-8 string "SQLite format 3" including the null terminator
-    sect["Command.ShowTablesDialog"] = AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10;
+    LocalString<128> buffer;
+    for (const auto& command : SQLite::SQLITE_COMMANDS)
+    {
+        buffer.SetFormat("Command.%s", command.Caption);
+        sect[buffer.GetText()] = command.DefaultKey;
+    }
     sect["Priority"]                 = 1;
 }
 }
