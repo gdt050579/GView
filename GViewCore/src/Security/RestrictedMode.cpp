@@ -43,6 +43,21 @@ namespace
     std::mutex g_policyMutex;
     std::atomic<bool> g_isActive{ false };
 
+    // Overwrites the given memory with zeros (volatile so the stores are not optimized away)
+    void SecureZero(void* data, size_t size) noexcept
+    {
+        volatile auto* p = static_cast<volatile unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i)
+        {
+            p[i] = 0;
+        }
+    }
+
+    void SecureErase(std::string& value) noexcept
+    {
+        SecureZero(value.data(), value.size());
+    }
+
     // Protected memory block for the policy
     struct ProtectedPolicyStorage {
         Policy policy;
@@ -60,12 +75,18 @@ namespace
             {
                 Unlock();
             }
-            // Secure erase
-            volatile char* p = reinterpret_cast<volatile char*>(&policy);
-            for (size_t i = 0; i < sizeof(Policy); ++i)
+            // Secure erase: wipe the data owned by each member, then reset the members.
+            // The raw bytes of `policy` must not be zeroed directly: that corrupts the internal
+            // pointers of its std::string/std::vector members (crashes on exit with libstdc++).
+            SecureErase(policy.id);
+            SecureErase(policy.purpose);
+            SecureErase(policy.watermark);
+            for (auto& plugin : policy.allowedPlugins)
             {
-                p[i] = 0;
+                SecureErase(plugin);
             }
+            SecureZero(policy.disabledFeatures.data(), policy.disabledFeatures.size() * sizeof(Feature));
+            SecureZero(policy.contentKeyId.data(), policy.contentKeyId.size());
             policy = Policy{};
         }
 
