@@ -102,7 +102,10 @@ bool GView::App::ResetConfiguration()
     // generic GView settings
     ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
 
-    // key bindings: only the user changes are stored ([Keys.*] sections, written by the "Keyboard shortcuts" window)
+    // key bindings: only the user changes are stored ([Keys.*] sections, written by the "Keyboard shortcuts" window).
+    // A reset restores the built-in keys -> saving an empty registry removes every [Keys.*] section and the legacy
+    // Key.* values of [GView] / [View.*] (the keyboard profile is reset with the [AppCUI] section above).
+    Keys::Registry{}.Save(ini);
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
