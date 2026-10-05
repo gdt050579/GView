@@ -27,13 +27,6 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
         value = config.CacheSameLocationAsAnalyzedFile;
         return true;
     }
-    for (const auto& key : Config::AllKeyboardCommands) {
-        const auto& entKey = key.get();
-        if (entKey.CommandId == propertyID) {
-            value = entKey.Key;
-            return true;
-        }
-    }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, String&)
@@ -51,13 +44,6 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
     case CacheSameLocationAsAnalyzedFileConfig:
         config.CacheSameLocationAsAnalyzedFile = std::get<bool>(value);
         return true;
-    }
-    for (auto& key : Config::AllKeyboardCommands) {
-        auto& entKey = key.get();
-        if (entKey.CommandId == propertyID) {
-            entKey.Key = std::get<Input::Key>(value);
-            return true;
-        }
     }
     return false;
 }
@@ -79,11 +65,6 @@ const vector<Property> Instance::GetPropertiesList()
         { CacheSameLocationAsAnalyzedFileConfig, "Config", "CacheSameLocationAsAnalyzedFile", PropertyType::Boolean, true },
     };
 
-    properties.reserve(properties.size() + Config::AllKeyboardCommands.size());
-
-    for (const auto& key : Config::AllKeyboardCommands) {
-        const auto& entKey = key.get();
-        properties.emplace_back(entKey.CommandId, "Key", entKey.Caption, PropertyType::Key, true);
-    }
+    // keys are configured from the "Keyboard shortcuts" window
     return properties;
 }

@@ -100,13 +100,13 @@ void TOCEntries::Update()
 bool TOCEntries::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", ENTRY_GOTO);
-    commandBar.SetCommand(Key::F9, "Select", ENTRY_SELECT);
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", ENTRY_SELECT);
     if (base == 10) {
-        commandBar.SetCommand(Key::F2, "Dec", ENTRY_CHANGEBASE);
+        commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, "Dec", ENTRY_CHANGEBASE);
     } else {
-        commandBar.SetCommand(Key::F2, "Hex", ENTRY_CHANGEBASE);
+        commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, "Hex", ENTRY_CHANGEBASE);
     }
-    commandBar.SetCommand(Key::Ctrl | Key::O, "Open", ENTRY_OPEN);
+    commandBar.SetCommand(PANEL_OPEN_ENTRY.Key, "Open", ENTRY_OPEN);
 
     return true;
 }

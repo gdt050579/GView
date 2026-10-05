@@ -6,6 +6,11 @@
 
 namespace GView::Type::PCAP
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
+inline KeyboardControl PANEL_OPEN_PACKET = {
+    Input::Key::Ctrl | Input::Key::Enter, "PanelOpenPacket", "Open the current packet (Packets panel)", 0
+};
 class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
@@ -37,6 +42,8 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
+        interface->RegisterKey(&PANEL_OPEN_PACKET);
         return true;
     }
 

@@ -105,8 +105,8 @@ void Panels::Directories::Update()
 bool Panels::Directories::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PE_DIRS_GOTO);
-    commandBar.SetCommand(Key::F3, "Edit", PE_DIRS_EDIT);
-    commandBar.SetCommand(Key::F9, "Select", PE_DIRS_SELECT);
+    commandBar.SetCommand(PANEL_EDIT.Key, "Edit", PE_DIRS_EDIT);
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", PE_DIRS_SELECT);
     return true;
 }
 

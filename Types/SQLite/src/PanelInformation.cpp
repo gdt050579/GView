@@ -73,6 +73,6 @@ void Panels::Information::Update()
 
 bool Panels::Information::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(Key::Ctrl | Key::A, "ProcessData", SQL_SHOW_DIALOG);
+    commandBar.SetCommand(PANEL_PROCESS_DATA.Key, "ProcessData", SQL_SHOW_DIALOG);
     return true;
 }

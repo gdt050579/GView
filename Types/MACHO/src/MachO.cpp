@@ -259,7 +259,7 @@ extern "C"
         LocalString<128> buffer;
         for (const auto& command : MachO::Commands::MACHO_COMMANDS) {
             buffer.SetFormat("Command.%s", command.Caption);
-            sect[buffer.GetText()] = command.Key;
+            sect[buffer.GetText()] = command.DefaultKey;
         }
     }
 }

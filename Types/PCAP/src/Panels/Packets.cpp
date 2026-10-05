@@ -730,9 +730,9 @@ void Panels::Packets::Update()
 bool Panels::Packets::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(ObjectAction::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(ObjectAction::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(ObjectAction::ChangeBase));
-    commandBar.SetCommand(Key::Ctrl | Key::Enter, "Open Packet", static_cast<int32_t>(ObjectAction::OpenPacket));
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", static_cast<int32_t>(ObjectAction::Select));
+    commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(ObjectAction::ChangeBase));
+    commandBar.SetCommand(PANEL_OPEN_PACKET.Key, "Open Packet", static_cast<int32_t>(ObjectAction::OpenPacket));
 
     return true;
 }

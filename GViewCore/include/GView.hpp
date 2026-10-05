@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.391.0"
+#define GVIEW_VERSION "0.393.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 #include <filesystem>
@@ -37,15 +37,39 @@ namespace Utils
     class JsonBuilderInterface;
 }
 
-struct CORE_EXPORT KeyboardControl {
-    Input::Key Key;
-    const char* Caption;
-    const char* Explanation;
-    uint32 CommandId;
-};
+// A named, rebindable shortcut: { key, "Caption" (stable id, used in the settings), "Explanation", commandId [, flags] }.
+// Declare them as `inline` (or `inline static` members) so every translation unit shares the same object: the key
+// bindings registry writes the user's configured key into `Key` (`DefaultKey` keeps the built-in one).
+// Always compare with `binding.Matches(keyCode)` (an unassigned binding has Key::None and never matches).
+using KeyboardControl      = AppCUI::Input::KeyBinding;
+using KeyboardControlFlags = AppCUI::Input::KeyBindingFlags;
+
 struct CORE_EXPORT KeyboardControlsInterface {
+    // registers a rebindable key (the object must outlive the call; the registry may update `key->Key`)
     virtual bool RegisterKey(KeyboardControl* key) = 0;
-    virtual ~KeyboardControlsInterface()           = default;
+    // starts a group of keys in the "Keyboard shortcuts" window (e.g. "Panels", "Navigation & editing")
+    virtual bool BeginCategory(std::string_view name) = 0;
+    // registers a display-only entry for keys that can not be expressed as a single key (e.g. "0-9", "[ / ]")
+    virtual bool RegisterKeyText(std::string_view keys, std::string_view caption, std::string_view explanation) = 0;
+    virtual ~KeyboardControlsInterface() = default;
+};
+
+// Standard keys of the list panels (Sections, Symbols, Objects, ...) of a type plugin.
+// Every plugin declares its own instance in its own namespace (`inline GView::StandardPanelKeys PANEL_KEYS;`), uses
+// `PANEL_KEYS.Select.Key` / `PANEL_KEYS.ChangeBase.Key` in the panels command bar and registers it from UpdateKeys.
+struct StandardPanelKeys {
+    KeyboardControl Select{ Input::Key::F9, "PanelSelect", "Select the current item in the viewer (panels)", 0 };
+    KeyboardControl ChangeBase{ Input::Key::F2, "PanelChangeBase", "Switch between decimal and hexadecimal values (panels)", 0 };
+
+    void Register(KeyboardControlsInterface* interface, bool hasSelect = true, bool hasChangeBase = true)
+    {
+        interface->BeginCategory("Panels");
+        interface->RegisterKeyText("Enter", "PanelGoTo", "Go to the current item in the viewer (panels)");
+        if (hasSelect)
+            interface->RegisterKey(&Select);
+        if (hasChangeBase)
+            interface->RegisterKey(&ChangeBase);
+    }
 };
 class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface {

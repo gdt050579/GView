@@ -113,17 +113,10 @@ bool GView::App::ResetConfiguration()
     ini["GView"]["LearningAllowPlainHttpLocalhost"] = false;
     ini["GView"]["LearningDownloadFolder"]          = "";
 
-    const std::array<std::reference_wrapper<KeyboardControl>, 7> localKeys = {
-        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
-        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR,
-        InstanceCommands::INSTANCE_LEARNING_SUBMIT_FLAG
-    };
-
-    LocalString<64> keyCommand;
-    for (auto& k : localKeys) {
-        keyCommand.SetFormat("Key.%s", k.get().Caption);
-        ini["GView"][keyCommand.GetText()] = k.get().Key;
-    }
+    // key bindings: only the user changes are stored ([Keys.*] sections, written by the "Keyboard shortcuts" window).
+    // A reset restores the built-in keys -> saving an empty registry removes every [Keys.*] section and the legacy
+    // Key.* values of [GView] / [View.*] (the keyboard profile is reset with the [AppCUI] section above).
+    Keys::Registry{}.Save(ini);
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());

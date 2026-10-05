@@ -19,12 +19,14 @@ namespace View
             constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
             constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
-            static KeyboardControl ZoomIn    = { Key::F3, "ZoomIn", "Zoom in the picture", CMD_ID_ZOOMIN };
-            static KeyboardControl ZoomOut   = { Key::F2, "ZoomOut", "Zoom out the picture", CMD_ID_ZOOMOUT };
-            static KeyboardControl NextImage = { Key::PageUp, "PrevImage", "Go to the previous image", CMD_ID_NEXT_IMAGE };
-            static KeyboardControl PrevImage = { Key::PageDown, "NextImage", "Go to the next image", CMD_ID_PREV_IMAGE };
+            inline KeyboardControl ZoomIn    = { Key::F3, "ZoomIn", "Zoom in the picture", CMD_ID_ZOOMIN };
+            inline KeyboardControl ZoomOut   = { Key::F2, "ZoomOut", "Zoom out the picture", CMD_ID_ZOOMOUT };
+            inline KeyboardControl PrevImage = { Key::PageUp, "PrevImage", "Go to the previous image", CMD_ID_PREV_IMAGE };
+            inline KeyboardControl NextImage = { Key::PageDown, "NextImage", "Go to the next image", CMD_ID_NEXT_IMAGE };
 
-            static std::array ImageViewCommands = { &ZoomIn, &ZoomOut, &NextImage, &PrevImage };
+            inline const std::array<KeyboardControl*, 4> ImageViewCommands = { &ZoomIn, &ZoomOut, &PrevImage, &NextImage };
+
+            void RegisterKeys(KeyboardControlsInterface* interface);
         }
 
         struct ImageInfo

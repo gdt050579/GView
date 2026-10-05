@@ -270,9 +270,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (auto& key : Config::AllKeyboardCommands) {
-        interface->RegisterKey(&key.get());
-    }
+    RegisterKeys(interface);
     return true;
 }
 

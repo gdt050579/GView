@@ -18,23 +18,26 @@ namespace View
             constexpr uint32 COMMAND_ID_EXPORT_CELL_CONTENT         = 0x1004;
             constexpr uint32 COMMAND_ID_EXPORT_COLUMN_CONTENT       = 0x1005;
 
-            static KeyboardControl ReplaceHeader = { Key::Space, "ReplaceHeader", "Replace header with first row", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW };
-
-            static KeyboardControl ToggleHorizontalLines = {
+            inline KeyboardControl ReplaceHeader = { Key::Space, "ReplaceHeader", "Replace header with first row", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW };
+            inline KeyboardControl ToggleHorizontalLines = {
                 Key::H, "ToggleHorizontalLines", "Toggle horizontal lines on/off", COMMAND_ID_TOGGLE_HORIZONTAL_LINES
             };
-            static KeyboardControl ToggleVerticalLines = { Key::V, "ToggleVerticalLines", "Toggle vertical lines on/off", COMMAND_ID_TOGGLE_VERTICAL_LINES };
-            static KeyboardControl ViewCellContent     = {
+            inline KeyboardControl ToggleVerticalLines = { Key::V, "ToggleVerticalLines", "Toggle vertical lines on/off", COMMAND_ID_TOGGLE_VERTICAL_LINES };
+            inline KeyboardControl ViewCellContent     = {
                 Key::Enter, "ViewCellContent", "View the content in the current selected cell", COMMAND_ID_VIEW_CELL_CONTENT
             };
-            static KeyboardControl ExportCellContent = {
+            inline KeyboardControl ExportCellContent = {
                 Key::Ctrl | Key::S, "ExportCellContent", "Export the content of the current cell", COMMAND_ID_EXPORT_CELL_CONTENT
             };
-            static KeyboardControl ExportColumnContent = {
+            inline KeyboardControl ExportColumnContent = {
                 Key::Ctrl | Key::Alt | Key::S, "ExportColumnContent", "Export the content of the current column", COMMAND_ID_EXPORT_COLUMN_CONTENT
             };
 
-            static std::array AllGridCommands = { &ReplaceHeader, &ToggleHorizontalLines, &ToggleVerticalLines, &ViewCellContent, &ExportCellContent, &ExportColumnContent };
+            inline const std::array<KeyboardControl*, 6> AllGridCommands = {
+                &ReplaceHeader, &ToggleHorizontalLines, &ToggleVerticalLines, &ViewCellContent, &ExportCellContent, &ExportColumnContent
+            };
+
+            void RegisterKeys(KeyboardControlsInterface* interface);
         }
 
 

@@ -679,7 +679,12 @@ namespace Type
         static constexpr uint32 PE_COMMAND_DIGITAL_SIGNATURE = 0;
         static constexpr uint32 PE_COMMAND_AREA_HIGHLIGHTER = 1;
 
-        static KeyboardControl PE_COMMANDS[] = {
+        // keys of the panels (configurable from the "Keyboard shortcuts" window)
+        inline GView::StandardPanelKeys PANEL_KEYS;
+        inline KeyboardControl PANEL_EDIT = { Input::Key::F3, "PanelEdit", "Edit the current section / directory (Sections and Directories panels)", 0 };
+        inline KeyboardControl PANEL_SAVE_RESOURCE = { Input::Key::F2, "PanelSaveResource", "Save the current resource to a file", 0 };
+
+        inline KeyboardControl PE_COMMANDS[] = {
             { Input::Key::Alt | Input::Key::F8, "DigitalSignature", "Validate digital signature", PE_COMMAND_DIGITAL_SIGNATURE },
             { Input::Key::Alt | Input::Key::F9, "AreaHighlighter", "Highlight portions of code base on an input file", PE_COMMAND_AREA_HIGHLIGHTER },
         };

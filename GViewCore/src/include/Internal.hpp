@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GView.hpp"
+#include "../App/KeyBindings.hpp"
 
 #include <set>
 #include <span>
@@ -291,7 +292,8 @@ namespace Generic
         struct
         {
             FixSizeString<25> Name;
-            Input::Key ShortKey;
+            Input::Key ShortKey;   // effective key (key bindings registry)
+            Input::Key DefaultKey; // key declared by the plugin (Command.<name>)
         } Commands[MAX_PLUGINS_COMMANDS];
         uint32 CommandsCount;
         bool (*fnRun)(const string_view command, Reference<GView::Object> currentObject);
@@ -301,9 +303,28 @@ namespace Generic
         bool Init(AppCUI::Utils::IniSection section);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
         void Run(uint32 commandIndex, Reference<GView::Object> currentObject);
+        void ApplyKeyBindings(const App::Keys::Registry& registry);
+        std::string GetKeysSection() const;
+
         inline std::string_view GetName() const
         {
-            return (std::string_view) Name;
+            return Name;
+        }
+        inline uint32 GetCommandsCount() const
+        {
+            return CommandsCount;
+        }
+        inline std::string_view GetCommandName(uint32 index) const
+        {
+            return index < CommandsCount ? std::string_view(Commands[index].Name) : std::string_view();
+        }
+        inline Input::Key GetCommandKey(uint32 index) const
+        {
+            return index < CommandsCount ? Commands[index].ShortKey : Input::Key::None;
+        }
+        inline Input::Key GetCommandDefaultKey(uint32 index) const
+        {
+            return index < CommandsCount ? Commands[index].DefaultKey : Input::Key::None;
         }
     };
 }; // namespace Generic
@@ -409,7 +430,8 @@ namespace Type
     struct PluginCommand
     {
         FixSizeString<25> name;
-        Input::Key key;
+        Input::Key key;        // effective key (key bindings registry)
+        Input::Key defaultKey; // key declared by the plugin (Command.<name>)
     };
 
     class Plugin
@@ -455,6 +477,8 @@ namespace Type
         {
             return commands;
         }
+        void ApplyKeyBindings(const App::Keys::Registry& registry);
+        std::string GetKeysSection() const;
 
         static uint64 ExtensionToHash(std::string_view ext);
         static uint64 ExtensionToHash(std::u16string_view ext);
@@ -502,25 +526,40 @@ namespace App
         constexpr int CMD_OPEN_ADD_NOTE         = 30012352;
         constexpr int CMD_LEARNING_SUBMIT_FLAG  = 30012353;
 
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
-        static GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_FIND   = { Input::Key::Ctrl | Input::Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
-        static GView::KeyboardControl INSTANCE_COMMAND_FIND      = { Input::Key::Alt | Input::Key::F7, "FindDialog", "Open the Find dialog", CMD_FIND };
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Input::Key::Ctrl | Input::Key::C, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Input::Key::Ctrl | Input::Key::Insert, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
-        static GView::KeyboardControl INSTANCE_CHANGE_VIEW      = { Input::Key::F4, "ChangeView", "Change the current viewer", CMD_NEXT_VIEW };
-        static GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW        = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Set focus on viewer", CMD_SWITCH_TO_VIEW };
-        static GView::KeyboardControl INSTANCE_CHOOSE_TYPE         = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
-        static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
-        static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE       = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
-        static GView::KeyboardControl INSTANCE_LEARNING_SUBMIT_FLAG = {
-            Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for this learning task", CMD_LEARNING_SUBMIT_FLAG
+        using KF = GView::KeyboardControlFlags;
+        // GView (window level) keys. `inline` -> one object shared by every translation unit (the key bindings
+        // registry writes the configured key into them). The captions are the settings names (keep them stable).
+        inline GView::KeyboardControl INSTANCE_CHANGE_VIEW       = { Input::Key::F4, "ChangeView", "Switch to the next viewer", CMD_NEXT_VIEW };
+        inline GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW    = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Move the focus back to the viewer", CMD_SWITCH_TO_VIEW };
+        inline GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialogAlt", "Open the GoTo dialog (alternative key)", CMD_GOTO };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_FIND   = { Input::Key::Ctrl | Input::Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
+        inline GView::KeyboardControl INSTANCE_COMMAND_FIND      = { Input::Key::Alt | Input::Key::F7, "FindDialogAlt", "Open the Find dialog (alternative key)", CMD_FIND };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Input::Key::Ctrl | Input::Key::C, "CopyDialog", "Open the Copy dialog", CMD_COPY_DIALOG };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Input::Key::Ctrl | Input::Key::Insert, "CopyDialogAlt", "Open the Copy dialog (alternative key)", CMD_COPY_DIALOG };
+        inline GView::KeyboardControl INSTANCE_CHOOSE_TYPE       = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Reopen the file with another type plugin", CMD_CHOSE_NEW_TYPE };
+        inline GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR  = { Input::Key::F1, "ShowKeys", "Show and edit the keyboard shortcuts", CMD_SHOW_KEY_CONFIGURATOR };
+        inline GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE     = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add a note to the current window", CMD_OPEN_ADD_NOTE };
+        inline GView::KeyboardControl INSTANCE_NEXT_WINDOW       = { Input::Key::Tab, "NextWindow", "Switch to the next window (when the viewer has the focus)", 0 };
+        inline GView::KeyboardControl INSTANCE_PREVIOUS_WINDOW   = { Input::Key::Shift | Input::Key::Tab, "PreviousWindow", "Switch to the previous window (when the viewer has the focus)", 0 };
+        inline GView::KeyboardControl INSTANCE_FOCUS_VIEWER      = { Input::Key::Escape, "FocusViewer", "Move the focus from a panel back to the viewer", 0 };
+        inline GView::KeyboardControl INSTANCE_WINDOWS_MANAGER   = { Input::Key::Alt | Input::Key::N0, "WindowsManager", "Show the windows manager", MenuCommands::SHOW_WINDOW_MANAGER, KF::RequiresRestart };
+        inline GView::KeyboardControl INSTANCE_LEARNING_SUBMIT_FLAG = {
+            Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
         };
+        inline GView::KeyboardControl INSTANCE_EXIT              = { Input::Key::Shift | Input::Key::Escape, "Exit", "Close GView", MenuCommands::EXIT_GVIEW, KF::RequiresRestart };
 
-        static const std::array GViewCommands = { &INSTANCE_CHANGE_VIEW,  &INSTANCE_SWITCH_TO_VIEW,   &INSTANCE_COMMAND_GOTO,         &FILE_WINDOW_COMMAND_FIND,
-                                                  &INSTANCE_CHOOSE_TYPE, &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_LEARNING_SUBMIT_FLAG };
-    }
+        inline const std::array<GView::KeyboardControl*, 17> GViewKeys = {
+            &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_CHANGE_VIEW,     &INSTANCE_SWITCH_TO_VIEW,  &INSTANCE_COMMAND_GOTO,  &FILE_WINDOW_COMMAND_GOTO,
+            &FILE_WINDOW_COMMAND_FIND,  &INSTANCE_COMMAND_FIND,    &FILE_WINDOW_COMMAND_COPY, &FILE_WINDOW_COMMAND_INSERT, &INSTANCE_CHOOSE_TYPE,
+            &INSTANCE_OPEN_ADD_NOTE,    &INSTANCE_NEXT_WINDOW,     &INSTANCE_PREVIOUS_WINDOW, &INSTANCE_FOCUS_VIEWER,  &INSTANCE_WINDOWS_MANAGER,
+            &INSTANCE_EXIT,             &INSTANCE_LEARNING_SUBMIT_FLAG,
+        };
+        // registers the GView keys (section "GView")
+        void RegisterGViewKeys(KeyboardControlsInterface* interface);
+    } // namespace InstanceCommands
 
+    class FileWindow;
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
                      public AppCUI::Controls::Handlers::OnStartInterface
@@ -535,6 +574,7 @@ namespace App
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
         std::filesystem::path lastOpenedFolderLocation;
+        Keys::Registry keyBindings;
 
         bool BuildMainMenus();
         bool LoadSettings();
@@ -545,6 +585,7 @@ namespace App
         void ShowAboutWindow();
         void ShowChangeThemeWindow();
         void ShowRestrictedModeWindow();
+        void ShowKeyboardShortcuts();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
@@ -624,6 +665,23 @@ namespace App
               Reference<Window> parent,
               const ConstString& creationProcess = "");
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
+
+        // key bindings
+        inline Keys::Registry& GetKeyBindings()
+        {
+            return keyBindings;
+        }
+        inline const std::vector<GView::Type::Plugin>& GetTypePlugins() const
+        {
+            return typePlugins;
+        }
+        inline const std::vector<GView::Generic::Plugin>& GetGenericPlugins() const
+        {
+            return genericPlugins;
+        }
+        // pushes the registry keys into GView, every viewer, every plugin command and every open file window
+        void ApplyKeyBindings();
+        Reference<FileWindow> GetCurrentFileWindow();
 
         // inline getters
         constexpr inline uint32 GetDefaultCacheSize() const
@@ -770,9 +828,6 @@ namespace App
         void ShowGoToDialog();
         void ShowFindDialog();
         void ShowCopyDialog();
-        void ShowKeyConfiguratorWindow();
-
-        bool UpdateKeys(KeyboardControlsInterface* interface);
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
@@ -807,6 +862,16 @@ namespace App
         // title = object name [+ " - " + course watermark]
         void RefreshTitle();
         std::string_view GetCurrentViewerKind();
+
+        // key bindings
+        inline Reference<Type::Plugin> GetTypePlugin() const
+        {
+            return typePlugin;
+        }
+        // section of the type plugin keys ("Type.<Name>"), empty for objects without a type plugin
+        std::string GetTypePluginKeysSection() const;
+        // writes the registry keys into the keys registered by the type plugin instance
+        void ApplyKeyBindings(const Keys::Registry& registry);
     };
 
     // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
@@ -830,21 +895,22 @@ namespace App
         bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
     };
 
-    struct KeyboardControlsImplementation : public KeyboardControlsInterface
+    namespace Keys
     {
-        struct OwnedKeyboardControl {
-            Input::Key Key;
-            std::string Caption;
-            std::string Explanation;
-            uint32 CommandId;
-
-            OwnedKeyboardControl(KeyboardControl* key) : Key(key->Key), Caption(key->Caption), Explanation(key->Explanation), CommandId(key->CommandId){}
+        // key bindings of a core viewer (all viewer keys are static -> they can be listed without a viewer instance)
+        struct ViewerKeys
+        {
+            std::string_view section; // "View.Buffer", ...
+            std::string_view title;   // "Buffer viewer", ...
+            void (*registerKeys)(KeyboardControlsInterface* interface);
+            void (*onKeysChanged)(); // rebuilds the viewer key map after the keys were changed
         };
+        std::span<const ViewerKeys> GetAllViewerKeys();
+        const ViewerKeys* GetViewerKeys(Reference<View::ViewControl> view);
+    } // namespace Keys
 
-        std::vector<OwnedKeyboardControl> keys;
-
-        virtual bool RegisterKey(KeyboardControl* key) override;
-    };
+    // "Keyboard shortcuts" window (fileWindow may be null -> only the "All keys" scope is available)
+    void ShowKeyboardShortcutsWindow(Reference<Instance> instance, Reference<FileWindow> fileWindow);
 } // namespace App
 
 namespace Security

@@ -455,25 +455,13 @@ void GView::View::GridViewer::Instance::PaintCursorInformationSeparator(AppCUI::
 
 enum class PropertyID : uint32 { None };
 
-bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
+bool Instance::GetPropertyValue(uint32, PropertyValue&)
 {
-    for (const auto& key : Commands::AllGridCommands) {
-        if (key->CommandId == id) {
-            value = key->Key;
-            return true;
-        }
-    }
     return false;
 }
 
-bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
+bool Instance::SetPropertyValue(uint32, const PropertyValue&, String&)
 {
-    for (const auto& key : Commands::AllGridCommands) {
-        if (key->CommandId == id) {
-            key->Key = std::get<Key>(value);
-            return true;
-        }
-    }
     return false;
 }
 
@@ -488,20 +476,12 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 
 const vector<Property> Instance::GetPropertiesList()
 {
-    vector<Property> properties;
-    properties.reserve(AllGridCommands.size());
-
-    for (const auto& key : AllGridCommands) {
-        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
-    }
-    return properties;
+    // keys are configured from the "Keyboard shortcuts" window
+    return {};
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (const auto& cmd : AllGridCommands) {
-        interface->RegisterKey(cmd);
-    }
-
+    Commands::RegisterKeys(interface);
     return true;
 }

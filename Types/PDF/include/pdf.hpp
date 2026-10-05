@@ -14,6 +14,10 @@ namespace Type
 {
     namespace PDF
     {
+        // keys of the panels (configurable from the "Keyboard shortcuts" window)
+        inline GView::StandardPanelKeys PANEL_KEYS;
+        inline KeyboardControl PANEL_TEXT_VIEWER = { Input::Key::F10, "PanelTextViewer", "Open the current object in a text viewer (Objects panel)", 0 };
+        inline KeyboardControl PANEL_SAVE_AS_TEXT = { Input::Key::F11, "PanelSaveAsText", "Save the text of the current object as a .txt file (Objects panel)", 0 };
 #pragma pack(push, 2)
 
         namespace WSC // white space characters
@@ -443,6 +447,9 @@ namespace Type
             }
             bool UpdateKeys(KeyboardControlsInterface* interface) override
             {
+                PANEL_KEYS.Register(interface, true, false);
+                interface->RegisterKey(&PANEL_TEXT_VIEWER);
+                interface->RegisterKey(&PANEL_SAVE_AS_TEXT);
                 return true;
             }
             GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;

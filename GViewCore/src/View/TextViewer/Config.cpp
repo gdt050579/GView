@@ -3,22 +3,22 @@
 using namespace GView::View::TextViewer;
 using namespace AppCUI::Input;
 
-void Config::Update(IniSection sect)
+void Config::Update(IniSection)
 {
-    sect.UpdateValue("Key.WrapMethod", Key::F2, true);
+    // keys are handled by the key bindings registry ([Keys.View.Text], "Keyboard shortcuts" window)
 }
 void Config::Initialize()
 {
-    auto ini = AppCUI::Application::GetAppSettings();
-    if (ini)
-    {
-        auto sect           = ini->GetSection("View.Text");
-        this->Keys.WordWrap = sect.GetValue("Key.WrapMethod").ToKey(Key::F2);
-    }
-    else
-    {
-        this->Keys.WordWrap = Key::F2;
-    }
-
     this->Loaded = true;
+}
+void GView::View::TextViewer::Commands::RegisterKeys(KeyboardControlsInterface* interface)
+{
+    interface->RegisterKey(&WordWrap);
+    interface->BeginCategory("Navigation & editing");
+    for (auto k : NavigationKeys)
+        interface->RegisterKey(k);
+}
+void GView::View::TextViewer::Commands::OnKeysChanged()
+{
+    Map.Build(NavigationKeys);
 }

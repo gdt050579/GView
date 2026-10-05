@@ -4,6 +4,8 @@
 
 namespace GView::Type::ZIP
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
 class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
@@ -54,6 +56,7 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
         return true;
     }
 

@@ -6,7 +6,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
+using namespace GView::View::TextViewer::Commands;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
 enum class BulletParserState : uint8
@@ -1275,106 +1275,77 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     switch (this->settings->wrapMethod)
     {
     case WrapMethod::None:
-        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:OFF", CMD_ID_WORD_WRAP);
+        commandBar.SetCommand(WordWrap.Key, "Wrap:OFF", CMD_ID_WORD_WRAP);
         break;
     case WrapMethod::LeftMargin:
-        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:LeftMargin", CMD_ID_WORD_WRAP);
+        commandBar.SetCommand(WordWrap.Key, "Wrap:LeftMargin", CMD_ID_WORD_WRAP);
         break;
     case WrapMethod::Padding:
-        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Padding", CMD_ID_WORD_WRAP);
+        commandBar.SetCommand(WordWrap.Key, "Wrap:Padding", CMD_ID_WORD_WRAP);
         break;
     case WrapMethod::Bullets:
-        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Bullets", CMD_ID_WORD_WRAP);
+        commandBar.SetCommand(WordWrap.Key, "Wrap:Bullets", CMD_ID_WORD_WRAP);
         break;
+    }
+    return false;
+}
+bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
+{
+    switch (commandId)
+    {
+    case CMD_NAV_LEFT:
+        MoveLeft(select);
+        return true;
+    case CMD_NAV_PREVIOUS_WORD:
+        MoveToPreviousWord(select);
+        return true;
+    case CMD_NAV_RIGHT:
+        MoveRight(select);
+        return true;
+    case CMD_NAV_NEXT_WORD:
+        MoveToNextWord(select);
+        return true;
+    case CMD_NAV_UP:
+        MoveUp(1, select);
+        return true;
+    case CMD_NAV_SCROLL_UP:
+        MoveScrollUp();
+        return true;
+    case CMD_NAV_DOWN:
+        MoveDown(1, select);
+        return true;
+    case CMD_NAV_SCROLL_DOWN:
+        MoveScrollDown();
+        return true;
+    case CMD_NAV_PAGE_UP:
+        MoveUp(std::max<>(1, this->GetHeight()), select);
+        return true;
+    case CMD_NAV_PAGE_DOWN:
+        MoveDown(std::max<>(1, this->GetHeight()), select);
+        return true;
+    case CMD_NAV_LINE_START:
+        MoveToStartOfLine(this->Cursor.lineNo, select);
+        return true;
+    case CMD_NAV_LINE_END:
+        MoveToEndOfLine(this->Cursor.lineNo, select);
+        return true;
+    case CMD_NAV_FILE_START:
+        MoveTo(0, 0, select);
+        return true;
+    case CMD_NAV_FILE_END:
+        MoveToEndOfFile(select);
+        return true;
+    case CMD_NAV_OPEN_SELECTION:
+        OpenCurrentSelection();
+        return true;
     }
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
-    switch (keyCode)
-    {
-    case Key::Left:
-        MoveLeft(false);
+    const auto action = Map.Resolve(keyCode);
+    if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
         return true;
-    case Key::Left | Key::Shift:
-        MoveLeft(true);
-        return true;
-    case Key::Left | Key::Ctrl:
-        MoveToPreviousWord(false);
-        return true;
-    case Key::Left | Key::Ctrl | Key::Shift:
-        MoveToPreviousWord(true);
-        return true;
-    case Key::Right:
-        MoveRight(false);
-        return true;
-    case Key::Right | Key::Shift:
-        MoveRight(true);
-        return true;
-    case Key::Right | Key::Ctrl:
-        MoveToNextWord(false);
-        return true;
-    case Key::Right | Key::Ctrl | Key::Shift:
-        MoveToNextWord(true);
-        return true;
-    case Key::Up:
-        MoveUp(1, false);
-        return true;
-    case Key::Up | Key::Shift:
-        MoveUp(1, true);
-        return true;
-    case Key::Up | Key::Ctrl:
-        MoveScrollUp();
-        return true;
-    case Key::Down:
-        MoveDown(1, false);
-        return true;
-    case Key::Down | Key::Shift:
-        MoveDown(1, true);
-        return true;
-    case Key::Down | Key::Ctrl:
-        MoveScrollDown();
-        return true;
-    case Key::PageUp:
-        MoveUp(std::max<>(1, this->GetHeight()), false);
-        return true;
-    case Key::PageUp | Key::Shift:
-        MoveUp(std::max<>(1, this->GetHeight()), true);
-        return true;
-    case Key::PageDown:
-        MoveDown(std::max<>(1, this->GetHeight()), false);
-        return true;
-    case Key::PageDown | Key::Shift:
-        MoveDown(std::max<>(1, this->GetHeight()), true);
-        return true;
-    case Key::Home:
-        MoveToStartOfLine(this->Cursor.lineNo, false);
-        return true;
-    case Key::Home | Key::Shift:
-        MoveToStartOfLine(this->Cursor.lineNo, true);
-        return true;
-    case Key::End:
-        MoveToEndOfLine(this->Cursor.lineNo, false);
-        return true;
-    case Key::End | Key::Shift:
-        MoveToEndOfLine(this->Cursor.lineNo, true);
-        return true;
-    case Key::Home | Key::Ctrl:
-        MoveTo(0, 0, false);
-        return true;
-    case Key::Home | Key::Ctrl | Key::Shift:
-        MoveTo(0, 0, true);
-        return true;
-    case Key::End | Key::Ctrl:
-        MoveToEndOfFile(false);
-        return true;
-    case Key::End | Key::Ctrl | Key::Shift:
-        MoveToEndOfFile(true);
-        return true;
-    case Key::Enter:
-        OpenCurrentSelection();
-        return true;
-    }
 
     return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
@@ -1642,9 +1613,9 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, I
     switch (direction)
     {
     case MouseWheel::Up:
-        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+        return ExecuteNavigationCommand(CMD_NAV_SCROLL_UP, false);
     case MouseWheel::Down:
-        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+        return ExecuteNavigationCommand(CMD_NAV_SCROLL_DOWN, false);
     }
 
     return false;
@@ -1735,9 +1706,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::ShowTabCharacter:
         value = this->settings->showTabCharacter;
         return true;
-    case PropertyID::WrapMethodKey:
-        value = this->config.Keys.WordWrap;
-        return true;
     }
     return false;
 }
@@ -1770,9 +1738,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ShowTabCharacter:
         this->settings->showTabCharacter = std::get<bool>(value);
         return true;
-    case PropertyID::WrapMethodKey:
-        config.Keys.WordWrap = std::get<AppCUI::Input::Key>(value);
-        return true;
     }
     error.SetFormat("Unknown internal ID: %u", id);
     return false;
@@ -1801,7 +1766,11 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, false, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
         // shortcuts
-        { BT(PropertyID::WrapMethodKey), "Key", "WrapMethod", PropertyType::Key, true },
     };
 }
 #undef BT
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    Commands::RegisterKeys(interface);
+    return true;
+}
