@@ -88,16 +88,18 @@ runs:
     - name: Install dependencies (Linux)
       if: ${{ runner.os == 'Linux' }}
       shell: bash
+      env:
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
       run: |
+        set -euo pipefail
         sudo apt-get update -y
-        sudo apt-get install -y \
-          gcc-multilib \
-          g++-multilib \
-          build-essential \
-          ninja-build \
-          libsdl2-dev \
-          libsdl2-ttf-dev \
-          libltdl-dev
+        pkgs=(build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev)
+        # The multilib packages only exist on x86 (they add the 32-bit cross toolchain). Nothing in GView needs
+        # them, but they stay on X64 so that lane is unchanged.
+        if [ "$RUNNER_ARCH_NAME" = "X64" ]; then
+          pkgs+=(gcc-multilib g++-multilib)
+        fi
+        sudo apt-get install -y "${pkgs[@]}"
 
     - name: Install dependencies (macOS)
       if: ${{ runner.os == 'macOS' }}
