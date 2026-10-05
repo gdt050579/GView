@@ -1,0 +1,42 @@
+# Keeps the SHA-pinned GitHub Actions, the docs toolchain and the AppCUI submodule current.
+# Updates arrive as pull requests that run the full CI, so nothing changes without a green build.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+      - "/.github/actions/build"
+    schedule:
+      interval: weekly
+      day: monday
+    # Wait a week after a release before proposing it: a compromised release is usually
+    # discovered and yanked within that window.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: "/docs"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "docs"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: gitsubmodule
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 1

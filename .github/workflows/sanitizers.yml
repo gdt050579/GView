@@ -1,0 +1,49 @@
+# .github/workflows/sanitizers.yml
+#
+# Runs the unit tests under AddressSanitizer + UndefinedBehaviorSanitizer (GCC, Linux). GView's inputs are hostile
+# by definition, so out-of-bounds reads, use-after-free and signed overflow in the parsers are incidents, not bugs.
+#
+# Scheduled + manual only (not a PR gate) until the baseline is clean; then add `pull_request:` here.
+# vcpkg dependencies are not instrumented (vcpkg builds ports with its own flags); GView + AppCUI are.
+name: sanitizers
+
+permissions: {}
+
+on:
+  schedule:
+    - cron: '41 2 * * 2'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  asan-ubsan:
+    name: ASan + UBSan unit tests (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      # CMake seeds CMAKE_<LANG>_FLAGS / linker flags from these at the first configure.
+      CFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
+      CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all
+      LDFLAGS: -fsanitize=address,undefined
+      # LeakSanitizer stays off until the leak baseline (third-party static initialisers included) is triaged;
+      # memory-safety errors are the signal this lane exists for.
+      ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1:strict_string_checks=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: ./.github/actions/build
+        with:
+          build_type: RelWithDebInfo
+          enable_tests: "true"
+          use_vcpkg_cache: "true"
+          use_ccache: "false"
+          upload_artifact: "false"
+          jobs_count: "0"
