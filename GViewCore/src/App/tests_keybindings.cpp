@@ -170,6 +170,39 @@ TEST_CASE("Registry save writes only overrides and drops the legacy values", "[K
     REQUIRE(reloaded.Resolve("Type.PE", "DigitalSignature", Key::Alt | Key::F8) == (Key::Alt | Key::F9));
 }
 
+TEST_CASE("Saving an empty registry removes every key customization (configuration reset)", "[KeyBindings]")
+{
+    IniObject ini;
+    REQUIRE(ini.CreateFromString(
+          "[GView]\n"
+          "CacheSize = 10\n"
+          "Key.ChangeView = F12\n"
+          "[View.Buffer]\n"
+          "Key.FindNext = Ctrl+F8\n"
+          "Config.Something = 1\n"
+          "[Keys.View.Buffer]\n"
+          "ChangeColumnsCount = Ctrl+F6\n"
+          "[Keys.Type.PE]\n"
+          "DigitalSignature = Alt+F9\n"
+          "[Type.PE]\n"
+          "Command.DigitalSignature = Alt+F8\n"));
+    Registry{}.Save(ini);
+
+    REQUIRE_FALSE(ini.HasSection("Keys.View.Buffer"));
+    REQUIRE_FALSE(ini.HasSection("Keys.Type.PE"));
+    REQUIRE_FALSE(ini.GetSection("GView").HasValue("Key.ChangeView"));
+    REQUIRE_FALSE(ini.GetSection("View.Buffer").HasValue("Key.FindNext"));
+    // everything else is kept (plugin declared commands are defaults, not customizations)
+    REQUIRE(ini.GetSection("GView").HasValue("CacheSize"));
+    REQUIRE(ini.GetSection("View.Buffer").HasValue("Config.Something"));
+    REQUIRE(ini.GetSection("Type.PE").GetValue("Command.DigitalSignature").AsKey() == (Key::Alt | Key::F8));
+
+    Registry reloaded;
+    reloaded.Load(ini);
+    REQUIRE_FALSE(reloaded.HasOverrides());
+    REQUIRE(reloaded.Resolve("GView", "ChangeView", Key::F4) == Key::F4);
+}
+
 //================================================================================== Collector / ApplyPass ===
 TEST_CASE("ApplyPass writes the resolved keys and keeps read-only keys", "[KeyBindings]")
 {
