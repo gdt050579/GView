@@ -48,6 +48,7 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="keyboard_shortcuts.html">Keyboard shortcuts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">GView configuration file</a><ul>
@@ -92,8 +93,9 @@
 <p>GView is configured via <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> file (that should be located next to GView executable). If the file is missing, running a simple <code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">reset</span></code> command from the CLI should restore it.</p>
 <p>The following section should be seen in a <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> file:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">[GView]</span></code> - a section with the general configuration for GView. Typically it contains associated key for changing the view, cache size, etc.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">[AppCUI]</span></code> - a section with the general configuration for AppCUI framework (color, frontend, etc)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[GView]</span></code> - a section with the general configuration for GView (cache size, etc).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[AppCUI]</span></code> - a section with the general configuration for AppCUI framework (color, frontend, keyboard profile <code class="docutils literal notranslate"><span class="pre">Keyboard.Ctrl</span></code> / <code class="docutils literal notranslate"><span class="pre">Keyboard.Alt</span></code>, etc)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[Keys.&lt;xxx&gt;]</span></code> - the keyboard shortcuts changed by the user from the <em>Keyboard shortcuts</em> window (see <a class="reference internal" href="keyboard_shortcuts.html"><span class="doc">Keyboard shortcuts</span></a>)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">[Type.&lt;XXX&gt;]</span></code> - various sections that describe characteristics of each supported type in GView</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">[View.&lt;xxx&gt;]</span></code> - various section for each smart view</p></li>
 </ul>

@@ -48,6 +48,7 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="keyboard_shortcuts.html">Keyboard shortcuts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
 <li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
@@ -55,6 +56,7 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Plugin development</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#public-vs-internal-api">Public vs internal API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#type-plugin-contract">Type plugin contract</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#keyboard-shortcuts">Keyboard shortcuts</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#smart-viewers">Smart viewers</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#key-interfaces">Key interfaces</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#adding-a-new-type-plugin">Adding a new Type plugin</a></li>
@@ -129,6 +131,46 @@ Used only inside GViewCore. Do not use in Type or Generic plugins.</p></li>
 <li><p><strong>UpdateKeys(KeyboardControlsInterface*)</strong> — Register keyboard shortcuts.</p></li>
 <li><p><strong>GetSmartAssistantContext(…)</strong> — Provide context for the smart assistant (can return minimal JSON).</p></li>
 </ul>
+</section>
+<section id="keyboard-shortcuts">
+<h2>Keyboard shortcuts<a class="headerlink" href="#keyboard-shortcuts" title="Permalink to this heading"></a></h2>
+<p>Every key handled by a plugin must be a named <code class="docutils literal notranslate"><span class="pre">KeyboardControl</span></code> (<code class="docutils literal notranslate"><span class="pre">AppCUI::Input::KeyBinding</span></code>) so that it is listed
+in the <em>Keyboard shortcuts</em> window (<code class="docutils literal notranslate"><span class="pre">F1</span></code>) and can be changed by the user (see <a class="reference internal" href="keyboard_shortcuts.html"><span class="doc">Keyboard shortcuts</span></a>):</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="k">namespace</span><span class="w"> </span><span class="nn">GView</span><span class="o">::</span><span class="nn">Type</span><span class="o">::</span><span class="nn">MyType</span>
+<span class="p">{</span>
+<span class="c1">// `inline` -&gt; a single object shared by every .cpp file of the plugin (the registry writes the user key into it)</span>
+<span class="kr">inline</span><span class="w"> </span><span class="n">KeyboardControl</span><span class="w"> </span><span class="n">MY_COMMANDS</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="n">Input</span><span class="o">::</span><span class="n">Key</span><span class="o">::</span><span class="n">Alt</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Input</span><span class="o">::</span><span class="n">Key</span><span class="o">::</span><span class="n">F8</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Verify&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Verify the signature&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">MY_COMMAND_VERIFY</span><span class="w"> </span><span class="p">},</span>
+<span class="p">};</span>
+<span class="kr">inline</span><span class="w"> </span><span class="n">GView</span><span class="o">::</span><span class="n">StandardPanelKeys</span><span class="w"> </span><span class="n">PANEL_KEYS</span><span class="p">;</span><span class="w"> </span><span class="c1">// F9 Select / F2 Dec-Hex of the list panels</span>
+<span class="kr">inline</span><span class="w"> </span><span class="n">KeyboardControl</span><span class="w"> </span><span class="n">PANEL_OPEN</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Input</span><span class="o">::</span><span class="n">Key</span><span class="o">::</span><span class="n">Ctrl</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Input</span><span class="o">::</span><span class="n">Key</span><span class="o">::</span><span class="n">O</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;PanelOpen&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Open the current entry&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">};</span>
+<span class="p">}</span>
+
+<span class="kt">bool</span><span class="w"> </span><span class="n">MyTypeFile</span><span class="o">::</span><span class="n">UpdateKeys</span><span class="p">(</span><span class="n">KeyboardControlsInterface</span><span class="o">*</span><span class="w"> </span><span class="n">interface</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">cmd</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="n">MY_COMMANDS</span><span class="p">)</span>
+<span class="w">        </span><span class="n">interface</span><span class="o">-&gt;</span><span class="n">RegisterKey</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cmd</span><span class="p">);</span>
+<span class="w">    </span><span class="n">PANEL_KEYS</span><span class="p">.</span><span class="n">Register</span><span class="p">(</span><span class="n">interface</span><span class="p">);</span><span class="w">          </span><span class="c1">// starts the &quot;Panels&quot; category</span>
+<span class="w">    </span><span class="n">interface</span><span class="o">-&gt;</span><span class="n">RegisterKey</span><span class="p">(</span><span class="o">&amp;</span><span class="n">PANEL_OPEN</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Rules:</p>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">Caption</span></code> is the identifier saved in the settings - keep it stable and unique for the plugin.</p></li>
+<li><p>Commands executed through <code class="docutils literal notranslate"><span class="pre">RunCommand</span></code> are declared in <code class="docutils literal notranslate"><span class="pre">UpdateSettings</span></code> as <code class="docutils literal notranslate"><span class="pre">Command.&lt;Caption&gt;</span></code> using
+<code class="docutils literal notranslate"><span class="pre">DefaultKey</span></code> (<code class="docutils literal notranslate"><span class="pre">sect[&quot;Command.Verify&quot;]</span> <span class="pre">=</span> <span class="pre">cmd.DefaultKey;</span></code>) and registered in <code class="docutils literal notranslate"><span class="pre">UpdateKeys</span></code> with the same caption.</p></li>
+<li><p>Read the key when it is used (<code class="docutils literal notranslate"><span class="pre">commandBar.SetCommand(PANEL_OPEN.Key,</span> <span class="pre">&quot;Open&quot;,</span> <span class="pre">ID)</span></code>, <code class="docutils literal notranslate"><span class="pre">PANEL_OPEN.Matches(keyCode)</span></code>),
+never copy it at construction time. <code class="docutils literal notranslate"><span class="pre">Matches</span></code> never matches an unassigned (<code class="docutils literal notranslate"><span class="pre">Key::None</span></code>) shortcut.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">interface-&gt;BeginCategory(&quot;Panels&quot;)</span></code> groups keys in the window; panel categories must start with <code class="docutils literal notranslate"><span class="pre">Panel</span></code>
+(e.g. <code class="docutils literal notranslate"><span class="pre">&quot;Panel:</span> <span class="pre">Resources&quot;</span></code>) - keys of different panel categories are never reported as conflicts.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">interface-&gt;RegisterKeyText(&quot;0-9&quot;,</span> <span class="pre">&quot;Bookmarks&quot;,</span> <span class="pre">&quot;...&quot;)</span></code> lists keys that can not be configured (character keys,
+keys handled by AppCUI controls).</p></li>
+<li><p>Keys of modal dialogs are shown in the dialog command bar and are not registered.</p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">KeyboardControl</span></code> layout and the <code class="docutils literal notranslate"><span class="pre">KeyboardControlsInterface</span></code> virtual table are part of the plugin ABI: changing
+them requires rebuilding GViewCore, AppCUI and every plugin.</p>
 </section>
 <section id="smart-viewers">
 <h2>Smart viewers<a class="headerlink" href="#smart-viewers" title="Permalink to this heading"></a></h2>
@@ -254,7 +296,7 @@ they do not implement the Type plugin contract above.</p>
 <li><p><strong>Add hash algorithm</strong> — <code class="docutils literal notranslate"><span class="pre">GViewCore/src/Hashes/</span></code> — Hash classes in GView.hpp</p></li>
 <li><p><strong>Add decoding</strong> — <code class="docutils literal notranslate"><span class="pre">GViewCore/src/Decoding/</span></code> — Decoding namespace</p></li>
 <li><p><strong>Modify viewer behavior</strong> — <code class="docutils literal notranslate"><span class="pre">GViewCore/src/View/</span></code> — ViewControl, Settings</p></li>
-<li><p><strong>Add keyboard shortcut</strong> — TypeInterface — UpdateKeys(), KeyboardControl</p></li>
+<li><p><strong>Add keyboard shortcut</strong> — TypeInterface — <code class="docutils literal notranslate"><span class="pre">inline</span> <span class="pre">KeyboardControl</span></code> + UpdateKeys() (see <em>Keyboard shortcuts</em>)</p></li>
 <li><p><strong>Add panel to Type</strong> — <code class="docutils literal notranslate"><span class="pre">Types/*/src/Panel*.cpp</span></code> — TabPage, ListView</p></li>
 <li><p><strong>AI assistant context</strong> — TypeInterface — GetSmartAssistantContext()</p></li>
 </ul>
