@@ -50,6 +50,7 @@
 <li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="keyboard_shortcuts.html">Keyboard shortcuts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
+<li class="toctree-l1"><a class="reference internal" href="learning_mode_protocol.html">Learning and Evaluation Mode - implementation report</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
 <li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Security and restricted mode</a><ul>
@@ -98,18 +99,30 @@ time windows, and reduce leakage of sensitive content (e.g. task binaries).</p>
 <h2>Public API (GView.hpp)<a class="headerlink" href="#public-api-gview-hpp" title="Permalink to this heading"></a></h2>
 <p>The following are in <code class="docutils literal notranslate"><span class="pre">GView::Security::RestrictedMode</span></code>:</p>
 <ul class="simple">
-<li><p><strong>Policy</strong> — Configuration: id, purpose, time window (startsAt/endsAt), disabled
-features, allowed plugins list, watermark text, screen protection option, content key id.</p></li>
+<li><p><strong>Policy</strong> — Configuration: schema, id, digest, purpose, issuedAt/startsAt/endsAt, subject
+(token binding), serverUrl, disabled features, allowed plugins list, storage mode (<code class="docutils literal notranslate"><span class="pre">File</span></code> /
+<code class="docutils literal notranslate"><span class="pre">Memory</span></code>), watermark text, best-effort / required screen protection, telemetry settings,
+submission settings, content encryption and content key id.</p></li>
 <li><p><strong>Feature</strong> — Enum of features that can be disabled: Copy, Export, SaveAs, Plugins,
 LLMHints, Clipboard, Screenshots.</p></li>
 <li><p><strong>LoadPolicyFromFiles(jsonPath, signaturePath, publicKey, outPolicy)</strong> — Load and
 verify an Ed25519-signed policy JSON. Returns <code class="docutils literal notranslate"><span class="pre">GStatus</span></code>; on success, <code class="docutils literal notranslate"><span class="pre">outPolicy</span></code>
 is filled.</p></li>
+<li><p><strong>VerifyAndParsePolicy(rawJson, signature, publicKey, subject, serverUrl, now, outPolicy)</strong> —
+Verify and parse a schema-2 policy delivered by a course server (signature first, then
+schema, digest, subject, server and validity window with 120 s skew).</p></li>
 <li><p><strong>IsActive()</strong> — Returns whether restricted mode is currently active.</p></li>
-<li><p><strong>GetCurrentPolicy()</strong> — Returns the current policy (read-only) or nullptr.</p></li>
+<li><p><strong>GetCurrentPolicy()</strong> — Returns a copy of the current policy (<code class="docutils literal notranslate"><span class="pre">std::optional</span></code>).</p></li>
+<li><p><strong>IsFeatureDisabled(feature)</strong> — Lock-free query, usable from plugins.</p></li>
 </ul>
-<p>When restricted mode is active, disabled features are unavailable in the UI (e.g. save,
-copy, export), and only plugins listed in the policy are allowed. This supports fair
+<p>Plugins should use <code class="docutils literal notranslate"><span class="pre">GView::App::IsBlockedByPolicy</span></code>, <code class="docutils literal notranslate"><span class="pre">IsExportBlockedFor</span></code> and
+<code class="docutils literal notranslate"><span class="pre">SetClipboardText</span></code> for every operation that copies, exports or saves content, so that the
+user gets a consistent notice and the attempt is recorded.</p>
+<p>The UI calls this mode <strong>Learning and Evaluation Mode</strong> (<em>Options</em> menu, or
+<code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">learn</span> <span class="pre">&lt;connectionString&gt;</span></code>). When it is active, disabled features are unavailable in
+the UI (e.g. save, copy, export), only plugins listed in the policy are allowed, and the policy
+watermark is shown in every window title. The full protocol, enforcement matrix and
+limitations are in <a class="reference internal" href="learning_mode_protocol.html"><span class="doc">Learning and Evaluation Mode - implementation report</span></a>. This supports fair
 evaluation and reduces easy copying of task content. See <a class="reference internal" href="education.html"><span class="doc">GView use in education</span></a> for the
 typical workflow (connect to server, load policy, request task, submit solution,
 telemetry).</p>

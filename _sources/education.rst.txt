@@ -3,7 +3,8 @@ GView use in education
 
 This page describes how GView can be used in educational settings for learning and
 evaluation, including the Learning and Evaluation Mode (built on :doc:`security`),
-the typical workflow, and security considerations.
+the typical workflow, and security considerations. The exact protocol, data formats and
+enforcement points are documented in :doc:`learning_mode_protocol`.
 
 Use case
 --------
@@ -13,30 +14,35 @@ Step-by-step workflow
 
 **Step 1: Launch GView and connect to the course server.**
 
-The student launches GView and selects the Learning and Evaluation Mode from the
-menu options. Then the student connects securely to the course server using a
-unique login token. Each student is assigned a unique token used to identify them.
-If the server accepts the connection, it returns the policy in JSON format.
+The student launches GView, selects *Options > Learning and Evaluation Mode* (or
+starts ``GView learn <connectionString>``) and pastes the connection string received from
+the teacher. The connection string contains the student's secret access token, the server
+address and the public key used to verify policies. GView connects over verified TLS; if
+the server accepts the token, it returns a policy (JSON) signed with Ed25519.
 
 **Step 2: Load and apply the policy in GView.**
 
-After the policy is received, it is automatically loaded in GView: features that
-are disabled by the policy become unusable (e.g., save, copy, export), and plugins
-that are disabled become unavailable. From this point on, the student works in a
+After the policy is received, GView verifies its signature, the student binding and its
+validity window before applying it (a policy that does not verify is refused and nothing is
+restricted or unlocked). Features that are disabled by the policy become unusable (e.g., save,
+copy, export) and plugins outside the whitelist become unavailable; blocked actions show a
+"Blocked by course policy" notice. The window shows the policy, its remaining time, the
+storage mode and whether screen protection could be applied on this platform. From this point on, the student works in a
 controlled environment that allows a fair evaluation of their skills. The features
 needed for the student to perform the analysis remain accessible, so their
 workflow is not impacted.
 
 **Step 3: Request a task.**
 
-The student can now request problems to work on. GView uses the student's token and
-sends a secure request to the server for a specific task (or for the next available
-task, depending on the policy).
+The window lists the published **weeks**; each week contains **problems** (graded tasks,
+with current points and the student's attempts) and **resources** (files, text notes and
+links shared by the teacher). Disabled weeks and items are never shown. *Details* shows the
+description; *Open* (or Enter) downloads the selected item.
 
-If the server accepts the request, it streams back binary content to GView along
-with the task requirements. Typically this is binary executable files (e.g., PE
-files). That content is opened inside GView either as a buffer (from memory only) or
-from a file (depending on the policy), enabling the student to start their analysis.
+Typically this is binary executable files (e.g., PE files). Depending on the policy and the
+item, the content is either kept in memory only (encrypted in transit, decrypted into locked
+memory, never written to disk) or saved to a folder chosen by the student and opened from
+there. In both cases its SHA-256 is verified.
 
 **Step 4: Perform the analysis.**
 
@@ -56,20 +62,26 @@ correct value is 3.
 
 **Step 5: Submit the solution.**
 
-The student submits the solution directly from GView:
+The student submits the solution directly from GView (*Submit flag* in the catalogue, or
+Ctrl+Alt+F in the task window), optionally - or, if the course requires it, mandatorily -
+together with a short explanation of the reasoning:
 
 * If the solution is wrong, the server returns a failure response, and the student
   can try again.
 * If the solution is correct, the server returns a success response and the number
   of points assigned for that task.
+* If the network fails, *Retry* resends the same submission (same submission id), so a
+  retry is never counted as an extra attempt.
 
 This immediate feedback lets students receive grading instantly, without waiting for
 human evaluation and intervention.
 
 **Step 6: Send telemetry.**
 
-At the end of the task, telemetry data is securely sent to the server. It is used
-for course improvement only. No invasive data is collected. In this use case, the
+When the policy enables it, telemetry is sent to the server in the background. It is used
+for course improvement only. No invasive data is collected: GView records that an action
+happened (a followed jump, a comment added, a viewer opened) but never comment text, labels,
+notes, clipboard content, keystrokes or files outside the course. In this use case, the
 focus is on the following metrics:
 
 * time to solve;

@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Learning and Evaluation Mode - implementation report &mdash; GView  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="GView architecture" href="architecture.html" />
+    <link rel="prev" title="GView use in education" href="education.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            GView
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="keyboard_shortcuts.html">Keyboard shortcuts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="education.html">GView use in education</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Learning and Evaluation Mode - implementation report</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview-and-threat-model">1. Overview and threat model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#connection-string">2. Connection string</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#access-token-and-request-headers">3. Access token and request headers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#endpoints">4. Endpoints</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#policy-schema-2">5. Policy (schema 2)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#content-delivery">6. Content delivery</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#feature-enforcement-matrix">7. Feature enforcement matrix</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#screen-protection">8. Screen protection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#telemetry">9. Telemetry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#submission">10. Submission</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#catalogue-model">11. Catalogue model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#session-state-machine">12. Session state machine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#verification">13. Verification</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#test-vectors">Test vectors</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#limitations">Limitations</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#deviations-from-the-protocol-spec">14. Deviations from the protocol spec</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#open-questions-for-the-server-implementer">15. Open questions for the server implementer</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plugin_development.html">Plugin development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins (Type Plugins)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GView</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Learning and Evaluation Mode - implementation report</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/learning_mode_protocol.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="learning-and-evaluation-mode-implementation-report">
+<h1>Learning and Evaluation Mode - implementation report<a class="headerlink" href="#learning-and-evaluation-mode-implementation-report" title="Permalink to this heading"></a></h1>
+<p>This page is the ground truth for what the GView client implements for Learning and Evaluation Mode (protocol v2).
+It is kept identical to <code class="docutils literal notranslate"><span class="pre">plans/LEARNING_MODE_IMPLEMENTED.md</span></code> (the copy consumed by the course-server team) and
+complements the design contract <code class="docutils literal notranslate"><span class="pre">plans/LEARNING_MODE_PROTOCOL_SPEC.md</span></code>. Where the client differs from that
+contract, the difference is listed in <a class="reference internal" href="#deviations-from-the-protocol-spec">14. Deviations from the protocol spec</a> and the spec has been updated.</p>
+<nav class="contents local" id="contents">
+<ul class="simple">
+<li><p><a class="reference internal" href="#overview-and-threat-model" id="id1">1. Overview and threat model</a></p></li>
+<li><p><a class="reference internal" href="#connection-string" id="id2">2. Connection string</a></p></li>
+<li><p><a class="reference internal" href="#access-token-and-request-headers" id="id3">3. Access token and request headers</a></p></li>
+<li><p><a class="reference internal" href="#endpoints" id="id4">4. Endpoints</a></p></li>
+<li><p><a class="reference internal" href="#policy-schema-2" id="id5">5. Policy (schema 2)</a></p></li>
+<li><p><a class="reference internal" href="#content-delivery" id="id6">6. Content delivery</a></p></li>
+<li><p><a class="reference internal" href="#feature-enforcement-matrix" id="id7">7. Feature enforcement matrix</a></p></li>
+<li><p><a class="reference internal" href="#screen-protection" id="id8">8. Screen protection</a></p></li>
+<li><p><a class="reference internal" href="#telemetry" id="id9">9. Telemetry</a></p></li>
+<li><p><a class="reference internal" href="#submission" id="id10">10. Submission</a></p></li>
+<li><p><a class="reference internal" href="#catalogue-model" id="id11">11. Catalogue model</a></p></li>
+<li><p><a class="reference internal" href="#session-state-machine" id="id12">12. Session state machine</a></p></li>
+<li><p><a class="reference internal" href="#verification" id="id13">13. Verification</a></p>
+<ul>
+<li><p><a class="reference internal" href="#test-vectors" id="id14">Test vectors</a></p></li>
+<li><p><a class="reference internal" href="#limitations" id="id15">Limitations</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#deviations-from-the-protocol-spec" id="id16">14. Deviations from the protocol spec</a></p></li>
+<li><p><a class="reference internal" href="#open-questions-for-the-server-implementer" id="id17">15. Open questions for the server implementer</a></p></li>
+</ul>
+</nav>
+<section id="overview-and-threat-model">
+<h2><a class="toc-backref" href="#id1" role="doc-backlink">1. Overview and threat model</a><a class="headerlink" href="#overview-and-threat-model" title="Permalink to this heading"></a></h2>
+<p>A teacher runs a course server that hands out tasks (problems), resources and a <strong>signed policy</strong>. The student
+pastes a connection string into GView (<em>Options &gt; Learning and Evaluation Mode</em>, or <code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">learn</span> <span class="pre">&lt;connectionString&gt;</span></code>).
+GView then:</p>
+<ol class="arabic simple">
+<li><p>connects over verified TLS and authenticates with a secret access token;</p></li>
+<li><p>receives a policy, verifies its Ed25519 signature over the raw bytes, then validates schema, digest, subject,
+server and validity window - and only then applies it;</p></li>
+<li><p>enforces the policy: disabled features, plugin whitelist, watermark, memory-only storage, screen protection;</p></li>
+<li><p>lists Weeks &gt; Problems/Resources, delivers task content either into page-locked memory (<code class="docutils literal notranslate"><span class="pre">memory</span></code>) or to a
+file chosen by the student (<code class="docutils literal notranslate"><span class="pre">file</span></code>), verifying SHA-256 in both cases;</p></li>
+<li><p>submits flags (with an optional explanation) using idempotency keys;</p></li>
+<li><p>sends privacy-preserving telemetry (event-level + counters) in the background.</p></li>
+</ol>
+<p><strong>What is guaranteed</strong> (against a student using an unmodified GView build):</p>
+<ul class="simple">
+<li><p>no policy is applied unless it verifies with the public key from the connection string (or the INI fallback); a
+missing key means the policy is refused, never silently ignored;</p></li>
+<li><p>a verified policy is never downgraded by a later unverifiable or legacy answer;</p></li>
+<li><p>memory-only task content is never written to disk by GView itself (no temp files, no disassembly cache, no
+exports, no “drop to disk” for signature checks) and is wiped when its window closes;</p></li>
+<li><p>every policy-gated GView entry point listed in <a class="reference internal" href="#feature-enforcement-matrix">7. Feature enforcement matrix</a> refuses the action, says so, and
+records a <code class="docutils literal notranslate"><span class="pre">feature_blocked</span></code> telemetry event;</p></li>
+<li><p>telemetry never contains user-authored text, file paths, clipboard content or keystrokes.</p></li>
+</ul>
+<p><strong>What is not guaranteed</strong> (best effort, see CCIS sec. 4.5 / 9.3): a photo of the screen, retyping content, a
+patched/rebuilt GView (it is open source), external tools reading process memory, OS-level screenshot tools on
+platforms without capture exclusion, and the clipboard paths of AppCUI’s own controls (see <a class="reference internal" href="#limitations">Limitations</a>).</p>
+</section>
+<section id="connection-string">
+<h2><a class="toc-backref" href="#id2" role="doc-backlink">2. Connection string</a><a class="headerlink" href="#connection-string" title="Permalink to this heading"></a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">v1</span><span class="p">:</span>  <span class="n">base64</span><span class="p">(</span> <span class="n">base64</span><span class="p">(</span><span class="n">token</span><span class="p">)</span> <span class="s2">&quot;#&quot;</span> <span class="n">base64</span><span class="p">(</span><span class="n">serverUrl</span><span class="p">)</span> <span class="p">)</span>
+<span class="n">v2</span><span class="p">:</span>  <span class="n">base64</span><span class="p">(</span> <span class="n">base64</span><span class="p">(</span><span class="n">token</span><span class="p">)</span> <span class="s2">&quot;#&quot;</span> <span class="n">base64</span><span class="p">(</span><span class="n">serverUrl</span><span class="p">)</span> <span class="s2">&quot;#&quot;</span> <span class="n">base64</span><span class="p">(</span><span class="n">policyPublicKeyHex</span><span class="p">)</span> <span class="p">[</span> <span class="s2">&quot;#&quot;</span> <span class="n">base64</span><span class="p">(</span><span class="n">extraJson</span><span class="p">)</span> <span class="p">]</span> <span class="p">)</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Standard base64 alphabet. Decoding is strict: no whitespace inside, no foreign characters, padding optional,
+non-canonical trailing bits rejected. Surrounding whitespace (copy/paste) is trimmed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">token</span></code>: 16..256 printable ASCII characters (0x21-0x7E). Anything else (CR/LF in particular) is rejected because
+the token travels in an HTTP header.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">serverUrl</span></code>: <code class="docutils literal notranslate"><span class="pre">https://host[:port][/path]</span></code>, no user-info, query or fragment; trailing <code class="docutils literal notranslate"><span class="pre">/</span></code> removed, scheme and
+host lower-cased. <code class="docutils literal notranslate"><span class="pre">http://</span></code> is accepted <strong>only</strong> for <code class="docutils literal notranslate"><span class="pre">localhost</span></code>, <code class="docutils literal notranslate"><span class="pre">127.0.0.1</span></code> or <code class="docutils literal notranslate"><span class="pre">[::1]</span></code> and only when
+<code class="docutils literal notranslate"><span class="pre">[GView]</span> <span class="pre">LearningAllowPlainHttpLocalhost=true</span></code> (teacher-laptop labs).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">policyPublicKeyHex</span></code>: exactly 64 hex characters (raw 32-byte Ed25519 key).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">extraJson</span></code> (optional JSON object): <code class="docutils literal notranslate"><span class="pre">label</span></code> (string, shown in the window) and <code class="docutils literal notranslate"><span class="pre">caPem</span></code> (base64 of a PEM
+certificate used as the <em>only</em> trust anchor for that deployment, e.g. a self-signed server certificate).</p></li>
+</ul>
+<p>Worked example (token <code class="docutils literal notranslate"><span class="pre">tok_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd</span></code>, server <code class="docutils literal notranslate"><span class="pre">https://re.example.edu</span></code>, the stub
+server’s public key <code class="docutils literal notranslate"><span class="pre">7fd806c7f2a9e88ec89bb6cca8ba6a2b4b225aa85e488e8222be9dc2acadf094</span></code>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">v1</span> <span class="o">=</span> <span class="n">ZEc5clgwRkNRMFJGUmtkSVNVcExURTFPVDFCUlVsTlVWVlpYV0ZsYU1ERXlNelExTmpjNE9XRmlZMlE9I2FIUjBjSE02THk5eVpTNWxlR0Z0Y0d4bExtVmtkUT09</span>
+<span class="n">v2</span> <span class="o">=</span> <span class="n">ZEc5clgwRkNRMFJGUmtkSVNVcExURTFPVDFCUlVsTlVWVlpYV0ZsYU1ERXlNelExTmpjNE9XRmlZMlE9I2FIUjBjSE02THk5eVpTNWxlR0Z0Y0d4bExtVmtkUT09I04yWmtPREEyWXpkbU1tRTVaVGc0WldNNE9XSmlObU5qWVRoaVlUWmhNbUkwWWpJeU5XRmhPRFZsTkRnNFpUZ3lNakppWlRsa1l6SmhZMkZrWmpBNU5BPT0</span><span class="o">=</span>
+<span class="n">v2</span> <span class="o">+</span> <span class="n">extra</span> <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span><span class="s2">&quot;RE 2026 - Group A&quot;</span><span class="p">}</span> <span class="o">=</span>
+     <span class="n">ZEc5clgwRkNRMFJGUmtkSVNVcExURTFPVDFCUlVsTlVWVlpYV0ZsYU1ERXlNelExTmpjNE9XRmlZMlE9I2FIUjBjSE02THk5eVpTNWxlR0Z0Y0d4bExtVmtkUT09I04yWmtPREEyWXpkbU1tRTVaVGc0WldNNE9XSmlObU5qWVRoaVlUWmhNbUkwWWpJeU5XRmhPRFZsTkRnNFpUZ3lNakppWlRsa1l6SmhZMkZrWmpBNU5BPT0jZXlKc1lXSmxiQ0k2SWxKRklESXdNallnTFNCSGNtOTFjQ0JCSW4wPQ</span><span class="o">==</span>
+</pre></div>
+</div>
+<p>INI keys (section <code class="docutils literal notranslate"><span class="pre">[GView]</span></code> of <code class="docutils literal notranslate"><span class="pre">gview.ini</span></code>):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Key</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ServerConnectionString</span></code></p></td>
+<td><p>Saved only after a <em>successful, verified</em> connect; used to reconnect on open.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PolicyPublicKey</span></code></p></td>
+<td><p>64 hex chars; used when the connection string has no key (v1).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">LearningAllowPlainHttpLocalhost</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code>/<code class="docutils literal notranslate"><span class="pre">false</span></code> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>), see above.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">LearningDownloadFolder</span></code></p></td>
+<td><p>Default folder for <code class="docutils literal notranslate"><span class="pre">file</span></code> deliveries (empty = <code class="docutils literal notranslate"><span class="pre">&lt;Documents&gt;/GView/&lt;week&gt;</span></code>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Key.LearningSubmitFlag</span></code></p></td>
+<td><p>Shortcut of “Submit flag for this task” in a task window (default Ctrl+Alt+F).</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="access-token-and-request-headers">
+<h2><a class="toc-backref" href="#id3" role="doc-backlink">3. Access token and request headers</a><a class="headerlink" href="#access-token-and-request-headers" title="Permalink to this heading"></a></h2>
+<p>The token is a secret bearer credential. Every request is an HTTPS <code class="docutils literal notranslate"><span class="pre">POST</span></code> with:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Header</p></th>
+<th class="head"><p>Value</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">XAppUserID</span></code></p></td>
+<td><p>the access token</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">X-GView-Client</span></code></p></td>
+<td><p>client version (<code class="docutils literal notranslate"><span class="pre">GVIEW_VERSION</span></code>, e.g. <code class="docutils literal notranslate"><span class="pre">0.390.0</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">X-GView-Protocol</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">2</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">X-GView-Policy</span></code></p></td>
+<td><p>id of the policy currently in force (omitted before the first policy)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Content-Type</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">application/json;</span> <span class="pre">charset=utf-8</span></code> (body <code class="docutils literal notranslate"><span class="pre">{}</span></code> unless noted)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Accept</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">application/json,</span> <span class="pre">application/octet-stream</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Transport rules (libcurl): <code class="docutils literal notranslate"><span class="pre">CURLOPT_SSL_VERIFYPEER=1</span></code>, <code class="docutils literal notranslate"><span class="pre">CURLOPT_SSL_VERIFYHOST=2</span></code>, TLS &gt;= 1.2, protocols
+restricted to <code class="docutils literal notranslate"><span class="pre">https</span></code> (or <code class="docutils literal notranslate"><span class="pre">http</span></code> for the localhost exception), <strong>redirects are never followed</strong> (the token must
+only reach the configured server), the Windows certificate store is trusted (<code class="docutils literal notranslate"><span class="pre">CURLSSLOPT_NATIVE_CA</span></code>) unless
+<code class="docutils literal notranslate"><span class="pre">caPem</span></code> is supplied, in which case it is the only trust anchor (<code class="docutils literal notranslate"><span class="pre">CURLOPT_CAINFO_BLOB</span></code>). Timeouts: connect 10 s,
+JSON requests 60 s, downloads 300 s, telemetry 15 s (2 s for the final flush at exit). Response caps: Connect 256 KiB
+(decoded policy 64 KiB), JSON 4 MiB, binaries 256 MiB, telemetry/submit replies 64 KiB. All network I/O runs on a
+worker thread; results are applied on the UI thread. Ending the session or exiting cancels the running request
+(checked about every second) instead of waiting for its timeout.</p>
+</section>
+<section id="endpoints">
+<h2><a class="toc-backref" href="#id4" role="doc-backlink">4. Endpoints</a><a class="headerlink" href="#endpoints" title="Permalink to this heading"></a></h2>
+<p>All endpoints are <code class="docutils literal notranslate"><span class="pre">POST</span></code>. Error envelope for every non-2xx answer:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;error&quot;</span><span class="p">,</span> <span class="s2">&quot;code&quot;</span><span class="p">:</span> <span class="s2">&quot;POLICY_EXPIRED&quot;</span><span class="p">,</span> <span class="s2">&quot;details&quot;</span><span class="p">:</span> <span class="s2">&quot;human readable&quot;</span><span class="p">,</span> <span class="s2">&quot;retryable&quot;</span><span class="p">:</span> <span class="n">false</span> <span class="p">}</span>
+</pre></div>
+</div>
+<p>Codes understood (HTTP mapping as in the spec): <code class="docutils literal notranslate"><span class="pre">BAD_REQUEST</span></code> 400, <code class="docutils literal notranslate"><span class="pre">UNAUTHORIZED</span></code> 401, <code class="docutils literal notranslate"><span class="pre">FORBIDDEN</span></code> 403,
+<code class="docutils literal notranslate"><span class="pre">NOT_FOUND</span></code> 404, <code class="docutils literal notranslate"><span class="pre">RATE_LIMITED</span></code> 429 (+ <code class="docutils literal notranslate"><span class="pre">Retry-After</span></code> seconds), <code class="docutils literal notranslate"><span class="pre">POLICY_EXPIRED</span></code> 403, <code class="docutils literal notranslate"><span class="pre">POLICY_NOT_STARTED</span></code> 403,
+<code class="docutils literal notranslate"><span class="pre">ALREADY_SOLVED</span></code> 409, <code class="docutils literal notranslate"><span class="pre">ITEM_DISABLED</span></code> 404, <code class="docutils literal notranslate"><span class="pre">UNSUPPORTED_CLIENT</span></code> 426, <code class="docutils literal notranslate"><span class="pre">SERVER_ERROR</span></code> 500. When the body is not an
+envelope the code is derived from the HTTP status. <code class="docutils literal notranslate"><span class="pre">TRANSPORT_ERROR</span></code> and <code class="docutils literal notranslate"><span class="pre">PROTOCOL_ERROR</span></code> are client-side only.</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Endpoint</p></th>
+<th class="head"><p>Client behaviour</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/Connect</span></code></p></td>
+<td><p>Sent first. <code class="docutils literal notranslate"><span class="pre">404</span></code>/<code class="docutils literal notranslate"><span class="pre">405</span></code> =&gt; retried once on legacy <code class="docutils literal notranslate"><span class="pre">/GView/</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/</span></code></p></td>
+<td><p>Legacy connect. Empty/non-JSON <code class="docutils literal notranslate"><span class="pre">200</span></code> =&gt; legacy session (see <a class="reference internal" href="#catalogue-model">11. Catalogue model</a>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/GetWeeks</span></code></p></td>
+<td><p>Catalogue. <code class="docutils literal notranslate"><span class="pre">404</span></code>/<code class="docutils literal notranslate"><span class="pre">405</span></code> =&gt; legacy <code class="docutils literal notranslate"><span class="pre">/GView/GetProblems</span></code> (flat array).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/GetProblems/&lt;name&gt;</span></code></p></td>
+<td><p>Problem download (bytes + delivery headers).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/GetResource/&lt;name&gt;</span></code></p></td>
+<td><p>Resource download (<code class="docutils literal notranslate"><span class="pre">file</span></code>/<code class="docutils literal notranslate"><span class="pre">text</span></code> kinds only; <code class="docutils literal notranslate"><span class="pre">link</span></code> uses the catalogue URL).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/SubmitFlag</span></code></p></td>
+<td><p>Submission (<a class="reference internal" href="#submission">10. Submission</a>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/Telemetry</span></code></p></td>
+<td><p>Batches (<a class="reference internal" href="#telemetry">9. Telemetry</a>).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">/GView/Heartbeat</span></code></p></td>
+<td><p>Not used by the client.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Connect response (protocol 2):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;ok&quot;</span><span class="p">,</span> <span class="s2">&quot;protocolVersion&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;serverVersion&quot;</span><span class="p">:</span> <span class="s2">&quot;2.0.0&quot;</span><span class="p">,</span> <span class="s2">&quot;serverTime&quot;</span><span class="p">:</span> <span class="mi">1759400000</span><span class="p">,</span>
+  <span class="s2">&quot;policy&quot;</span><span class="p">:</span> <span class="s2">&quot;&lt;base64 of the exact policy bytes&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;policySignature&quot;</span><span class="p">:</span> <span class="s2">&quot;&lt;base64 of a 64-byte Ed25519 signature&gt;&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;user&quot;</span><span class="p">:</span> <span class="p">{</span> <span class="s2">&quot;displayName&quot;</span><span class="p">:</span> <span class="s2">&quot;Student 17&quot;</span><span class="p">,</span> <span class="s2">&quot;score&quot;</span><span class="p">:</span> <span class="mi">120</span> <span class="p">}</span> <span class="p">}</span>
+</pre></div>
+</div>
+<p>A JSON object without <code class="docutils literal notranslate"><span class="pre">policy</span></code> and without <code class="docutils literal notranslate"><span class="pre">protocolVersion</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code> is treated as legacy. A protocol-2 answer
+without <code class="docutils literal notranslate"><span class="pre">policy</span></code>/<code class="docutils literal notranslate"><span class="pre">policySignature</span></code> is an error. <code class="docutils literal notranslate"><span class="pre">serverTime</span></code> is informational (the client validates with its
+own clock and 120 s skew).</p>
+<p>Item names are validated before they are placed in a URL: <code class="docutils literal notranslate"><span class="pre">[A-Za-z0-9_-]{1,64}</span></code>.</p>
+</section>
+<section id="policy-schema-2">
+<h2><a class="toc-backref" href="#id5" role="doc-backlink">5. Policy (schema 2)</a><a class="headerlink" href="#policy-schema-2" title="Permalink to this heading"></a></h2>
+<p>Signature: <code class="docutils literal notranslate"><span class="pre">Ed25519.verify(publicKey,</span> <span class="pre">policyBytes,</span> <span class="pre">signature)</span></code> with OpenSSL <code class="docutils literal notranslate"><span class="pre">EVP_DigestVerify</span></code> over the exact
+decoded bytes, <strong>before</strong> any parsing. Validation order and error codes (the code prefixes the message and is the
+<code class="docutils literal notranslate"><span class="pre">reason</span></code> of <code class="docutils literal notranslate"><span class="pre">policy_rejected</span></code>):</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_KEY_MISSING</span></code> - no 32-byte public key (connection string v2 or <code class="docutils literal notranslate"><span class="pre">PolicyPublicKey</span></code>);</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_SIGNATURE_INVALID</span></code> - signature does not verify;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_SCHEMA_UNSUPPORTED</span></code> - <code class="docutils literal notranslate"><span class="pre">schema</span></code> is not <code class="docutils literal notranslate"><span class="pre">2</span></code>;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_MALFORMED</span></code> - structure/types (see below);</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_DIGEST_MISMATCH</span></code> - digest check;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_SUBJECT_MISMATCH</span></code> - <code class="docutils literal notranslate"><span class="pre">subject</span> <span class="pre">!=</span> <span class="pre">hex(sha256(token))[0:16]</span></code> (constant-time compare);</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_SERVER_MISMATCH</span></code> - <code class="docutils literal notranslate"><span class="pre">serverUrl</span></code> (normalised) differs from the connection string’s server;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POLICY_NOT_STARTED</span></code> / <code class="docutils literal notranslate"><span class="pre">POLICY_EXPIRED</span></code> - <code class="docutils literal notranslate"><span class="pre">startsAt</span> <span class="pre">-</span> <span class="pre">120</span> <span class="pre">&lt;=</span> <span class="pre">now</span> <span class="pre">&lt;=</span> <span class="pre">endsAt</span> <span class="pre">+</span> <span class="pre">120</span></code>;</p></li>
+<li><p>platform: <code class="docutils literal notranslate"><span class="pre">requireScreenProtect</span></code> and capture exclusion unavailable =&gt; state <em>Error</em> (restrictions applied,
+no task can be opened).</p></li>
+</ol>
+<p>Fields (unknown top-level fields are ignored; a <em>present</em> field with a wrong type is an error):</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 15.0%" />
+<col style="width: 55.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Field</p></th>
+<th class="head"><p>Required / default</p></th>
+<th class="head"><p>Rules</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">schema</span></code></p></td>
+<td><p>required</p></td>
+<td><p>must be 2</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">id</span></code></p></td>
+<td><p>required</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">[A-Za-z0-9_.-]{1,64}</span></code>; sent as <code class="docutils literal notranslate"><span class="pre">X-GView-Policy</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">digest</span></code></p></td>
+<td><p>required</p></td>
+<td><p>64 lowercase hex</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">purpose</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>&lt;= 256 chars, no control characters</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">issuedAt</span></code></p></td>
+<td><p>0</p></td>
+<td><p>unsigned integer</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">startsAt</span></code> / <code class="docutils literal notranslate"><span class="pre">endsAt</span></code></p></td>
+<td><p>required</p></td>
+<td><p>unsigned, <code class="docutils literal notranslate"><span class="pre">endsAt</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>, <code class="docutils literal notranslate"><span class="pre">endsAt</span> <span class="pre">&gt;=</span> <span class="pre">startsAt</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">subject</span></code></p></td>
+<td><p>required</p></td>
+<td><p>16 lowercase hex</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">serverUrl</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>when present it must match the connection string’s server</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">disabledFeatures</span></code></p></td>
+<td><p>[]</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Copy,</span> <span class="pre">Export,</span> <span class="pre">SaveAs,</span> <span class="pre">Plugins,</span> <span class="pre">LLMHints,</span> <span class="pre">Clipboard,</span> <span class="pre">Screenshots</span></code>; <strong>unknown names are rejected</strong></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">allowedPlugins</span></code></p></td>
+<td><p>[]</p></td>
+<td><p>&lt;= 256 names <code class="docutils literal notranslate"><span class="pre">[A-Za-z0-9_.-]{1,64}</span></code>; applies when <code class="docutils literal notranslate"><span class="pre">Plugins</span></code> is disabled; matched case-insensitively</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">storageMode</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">file</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">file</span></code> or <code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">watermark</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>&lt;= 128 chars, shown in every file window title</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">bestEffortScreenProtect</span></code></p></td>
+<td><p>true</p></td>
+<td><p>see <a class="reference internal" href="#screen-protection">8. Screen protection</a></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">requireScreenProtect</span></code></p></td>
+<td><p>false</p></td>
+<td><p>see <a class="reference internal" href="#screen-protection">8. Screen protection</a></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.enabled</span></code></p></td>
+<td><p>false</p></td>
+<td><p>nothing is collected or sent when false</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.flushIntervalSeconds</span></code></p></td>
+<td><p>60</p></td>
+<td><p>clamped to [5, 3600]</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.maxBatchEvents</span></code></p></td>
+<td><p>500</p></td>
+<td><p>clamped to [1, 5000]; the queue holds 4x this</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.idleThresholdSeconds</span></code></p></td>
+<td><p>120</p></td>
+<td><p>clamped to [10, 86400]</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.eventLevel</span></code></p></td>
+<td><p>true</p></td>
+<td><p>false =&gt; counters only, no events</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">submission.allowInTool</span></code></p></td>
+<td><p>true</p></td>
+<td><p>false =&gt; Submit hidden</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">submission.requireExplanation</span></code></p></td>
+<td><p>false</p></td>
+<td><p>explanation mandatory for every problem</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">submission.explanationMaxChars</span></code></p></td>
+<td><p>2000</p></td>
+<td><p>clamped to [0, 100000]</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">contentEncryption</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>“” or <code class="docutils literal notranslate"><span class="pre">aes-256-gcm-hkdf-v1</span></code>; <strong>required</strong> when <code class="docutils literal notranslate"><span class="pre">storageMode=memory</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">contentKeyId</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>16 lowercase hex; <strong>required</strong> with <code class="docutils literal notranslate"><span class="pre">contentEncryption</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Digest: the server serialises the policy with <code class="docutils literal notranslate"><span class="pre">&quot;digest&quot;:&quot;&quot;</span></code> (compact separators, sorted keys), takes
+<code class="docutils literal notranslate"><span class="pre">sha256</span></code> of those bytes and embeds the hex value. The client verifies it by blanking the (unique) occurrence of
+<code class="docutils literal notranslate"><span class="pre">&quot;digest&quot;:&quot;&lt;hex&gt;&quot;</span></code> (or <code class="docutils literal notranslate"><span class="pre">&quot;digest&quot;:</span> <span class="pre">&quot;&lt;hex&gt;&quot;</span></code>) in the received bytes and hashing the result. The digest must appear
+exactly once.</p>
+<p>Re-entrancy: a connect while a policy is in force validates the new policy completely; only a <em>valid</em> policy
+replaces the current one (a different <code class="docutils literal notranslate"><span class="pre">id</span></code> emits <code class="docutils literal notranslate"><span class="pre">policy_applied</span></code>). Failed reconnects and legacy answers leave
+the current policy in force.</p>
+<p>Implementation: <code class="docutils literal notranslate"><span class="pre">GViewCore/src/Security/RestrictedMode.cpp</span></code> (<code class="docutils literal notranslate"><span class="pre">VerifyAndParsePolicy</span></code>, <code class="docutils literal notranslate"><span class="pre">Internal::Activate</span></code>
+returning an <code class="docutils literal notranslate"><span class="pre">ActivationReport</span></code>). The policy object is signed public data and is not page-locked; secrets are
+(see below).</p>
+</section>
+<section id="content-delivery">
+<h2><a class="toc-backref" href="#id6" role="doc-backlink">6. Content delivery</a><a class="headerlink" href="#content-delivery" title="Permalink to this heading"></a></h2>
+<p>Download response headers: <code class="docutils literal notranslate"><span class="pre">X-GView-Delivery:</span> <span class="pre">memory|file</span></code> (required in v2), <code class="docutils literal notranslate"><span class="pre">X-GView-SHA256</span></code> (hex of the plaintext,
+required in v2), <code class="docutils literal notranslate"><span class="pre">X-GView-Encrypted:</span> <span class="pre">0|1</span></code>, <code class="docutils literal notranslate"><span class="pre">X-GView-Filename</span></code> (sanitised: base name only, no reserved device names,
+no <code class="docutils literal notranslate"><span class="pre">&lt;&gt;:&quot;|?*</span></code> or control characters, &lt;= 128 chars), <code class="docutils literal notranslate"><span class="pre">X-GView-Item-Version</span></code>.</p>
+<p>Effective mode = most restrictive of <code class="docutils literal notranslate"><span class="pre">policy.storageMode</span></code>, the catalogue <code class="docutils literal notranslate"><span class="pre">deliveryMode</span></code> and <code class="docutils literal notranslate"><span class="pre">X-GView-Delivery</span></code>
+(<code class="docutils literal notranslate"><span class="pre">memory</span></code> wins). Legacy sessions always use memory mode (historic behaviour).</p>
+<p><code class="docutils literal notranslate"><span class="pre">aes-256-gcm-hkdf-v1</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">key</span>   <span class="o">=</span> <span class="n">HKDF</span><span class="o">-</span><span class="n">SHA256</span><span class="p">(</span><span class="n">ikm</span> <span class="o">=</span> <span class="n">UTF8</span><span class="p">(</span><span class="n">accessToken</span><span class="p">),</span> <span class="n">salt</span> <span class="o">=</span> <span class="n">UTF8</span><span class="p">(</span><span class="n">policy</span><span class="o">.</span><span class="n">id</span><span class="p">),</span> <span class="n">info</span> <span class="o">=</span> <span class="s2">&quot;GView-Content-v1&quot;</span><span class="p">,</span> <span class="n">L</span> <span class="o">=</span> <span class="mi">32</span><span class="p">)</span>
+<span class="n">keyId</span> <span class="o">=</span> <span class="nb">hex</span><span class="p">(</span><span class="n">sha256</span><span class="p">(</span><span class="n">key</span><span class="p">))[</span><span class="mi">0</span><span class="p">:</span><span class="mi">16</span><span class="p">]</span>                     <span class="o">-&gt;</span> <span class="n">must</span> <span class="n">equal</span> <span class="n">policy</span><span class="o">.</span><span class="n">contentKeyId</span> <span class="p">(</span><span class="n">checked</span> <span class="n">before</span> <span class="n">decrypting</span><span class="p">)</span>
+<span class="n">aad</span>   <span class="o">=</span> <span class="n">UTF8</span><span class="p">(</span><span class="n">itemName</span><span class="p">)</span> <span class="o">||</span> <span class="mh">0x00</span> <span class="o">||</span> <span class="n">UTF8</span><span class="p">(</span><span class="n">policy</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+<span class="n">blob</span>  <span class="o">=</span> <span class="s2">&quot;GVE1&quot;</span> <span class="o">||</span> <span class="n">iv</span><span class="p">(</span><span class="mi">12</span><span class="p">)</span> <span class="o">||</span> <span class="n">ciphertext</span> <span class="o">||</span> <span class="n">tag</span><span class="p">(</span><span class="mi">16</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Rules: an encrypted blob requires an active policy; a memory delivery that is <strong>not</strong> encrypted is refused when the
+policy declares <code class="docutils literal notranslate"><span class="pre">contentEncryption</span></code>; the SHA-256 of the plaintext is verified in all v2 cases.</p>
+<p>Memory mode: the blob is decrypted directly into a <code class="docutils literal notranslate"><span class="pre">LockedBuffer</span></code> (<code class="docutils literal notranslate"><span class="pre">VirtualAlloc</span></code> + <code class="docutils literal notranslate"><span class="pre">VirtualLock</span></code> - the
+working set is grown if needed - / <code class="docutils literal notranslate"><span class="pre">mmap</span></code> + <code class="docutils literal notranslate"><span class="pre">mlock</span></code> + <code class="docutils literal notranslate"><span class="pre">MADV_DONTDUMP</span></code>), the HTTP buffers use an allocator that
+zeroes memory before freeing it, and the viewer reads straight from the locked buffer through a read-only
+<code class="docutils literal notranslate"><span class="pre">LockedMemoryDataObject</span></code> (no <code class="docutils literal notranslate"><span class="pre">MemoryFile</span></code> copy). The buffer is wiped when the window closes. The window is bound
+to the item; for memory items GView never reads or writes the disassembly cache, never exports, and skips WinTrust
+(which would need the file on disk; the embedded OpenSSL signature check still runs).</p>
+<p>Known residual plaintext copies (honest list): GView’s <code class="docutils literal notranslate"><span class="pre">DataCache</span></code> chunk cache (up to <code class="docutils literal notranslate"><span class="pre">CacheSize</span></code>, 10 MiB by
+default, ordinary heap), parser/viewer-derived structures (strings, disassembly text, images), AppCUI screen buffers.
+Pinning can fail silently (Windows working-set quota, Linux <code class="docutils literal notranslate"><span class="pre">RLIMIT_MEMLOCK</span></code>); content is then still wiped but may
+have been paged.</p>
+<p>File mode: the student picks the destination in a Save dialog (default <code class="docutils literal notranslate"><span class="pre">LearningDownloadFolder</span></code> or
+<code class="docutils literal notranslate"><span class="pre">&lt;Documents&gt;/GView/&lt;week&gt;</span></code>); the content is written to <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;.part</span></code>, re-hashed from disk, then atomically moved
+into place (<code class="docutils literal notranslate"><span class="pre">MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)</span></code> / <code class="docutils literal notranslate"><span class="pre">rename</span></code>). Any failure removes the <code class="docutils literal notranslate"><span class="pre">.part</span></code> file.</p>
+<p>Secrets: the access token is held in a <code class="docutils literal notranslate"><span class="pre">SecureString</span></code> (wiped allocator) and the content key in a <code class="docutils literal notranslate"><span class="pre">LockedBuffer</span></code>;
+both are erased by <em>End session</em> and at exit. libcurl’s own copy of the header list is freed without wiping, the
+connection field’s text and the saved <code class="docutils literal notranslate"><span class="pre">ServerConnectionString</span></code> (which contains the token) remain - the latter is
+stored in <code class="docutils literal notranslate"><span class="pre">gview.ini</span></code> in plain text, as before this work.</p>
+</section>
+<section id="feature-enforcement-matrix">
+<h2><a class="toc-backref" href="#id7" role="doc-backlink">7. Feature enforcement matrix</a><a class="headerlink" href="#feature-enforcement-matrix" title="Permalink to this heading"></a></h2>
+<p>Every gate goes through <code class="docutils literal notranslate"><span class="pre">GView::App::IsBlockedByPolicy</span></code> (or <code class="docutils literal notranslate"><span class="pre">IsExportBlockedFor(object,</span> <span class="pre">...)</span></code>), which shows a
+“Blocked by course policy” notice (at most once per 5 s per feature) and records <code class="docutils literal notranslate"><span class="pre">feature_blocked</span></code>. Commands are
+also hidden from the command bar where GView builds it. Under a <code class="docutils literal notranslate"><span class="pre">memory</span></code> storage policy, <code class="docutils literal notranslate"><span class="pre">Export</span></code> and <code class="docutils literal notranslate"><span class="pre">SaveAs</span></code>
+are restricted even if not listed.</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Feature</p></th>
+<th class="head"><p>Gated locations</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Copy</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">FileWindow::ShowCopyDialog</span></code> (Ctrl+C / Ctrl+Insert in every viewer);
+<code class="docutils literal notranslate"><span class="pre">BufferViewer::Instance::ShowCopyDialog</span></code>; <code class="docutils literal notranslate"><span class="pre">TextViewer::Instance::ShowCopyDialog</span></code>;
+<code class="docutils literal notranslate"><span class="pre">DissasmViewer::Instance::ShowCopyDialog</span></code>; all clipboard writes via <code class="docutils literal notranslate"><span class="pre">GView::App::SetClipboardText</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Clipboard</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GView::App::SetClipboardText</span></code> (BufferViewer <code class="docutils literal notranslate"><span class="pre">CopyDialog</span></code>, TextViewer, DissasmViewer, Hashes generic
+plugin MD5/SHA256 copy, learning link dialog - the Copy button is disabled)</p></td>
+</tr>
+<tr class="row-even"><td><p>Export</p></td>
+<td><p>GridViewer export cell/column (hidden + gated); <code class="docutils literal notranslate"><span class="pre">DissasmViewer::CommandExportAsmFile</span></code>;
+<code class="docutils literal notranslate"><span class="pre">DissasmViewer::SaveCacheData</span></code>/<code class="docutils literal notranslate"><span class="pre">LoadCacheData</span></code> (skipped); Dropper generic plugin; PE
+<code class="docutils literal notranslate"><span class="pre">Resources::SaveCurrentResource</span></code>; PE <code class="docutils literal notranslate"><span class="pre">DigitalSignature</span></code> drop-to-disk for WinTrust; PDF
+<code class="docutils literal notranslate"><span class="pre">ExtractAndSaveTextWithDialog</span></code>; JS <code class="docutils literal notranslate"><span class="pre">AST::DumpVisitor</span></code> debug dumps</p></td>
+</tr>
+<tr class="row-odd"><td><p>SaveAs</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">LexicalViewer::Instance::ShowSaveAsDialog</span></code> (hidden + gated; memory items also blocked)</p></td>
+</tr>
+<tr class="row-even"><td><p>Plugins</p></td>
+<td><p>runtime filter in <code class="docutils literal notranslate"><span class="pre">Instance::IdentifyTypePlugin_FirstMatch/BestMatch/WithSelectedType</span></code>,
+<code class="docutils literal notranslate"><span class="pre">SelectTypeDialog::PopulateTypes</span></code>, final check in <code class="docutils literal notranslate"><span class="pre">Instance::Add</span></code> (falls back to the default viewer);
+generic plugins hidden in <code class="docutils literal notranslate"><span class="pre">Instance::UpdateCommandBar</span></code> and refused in <code class="docutils literal notranslate"><span class="pre">Instance::OnEvent</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>LLMHints</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SmartAssistantPromptInterfaceProxy::AskSmartAssistant</span></code> (single choke point for every prompt); the Smart
+Assistants tab is not created for new windows</p></td>
+</tr>
+<tr class="row-even"><td><p>Screenshots</p></td>
+<td><p>see <a class="reference internal" href="#screen-protection">8. Screen protection</a></p></td>
+</tr>
+<tr class="row-odd"><td><p>Watermark</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">FileWindow::RefreshTitle</span></code> (“&lt;name&gt; - &lt;watermark&gt;”) for new and already open windows</p></td>
+</tr>
+</tbody>
+</table>
+<p>What remains possible: see <a class="reference internal" href="#overview-and-threat-model">1. Overview and threat model</a> and <a class="reference internal" href="#limitations">Limitations</a>.</p>
+</section>
+<section id="screen-protection">
+<h2><a class="toc-backref" href="#id8" role="doc-backlink">8. Screen protection</a><a class="headerlink" href="#screen-protection" title="Permalink to this heading"></a></h2>
+<p>Protection is <em>requested</em> when <code class="docutils literal notranslate"><span class="pre">bestEffortScreenProtect</span></code> or <code class="docutils literal notranslate"><span class="pre">requireScreenProtect</span></code> is true or <code class="docutils literal notranslate"><span class="pre">Screenshots</span></code> is
+disabled. It is <em>applied</em> when capture exclusion succeeds on at least one GView-owned window.</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Platform / frontend</p></th>
+<th class="head"><p>Behaviour</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Windows, SDL frontend</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)</span></code> (fallback <code class="docutils literal notranslate"><span class="pre">WDA_MONITOR</span></code>) on
+every visible top-level window of the process =&gt; applied. PrintScreen and Win+Shift+S
+are blocked by a low-level keyboard hook running on its own message-pumping thread.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Windows, console frontend</p></td>
+<td><p>The console window belongs to conhost/Windows Terminal, so capture exclusion cannot be
+applied =&gt; <strong>not applied</strong>; the keyboard hook is still installed.</p></td>
+</tr>
+<tr class="row-even"><td><p>Linux</p></td>
+<td><p>No capture-exclusion API; only <code class="docutils literal notranslate"><span class="pre">PR_SET_DUMPABLE=0</span></code> =&gt; not applied.</p></td>
+</tr>
+<tr class="row-odd"><td><p>macOS</p></td>
+<td><p>Not implemented for the terminal frontend =&gt; not applied.</p></td>
+</tr>
+</tbody>
+</table>
+<p><code class="docutils literal notranslate"><span class="pre">requireScreenProtect=true</span></code> and not applied =&gt; session state <em>Error</em>, tasks cannot be opened, the window explains
+the platform limitation and <code class="docutils literal notranslate"><span class="pre">screen_protect_failed{reason:&quot;unsupported_platform&quot;}</span></code> is recorded. Everything is
+reverted on deactivation (hook thread stopped, affinity reset).</p>
+</section>
+<section id="telemetry">
+<h2><a class="toc-backref" href="#id9" role="doc-backlink">9. Telemetry</a><a class="headerlink" href="#telemetry" title="Permalink to this heading"></a></h2>
+<p>Only windows opened from the course catalogue produce item events. Batches are posted by a background thread every
+<code class="docutils literal notranslate"><span class="pre">flushIntervalSeconds</span></code> and immediately after <code class="docutils literal notranslate"><span class="pre">submit</span></code>, <code class="docutils literal notranslate"><span class="pre">task_close</span></code> and <code class="docutils literal notranslate"><span class="pre">policy_applied</span></code>; at exit
+<code class="docutils literal notranslate"><span class="pre">session_end</span></code> is flushed synchronously with a 2 s cap.</p>
+<p>Batch:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span> <span class="s2">&quot;sessionId&quot;</span><span class="p">:</span> <span class="s2">&quot;&lt;uuid4, one per session, kept across reconnects&gt;&quot;</span><span class="p">,</span> <span class="s2">&quot;policyId&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;policyDigest&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;clientVersion&quot;</span><span class="p">:</span> <span class="s2">&quot;0.390.0&quot;</span><span class="p">,</span> <span class="s2">&quot;platform&quot;</span><span class="p">:</span> <span class="s2">&quot;windows-x64&quot;</span><span class="p">,</span> <span class="s2">&quot;sentAt&quot;</span><span class="p">:</span> <span class="mi">1759403100</span><span class="p">,</span>
+  <span class="s2">&quot;events&quot;</span><span class="p">:</span> <span class="p">[</span> <span class="p">{</span> <span class="s2">&quot;seq&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;t&quot;</span><span class="p">:</span> <span class="mi">1759401000</span><span class="p">,</span> <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;task_open&quot;</span><span class="p">,</span> <span class="s2">&quot;item&quot;</span><span class="p">:</span> <span class="s2">&quot;w1_stack_var&quot;</span><span class="p">,</span> <span class="s2">&quot;itemVersion&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;mode&quot;</span><span class="p">:</span> <span class="s2">&quot;memory&quot;</span> <span class="p">}</span> <span class="p">],</span>
+  <span class="s2">&quot;counters&quot;</span><span class="p">:</span> <span class="p">{</span> <span class="s2">&quot;w1_stack_var&quot;</span><span class="p">:</span> <span class="p">{</span> <span class="s2">&quot;jump_follow&quot;</span><span class="p">:</span> <span class="mi">12</span><span class="p">,</span> <span class="s2">&quot;...&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;viewer_open&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;Dissasm&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span> <span class="s2">&quot;feature_blocked&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;Copy&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span> <span class="p">}</span> <span class="p">}</span> <span class="p">}</span>
+</pre></div>
+</div>
+<p>Event whitelist (any other field, or an <code class="docutils literal notranslate"><span class="pre">item</span></code> on an event that does not allow it, is refused by the client):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Event</p></th>
+<th class="head"><p>item</p></th>
+<th class="head"><p>fields</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">session_start</span></code></p></td>
+<td><p>no</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">session_end</span></code></p></td>
+<td><p>no</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">reason</span></code> (<code class="docutils literal notranslate"><span class="pre">exit</span></code>, <code class="docutils literal notranslate"><span class="pre">user</span></code>, <code class="docutils literal notranslate"><span class="pre">policy_expired</span></code>, <code class="docutils literal notranslate"><span class="pre">policy_ended</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">policy_applied</span></code></p></td>
+<td><p>no</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">mode</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">policy_rejected</span></code></p></td>
+<td><p>no</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">reason</span></code> (a <code class="docutils literal notranslate"><span class="pre">POLICY_*</span></code> code)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">task_open</span></code></p></td>
+<td><p>yes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">itemVersion</span></code>, <code class="docutils literal notranslate"><span class="pre">mode</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">task_close</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">resource_open</span></code></p></td>
+<td><p>yes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">itemVersion</span></code>, <code class="docutils literal notranslate"><span class="pre">mode</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">viewer_open</span></code></p></td>
+<td><p>yes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">viewer</span></code> (Buffer, Text, Lexical, Image, Grid, Dissasm, Container, Other)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">jump_follow</span></code></p></td>
+<td><p>yes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">from</span></code>, <code class="docutils literal notranslate"><span class="pre">to</span></code> (<code class="docutils literal notranslate"><span class="pre">0x..</span></code> hex), <code class="docutils literal notranslate"><span class="pre">kind</span></code> (mnemonic, <code class="docutils literal notranslate"><span class="pre">[a-z0-9.]{&lt;=15}</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">jump_back</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">jump_forward</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">goto_entrypoint</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">goto_dialog</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">comment_add</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">comment_edit</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">comment_remove</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">label_rename</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">note_add</span></code></p></td>
+<td><p>yes</p></td>
+<td><ul class="simple">
+<li></li>
+</ul>
+</td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">idle</span></code></p></td>
+<td><p>yes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">seconds</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">feature_blocked</span></code></p></td>
+<td><p>yes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">feature</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">submit</span></code></p></td>
+<td><p>yes</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">clientSubmissionId</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">client_error</span></code></p></td>
+<td><p>no</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">message</span></code> (constant strings from GView code), <code class="docutils literal notranslate"><span class="pre">fatal</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">screen_protect_failed</span></code></p></td>
+<td><p>no</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">reason</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Counters (totals since session start, per item; the server replaces them): <code class="docutils literal notranslate"><span class="pre">jump_follow</span></code>, <code class="docutils literal notranslate"><span class="pre">jump_back</span></code>,
+<code class="docutils literal notranslate"><span class="pre">jump_forward</span></code>, <code class="docutils literal notranslate"><span class="pre">goto_entrypoint</span></code>, <code class="docutils literal notranslate"><span class="pre">goto_dialog</span></code>, <code class="docutils literal notranslate"><span class="pre">comment_add</span></code>, <code class="docutils literal notranslate"><span class="pre">comment_edit</span></code>, <code class="docutils literal notranslate"><span class="pre">comment_remove</span></code>,
+<code class="docutils literal notranslate"><span class="pre">label_rename</span></code>, <code class="docutils literal notranslate"><span class="pre">note_add</span></code>, <code class="docutils literal notranslate"><span class="pre">idle_seconds</span></code>, <code class="docutils literal notranslate"><span class="pre">active_seconds</span></code>, <code class="docutils literal notranslate"><span class="pre">dissasm_seconds</span></code> and the maps <code class="docutils literal notranslate"><span class="pre">viewer_open</span></code>
+and <code class="docutils literal notranslate"><span class="pre">feature_blocked</span></code>.</p>
+<p>Activity model: GView repaints only in response to input, so a repaint of a file window is the activity signal.
+Idle starts when no activity happened for <code class="docutils literal notranslate"><span class="pre">idleThresholdSeconds</span></code>; one <code class="docutils literal notranslate"><span class="pre">idle{seconds}</span></code> event is recorded when
+activity resumes. Active and Dissasm seconds accrue while a course window has focus and the user is not idle.</p>
+<p>Delivery: <code class="docutils literal notranslate"><span class="pre">seq</span></code> is monotonic per <code class="docutils literal notranslate"><span class="pre">sessionId</span></code> and preserved across retries (the server de-duplicates on
+<code class="docutils literal notranslate"><span class="pre">(sessionId,</span> <span class="pre">seq)</span></code>). <code class="docutils literal notranslate"><span class="pre">2xx</span></code> =&gt; removed; <code class="docutils literal notranslate"><span class="pre">429</span></code>/<code class="docutils literal notranslate"><span class="pre">5xx</span></code>/network error =&gt; kept and retried at the next flush;
+any other <code class="docutils literal notranslate"><span class="pre">4xx</span></code> =&gt; dropped. The queue holds <code class="docutils literal notranslate"><span class="pre">maxBatchEvents</span> <span class="pre">x</span> <span class="pre">4</span></code> events (oldest dropped). A <code class="docutils literal notranslate"><span class="pre">403</span>
+<span class="pre">POLICY_EXPIRED</span></code> on telemetry expires the session. Batches stay below 900 KiB.</p>
+<p>Privacy: never sent - comment text, label names, note contents, clipboard content, keystrokes, file paths, user
+files opened outside the catalogue, screenshots. <code class="docutils literal notranslate"><span class="pre">telemetry.enabled=false</span></code> or no policy =&gt; nothing is recorded and
+no thread runs. <code class="docutils literal notranslate"><span class="pre">policy_rejected</span></code> is only ever sent when a previously verified policy with telemetry enabled is in
+force (a rejected policy cannot grant consent).</p>
+</section>
+<section id="submission">
+<h2><a class="toc-backref" href="#id10" role="doc-backlink">10. Submission</a><a class="headerlink" href="#submission" title="Permalink to this heading"></a></h2>
+<p>Body (<code class="docutils literal notranslate"><span class="pre">application/json</span></code>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span> <span class="s2">&quot;problem&quot;</span><span class="p">:</span> <span class="s2">&quot;w1_stack_var&quot;</span><span class="p">,</span> <span class="s2">&quot;flag&quot;</span><span class="p">:</span> <span class="s2">&quot;3&quot;</span><span class="p">,</span> <span class="s2">&quot;explanation&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;clientSubmissionId&quot;</span><span class="p">:</span> <span class="s2">&quot;&lt;uuid4&gt;&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;policyId&quot;</span><span class="p">:</span> <span class="s2">&quot;pol_...&quot;</span><span class="p">,</span> <span class="s2">&quot;policyDigest&quot;</span><span class="p">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;clientVersion&quot;</span><span class="p">:</span> <span class="s2">&quot;0.390.0&quot;</span><span class="p">,</span> <span class="s2">&quot;clientTime&quot;</span><span class="p">:</span> <span class="mi">1759403000</span> <span class="p">}</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>The flag is trimmed, must be non-empty and &lt;= 512 bytes; the explanation is required when the policy or the
+problem requires it and is limited to <code class="docutils literal notranslate"><span class="pre">explanationMaxChars</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">clientSubmissionId</span></code> is a UUIDv4 created once per <em>new answer</em> (problem + flag + explanation fingerprint). A retry
+after a transport failure, 408, 429 or 5xx reuses it; any answer from the server that grades or refuses the attempt
+consumes it, so the next submission is a new attempt; editing the answer creates a new id.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">submit{clientSubmissionId}</span></code> telemetry is recorded and a flush requested.</p></li>
+<li><p>Response: <code class="docutils literal notranslate"><span class="pre">correct</span></code>, <code class="docutils literal notranslate"><span class="pre">points</span></code>, <code class="docutils literal notranslate"><span class="pre">attempts</span></code>, <code class="docutils literal notranslate"><span class="pre">alreadySolved</span></code>, <code class="docutils literal notranslate"><span class="pre">duplicate</span></code>, <code class="docutils literal notranslate"><span class="pre">details</span></code>, <code class="docutils literal notranslate"><span class="pre">totalScore</span></code> are
+shown. <code class="docutils literal notranslate"><span class="pre">409</span> <span class="pre">ALREADY_SOLVED</span></code> is informational. <code class="docutils literal notranslate"><span class="pre">403</span> <span class="pre">POLICY_EXPIRED</span></code> expires the session.</p></li>
+<li><p>Legacy servers (no <code class="docutils literal notranslate"><span class="pre">correct</span></code> field): <code class="docutils literal notranslate"><span class="pre">correct</span> <span class="pre">=</span> <span class="pre">(status</span> <span class="pre">==</span> <span class="pre">&quot;ok&quot;)</span></code>.</p></li>
+<li><p>UI: catalogue <em>Submit flag</em> button, or Ctrl+Alt+F (<code class="docutils literal notranslate"><span class="pre">Key.LearningSubmitFlag</span></code>) in a task window.</p></li>
+</ul>
+</section>
+<section id="catalogue-model">
+<h2><a class="toc-backref" href="#id11" role="doc-backlink">11. Catalogue model</a><a class="headerlink" href="#catalogue-model" title="Permalink to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">GetWeeks</span></code> is parsed defensively: weeks/items with <code class="docutils literal notranslate"><span class="pre">enabled:false</span></code> are hidden (the server should never send
+them), items with invalid names, unknown <code class="docutils literal notranslate"><span class="pre">kind</span></code>/<code class="docutils literal notranslate"><span class="pre">deliveryMode</span></code> or non-http(s) links are dropped and counted
+(“N entries hidden”), duplicates are dropped, strings are capped and control characters removed. Weeks are sorted by
+<code class="docutils literal notranslate"><span class="pre">order</span></code> then <code class="docutils literal notranslate"><span class="pre">id</span></code>; items by <code class="docutils literal notranslate"><span class="pre">order</span></code> then <code class="docutils literal notranslate"><span class="pre">name</span></code>. <code class="docutils literal notranslate"><span class="pre">kind</span></code>: <code class="docutils literal notranslate"><span class="pre">file</span></code> and <code class="docutils literal notranslate"><span class="pre">text</span></code> are downloaded (text opens in
+the Text/Lexical viewer), <code class="docutils literal notranslate"><span class="pre">link</span></code> shows the URL read-only (Copy only if <code class="docutils literal notranslate"><span class="pre">Clipboard</span></code> is allowed).</p>
+<p>Legacy servers: <code class="docutils literal notranslate"><span class="pre">/GView/</span></code> with an empty 200 =&gt; <em>Legacy</em> state: no restrictions are applied (there is nothing to
+verify), the catalogue comes from the flat <code class="docutils literal notranslate"><span class="pre">GetProblems</span></code> list as a single week, submissions use the legacy verdict.
+The window says so explicitly.</p>
+</section>
+<section id="session-state-machine">
+<h2><a class="toc-backref" href="#id12" role="doc-backlink">12. Session state machine</a><a class="headerlink" href="#session-state-machine" title="Permalink to this heading"></a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Disconnected</span> <span class="o">--</span><span class="n">Connect</span><span class="o">--&gt;</span> <span class="n">Connecting</span> <span class="o">--</span><span class="n">verified</span> <span class="n">policy</span><span class="o">------------&gt;</span> <span class="n">Active</span> <span class="o">--</span><span class="n">endsAt</span><span class="o">+</span><span class="mi">120</span><span class="n">s</span> <span class="o">/</span> <span class="n">POLICY_EXPIRED</span><span class="o">--&gt;</span> <span class="n">Expired</span>
+     <span class="o">^</span>                        <span class="o">|</span>  \<span class="o">--</span><span class="n">legacy</span> <span class="p">(</span><span class="n">empty</span> <span class="mi">200</span><span class="p">)</span><span class="o">-------------&gt;</span> <span class="n">Legacy</span>  <span class="p">(</span><span class="n">catalogue</span> <span class="o">+</span> <span class="n">submit</span><span class="p">,</span> <span class="n">no</span> <span class="n">restrictions</span><span class="p">)</span>
+     <span class="o">|</span>                        \<span class="o">---</span><span class="nb">any</span> <span class="n">failure</span> <span class="p">(</span><span class="n">no</span> <span class="n">policy</span> <span class="n">yet</span><span class="p">)</span><span class="o">-----&gt;</span> <span class="n">Error</span>   <span class="p">(</span><span class="n">no</span> <span class="n">task</span> <span class="n">can</span> <span class="n">be</span> <span class="n">opened</span><span class="p">)</span>
+     <span class="o">|</span>                <span class="n">Active</span> <span class="o">--</span><span class="n">requireScreenProtect</span> <span class="n">unmet</span><span class="o">--&gt;</span> <span class="n">Error</span> <span class="p">(</span><span class="n">restrictions</span> <span class="n">applied</span><span class="p">,</span> <span class="n">tasks</span> <span class="n">blocked</span><span class="p">)</span>
+     <span class="o">|</span>                <span class="n">Active</span><span class="o">/</span><span class="n">Expired</span><span class="o">/</span><span class="n">Error</span> <span class="o">--</span><span class="n">Reconnect</span><span class="o">--&gt;</span> <span class="n">Connecting</span> <span class="p">(</span><span class="n">current</span> <span class="n">policy</span> <span class="n">stays</span> <span class="ow">in</span> <span class="n">force</span> <span class="n">until</span> <span class="n">a</span> <span class="n">newer</span> <span class="n">validates</span><span class="p">)</span>
+     <span class="o">+--</span><span class="n">End</span> <span class="n">session</span> <span class="p">(</span><span class="n">only</span> <span class="n">when</span> <span class="n">no</span> <span class="n">learning</span> <span class="n">window</span> <span class="ow">is</span> <span class="nb">open</span><span class="p">)</span> <span class="o">/</span> <span class="n">exit</span><span class="o">--</span> <span class="nb">any</span> <span class="n">state</span>
+</pre></div>
+</div>
+<p>Expired keeps the restrictions applied (already open windows stay protected); downloads and submissions are refused;
+one final <code class="docutils literal notranslate"><span class="pre">session_end</span></code> is flushed and flushing stops.</p>
+</section>
+<section id="verification">
+<h2><a class="toc-backref" href="#id13" role="doc-backlink">13. Verification</a><a class="headerlink" href="#verification" title="Permalink to this heading"></a></h2>
+<p>Environment: Windows 11 Enterprise 10.0.26200, MSVC 19.44 (VS 2022 17.14), Debug, Catch2 3.10.0, OpenSSL 3.5.2,
+libcurl 8.16.0 (OpenSSL backend), Python 3.11.9 + cryptography 50.0.1 for the stub server.</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Case</p></th>
+<th class="head"><p>Tests (<code class="docutils literal notranslate"><span class="pre">GViewCore/src/Security/Learning/tests_learning.cpp</span></code>)</p></th>
+<th class="head"><p>Result</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>T1</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">session</span> <span class="pre">connect</span> <span class="pre">T1</span> <span class="pre">(valid</span> <span class="pre">policy)</span></code>, <code class="docutils literal notranslate"><span class="pre">policy</span> <span class="pre">verification</span></code> (valid), <code class="docutils literal notranslate"><span class="pre">encrypted</span> <span class="pre">memory</span>
+<span class="pre">download</span> <span class="pre">through</span> <span class="pre">the</span> <span class="pre">session</span></code>, E2E <code class="docutils literal notranslate"><span class="pre">end-to-end</span> <span class="pre">against</span> <span class="pre">the</span> <span class="pre">stub</span> <span class="pre">server</span></code></p></td>
+<td><p>passed</p></td>
+</tr>
+<tr class="row-odd"><td><p>T2</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">policy</span> <span class="pre">verification</span></code> (tampered byte, wrong key, missing key), <code class="docutils literal notranslate"><span class="pre">session</span> <span class="pre">rejects</span> <span class="pre">invalid</span>
+<span class="pre">policies</span></code>, E2E <code class="docutils literal notranslate"><span class="pre">hostile</span> <span class="pre">stub</span> <span class="pre">server</span></code> (<code class="docutils literal notranslate"><span class="pre">--tamper-policy</span></code>)</p></td>
+<td><p>passed</p></td>
+</tr>
+<tr class="row-even"><td><p>T3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">policy</span> <span class="pre">verification</span></code> (expired, not started, skew), <code class="docutils literal notranslate"><span class="pre">POLICY_EXPIRED</span> <span class="pre">from</span> <span class="pre">the</span> <span class="pre">server</span> <span class="pre">=&gt;</span>
+<span class="pre">Expired</span></code>, E2E unknown/disabled item =&gt; <code class="docutils literal notranslate"><span class="pre">NOT_FOUND</span></code></p></td>
+<td><p>passed</p></td>
+</tr>
+<tr class="row-odd"><td><p>T4</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">policy</span> <span class="pre">activation</span> <span class="pre">and</span> <span class="pre">enforcement</span> <span class="pre">state</span> <span class="pre">(T4)</span></code> (every feature flag, whitelist,
+re-entrancy); headless UI script: Ctrl+C in a task window =&gt; “Blocked by course policy”</p></td>
+<td><p>passed (state); entry
+points by review + UI</p></td>
+</tr>
+<tr class="row-even"><td><p>T5</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">content</span> <span class="pre">encryption</span> <span class="pre">round</span> <span class="pre">trip</span></code>, <code class="docutils literal notranslate"><span class="pre">download</span> <span class="pre">processing</span></code> (no file in CWD/TEMP, key-id
+mismatch, unencrypted refusal, SHA mismatch), <code class="docutils literal notranslate"><span class="pre">file</span> <span class="pre">mode</span> <span class="pre">atomic</span> <span class="pre">write</span></code>, <code class="docutils literal notranslate"><span class="pre">locked</span> <span class="pre">buffer</span>
+<span class="pre">hygiene</span></code>, E2E (Python-encrypted blobs), hostile E2E (<code class="docutils literal notranslate"><span class="pre">--corrupt-blob</span></code>)</p></td>
+<td><p>passed</p></td>
+</tr>
+<tr class="row-odd"><td><p>T6</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">idempotency</span> <span class="pre">keys</span></code>, <code class="docutils literal notranslate"><span class="pre">submission</span> <span class="pre">flow</span> <span class="pre">and</span> <span class="pre">idempotent</span> <span class="pre">retries</span></code>, E2E <code class="docutils literal notranslate"><span class="pre">duplicate:true</span></code></p></td>
+<td><p>passed</p></td>
+</tr>
+<tr class="row-even"><td><p>T7</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">telemetry</span> <span class="pre">known</span> <span class="pre">sequence</span> <span class="pre">(T7)</span></code>, <code class="docutils literal notranslate"><span class="pre">telemetry</span> <span class="pre">contract</span> <span class="pre">table</span></code>, E2E de-duplication</p></td>
+<td><p>passed</p></td>
+</tr>
+<tr class="row-odd"><td><p>T8</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">telemetry</span> <span class="pre">whitelist,</span> <span class="pre">bounds</span> <span class="pre">and</span> <span class="pre">flush</span> <span class="pre">outcomes</span></code> (network failure keeps events),
+<code class="docutils literal notranslate"><span class="pre">reconnect</span> <span class="pre">re-validates</span></code>, <code class="docutils literal notranslate"><span class="pre">requireScreenProtect</span> <span class="pre">unsupported</span> <span class="pre">=&gt;</span> <span class="pre">refusal</span></code></p></td>
+<td><p>passed</p></td>
+</tr>
+</tbody>
+</table>
+<p>Totals on this machine: 27 learning unit test cases / 635 assertions pass (the two end-to-end cases
+are hidden and need the stub server: 58 + 12 assertions pass, 705 in total); the full <code class="docutils literal notranslate"><span class="pre">ctest</span></code> suite (33 cases) passes. Cross-implementation
+vectors (<a class="reference internal" href="#test-vectors">Test vectors</a>) are asserted by <code class="docutils literal notranslate"><span class="pre">cross-implementation</span> <span class="pre">test</span> <span class="pre">vectors</span></code>.</p>
+<p>How to reproduce:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">cmake</span> <span class="o">-</span><span class="n">S</span> <span class="o">.</span> <span class="o">-</span><span class="n">B</span> <span class="n">build</span><span class="o">-</span><span class="n">test</span> <span class="o">-</span><span class="n">DENABLE_TESTS</span><span class="o">=</span><span class="n">ON</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">build</span><span class="o">-</span><span class="n">test</span> <span class="o">--</span><span class="n">config</span> <span class="n">Debug</span>
+<span class="n">ctest</span> <span class="o">--</span><span class="n">test</span><span class="o">-</span><span class="nb">dir</span> <span class="n">build</span><span class="o">-</span><span class="n">test</span> <span class="o">-</span><span class="n">C</span> <span class="n">Debug</span>
+<span class="n">python</span> <span class="n">tools</span><span class="o">/</span><span class="n">learning_mode_stub_server</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">quiet</span> <span class="o">--</span><span class="n">require</span><span class="o">-</span><span class="n">explanation</span>      <span class="c1"># prints the connection string</span>
+<span class="nb">set</span> <span class="n">GVIEW_LEARNING_STUB_CS</span><span class="o">=&lt;</span><span class="n">printed</span> <span class="n">connection</span> <span class="n">string</span><span class="o">&gt;</span>
+<span class="nb">bin</span>\<span class="n">Debug</span>\<span class="n">libGViewCore</span><span class="o">.</span><span class="n">exe</span> <span class="s2">&quot;[integration]&quot;</span>
+</pre></div>
+</div>
+<p>Manual check of the UI: <code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">learn</span> <span class="pre">&lt;connection</span> <span class="pre">string</span> <span class="pre">printed</span> <span class="pre">by</span> <span class="pre">the</span> <span class="pre">stub&gt;</span></code>.</p>
+<section id="test-vectors">
+<h3><a class="toc-backref" href="#id14" role="doc-backlink">Test vectors</a><a class="headerlink" href="#test-vectors" title="Permalink to this heading"></a></h3>
+<p>The stub key is derived from a public seed and is <strong>for tests only</strong>.</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Input / output</p></th>
+<th class="head"><p>Value</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>token</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tok_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>subject</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">f1988ba4bd709819</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>content key (pol id</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">7e6629f6db625710f19a7c0bdac5dd6881699b65aa8a90659966bd24539c35fb</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">pol_2026w1_ab12cd</span></code>)</p></td>
+<td></td>
+</tr>
+<tr class="row-even"><td><p>contentKeyId</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">4ae23e4dafdc826d</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>AAD (item</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">77315f737461636b5f76617200706f6c5f3230323677315f616231326364</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">w1_stack_var</span></code>)</p></td>
+<td></td>
+</tr>
+<tr class="row-odd"><td><p>public key</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">7fd806c7f2a9e88ec89bb6cca8ba6a2b4b225aa85e488e8222be9dc2acadf094</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Signed policy (<code class="docutils literal notranslate"><span class="pre">serverUrl</span></code> <code class="docutils literal notranslate"><span class="pre">https://re.example.edu</span></code>, verified at <code class="docutils literal notranslate"><span class="pre">now</span> <span class="pre">=</span> <span class="pre">1759400000</span></code>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="s2">&quot;allowedPlugins&quot;</span><span class="p">:[],</span><span class="s2">&quot;bestEffortScreenProtect&quot;</span><span class="p">:</span><span class="n">true</span><span class="p">,</span><span class="s2">&quot;digest&quot;</span><span class="p">:</span><span class="s2">&quot;5e6a9108d33760ebce5fc15585d40a7081d3eddaaa743eab771d0e535039eff8&quot;</span><span class="p">,</span><span class="s2">&quot;disabledFeatures&quot;</span><span class="p">:[</span><span class="s2">&quot;Copy&quot;</span><span class="p">,</span><span class="s2">&quot;Export&quot;</span><span class="p">],</span><span class="s2">&quot;endsAt&quot;</span><span class="p">:</span><span class="mi">1760004800</span><span class="p">,</span><span class="s2">&quot;id&quot;</span><span class="p">:</span><span class="s2">&quot;pol_2026w1_ab12cd&quot;</span><span class="p">,</span><span class="s2">&quot;issuedAt&quot;</span><span class="p">:</span><span class="mi">1759400000</span><span class="p">,</span><span class="s2">&quot;purpose&quot;</span><span class="p">:</span><span class="s2">&quot;Evaluation week 1&quot;</span><span class="p">,</span><span class="s2">&quot;requireScreenProtect&quot;</span><span class="p">:</span><span class="n">false</span><span class="p">,</span><span class="s2">&quot;schema&quot;</span><span class="p">:</span><span class="mi">2</span><span class="p">,</span><span class="s2">&quot;serverUrl&quot;</span><span class="p">:</span><span class="s2">&quot;https://re.example.edu&quot;</span><span class="p">,</span><span class="s2">&quot;startsAt&quot;</span><span class="p">:</span><span class="mi">1759399880</span><span class="p">,</span><span class="s2">&quot;storageMode&quot;</span><span class="p">:</span><span class="s2">&quot;file&quot;</span><span class="p">,</span><span class="s2">&quot;subject&quot;</span><span class="p">:</span><span class="s2">&quot;f1988ba4bd709819&quot;</span><span class="p">,</span><span class="s2">&quot;submission&quot;</span><span class="p">:{</span><span class="s2">&quot;allowInTool&quot;</span><span class="p">:</span><span class="n">true</span><span class="p">,</span><span class="s2">&quot;explanationMaxChars&quot;</span><span class="p">:</span><span class="mi">2000</span><span class="p">,</span><span class="s2">&quot;requireExplanation&quot;</span><span class="p">:</span><span class="n">false</span><span class="p">},</span><span class="s2">&quot;telemetry&quot;</span><span class="p">:{</span><span class="s2">&quot;enabled&quot;</span><span class="p">:</span><span class="n">true</span><span class="p">,</span><span class="s2">&quot;eventLevel&quot;</span><span class="p">:</span><span class="n">true</span><span class="p">,</span><span class="s2">&quot;flushIntervalSeconds&quot;</span><span class="p">:</span><span class="mi">60</span><span class="p">,</span><span class="s2">&quot;idleThresholdSeconds&quot;</span><span class="p">:</span><span class="mi">120</span><span class="p">,</span><span class="s2">&quot;maxBatchEvents&quot;</span><span class="p">:</span><span class="mi">500</span><span class="p">},</span><span class="s2">&quot;watermark&quot;</span><span class="p">:</span><span class="s2">&quot;Student 17&quot;</span><span class="p">}</span>
+
+<span class="n">signature</span> <span class="p">(</span><span class="n">base64</span><span class="p">)</span> <span class="o">=</span> <span class="n">LnnH52</span><span class="o">/</span><span class="mi">44</span><span class="n">aGmbhfBVmmv7LwdQoUSTaNppaRMhuE4W4tBy0rKPLyUIbVAlUa2Jw</span><span class="o">/</span><span class="n">cuy3jjOSjIkWPkFzbPNdWBQ</span><span class="o">==</span>
+</pre></div>
+</div>
+</section>
+<section id="limitations">
+<h3><a class="toc-backref" href="#id15" role="doc-backlink">Limitations</a><a class="headerlink" href="#limitations" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>AppCUI controls write to the clipboard on their own</strong> (Ctrl+C in <code class="docutils literal notranslate"><span class="pre">ListView</span></code>/<code class="docutils literal notranslate"><span class="pre">TreeView</span></code>/<code class="docutils literal notranslate"><span class="pre">Grid</span></code> panels,
+<code class="docutils literal notranslate"><span class="pre">TextField</span></code>/<code class="docutils literal notranslate"><span class="pre">TextArea</span></code> selections, theme editor, window manager notes) through <code class="docutils literal notranslate"><span class="pre">AppCUI::OS::Clipboard</span></code> and
+are not gated, because the AppCUI submodule was not modified. Paste is not blocked either. Proposed upstream fix: a
+process-wide clipboard policy callback in <code class="docutils literal notranslate"><span class="pre">AppCUI::OS::Clipboard</span></code> (<code class="docutils literal notranslate"><span class="pre">SetText</span></code>/<code class="docutils literal notranslate"><span class="pre">GetText</span></code> consult it), installed
+by GView on activation.</p></li>
+<li><p>Screen capture cannot be prevented on the Windows console frontend, Linux or macOS (<a class="reference internal" href="#screen-protection">8. Screen protection</a>).</p></li>
+<li><p>Frontends without frame updates (ncurses on Linux/macOS) run network operations synchronously on the UI thread,
+bounded by the timeouts above. GView enables AppCUI’s FPS mode so that the Windows console and SDL frontends
+deliver <code class="docutils literal notranslate"><span class="pre">OnFrameUpdate</span></code> (~30 Hz, no repaint unless something changed); on those frontends the automatic connect
+when the Learning window opens is deferred to its first frame so that it runs on the worker.</p></li>
+<li><p>Idle/active time is derived from repaints (approximation).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Retry-After</span></code> is shown to the user but telemetry retries simply wait for the next flush interval.</p></li>
+<li><p>Plugins outside GViewCore can still write files through code paths not listed in the matrix; the plugin
+whitelist (<code class="docutils literal notranslate"><span class="pre">Plugins</span></code> + <code class="docutils literal notranslate"><span class="pre">allowedPlugins</span></code>) is the control for those (e.g. <code class="docutils literal notranslate"><span class="pre">FileDownloader</span></code>).</p></li>
+<li><p>Residual plaintext copies and secrets: see <a class="reference internal" href="#content-delivery">6. Content delivery</a>.</p></li>
+</ul>
+</section>
+</section>
+<section id="deviations-from-the-protocol-spec">
+<h2><a class="toc-backref" href="#id16" role="doc-backlink">14. Deviations from the protocol spec</a><a class="headerlink" href="#deviations-from-the-protocol-spec" title="Permalink to this heading"></a></h2>
+<p>All of these are additional strictness or clarifications; <code class="docutils literal notranslate"><span class="pre">plans/LEARNING_MODE_PROTOCOL_SPEC.md</span></code> was updated.</p>
+<ol class="arabic simple">
+<li><p>Extra validation step <code class="docutils literal notranslate"><span class="pre">POLICY_SERVER_MISMATCH</span></code>: a non-empty <code class="docutils literal notranslate"><span class="pre">serverUrl</span></code> must equal the connection string’s
+server (scheme/host case-insensitive, trailing <code class="docutils literal notranslate"><span class="pre">/</span></code> ignored).</p></li>
+<li><p>Course-server policies must be <code class="docutils literal notranslate"><span class="pre">schema:</span> <span class="pre">2</span></code> (schema 1 is only accepted by the file-based <code class="docutils literal notranslate"><span class="pre">LoadPolicyFromFiles</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">storageMode:</span> <span class="pre">memory</span></code> requires <code class="docutils literal notranslate"><span class="pre">contentEncryption</span></code> and <code class="docutils literal notranslate"><span class="pre">contentKeyId</span></code>; <code class="docutils literal notranslate"><span class="pre">contentEncryption</span></code> requires
+<code class="docutils literal notranslate"><span class="pre">contentKeyId</span></code>; present fields with wrong JSON types are rejected (fail closed).</p></li>
+<li><p>Unencrypted <code class="docutils literal notranslate"><span class="pre">memory</span></code> deliveries are refused when the policy declares <code class="docutils literal notranslate"><span class="pre">contentEncryption</span></code>; <code class="docutils literal notranslate"><span class="pre">X-GView-SHA256</span></code>
+and <code class="docutils literal notranslate"><span class="pre">X-GView-Delivery</span></code> are mandatory in protocol 2.</p></li>
+<li><p>Telemetry: explicit per-event field whitelist (table above); <code class="docutils literal notranslate"><span class="pre">note_add</span></code> counter; <code class="docutils literal notranslate"><span class="pre">eventLevel:false</span></code> means
+counters only; item events only for catalogue windows; <code class="docutils literal notranslate"><span class="pre">policy_rejected</span></code> only with prior consent.</p></li>
+<li><p>Screen protection is requested by <code class="docutils literal notranslate"><span class="pre">bestEffortScreenProtect</span></code> <em>or</em> <code class="docutils literal notranslate"><span class="pre">requireScreenProtect</span></code> <em>or</em> a disabled
+<code class="docutils literal notranslate"><span class="pre">Screenshots</span></code> feature.</p></li>
+<li><p>Under a <code class="docutils literal notranslate"><span class="pre">memory</span></code> storage policy <code class="docutils literal notranslate"><span class="pre">Export</span></code> and <code class="docutils literal notranslate"><span class="pre">SaveAs</span></code> are restricted for every object.</p></li>
+<li><p>Telemetry numeric parameters and <code class="docutils literal notranslate"><span class="pre">explanationMaxChars</span></code> are clamped to the ranges listed in <a class="reference internal" href="#policy-schema-2">5. Policy (schema 2)</a>.</p></li>
+<li><p>Redirects are never followed; <code class="docutils literal notranslate"><span class="pre">caPem</span></code> replaces (does not extend) the system trust store.</p></li>
+<li><p>Item names must match <code class="docutils literal notranslate"><span class="pre">[A-Za-z0-9_-]{1,64}</span></code> (Django <code class="docutils literal notranslate"><span class="pre">SlugField</span></code> compatible).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/GView/Heartbeat</span></code> is not used by the client.</p></li>
+</ol>
+</section>
+<section id="open-questions-for-the-server-implementer">
+<h2><a class="toc-backref" href="#id17" role="doc-backlink">15. Open questions for the server implementer</a><a class="headerlink" href="#open-questions-for-the-server-implementer" title="Permalink to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Please make sure <code class="docutils literal notranslate"><span class="pre">policy.serverUrl</span></code> is exactly the URL put in connection strings (otherwise use an empty
+<code class="docutils literal notranslate"><span class="pre">serverUrl</span></code>) - the client rejects mismatches.</p></li>
+<li><p>Accept the <code class="docutils literal notranslate"><span class="pre">note_add</span></code> counter and the <code class="docutils literal notranslate"><span class="pre">reason</span></code> values listed for <code class="docutils literal notranslate"><span class="pre">session_end</span></code>.</p></li>
+<li><p>Should <code class="docutils literal notranslate"><span class="pre">eventLevel:false</span></code> also suppress session lifecycle events server-side? The client sends counters only.</p></li>
+<li><p>The client treats any <code class="docutils literal notranslate"><span class="pre">4xx</span></code> except <code class="docutils literal notranslate"><span class="pre">408</span></code>/<code class="docutils literal notranslate"><span class="pre">429</span></code> on <code class="docutils literal notranslate"><span class="pre">SubmitFlag</span></code> as consuming the idempotency key (e.g. a
+<code class="docutils literal notranslate"><span class="pre">400</span></code> for a missing explanation). Confirm the server does not store a <code class="docutils literal notranslate"><span class="pre">Submission</span></code> row in that case.</p></li>
+<li><p>Confirm that a protocol-2 download of a <code class="docutils literal notranslate"><span class="pre">kind=link</span></code> resource is never needed (the client uses the catalogue URL).</p></li>
+<li><p>Legacy flat <code class="docutils literal notranslate"><span class="pre">GetProblems</span></code> items carry no <code class="docutils literal notranslate"><span class="pre">deliveryMode</span></code>/<code class="docutils literal notranslate"><span class="pre">sha256</span></code>; for v2 clients please always serve
+<code class="docutils literal notranslate"><span class="pre">GetWeeks</span></code>.</p></li>
+</ol>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="education.html" class="btn btn-neutral float-left" title="GView use in education" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="architecture.html" class="btn btn-neutral float-right" title="GView architecture" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Gavriluț Dragoș, Mutu Gheorghiță, Andrei Damian, Raul Zaharia.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

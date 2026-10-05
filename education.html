@@ -21,7 +21,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="GView architecture" href="architecture.html" />
+    <link rel="next" title="Learning and Evaluation Mode - implementation report" href="learning_mode_protocol.html" />
     <link rel="prev" title="Keyboard shortcuts" href="keyboard_shortcuts.html" /> 
 </head>
 
@@ -58,6 +58,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#security-and-limitations">Security and limitations</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="learning_mode_protocol.html">Learning and Evaluation Mode - implementation report</a></li>
 <li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
 <li class="toctree-l1"><a class="reference internal" href="configuration.html">GView configuration file</a></li>
 <li class="toctree-l1"><a class="reference internal" href="security.html">Security and restricted mode</a></li>
@@ -97,31 +98,37 @@
 <h1>GView use in education<a class="headerlink" href="#gview-use-in-education" title="Permalink to this heading"></a></h1>
 <p>This page describes how GView can be used in educational settings for learning and
 evaluation, including the Learning and Evaluation Mode (built on <a class="reference internal" href="security.html"><span class="doc">Security and restricted mode</span></a>),
-the typical workflow, and security considerations.</p>
+the typical workflow, and security considerations. The exact protocol, data formats and
+enforcement points are documented in <a class="reference internal" href="learning_mode_protocol.html"><span class="doc">Learning and Evaluation Mode - implementation report</span></a>.</p>
 <section id="use-case">
 <h2>Use case<a class="headerlink" href="#use-case" title="Permalink to this heading"></a></h2>
 <section id="step-by-step-workflow">
 <h3>Step-by-step workflow<a class="headerlink" href="#step-by-step-workflow" title="Permalink to this heading"></a></h3>
 <p><strong>Step 1: Launch GView and connect to the course server.</strong></p>
-<p>The student launches GView and selects the Learning and Evaluation Mode from the
-menu options. Then the student connects securely to the course server using a
-unique login token. Each student is assigned a unique token used to identify them.
-If the server accepts the connection, it returns the policy in JSON format.</p>
+<p>The student launches GView, selects <em>Options &gt; Learning and Evaluation Mode</em> (or
+starts <code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">learn</span> <span class="pre">&lt;connectionString&gt;</span></code>) and pastes the connection string received from
+the teacher. The connection string contains the student’s secret access token, the server
+address and the public key used to verify policies. GView connects over verified TLS; if
+the server accepts the token, it returns a policy (JSON) signed with Ed25519.</p>
 <p><strong>Step 2: Load and apply the policy in GView.</strong></p>
-<p>After the policy is received, it is automatically loaded in GView: features that
-are disabled by the policy become unusable (e.g., save, copy, export), and plugins
-that are disabled become unavailable. From this point on, the student works in a
+<p>After the policy is received, GView verifies its signature, the student binding and its
+validity window before applying it (a policy that does not verify is refused and nothing is
+restricted or unlocked). Features that are disabled by the policy become unusable (e.g., save,
+copy, export) and plugins outside the whitelist become unavailable; blocked actions show a
+“Blocked by course policy” notice. The window shows the policy, its remaining time, the
+storage mode and whether screen protection could be applied on this platform. From this point on, the student works in a
 controlled environment that allows a fair evaluation of their skills. The features
 needed for the student to perform the analysis remain accessible, so their
 workflow is not impacted.</p>
 <p><strong>Step 3: Request a task.</strong></p>
-<p>The student can now request problems to work on. GView uses the student’s token and
-sends a secure request to the server for a specific task (or for the next available
-task, depending on the policy).</p>
-<p>If the server accepts the request, it streams back binary content to GView along
-with the task requirements. Typically this is binary executable files (e.g., PE
-files). That content is opened inside GView either as a buffer (from memory only) or
-from a file (depending on the policy), enabling the student to start their analysis.</p>
+<p>The window lists the published <strong>weeks</strong>; each week contains <strong>problems</strong> (graded tasks,
+with current points and the student’s attempts) and <strong>resources</strong> (files, text notes and
+links shared by the teacher). Disabled weeks and items are never shown. <em>Details</em> shows the
+description; <em>Open</em> (or Enter) downloads the selected item.</p>
+<p>Typically this is binary executable files (e.g., PE files). Depending on the policy and the
+item, the content is either kept in memory only (encrypted in transit, decrypted into locked
+memory, never written to disk) or saved to a folder chosen by the student and opened from
+there. In both cases its SHA-256 is verified.</p>
 <p><strong>Step 4: Perform the analysis.</strong></p>
 <p>The student follows the usual process used in laboratories. First, the student
 inspects the raw bytes from a binary perspective using the Buffer Viewer. This
@@ -135,18 +142,24 @@ information, they can add comments to the code.</p>
 variable from the stack. Upon inspection, the student can determine that the
 correct value is 3.</p>
 <p><strong>Step 5: Submit the solution.</strong></p>
-<p>The student submits the solution directly from GView:</p>
+<p>The student submits the solution directly from GView (<em>Submit flag</em> in the catalogue, or
+Ctrl+Alt+F in the task window), optionally - or, if the course requires it, mandatorily -
+together with a short explanation of the reasoning:</p>
 <ul class="simple">
 <li><p>If the solution is wrong, the server returns a failure response, and the student
 can try again.</p></li>
 <li><p>If the solution is correct, the server returns a success response and the number
 of points assigned for that task.</p></li>
+<li><p>If the network fails, <em>Retry</em> resends the same submission (same submission id), so a
+retry is never counted as an extra attempt.</p></li>
 </ul>
 <p>This immediate feedback lets students receive grading instantly, without waiting for
 human evaluation and intervention.</p>
 <p><strong>Step 6: Send telemetry.</strong></p>
-<p>At the end of the task, telemetry data is securely sent to the server. It is used
-for course improvement only. No invasive data is collected. In this use case, the
+<p>When the policy enables it, telemetry is sent to the server in the background. It is used
+for course improvement only. No invasive data is collected: GView records that an action
+happened (a followed jump, a comment added, a viewer opened) but never comment text, labels,
+notes, clipboard content, keystrokes or files outside the course. In this use case, the
 focus is on the following metrics:</p>
 <ul class="simple">
 <li><p>time to solve;</p></li>
@@ -203,7 +216,7 @@ working with it.</p>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="keyboard_shortcuts.html" class="btn btn-neutral float-left" title="Keyboard shortcuts" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="architecture.html" class="btn btn-neutral float-right" title="GView architecture" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="learning_mode_protocol.html" class="btn btn-neutral float-right" title="Learning and Evaluation Mode - implementation report" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
