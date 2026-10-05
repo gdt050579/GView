@@ -166,113 +166,109 @@ bool Instance::OnMouseWheel(int, int, Input::MouseWheel direction, Input::Key)
 {
     switch (direction) {
     case MouseWheel::Up:
-        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+        return ExecuteNavigationCommand(COMMAND_NAV_SCROLL_UP, false);
     case MouseWheel::Down:
-        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+        return ExecuteNavigationCommand(COMMAND_NAV_SCROLL_DOWN, false);
     case MouseWheel::Left:
-        return OnKeyEvent(Key::PageUp, false);
+        return ExecuteNavigationCommand(COMMAND_NAV_PAGE_UP, false);
     case MouseWheel::Right:
-        return OnKeyEvent(Key::PageDown, false);
+        return ExecuteNavigationCommand(COMMAND_NAV_PAGE_DOWN, false);
     }
 
     return false;
 }
 
-bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
+bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 {
-    bool select = ((keyCode & Key::Shift) != Key::None);
-    if (select)
-        keyCode = static_cast<Key>((uint32) keyCode - (uint32) Key::Shift);
-
-    switch (keyCode) {
-    case Key::Down:
+    switch (commandId) {
+    case COMMAND_NAV_DOWN:
         if (Cursor.startViewLine + Cursor.lineInView + 1 <= Layout.totalLinesSize)
-            MoveTo(0, 1, keyCode, select);
+            MoveTo(0, 1, Key::Down, select);
         return true;
-    case Key::Up:
+    case COMMAND_NAV_UP:
         if (Cursor.startViewLine + Cursor.lineInView > 0)
-            MoveTo(0, -1, keyCode, select);
+            MoveTo(0, -1, Key::Up, select);
         else
-            MoveTo(-static_cast<int32>(Cursor.offset), 0, keyCode, select);
+            MoveTo(-static_cast<int32>(Cursor.offset), 0, Key::Up, select);
         return true;
-    case Key::Left:
+    case COMMAND_NAV_LEFT:
         if (this->Cursor.offset > 0)
-            MoveTo(-1, 0, keyCode, select);
+            MoveTo(-1, 0, Key::Left, select);
         return true;
-    case Key::Right:
+    case COMMAND_NAV_RIGHT:
         if (this->Cursor.offset < this->Layout.textSize)
-            MoveTo(1, 0, keyCode, select);
+            MoveTo(1, 0, Key::Right, select);
         return true;
-    case Key::PageDown:
+    case COMMAND_NAV_PAGE_DOWN:
         if (Cursor.startViewLine + Cursor.lineInView + this->Layout.visibleRows <= Layout.totalLinesSize)
-            MoveTo(0, this->Layout.visibleRows, keyCode, select);
+            MoveTo(0, this->Layout.visibleRows, Key::PageDown, select);
         else
-            MoveTo(0, Layout.totalLinesSize - Cursor.startViewLine - Cursor.lineInView, keyCode, select);
+            MoveTo(0, Layout.totalLinesSize - Cursor.startViewLine - Cursor.lineInView, Key::PageDown, select);
         return true;
-    case Key::PageUp:
+    case COMMAND_NAV_PAGE_UP:
         if (Cursor.startViewLine + Cursor.lineInView >= this->Layout.visibleRows)
-            MoveTo(0, -static_cast<int32>(this->Layout.visibleRows), keyCode, select);
+            MoveTo(0, -static_cast<int32>(this->Layout.visibleRows), Key::PageUp, select);
         else
-            MoveTo(0, -static_cast<int32>(Cursor.startViewLine + Cursor.lineInView), keyCode, select);
+            MoveTo(0, -static_cast<int32>(Cursor.startViewLine + Cursor.lineInView), Key::PageUp, select);
         return true;
-    case Key::Home:
-        MoveTo(-static_cast<int32>(Cursor.offset), 0, keyCode, select);
+    case COMMAND_NAV_HOME:
+        MoveTo(-static_cast<int32>(Cursor.offset), 0, Key::Home, select);
         return true;
-    case Key::End:
-        MoveTo(this->Layout.textSize - 1 - Cursor.offset, select);
+    case COMMAND_NAV_END:
+        // move to the last character of the line (offset relative to the cursor; lines = 0)
+        MoveTo(static_cast<int32>(this->Layout.textSize) - 1 - static_cast<int32>(Cursor.offset), 0, Key::End, select);
         return true;
-    case Key::Ctrl | Key::Up:
+    case COMMAND_NAV_SCROLL_UP:
         if (this->Cursor.lineInView + this->Cursor.startViewLine > 0)
             MoveScrollTo(0, -1);
-        /*else
-            MoveScrollTo(0, -(this->Layout.textSize - this->Cursor.offset));*/
         return true;
-    case Key::Ctrl | Key::Down:
+    case COMMAND_NAV_SCROLL_DOWN:
         if (Cursor.startViewLine + Cursor.lineInView + 1 < Layout.totalLinesSize)
             MoveScrollTo(0, 1);
         return true;
-    case Key::Ctrl | Key::Left:
+    case COMMAND_NAV_SCROLL_LEFT:
         if (this->Cursor.offset >= 1)
             MoveScrollTo(-1, 0);
         return true;
-    case Key::Ctrl | Key::Right:
+    case COMMAND_NAV_SCROLL_RIGHT:
         if (this->Cursor.offset < Layout.textSize)
             MoveScrollTo(1, 0);
         return true;
-    case Key::Space:
+    case COMMAND_NAV_SPACE:
         ProcessSpaceKey();
         return true;
-    case Key::Enter:
+    case COMMAND_NAV_OPEN:
         OpenCurrentSelection();
         return true;
-    case Key::X:
+    case COMMAND_NAV_ADD_ZONE:
         CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Add);
         return true;
-    }
-
-    if (keyCode == Config::AddOrEditCommentCommand.Key) {
+    case COMMAND_ADD_OR_EDIT_COMMENT:
         AddComment();
         return true;
-    }
-    if (keyCode == Config::RemoveCommentCommand.Key) {
+    case COMMAND_REMOVE_COMMENT:
         RemoveComment();
         return true;
-    }
-
-    if (keyCode == Config::RenameLabelCommand.Key) {
+    case COMMAND_RENAME_LABEL:
         RenameLabel();
         return true;
-    }
-
-    if (keyCode == Config::SaveCacheCommand.Key) {
+    case COMMAND_SAVE_DISSASM_CACHE:
         SaveCacheData();
         return true;
     }
+    return false;
+}
+
+bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
+{
+    const auto action = Config::Map.Resolve(keyCode);
+    if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
+        return true;
 
     if (keyCode == Key::Escape)
         SaveCacheData();
 
-    return ViewControl::OnKeyEvent(select ? (keyCode | Key::Shift) : keyCode, charCode);
+    return ViewControl::OnKeyEvent(keyCode, charCode);
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -356,13 +352,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         }
         case COMMAND_DISSAM_GOTO_ENTRYPOINT: {
             ProcessSpaceKey(true);
-            return true;
-        }
-        case COMMAND_AVAILABLE_KEYS: {
-            {
-                KeyConfigDisplayWindow windows;
-                windows.Show();
-            }
             return true;
         }
         default:

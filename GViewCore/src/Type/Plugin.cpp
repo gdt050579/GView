@@ -142,9 +142,10 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
                 // we have a valid command and key
                 if (this->commands.size() == 0)
                     this->commands.reserve(4);
-                auto& cmd = this->commands.emplace_back();
-                cmd.key   = key.value();
-                cmd.name  = entryName.substr(8);
+                auto& cmd      = this->commands.emplace_back();
+                cmd.key        = key.value();
+                cmd.defaultKey = key.value();
+                cmd.name       = entryName.substr(8);
             }
         }
     }
@@ -233,4 +234,16 @@ TypeInterface* Plugin::CreateInstance() const
     CHECK(!this->Invalid, nullptr, "Invalid plugin (not loaded properly or no valid exports)");
     CHECK(this->Loaded, nullptr, "Plugin was no loaded. Have you call `Validate` first ?");
     return this->fnCreateInstance();
+}
+std::string Plugin::GetKeysSection() const
+{
+    std::string section(GView::App::Keys::SECTION_TYPE_PREFIX);
+    section.append(this->name.GetText(), this->name.Len());
+    return section;
+}
+void Plugin::ApplyKeyBindings(const GView::App::Keys::Registry& registry)
+{
+    const auto section = GetKeysSection();
+    for (auto& cmd : this->commands)
+        cmd.key = registry.Resolve(section, cmd.name, cmd.defaultKey);
 }

@@ -54,56 +54,27 @@ runs:
         }
 
     # --------------------------
-    # Cache vcpkg
+    # Cache vcpkg (binary cache)
     # --------------------------
-    - name: Compute vcpkg.json hash
-      id: vcpkg_hash
-      if: ${{ runner.os != 'Windows' }}
+    # vcpkg stores one zip per built package in VCPKG_DEFAULT_BINARY_CACHE. Restoring them is a matter of seconds and,
+    # unlike caching build/vcpkg_installed, a change of one dependency (vcpkg.json, ports, compiler) only rebuilds the
+    # affected packages: the previous cache is restored through restore-keys and the new packages are added to it.
+    - name: Setup vcpkg binary cache
+      if: ${{ inputs.use_vcpkg_cache == 'true' }}
       shell: bash
       run: |
-        if [ -f "vcpkg.json" ]; then
-          HASH=$(sha256sum vcpkg.json | cut -d' ' -f1)
-        else
-          HASH="novcpkg"
-        fi
-        echo "HASH=$HASH" >> "$GITHUB_ENV"
-        echo "HASH=$HASH" >> "$GITHUB_OUTPUT"
+        VCPKG_CACHE_DIR="${{ github.workspace }}/.vcpkg-binary-cache"
+        mkdir -p "$VCPKG_CACHE_DIR"
+        echo "VCPKG_DEFAULT_BINARY_CACHE=$VCPKG_CACHE_DIR" >> "$GITHUB_ENV"
 
-    - name: Compute vcpkg.json hash (Windows)
-      id: vcpkg_hash_win
-      if: ${{ runner.os == 'Windows' }}
-      shell: pwsh
-      run: |
-        if (Test-Path "vcpkg.json") {
-          $HASH = (Get-FileHash vcpkg.json -Algorithm SHA256).Hash
-        } else {
-          $HASH = "novcpkg"
-        }
-        echo "HASH=$HASH" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
-        echo "HASH=$HASH" >> $GITHUB_OUTPUT
-
-    - name: Cache vcpkg (Linux/macOS)
-      if: ${{ inputs.use_vcpkg_cache == 'true' && runner.os != 'Windows' }}
+    - name: Cache vcpkg packages
+      if: ${{ inputs.use_vcpkg_cache == 'true' }}
       uses: actions/cache@v4
       with:
-        path: |
-          build/vcpkg_installed
-          build/vcpkg_downloads
-        key: ${{ runner.os }}-vcpkg-${{ steps.vcpkg_hash.outputs.HASH }}
+        path: ${{ github.workspace }}/.vcpkg-binary-cache
+        key: vcpkg-bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'AppCUI/vcpkg/versions/baseline.json', 'AppCUI/vcpkg-ports/**') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-
-
-    - name: Cache vcpkg (Windows)
-      if: ${{ inputs.use_vcpkg_cache == 'true' && runner.os == 'Windows' }}
-      uses: actions/cache@v4
-      with:
-        path: |
-          build/vcpkg_installed
-          build/vcpkg_downloads
-        key: ${{ runner.os }}-vcpkg-${{ steps.vcpkg_hash_win.outputs.HASH }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-
-
+          vcpkg-bin-${{ runner.os }}-${{ runner.arch }}-
 
     # --------------------------
     # OS dependencies
@@ -125,9 +96,33 @@ runs:
     - name: Install dependencies (macOS)
       if: ${{ runner.os == 'macOS' }}
       shell: bash
+      env:
+        # Homebrew does not provide bottles for Intel macOS anymore: `brew update` + upgrades (cmake, python, openssl,
+        # glib, ...) are compiled from source and take ~40 minutes. Use the tools already present on the runner image
+        # and only install what is missing, without updating or upgrading anything.
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+        HOMEBREW_NO_INSTALL_UPGRADE: "1"
+        HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
+        HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        HOMEBREW_NO_ANALYTICS: "1"
+        HOMEBREW_NO_ENV_HINTS: "1"
       run: |
-        brew update
-        brew install autoconf autoconf-archive automake libtool make cmake ninja
+        missing=""
+        # formula:command pairs (the command tells if the tool is already available)
+        for entry in cmake:cmake ninja:ninja pkgconf:pkg-config autoconf:autoconf automake:automake libtool:glibtoolize make:gmake; do
+          formula="${entry%%:*}"; tool="${entry##*:}"
+          command -v "$tool" >/dev/null 2>&1 || missing="$missing $formula"
+        done
+        # autoconf-archive only provides m4 macros (no command)
+        brew list --versions autoconf-archive >/dev/null 2>&1 || missing="$missing autoconf-archive"
+        if [ -n "$missing" ]; then
+          echo "Installing:$missing"
+          brew install $missing
+        else
+          echo "All build tools are already installed"
+        fi
+        cmake --version | head -1
+        ninja --version
         echo "VCPKG_CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
 
     # --------------------------

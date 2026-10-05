@@ -1536,107 +1536,81 @@ void Instance::DeleteTokens()
         this->Reparse(false);
     }
 }
-bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
+bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 {
-    switch (keyCode)
+    switch (commandId)
     {
-    case Key::Up:
-        MoveUp(1, false);
+    case CMD_NAV_UP:
+        MoveUp(1, select);
         return true;
-    case Key::Up | Key::Shift:
-        MoveUp(1, true);
+    case CMD_NAV_PAGE_UP:
+        MoveUp(this->GetHeight(), select);
         return true;
-    case Key::PageUp:
-        MoveUp(this->GetHeight(), false);
+    case CMD_NAV_DOWN:
+        MoveDown(1, select);
         return true;
-    case Key::PageUp | Key::Shift:
-        MoveUp(this->GetHeight(), true);
+    case CMD_NAV_PAGE_DOWN:
+        MoveDown(this->GetHeight(), select);
         return true;
-    case Key::Down:
-        MoveDown(1, false);
+    case CMD_NAV_LEFT:
+        MoveLeft(select, true);
         return true;
-    case Key::Down | Key::Shift:
-        MoveDown(1, true);
+    case CMD_NAV_RIGHT:
+        MoveRight(select, true);
         return true;
-    case Key::PageDown:
-        MoveDown(this->GetHeight(), false);
+    case CMD_NAV_HOME:
+        MoveLeft(select, false);
         return true;
-    case Key::PageDown | Key::Shift:
-        MoveDown(this->GetHeight(), true);
-        return true;
-    case Key::Left:
-        MoveLeft(false, true);
-        return true;
-    case Key::Left | Key::Shift:
-        MoveLeft(true, true);
-        return true;
-    case Key::Right:
-        MoveRight(false, true);
-        return true;
-    case Key::Right | Key::Shift:
-        MoveRight(true, true);
-        return true;
-    case Key::Home:
-        MoveLeft(false, false);
-        return true;
-    case Key::Home | Key::Shift:
-        MoveLeft(true, false);
-        return true;
-    case Key::End:
-        MoveRight(false, false);
-        return true;
-    case Key::End | Key::Shift:
-        MoveRight(true, false);
+    case CMD_NAV_END:
+        MoveRight(select, false);
         return true;
 
     // view-port scroll
-    case Key::Left | Key::Ctrl:
+    case CMD_NAV_SCROLL_LEFT:
         if (Scroll.x > 0)
             Scroll.x--;
         return true;
-    case Key::Right | Key::Ctrl:
+    case CMD_NAV_SCROLL_RIGHT:
         Scroll.x++;
         return true;
-    case Key::Up | Key::Ctrl:
+    case CMD_NAV_SCROLL_UP:
         if (Scroll.y > 0)
             Scroll.y--;
         return true;
-    case Key::Down | Key::Ctrl:
+    case CMD_NAV_SCROLL_DOWN:
         Scroll.y++;
         return true;
 
     // fold -> unfold
-    case Key::Space:
+    case CMD_NAV_TOGGLE_FOLD:
         SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, false);
         return true;
-    case Key::Space | Key::Ctrl:
+    case CMD_NAV_TOGGLE_FOLD_ALL:
         SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, true);
         return true;
 
-    case Key::Enter:
+    case CMD_NAV_EDIT_TOKEN:
         EditCurrentToken();
         return true;
 
-    case Key::E:
+    case CMD_NAV_EXPAND_ALL:
         ExpandAll();
         return true;
-    case Key::F:
+    case CMD_NAV_FOLD_ALL:
         FoldAll();
         return true;
-    case Key::A:
+    case CMD_NAV_FIND_ALL:
         ShowFindAllDialog();
         return true;
-    case Key::N:
-    case Key::Ctrl | Key::PageDown:
+    case CMD_NAV_NEXT_SIMILAR:
         MoveToNextSimilarToken(1);
         return true;
-    case Key::P:
-    case Key::Ctrl | Key::PageUp:
+    case CMD_NAV_PREVIOUS_SIMILAR:
         MoveToNextSimilarToken(-1);
         return true;
 
     // copy & selection
-    case Key::A | Key::Ctrl:
+    case CMD_NAV_SELECT_ALL:
         if ((!this->tokens.empty()) && (this->noItemsVisible == false))
         {
             this->selection.Clear();
@@ -1644,6 +1618,13 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         }
         return true;
     }
+    return false;
+}
+bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
+{
+    const auto action = Map.Resolve(keyCode);
+    if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
+        return true;
 
     if (characterCode > 0)
     {
@@ -2052,9 +2033,9 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, I
     switch (direction)
     {
     case MouseWheel::Up:
-        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+        return ExecuteNavigationCommand(CMD_NAV_SCROLL_UP, false);
     case MouseWheel::Down:
-        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+        return ExecuteNavigationCommand(CMD_NAV_SCROLL_DOWN, false);
     }
 
     return false;
@@ -2251,12 +2232,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = this->settings->maxTokenSize.Height;
         return true;
     }
-    for (const auto& key : LexicalViewerCommands) {
-        if (key->CommandId == id) {
-            value = key->Key;
-            return true;
-        }
-    }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
@@ -2290,12 +2265,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->settings->maxTokenSize.Height = std::max<>(1U, std::get<uint32>(value));
         RecomputeTokenPositions();
         return true;
-    }
-    for (const auto& key : LexicalViewerCommands) {
-        if (key->CommandId == id) {
-            key->Key = std::get<Key>(value);
-            return true;
-        }
     }
     error.SetFormat("Unknown internal ID: %u", id);
     return false;
@@ -2332,20 +2301,12 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::HighlightSimilarTokens), "View", "Highlight similar tokens", PropertyType::Boolean },
     };
 
-    properties.reserve(properties.size() + LexicalViewerCommands.size());
-    for (const auto& key : LexicalViewerCommands) {
-        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
-    }
-
     return properties;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (const auto& cmd : LexicalViewerCommands) {
-        interface->RegisterKey(cmd);
-    }
-
+    Commands::RegisterKeys(interface);
     return true;
 }
 #undef BT

@@ -65,7 +65,7 @@ extern "C"
         LocalString<128> buffer;
         for (const auto& command : MAM::MAM_COMMANDS) {
             buffer.SetFormat("Command.%s", command.Caption);
-            sect[buffer.GetText()] = command.Key;
+            sect[buffer.GetText()] = command.DefaultKey;
         }
     }
 }

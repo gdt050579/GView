@@ -48,19 +48,6 @@ struct Config {
         ColorPair Ascii;
         ColorPair Unicode;
     } Colors;
-    struct {
-        AppCUI::Input::Key ChangeColumnsNumber;
-        AppCUI::Input::Key ChangeValueFormatOrCP;
-        AppCUI::Input::Key ChangeAddressMode;
-        AppCUI::Input::Key GoToEntryPoint;
-        AppCUI::Input::Key ChangeSelectionType;
-        AppCUI::Input::Key ShowHideStrings;
-        AppCUI::Input::Key FindNext;
-        AppCUI::Input::Key FindPrevious;
-        AppCUI::Input::Key Copy;
-        AppCUI::Input::Key DissasmDialog;
-        AppCUI::Input::Key ShowColorNotFocused;
-    } Keys;
     bool Loaded;
 
     static void Update(IniSection sect);
@@ -157,19 +144,97 @@ namespace Commands
     */
     constexpr int BUFFERVIEW_CMD_SHOW_COLOR        = 0xBF18;
 
-    //TODO: fully integrate these commands
-    static KeyboardControl ChangeColumnsCount = { Input::Key::F6, "ChangeColumnsCount", "Change the columns number", BUFFERVIEW_CMD_CHANGECOL };
-    static KeyboardControl ChangeValueFormatOrCP = { Input::Key::F2, "ChangeValueFormatOrCP", "Change value formats: change base", BUFFERVIEW_CMD_CHANGEBASE };
-    static KeyboardControl ChangeAddressMode     = { Input::Key::F3, "ChangeAddressMode", "Change the columns number", BUFFERVIEW_CMD_CHANGEADDRESSMODE };
-    static KeyboardControl GoToEntryPoint        = { Input::Key::F7, "GoToEntryPoint", "Go to the zone entrypoint", BUFFERVIEW_CMD_GOTOEP };
-    static KeyboardControl ChangeSelectionType   = { Input::Key::F9, "ChangeSelectionType", "Change the columns number", BUFFERVIEW_CMD_CHANGESELECTION };
-    static KeyboardControl ShowHideStrings       = {
-        Input::Key::Alt | Input::Key::F3, "ShowHideStrings", "Enable or disable string highlighting", BUFFERVIEW_CMD_HIDESTRINGS
+    // navigation commands (resolved through Commands::Map in OnKeyEvent)
+    constexpr uint32 BUFFERVIEW_NAV_DOWN             = 0xC000;
+    constexpr uint32 BUFFERVIEW_NAV_UP               = 0xC001;
+    constexpr uint32 BUFFERVIEW_NAV_LEFT             = 0xC002;
+    constexpr uint32 BUFFERVIEW_NAV_RIGHT            = 0xC003;
+    constexpr uint32 BUFFERVIEW_NAV_PAGE_DOWN        = 0xC004;
+    constexpr uint32 BUFFERVIEW_NAV_PAGE_UP          = 0xC005;
+    constexpr uint32 BUFFERVIEW_NAV_LINE_START       = 0xC006;
+    constexpr uint32 BUFFERVIEW_NAV_LINE_END         = 0xC007;
+    constexpr uint32 BUFFERVIEW_NAV_SCROLL_UP        = 0xC008;
+    constexpr uint32 BUFFERVIEW_NAV_SCROLL_DOWN      = 0xC009;
+    constexpr uint32 BUFFERVIEW_NAV_SCROLL_LEFT      = 0xC00A;
+    constexpr uint32 BUFFERVIEW_NAV_SCROLL_RIGHT     = 0xC00B;
+    constexpr uint32 BUFFERVIEW_NAV_FILE_START       = 0xC00C;
+    constexpr uint32 BUFFERVIEW_NAV_FILE_END         = 0xC00D;
+    constexpr uint32 BUFFERVIEW_NAV_PREVIOUS_ZONE    = 0xC00E;
+    constexpr uint32 BUFFERVIEW_NAV_NEXT_ZONE        = 0xC00F;
+    constexpr uint32 BUFFERVIEW_NAV_PREVIOUS_BLOCK   = 0xC010;
+    constexpr uint32 BUFFERVIEW_NAV_NEXT_BLOCK       = 0xC011;
+    constexpr uint32 BUFFERVIEW_NAV_SELECTION_1      = 0xC012;
+    constexpr uint32 BUFFERVIEW_NAV_SELECTION_2      = 0xC013;
+    constexpr uint32 BUFFERVIEW_NAV_SELECTION_3      = 0xC014;
+    constexpr uint32 BUFFERVIEW_NAV_SELECTION_4      = 0xC015;
+    constexpr uint32 BUFFERVIEW_NAV_TILL_END_OF_BLOCK = 0xC016;
+    constexpr uint32 BUFFERVIEW_NAV_SKIP_CHARACTER   = 0xC017;
+    constexpr uint32 BUFFERVIEW_NAV_OPEN_SELECTION   = 0xC018;
+
+    using Input::Key;
+    using KF = KeyboardControlFlags;
+
+    // command bar commands
+    inline KeyboardControl ChangeColumnsCount    = { Key::F6, "ChangeColumnsCount", "Change the number of columns", BUFFERVIEW_CMD_CHANGECOL };
+    inline KeyboardControl ChangeValueFormatOrCP = {
+        Key::F2, "ChangeValueFormatOrCP", "Change the value format (hex/oct/dec) or the code page (full screen mode)", BUFFERVIEW_CMD_CHANGEBASE
     };
-    static KeyboardControl FindNext      = { Input::Key::Ctrl | Input::Key::F7, "FindNext", "Find the next sequence", BUFFERVIEW_CMD_FINDNEXT };
-    static KeyboardControl FindPrevious  = { Input::Key::Ctrl | Input::Key::Shift | Input::Key::F7, "FindPrevious", "Find previous sequence", BUFFERVIEW_CMD_FINDPREVIOUS };
-    static KeyboardControl DissasmDialogCmd = { Input::Key::Ctrl | Input::Key::D, "DissasmDialog", "Open dissasm dialog", BUFFERVIEW_CMD_DISSASM_DIALOG };
-    static KeyboardControl ShowColorNotFocused = { Input::Key::Ctrl | Input::Key::Alt | Input::Key::C, "ShowColor", "Show color when main windows is not in focus", BUFFERVIEW_CMD_SHOW_COLOR };
+    inline KeyboardControl ChangeAddressMode   = { Key::F3, "ChangeAddressMode", "Change the address mode (file offset, RVA, ...)", BUFFERVIEW_CMD_CHANGEADDRESSMODE };
+    inline KeyboardControl GoToEntryPoint      = { Key::F7, "GoToEntryPoint", "Go to the zone entrypoint", BUFFERVIEW_CMD_GOTOEP };
+    inline KeyboardControl ChangeSelectionType = { Key::F9, "ChangeSelectionType", "Switch between single and multiple selection", BUFFERVIEW_CMD_CHANGESELECTION };
+    inline KeyboardControl ShowHideStrings     = { Key::Alt | Key::F3, "ShowHideStrings", "Enable or disable string highlighting", BUFFERVIEW_CMD_HIDESTRINGS };
+    inline KeyboardControl FindNext            = { Key::Ctrl | Key::F7, "FindNext", "Find the next occurrence (after a search)", BUFFERVIEW_CMD_FINDNEXT };
+    inline KeyboardControl FindPrevious = { Key::Ctrl | Key::Shift | Key::F7, "FindPrevious", "Find the previous occurrence (after a search)", BUFFERVIEW_CMD_FINDPREVIOUS };
+    inline KeyboardControl DissasmDialogCmd = { Key::Ctrl | Key::D, "DissasmDialog", "Open the disassembly dialog", BUFFERVIEW_CMD_DISSASM_DIALOG };
+    inline KeyboardControl ShowColorNotFocused = {
+        Key::Ctrl | Key::Alt | Key::C, "ShowColorNotFocused", "Keep the colors when the window is not focused", BUFFERVIEW_CMD_SHOW_COLOR
+    };
+
+    // navigation & editing (Shift extends the selection for the movement keys)
+    inline KeyboardControl MoveDown      = { Key::Down, "MoveDown", "Move the cursor one line down", BUFFERVIEW_NAV_DOWN, KF::ShiftExtendsSelection };
+    inline KeyboardControl MoveUp        = { Key::Up, "MoveUp", "Move the cursor one line up", BUFFERVIEW_NAV_UP, KF::ShiftExtendsSelection };
+    inline KeyboardControl MoveLeft      = { Key::Left, "MoveLeft", "Move the cursor one byte to the left", BUFFERVIEW_NAV_LEFT, KF::ShiftExtendsSelection };
+    inline KeyboardControl MoveRight     = { Key::Right, "MoveRight", "Move the cursor one byte to the right", BUFFERVIEW_NAV_RIGHT, KF::ShiftExtendsSelection };
+    inline KeyboardControl MovePageDown  = { Key::PageDown, "MovePageDown", "Move the cursor one page down", BUFFERVIEW_NAV_PAGE_DOWN, KF::ShiftExtendsSelection };
+    inline KeyboardControl MovePageUp    = { Key::PageUp, "MovePageUp", "Move the cursor one page up", BUFFERVIEW_NAV_PAGE_UP, KF::ShiftExtendsSelection };
+    inline KeyboardControl MoveLineStart = { Key::Home, "MoveToLineStart", "Move the cursor to the start of the line", BUFFERVIEW_NAV_LINE_START, KF::ShiftExtendsSelection };
+    inline KeyboardControl MoveLineEnd   = { Key::End, "MoveToLineEnd", "Move the cursor to the end of the line", BUFFERVIEW_NAV_LINE_END, KF::ShiftExtendsSelection };
+    inline KeyboardControl MoveFileStart = { Key::Ctrl | Key::Home, "MoveToFileStart", "Move the cursor to the start of the file", BUFFERVIEW_NAV_FILE_START, KF::ShiftExtendsSelection };
+    inline KeyboardControl MoveFileEnd   = { Key::Ctrl | Key::End, "MoveToFileEnd", "Move the cursor to the end of the file", BUFFERVIEW_NAV_FILE_END, KF::ShiftExtendsSelection };
+    inline KeyboardControl PreviousZone  = { Key::Ctrl | Key::PageUp, "PreviousZone", "Move to the previous zone", BUFFERVIEW_NAV_PREVIOUS_ZONE, KF::ShiftExtendsSelection };
+    inline KeyboardControl NextZone      = { Key::Ctrl | Key::PageDown, "NextZone", "Move to the next zone", BUFFERVIEW_NAV_NEXT_ZONE, KF::ShiftExtendsSelection };
+    inline KeyboardControl PreviousBlock = {
+        Key::Ctrl | Key::Alt | Key::PageUp, "PreviousBlock", "Move to the start of the previous block of identical bytes", BUFFERVIEW_NAV_PREVIOUS_BLOCK, KF::ShiftExtendsSelection
+    };
+    inline KeyboardControl NextBlock = {
+        Key::Ctrl | Key::Alt | Key::PageDown, "NextBlock", "Move to the start of the next block of identical bytes", BUFFERVIEW_NAV_NEXT_BLOCK, KF::ShiftExtendsSelection
+    };
+    inline KeyboardControl TillEndOfBlock = { Key::E, "MoveTillEndOfBlock", "Move to the end of the current block", BUFFERVIEW_NAV_TILL_END_OF_BLOCK, KF::ShiftExtendsSelection };
+    inline KeyboardControl SkipCharacter  = { Key::S, "SkipCharacter", "Skip all consecutive bytes equal to the current one", BUFFERVIEW_NAV_SKIP_CHARACTER, KF::ShiftExtendsSelection };
+    inline KeyboardControl ScrollUp       = { Key::Ctrl | Key::Up, "ScrollUp", "Scroll the view one line up", BUFFERVIEW_NAV_SCROLL_UP };
+    inline KeyboardControl ScrollDown     = { Key::Ctrl | Key::Down, "ScrollDown", "Scroll the view one line down", BUFFERVIEW_NAV_SCROLL_DOWN };
+    inline KeyboardControl ScrollLeft     = { Key::Ctrl | Key::Left, "ScrollLeft", "Scroll the view one byte to the left", BUFFERVIEW_NAV_SCROLL_LEFT };
+    inline KeyboardControl ScrollRight    = { Key::Ctrl | Key::Right, "ScrollRight", "Scroll the view one byte to the right", BUFFERVIEW_NAV_SCROLL_RIGHT };
+    inline KeyboardControl GoToSelection1 = { Key::Alt | Key::N1, "GoToSelection1", "Move to selection 1", BUFFERVIEW_NAV_SELECTION_1 };
+    inline KeyboardControl GoToSelection2 = { Key::Alt | Key::N2, "GoToSelection2", "Move to selection 2", BUFFERVIEW_NAV_SELECTION_2 };
+    inline KeyboardControl GoToSelection3 = { Key::Alt | Key::N3, "GoToSelection3", "Move to selection 3", BUFFERVIEW_NAV_SELECTION_3 };
+    inline KeyboardControl GoToSelection4 = { Key::Alt | Key::N4, "GoToSelection4", "Move to selection 4", BUFFERVIEW_NAV_SELECTION_4 };
+    inline KeyboardControl OpenSelection  = { Key::Enter, "OpenSelection", "Open the current selection as a new object", BUFFERVIEW_NAV_OPEN_SELECTION };
+
+    inline const std::array<KeyboardControl*, 10> CommandKeys = {
+        &ChangeColumnsCount, &ChangeValueFormatOrCP, &ChangeAddressMode, &GoToEntryPoint,   &ChangeSelectionType,
+        &ShowHideStrings,    &FindNext,              &FindPrevious,      &DissasmDialogCmd, &ShowColorNotFocused,
+    };
+    inline const std::array<KeyboardControl*, 25> NavigationKeys = {
+        &MoveDown,       &MoveUp,         &MoveLeft,       &MoveRight,      &MovePageDown, &MovePageUp,     &MoveLineStart,
+        &MoveLineEnd,    &MoveFileStart,  &MoveFileEnd,    &PreviousZone,   &NextZone,     &PreviousBlock,  &NextBlock,
+        &TillEndOfBlock, &SkipCharacter,  &ScrollUp,       &ScrollDown,     &ScrollLeft,   &ScrollRight,    &GoToSelection1,
+        &GoToSelection2, &GoToSelection3, &GoToSelection4, &OpenSelection,
+    };
+    inline Input::KeyMap Map;
+
+    void RegisterKeys(KeyboardControlsInterface* interface);
+    void OnKeysChanged();
 }
 
 class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface, public GView::Utils::ObjectHighlightingZonesInterface
@@ -343,6 +408,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual void OnFocus() override;
     virtual void OnLoseFocus() override;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
+    bool ExecuteNavigationCommand(uint32 commandId, bool select);
 
     virtual bool GoTo(uint64 offset) override;
     virtual bool Select(uint64 offset, uint64 size) override;

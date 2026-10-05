@@ -114,8 +114,8 @@ void Dylib::Update()
 bool Dylib::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(Action::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(Action::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(Action::ChangeBase));
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", static_cast<int32_t>(Action::Select));
+    commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(Action::ChangeBase));
 
     return true;
 }

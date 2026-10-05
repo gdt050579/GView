@@ -4,6 +4,9 @@
 
 namespace GView::Type::PYEXTRACTOR
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
+inline KeyboardControl PANEL_OPEN_ENTRY = { Input::Key::Ctrl | Input::Key::O, "PanelOpenEntry", "Open the current entry (TOC entries panel)", 0 };
 enum class Magic : uint16 {
     NoCompression      = 0x0178, // - No Compression / low
     DefaultCompression = 0x9C78, // - Default Compression
@@ -94,6 +97,8 @@ class PYEXTRACTORFile : public TypeInterface, public View::ContainerViewer::Enum
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
+        interface->RegisterKey(&PANEL_OPEN_ENTRY);
         return true;
     }
 

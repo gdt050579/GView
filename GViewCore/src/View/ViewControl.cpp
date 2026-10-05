@@ -1,4 +1,4 @@
-#include "GView.hpp"
+#include "Internal.hpp"
 
 using namespace GView::View;
 
@@ -84,28 +84,21 @@ bool ViewControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         return false;
     }
 
-    switch (keyCode) {
-    case AppCUI::Input::Key::Tab:
-        for (uint32 i = 0; i < windowsNo; i++) {
-            auto window = desktop->GetChild(i);
-            if (window->HasFocus()) {
-                window = desktop->GetChild(i == windowsNo - 1 ? 0 : i + 1);
-                window->SetFocus();
-                return true;
-            }
+    int32 direction = 0;
+    if (GView::App::InstanceCommands::INSTANCE_NEXT_WINDOW.Matches(keyCode))
+        direction = 1;
+    else if (GView::App::InstanceCommands::INSTANCE_PREVIOUS_WINDOW.Matches(keyCode))
+        direction = -1;
+    else
+        return false;
+
+    for (uint32 i = 0; i < windowsNo; i++) {
+        auto window = desktop->GetChild(i);
+        if (window->HasFocus()) {
+            const uint32 next = direction > 0 ? (i == windowsNo - 1 ? 0 : i + 1) : (i == 0 ? windowsNo - 1 : i - 1);
+            desktop->GetChild(next)->SetFocus();
+            return true;
         }
-        return false;
-    case AppCUI::Input::Key::Tab | AppCUI::Input::Key::Shift:
-        for (uint32 i = 0; i < windowsNo; i++) {
-            auto window = desktop->GetChild(i);
-            if (window->HasFocus()) {
-                window = desktop->GetChild(i == 0 ? windowsNo - 1 : i - 1);
-                window->SetFocus();
-                return true;
-            }
-        }
-        return false;
-    default:
-        return false;
     }
+    return false;
 }

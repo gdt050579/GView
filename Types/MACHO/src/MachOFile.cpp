@@ -1175,6 +1175,7 @@ bool MachOFile::UpdateKeys(KeyboardControlsInterface* interface)
 {
     for (auto& entry : Commands::MACHO_COMMANDS)
         interface->RegisterKey(&entry);
+    PANEL_KEYS.Register(interface);
     return true;
 }
 

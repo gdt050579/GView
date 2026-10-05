@@ -74,6 +74,25 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     this->SetTag(obj->GetContentType()->GetTypeName(), "");
 
     queryInterface.fileWindow = this;
+
+    // push the configured keys into the keys registered by the type plugin instance
+    if (this->gviewApp.IsValid())
+        ApplyKeyBindings(this->gviewApp->GetKeyBindings());
+}
+std::string FileWindow::GetTypePluginKeysSection() const
+{
+    auto plugin = this->typePlugin;
+    if (!plugin.IsValid())
+        return {};
+    return plugin->GetKeysSection();
+}
+void FileWindow::ApplyKeyBindings(const Keys::Registry& registry)
+{
+    const auto section = GetTypePluginKeysSection();
+    if (section.empty() || (!this->obj) || (this->obj->GetContentType() == nullptr))
+        return;
+    Keys::ApplyPass pass(registry, section);
+    this->obj->GetContentType()->UpdateKeys(&pass);
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -181,7 +200,7 @@ bool FileWindow::SetViewByIndex(uint32 index)
 
 bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 {
-    if (keyCode == Key::Escape && !view->HasFocus()) {
+    if (INSTANCE_FOCUS_VIEWER.Matches(keyCode) && !view->HasFocus()) {
         view->SetFocus();
         return true;
     }
@@ -194,24 +213,23 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == INSTANCE_SWITCH_TO_VIEW.Key)
+    if (INSTANCE_SWITCH_TO_VIEW.Matches(keyCode))
     {
         if (!view->HasFocus())
             view->SetFocus();
         return true;
     }
 
-    //TODO: maybe optimize this more
-    if (keyCode == FILE_WINDOW_COMMAND_GOTO.Key) 
-    {
+    // the primary GoTo/Find keys are command bar commands, the alternative ones are handled here
+    if (FILE_WINDOW_COMMAND_GOTO.Matches(keyCode)) {
         ShowGoToDialog();
         return true;
     }
-    if (keyCode == FILE_WINDOW_COMMAND_FIND.Key) {
+    if (FILE_WINDOW_COMMAND_FIND.Matches(keyCode)) {
         ShowFindDialog();
         return true;
     }
-    if (keyCode == FILE_WINDOW_COMMAND_COPY.Key || keyCode == FILE_WINDOW_COMMAND_INSERT.Key) {
+    if (FILE_WINDOW_COMMAND_COPY.Matches(keyCode) || FILE_WINDOW_COMMAND_INSERT.Matches(keyCode)) {
         ShowCopyDialog();
         return true;
     }
@@ -249,7 +267,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             }
             return true;
         case CMD_SHOW_KEY_CONFIGURATOR:
-            ShowKeyConfiguratorWindow();
+            ShowKeyboardShortcutsWindow(this->gviewApp, this);
             return true;
         case CMD_OPEN_ADD_NOTE:
             GView::App::ShowAddNoteDialog();
@@ -281,19 +299,24 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
-    commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, INSTANCE_COMMAND_GOTO.Caption, CMD_GOTO);
-    commandBar.SetCommand(INSTANCE_COMMAND_FIND.Key, INSTANCE_COMMAND_FIND.Caption, CMD_FIND);
-    commandBar.SetCommand(INSTANCE_CHOOSE_TYPE.Key, INSTANCE_CHOOSE_TYPE.Caption, CMD_CHOSE_NEW_TYPE);
-    commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, INSTANCE_KEY_CONFIGURATOR.Caption, CMD_SHOW_KEY_CONFIGURATOR);
-    commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE.Key, INSTANCE_OPEN_ADD_NOTE.Caption, CMD_OPEN_ADD_NOTE);
+    if (INSTANCE_CHANGE_VIEW.Key != Key::None)
+        commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    if (INSTANCE_COMMAND_GOTO.Key != Key::None)
+        commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, "GoTo", CMD_GOTO);
+    if (INSTANCE_COMMAND_FIND.Key != Key::None)
+        commandBar.SetCommand(INSTANCE_COMMAND_FIND.Key, "Find", CMD_FIND);
+    commandBar.SetCommand(INSTANCE_CHOOSE_TYPE, CMD_CHOSE_NEW_TYPE);
+    if (INSTANCE_KEY_CONFIGURATOR.Key != Key::None)
+        commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "Keys", CMD_SHOW_KEY_CONFIGURATOR);
+    commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE, CMD_OPEN_ADD_NOTE);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {
         auto idx = 0;
         for (auto& cmd : typePlugin->GetCommands())
         {
-            commandBar.SetCommand(cmd.key, cmd.name, CMD_FOR_TYPE_PLUGIN_START + idx);
+            if (cmd.key != Key::None) // unassigned in the key bindings
+                commandBar.SetCommand(cmd.key, cmd.name, CMD_FOR_TYPE_PLUGIN_START + idx);
             idx++;
         }
     }
@@ -309,18 +332,10 @@ void FileWindow::Start()
     queryInterface.Start();
 }
 
-bool FileWindow::UpdateKeys(KeyboardControlsInterface* impl)
+void GView::App::InstanceCommands::RegisterGViewKeys(KeyboardControlsInterface* interface)
 {
-    impl->RegisterKey(&FILE_WINDOW_COMMAND_GOTO);
-    impl->RegisterKey(&INSTANCE_COMMAND_GOTO);
-    impl->RegisterKey(&FILE_WINDOW_COMMAND_FIND);
-    impl->RegisterKey(&INSTANCE_COMMAND_FIND);
-    impl->RegisterKey(&FILE_WINDOW_COMMAND_COPY);
-    impl->RegisterKey(&FILE_WINDOW_COMMAND_INSERT);
-    impl->RegisterKey(&INSTANCE_CHANGE_VIEW);
-    impl->RegisterKey(&INSTANCE_SWITCH_TO_VIEW);
-    impl->RegisterKey(&INSTANCE_CHOOSE_TYPE);
-    impl->RegisterKey(&INSTANCE_KEY_CONFIGURATOR);
-    impl->RegisterKey(&INSTANCE_OPEN_ADD_NOTE);
-    return true;
+    for (auto key : GViewKeys)
+        interface->RegisterKey(key);
+    interface->BeginCategory("Menus");
+    interface->RegisterKeyText("Alt+<letter>", "OpenMenu", "Open the menu whose name has that letter underlined (File, Options, Windows, Help)");
 }

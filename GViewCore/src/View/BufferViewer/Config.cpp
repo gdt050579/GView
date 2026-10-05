@@ -5,78 +5,32 @@ using namespace AppCUI::Input;
 
 constexpr auto SECTION_NAME_VIEW_BUFFER = "View.Buffer";
 
-constexpr auto KEY_NAME_CHANGE_COLUMNS_COUNT        = "Key.ChangeColumnsCount";
-constexpr auto KEY_NAME_CHANGE_VALUE_FORMAT_OR_CP   = "Key.ChangeValueFormatOrCP";
-constexpr auto KEY_NAME_CHANGE_ADDRESS_MODE         = "Key.ChangeAddressMode";
-constexpr auto KEY_NAME_GO_TO_ENTRY_POINT           = "Key.GoToEntryPoint";
-constexpr auto KEY_NAME_CHANGE_SELECTION_TYPE       = "Key.ChangeSelectionType";
-constexpr auto KEY_NAME_SHOW_HIDE_STRINGS           = "Key.ShowHideStrings";
-constexpr auto KEY_NAME_FIND_NEXT                   = "Key.FindNext";
-constexpr auto KEY_NAME_FIND_PREVIOUS               = "Key.FindPrevious";
-constexpr auto KEY_NAME_COPY                        = "Key.Copy";
-constexpr auto KEY_NAME_DISSASM                     = "Key.DissasmDialog";
-constexpr auto KEY_NAME_SHOW_COLOR_WHEN_NOT_FOCUSED = "Key.ShowColorNotFocused";
-
-constexpr auto KEY_CHANGE_COLUMNS_COUNT        = Key::F6;
-constexpr auto KEY_CHANGE_VALUE_FORMAT_OR_CP   = Key::F2;
-constexpr auto KEY_CHANGE_ADDRESS_MODE         = Key::F3;
-constexpr auto KEY_GO_TO_ENTRY_POINT           = Key::F7;
-constexpr auto KEY_CHANGE_SELECTION_TYPE       = Key::F9;
-constexpr auto KEY_SHOW_HIDE_STRINGS           = Key::Alt | Key::F3;
-constexpr auto KEY_FIND_NEXT                   = Key::Ctrl | Key::F7;
-constexpr auto KEY_FIND_PREVIOUS               = Key::Ctrl | Key::Shift | Key::F7;
-constexpr auto KEY_DISSASM                     = Key::Ctrl | Key::D;
-constexpr auto KEY_SHOW_COLOR_WHEN_NOT_FOCUSED = Key::Ctrl | Key::Alt | Key::C;
-
-void Config::Update(IniSection sect)
+void Config::Update(IniSection)
 {
-    sect.UpdateValue(KEY_NAME_CHANGE_COLUMNS_COUNT, KEY_CHANGE_COLUMNS_COUNT, true);
-    sect.UpdateValue(KEY_NAME_CHANGE_VALUE_FORMAT_OR_CP, KEY_CHANGE_VALUE_FORMAT_OR_CP, true);
-    sect.UpdateValue(KEY_NAME_CHANGE_ADDRESS_MODE, KEY_CHANGE_ADDRESS_MODE, true);
-    sect.UpdateValue(KEY_NAME_GO_TO_ENTRY_POINT, KEY_GO_TO_ENTRY_POINT, true);
-    sect.UpdateValue(KEY_NAME_CHANGE_SELECTION_TYPE, KEY_CHANGE_SELECTION_TYPE, true);
-    sect.UpdateValue(KEY_NAME_SHOW_HIDE_STRINGS, KEY_SHOW_HIDE_STRINGS, true);
-    sect.UpdateValue(KEY_NAME_FIND_NEXT, KEY_FIND_NEXT, true);
-    sect.UpdateValue(KEY_NAME_FIND_PREVIOUS, KEY_FIND_PREVIOUS, true);
-    sect.UpdateValue(KEY_NAME_DISSASM, KEY_DISSASM, true);
-    sect.UpdateValue(KEY_NAME_SHOW_COLOR_WHEN_NOT_FOCUSED, KEY_SHOW_COLOR_WHEN_NOT_FOCUSED, true);
+    // keys are handled by the key bindings registry ([Keys.View.Buffer], "Keyboard shortcuts" window)
 }
 
 void Config::Initialize()
 {
     this->Colors.Ascii   = ColorPair{ Color::Red, Color::DarkBlue };
     this->Colors.Unicode = ColorPair{ Color::Yellow, Color::DarkBlue };
+    this->Loaded         = true;
+}
 
-    auto ini = AppCUI::Application::GetAppSettings();
-    if (ini)
-    {
-        auto sect                        = ini->GetSection(SECTION_NAME_VIEW_BUFFER);
-        this->Keys.ChangeColumnsNumber   = sect.GetValue(KEY_NAME_CHANGE_COLUMNS_COUNT).ToKey(KEY_CHANGE_COLUMNS_COUNT);
-        this->Keys.ChangeValueFormatOrCP = sect.GetValue(KEY_NAME_CHANGE_VALUE_FORMAT_OR_CP).ToKey(KEY_CHANGE_VALUE_FORMAT_OR_CP);
-        this->Keys.ChangeAddressMode     = sect.GetValue(KEY_NAME_CHANGE_ADDRESS_MODE).ToKey(KEY_CHANGE_ADDRESS_MODE);
-        this->Keys.GoToEntryPoint        = sect.GetValue(KEY_NAME_GO_TO_ENTRY_POINT).ToKey(KEY_GO_TO_ENTRY_POINT);
-        this->Keys.ChangeSelectionType   = sect.GetValue(KEY_NAME_CHANGE_SELECTION_TYPE).ToKey(KEY_CHANGE_SELECTION_TYPE);
-        this->Keys.ShowHideStrings       = sect.GetValue(KEY_NAME_SHOW_HIDE_STRINGS).ToKey(KEY_SHOW_HIDE_STRINGS);
-        this->Keys.FindNext              = sect.GetValue(KEY_NAME_FIND_NEXT).ToKey(KEY_FIND_NEXT);
-        this->Keys.FindPrevious          = sect.GetValue(KEY_NAME_FIND_PREVIOUS).ToKey(KEY_FIND_PREVIOUS);
-        this->Keys.DissasmDialog         = sect.GetValue(KEY_NAME_DISSASM).ToKey(KEY_DISSASM);
-        this->Keys.ShowColorNotFocused   = sect.GetValue(KEY_NAME_SHOW_COLOR_WHEN_NOT_FOCUSED).ToKey(KEY_SHOW_COLOR_WHEN_NOT_FOCUSED);
-    }
-    else
-    {
-        this->Keys.ChangeColumnsNumber   = KEY_CHANGE_COLUMNS_COUNT;
-        this->Keys.ChangeValueFormatOrCP = KEY_CHANGE_VALUE_FORMAT_OR_CP;
-        this->Keys.ChangeAddressMode     = KEY_CHANGE_ADDRESS_MODE;
-        this->Keys.GoToEntryPoint        = KEY_GO_TO_ENTRY_POINT;
-        this->Keys.ChangeSelectionType   = KEY_CHANGE_SELECTION_TYPE;
-        this->Keys.ShowHideStrings       = KEY_SHOW_HIDE_STRINGS;
-        this->Keys.FindNext              = KEY_FIND_NEXT;
-        this->Keys.FindPrevious          = KEY_FIND_PREVIOUS;
-        this->Keys.DissasmDialog         = KEY_DISSASM;
-        this->Keys.ShowColorNotFocused   = KEY_SHOW_COLOR_WHEN_NOT_FOCUSED;
-    }
-
-    this->Loaded = true;
+void GView::View::BufferViewer::Commands::RegisterKeys(KeyboardControlsInterface* interface)
+{
+    for (auto k : CommandKeys)
+        interface->RegisterKey(k);
+    interface->BeginCategory("Navigation & editing");
+    for (auto k : NavigationKeys)
+        interface->RegisterKey(k);
+    interface->RegisterKeyText("0-9", "GoToBookmark", "Move to a bookmark (bookmarks are set from the properties)");
+    interface->RegisterKeyText("[ / ]", "AddressWidth", "Decrease / increase the address column width");
+    interface->RegisterKeyText("{ / }", "ZoneNameWidth", "Decrease / increase the zone name column width");
+}
+void GView::View::BufferViewer::Commands::OnKeysChanged()
+{
+    Map.Build(NavigationKeys);
 }
 
 //======================================================================[PROPERTY]============================
@@ -183,38 +137,8 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::Selection_4:
         value = this->selection.GetStringRepresentation(3);
         return true;
-    case PropertyID::ChangeAddressMode:
-        value = config.Keys.ChangeAddressMode;
-        return true;
-    case PropertyID::ChangeValueFormatOrCP:
-        value = config.Keys.ChangeValueFormatOrCP;
-        return true;
-    case PropertyID::ChangeColumnsView:
-        value = config.Keys.ChangeColumnsNumber;
-        return true;
-    case PropertyID::GoToEntryPoint:
-        value = config.Keys.GoToEntryPoint;
-        return true;
-    case PropertyID::ChangeSelectionType:
-        value = config.Keys.ChangeSelectionType;
-        return true;
-    case PropertyID::ShowHideStrings:
-        value = config.Keys.ShowHideStrings;
-        return true;
     case PropertyID::AddressType:
         value = this->currentAdrressMode;
-        return true;
-    case PropertyID::FindNext:
-        value = config.Keys.FindNext;
-        return true;
-    case PropertyID::FindPrevious:
-        value = config.Keys.FindPrevious;
-        return true;
-    case PropertyID::Dissasm:
-        value = config.Keys.DissasmDialog;
-        return true;
-    case PropertyID::ShowColorNotFocused:
-        value = config.Keys.ShowColorNotFocused;
         return true;
     }
     return false;
@@ -295,38 +219,8 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::SelectionType:
         this->selection.EnableMultiSelection(std::get<uint64>(value) == 1);
         return true;
-    case PropertyID::ChangeAddressMode:
-        config.Keys.ChangeAddressMode = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::ChangeValueFormatOrCP:
-        config.Keys.ChangeValueFormatOrCP = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::ChangeColumnsView:
-        config.Keys.ChangeColumnsNumber = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::GoToEntryPoint:
-        config.Keys.GoToEntryPoint = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::ChangeSelectionType:
-        config.Keys.ChangeSelectionType = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::ShowHideStrings:
-        config.Keys.ShowHideStrings = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::FindNext:
-        config.Keys.FindNext = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::FindPrevious:
-        config.Keys.FindPrevious = std::get<AppCUI::Input::Key>(value);
-        return true;
-    case PropertyID::Dissasm:
-        config.Keys.DissasmDialog = std::get<AppCUI::Input::Key>(value);
-        return true;
     case PropertyID::AddressType:
         this->currentAdrressMode = (uint32) std::get<uint64>(value);
-        return true;
-    case PropertyID::ShowColorNotFocused:
-        config.Keys.ShowColorNotFocused = std::get<AppCUI::Input::Key>(value);
         return true;
     }
     error.SetFormat("Unknown internal ID: %u", id);
@@ -394,19 +288,7 @@ const vector<Property> Instance::GetPropertiesList()
              { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
              { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
              { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
-             { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutive chars", PropertyType::UInt32 },
-
-             // shortcuts
-             { BT(PropertyID::ChangeAddressMode), "Key", "ChangeAddressMode", PropertyType::Key, true },
-             { BT(PropertyID::ChangeValueFormatOrCP), "Key", "ChangeValueFormatOrCP", PropertyType::Key, true },
-             { BT(PropertyID::ChangeColumnsView), "Key", "ChangeColumnsCount", PropertyType::Key, true },
-             { BT(PropertyID::GoToEntryPoint), "Key", "GoToEntryPoint", PropertyType::Key, true },
-             { BT(PropertyID::ChangeSelectionType), "Key", "ChangeSelectionType", PropertyType::Key, true },
-             { BT(PropertyID::ShowHideStrings), "Key", "ShowHideStrings", PropertyType::Key, true },
-             { BT(PropertyID::Dissasm), "Key", "DissasmDialog", PropertyType::Key, true },
-             { BT(PropertyID::FindNext), "Key", "FindNext", PropertyType::Key, true },
-             { BT(PropertyID::FindPrevious), "Key", "FindPrevious", PropertyType::Key, true },
-             { BT(PropertyID::ShowColorNotFocused), "Key", "ShowColorNotFocused", PropertyType::Key, true }
+             { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutive chars", PropertyType::UInt32 }
     };
 }
 #undef BT

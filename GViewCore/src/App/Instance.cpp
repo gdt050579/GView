@@ -19,6 +19,7 @@ struct GViewMenuCommand {
     std::string_view name;
     int commandID;
     Key shortCutKey;
+    const GView::KeyboardControl* binding = nullptr; // when set, the shortcut is the (configurable) key of this binding
 };
 constexpr GViewMenuCommand menuFileList[] = {
     { "&Open file", MenuCommands::OPEN_FILE, Key::None },
@@ -27,7 +28,7 @@ constexpr GViewMenuCommand menuFileList[] = {
     { "Open &process", MenuCommands::OPEN_PID, Key::None },
     { "Open process &tree", MenuCommands::OPEN_PROCESS_TREE, Key::None },
     { "", 0, Key::None },
-    { "E&xit", MenuCommands::EXIT_GVIEW, Key::Shift | Key::Escape },
+    { "E&xit", MenuCommands::EXIT_GVIEW, Key::None, &INSTANCE_EXIT },
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 
@@ -48,10 +49,11 @@ constexpr GViewMenuCommand menuWindowList[] = {
     { "Close &All", MenuCommands::CLOSE_ALL, Key::None },
     { "Close All e&xcept current", MenuCommands::CLOSE_ALL, Key::None },
     { "", 0, Key::None },
-    { "&Windows manager", MenuCommands::SHOW_WINDOW_MANAGER, Key::Alt | Key::N0 },
+    { "&Windows manager", MenuCommands::SHOW_WINDOW_MANAGER, Key::None, &INSTANCE_WINDOWS_MANAGER },
 };
 constexpr GViewMenuCommand menuHelpList[] = {
     { "Check for &updates", MenuCommands::CHECK_FOR_UPDATES, Key::None },
+    { "&Keyboard shortcuts", MenuCommands::AVAILABLE_KEYS, Key::None, &INSTANCE_KEY_CONFIGURATOR },
     { "&About", MenuCommands::ABOUT, Key::None },
 };
 
@@ -63,7 +65,8 @@ bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
         if (list->name.empty()) {
             CHECK(mnu->AddSeparator() != InvalidItemHandle, false, "Fail to add separator !");
         } else {
-            CHECK(mnu->AddCommandItem(list->name, list->commandID, list->shortCutKey) != InvalidItemHandle,
+            const auto key = list->binding ? list->binding->Key : list->shortCutKey;
+            CHECK(mnu->AddCommandItem(list->name, list->commandID, key) != InvalidItemHandle,
                   false,
                   "Fail to add %s to menu !",
                   list->name.data());
@@ -115,12 +118,54 @@ bool Instance::LoadSettings()
     auto sect                                  = ini->GetSection("GView");
     this->defaultCacheSize                     = std::max<>(sect.GetValue("Config.CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
 
-    LocalString<64> keyCommand;
-    for (auto& k : GViewCommands) {
-        keyCommand.SetFormat("Key.%s", k->Caption);
-        k->Key = sect.GetValue(keyCommand.GetText()).ToKey(k->Key);
-    }
+    // key bindings (must be applied before the menus and the first window are created)
+    this->keyBindings.Load(*ini);
+    ApplyKeyBindings();
     return true;
+}
+void Instance::ApplyKeyBindings()
+{
+    // GView keys
+    Keys::ApplyPass gviewPass(this->keyBindings, Keys::SECTION_GVIEW);
+    RegisterGViewKeys(&gviewPass);
+    // viewers (static keys -> one pass per viewer type)
+    for (const auto& viewer : Keys::GetAllViewerKeys()) {
+        Keys::ApplyPass pass(this->keyBindings, viewer.section);
+        viewer.registerKeys(&pass);
+        if (viewer.onKeysChanged)
+            viewer.onKeysChanged();
+    }
+    // plugin commands (command bar)
+    for (auto& p : this->typePlugins)
+        p.ApplyKeyBindings(this->keyBindings);
+    for (auto& p : this->genericPlugins)
+        p.ApplyKeyBindings(this->keyBindings);
+    // keys registered by the type plugin instances of the opened windows
+    auto dsk = AppCUI::Application::GetDesktop();
+    if (dsk.IsValid()) {
+        const auto count = dsk->GetChildrenCount();
+        for (uint32 i = 0; i < count; i++) {
+            auto child = dsk->GetChild(i);
+            if (!child.IsValid())
+                continue;
+            if (auto fileWindow = dynamic_cast<FileWindow*>(&static_cast<Control&>(child)))
+                fileWindow->ApplyKeyBindings(this->keyBindings);
+        }
+    }
+}
+Reference<FileWindow> Instance::GetCurrentFileWindow()
+{
+    auto dsk = AppCUI::Application::GetDesktop();
+    if (!dsk.IsValid())
+        return nullptr;
+    auto focused = dsk->GetFocusedChild();
+    if (!focused.IsValid())
+        return nullptr;
+    return dynamic_cast<FileWindow*>(&static_cast<Control&>(focused));
+}
+void Instance::ShowKeyboardShortcuts()
+{
+    ShowKeyboardShortcutsWindow(this, GetCurrentFileWindow());
 }
 bool Instance::BuildMainMenus()
 {
@@ -571,6 +616,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         case MenuCommands::ABOUT:
             ShowAboutWindow();
             return true;
+        case MenuCommands::AVAILABLE_KEYS:
+            ShowKeyboardShortcuts();
+            return true;
         case MenuCommands::CHANGE_THEME:
             ShowChangeThemeWindow();
             return true;
@@ -603,13 +651,6 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
         value = this->defaultCacheSize;
         return true;
     }
-    for (const auto& key : GViewCommands) {
-        if (key->CommandId == propertyID) {
-            value = key->Key;
-            return true;
-        }
-    }
-
     return false;
 }
 bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error)
@@ -622,12 +663,6 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
         }
         this->defaultCacheSize = newCacheSize;
         return true;
-    }
-    for (const auto& key : GViewCommands) {
-        if (key->CommandId == propertyID) {
-            key->Key = std::get<Key>(value);
-            return true;
-        }
     }
     return true;
 }
@@ -644,10 +679,6 @@ const vector<Property> Instance::GetPropertiesList()
         { CACHE_SIZE_PROPERTY_ID, "Config", "CacheSize", PropertyType::UInt32 },
     };
 
-    properties.reserve(properties.size() + GViewCommands.size());
-    for (const auto& key : GViewCommands) {
-        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
-    }
-
+    // keys are configured from the "Keyboard shortcuts" window (Help menu / F1)
     return properties;
 }

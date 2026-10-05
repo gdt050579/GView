@@ -62,6 +62,7 @@ namespace View
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
+            bool UpdateKeys(KeyboardControlsInterface* interface) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
             virtual bool GoTo(uint64 offset) override;
@@ -93,6 +94,8 @@ namespace View
             }
         };
 
+        // the container keys are handled by the AppCUI tree view control (listed, not configurable)
+        void RegisterKeys(KeyboardControlsInterface* interface);
     } // namespace ContainerViewer
 } // namespace View
 

@@ -5,6 +5,8 @@
 
 namespace GView::Type::ISO
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
 class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
@@ -43,6 +45,7 @@ class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
         return true;
     }
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
