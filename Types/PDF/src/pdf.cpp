@@ -2901,6 +2901,8 @@ bool SaveExtractedTextToFile(const std::string& text, const std::u16string_view&
 
 bool PDF::PDFFile::ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFFile> pdf)
 {
+    if (GView::App::IsExportBlockedFor(pdf->obj, "saving extracted text to disk"))
+        return false;
     auto extractedText = ExtractTextFromPDF(pdf);
     if (extractedText.empty()) {
         Dialogs::MessageBox::ShowNotification("Notification", "Couldn't find text to extract from this PDF!");

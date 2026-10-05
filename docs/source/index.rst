@@ -15,6 +15,7 @@ and a plugin-based architecture for file formats and generic operations.
    usage
    keyboard_shortcuts
    education
+   learning_mode_protocol
    architecture
    configuration
    security

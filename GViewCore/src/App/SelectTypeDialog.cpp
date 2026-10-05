@@ -161,7 +161,7 @@ void SelectTypeDialog::PopulateTypes(
         cbType->AddSeparator("Matched by extension");
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
-            if (pm.IsMatchByExtension(idx))
+            if (pm.IsMatchByExtension(idx) && GView::Security::RestrictedMode::Internal::IsPluginAllowed(typePlugins[idx].GetName()))
                 cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]), idx);
         }
     }
@@ -170,7 +170,7 @@ void SelectTypeDialog::PopulateTypes(
         cbType->AddSeparator("Matched by content");
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
-            if (pm.IsMatchByContent(idx))
+            if (pm.IsMatchByContent(idx) && GView::Security::RestrictedMode::Internal::IsPluginAllowed(typePlugins[idx].GetName()))
                 cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]), idx);
         }
     }

@@ -244,7 +244,8 @@ bool CopyDialog::Process()
         CHECK(usb.Add(s), false, "");
     }
 
-    if (AppCUI::OS::Clipboard::SetText(usb) == false)
+    // policy-gated clipboard write (the dialog entry point is gated as well)
+    if (GView::App::SetClipboardText(usb) == false)
     {
         LocalString<128> message;
         CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", instance->GetObject()->GetData().GetSize(), cacheSize),

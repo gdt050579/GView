@@ -937,8 +937,8 @@ extern "C"
 
             if (outputs.size() == 1)
             {
-                AppCUI::OS::Clipboard::SetText(outputs.begin()->second);
-                Dialogs::MessageBox::ShowNotification("MD5 copied to clipboard!", outputs.begin()->second);
+                if (GView::App::SetClipboardText(outputs.begin()->second, false))
+                    Dialogs::MessageBox::ShowNotification("MD5 copied to clipboard!", outputs.begin()->second);
             }
             else
             {
@@ -961,8 +961,8 @@ extern "C"
 
             if (outputs.size() == 1)
             {
-                AppCUI::OS::Clipboard::SetText(outputs.begin()->second);
-                Dialogs::MessageBox::ShowNotification("SHA256 copied to clipboard!", outputs.begin()->second);
+                if (GView::App::SetClipboardText(outputs.begin()->second, false))
+                    Dialogs::MessageBox::ShowNotification("SHA256 copied to clipboard!", outputs.begin()->second);
             }
             else
             {

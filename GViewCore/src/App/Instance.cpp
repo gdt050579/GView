@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include "Learning/SecureMemory.hpp"
 #include <array>
 
 using namespace GView::App;
@@ -36,7 +37,7 @@ constexpr GViewMenuCommand menuOptionsList[] = {
     { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
     { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None },
     { "", 0, Key::None },
-    { "Open &Restricted Mode", MenuCommands::OPEN_RESTRICTED_MODE, Key::None },
+    { "&Learning and Evaluation Mode", MenuCommands::OPEN_RESTRICTED_MODE, Key::None },
 };
 
 constexpr GViewMenuCommand menuWindowList[] = {
@@ -190,8 +191,11 @@ bool Instance::BuildMainMenus()
 bool Instance::Init(bool isTestingEnabled)
 {
     InitializationData initData;
-    initData.Flags =
-          InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile | InitializationFlags::AutoHotKeyForWindow;
+    // EnableFPSMode: AppCUI only delivers OnFrameUpdate (~30 Hz) in FPS mode. Learning and Evaluation Mode relies on
+    // it to apply background network results on the UI thread without blocking. No GView control requests a repaint
+    // from OnFrameUpdate unless its state changed, so idle CPU usage stays negligible.
+    initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile |
+                     InitializationFlags::AutoHotKeyForWindow | InitializationFlags::EnableFPSMode;
 
     const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
     AppCUI::OS::File settingsFile;
@@ -262,6 +266,10 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
             break;
         }
     }
+    if (plg != nullptr && !Security::RestrictedMode::Internal::IsPluginAllowed(plg->GetName())) {
+        GView::App::IsBlockedByPolicy(Security::RestrictedMode::Feature::Plugins, "this type plugin is not allowed by the course policy");
+        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
+    }
 
     // plugin was not found
     if (plg == nullptr) {
@@ -304,8 +312,11 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
       const string_view& extension, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
 {
     // check for extension first
+    // (plugins outside the course policy whitelist are skipped at runtime: the policy may arrive after startup)
     if (extensionHash != 0) {
         for (auto& pType : this->typePlugins) {
+            if (!Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()))
+                continue;
             if (pType.MatchExtension(extensionHash)) {
                 if (pType.IsOfType(buf, textParser, extension))
                     return &pType;
@@ -315,6 +326,8 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
 
     // check the content
     for (auto& pType : this->typePlugins) {
+        if (!Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()))
+            continue;
         if (pType.MatchContent(buf, textParser)) {
             if (pType.IsOfType(buf, textParser))
                 return &pType;
@@ -337,6 +350,8 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
     auto count = 0;
     if (extensionHash != 0) {
         for (auto& pType : this->typePlugins) {
+            if (!Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()))
+                continue;
             if (pType.MatchExtension(extensionHash)) {
                 if (pType.IsOfType(buf, textParser)) {
                     count++;
@@ -350,6 +365,8 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
 
     // check the content
     for (auto& pType : this->typePlugins) {
+        if (!Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()))
+            continue;
         if (pType.MatchContent(buf, textParser)) {
             if (pType.IsOfType(buf, textParser)) {
                 count++;
@@ -429,6 +446,9 @@ bool Instance::Add(
     std::u16string newName{ temp.ToStringView() };
     auto plg = IdentifyTypePlugin(name, path, cache, extHash, method, typeName, newName);
     CHECK(plg, false, "Unable to identify a valid plugin open canceled !");
+    // defence in depth: whatever the identification path, a plugin outside the course whitelist never runs
+    if (plg != static_cast<const void*>(&this->defaultPlugin) && !Security::RestrictedMode::Internal::IsPluginAllowed(plg->GetName()))
+        plg = &this->defaultPlugin;
 
     // create an instance of that object type
     auto contentType = plg->CreateInstance();
@@ -439,7 +459,10 @@ bool Instance::Add(
     // instantiate window
     while (true) {
         CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
-        CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
+        // LLM hints disabled by the course policy => no Smart Assistants tab (prompts are also gated centrally)
+        if (!Security::RestrictedMode::IsFeatureDisabled(Security::RestrictedMode::Feature::LLMHints)) {
+            CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
+        }
         win->Start(); // starts the window and set focus
 
         auto res = AppCUI::Application::AddWindow(std::move(win), GetCurrentWindow(), creationProcess);
@@ -516,6 +539,18 @@ bool Instance::AddBufferWindow(
     }
     return Add(Object::Type::MemoryBuffer, std::move(f), name, path, 0, method, typeName, parent, creationProcess);
 }
+bool Instance::AddDataObjectWindow(
+      std::unique_ptr<AppCUI::OS::DataObject> data,
+      const ConstString& name,
+      const ConstString& path,
+      OpenMethod method,
+      string_view typeName,
+      Reference<Window> parent,
+      const ConstString& creationProcess)
+{
+    CHECK(data, false, "Expecting a valid data object");
+    return Add(Object::Type::MemoryBuffer, std::move(data), name, path, 0, method, typeName, parent, creationProcess);
+}
 void Instance::OpenFile()
 {
     auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", this->lastOpenedFolderLocation);
@@ -544,7 +579,9 @@ void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     auto idx = GENERIC_PLUGINS_CMDID;
     for (auto& p : this->genericPlugins) {
-        p.UpdateCommandBar(commandBar, idx);
+        // plugins outside the course whitelist are not offered (the student sees the policy instead of fighting it)
+        if (Security::RestrictedMode::Internal::IsPluginAllowed(p.GetName()))
+            p.UpdateCommandBar(commandBar, idx);
         idx += GENERIC_PLUGINS_FRAME;
     }
 }
@@ -630,10 +667,17 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
-            auto packedValue = ((uint32) ID) - GENERIC_PLUGINS_CMDID;
+            auto packedValue       = ((uint32) ID) - GENERIC_PLUGINS_CMDID;
+            const auto pluginIndex = packedValue / GENERIC_PLUGINS_FRAME;
+            if (pluginIndex >= this->genericPlugins.size())
+                return true;
+            auto& plugin = this->genericPlugins[pluginIndex];
+            if (!Security::RestrictedMode::Internal::IsPluginAllowed(plugin.GetName())) {
+                GView::App::IsBlockedByPolicy(Security::RestrictedMode::Feature::Plugins, "this generic plugin is not allowed by the course policy");
+                return true;
+            }
             // get current focused object
-
-            this->genericPlugins[packedValue / GENERIC_PLUGINS_FRAME].Run(packedValue % GENERIC_PLUGINS_FRAME, this->GetCurrentObject());
+            plugin.Run(packedValue % GENERIC_PLUGINS_FRAME, this->GetCurrentObject());
             return true;
         }
     }
@@ -642,6 +686,11 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 void Instance::OnStart(Reference<Control> control)
 {
     ShowErrors();
+    std::string connectionString;
+    if (GView::App::TakeStartupLearningConnection(connectionString)) {
+        GView::App::ShowLearningModeWindow(connectionString, true);
+        GView::Security::Learning::WipeString(connectionString);
+    }
 }
 //===============================[PROPERTIES]==================================
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)

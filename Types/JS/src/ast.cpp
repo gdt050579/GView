@@ -3823,7 +3823,9 @@ namespace Type
 
             DumpVisitor::DumpVisitor(const char* file)
             {
-                this->file = std::ofstream(file);
+                // debug AST dumps contain task-derived content: never written while exports are restricted by a course policy
+                if (!GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export))
+                    this->file = std::ofstream(file);
             }
 
             DumpVisitor::~DumpVisitor()

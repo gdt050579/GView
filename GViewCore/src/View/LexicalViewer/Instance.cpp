@@ -1076,7 +1076,9 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(FoldAllCmd.Key, FoldAllCmd.Caption, FoldAllCmd.CommandId);
     commandBar.SetCommand(ExpandAllCmd.Key, ExpandAllCmd.Caption, ExpandAllCmd.CommandId);
     commandBar.SetCommand(ShowPluginsCmd.Key, ShowPluginsCmd.Caption, ShowPluginsCmd.CommandId);
-    commandBar.SetCommand(SaveAsCmd.Key, SaveAsCmd.Caption, SaveAsCmd.CommandId);
+    if (!GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::SaveAs) &&
+        !GView::Security::Learning::Hooks::IsMemoryOnlyObject(this->obj))
+        commandBar.SetCommand(SaveAsCmd.Key, SaveAsCmd.Caption, SaveAsCmd.CommandId);
 
     return false;
 }
@@ -1815,6 +1817,10 @@ void Instance::ShowPlugins()
 }
 void Instance::ShowSaveAsDialog()
 {
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::SaveAs, "saving the text to a file"))
+        return;
+    if (GView::App::IsExportBlockedFor(this->obj, "saving memory-only task content to disk"))
+        return;
     SaveAsDialog dlg(this->obj);
     if (dlg.Show() != Dialogs::Result::Ok)
         return;

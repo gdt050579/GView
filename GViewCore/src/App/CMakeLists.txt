@@ -12,7 +12,8 @@ target_sources(GViewCore PRIVATE
     ViewerKeys.cpp
     QueryInterface.cpp
     OptionsWindow.cpp
-    RestrictedModeWindow.cpp
+    LearningModeWindow.cpp
+    LearningSubmitDialog.cpp
 )
 
 add_testing_sources(GViewCore tests_keybindings.cpp)

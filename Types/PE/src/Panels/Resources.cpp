@@ -71,6 +71,8 @@ bool Panels::Resources::OnUpdateCommandBar(AppCUI::Application::CommandBar& comm
 }
 void Panels::Resources::SaveCurrentResource()
 {
+    if (GView::App::IsExportBlockedFor(this->win->GetObject(), "saving a resource to disk"))
+        return;
     auto r = list->GetCurrentItem().GetData<PEFile::ResourceInformation>();
     LocalString<128> tmp;
     tmp.Format("resource_%08X_%X_%d.res", r->Start, r->Size, r->ID);

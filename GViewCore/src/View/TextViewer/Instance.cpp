@@ -1461,7 +1461,9 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
-    if (!selection.HasAnySelection()) 
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Copy, "copying from the text view"))
+        return true;
+    if (!selection.HasAnySelection())
     {
         Dialogs::MessageBox::ShowError("Error", "Please make a selection before copying");
         return false;
@@ -1480,7 +1482,7 @@ bool Instance::ShowCopyDialog()
         return false;
     }
 
-    if (AppCUI::OS::Clipboard::SetText(buf) == false) {
+    if (GView::App::SetClipboardText(buf) == false) {
         LocalString<128> message;
         CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", obj->GetData().GetSize(), 100), false, "");
         Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);

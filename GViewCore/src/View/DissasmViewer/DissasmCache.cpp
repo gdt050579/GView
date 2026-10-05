@@ -136,6 +136,9 @@ void Instance::LoadCacheData()
 {
     if (!config.EnableDeepScanDissasmOnStart)
         return;
+    // memory-only task content: no disk interaction at all (a stale cache could also belong to another file)
+    if (GView::Security::Learning::Hooks::IsMemoryOnlyObject(obj))
+        return;
     const std::filesystem::path path = DissasmCache::GetCacheFilePath(obj->GetPath(), config.CacheSameLocationAsAnalyzedFile);
     if (!cacheData.LoadCacheFile(path.u16string())) {
         cacheData.ClearCache(true);
@@ -151,6 +154,11 @@ void Instance::LoadCacheData()
 void Instance::SaveCacheData()
 {
     if (!config.EnableDeepScanDissasmOnStart)
+        return;
+    // The cache persists annotations (comments, labels) next to the analysed file. Memory-only task content must never
+    // leave a trace on disk, and a disabled Export feature covers annotation exports as well.
+    if (GView::Security::Learning::Hooks::IsMemoryOnlyObject(obj) ||
+        GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export))
         return;
     cacheData.ClearCache(); // TODO: optimise this better? maybe clear cache after loading
     if (!settings->SaveToCache(cacheData, obj))

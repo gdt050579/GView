@@ -390,6 +390,8 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Copy, "copying from the buffer view"))
+        return true;
     CopyDialog dlg(this);
     CHECK(dlg.Show() == Dialogs::Result::Ok, true, "");
 
