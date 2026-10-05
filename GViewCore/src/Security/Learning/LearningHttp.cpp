@@ -190,12 +190,13 @@ namespace
             }
 
             const std::string url = cfg.serverUrl + req.path;
+#ifdef DISSASM_DEV
             const bool plainHttp  = url.starts_with("http://");
-            if (plainHttp && !cfg.allowPlainHttpLocalhost)
-            {
+            if (plainHttp && !cfg.allowPlainHttpLocalhost) {
                 resp.transportError = "plain HTTP is not allowed";
                 return resp;
             }
+#endif
             char errorBuffer[CURL_ERROR_SIZE] = {};
             TransferContext ctx{ &resp, req.maxResponseBytes, req.cancel };
 
@@ -208,7 +209,11 @@ namespace
             curl_easy_setopt(c, CURLOPT_HTTPHEADER, h.headers);
             // Never follow redirects: the access token header must only ever reach the configured server.
             curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 0L);
+#ifdef DISSASM_DEV
             curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR, plainHttp ? "http" : "https");
+#else
+            curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR, "https");
+#endif
             curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 1L);
             curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 2L);
             curl_easy_setopt(c, CURLOPT_SSLVERSION, static_cast<long>(CURL_SSLVERSION_TLSv1_2));
