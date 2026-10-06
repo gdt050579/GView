@@ -137,7 +137,8 @@ runs:
       run: |
         cmake -S . -B build \
           -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-          -DENABLE_TESTS=${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}           -DGVIEW_ENABLE_REMOTE=${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
+          -DENABLE_TESTS=${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }} \
+          -DGVIEW_ENABLE_REMOTE=${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
 
     - name: Configure CMake (Windows)
       if: ${{ runner.os == 'Windows' }}
