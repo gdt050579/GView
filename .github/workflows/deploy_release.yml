@@ -1,10 +1,16 @@
+# .github/workflows/deploy_release.yml
+#
+# Builds, signs, attests and publishes a GitHub Release named after GVIEW_VERSION (GViewCore/include/GView.hpp).
+#
+# Supply-chain properties of a release produced by this workflow:
+#   * dependencies are built from source (no vcpkg binary cache, no compiler cache) in a clean runner;
+#   * every executable / shared library / plugin inside an archive is signed with Sigstore keyless signing
+#     (the signing identity is this workflow, there is no long-lived key to leak);
+#   * every archive gets a SLSA build-provenance attestation (`gh attestation verify`);
+#   * SHA256SUMS lists every archive.
 name: "Deploy release"
 
-permissions:
-  id-token: write
-  attestations: write
-  contents: write
-  actions: write
+permissions: {}
 
 on:
   push:
@@ -19,6 +25,11 @@ on:
         default: true
         type: boolean
 
+# Never run two releases at once and never cancel one that is half-published.
+concurrency:
+  group: deploy-release
+  cancel-in-progress: false
+
 env:
   BUILD_TYPE: Release
 
@@ -29,66 +40,148 @@ jobs:
   build-all:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write   # Sigstore keyless signing (cosign)
     strategy:
       fail-fast: false
       matrix:
+        # To ship Apple Silicon / Linux arm64 archives, add macos-15 / ubuntu-24.04-arm here once the
+        # experimental lanes in ci.yml are green. Archive names already carry the architecture.
         os: [ubuntu-24.04, macos-15-intel, windows-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
+          persist-credentials: false
 
-      # Use the composite action (inputs are strings)
-      - name: Build & package
-        uses: ./.github/actions/build
+      - name: Build, sign & package
+        uses: $/.github/actions/build
         with:
           build_type: ${{ env.BUILD_TYPE }}
           enable_tests: "false"
-          use_vcpkg_cache: "true"
+          use_vcpkg_cache: "false"
+          use_ccache: "false"
           upload_artifact: "true"
-          artifact_path: "bin/Release/**"
           jobs_count: "0"
           sign_binaries: "true"
 
   # --------------------------------------------------
   # Publish to GitHub Release
   # --------------------------------------------------
-  publish_job:
+  publish:
     name: "Publish to GitHub Release"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [build-all]
+    permissions:
+      contents: write       # create the tag + release and upload assets
+      id-token: write       # sign the provenance attestation
+      attestations: write   # store the provenance attestation
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Extract version
         run: |
-          ver=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+          ver=$(python3 .github/workflows/get_version.py GViewCore/include/GView.hpp)
           echo "GVIEW_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "Releasing GView $ver"
 
-      # ------------------------
-      # Download all artifacts from the matrix
-      # ------------------------
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          # The composite action names artifacts as:
-          #   build-Linux-Release, build-macOS-Release, build-Windows-Release
+          # The composite action names artifacts build-<OS>-<ARCH>-Release
           pattern: build-*-Release
           merge-multiple: true
           path: artifacts
 
-      # ------------------------
-      # Publish Release
-      # ------------------------
-      - name: Publish GitHub release
-        uses: marvinpinto/action-automatic-releases@latest
+      - name: Create SHA256SUMS
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          ls -la
+          cat ./*.zip.sha256 > SHA256SUMS
+          rm -f ./*.zip.sha256
+          sha256sum -c SHA256SUMS
+          echo "::group::SHA256SUMS"
+          cat SHA256SUMS
+          echo "::endgroup::"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: "${{ env.GVIEW_VERSION }}"
-          # On workflow_dispatch use the provided input; on push default to false
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.isPreRelease || false }}
-          title: "GView Build ${{ env.GVIEW_VERSION }}"
-          files: |
+          subject-path: |
             artifacts/*.zip
+            artifacts/SHA256SUMS
+
+      - name: Resolve release flags
+        id: flags
+        env:
+          IS_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.isPreRelease || false }}
+        run: |
+          echo "prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Pre-release: $IS_PRERELEASE"
+
+      - name: Write release notes header
+        env:
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          workflow_path="${WORKFLOW_REF#"$REPO"/}"
+          workflow_path="${workflow_path%@*}"
+          cat > release-notes.md <<EOF
+          ## Verifying this release
+
+          All archives were built by GitHub Actions from \`${REPO}\` and carry a SLSA build-provenance attestation.
+          Every executable, shared library and plugin inside an archive is signed with Sigstore (keyless), with the
+          signature (\`.sig\`), certificate (\`.cert\`) and bundle (\`.bundle\`) stored next to the file.
+
+          \`\`\`bash
+          # 1. archive provenance (needs the GitHub CLI)
+          gh attestation verify GView-${GVIEW_VERSION}-Linux-X64.zip --repo ${REPO}
+
+          # 2. checksums
+          sha256sum --ignore-missing -c SHA256SUMS
+
+          # 3. an individual binary inside the archive (needs cosign)
+          cosign verify-blob --bundle libPE.tpl.bundle \\
+            --certificate-identity-regexp '^${SERVER_URL}/${REPO}/${workflow_path}@' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
+            libPE.tpl
+          \`\`\`
+
+          EOF
+          cat release-notes.md
+
+      # The GitHub CLI is preinstalled on the runner: no third-party action is needed in the release path.
+      # `gh release create` creates the tag at the built commit; an existing release only gets its assets refreshed.
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ env.GVIEW_VERSION }}
+          PRERELEASE: ${{ steps.flags.outputs.prerelease }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          assets=(artifacts/*.zip artifacts/SHA256SUMS)
+          for a in "${assets[@]}"; do test -f "$a" || { echo "::error::Missing release asset: $a"; exit 1; }; done
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists: uploading assets only."
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            flags=(--title "GView $TAG" --notes-file release-notes.md --generate-notes --target "$TARGET_SHA")
+            if [ "$PRERELEASE" = "true" ]; then
+              flags+=(--prerelease --latest=false)
+            else
+              flags+=(--latest)
+            fi
+            gh release create "$TAG" "${assets[@]}" "${flags[@]}"
+          fi

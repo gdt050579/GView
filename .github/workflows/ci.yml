@@ -1,8 +1,7 @@
 # .github/workflows/ci.yml
 name: build
 
-permissions:
-  contents: read
+permissions: {}
 
 on:
   push:
@@ -10,18 +9,37 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One run per PR / branch: a new push cancels the superseded PR build (never a push to a protected branch).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    # Experimental lanes report their result but never block a PR. Promote them (experimental: false)
+    # once they are consistently green.
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15-intel, windows-latest]
+        experimental: [false]
+        include:
+          - os: macos-15          # Apple Silicon (arm64)
+            experimental: true
+          - os: ubuntu-24.04-arm  # Linux arm64
+            experimental: true
     steps:
-      - uses: actions/checkout@v6
-        with: { submodules: recursive }
-      - uses: ./.github/actions/build
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: $/.github/actions/build
         with:
           build_type: Release
           enable_tests: "false"
