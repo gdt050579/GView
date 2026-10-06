@@ -38,7 +38,7 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
-      - uses: ./.github/actions/build
+      - uses: $/.github/actions/build
         with:
           build_type: RelWithDebInfo
           enable_tests: "true"

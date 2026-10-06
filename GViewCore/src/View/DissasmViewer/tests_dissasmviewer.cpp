@@ -306,8 +306,11 @@ class DissasmTestInstance
     DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize)
     {
         instance = nullptr;
-        const bool initResult = init(binaryData, binaryDataSize);
-        assert(initResult);
+        // assert() is compiled out in RelWithDebInfo/Release (NDEBUG): a failed init would otherwise continue with a
+        // null zone and crash the test with SIGSEGV instead of reporting what went wrong.
+        if (!init(binaryData, binaryDataSize)) {
+            FAIL("DissasmTestInstance: failed to initialize the test instance");
+        }
     }
 
     bool init(const unsigned char* binaryData, size_t binaryDataSize)
@@ -315,12 +318,15 @@ class DissasmTestInstance
         GView::Utils::DataCache cache              = GView::Utils::DataCache();
         std::unique_ptr<OS::MemoryFile> memoryFile = std::make_unique<OS::MemoryFile>();
         if (!memoryFile->Create(binaryData, binaryDataSize)) {
-            printf("ERROR: creating memory file!");
+            printf("ERROR: creating memory file!\n");
             return false;
         }
 
-        if (!cache.Init(std::move(memoryFile), static_cast<uint32>(memoryFile->GetSize()))) {
-            printf("ERROR: creating cache!");
+        // Read the size before the pointer is moved into the cache: function arguments are evaluated in an
+        // unspecified order, and Clang moves `memoryFile` first (null dereference).
+        const auto fileSize = static_cast<uint32>(memoryFile->GetSize());
+        if (!cache.Init(std::move(memoryFile), fileSize)) {
+            printf("ERROR: creating cache!\n");
             return false;
         }
 
@@ -346,8 +352,9 @@ class DissasmTestInstance
         initData.visibleRows                  = 53;
         initData.obj                          = obj;
 
-        const bool initZoneResult = zone->InitZone(initData);
-        assert(initZoneResult);
+        if (!zone->InitZone(initData)) {
+            FAIL("DissasmTestInstance: InitZone failed");
+        }
     }
 
     bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)

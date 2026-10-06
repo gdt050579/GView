@@ -65,5 +65,8 @@ jobs:
           tar -xzf "$tarball" -C "$RUNNER_TEMP/actionlint" actionlint
           echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
 
+      # The `$/` self-repository `uses:` syntax (GitHub, July 2026) is not parsed by actionlint 1.7.12 yet
+      # (rhysd/actionlint#711, PR #732): that one error is ignored until a release understands it. Drop the
+      # `-ignore` once actionlint accepts `uses: $/...` so that the inputs of .github/actions/build are checked again.
       - name: Run actionlint
-        run: actionlint -color
+        run: actionlint -color -ignore 'specifying action "\$/[^"]*" in invalid format because ref is missing'

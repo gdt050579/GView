@@ -58,7 +58,7 @@ jobs:
           persist-credentials: false
 
       - name: Build, sign & package
-        uses: ./.github/actions/build
+        uses: $/.github/actions/build
         with:
           build_type: ${{ env.BUILD_TYPE }}
           enable_tests: "false"

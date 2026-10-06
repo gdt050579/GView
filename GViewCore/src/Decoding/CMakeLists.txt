@@ -9,3 +9,5 @@ target_sources(GViewCore PRIVATE
         XOREncoding.cpp
         HTMLCharactersEncoding.cpp
 )
+
+add_testing_sources(GViewCore tests_base64.cpp)

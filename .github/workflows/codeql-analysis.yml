@@ -51,7 +51,7 @@ jobs:
 
       - name: Build C++
         if: matrix.language == 'c-cpp'
-        uses: ./.github/actions/build
+        uses: $/.github/actions/build
         with:
           build_type: RelWithDebInfo
           enable_tests: "false"
