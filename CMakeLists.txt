@@ -14,6 +14,10 @@ message("CMAKE_HOST_SYSTEM_PROCESSOR => ${CMAKE_HOST_SYSTEM_PROCESSOR}")
 message("CMAKE_C_COMPILER_ARCHITECTURE_ID => ${CMAKE_C_COMPILER_ARCHITECTURE_ID}")
 
 option(ENABLE_TESTS "Enable tests" OFF)
+# Remote TUI (GView serve / connect / listen, docs/source/remote_protocol.rst): TLS 1.3 + mutual TLS over TCP.
+# OFF by default: when disabled no networking code for the remote mode is compiled into GView.
+option(GVIEW_ENABLE_REMOTE "Build the remote TUI client/server (TLS 1.3, mutual TLS, OpenSSL)" OFF)
+message("GVIEW_ENABLE_REMOTE => ${GVIEW_ENABLE_REMOTE}")
 set(CURRENT_PROJECT_NAME GView)
 if (ENABLE_TESTS)
     message("ENALBED TESTING")

@@ -5,6 +5,9 @@
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
 #include "LexicalViewer.hpp"
+#ifdef GVIEW_ENABLE_REMOTE
+#    include "../Remote/RemoteConfig.hpp"
+#endif
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -112,6 +115,11 @@ bool GView::App::ResetConfiguration()
     ini["GView"]["PolicyPublicKey"]                 = "";
     ini["GView"]["LearningAllowPlainHttpLocalhost"] = false;
     ini["GView"]["LearningDownloadFolder"]          = "";
+
+#ifdef GVIEW_ENABLE_REMOTE
+    // remote TUI (see docs/source/remote_protocol.rst)
+    GView::Remote::WriteDefaultRemoteConfig(ini);
+#endif
 
     // key bindings: only the user changes are stored ([Keys.*] sections, written by the "Keyboard shortcuts" window).
     // A reset restores the built-in keys -> saving an empty registry removes every [Keys.*] section and the legacy

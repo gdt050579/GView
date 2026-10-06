@@ -1,5 +1,8 @@
 #include "Internal.hpp"
 #include "Learning/SecureMemory.hpp"
+#ifdef GVIEW_ENABLE_REMOTE
+#    include "../Remote/RemoteConfig.hpp"
+#endif
 #include <array>
 
 using namespace GView::App;
@@ -29,6 +32,11 @@ constexpr GViewMenuCommand menuFileList[] = {
     { "Open &process", MenuCommands::OPEN_PID, Key::None },
     { "Open process &tree", MenuCommands::OPEN_PROCESS_TREE, Key::None },
     { "", 0, Key::None },
+#ifdef GVIEW_ENABLE_REMOTE
+    { "Connect to a &remote GView", MenuCommands::REMOTE_CONNECT, Key::None },
+    { "&Wait for a reverse connection", MenuCommands::REMOTE_LISTEN, Key::None },
+    { "", 0, Key::None },
+#endif
     { "E&xit", MenuCommands::EXIT_GVIEW, Key::None, &INSTANCE_EXIT },
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
@@ -76,6 +84,13 @@ bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
         list++;
     }
     return true;
+}
+
+// set by the remote server before Init (GView::App::SetHeadlessFrontend)
+static AppCUI::Application::CustomFrontendInterface* headlessFrontend = nullptr;
+void GView::App::SetHeadlessFrontend(AppCUI::Application::CustomFrontendInterface* frontend)
+{
+    headlessFrontend = frontend;
 }
 
 Instance::Instance()
@@ -196,6 +211,13 @@ bool Instance::Init(bool isTestingEnabled)
     // from OnFrameUpdate unless its state changed, so idle CPU usage stays negligible.
     initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile |
                      InitializationFlags::AutoHotKeyForWindow | InitializationFlags::EnableFPSMode;
+    if (headlessFrontend) {
+        // remote server: the screen is streamed to remote analysts and must stay up even when every window is closed
+        initData.Frontend       = FrontendType::Custom;
+        initData.CustomFrontend = headlessFrontend;
+        initData.Flags |= InitializationFlags::DisableAutoCloseDesktop;
+        headlessFrontend = nullptr;
+    }
 
     const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
     AppCUI::OS::File settingsFile;
@@ -586,23 +608,39 @@ void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     }
 }
 
+// Objects are the file windows of the desktop; other windows (e.g. remote screens) are skipped.
 uint32 Instance::GetObjectsCount()
 {
     auto dsk = AppCUI::Application::GetDesktop();
     CHECK(dsk.IsValid(), 0, "Fail to get Desktop object from AppCUI !");
-    return dsk->GetChildrenCount();
+    uint32 count      = 0;
+    const auto total  = dsk->GetChildrenCount();
+    for (uint32 i = 0; i < total; i++)
+        if (dsk->GetChild(i).ToObjectRef<FileWindow>().IsValid())
+            count++;
+    return count;
 }
 Reference<GView::Object> Instance::GetObject(uint32 index)
 {
     auto dsk = AppCUI::Application::GetDesktop();
     CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
-    return dsk->GetChild(index).ToObjectRef<FileWindow>()->GetObject();
+    const auto total = dsk->GetChildrenCount();
+    for (uint32 i = 0; i < total; i++) {
+        auto fw = dsk->GetChild(i).ToObjectRef<FileWindow>();
+        if (!fw.IsValid())
+            continue;
+        if (index == 0)
+            return fw->GetObject();
+        index--;
+    }
+    return nullptr;
 }
 Reference<GView::Object> Instance::GetCurrentObject()
 {
     auto dsk = AppCUI::Application::GetDesktop();
     CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
-    return dsk->GetFocusedChild().ToObjectRef<FileWindow>()->GetObject();
+    auto fw = dsk->GetFocusedChild().ToObjectRef<FileWindow>();
+    return fw.IsValid() ? fw->GetObject() : nullptr;
 }
 uint32 Instance::GetTypePluginsCount()
 {
@@ -665,6 +703,14 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         case MenuCommands::OPEN_RESTRICTED_MODE:
             ShowRestrictedModeWindow();
             return true;
+#ifdef GVIEW_ENABLE_REMOTE
+        case MenuCommands::REMOTE_CONNECT:
+            GView::Remote::ShowConnectDialog();
+            return true;
+        case MenuCommands::REMOTE_LISTEN:
+            GView::Remote::ShowListenDialog();
+            return true;
+#endif
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
             auto packedValue       = ((uint32) ID) - GENERIC_PLUGINS_CMDID;
@@ -677,7 +723,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                 return true;
             }
             // get current focused object
-            plugin.Run(packedValue % GENERIC_PLUGINS_FRAME, this->GetCurrentObject());
+            auto object = this->GetCurrentObject();
+            if (object.IsValid())
+                plugin.Run(packedValue % GENERIC_PLUGINS_FRAME, object);
             return true;
         }
     }

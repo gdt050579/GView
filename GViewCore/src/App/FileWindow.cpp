@@ -404,4 +404,8 @@ void GView::App::InstanceCommands::RegisterGViewKeys(KeyboardControlsInterface* 
         interface->RegisterKey(key);
     interface->BeginCategory("Menus");
     interface->RegisterKeyText("Alt+<letter>", "OpenMenu", "Open the menu whose name has that letter underlined (File, Options, Windows, Help)");
+#ifdef GVIEW_ENABLE_REMOTE
+    interface->BeginCategory("Remote");
+    interface->RegisterKey(&REMOTE_LOCAL_KEY);
+#endif
 }

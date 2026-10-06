@@ -7,6 +7,9 @@ inputs:
   enable_tests:
     description: "Run tests? ('true'|'false')"
     default: "false"
+  enable_remote:
+    description: "Build the remote TUI (GVIEW_ENABLE_REMOTE)? ('true'|'false')"
+    default: "false"
   use_vcpkg_cache:
     description: "Cache vcpkg artifacts? ('true'|'false')"
     default: "true"
@@ -134,16 +137,18 @@ runs:
       run: |
         cmake -S . -B build \
           -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-          -DENABLE_TESTS=${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}
+          -DENABLE_TESTS=${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}           -DGVIEW_ENABLE_REMOTE=${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
 
     - name: Configure CMake (Windows)
       if: ${{ runner.os == 'Windows' }}
       shell: pwsh
       run: |
         $enableTests = if ("${{ inputs.enable_tests }}" -eq "true") { "ON" } else { "OFF" }
+        $enableRemote = if ("${{ inputs.enable_remote }}" -eq "true") { "ON" } else { "OFF" }
         cmake -S . -B build `
           -DCMAKE_BUILD_TYPE="${{ inputs.build_type }}" `
-          -DENABLE_TESTS="$enableTests"
+          -DENABLE_TESTS="$enableTests" `
+          -DGVIEW_ENABLE_REMOTE="$enableRemote"
 
     # --------------------------
     # Build
