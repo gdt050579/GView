@@ -2,6 +2,7 @@
 #include "DissasmX86.hpp"
 #include "DissasmCodeZone.hpp"
 #include "DissasmFunctionUtils.hpp"
+#include "DissasmX86LocalVariables.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>
@@ -160,6 +161,18 @@ inline void DissasmAddColorsToInstruction(
 
     cb.Add(string, colors.AsmDefaultColor);
 
+    if (insn.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition && insn.op_str) {
+        // IDA like variable line, below the function label: "var_8 = dword ptr -8"
+        string.Clear();
+        string.SetChars(' ', textPaddingLabelsSpace * 2);
+        cb.Add(string, colors.AsmDefaultColor);
+        const std::string_view text = { insn.op_str, insn.op_str_size };
+        const size_t nameSize       = std::min<size_t>(insn.localVariableNameSize, text.size());
+        cb.Add(text.substr(0, nameSize), colors.AsmLocalVariableColor);
+        cb.Add(text.substr(nameSize), colors.AsmLocationInstruction);
+        return;
+    }
+
     if (insn.size > 0) {
         string.Clear();
         string.SetChars(' ', textPaddingLabelsSpace);
@@ -192,15 +205,26 @@ inline void DissasmAddColorsToInstruction(
             return;
         }
 
-        char lastOp = ' ';
+        // the local variable used by the instruction ([ebp + var_8]) is the token placed at localVariableNameStart
+        const bool hasVariableToken = insn.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Reference && insn.localVariableNameSize > 0;
+        size_t tokenStart           = 0;
         LocalString<32> buffer;
-        for (const char c : op_str) {
+        auto addToken = [&]() {
+            if (hasVariableToken && tokenStart == insn.localVariableNameStart)
+                cb.Add(buffer.GetText(), colors.AsmLocalVariableColor);
+            else
+                checkValidAndAdd(buffer.GetText());
+            buffer.Clear();
+        };
+
+        char lastOp = ' ';
+        for (size_t i = 0; i < op_str.size(); i++) {
+            const char c = op_str[i];
             if (c == ' ' || c == ',' || c == '[' || c == ']') {
                 if (buffer.Len() > 0) {
                     if (lastOp != '[')
                         cb.Add(" ");
-                    checkValidAndAdd(buffer.GetText());
-                    buffer.Clear();
+                    addToken();
                 }
                 if (c != ' ') {
                     const char tmp[3] = { ' ', c, '\0' };
@@ -210,11 +234,13 @@ inline void DissasmAddColorsToInstruction(
                 lastOp = c;
                 continue;
             }
+            if (buffer.Len() == 0)
+                tokenStart = i;
             buffer.AddChar(c);
         }
         if (buffer.Len() > 0) {
             cb.Add(" ");
-            checkValidAndAdd(buffer.GetText());
+            addToken();
         }
     } else {
         if (mappingPtr) {
@@ -232,35 +258,20 @@ inline cs_insn* GetCurrentInstructionByLine(
       uint32 lineToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli = nullptr)
 {
     uint32 lineDifferences = 1;
-    // TODO: first or be transformed into an abs ?
-    const bool lineIsAtMargin = lineToReach >= zone->offsetCacheMaxLine;
-    if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1 || lineIsAtMargin) {
-        // TODO: can be inlined as function
-        uint32 codeOffsetIndex      = 0;
-        const auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, lineToReach, &codeOffsetIndex);
-        const bool samePreviousZone = closestData.line == zone->lastClosestLine;
-        zone->lastClosestLine       = closestData.line;
-        zone->asmAddress            = closestData.offset - zone->cachedCodeOffsets[0].offset;
-        zone->asmSize               = zone->zoneDetails.size - zone->asmAddress;
+    // only the line right after the previous decoded one continues from the current position (same cached offset window),
+    // any other line (including the same line again) restarts from its closest cached offset
+    const bool isNextLine = lineToReach == zone->lastDrawnLine + 1u && lineToReach < zone->offsetCacheMaxLine;
+    uint64 windowStart    = zone->asmAddress;
+    if (!isNextLine) {
+        uint32 codeOffsetIndex = 0;
+        const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, lineToReach, &codeOffsetIndex);
+        zone->lastClosestLine  = closestData.line;
+        windowStart            = closestData.offset - zone->cachedCodeOffsets[0].offset;
+        zone->asmWindowEnd     = GetCachedOffsetWindowEnd(zone, codeOffsetIndex);
         if (static_cast<size_t>(codeOffsetIndex) + 1u < zone->cachedCodeOffsets.size())
             zone->offsetCacheMaxLine = zone->cachedCodeOffsets[static_cast<size_t>(codeOffsetIndex) + 1u].line;
         else
             zone->offsetCacheMaxLine = UINT32_MAX;
-
-        if (!samePreviousZone) {
-            // TODO: maybe get less data ?
-            const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
-            zone->lastData             = instructionData;
-            if (!instructionData.IsValid()) {
-                if (dli)
-                    dli->WriteErrorToScreen("ERROR: extract valid data from file!");
-                diffLines = UINT32_MAX;
-                return nullptr;
-            }
-        }
-        zone->asmData = const_cast<uint8*>(zone->lastData.GetData());
-        // if (lineInView > zone->lastDrawnLine)
-        //     lineDifferences = lineInView - zone->lastDrawnLine + 1;
         lineDifferences = lineToReach - closestData.line + 1;
     }
 
@@ -269,13 +280,22 @@ inline cs_insn* GetCurrentInstructionByLine(
         return nullptr;
     }
 
+    // the window is fetched again even for the next line: O(1) while cached, and other readers may have refilled the data cache
+    if (!zone->FetchCodeWindow(obj, windowStart, zone->asmWindowEnd)) {
+        zone->offsetCacheMaxLine = 0;
+        if (dli)
+            dli->WriteErrorToScreen("ERROR: extract valid data from file!");
+        diffLines = UINT32_MAX;
+        return nullptr;
+    }
+
     // TODO: keep the handle open and insn open until the program ends
     csh handle;
     const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(zone->internalArchitecture), &handle);
     if (resCode != CS_ERR_OK) {
+        zone->offsetCacheMaxLine = 0;
         if (dli)
             dli->WriteErrorToScreen(cs_strerror(resCode));
-        cs_close(&handle);
         return nullptr;
     }
 
@@ -283,6 +303,7 @@ inline cs_insn* GetCurrentInstructionByLine(
 
     while (lineDifferences > 0) {
         if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, &zone->asmAddress, insn)) {
+            zone->offsetCacheMaxLine = 0;
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
             cs_free(insn, 1);
@@ -421,11 +442,12 @@ bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternal
     if (currentType.isCollapsed) {
         op_str      = strdup(currentType.name.c_str());
         op_str_size = static_cast<uint32>(currentType.name.size());
-        strncpy(mnemonic, "collapsed", std::min<uint32>(sizeof(mnemonic), 9));
+        SetMnemonic("collapsed");
         return true;
     }
 
-    strncpy(mnemonic, foundAnnotation->second.first.data(), sizeof(mnemonic));
+    // labels can be renamed to any length, the mnemonic is always NUL terminated
+    SetMnemonic(foundAnnotation->second.first);
     // strncpy((char*) bytes, "------", sizeof(bytes));
     // size        = static_cast<uint32>(strlen((char*) bytes));
 
@@ -436,12 +458,65 @@ bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternal
     return true;
 }
 
+struct CsInsnDeleter {
+    void operator()(cs_insn* insn) const
+    {
+        cs_free(insn, 1);
+    }
+};
+
+void DissasmAsmPreCacheLine::SetMnemonic(std::string_view text)
+{
+    const size_t length = std::min<size_t>(text.size(), sizeof(mnemonic) - 1u);
+    memcpy(mnemonic, text.data(), length);
+    mnemonic[length] = '\0';
+}
+
+void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCodeZone* zone)
+{
+    if (op_str) {
+        free(op_str);
+        op_str = nullptr;
+    }
+    const std::string_view text = operands ? operands : "";
+
+    // [ebp - 8] -> [ebp + var_8] when the slot is a recognized variable of the function that contains the instruction
+    const DissasmFunctionFrame* function = nullptr;
+    const DissasmLocalVariable* variable = nullptr;
+    X86FrameOperand frameOperand{};
+    if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
+        function = zone->localVariables.FindFunctionByAddress(address);
+        variable = function ? function->FindVariable(frameOperand.frameOffset) : nullptr;
+    }
+    if (!variable) {
+        op_str      = portable_strdup(operands ? operands : "");
+        op_str_size = static_cast<uint32>(text.size());
+        return;
+    }
+
+    std::string rewritten;
+    rewritten.reserve(text.size() + variable->name.size() + 3u);
+    rewritten.append(text.substr(0, frameOperand.replaceStart));
+    rewritten.append(" + ");
+    localVariableNameStart = static_cast<uint32>(rewritten.size());
+    rewritten.append(variable->name);
+    rewritten.append(text.substr(frameOperand.replaceEnd));
+
+    op_str                = portable_strdup(rewritten.c_str());
+    op_str_size           = static_cast<uint32>(rewritten.size());
+    localVariableKind     = LocalVariableKind::Reference;
+    localVariableFunction = function->startAddress;
+    localVariableOffset   = frameOperand.frameOffset;
+    localVariableNameSize = static_cast<uint32>(variable->name.size());
+}
+
 bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& params)
 {
     uint32 diffLines = 0;
-    cs_insn* insn    = GetCurrentInstructionByLine(params.asmLine, params.zone, params.obj, diffLines, params.dli);
-    if (!insn)
+    cs_insn* insnPtr = GetCurrentInstructionByLine(params.asmLine, params.zone, params.obj, diffLines, params.dli);
+    if (!insnPtr)
         return false;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(insnPtr); // released on every return path
 
     address = insn->address;
     memcpy(bytes, insn->bytes, std::min<uint32>(sizeof(bytes), sizeof(insn->bytes)));
@@ -451,15 +526,16 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     if (params.isCollapsed && params.zoneName) {
         op_str      = strdup(params.zoneName->c_str());
         op_str_size = static_cast<uint32>(params.zoneName->size());
-        strncpy(mnemonic, "collapsed", std::min<uint32>(sizeof(mnemonic), 9));
-        cs_free(insn, 1);
+        SetMnemonic("collapsed");
         return true;
     }
 
-    memcpy(mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
+    SetMnemonic(insn->mnemonic);
 
-    if (!params.settings || !params.asmData)
+    if (!params.settings || !params.asmData) {
+        SetOperands(insn->op_str, params.zone);
         return true;
+    }
 
     switch (*((uint32*) insn->mnemonic)) {
     case pushOP:
@@ -472,10 +548,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         if (insn->mnemonic[0] == 'j') {
             flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
         } else {
-            op_str      = strdup(insn->op_str);
-            op_str_size = static_cast<uint32>(strlen(op_str));
-            // params.zone->asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
-            cs_free(insn, 1);
+            SetOperands(insn->op_str, params.zone);
             return true;
         }
     }
@@ -484,6 +557,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     uint64 hexVal = 0;
     if (CheckExtractInsnHexValue(insn->op_str, hexVal, params.settings->maxLocationMemoryMappingSize)) {
         hexValue = hexVal;
+        if (flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag))
+            branchTarget = hexVal; // same base as the decoded addresses, used by the jump arrows
         if (hexVal == 0 && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             hexValue = params.zone->cachedCodeOffsets[0].offset;
         else if (hexVal < params.zone->cachedCodeOffsets[0].offset)
@@ -555,11 +630,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
     if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
         if (!hexValue.has_value()) {
-            flags       = 0;
-            op_str      = strdup(insn->op_str);
-            op_str_size = static_cast<uint32>(strlen(op_str));
-            // params.zone->asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
-            cs_free(insn, 1);
+            flags = 0;
+            SetOperands(insn->op_str, params.zone);
             return true;
         }
 
@@ -581,12 +653,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         op_str_size = static_cast<uint32>(fnName.Len());
     }
 
-    if (!op_str && !mapping) {
-        op_str      = strdup(insn->op_str);
-        op_str_size = (uint32) strlen(op_str);
-    }
-    // params.zone->asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
-    cs_free(insn, 1);
+    if (!op_str && !mapping)
+        SetOperands(insn->op_str, params.zone);
     return true;
 }
 
@@ -610,92 +678,41 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
 void DissasmAsmPreCacheData::PrepareLabelArrows()
 {
+    for (auto& line : cachedAsmLines)
+        line.lineArrowToDraw = 0;
     if (cachedAsmLines.empty())
         return;
 
     const uint64 minimalAddress = cachedAsmLines.front().address;
     const uint64 maximalAddress = cachedAsmLines.back().address;
 
-    std::vector<DissasmAsmPreCacheLine*> startInstructions;
-    startInstructions.reserve(textColumnIndicatorArrowLinesSpace);
-
-    for (auto& line : cachedAsmLines) {
-        line.lineArrowToDraw = 0;
-        if (line.flags != DissasmAsmPreCacheLine::InstructionFlag::CallFlag && line.flags != DissasmAsmPreCacheLine::InstructionFlag::JmpFlag)
+    constexpr uint8 ARROW_COLUMNS[textColumnIndicatorArrowLinesSpace] = { DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1,
+                                                                           DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2,
+                                                                           DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3 };
+    uint32 arrowsCount = 0;
+    for (size_t sourceIndex = 0; sourceIndex < cachedAsmLines.size() && arrowsCount < textColumnIndicatorArrowLinesSpace; sourceIndex++) {
+        const auto& source = cachedAsmLines[sourceIndex];
+        if (source.flags != DissasmAsmPreCacheLine::InstructionFlag::CallFlag && source.flags != DissasmAsmPreCacheLine::InstructionFlag::JmpFlag)
             continue;
-        if (!line.hexValue.has_value())
+        if (!source.branchTarget.has_value())
             continue;
-        if (line.hexValue.value() < minimalAddress || line.hexValue.value() > maximalAddress)
+        const uint64 target = source.branchTarget.value();
+        if (target < minimalAddress || target > maximalAddress)
             continue;
-        startInstructions.push_back(&line);
-        if (startInstructions.size() >= textColumnIndicatorArrowLinesSpace)
-            break;
-    }
+        // first visible line placed at the target (its label when it has one); a target in the middle of an instruction has no line
+        const auto targetIt = std::find_if(
+              cachedAsmLines.begin(), cachedAsmLines.end(), [target](const DissasmAsmPreCacheLine& line) { return line.address == target; });
+        if (targetIt == cachedAsmLines.end())
+            continue;
 
-    if (startInstructions.empty())
-        return;
-
-    std::sort(startInstructions.begin(), startInstructions.end(), [](const DissasmAsmPreCacheLine* a, const DissasmAsmPreCacheLine* b) {
-        return a->hexValue.value() < b->hexValue.value();
-    });
-
-    std::vector<DissasmAsmPreCacheLine*> actualLabelsLines;
-    actualLabelsLines.reserve(startInstructions.size());
-
-    {
-        auto cacheLineIt = cachedAsmLines.begin();
-        auto labelIt     = startInstructions.begin();
-        while (labelIt != startInstructions.end() && cacheLineIt != cachedAsmLines.end()) {
-            if (cacheLineIt->address == (*labelIt)->hexValue.value()) {
-                actualLabelsLines.push_back(&(*cacheLineIt));
-                ++labelIt;
-            } else
-                ++cacheLineIt;
-            //++cacheLineIt;
-        }
-    }
-
-    assert(startInstructions.size() == actualLabelsLines.size());
-
-    auto startOpIt   = startInstructions.begin();
-    auto endOpIt     = actualLabelsLines.begin();
-    uint32 lineIndex = 0;
-    uint8 lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1;
-
-    while (startOpIt != startInstructions.end()) {
-        const bool startOpIsSmaller       = (*startOpIt)->currentLine < (*endOpIt)->currentLine;
-        DissasmAsmPreCacheLine* startLine = startOpIsSmaller ? *startOpIt : *endOpIt;
-        DissasmAsmPreCacheLine* endLine   = startOpIsSmaller ? *endOpIt : *startOpIt;
-
-        startLine->lineArrowToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine;
-        endLine->lineArrowToDraw   = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawEndingLine;
-
-        while (startLine <= endLine) {
-            startLine->lineArrowToDraw |= lineToDraw;
-            ++startLine;
-        }
-
-        ++startOpIt;
-        ++endOpIt;
-        switch (++lineIndex) {
-        case 0:
-            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1;
-            break;
-        case 1:
-            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2;
-            break;
-        case 2:
-            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3;
-            break;
-        case 3:
-            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine4;
-            break;
-        case 4:
-            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine5;
-            break;
-        default:
-            assert(false); // invalid lineToDraw value
-        }
+        const size_t targetIndex = static_cast<size_t>(targetIt - cachedAsmLines.begin());
+        const size_t firstIndex  = std::min(sourceIndex, targetIndex);
+        const size_t lastIndex   = std::max(sourceIndex, targetIndex);
+        cachedAsmLines[firstIndex].lineArrowToDraw |= DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine;
+        cachedAsmLines[lastIndex].lineArrowToDraw |= DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawEndingLine;
+        for (size_t i = firstIndex; i <= lastIndex; i++)
+            cachedAsmLines[i].lineArrowToDraw |= ARROW_COLUMNS[arrowsCount];
+        arrowsCount++;
     }
 }
 
@@ -726,26 +743,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
         RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
 
-        if (!zone->isInit) {
-            {
-                DissasmCodeZoneInitData initData{};
-                initData.enableDeepScanDissasmOnStart = config.EnableDeepScanDissasmOnStart;
-                initData.obj                          = obj;
-                initData.dli                          = &dli;
-                initData.maxLocationMemoryMappingSize = settings->maxLocationMemoryMappingSize;
-                initData.visibleRows                  = Layout.visibleRows;
-
-                if (!zone->InitZone(initData))
-                    return false;
-                if (initData.hasAdjustedSize)
-                    AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
-                if (!zone->TryLoadDataFromCache(cacheData)) {
-                    // TODO: will enable errors in the next version
-                    // dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
-                    // return false;
-                }
-            }
-        }
+        if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
+            return false;
 
         return true;
     }
@@ -800,21 +799,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (firstLineToDraw)
         --currentLine;
 
-    if (!zone->isInit) {
-        {
-            DissasmCodeZoneInitData initData{};
-            initData.enableDeepScanDissasmOnStart = config.EnableDeepScanDissasmOnStart;
-            initData.obj                          = obj;
-            initData.dli                          = &dli;
-            initData.maxLocationMemoryMappingSize = settings->maxLocationMemoryMappingSize;
-            initData.visibleRows                  = Layout.visibleRows;
-
-            if (!zone->InitZone(initData))
-                return false;
-            if (initData.hasAdjustedSize)
-                AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
-        }
-    }
+    if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
+        return false;
 
     auto& asmPreCacheData = zone->asmPreCacheData;
     if (asmPreCacheData.cachedAsmLines.empty()) {
@@ -889,6 +875,33 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     return true;
 }
 
+bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
+{
+    DissasmCodeZoneInitData initData{};
+    // the local variables are recognized inside the functions found by the deep scan
+    initData.enableDeepScanDissasmOnStart  = config.EnableDeepScanDissasmOnStart;
+    initData.enableLocalVariablesDetection = config.EnableDeepScanDissasmOnStart;
+    initData.obj                           = obj;
+    initData.dli                           = &dli;
+    initData.maxLocationMemoryMappingSize  = settings->maxLocationMemoryMappingSize;
+    initData.visibleRows                   = Layout.visibleRows;
+
+    if (!zone->InitZone(initData))
+        return false;
+    if (initData.hasAdjustedSize)
+        AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
+
+    bool zoneLinesChanged = false;
+    if (!zone->TryLoadDataFromCache(cacheData, zoneLinesChanged)) {
+        // TODO: will enable errors in the next version
+        // dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
+        // return false;
+    }
+    if (zoneLinesChanged) // local variables removed by the user in a previous session
+        AdjustZoneExtendedSize(zone, zone->GetRootZoneLinesCount() + 1u); // +1 for the title
+    return true;
+}
+
 void Instance::CommandExportAsmFile()
 {
     if (GView::App::IsExportBlockedFor(obj, "exporting the disassembly to .asm files"))
@@ -914,21 +927,21 @@ void Instance::CommandExportAsmFile()
 
             f.Write("ASMZoneZone\n", sizeof("ASMZoneZone\n") - 1);
 
-            csh handle;
-            const auto resCode = cs_open(CS_ARCH_X86, CS_MODE_64, &handle);
-            if (resCode != CS_ERR_OK) {
-                f.Write(cs_strerror(resCode));
+            const auto dissamZone = static_cast<DissasmCodeZone*>(zone.get());
+            const auto language   = dissamZone->zoneDetails.language;
+            if (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64) {
+                f.Write("Only x86/x64 zones can be exported!");
                 f.Close();
+                continue;
             }
-
-            cs_insn* insn = cs_malloc(handle);
-
-            const auto dissamZone      = static_cast<DissasmCodeZone*>(zone.get());
             const uint64 staringOffset = dissamZone->cachedCodeOffsets[0].offset;
-            size_t size                = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
-
-            uint64 address          = 0;
-            const uint64 endAddress = size;
+            if (staringOffset < dissamZone->zoneDetails.startingZonePoint ||
+                staringOffset - dissamZone->zoneDetails.startingZonePoint >= dissamZone->zoneDetails.size) {
+                f.Write("Invalid zone!");
+                f.Close();
+                continue;
+            }
+            size_t size = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
 
             const auto dataBuffer = obj->GetData().Get(staringOffset, static_cast<uint32>(size), false);
             if (!dataBuffer.IsValid()) {
@@ -936,7 +949,21 @@ void Instance::CommandExportAsmFile()
                 f.Close();
                 continue;
             }
-            auto data = dataBuffer.GetData();
+            // the data cache may return less than requested
+            size                    = dataBuffer.GetLength();
+            uint64 address          = 0;
+            const uint64 endAddress = size;
+            auto data               = dataBuffer.GetData();
+
+            csh handle;
+            const auto resCode = cs_open(CS_ARCH_X86, language == DisassemblyLanguage::x64 ? CS_MODE_64 : CS_MODE_32, &handle);
+            if (resCode != CS_ERR_OK) {
+                f.Write(cs_strerror(resCode));
+                f.Close();
+                continue;
+            }
+
+            cs_insn* insn = cs_malloc(handle);
 
             while (address < endAddress) {
                 if (!cs_disasm_iter(handle, &data, &size, &address, insn))
@@ -1043,15 +1070,19 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
     // TODO: can be improved by extracting the common part of the calculation of the actual line and to search for the closest zone directly
     const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
-    uint32 actualLine       = zone->types.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
+    const auto& targetType  = zone->types.back().get();
 
-    const auto annotations = zone->types.back().get().annotations;
-    for (const auto& entry : annotations.mappings) // no std::views::keys on mac
-    {
-        if (entry.first > diffLines + 1)
+    // diffLines is the instruction index: every text line (label, local variable) placed before the instruction moves it down
+    uint32 instructionLine = diffLines + targetType.beforeTextLines;
+    for (const auto& entry : targetType.annotations.mappings) { // no std::views::keys on mac
+        if (entry.first > instructionLine)
             break;
-        actualLine++;
+        instructionLine++;
     }
+    // land on the label (and the local variables) placed right above the instruction
+    uint32 landingLine = instructionLine;
+    while (landingLine > 0 && targetType.annotations.contains(landingLine - 1u))
+        landingLine--;
 
     // if (adjustedLine.has_value())
     //     actualLine += adjustedLine.value() + 1;
@@ -1060,7 +1091,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     zone->types          = std::move(types);
     zone->levels         = std::move(levels);
 
-    diffLines += actualLine;
+    diffLines = landingLine + 2u; //+1 for menu, +1 for title
 
     jumps_holder.insert(Cursor.saveState());
     Cursor.lineInView    = std::min<uint32>(5, diffLines);
@@ -1207,6 +1238,28 @@ DissasmCodeInternalType* GView::View::DissasmViewer::GetRecursiveCollpasedZoneBy
 GStatus DissasmCodeZone::TryRenameLine(
       uint32 line, Reference<GView::Object> obj, std::string_view* newName, DissasmInsnExtractLineParams* params)
 {
+    if (!newName) {
+        // local variable: its definition line or an instruction that uses it
+        uint64 functionStart = 0;
+        int32 frameOffset    = 0;
+        if (GetLocalVariableFromLine(line, obj, functionStart, frameOffset)) {
+            const auto function = localVariables.FindFunctionByStart(functionStart);
+            const auto variable = function ? function->FindVariable(frameOffset) : nullptr;
+            if (!variable)
+                return GStatus::Error("Failed to find the local variable!");
+            SingleLineEditWindow dlg(variable->name, "Rename local variable");
+            if (dlg.Show() != Dialogs::Result::Ok)
+                return GStatus::Ok();
+            const auto res = dlg.GetResult();
+            if (res.empty() || res == variable->name)
+                return GStatus::Ok();
+            auto status = RenameLocalVariable(functionStart, frameOffset, res);
+            if (!status.ok)
+                return status;
+            return GStatus{ .ok = true, .message = "renamed local variable" };
+        }
+    }
+
     // TODO: improve, add searching function to search inside types for the current annotation
     std::string currentName = {};
     auto& annotations = dissasmType.annotations;
@@ -1324,6 +1377,32 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
 
     if (currentType.isCollapsed) {
         assert(!currentType.name.empty());
+    }
+
+    if (!currentType.isCollapsed) {
+        const auto annotation = currentType.annotations.find(currentLine);
+        if (annotation != currentType.annotations.end() && IsLocalVariableAnnotation(annotation->second)) {
+            const uint64 functionStart = GetLocalVariableAnnotationFunction(annotation->second.second);
+            const int32 frameOffset    = GetLocalVariableAnnotationOffset(annotation->second.second);
+            const auto function        = localVariables.FindFunctionByStart(functionStart);
+            const auto variable        = function ? function->FindVariable(frameOffset) : nullptr;
+
+            asmCacheLine.size        = 0;
+            asmCacheLine.currentLine = currentLine;
+            asmCacheLine.address     = functionStart;
+            std::string text         = "<unknown local variable>"; // the lines and the variables are always updated together
+            uint32 nameSize          = 0;
+            if (variable) {
+                FormatLocalVariableDefinition(*variable, text, nameSize);
+                asmCacheLine.localVariableKind     = DissasmAsmPreCacheLine::LocalVariableKind::Definition;
+                asmCacheLine.localVariableFunction = functionStart;
+                asmCacheLine.localVariableOffset   = frameOffset;
+                asmCacheLine.localVariableNameSize = nameSize;
+            }
+            asmCacheLine.op_str      = portable_strdup(text.c_str());
+            asmCacheLine.op_str_size = static_cast<uint32>(text.size());
+            return asmCacheLine;
+        }
     }
 
     if (asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine)) {
@@ -2027,6 +2106,16 @@ std::vector<std::string> findMostCommonNames(const std::vector<std::string>& nam
     return result;
 }
 
+// calls to imported functions keep the API name in the mapping instead of the operands
+static const char* GetAssistantOperands(const DissasmAsmPreCacheLine& line)
+{
+    if (line.op_str)
+        return line.op_str;
+    if (line.mapping)
+        return static_cast<const MemoryMappingEntry*>(line.mapping)->name.c_str();
+    return "";
+}
+
 void Instance::QuerySmartAssistantX86X64(
       DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType)
 {
@@ -2073,7 +2162,7 @@ void Instance::QuerySmartAssistantX86X64(
     while (actualLineInDocument < codeZone->endingLineIndex && lineIndex < DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED) {
         auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
         if (currentLine.size > 0) {
-            currentBuffer.SetFormat("   %s %s", currentLine.mnemonic, currentLine.op_str);
+            currentBuffer.SetFormat("   %s %s", currentLine.mnemonic, GetAssistantOperands(currentLine));
             if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
                 if (queryParams.includeComments) {
                     if (codeZone->GetComment(currentDissasmLine, comment)) {
@@ -2087,7 +2176,9 @@ void Instance::QuerySmartAssistantX86X64(
             }
         } else {
             if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
-                assemblyLines.emplace_back(currentLine.mnemonic);
+                // labels are sent by name, the local variables with their definition
+                const bool isVariable = currentLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition && currentLine.op_str;
+                assemblyLines.emplace_back(isVariable ? currentLine.op_str : currentLine.mnemonic);
             }
         }
         if (queryParams.stopAtTheEndOfTheFunction && *(uint32*) currentLine.mnemonic == retOP)
@@ -2173,8 +2264,9 @@ void Instance::QuerySmartAssistantX86X64(
         dlg.Show();
 
         auto indexResult = dlg.GetSelectedIndex();
-        if (indexResult.has_value()) {
-            auto sv = std::string_view(names[indexResult.value()]);
+        // the dialog shows namesToShow (all the retries merged), `names` holds only the last answer
+        if (indexResult.has_value() && indexResult.value() < namesToShow.size()) {
+            auto sv = std::string_view(namesToShow[indexResult.value()]);
             codeZone->TryRenameLine(line, obj, &sv, nullptr);
         }
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
@@ -2193,14 +2285,14 @@ void Instance::QuerySmartAssistantX86X64(
                 Dialogs::MessageBox::ShowNotification("Warning", "No instructions found!");
                 return;
             }
-            currentBuffer.SetFormat("%s %s", initialLine.mnemonic, initialLine.op_str);
+            currentBuffer.SetFormat("%s %s", initialLine.mnemonic, GetAssistantOperands(initialLine));
             if (resultValue[0].first != currentBuffer.GetText()) {
                 Dialogs::MessageBox::ShowNotification("Warning", "The assistant did not provide the expected comments!");
             }
             for (const auto& [asmLine, comment] : resultValue) {
                 do {
                     auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
-                    if (currentLine.op_str)
+                    if (currentLine.op_str && currentLine.localVariableKind != DissasmAsmPreCacheLine::LocalVariableKind::Definition)
                         break;
                     if (++currentDissasmLine >= codeZone->endingLineIndex)
                         return; // todo: check in the future

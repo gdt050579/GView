@@ -19,4 +19,9 @@ cs_insn* GetCurrentInstructionByOffset(
       uint32& diffLines,
       GView::View::DissasmViewer::DrawLineInfo* dli = nullptr);
 
+GView::View::DissasmViewer::AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(
+      const std::vector<GView::View::DissasmViewer::AsmOffsetLine>& values, uint64 searchedOffset, uint32* index = nullptr);
+// end (relative, exclusive) of the bytes needed to decode the lines that start at the cached offset `cachedOffsetIndex`
+uint64 GetCachedOffsetWindowEnd(const GView::View::DissasmViewer::DissasmCodeZone* zone, uint32 cachedOffsetIndex);
+
 GView::View::DissasmViewer::AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<GView::View::DissasmViewer::AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr);

@@ -43,6 +43,7 @@ void ColorManager::SetAllColorsInactive()
     this->Colors.AsmLocationInstruction        = this->Colors.Inactive;
     this->Colors.AsmJumpInstruction            = this->Colors.Inactive;
     this->Colors.AsmComment                    = this->Colors.Inactive;
+    this->Colors.AsmLocalVariableColor         = this->Colors.Inactive;
     this->Colors.AsmDefaultColor               = this->Colors.Inactive;
     this->Colors.AsmTitleColumnColor           = this->Colors.Inactive;
 
@@ -105,6 +106,7 @@ void Config::UpdateColors(const AppCUI::Application::Config& config)
     this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::Transparent };
     this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::Transparent };
     this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, Color::Transparent };
+    this->ConfigColors.AsmLocalVariableColor         = ColorPair{ Color::Yellow, Color::Transparent };
     this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, Color::Transparent };
     this->ConfigColors.AsmTitleColor                 = config.Header.Text.Focused;
     this->ConfigColors.AsmTitleColumnColor           = config.Border.Focused;
@@ -126,6 +128,7 @@ void Config::UpdateColors(const AppCUI::Application::Config& config)
         LOAD_COLOR_IF_EXISTS(AsmLocationInstruction);
         LOAD_COLOR_IF_EXISTS(AsmJumpInstruction);
         LOAD_COLOR_IF_EXISTS(AsmComment);
+        LOAD_COLOR_IF_EXISTS(AsmLocalVariableColor);
         LOAD_COLOR_IF_EXISTS(AsmDefaultColor);
     }
 }
@@ -162,6 +165,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
         { "AsmLocationInstruction", CustomColor(ConfigColors.AsmLocationInstruction) },
         { "AsmJumpInstruction", CustomColor(ConfigColors.AsmJumpInstruction) },
         { "AsmComment", CustomColor(ConfigColors.AsmComment) },
+        { "AsmLocalVariableColor", CustomColor(ConfigColors.AsmLocalVariableColor) },
         { "AsmDefaultColor", CustomColor(ConfigColors.AsmDefaultColor) },
     };
     if (!Dialogs::ThemeEditor::RegisterCustomColors("DissamColors", dissamColors, this)) {
@@ -246,6 +250,15 @@ void Config::OnPreviewWindowDraw(
     ++startingY;
 
     r.WriteSingleLineText(startingX + 1, startingY, "ret", *AsmFunctionColorTheme);
+    ++startingY;
+
+    // older themes may not define it
+    const auto localVariableColor = colors.find("AsmLocalVariableColor");
+    const auto AsmLocalVariableColorTheme = localVariableColor != colors.end() ? localVariableColor->second.TryGetColorPair() : nullptr;
+    if (AsmLocalVariableColorTheme) {
+        r.WriteSingleLineText(startingX + 1, startingY, "var_8", *AsmLocalVariableColorTheme);
+        r.WriteSingleLineText(startingX + 20, startingY, "; AsmLocalVariableColor", *AsmCommentTheme);
+    }
 
     // ret + call -> AsmFunctionColor
 

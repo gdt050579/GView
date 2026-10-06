@@ -39,6 +39,12 @@ namespace View
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 180;
 
+        // x86/x64: a cached offset (zone line <-> file offset) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes of code, so decoding
+        // any line never needs more than the bytes between two cached offsets
+        static constexpr uint64 DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
+        static constexpr uint64 DISSASM_MAX_INSTRUCTION_SIZE      = 15;
+        static constexpr uint64 DISSASM_MAX_CODE_WINDOW_SIZE      = 4096;
+
         static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
 
         enum class QueryTypeSmartAssistant : uint8 { FunctionName, ExplainCode, ConvertToHighLevel, FunctionNameAndExplanation, MitreTechiques };
@@ -94,6 +100,9 @@ namespace View
         enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone };
 
         struct ParseZone {
+            // zones are owned through std::unique_ptr<ParseZone>, the derived members must be destroyed as well
+            virtual ~ParseZone() = default;
+
             uint32 startLineIndex;
             uint32 endingLineIndex;
             uint32 extendedSize;
@@ -146,6 +155,8 @@ namespace View
         struct DissasmAsmPreCacheLine {
             enum InstructionFlag : uint8 { NoneFlag = 0x00, CallFlag = 0x1, PushFlag = 0x2, JmpFlag = 0x4 };
 
+            enum class LocalVariableKind : uint8 { None, Definition, Reference };
+
             enum LineArrowToDrawFlag : uint8 {
                 NoLines   = 0x00,
                 DrawLine1 = 0x1,
@@ -162,10 +173,11 @@ namespace View
             uint8 bytes[24]    = {};
             uint16 size        = 0;
             uint32 currentLine = 0;
-            char mnemonic[CS_MNEMONIC_SIZE];
+            char mnemonic[CS_MNEMONIC_SIZE] = {};
             char* op_str       = nullptr;
             uint32 op_str_size = 0;
             std::optional<uint64> hexValue;
+            std::optional<uint64> branchTarget; // target of a direct jump / call, same base as `address`
             uint8 flags                           = 0;
             uint8 lineArrowToDraw                 = 0;
             const void* mapping                   = nullptr;
@@ -173,6 +185,13 @@ namespace View
 
             bool shouldAddButton = false;
             bool isZoneCollapsed = false;
+
+            // local variable defined by this line (variable line) or used by the operands of this instruction
+            LocalVariableKind localVariableKind = LocalVariableKind::None;
+            int32 localVariableOffset           = 0;
+            uint64 localVariableFunction        = 0;
+            uint32 localVariableNameStart       = 0; // position of the variable name inside op_str
+            uint32 localVariableNameSize        = 0;
 
             uint32 GetLineSize() const
             {
@@ -183,44 +202,51 @@ namespace View
 
             DissasmAsmPreCacheLine(DissasmAsmPreCacheLine&& other) noexcept(true)
             {
-                address         = other.address;
-                size            = other.size;
-                currentLine     = other.currentLine;
-                op_str_size     = other.op_str_size;
-                op_str          = other.op_str;
-                other.op_str    = nullptr;
-                flags           = other.flags;
-                lineArrowToDraw = other.lineArrowToDraw;
-                mapping         = other.mapping;
-                memcpy(bytes, other.bytes, sizeof(bytes));
-                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
-                parent          = other.parent;
-                shouldAddButton = other.shouldAddButton;
-                isZoneCollapsed = false;
+                CopyFieldsFrom(other);
+                op_str       = other.op_str;
+                other.op_str = nullptr;
             }
             DissasmAsmPreCacheLine(const DissasmAsmPreCacheLine& other)
             {
-                address         = other.address;
-                size            = other.size;
-                currentLine     = other.currentLine;
-                op_str_size     = other.op_str_size;
-                op_str          = portable_strdup(other.op_str);
-                flags           = other.flags;
-                lineArrowToDraw = other.lineArrowToDraw;
-                mapping         = other.mapping;
-                memcpy(bytes, other.bytes, sizeof(bytes));
-                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
-                parent          = other.parent;
-                shouldAddButton = other.shouldAddButton;
-                isZoneCollapsed = false;
+                CopyFieldsFrom(other);
+                op_str = other.op_str ? portable_strdup(other.op_str) : nullptr;
             }
+            // op_str is an owned raw buffer: assigning would either leak or double free it
+            DissasmAsmPreCacheLine& operator=(const DissasmAsmPreCacheLine&) = delete;
+            DissasmAsmPreCacheLine& operator=(DissasmAsmPreCacheLine&&)      = delete;
             bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, struct DrawLineInfo* dli = nullptr);
             bool TryGetDataFromInsn(DissasmInsnExtractLineParams& params);
+            void SetMnemonic(std::string_view text); // always NUL terminated, truncated to CS_MNEMONIC_SIZE - 1
+            void SetOperands(const char* operands, const struct DissasmCodeZone* zone);
 
             ~DissasmAsmPreCacheLine()
             {
                 if (op_str)
                     free(op_str);
+            }
+
+          private:
+            void CopyFieldsFrom(const DissasmAsmPreCacheLine& other)
+            {
+                address     = other.address;
+                size        = other.size;
+                currentLine = other.currentLine;
+                op_str_size = other.op_str_size;
+                memcpy(bytes, other.bytes, sizeof(bytes));
+                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                hexValue               = other.hexValue;
+                branchTarget           = other.branchTarget;
+                flags                  = other.flags;
+                lineArrowToDraw        = other.lineArrowToDraw;
+                mapping                = other.mapping;
+                parent                 = other.parent;
+                shouldAddButton        = other.shouldAddButton;
+                isZoneCollapsed        = other.isZoneCollapsed;
+                localVariableKind      = other.localVariableKind;
+                localVariableOffset    = other.localVariableOffset;
+                localVariableFunction  = other.localVariableFunction;
+                localVariableNameStart = other.localVariableNameStart;
+                localVariableNameSize  = other.localVariableNameSize;
             }
         };
 
@@ -371,6 +397,7 @@ namespace View
             int32 adjustedZoneSize;
             bool hasAdjustedSize;
             bool enableDeepScanDissasmOnStart;
+            bool enableLocalVariablesDetection; // requires enableDeepScanDissasmOnStart
             Reference<GView::Object> obj;
             uint64 maxLocationMemoryMappingSize;
             uint32 visibleRows;
@@ -620,6 +647,8 @@ namespace View
             void AddComment();
             void RemoveComment();
             void RenameLabel();
+            void RemoveLocalVariable();
+            bool InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);

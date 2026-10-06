@@ -1,6 +1,7 @@
 #include "DissasmDataTypes.hpp"
 #include "DissasmIOHelpers.hpp"
 #include <array>
+#include <algorithm>
 
 using namespace GView::View::DissasmViewer;
 
@@ -43,9 +44,24 @@ void DissasmComments::AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine
                 commentsAjusted.insert({ comment.first + 1, std::move(comment.second) });
             else
                 commentsAjusted.insert({ comment.first - 1, std::move(comment.second) });
+        } else {
+            commentsAjusted.insert({ comment.first, std::move(comment.second) }); // comments before the changed line stay in place
         }
     }
 
+    comments = std::move(commentsAjusted);
+}
+
+void DissasmComments::RemoveLine(uint32 line)
+{
+    // comments are keyed by line - 1, so the comment of line 0 lives at UINT32_MAX and is never after the removed line
+    decltype(comments) commentsAjusted = {};
+    for (auto& [key, text] : comments) {
+        const uint32 commentLine = key + 1u;
+        if (commentLine == line)
+            continue;
+        commentsAjusted.insert({ commentLine > line ? key - 1u : key, std::move(text) });
+    }
     comments = std::move(commentsAjusted);
 }
 
@@ -173,5 +189,116 @@ bool AnnotationContainer::LoadFromBuffer(const std::byte*& start, const std::byt
         }
     }
 
+    return true;
+}
+
+DissasmLocalVariable* DissasmFunctionFrame::FindVariable(int32 frameOffset)
+{
+    auto it = std::lower_bound(
+          variables.begin(), variables.end(), frameOffset, [](const DissasmLocalVariable& var, int32 offset) { return var.frameOffset < offset; });
+    if (it == variables.end() || it->frameOffset != frameOffset)
+        return nullptr;
+    return &(*it);
+}
+
+const DissasmLocalVariable* DissasmFunctionFrame::FindVariable(int32 frameOffset) const
+{
+    return const_cast<DissasmFunctionFrame*>(this)->FindVariable(frameOffset);
+}
+
+bool DissasmFunctionFrame::HasVariableNamed(std::string_view name) const
+{
+    for (const auto& var : variables)
+        if (var.name == name)
+            return true;
+    return false;
+}
+
+const DissasmFunctionFrame* DissasmLocalVariables::FindFunctionByAddress(uint64 address) const
+{
+    // first function starting after address, the candidate is the one before it
+    auto it = std::upper_bound(
+          functions.begin(), functions.end(), address, [](uint64 value, const DissasmFunctionFrame& fn) { return value < fn.startAddress; });
+    if (it == functions.begin())
+        return nullptr;
+    --it;
+    if (address >= it->endAddress)
+        return nullptr;
+    return &(*it);
+}
+
+DissasmFunctionFrame* DissasmLocalVariables::FindFunctionByStart(uint64 startAddress)
+{
+    auto it = std::lower_bound(
+          functions.begin(), functions.end(), startAddress, [](const DissasmFunctionFrame& fn, uint64 value) { return fn.startAddress < value; });
+    if (it == functions.end() || it->startAddress != startAddress)
+        return nullptr;
+    return &(*it);
+}
+
+const DissasmFunctionFrame* DissasmLocalVariables::FindFunctionByStart(uint64 startAddress) const
+{
+    return const_cast<DissasmLocalVariables*>(this)->FindFunctionByStart(startAddress);
+}
+
+void DissasmLocalVariables::ToBuffer(std::vector<std::byte>& buffer) const
+{
+    append_bytes(buffer, (uint32) functions.size());
+    for (const auto& fn : functions) {
+        append_bytes(buffer, fn.startAddress);
+        append_bytes(buffer, fn.endAddress);
+        append_bytes(buffer, (uint32) fn.variables.size());
+        for (const auto& var : fn.variables) {
+            append_bytes(buffer, var.frameOffset);
+            append_bytes(buffer, var.size);
+            append_string(buffer, var.name);
+        }
+    }
+}
+
+bool DissasmLocalVariables::LoadFromBuffer(const std::byte*& start, const std::byte* end)
+{
+    // the cache file is untrusted input: everything is parsed into a temporary and committed only if it is fully consistent
+    constexpr size_t MIN_FUNCTION_RECORD_SIZE = sizeof(uint64) * 2 + sizeof(uint32);
+    constexpr size_t MIN_VARIABLE_RECORD_SIZE = sizeof(int32) + sizeof(uint16) + sizeof(uint32);
+
+    uint32 functionsCount = 0;
+    if (!read_primitive(start, end, functionsCount))
+        return false;
+    if (functionsCount > static_cast<size_t>(end - start) / MIN_FUNCTION_RECORD_SIZE)
+        return false;
+
+    std::vector<DissasmFunctionFrame> loaded;
+    loaded.reserve(functionsCount);
+    for (uint32 i = 0; i < functionsCount; i++) {
+        DissasmFunctionFrame fn{};
+        uint32 variablesCount = 0;
+        if (!read_primitive(start, end, fn.startAddress) || !read_primitive(start, end, fn.endAddress) || !read_primitive(start, end, variablesCount))
+            return false;
+        if (fn.startAddress > 0xFFFFFFFFull || fn.startAddress >= fn.endAddress)
+            return false;
+        if (!loaded.empty() && fn.startAddress < loaded.back().endAddress)
+            return false;
+        if (variablesCount > DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION || variablesCount > static_cast<size_t>(end - start) / MIN_VARIABLE_RECORD_SIZE)
+            return false;
+
+        fn.variables.reserve(variablesCount);
+        for (uint32 j = 0; j < variablesCount; j++) {
+            DissasmLocalVariable var{};
+            if (!read_primitive(start, end, var.frameOffset) || !read_primitive(start, end, var.size) ||
+                !read_u32_len_prefixed_string(start, end, var.name))
+                return false;
+            if (var.name.empty() || var.name.size() > DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE)
+                return false;
+            if (!fn.variables.empty() && var.frameOffset <= fn.variables.back().frameOffset)
+                return false;
+            if (fn.HasVariableNamed(var.name))
+                return false;
+            fn.variables.push_back(std::move(var));
+        }
+        loaded.push_back(std::move(fn));
+    }
+
+    functions = std::move(loaded);
     return true;
 }

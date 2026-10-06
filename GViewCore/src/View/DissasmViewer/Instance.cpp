@@ -492,6 +492,53 @@ void Instance::RenameLabel()
     convertedZone->asmPreCacheData.Clear();
 }
 
+void Instance::RemoveLocalVariable()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+    if (zonesFound[0].startingLine <= 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line inside the region, not the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    const auto language      = convertedZone->zoneDetails.language;
+    if (!convertedZone->isInit || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+        return;
+    if (convertedZone->localVariables.Empty()) {
+        Dialogs::MessageBox::ShowNotification(
+              "Warning", "There are no local variables in this zone (they are recognized only when Config.DeepScanDissasmOnStart is enabled)!");
+        return;
+    }
+
+    uint64 functionStart = 0;
+    int32 frameOffset    = 0;
+    if (!convertedZone->GetLocalVariableFromLine(zonesFound[0].startingLine - 2u, obj, functionStart, frameOffset)) { // 2 for title and menu
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a local variable or an instruction that uses one!");
+        return;
+    }
+
+    bool lineRemoved  = false;
+    const auto status = convertedZone->RemoveLocalVariable(functionStart, frameOffset, lineRemoved);
+    if (!status.ok) {
+        Dialogs::MessageBox::ShowNotification("Warning", status.message);
+        return;
+    }
+    selection.Clear();
+    if (lineRemoved)
+        AdjustZoneExtendedSize(convertedZone, convertedZone->extendedSize - 1u);
+    convertedZone->asmPreCacheData.Clear();
+}
+
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets) {
@@ -984,6 +1031,9 @@ struct MappingZonesData {
 
 void Instance::RecomputeDissasmZones()
 {
+    // the zones are recreated below, the pointers kept for clearing their cached lines would dangle
+    asmData.zonesToClear.clear();
+
     std::map<uint32, std::vector<MappingZonesData>> mappingData;
     for (auto& mapping : this->settings->dissasmTypeMapped) {
         mappingData[OffsetToLinePosition(mapping.first).line].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });

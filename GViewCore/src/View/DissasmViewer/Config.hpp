@@ -17,6 +17,7 @@ constexpr uint32 COMMAND_SAVE_DISSASM_CACHE     = 110;
 constexpr uint32 COMMAND_QUERY_FUNCTION_NAME    = 111;
 constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
 constexpr uint32 COMMAND_RENAME_LABEL           = 113;
+constexpr uint32 COMMAND_REMOVE_LOCAL_VARIABLE  = 114;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -54,6 +55,8 @@ constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE            = 12
 constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL      = 13;
 constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION = 14;
 constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES        = 15;
+constexpr int32 RIGHT_CLICK_DISSASM_RENAME_LOCAL_VARIABLE                   = 16;
+constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_LOCAL_VARIABLE                   = 17;
 
 struct RightClickCommand {
     int commandID;
@@ -82,6 +85,9 @@ const RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = {
         { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
         { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" } } },
     { "Comment", { { RIGHT_CLICK_ADD_COMMENT, "Add comment" }, { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" } } },
+    { "LocalVariable",
+      { { RIGHT_CLICK_DISSASM_RENAME_LOCAL_VARIABLE, "Rename local variable" },
+        { RIGHT_CLICK_DISSASM_REMOVE_LOCAL_VARIABLE, "Remove local variable" } } },
     { "CodeZone", { { RIGHT_CLICK_CODE_ZONE_EDIT, "Edit zone" } } },
     { "Assistant",
       {
@@ -121,6 +127,7 @@ namespace View
             Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
             Graphics::ColorPair AsmJumpInstruction;            // jmp
             Graphics::ColorPair AsmComment;                    // comments added by user
+            Graphics::ColorPair AsmLocalVariableColor;         // var_8, arg_0
             Graphics::ColorPair AsmDefaultColor;               // rest of things
             Graphics::ColorPair AsmTitleColor;
             Graphics::ColorPair AsmTitleColumnColor;
@@ -183,14 +190,21 @@ namespace View
             // Other keys
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
-            inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_RENAME_LABEL };
+            inline static KeyboardControl RenameLabelCommand      = {
+                Input::Key::N, "RenameLabel", "Rename label, function or local variable", COMMAND_RENAME_LABEL
+            };
+            inline static KeyboardControl RemoveLocalVariableCommand = { Input::Key::Shift | Input::Key::Delete,
+                                                                         "RemoveLocalVariable",
+                                                                         "Remove the local variable defined or used on the current line",
+                                                                         COMMAND_REMOVE_LOCAL_VARIABLE };
             inline static KeyboardControl SaveCacheCommand        = {
                 Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = { AddOrEditCommentCommand,
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = { AddOrEditCommentCommand,
                                                                                                      RemoveCommentCommand,
-                                                                                                     RenameLabelCommand };
+                                                                                                     RenameLabelCommand,
+                                                                                                     RemoveLocalVariableCommand };
 
             // navigation & editing
             using KF = KeyboardControlFlags;
@@ -220,15 +234,15 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 19> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 20> KeyEventCommands = {
                 &MoveDownCommand,   &MoveUpCommand,     &MoveLeftCommand,    &MoveRightCommand,     &MovePageDownCommand,
                 &MovePageUpCommand, &MoveHomeCommand,   &MoveEndCommand,     &ScrollUpCommand,      &ScrollDownCommand,
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
-                &AddOrEditCommentCommand, &RemoveCommentCommand, &RenameLabelCommand, &SaveCacheCommand,
+                &AddOrEditCommentCommand, &RemoveCommentCommand, &RenameLabelCommand, &RemoveLocalVariableCommand, &SaveCacheCommand,
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 11> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 12> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -237,6 +251,7 @@ namespace View
                 AddOrEditCommentCommand,
                 RemoveCommentCommand,
                 RenameLabelCommand,
+                RemoveLocalVariableCommand,
                 SaveCacheCommand,
                 CommandQueryFunctionName,
                 CommandQueryMITRETechnique

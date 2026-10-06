@@ -1,6 +1,7 @@
 
 #include "DissasmCodeZone.hpp"
 #include "DissasmFunctionUtils.hpp"
+#include <algorithm>
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
@@ -131,45 +132,51 @@ LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
     return callName;
 }
 
-AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetLine>& values, uint64 searchedOffset)
+AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetLine>& values, uint64 searchedOffset, uint32* index)
 {
     assert(!values.empty());
-    uint32 left  = 0;
-    uint32 right = static_cast<uint32>(values.size()) - 1u;
-    while (left < right) {
-        const uint32 mid = (left + right) / 2;
-        if (searchedOffset == values[mid].offset)
-            return values[mid];
-        if (searchedOffset < values[mid].offset)
-            right = mid - 1;
-        else
-            left = mid + 1;
-    }
-    if (left > 0 && values[left].offset > searchedOffset)
-        return values[left - 1];
+    // the last cached offset placed before (or at) the searched one, the first one when the searched offset is before the code
+    auto it = std::upper_bound(
+          values.begin(), values.end(), searchedOffset, [](uint64 offset, const AsmOffsetLine& entry) { return offset < entry.offset; });
+    if (it != values.begin())
+        --it;
+    if (index)
+        *index = static_cast<uint32>(it - values.begin());
+    return *it;
+}
 
-    return values[left];
+uint64 GetCachedOffsetWindowEnd(const DissasmCodeZone* zone, uint32 cachedOffsetIndex)
+{
+    const auto& offsets = zone->cachedCodeOffsets;
+    if (static_cast<size_t>(cachedOffsetIndex) + 1u < offsets.size())
+        return offsets[cachedOffsetIndex + 1u].offset - offsets[0].offset + DISSASM_MAX_INSTRUCTION_SIZE;
+    // after the last cached offset there are less than DISSASM_INSTRUCTION_OFFSET_MARGIN bytes of decoded instructions
+    return offsets[cachedOffsetIndex].offset - offsets[0].offset + DISSASM_INSTRUCTION_OFFSET_MARGIN + 2 * DISSASM_MAX_INSTRUCTION_SIZE;
 }
 
 cs_insn* GetCurrentInstructionByOffset(
       uint64 offsetToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli)
 {
-    const auto closestData = SearchForClosestAsmOffsetLineByOffset(zone->cachedCodeOffsets, offsetToReach);
-    zone->lastClosestLine  = closestData.line;
-    zone->asmAddress       = closestData.offset - zone->cachedCodeOffsets[0].offset;
-    zone->asmSize          = zone->zoneDetails.size - zone->asmAddress;
+    diffLines = 0;
+    // the decoding position is moved below: the next drawn line has to search its cached offset again
+    zone->offsetCacheMaxLine = 0;
 
-    // TODO: maybe get less data ?
-    const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
-    zone->lastData             = instructionData;
-    if (!instructionData.IsValid()) {
+    const uint64 codeStart = zone->cachedCodeOffsets[0].offset;
+    if (offsetToReach < codeStart) {
+        diffLines = UINT32_MAX;
+        return nullptr;
+    }
+
+    uint32 cachedOffsetIndex = 0;
+    const auto closestData   = SearchForClosestAsmOffsetLineByOffset(zone->cachedCodeOffsets, offsetToReach, &cachedOffsetIndex);
+    zone->lastClosestLine    = closestData.line;
+    zone->asmWindowEnd       = GetCachedOffsetWindowEnd(zone, cachedOffsetIndex);
+    if (!zone->FetchCodeWindow(obj, closestData.offset - codeStart, zone->asmWindowEnd)) {
         if (dli)
             dli->WriteErrorToScreen("ERROR: extract valid data from file!");
         diffLines = UINT32_MAX;
         return nullptr;
     }
-
-    zone->asmData = const_cast<uint8*>(zone->lastData.GetData());
 
     // TODO: keep the handle open and insn open until the program ends
     csh handle;
@@ -177,14 +184,11 @@ cs_insn* GetCurrentInstructionByOffset(
     if (resCode != CS_ERR_OK) {
         if (dli)
             dli->WriteErrorToScreen(cs_strerror(resCode));
-        cs_close(&handle);
         return nullptr;
     }
 
-    diffLines     = 0;
     cs_insn* insn = cs_malloc(handle);
-    if (offsetToReach >= zone->cachedCodeOffsets[0].offset)
-        offsetToReach -= zone->cachedCodeOffsets[0].offset;
+    offsetToReach -= codeStart;
     while (zone->asmAddress <= offsetToReach) {
         if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, &zone->asmAddress, insn)) {
             if (dli)
