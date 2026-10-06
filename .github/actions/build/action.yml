@@ -1,5 +1,5 @@
 name: "Reusable Build (composite)"
-description: "Configure, build, (optionally) test and upload artifacts with CMake"
+description: "Configure, build, (optionally) test, sign and upload artifacts with CMake"
 inputs:
   build_type:
     description: "CMake build type"
@@ -11,20 +11,27 @@ inputs:
     description: "Build the remote TUI (GVIEW_ENABLE_REMOTE)? ('true'|'false')"
     default: "false"
   use_vcpkg_cache:
-    description: "Cache vcpkg artifacts? ('true'|'false')"
+    description: "Cache vcpkg artifacts? ('true'|'false'). Keep 'false' for release builds so shipped dependencies are always built from source."
+    default: "true"
+  use_ccache:
+    description: "Use ccache for the GView sources on Linux? ('true'|'false'). Ignored on Windows and macOS."
     default: "true"
   upload_artifact:
     description: "Upload build artifact? ('true'|'false')"
     default: "false"
-  artifact_path:
-    description: "Path (glob) to upload when upload_artifact=true"
-    default: "bin/Release/**"
   jobs_count:
     description: "Number of parallel jobs for build (string number, '0' = auto)"
     default: "0"
   sign_binaries:
-    description: "Sign the binaries using a keyless method"
+    description: "Sign the binaries using Sigstore keyless signing (requires 'id-token: write')"
     default: "false"
+outputs:
+  version:
+    description: "GVIEW_VERSION read from GViewCore/include/GView.hpp"
+    value: ${{ steps.meta.outputs.version }}
+  archive:
+    description: "Absolute path of the packaged archive (when upload_artifact is 'true')"
+    value: ${{ steps.pkg_unix.outputs.zip_path || steps.pkg_win.outputs.zip_path }}
 runs:
   using: "composite"
   steps:
@@ -34,45 +41,44 @@ runs:
     # --------------------------
 
     # --------------------------
-    # Compute JOBS count
+    # Compute the JOBS count and the GView version (bash is available on every runner, including Windows)
     # --------------------------
-    - name: Set JOBS (Linux/macOS)
-      if: ${{ runner.os != 'Windows' }}
+    - name: Read build metadata
+      id: meta
       shell: bash
+      env:
+        JOBS_INPUT: ${{ inputs.jobs_count }}
       run: |
-        if [ "${{ inputs.jobs_count }}" = "0" ]; then
-          echo "JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+        set -euo pipefail
+        if [ "$JOBS_INPUT" = "0" ]; then
+          jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")
         else
-          echo "JOBS=${{ inputs.jobs_count }}" >> "$GITHUB_ENV"
+          jobs="$JOBS_INPUT"
         fi
-
-    - name: Set JOBS (Windows)
-      if: ${{ runner.os == 'Windows' }}
-      shell: pwsh
-      run: |
-        if ("${{ inputs.jobs_count }}" -eq "0") {
-          "JOBS=$env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
-        } else {
-          "JOBS=${{ inputs.jobs_count }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
-        }
+        ver=$(sed -n 's/^#define GVIEW_VERSION "\([0-9][0-9.]*\)".*/\1/p' GViewCore/include/GView.hpp | head -n 1)
+        if [ -z "$ver" ]; then
+          echo "::error::Could not read GVIEW_VERSION from GViewCore/include/GView.hpp"
+          exit 1
+        fi
+        echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
+        echo "version=$ver" >> "$GITHUB_OUTPUT"
+        echo "GView version: $ver, parallel jobs: $jobs"
 
     # --------------------------
     # Cache vcpkg (binary cache)
     # --------------------------
-    # vcpkg stores one zip per built package in VCPKG_DEFAULT_BINARY_CACHE. Restoring them is a matter of seconds and,
+    # vcpkg stores one zip per built package in the binary cache. Restoring them is a matter of seconds and,
     # unlike caching build/vcpkg_installed, a change of one dependency (vcpkg.json, ports, compiler) only rebuilds the
     # affected packages: the previous cache is restored through restore-keys and the new packages are added to it.
-    - name: Setup vcpkg binary cache
+    # The cache location is handed to vcpkg through VCPKG_BINARY_SOURCES on the configure step (see below).
+    - name: Create vcpkg binary cache directory
       if: ${{ inputs.use_vcpkg_cache == 'true' }}
       shell: bash
-      run: |
-        VCPKG_CACHE_DIR="${{ github.workspace }}/.vcpkg-binary-cache"
-        mkdir -p "$VCPKG_CACHE_DIR"
-        echo "VCPKG_DEFAULT_BINARY_CACHE=$VCPKG_CACHE_DIR" >> "$GITHUB_ENV"
+      run: mkdir -p "$GITHUB_WORKSPACE/.vcpkg-binary-cache"
 
     - name: Cache vcpkg packages
       if: ${{ inputs.use_vcpkg_cache == 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ github.workspace }}/.vcpkg-binary-cache
         key: vcpkg-bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'AppCUI/vcpkg/versions/baseline.json', 'AppCUI/vcpkg-ports/**') }}
@@ -85,16 +91,18 @@ runs:
     - name: Install dependencies (Linux)
       if: ${{ runner.os == 'Linux' }}
       shell: bash
+      env:
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
       run: |
+        set -euo pipefail
         sudo apt-get update -y
-        sudo apt-get install -y \
-          gcc-multilib \
-          g++-multilib \
-          build-essential \
-          ninja-build \
-          libsdl2-dev \
-          libsdl2-ttf-dev \
-          libltdl-dev
+        pkgs=(build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev)
+        # The multilib packages only exist on x86 (they add the 32-bit cross toolchain). Nothing in GView needs
+        # them, but they stay on X64 so that lane is unchanged.
+        if [ "$RUNNER_ARCH_NAME" = "X64" ]; then
+          pkgs+=(gcc-multilib g++-multilib)
+        fi
+        sudo apt-get install -y "${pkgs[@]}"
 
     - name: Install dependencies (macOS)
       if: ${{ runner.os == 'macOS' }}
@@ -126,194 +134,200 @@ runs:
         fi
         cmake --version | head -1
         ninja --version
-        echo "VCPKG_CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
+
+    # --------------------------
+    # Compiler cache for the GView sources (Linux only: apt install is instant, and the Makefile generator supports
+    # compiler launchers). vcpkg dependencies are covered by the vcpkg binary cache above.
+    # --------------------------
+    - name: Setup ccache (Linux)
+      if: ${{ inputs.use_ccache == 'true' && runner.os == 'Linux' }}
+      uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+      with:
+        key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.build_type }}-tests${{ inputs.enable_tests }}
+        max-size: 500M
 
     # --------------------------
     # Configure
+    #   VCPKG_BINARY_SOURCES : 'clear' disables every binary cache (release builds compile all dependencies from
+    #                          source); otherwise the directory restored by actions/cache above is used read/write.
+    #   VCPKG_CMAKE_GENERATOR: Ninja for the vcpkg ports on macOS (installed above).
+    #   CMAKE_*_LAUNCHER     : CMake >= 3.17 seeds the compiler launcher from these environment variables.
     # --------------------------
     - name: Configure CMake (Linux/macOS)
       if: ${{ runner.os != 'Windows' }}
       shell: bash
+      env:
+        BUILD_TYPE: ${{ inputs.build_type }}
+        ENABLE_TESTS: ${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}
+        ENABLE_REMOTE: ${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
+        VCPKG_BINARY_SOURCES: ${{ inputs.use_vcpkg_cache == 'true' && format('clear;files,{0}/.vcpkg-binary-cache,readwrite', github.workspace) || 'clear' }}
+        VCPKG_CMAKE_GENERATOR: ${{ runner.os == 'macOS' && 'Ninja' || '' }}
+        CMAKE_C_COMPILER_LAUNCHER: ${{ inputs.use_ccache == 'true' && runner.os == 'Linux' && 'ccache' || '' }}
+        CMAKE_CXX_COMPILER_LAUNCHER: ${{ inputs.use_ccache == 'true' && runner.os == 'Linux' && 'ccache' || '' }}
       run: |
         cmake -S . -B build \
-          -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-          -DENABLE_TESTS=${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }} \
-          -DGVIEW_ENABLE_REMOTE=${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
+          -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+          -DENABLE_TESTS="$ENABLE_TESTS" \
+          -DGVIEW_ENABLE_REMOTE="$ENABLE_REMOTE"
 
     - name: Configure CMake (Windows)
       if: ${{ runner.os == 'Windows' }}
       shell: pwsh
+      env:
+        BUILD_TYPE: ${{ inputs.build_type }}
+        ENABLE_TESTS: ${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}
+        ENABLE_REMOTE: ${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
+        VCPKG_BINARY_SOURCES: ${{ inputs.use_vcpkg_cache == 'true' && format('clear;files,{0}/.vcpkg-binary-cache,readwrite', github.workspace) || 'clear' }}
       run: |
-        $enableTests = if ("${{ inputs.enable_tests }}" -eq "true") { "ON" } else { "OFF" }
-        $enableRemote = if ("${{ inputs.enable_remote }}" -eq "true") { "ON" } else { "OFF" }
         cmake -S . -B build `
-          -DCMAKE_BUILD_TYPE="${{ inputs.build_type }}" `
-          -DENABLE_TESTS="$enableTests" `
-          -DGVIEW_ENABLE_REMOTE="$enableRemote"
+          -DCMAKE_BUILD_TYPE="$env:BUILD_TYPE" `
+          -DENABLE_TESTS="$env:ENABLE_TESTS" `
+          -DGVIEW_ENABLE_REMOTE="$env:ENABLE_REMOTE"
 
     # --------------------------
     # Build
     # --------------------------
-    - name: Build (Linux/macOS)
-      if: ${{ runner.os != 'Windows' }}
-      shell: bash
-      run: |
-        cmake --build build \
-          --config ${{ inputs.build_type }} \
-          --parallel $JOBS
-
-    - name: Build (Windows)
-      if: ${{ runner.os == 'Windows' }}
-      shell: pwsh
-      run: |
-        cmake --build build `
-          --config "${{ inputs.build_type }}" `
-          --parallel $env:JOBS
-
-    # --------------------------
-    # Sign binaries
-    # --------------------------
-    - name: Sign binaries
-      if: ${{ inputs.sign_binaries == 'true' }}
-      uses: sigstore/cosign-installer@v4.0.0
-
-    - name: Sign binaries (Linux/macOS)
-      if: ${{ inputs.sign_binaries == 'true' && runner.os != 'Windows' }}
+    - name: Build
       shell: bash
       env:
-        COSIGN_EXPERIMENTAL: "true"
-        COSIGN_OIDC_PROVIDER: "github-actions"
+        BUILD_TYPE: ${{ inputs.build_type }}
+        JOBS: ${{ steps.meta.outputs.jobs }}
+      run: |
+        cmake --build build --config "$BUILD_TYPE" --parallel "$JOBS"
+
+    # --------------------------
+    # Tests
+    # --------------------------
+    - name: Run tests
+      if: ${{ inputs.enable_tests == 'true' }}
+      shell: bash
+      env:
+        BUILD_TYPE: ${{ inputs.build_type }}
+      run: |
+        ctest --test-dir build -C "$BUILD_TYPE" --output-on-failure --timeout 600 --output-junit "$GITHUB_WORKSPACE/test-results.xml"
+
+    - name: Upload test results
+      if: ${{ inputs.enable_tests == 'true' && always() }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: test-results-${{ runner.os }}-${{ runner.arch }}-${{ inputs.build_type }}
+        path: |
+          test-results.xml
+          build/Testing/Temporary/LastTest.log
+        if-no-files-found: ignore
+        retention-days: 7
+
+    # --------------------------
+    # Sign binaries (Sigstore keyless: the signing identity is this workflow, no long-lived key exists)
+    # --------------------------
+    - name: Install cosign
+      if: ${{ inputs.sign_binaries == 'true' }}
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+    - name: Sign binaries
+      if: ${{ inputs.sign_binaries == 'true' }}
+      shell: bash
+      env:
+        BUILD_TYPE: ${{ inputs.build_type }}
       run: |
         set -euo pipefail
-
-        BIN_DIR="bin/${{ inputs.build_type }}"
+        BIN_DIR="bin/$BUILD_TYPE"
         echo "Searching for binaries in: $BIN_DIR"
 
-        # Collect file list (bash 3 compatible for macOS)
+        # Collect file list (bash 3 compatible for macOS). Executables, shared libraries and GView plugins.
         FILES=()
         while IFS= read -r f; do
           FILES+=("$f")
         done < <(find "$BIN_DIR" -type f \( \
-            -name "*.so" -o \
-            -name "*.a" -o \
-            -name "*.dylib" -o \
-            -name "*.tpl" -o \
-            -name "*.gpl" \
-          \))
+            -name "GView" -o -name "GView.exe" -o \
+            -name "*.so" -o -name "*.dylib" -o -name "*.dll" -o \
+            -name "*.tpl" -o -name "*.gpl" \
+          \) | sort)
 
         if [ "${#FILES[@]}" -eq 0 ]; then
-          echo "No binaries found to sign."
-          exit 0
+          echo "::error::No binaries found to sign in $BIN_DIR"
+          exit 1
         fi
 
         echo "Signing ${#FILES[@]} binaries..."
-
-        # cosign sign-blob does not support --files across versions; sign one by one.
         for f in "${FILES[@]}"; do
-          cosign sign-blob \
-            --yes \
+          cosign sign-blob --yes \
             --output-signature "$f.sig" \
             --output-certificate "$f.cert" \
             --bundle "$f.bundle" \
             "$f"
         done
-
         echo "Signing completed successfully."
 
-
-    - name: Sign binaries (Windows)
-      if: ${{ inputs.sign_binaries == 'true' && runner.os == 'Windows' }}
-      shell: pwsh
-      env:
-        COSIGN_EXPERIMENTAL: "true"
-        COSIGN_OIDC_PROVIDER: "github-actions"
-      run: |
-        $ErrorActionPreference = "Stop"
-
-        $binDir = "bin\${{ inputs.build_type }}"
-        Write-Host "Searching for binaries in $binDir"
-
-        $patterns = @("*.dll", "*.exe", "*.tpl", "*.gpl")
-        $files = @()
-
-        foreach ($pattern in $patterns) {
-          $files += Get-ChildItem -Path $binDir -Recurse -Filter $pattern -File
-        }
-
-        if ($files.Count -eq 0) {
-          Write-Host "No binaries found to sign."
-          exit 0
-        }
-
-        Write-Host "Signing $($files.Count) binaries..."
-
-        foreach ($f in $files) {
-          cosign sign-blob `
-            --yes `
-            --output-signature "$($f.FullName).sig" `
-            --output-certificate "$($f.FullName).cert" `
-            --bundle "$($f.FullName).bundle" `
-            $f.FullName
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Cosign failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-        }
-
-        Write-Host "Signing completed successfully."
-
-
-
     # --------------------------
-    # Tests
-    # --------------------------
-    - name: Run tests (Linux/macOS)
-      if: ${{ inputs.enable_tests == 'true' && runner.os != 'Windows' }}
-      shell: bash
-      run: |
-        ctest --test-dir build --output-on-failure
-
-    - name: Run tests (Windows)
-      if: ${{ inputs.enable_tests == 'true' && runner.os == 'Windows' }}
-      shell: pwsh
-      run: |
-        ctest --test-dir build --output-on-failure
-
-    # --------------------------
-    # Artifact packaging
+    # Artifact packaging: the archive root is the content of bin/<build_type> on every platform,
+    # named GView-<version>-<OS>-<ARCH>.zip (e.g. GView-0.394.0-Linux-X64.zip).
     # --------------------------
     - name: Package artifact (Linux/macOS)
+      id: pkg_unix
       if: ${{ inputs.upload_artifact == 'true' && runner.os != 'Windows' }}
       shell: bash
+      env:
+        BUILD_TYPE: ${{ inputs.build_type }}
+        GVIEW_VERSION: ${{ steps.meta.outputs.version }}
+        RUNNER_OS_NAME: ${{ runner.os }}
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
       run: |
-        zip_name="build-${{ runner.os }}-${{ inputs.build_type }}.zip"
-        zip -9 -r "$zip_name" ${{ inputs.artifact_path }}
-        echo "AZIP=$PWD/$zip_name" >> "$GITHUB_ENV"
+        set -euo pipefail
+        zip_name="GView-${GVIEW_VERSION}-${RUNNER_OS_NAME}-${RUNNER_ARCH_NAME}.zip"
+        test -d "bin/$BUILD_TYPE" || { echo "::error::bin/$BUILD_TYPE does not exist"; exit 1; }
+        ( cd "bin/$BUILD_TYPE" && zip -9 -r -y "$GITHUB_WORKSPACE/$zip_name" . )
+        echo "zip_path=$GITHUB_WORKSPACE/$zip_name" >> "$GITHUB_OUTPUT"
+        echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
 
     - name: Package artifact (Windows)
+      id: pkg_win
       if: ${{ inputs.upload_artifact == 'true' && runner.os == 'Windows' }}
       shell: pwsh
+      env:
+        BUILD_TYPE: ${{ inputs.build_type }}
+        GVIEW_VERSION: ${{ steps.meta.outputs.version }}
+        RUNNER_OS_NAME: ${{ runner.os }}
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
       run: |
-        $zipName = "build-${{ runner.os }}-${{ inputs.build_type }}.zip"
-        $artifactRoot = Join-Path $Env:GITHUB_WORKSPACE "bin\${{ inputs.build_type }}"
-        if (!(Test-Path $artifactRoot)) { Write-Host "No files matched: $artifactRoot"; exit 1 }
+        $ErrorActionPreference = "Stop"
+        $zipName = "GView-$env:GVIEW_VERSION-$env:RUNNER_OS_NAME-$env:RUNNER_ARCH_NAME.zip"
+        $artifactRoot = Join-Path $Env:GITHUB_WORKSPACE "bin\$env:BUILD_TYPE"
+        if (!(Test-Path $artifactRoot)) { Write-Error "No files matched: $artifactRoot"; exit 1 }
         $files = Get-ChildItem -Path $artifactRoot -Recurse -File
-        if (!$files) { Write-Host "No files matched: $artifactRoot"; exit 1 }
+        if (!$files) { Write-Error "No files matched: $artifactRoot"; exit 1 }
         $dest = Join-Path $Env:GITHUB_WORKSPACE $zipName
         if (Test-Path $dest) { Remove-Item $dest }
-        Push-Location $Env:GITHUB_WORKSPACE
-        Compress-Archive -Path ("bin\${{ inputs.build_type }}\*") -DestinationPath $dest -Force
-        Pop-Location
-        "AZIP=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ASCII
+        Compress-Archive -Path (Join-Path $artifactRoot "*") -DestinationPath $dest -CompressionLevel Optimal -Force
+        "zip_path=$dest" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding ASCII
+        "zip_name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding ASCII
+
+    - name: Compute archive checksum
+      if: ${{ inputs.upload_artifact == 'true' }}
+      shell: bash
+      env:
+        ZIP_PATH: ${{ steps.pkg_unix.outputs.zip_path || steps.pkg_win.outputs.zip_path }}
+        ZIP_NAME: ${{ steps.pkg_unix.outputs.zip_name || steps.pkg_win.outputs.zip_name }}
+      run: |
+        set -euo pipefail
+        cd "$(dirname "$ZIP_PATH")"
+        if command -v sha256sum >/dev/null 2>&1; then
+          sha256sum "$ZIP_NAME" > "$ZIP_NAME.sha256"
+        else
+          shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256"
+        fi
+        cat "$ZIP_NAME.sha256"
 
     # --------------------------
     # Upload
     # --------------------------
     - name: Upload artifact
-      if: ${{ inputs.upload_artifact == 'true' && env.AZIP != '' }}
-      uses: actions/upload-artifact@v4
+      if: ${{ inputs.upload_artifact == 'true' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: build-${{ runner.os }}-${{ inputs.build_type }}
-        path: ${{ env.AZIP }}
+        name: build-${{ runner.os }}-${{ runner.arch }}-${{ inputs.build_type }}
+        path: |
+          ${{ steps.pkg_unix.outputs.zip_path || steps.pkg_win.outputs.zip_path }}
+          ${{ steps.pkg_unix.outputs.zip_path || steps.pkg_win.outputs.zip_path }}.sha256
+        if-no-files-found: error
         retention-days: 1

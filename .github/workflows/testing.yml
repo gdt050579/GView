@@ -1,7 +1,7 @@
+# .github/workflows/testing.yml
 name: unit testing
 
-permissions:
-  contents: read
+permissions: {}
 
 on:
   push:
@@ -9,23 +9,40 @@ on:
   workflow_dispatch:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   unit-tests:
     name: Unit tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    # Windows is the gating lane. Linux and macOS run the same tests but only report until they are proven
+    # green; flip `experimental` to false to make them gating as well.
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        include:
+          - os: windows-latest
+            experimental: false
+          - os: ubuntu-24.04
+            experimental: true
+          - os: macos-15-intel
+            experimental: true
     steps:
-      - uses: actions/checkout@v6
-        with: { submodules: recursive }
-      - uses: ./.github/actions/build
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: $/.github/actions/build
         with:
           build_type: RelWithDebInfo
           enable_tests: "true"
           enable_remote: "true" # runs the remote protocol / TLS tests
           use_vcpkg_cache: "true"
           upload_artifact: "false"
-          os_matrix: '["windows-latest"]' # TODO: "ubuntu-24.04","macos-15-intel",
           jobs_count: "0"

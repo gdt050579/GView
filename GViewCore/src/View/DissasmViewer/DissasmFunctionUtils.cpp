@@ -125,9 +125,15 @@ bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
 LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
 {
     NumericFormatter formatter;
-    auto sv = formatter.ToHex(functionAddress);
+    const auto sv = formatter.ToHex(functionAddress);
     LocalString<64> callName;
-    callName.AddFormat("%s%09s", prefix, sv.data());
+    callName.Add(prefix);
+    // Pad to 9 hex digits by hand. "%09s" relied on the '0' flag with a string conversion, which is undefined
+    // behaviour: MSVC pads with zeros, glibc and Apple libc with spaces, so the names differed per platform.
+    if (sv.size() < 9) {
+        callName.AddChars('0', static_cast<uint32>(9 - sv.size()));
+    }
+    callName.Add(sv);
     return callName;
 }
 

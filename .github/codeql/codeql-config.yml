@@ -1,0 +1,14 @@
+name: "GView CodeQL configuration"
+
+# security-extended = default security suite + lower-precision security queries. GView parses hostile input
+# (malware, malformed files), so the extra memory-safety and integer-handling queries are worth the triage cost.
+queries:
+  - uses: security-extended
+
+# Third-party and vendored code: findings there belong upstream (AppCUI is a submodule, LLVMDemangle is vendored).
+paths-ignore:
+  - AppCUI
+  - 3rdPartyLibs
+  - build
+  - build-test
+  - docs/build

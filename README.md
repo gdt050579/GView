@@ -1,8 +1,13 @@
 # GView
 
-![Build icon](https://github.com/gdt050579/AppCUI/actions/workflows/ci.yml/badge.svg)
+[![Build](https://github.com/gdt050579/GView/actions/workflows/ci.yml/badge.svg)](https://github.com/gdt050579/GView/actions/workflows/ci.yml)
 [![Unit testing](https://github.com/gdt050579/GView/actions/workflows/testing.yml/badge.svg)](https://github.com/gdt050579/GView/actions/workflows/testing.yml)
+[![CodeQL](https://github.com/gdt050579/GView/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/gdt050579/GView/actions/workflows/codeql-analysis.yml)
 [![Deploy release](https://github.com/gdt050579/GView/actions/workflows/deploy_release.yml/badge.svg)](https://github.com/gdt050579/GView/actions/workflows/deploy_release.yml)
+[![Documentation](https://github.com/gdt050579/GView/actions/workflows/docs.yml/badge.svg)](https://gdt050579.github.io/GView/)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/gdt050579/GView/badge)](https://scorecard.dev/viewer/?uri=github.com/gdt050579/GView)
+[![Latest release](https://img.shields.io/github/v/release/gdt050579/GView?include_prereleases&sort=semver)](https://github.com/gdt050579/GView/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 GView framework is a powerful tool for examining files or any data with a defined structure, such as buffers or memory zones.
 
@@ -160,8 +165,23 @@ This will require manual installation of ninja (ninja-build).
 # set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
 ```
 ## CI/CD
-We are using `Github Actions` ensuring that the project builds on `Windows`, `OSX` & `Linux` and we are working towards creating artifacts, storing them and eventually building a release flow.
-For static analysis, we are using `CodeQL` & `Microsoft C++ Code Analysis`.
+All automation lives in `.github/workflows/` and shares one composite build action (`.github/actions/build`). Every third-party action is pinned to a commit SHA and kept current by Dependabot.
+
+| Workflow | Runs on | What it does |
+|---|---|---|
+| `ci.yml` | push, PR | Release build on Windows, macOS (Intel) and Linux. Apple Silicon and Linux arm64 run as non-blocking experimental lanes. |
+| `testing.yml` | push, PR | Catch2 unit tests (`-DENABLE_TESTS=ON`). Windows is gating; Linux and macOS report only until proven green. |
+| `codeql-analysis.yml` | push, PR, weekly | CodeQL `security-extended` for C/C++, Python and the workflows themselves. |
+| `sanitizers.yml` | weekly, manual | Unit tests under AddressSanitizer + UndefinedBehaviorSanitizer. |
+| `format-check.yml` | PR | `clang-format` (LLVM 19) on the changed lines only. |
+| `workflow-lint.yml` | push, PR | `zizmor` security audit and `actionlint` for the workflow files. |
+| `scorecard.yml` | push, weekly | OpenSSF Scorecard supply-chain health checks. |
+| `docs.yml` | push, PR | Builds the Sphinx documentation (warnings are errors) and publishes it to GitHub Pages. |
+| `increase_version.yml` | push to `main` | Bumps `GVIEW_VERSION` automatically. |
+| `deploy_release.yml` | manual, push to `release` | Builds from source on all platforms, signs every binary with Sigstore, attests the archives (SLSA provenance) and publishes a GitHub Release. |
+
+### Verifying a release
+Each release page lists the exact commands. In short: `gh attestation verify <archive>.zip --repo gdt050579/GView` checks the archive provenance, `sha256sum -c SHA256SUMS` checks the checksums, and `cosign verify-blob` with the `.bundle` next to every binary checks the individual files.
 
 ## Documentation 
 The project uses Sphinx as the main documentation engine. Sphinx sources can be located under `docs` folder.
