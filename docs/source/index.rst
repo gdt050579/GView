@@ -18,6 +18,7 @@ and a plugin-based architecture for file formats and generic operations.
    learning_mode_protocol
    architecture
    configuration
+   updates
    security
    plugin_development
    core

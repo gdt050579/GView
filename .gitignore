@@ -19,3 +19,5 @@ GView/GView.rc
 GView/GView.aps
 GViewCore/GViewCore.rc
 GViewCore/GViewCore.aps
+GViewUpdater/GViewUpdater.rc
+GViewUpdater/GViewUpdater.aps

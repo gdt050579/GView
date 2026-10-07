@@ -158,6 +158,7 @@ add_subdirectory(GViewCore)
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(GView)
+    add_subdirectory(GViewUpdater)
 endif()
 
 if (APPLE)

@@ -192,7 +192,9 @@ runs:
             -name "*.a" -o \
             -name "*.dylib" -o \
             -name "*.tpl" -o \
-            -name "*.gpl" \
+            -name "*.gpl" -o \
+            -name "GView" -o \
+            -name "GViewUpdater" \
           \))
 
         if [ "${#FILES[@]}" -eq 0 ]; then

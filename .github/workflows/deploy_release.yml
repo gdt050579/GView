@@ -80,6 +80,15 @@ jobs:
           path: artifacts
 
       # ------------------------
+      # Checksums (the in-app updater refuses archives without them)
+      # ------------------------
+      - name: Create SHA256SUMS.txt
+        run: |
+          cd artifacts
+          sha256sum *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # ------------------------
       # Publish Release
       # ------------------------
       - name: Publish GitHub release
@@ -92,3 +101,4 @@ jobs:
           title: "GView Build ${{ env.GVIEW_VERSION }}"
           files: |
             artifacts/*.zip
+            artifacts/SHA256SUMS.txt

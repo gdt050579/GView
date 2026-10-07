@@ -1,5 +1,7 @@
 #include "Internal.hpp"
 #include "Learning/SecureMemory.hpp"
+#include "../Update/Stager.hpp"
+#include "../Update/UpdateService.hpp"
 #include <array>
 
 using namespace GView::App;
@@ -58,7 +60,6 @@ constexpr GViewMenuCommand menuHelpList[] = {
     { "&About", MenuCommands::ABOUT, Key::None },
 };
 
-constexpr ItemHandle menuHelpListDisabledCommandsList[] = { 0 };
 
 bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
 {
@@ -182,9 +183,6 @@ bool Instance::BuildMainMenus()
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
     CHECK(AddMenuCommands(mnuHelp, menuHelpList, ARRAY_LEN(menuHelpList)), false, "");
-    for (auto itemHandle : menuHelpListDisabledCommandsList) {
-        CHECK(mnuHelp->SetEnable(itemHandle, false), false, "Fail to disable menu item");
-    }
     return true;
 }
 
@@ -196,6 +194,9 @@ bool Instance::Init(bool isTestingEnabled)
     // from OnFrameUpdate unless its state changed, so idle CPU usage stays negligible.
     initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile |
                      InitializationFlags::AutoHotKeyForWindow | InitializationFlags::EnableFPSMode;
+    // the GView desktop runs the background update check (see Update/UpdateService.hpp)
+    if (!isTestingEnabled)
+        initData.CustomDesktopConstructor = GView::App::CreateDesktop;
 
     const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
     AppCUI::OS::File settingsFile;
@@ -237,6 +238,12 @@ bool Instance::Init(bool isTestingEnabled)
 
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.InitDefaultPlugin();
+
+    if (!isTestingEnabled) {
+        // leftovers of a previous update (staging folders, replaced files of a completed update)
+        GView::Update::CleanupWorkDir(AppCUI::OS::GetCurrentApplicationPath().parent_path());
+        GView::Update::Service::Enable();
+    }
 
     // set up handlers
     auto dsk                 = AppCUI::Application::GetDesktop();
@@ -652,6 +659,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::ABOUT:
             ShowAboutWindow();
+            return true;
+        case MenuCommands::CHECK_FOR_UPDATES:
+            GView::Update::Service::CheckInteractive();
             return true;
         case MenuCommands::AVAILABLE_KEYS:
             ShowKeyboardShortcuts();
