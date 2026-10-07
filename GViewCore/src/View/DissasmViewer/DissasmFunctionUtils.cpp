@@ -136,8 +136,7 @@ AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetL
 {
     assert(!values.empty());
     // the last cached offset placed before (or at) the searched one, the first one when the searched offset is before the code
-    auto it = std::upper_bound(
-          values.begin(), values.end(), searchedOffset, [](uint64 offset, const AsmOffsetLine& entry) { return offset < entry.offset; });
+    auto it = std::upper_bound(values.begin(), values.end(), searchedOffset, [](uint64 offset, const AsmOffsetLine& entry) { return offset < entry.offset; });
     if (it != values.begin())
         --it;
     if (index)

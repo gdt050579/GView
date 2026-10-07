@@ -86,8 +86,7 @@ const RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = {
         { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" } } },
     { "Comment", { { RIGHT_CLICK_ADD_COMMENT, "Add comment" }, { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" } } },
     { "LocalVariable",
-      { { RIGHT_CLICK_DISSASM_RENAME_LOCAL_VARIABLE, "Rename local variable" },
-        { RIGHT_CLICK_DISSASM_REMOVE_LOCAL_VARIABLE, "Remove local variable" } } },
+      { { RIGHT_CLICK_DISSASM_RENAME_LOCAL_VARIABLE, "Rename local variable" }, { RIGHT_CLICK_DISSASM_REMOVE_LOCAL_VARIABLE, "Remove local variable" } } },
     { "CodeZone", { { RIGHT_CLICK_CODE_ZONE_EDIT, "Edit zone" } } },
     { "Assistant",
       {
@@ -201,10 +200,9 @@ namespace View
                 Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = { AddOrEditCommentCommand,
-                                                                                                     RemoveCommentCommand,
-                                                                                                     RenameLabelCommand,
-                                                                                                     RemoveLocalVariableCommand };
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
+                AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand, RemoveLocalVariableCommand
+            };
 
             // navigation & editing
             using KF = KeyboardControlFlags;
@@ -235,10 +233,26 @@ namespace View
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
             inline static std::array<KeyboardControl*, 20> KeyEventCommands = {
-                &MoveDownCommand,   &MoveUpCommand,     &MoveLeftCommand,    &MoveRightCommand,     &MovePageDownCommand,
-                &MovePageUpCommand, &MoveHomeCommand,   &MoveEndCommand,     &ScrollUpCommand,      &ScrollDownCommand,
-                &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
-                &AddOrEditCommentCommand, &RemoveCommentCommand, &RenameLabelCommand, &RemoveLocalVariableCommand, &SaveCacheCommand,
+                &MoveDownCommand,
+                &MoveUpCommand,
+                &MoveLeftCommand,
+                &MoveRightCommand,
+                &MovePageDownCommand,
+                &MovePageUpCommand,
+                &MoveHomeCommand,
+                &MoveEndCommand,
+                &ScrollUpCommand,
+                &ScrollDownCommand,
+                &ScrollLeftCommand,
+                &ScrollRightCommand,
+                &SpaceCommand,
+                &OpenSelectionCommand,
+                &AddZoneCommand,
+                &AddOrEditCommentCommand,
+                &RemoveCommentCommand,
+                &RenameLabelCommand,
+                &RemoveLocalVariableCommand,
+                &SaveCacheCommand,
             };
             inline static Input::KeyMap Map;
 

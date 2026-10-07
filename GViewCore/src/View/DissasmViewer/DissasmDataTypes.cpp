@@ -217,8 +217,8 @@ bool DissasmFunctionFrame::HasVariableNamed(std::string_view name) const
 const DissasmFunctionFrame* DissasmLocalVariables::FindFunctionByAddress(uint64 address) const
 {
     // first function starting after address, the candidate is the one before it
-    auto it = std::upper_bound(
-          functions.begin(), functions.end(), address, [](uint64 value, const DissasmFunctionFrame& fn) { return value < fn.startAddress; });
+    auto it =
+          std::upper_bound(functions.begin(), functions.end(), address, [](uint64 value, const DissasmFunctionFrame& fn) { return value < fn.startAddress; });
     if (it == functions.begin())
         return nullptr;
     --it;
@@ -285,8 +285,7 @@ bool DissasmLocalVariables::LoadFromBuffer(const std::byte*& start, const std::b
         fn.variables.reserve(variablesCount);
         for (uint32 j = 0; j < variablesCount; j++) {
             DissasmLocalVariable var{};
-            if (!read_primitive(start, end, var.frameOffset) || !read_primitive(start, end, var.size) ||
-                !read_u32_len_prefixed_string(start, end, var.name))
+            if (!read_primitive(start, end, var.frameOffset) || !read_primitive(start, end, var.size) || !read_u32_len_prefixed_string(start, end, var.name))
                 return false;
             if (var.name.empty() || var.name.size() > DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE)
                 return false;

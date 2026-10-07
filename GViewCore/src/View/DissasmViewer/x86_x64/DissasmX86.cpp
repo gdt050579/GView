@@ -687,9 +687,9 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     const uint64 maximalAddress = cachedAsmLines.back().address;
 
     constexpr uint8 ARROW_COLUMNS[textColumnIndicatorArrowLinesSpace] = { DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1,
-                                                                           DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2,
-                                                                           DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3 };
-    uint32 arrowsCount = 0;
+                                                                          DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2,
+                                                                          DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3 };
+    uint32 arrowsCount                                                = 0;
     for (size_t sourceIndex = 0; sourceIndex < cachedAsmLines.size() && arrowsCount < textColumnIndicatorArrowLinesSpace; sourceIndex++) {
         const auto& source = cachedAsmLines[sourceIndex];
         if (source.flags != DissasmAsmPreCacheLine::InstructionFlag::CallFlag && source.flags != DissasmAsmPreCacheLine::InstructionFlag::JmpFlag)
@@ -700,8 +700,8 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
         if (target < minimalAddress || target > maximalAddress)
             continue;
         // first visible line placed at the target (its label when it has one); a target in the middle of an instruction has no line
-        const auto targetIt = std::find_if(
-              cachedAsmLines.begin(), cachedAsmLines.end(), [target](const DissasmAsmPreCacheLine& line) { return line.address == target; });
+        const auto targetIt =
+              std::find_if(cachedAsmLines.begin(), cachedAsmLines.end(), [target](const DissasmAsmPreCacheLine& line) { return line.address == target; });
         if (targetIt == cachedAsmLines.end())
             continue;
 
@@ -897,7 +897,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         // dli.WriteErrorToScreen("ERROR: failed to load data from cache!");
         // return false;
     }
-    if (zoneLinesChanged) // local variables removed by the user in a previous session
+    if (zoneLinesChanged)                                                 // local variables removed by the user in a previous session
         AdjustZoneExtendedSize(zone, zone->GetRootZoneLinesCount() + 1u); // +1 for the title
     return true;
 }

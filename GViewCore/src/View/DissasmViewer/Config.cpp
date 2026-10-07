@@ -156,7 +156,8 @@ void Config::Initialize(const AppCUI::Application::Config& config)
     }
 
     Application::Config::CustomColorNameStorage dissamColors = {
-        { "StructureColor", CustomColor(ConfigColors.StructureColor) }, { "AsmOffsetColor", CustomColor(ConfigColors.AsmOffsetColor) },
+        { "StructureColor", CustomColor(ConfigColors.StructureColor) },
+        { "AsmOffsetColor", CustomColor(ConfigColors.AsmOffsetColor) },
         { "AsmIrrelevantInstructionColor", CustomColor(ConfigColors.AsmIrrelevantInstructionColor) },
         { "AsmWorkRegisterColor", CustomColor(ConfigColors.AsmWorkRegisterColor) },
         { "AsmStackRegisterColor", CustomColor(ConfigColors.AsmStackRegisterColor) },
@@ -253,7 +254,7 @@ void Config::OnPreviewWindowDraw(
     ++startingY;
 
     // older themes may not define it
-    const auto localVariableColor = colors.find("AsmLocalVariableColor");
+    const auto localVariableColor         = colors.find("AsmLocalVariableColor");
     const auto AsmLocalVariableColorTheme = localVariableColor != colors.end() ? localVariableColor->second.TryGetColorPair() : nullptr;
     if (AsmLocalVariableColorTheme) {
         r.WriteSingleLineText(startingX + 1, startingY, "var_8", *AsmLocalVariableColorTheme);

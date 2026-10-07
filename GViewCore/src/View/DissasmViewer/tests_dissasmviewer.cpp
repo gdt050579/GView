@@ -306,8 +306,7 @@ class DissasmTestInstance
 
     bool enableLocalVariables;
 
-    DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false)
-        : enableLocalVariables(enableLocalVariables)
+    DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false) : enableLocalVariables(enableLocalVariables)
     {
         instance = nullptr;
         const bool initResult = init(binaryData, binaryDataSize);
@@ -1027,8 +1026,8 @@ TEST_CASE("LocalVariablesRenameAndRemove", "[Dissasm]LocalVariables")
     REQUIRE(!dissasmInstance.RenameLocalVariable(37, "a]").ok);
     REQUIRE(!dissasmInstance.RenameLocalVariable(37, "").ok);
     REQUIRE(!dissasmInstance.RenameLocalVariable(37, std::string(DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE + 1, 'a')).ok);
-    REQUIRE(!dissasmInstance.RenameLocalVariable(38, "x").ok);        // push ebp does not use a variable
-    REQUIRE(dissasmInstance.RenameLocalVariable(362, "count").ok);    // another function
+    REQUIRE(!dissasmInstance.RenameLocalVariable(38, "x").ok);     // push ebp does not use a variable
+    REQUIRE(dissasmInstance.RenameLocalVariable(362, "count").ok); // another function
     REQUIRE(dissasmInstance.CheckLineText(373, "mov dword ptr [ebp + count], 2"));
     REQUIRE(dissasmInstance.CheckLineText(37, "number = dword ptr 8"));
 
@@ -1232,7 +1231,14 @@ static bool CheckFrameVariables(const DissasmFunctionFrame& frame, std::initiali
     auto it = frame.variables.begin();
     for (const auto& variable : expected) {
         if (it->frameOffset != variable.frameOffset || it->size != variable.size || it->name != variable.name) {
-            printf("expected %s(%d, %u), found %s(%d, %u)\n", variable.name.c_str(), variable.frameOffset, variable.size, it->name.c_str(), it->frameOffset, it->size);
+            printf(
+                  "expected %s(%d, %u), found %s(%d, %u)\n",
+                  variable.name.c_str(),
+                  variable.frameOffset,
+                  variable.size,
+                  it->name.c_str(),
+                  it->frameOffset,
+                  it->size);
             return false;
         }
         ++it;
@@ -1247,7 +1253,8 @@ TEST_CASE("LocalVariablesFrameAnalysis", "[Dissasm]LocalVariables")
 
     // mov edi, edi; push ebp; mov ebp, esp; mov eax, [ebp + 8]; mov [ebp - 4], eax; lea ecx, [ebp - 0x10]; pop ebp; ret;
     // mov [ebp - 0x20], eax (unreachable, after the end of the function)
-    REQUIRE(AnalyzeFrame(x86, { 0x8B, 0xFF, 0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08, 0x89, 0x45, 0xFC, 0x8D, 0x4D, 0xF0, 0x5D, 0xC3, 0x89, 0x45, 0xE0 }, false, frame));
+    REQUIRE(AnalyzeFrame(
+          x86, { 0x8B, 0xFF, 0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08, 0x89, 0x45, 0xFC, 0x8D, 0x4D, 0xF0, 0x5D, 0xC3, 0x89, 0x45, 0xE0 }, false, frame));
     REQUIRE(frame.endAddress == 0x10);
     REQUIRE(CheckFrameVariables(frame, { { -0x10, 0, "var_10" }, { -4, 4, "var_4" }, { 8, 4, "arg_0" } }));
 
@@ -1270,11 +1277,11 @@ TEST_CASE("LocalVariablesFrameAnalysis", "[Dissasm]LocalVariables")
     REQUIRE(CheckFrameVariables(frame, { { -4, 4, "var_4" } }));
 
     // not frame based functions
-    REQUIRE(!AnalyzeFrame(x86, { 0x53, 0x8B, 0xEC, 0x89, 0x45, 0xFC, 0xC3 }, false, frame)); // push ebx; mov ebp, esp
-    REQUIRE(!AnalyzeFrame(x86, { 0x55, 0x8B, 0xC4, 0x89, 0x45, 0xFC, 0xC3 }, false, frame)); // push ebp; mov eax, esp
+    REQUIRE(!AnalyzeFrame(x86, { 0x53, 0x8B, 0xEC, 0x89, 0x45, 0xFC, 0xC3 }, false, frame));       // push ebx; mov ebp, esp
+    REQUIRE(!AnalyzeFrame(x86, { 0x55, 0x8B, 0xC4, 0x89, 0x45, 0xFC, 0xC3 }, false, frame));       // push ebp; mov eax, esp
     REQUIRE(!AnalyzeFrame(x86, { 0x83, 0xEC, 0x08, 0x89, 0x44, 0x24, 0x04, 0xC3 }, false, frame)); // esp based
-    REQUIRE(!AnalyzeFrame(x86, { 0x55 }, false, frame));                                         // truncated
-    REQUIRE(!AnalyzeFrame(x86, { 0xFF, 0xFF, 0xFF, 0xFF }, false, frame));                       // invalid code
+    REQUIRE(!AnalyzeFrame(x86, { 0x55 }, false, frame));                                           // truncated
+    REQUIRE(!AnalyzeFrame(x86, { 0xFF, 0xFF, 0xFF, 0xFF }, false, frame));                         // invalid code
 
     // x64: push rbp; mov rbp, rsp; mov dword ptr [rbp - 0x14], edi; mov qword ptr [rbp + 0x10], rax; pop rbp; ret
     DetailHandle x64(CS_MODE_64);
@@ -1315,13 +1322,13 @@ TEST_CASE("LocalVariablesSerialization", "[Dissasm]LocalVariables")
         const std::byte* begin = data.data();
         return !result.LoadFromBuffer(begin, data.data() + data.size()) && result.functions.empty();
     };
-    REQUIRE(rejects({ { { 0x40, 0x80, {} }, { 0x10, 0x20, {} } } }));                            // unsorted functions
-    REQUIRE(rejects({ { { 0x10, 0x40, {} }, { 0x30, 0x50, {} } } }));                            // overlapping functions
-    REQUIRE(rejects({ { { 0x10, 0x10, {} } } }));                                                // empty range
-    REQUIRE(rejects({ { { 0x10, 0x40, { { -4, 4, "a" }, { -8, 4, "b" } } } } }));                // unsorted variables
-    REQUIRE(rejects({ { { 0x10, 0x40, { { -8, 4, "a" }, { -4, 4, "a" } } } } }));                // duplicated names
-    REQUIRE(rejects({ { { 0x10, 0x40, { { -8, 4, "" } } } } }));                                 // empty name
-    REQUIRE(rejects({ { { 0x100000000ull, 0x100000010ull, { { -8, 4, "a" } } } } }));            // start over 32 bits
+    REQUIRE(rejects({ { { 0x40, 0x80, {} }, { 0x10, 0x20, {} } } }));                 // unsorted functions
+    REQUIRE(rejects({ { { 0x10, 0x40, {} }, { 0x30, 0x50, {} } } }));                 // overlapping functions
+    REQUIRE(rejects({ { { 0x10, 0x10, {} } } }));                                     // empty range
+    REQUIRE(rejects({ { { 0x10, 0x40, { { -4, 4, "a" }, { -8, 4, "b" } } } } }));     // unsorted variables
+    REQUIRE(rejects({ { { 0x10, 0x40, { { -8, 4, "a" }, { -4, 4, "a" } } } } }));     // duplicated names
+    REQUIRE(rejects({ { { 0x10, 0x40, { { -8, 4, "" } } } } }));                      // empty name
+    REQUIRE(rejects({ { { 0x100000000ull, 0x100000010ull, { { -8, 4, "a" } } } } })); // start over 32 bits
 
     for (size_t size = 0; size < buffer.size(); size++) { // every truncation is rejected
         DissasmLocalVariables result;
@@ -1376,11 +1383,11 @@ TEST_CASE("DissasmLabelArrows", "[Dissasm]Functions")
     };
 
     DissasmAsmPreCacheData data;
-    data.cachedAsmLines.push_back(makeLine(0x10, 2, 0, 0x16));  // jmp forward
-    data.cachedAsmLines.push_back(makeLine(0x12, 2, 1, 0x13));  // target inside an instruction: no line, no arrow
+    data.cachedAsmLines.push_back(makeLine(0x10, 2, 0, 0x16)); // jmp forward
+    data.cachedAsmLines.push_back(makeLine(0x12, 2, 1, 0x13)); // target inside an instruction: no line, no arrow
     data.cachedAsmLines.push_back(makeLine(0x14, 2, 2, {}));
-    data.cachedAsmLines.push_back(makeLine(0x16, 0, 3, {}));    // label
-    data.cachedAsmLines.push_back(makeLine(0x16, 2, 4, 0x10));  // jmp backward
+    data.cachedAsmLines.push_back(makeLine(0x16, 0, 3, {}));   // label
+    data.cachedAsmLines.push_back(makeLine(0x16, 2, 4, 0x10)); // jmp backward
     data.PrepareLabelArrows();
 
     using F = DissasmAsmPreCacheLine::LineArrowToDrawFlag;

@@ -196,8 +196,7 @@ inline bool ExtractCallsToInsertFunctionNames(
             continue;
 
         DissasmFunctionFrame frame{};
-        if (!AnalyzeX86FunctionFrame(
-                  detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, zone->Is64BitCode(), frame) ||
+        if (!AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, zone->Is64BitCode(), frame) ||
             frame.variables.empty())
             continue;
         // IDA like: the variables are listed right below the function label

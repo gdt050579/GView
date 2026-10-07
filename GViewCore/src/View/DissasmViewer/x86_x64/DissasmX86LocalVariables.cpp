@@ -113,15 +113,15 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     if (!insn || !insn->detail)
         return false; // the handle must have CS_OPT_DETAIL enabled
 
-    const x86_reg frameRegister       = is64 ? X86_REG_RBP : X86_REG_EBP;
-    const x86_reg stackRegister       = is64 ? X86_REG_RSP : X86_REG_ESP;
-    const int64 firstArgumentOffset   = is64 ? 16 : 8; // saved frame pointer + return address
-    const uint8* data                 = code;
-    size_t size                       = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
-    uint64 address                    = codeAddress;
-    uint64 furthestBranchTarget       = 0;
-    uint64 endAddress                 = codeAddress;
-    uint32 decodedInstructions        = 0;
+    const x86_reg frameRegister                                    = is64 ? X86_REG_RBP : X86_REG_EBP;
+    const x86_reg stackRegister                                    = is64 ? X86_REG_RSP : X86_REG_ESP;
+    const int64 firstArgumentOffset                                = is64 ? 16 : 8; // saved frame pointer + return address
+    const uint8* data                                              = code;
+    size_t size                                                    = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
+    uint64 address                                                 = codeAddress;
+    uint64 furthestBranchTarget                                    = 0;
+    uint64 endAddress                                              = codeAddress;
+    uint32 decodedInstructions                                     = 0;
     enum class State : uint8 { ExpectPush, ExpectMov, Body } state = State::ExpectPush;
 
     std::vector<FrameAccess> accesses;
@@ -276,8 +276,7 @@ bool GView::View::DissasmViewer::FindX86FrameOperand(std::string_view operands, 
     const size_t length = operands.size();
     size_t position     = start + frameBase.size();
     // "[ebp]" is the saved frame pointer and "[ebp + eax*4 ...]" is not a single slot
-    if (position + 3 > length || operands[position] != ' ' || (operands[position + 1] != '+' && operands[position + 1] != '-') ||
-        operands[position + 2] != ' ')
+    if (position + 3 > length || operands[position] != ' ' || (operands[position + 1] != '+' && operands[position + 1] != '-') || operands[position + 2] != ' ')
         return false;
     const bool isNegative = operands[position + 1] == '-';
     position += 3;

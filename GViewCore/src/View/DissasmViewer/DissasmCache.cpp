@@ -394,8 +394,7 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         if (!read_primitive(dataPtr, dataPtrEnd, version) || version != DISSASM_CODE_ZONE_CACHE_VERSION)
             return false;
         DissasmLocalVariables variables;
-        if (!comments.LoadFromBuffer(dataPtr, dataPtrEnd) || !annotations.LoadFromBuffer(dataPtr, dataPtrEnd) ||
-            !variables.LoadFromBuffer(dataPtr, dataPtrEnd))
+        if (!comments.LoadFromBuffer(dataPtr, dataPtrEnd) || !annotations.LoadFromBuffer(dataPtr, dataPtrEnd) || !variables.LoadFromBuffer(dataPtr, dataPtrEnd))
             return false;
         return ApplyCachedZoneData(*this, comments, annotations, variables, zoneLinesChanged);
     }

@@ -199,7 +199,7 @@ namespace View
         // in the code zone (relative to the first decoded instruction) and as the annotation values.
         struct DissasmFunctionFrame {
             uint64 startAddress;
-            uint64 endAddress; // exclusive
+            uint64 endAddress;                           // exclusive
             std::vector<DissasmLocalVariable> variables; // sorted by frameOffset, unique offsets and names
 
             DissasmLocalVariable* FindVariable(int32 frameOffset);
