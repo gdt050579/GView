@@ -43,6 +43,7 @@ jobs:
         with:
           build_type: Release
           enable_tests: "false"
+          enable_remote: "true" # the remote TUI must compile on every platform
           use_vcpkg_cache: "true"
           upload_artifact: "false"
           jobs_count: "0"

@@ -42,6 +42,7 @@ jobs:
         with:
           build_type: RelWithDebInfo
           enable_tests: "true"
+          enable_remote: "true" # runs the remote protocol / TLS tests
           use_vcpkg_cache: "true"
           upload_artifact: "false"
           jobs_count: "0"

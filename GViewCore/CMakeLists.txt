@@ -28,6 +28,15 @@ find_package(OpenSSL REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 
+if (GVIEW_ENABLE_REMOTE)
+    # remote TUI: TLS (libssl, which brings libcrypto after it for static builds) + sockets
+    target_compile_definitions(${PROJECT_NAME} PRIVATE GVIEW_ENABLE_REMOTE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL)
+    if (WIN32)
+        target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32)
+    endif()
+endif()
+
 find_package(ZLIB REQUIRED)
 message("ZLIB_INCLUDE_DIR => ${ZLIB_INCLUDE_DIR}")
 message("ZLIB_LIBRARIES => ${ZLIB_LIBRARIES}")

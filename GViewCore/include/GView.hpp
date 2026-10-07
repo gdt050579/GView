@@ -1849,6 +1849,15 @@ namespace App
      */
     bool CORE_EXPORT SetClipboardText(const ConstString& text, bool isSelectionCopy = true);
 
+    /**
+     * Remote TUI (docs/source/remote_protocol.rst): runs one of the "serve", "connect", "listen" or "remote-certs"
+     * command line commands (arguments in UTF-8) and returns the process exit code. The remote mode is compiled only
+     * when GView is configured with -DGVIEW_ENABLE_REMOTE=ON; otherwise IsRemoteSupported() returns false and
+     * RunRemoteCommand reports the missing feature.
+     */
+    bool CORE_EXPORT IsRemoteSupported();
+    int CORE_EXPORT RunRemoteCommand(std::string_view command, const std::vector<std::string>& arguments);
+
 }; // namespace App
 }; // namespace GView
 

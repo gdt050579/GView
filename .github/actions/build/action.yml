@@ -7,6 +7,9 @@ inputs:
   enable_tests:
     description: "Run tests? ('true'|'false')"
     default: "false"
+  enable_remote:
+    description: "Build the remote TUI (GVIEW_ENABLE_REMOTE)? ('true'|'false')"
+    default: "false"
   use_vcpkg_cache:
     description: "Cache vcpkg artifacts? ('true'|'false'). Keep 'false' for release builds so shipped dependencies are always built from source."
     default: "true"
@@ -156,6 +159,7 @@ runs:
       env:
         BUILD_TYPE: ${{ inputs.build_type }}
         ENABLE_TESTS: ${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}
+        ENABLE_REMOTE: ${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
         VCPKG_BINARY_SOURCES: ${{ inputs.use_vcpkg_cache == 'true' && format('clear;files,{0}/.vcpkg-binary-cache,readwrite', github.workspace) || 'clear' }}
         VCPKG_CMAKE_GENERATOR: ${{ runner.os == 'macOS' && 'Ninja' || '' }}
         CMAKE_C_COMPILER_LAUNCHER: ${{ inputs.use_ccache == 'true' && runner.os == 'Linux' && 'ccache' || '' }}
@@ -163,7 +167,8 @@ runs:
       run: |
         cmake -S . -B build \
           -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-          -DENABLE_TESTS="$ENABLE_TESTS"
+          -DENABLE_TESTS="$ENABLE_TESTS" \
+          -DGVIEW_ENABLE_REMOTE="$ENABLE_REMOTE"
 
     - name: Configure CMake (Windows)
       if: ${{ runner.os == 'Windows' }}
@@ -171,11 +176,13 @@ runs:
       env:
         BUILD_TYPE: ${{ inputs.build_type }}
         ENABLE_TESTS: ${{ inputs.enable_tests == 'true' && 'ON' || 'OFF' }}
+        ENABLE_REMOTE: ${{ inputs.enable_remote == 'true' && 'ON' || 'OFF' }}
         VCPKG_BINARY_SOURCES: ${{ inputs.use_vcpkg_cache == 'true' && format('clear;files,{0}/.vcpkg-binary-cache,readwrite', github.workspace) || 'clear' }}
       run: |
         cmake -S . -B build `
           -DCMAKE_BUILD_TYPE="$env:BUILD_TYPE" `
-          -DENABLE_TESTS="$env:ENABLE_TESTS"
+          -DENABLE_TESTS="$env:ENABLE_TESTS" `
+          -DGVIEW_ENABLE_REMOTE="$env:ENABLE_REMOTE"
 
     # --------------------------
     # Build

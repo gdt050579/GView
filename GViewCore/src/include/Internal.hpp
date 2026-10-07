@@ -507,6 +507,8 @@ namespace App
         constexpr int OPEN_FOLDER       = 120001;
         constexpr int OPEN_PID          = 120002;
         constexpr int OPEN_PROCESS_TREE = 120003;
+        constexpr int REMOTE_CONNECT    = 120004;
+        constexpr int REMOTE_LISTEN     = 120005;
 
         constexpr int CHANGE_THEME         = 130000;
         constexpr int OPEN_THEME_EDITOR    = 130001;
@@ -548,6 +550,10 @@ namespace App
             Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
         };
         inline GView::KeyboardControl INSTANCE_EXIT              = { Input::Key::Shift | Input::Key::Escape, "Exit", "Close GView", MenuCommands::EXIT_GVIEW, KF::RequiresRestart };
+        // remote windows send every key to the remote GView; after this key the next one is handled locally
+        inline GView::KeyboardControl REMOTE_LOCAL_KEY = {
+            Input::Key::Ctrl | Input::Key::F12, "RemoteLocalKey", "Remote window: handle the next key in this GView (not in the remote one)", 0
+        };
 
         inline const std::array<GView::KeyboardControl*, 17> GViewKeys = {
             &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_CHANGE_VIEW,     &INSTANCE_SWITCH_TO_VIEW,  &INSTANCE_COMMAND_GOTO,  &FILE_WINDOW_COMMAND_GOTO,
@@ -879,6 +885,8 @@ namespace App
     void ShowLearningSubmitDialog(std::string_view problemName);
     void RefreshAllFileWindowTitles();
     bool TakeStartupLearningConnection(std::string& out);
+    // Next Init uses this frontend instead of a terminal (remote server); the desktop stays open without windows.
+    void SetHeadlessFrontend(AppCUI::Application::CustomFrontendInterface* frontend);
     bool OpenDataObject(
           std::unique_ptr<AppCUI::OS::DataObject> data,
           const ConstString& name,
