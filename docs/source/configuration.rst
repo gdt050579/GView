@@ -5,7 +5,7 @@ GView is configured via ``GView.ini`` file (that should be located next to GView
 
 The following section should be seen in a ``GView.ini`` file:
 
-* ``[GView]`` - a section with the general configuration for GView (cache size, etc).
+* ``[GView]`` - a section with the general configuration for GView (cache size, update checks, etc). The ``Update*`` keys are described in :doc:`updates`.
 * ``[AppCUI]`` - a section with the general configuration for AppCUI framework (color, frontend, keyboard profile ``Keyboard.Ctrl`` / ``Keyboard.Alt``, etc)
 * ``[Keys.<xxx>]`` - the keyboard shortcuts changed by the user from the *Keyboard shortcuts* window (see :doc:`keyboard_shortcuts`)
 * ``[Type.<XXX>]`` - various sections that describe characteristics of each supported type in GView

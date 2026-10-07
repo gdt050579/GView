@@ -14,6 +14,8 @@ target_sources(GViewCore PRIVATE
     OptionsWindow.cpp
     LearningModeWindow.cpp
     LearningSubmitDialog.cpp
+    UpdateDialog.cpp
+    GViewDesktop.cpp
 )
 
 add_testing_sources(GViewCore tests_keybindings.cpp)

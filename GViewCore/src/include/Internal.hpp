@@ -560,6 +560,9 @@ namespace App
     } // namespace InstanceCommands
 
     class FileWindow;
+    // GView desktop (App/GViewDesktop.cpp): drives the auto-updater from OnFrameUpdate
+    AppCUI::Controls::Desktop* CreateDesktop();
+
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
                      public AppCUI::Controls::Handlers::OnStartInterface

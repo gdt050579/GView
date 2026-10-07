@@ -100,6 +100,7 @@ jobs:
           merge-multiple: true
           path: artifacts
 
+      # The in-app updater refuses archives that are not listed in SHA256SUMS.
       - name: Create SHA256SUMS
         working-directory: artifacts
         run: |
