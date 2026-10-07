@@ -48,6 +48,8 @@ namespace View
             bool HasComment(uint32 line) const;
             void RemoveComment(uint32 line);
             void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+            // drops the comment of `line` and moves every comment placed after it one line up
+            void RemoveLine(uint32 line);
 
             uint32 GetRequiredSizeForSerialization() const;
             void ToBuffer(std::vector<std::byte>& buffer) const;
@@ -183,6 +185,62 @@ namespace View
             bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
 
+        constexpr uint32 DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION = 512;
+        constexpr uint32 DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE     = 128;
+
+        // A stack slot addressed through the frame register ([ebp - 8] / [rbp + 0x10]) inside a function.
+        struct DissasmLocalVariable {
+            int32 frameOffset; // signed displacement relative to the frame register: [ebp - 8] -> -8
+            uint16 size;       // widest access in bytes, 0 when only its address is taken (lea)
+            std::string name;
+        };
+
+        // Frame of a function that uses a frame pointer (push ebp; mov ebp, esp). Addresses use the same base as the instructions drawn
+        // in the code zone (relative to the first decoded instruction) and as the annotation values.
+        struct DissasmFunctionFrame {
+            uint64 startAddress;
+            uint64 endAddress;                           // exclusive
+            std::vector<DissasmLocalVariable> variables; // sorted by frameOffset, unique offsets and names
+
+            DissasmLocalVariable* FindVariable(int32 frameOffset);
+            const DissasmLocalVariable* FindVariable(int32 frameOffset) const;
+            bool HasVariableNamed(std::string_view name) const;
+        };
+
+        struct DissasmLocalVariables {
+            std::vector<DissasmFunctionFrame> functions; // sorted by startAddress, ranges never overlap
+
+            bool Empty() const
+            {
+                return functions.empty();
+            }
+            const DissasmFunctionFrame* FindFunctionByAddress(uint64 address) const; // function whose [start, end) contains address
+            DissasmFunctionFrame* FindFunctionByStart(uint64 startAddress);
+            const DissasmFunctionFrame* FindFunctionByStart(uint64 startAddress) const;
+
+            void ToBuffer(std::vector<std::byte>& buffer) const;
+            bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
+        };
+
+        // Lines that describe a local variable are stored as annotations (text lines) so they follow the existing line bookkeeping
+        // (collapsible zones, comments, cache). They are told apart from labels by an empty name (labels can never be renamed to an
+        // empty name) and their value packs the owning function start (low 32 bits) and the frame offset (high 32 bits).
+        inline AnnotationContainer::AnnoationCallValueType PackLocalVariableAnnotation(uint64 functionStart, int32 frameOffset)
+        {
+            return (static_cast<uint64>(static_cast<uint32>(frameOffset)) << 32) | (functionStart & 0xFFFFFFFFull);
+        }
+        inline bool IsLocalVariableAnnotation(const AnnotationContainer::AnnotationDetails& details)
+        {
+            return details.first.empty();
+        }
+        inline uint64 GetLocalVariableAnnotationFunction(AnnotationContainer::AnnoationCallValueType value)
+        {
+            return value & 0xFFFFFFFFull;
+        }
+        inline int32 GetLocalVariableAnnotationOffset(AnnotationContainer::AnnoationCallValueType value)
+        {
+            return static_cast<int32>(static_cast<uint32>(value >> 32));
+        }
 
     } // namespace DissasmViewer
 } // namespace View

@@ -252,6 +252,9 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_RENAME_LABEL:
         RenameLabel();
         return true;
+    case COMMAND_REMOVE_LOCAL_VARIABLE:
+        RemoveLocalVariable();
+        return true;
     case COMMAND_SAVE_DISSASM_CACHE:
         SaveCacheData();
         return true;
@@ -321,6 +324,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case RIGHT_CLICK_REMOVE_COMMENT:
             RemoveComment();
+            return true;
+        case RIGHT_CLICK_DISSASM_RENAME_LOCAL_VARIABLE:
+            RenameLabel();
+            return true;
+        case RIGHT_CLICK_DISSASM_REMOVE_LOCAL_VARIABLE:
+            RemoveLocalVariable();
             return true;
         case RIGHT_CLICK_CLEAR_SELECTION:
             selection.Clear();
