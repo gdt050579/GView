@@ -1,8 +1,7 @@
 #include "../GViewCore/include/GView.hpp"
 #include <iostream>
 
-enum class CommandID
-{
+enum class CommandID {
     Unknown,
     Help,
     Open,

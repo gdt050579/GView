@@ -613,8 +613,8 @@ uint32 Instance::GetObjectsCount()
 {
     auto dsk = AppCUI::Application::GetDesktop();
     CHECK(dsk.IsValid(), 0, "Fail to get Desktop object from AppCUI !");
-    uint32 count      = 0;
-    const auto total  = dsk->GetChildrenCount();
+    uint32 count     = 0;
+    const auto total = dsk->GetChildrenCount();
     for (uint32 i = 0; i < total; i++)
         if (dsk->GetChild(i).ToObjectRef<FileWindow>().IsValid())
             count++;
