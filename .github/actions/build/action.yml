@@ -240,6 +240,7 @@ runs:
           FILES+=("$f")
         done < <(find "$BIN_DIR" -type f \( \
             -name "GView" -o -name "GView.exe" -o \
+            -name "GViewUpdater" -o -name "GViewUpdater.exe" -o \
             -name "*.so" -o -name "*.dylib" -o -name "*.dll" -o \
             -name "*.tpl" -o -name "*.gpl" \
           \) | sort)

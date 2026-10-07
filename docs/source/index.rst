@@ -19,6 +19,7 @@ and a plugin-based architecture for file formats and generic operations.
    remote_protocol
    architecture
    configuration
+   updates
    security
    plugin_development
    core

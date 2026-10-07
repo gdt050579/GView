@@ -3,6 +3,8 @@
 #ifdef GVIEW_ENABLE_REMOTE
 #    include "../Remote/RemoteConfig.hpp"
 #endif
+#include "../Update/Stager.hpp"
+#include "../Update/UpdateService.hpp"
 #include <array>
 
 using namespace GView::App;
@@ -66,7 +68,6 @@ constexpr GViewMenuCommand menuHelpList[] = {
     { "&About", MenuCommands::ABOUT, Key::None },
 };
 
-constexpr ItemHandle menuHelpListDisabledCommandsList[] = { 0 };
 
 bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
 {
@@ -197,9 +198,6 @@ bool Instance::BuildMainMenus()
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
     CHECK(AddMenuCommands(mnuHelp, menuHelpList, ARRAY_LEN(menuHelpList)), false, "");
-    for (auto itemHandle : menuHelpListDisabledCommandsList) {
-        CHECK(mnuHelp->SetEnable(itemHandle, false), false, "Fail to disable menu item");
-    }
     return true;
 }
 
@@ -211,6 +209,9 @@ bool Instance::Init(bool isTestingEnabled)
     // from OnFrameUpdate unless its state changed, so idle CPU usage stays negligible.
     initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile |
                      InitializationFlags::AutoHotKeyForWindow | InitializationFlags::EnableFPSMode;
+    // A remote server never updates itself: the update dialog would be shown to the remote analysts, and installing
+    // replaces the binaries and restarts the process the analysts are connected to.
+    const bool isRemoteServer = headlessFrontend != nullptr;
     if (headlessFrontend) {
         // remote server: the screen is streamed to remote analysts and must stay up even when every window is closed
         initData.Frontend       = FrontendType::Custom;
@@ -218,6 +219,9 @@ bool Instance::Init(bool isTestingEnabled)
         initData.Flags |= InitializationFlags::DisableAutoCloseDesktop;
         headlessFrontend = nullptr;
     }
+    // the GView desktop runs the background update check (see Update/UpdateService.hpp)
+    if (!isTestingEnabled && !isRemoteServer)
+        initData.CustomDesktopConstructor = GView::App::CreateDesktop;
 
     const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
     AppCUI::OS::File settingsFile;
@@ -259,6 +263,13 @@ bool Instance::Init(bool isTestingEnabled)
 
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.InitDefaultPlugin();
+
+    if (!isTestingEnabled) {
+        // leftovers of a previous update (staging folders, replaced files of a completed update)
+        GView::Update::CleanupWorkDir(AppCUI::OS::GetCurrentApplicationPath().parent_path());
+        if (!isRemoteServer)
+            GView::Update::Service::Enable(); // also gates Help > Check for updates
+    }
 
     // set up handlers
     auto dsk                 = AppCUI::Application::GetDesktop();
@@ -690,6 +701,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::ABOUT:
             ShowAboutWindow();
+            return true;
+        case MenuCommands::CHECK_FOR_UPDATES:
+            GView::Update::Service::CheckInteractive();
             return true;
         case MenuCommands::AVAILABLE_KEYS:
             ShowKeyboardShortcuts();

@@ -251,7 +251,7 @@ int ProcessOpenCommand(int argc, T** argv, int startIndex, bool isTesting = fals
     AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
     GView::App::Run(testingContent);
 
-    return 0;
+    return isTesting ? 0 : GView::App::FinishPendingUpdate();
 }
 
 #ifdef BUILD_FOR_WINDOWS
@@ -260,6 +260,7 @@ int wmain(int argc, const wchar_t** argv)
 int main(int argc, const char** argv)
 #endif
 {
+    GView::App::SetCommandLineArguments(argc, argv);
     if (argc < 2)
     {
         const char* openCurrentFolderCommand[] = { "."};
@@ -297,7 +298,7 @@ int main(int argc, const char** argv)
         CHECK(GView::App::Init(false), 1, "");
         GView::App::OpenLearningModeOnStart(cs);
         GView::App::Run("");
-        return 0;
+        return GView::App::FinishPendingUpdate();
     }
     case CommandID::Test: {
         if (argc < 4) {

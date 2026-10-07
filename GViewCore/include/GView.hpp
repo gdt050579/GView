@@ -1791,6 +1791,14 @@ namespace App
     bool CORE_EXPORT Init(bool isTestingEnabled);
     void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
+    // Auto-updater: the command line is reused to restart GView after an update; call FinishPendingUpdate after Run
+    // (it installs an update accepted by the user, restarts GView and returns the exit code to use, 0 when idle).
+#ifdef BUILD_FOR_WINDOWS
+    void CORE_EXPORT SetCommandLineArguments(int argc, const wchar_t** argv);
+#else
+    void CORE_EXPORT SetCommandLineArguments(int argc, const char** argv);
+#endif
+    int CORE_EXPORT FinishPendingUpdate();
     void CORE_EXPORT OpenFile(
           const std::filesystem::path& path,
           OpenMethod method,

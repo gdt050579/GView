@@ -13,6 +13,7 @@ add_subdirectory(Regex)
 add_subdirectory(Entropy)
 add_subdirectory(Security)
 add_subdirectory(Remote)
+add_subdirectory(Update)
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
     target_sources(GViewCore PRIVATE main.cpp)
