@@ -31,7 +31,7 @@ struct HttpGetRequest {
 struct HttpGetResponse {
     bool transportOk{ false }; // an HTTP status line was received
     long status{ 0 };
-    std::string body;          // memory downloads only
+    std::string body; // memory downloads only
     std::string etag;
     bool tooLarge{ false };
     bool cancelled{ false };

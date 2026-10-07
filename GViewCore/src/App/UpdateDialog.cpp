@@ -66,16 +66,14 @@ namespace
 
             if (!canInstall)
                 Factory::Label::Create(
-                      this,
-                      "GView cannot write to its installation folder: download the new version manually (use 'Copy link').",
-                      "l:1,t:3,r:1");
+                      this, "GView cannot write to its installation folder: download the new version manually (use 'Copy link').", "l:1,t:3,r:1");
 
             const std::string_view notes = release.notes.empty() ? std::string_view("No release notes were published.") : release.notes;
             Factory::TextArea::Create(this, AsUtf8(notes), "l:1,t:5,r:1,b:3", TextAreaFlags::Readonly | TextAreaFlags::ScrollBars | TextAreaFlags::Border);
 
-            install = Factory::Button::Create(this, "&Install update", "l:1,b:0,w:19", BUTTON_INSTALL);
-            remind  = Factory::Button::Create(this, "&Remind me later", "l:22,b:0,w:20", BUTTON_REMIND);
-            skip    = Factory::Button::Create(this, "&Skip this version", "l:44,b:0,w:22", BUTTON_SKIP);
+            install   = Factory::Button::Create(this, "&Install update", "l:1,b:0,w:19", BUTTON_INSTALL);
+            remind    = Factory::Button::Create(this, "&Remind me later", "l:22,b:0,w:20", BUTTON_REMIND);
+            skip      = Factory::Button::Create(this, "&Skip this version", "l:44,b:0,w:22", BUTTON_SKIP);
             auto copy = Factory::Button::Create(this, "Copy &link", "r:1,b:0,w:14", BUTTON_COPY, ButtonFlags::Flat);
             copy->SetEnabled(!GView::Security::RestrictedMode::IsFeatureDisabled(GView::Security::RestrictedMode::Feature::Clipboard));
             EnableButtons(!guarded);

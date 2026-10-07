@@ -180,17 +180,26 @@ TEST_CASE("Update.ParseReleaseFeed", "[update]")
     }
     SECTION("no asset for the platform")
     {
-        const auto r = ParseReleaseFeed(R"([{"tag_name":"1.0.0","draft":false,"prerelease":false,"assets":[{"name":"build-Linux-Release.zip","size":5,"browser_download_url":"https://a/b"}]}])",
-                                        true,
-                                        { PlatformOS::Windows, Arch::X64 });
+        const auto r = ParseReleaseFeed(
+              R"([{"tag_name":"1.0.0","draft":false,"prerelease":false,"assets":[{"name":"build-Linux-Release.zip","size":5,"browser_download_url":"https://a/b"}]}])",
+              true,
+              { PlatformOS::Windows, Arch::X64 });
         REQUIRE(r.ok);
         REQUIRE_FALSE(r.release.has_value());
     }
     SECTION("hostile or broken input never throws")
     {
-        for (const char* bad : { "", "{", "{}", "null", "[1,2,3]", "[{\"tag_name\":5}]", "[{\"tag_name\":\"1.0.0\",\"draft\":false,\"assets\":{}}]",
-                                 "[{\"tag_name\":\"1.0.0\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"x-windows.zip\",\"size\":-5,\"browser_download_url\":\"https://a/b\"}]}]",
-                                 "[{\"tag_name\":\"1.0.0\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"x-windows.zip\",\"size\":99999999999,\"browser_download_url\":\"https://a/b\"}]}]" }) {
+        for (const char* bad : { "",
+                                 "{",
+                                 "{}",
+                                 "null",
+                                 "[1,2,3]",
+                                 "[{\"tag_name\":5}]",
+                                 "[{\"tag_name\":\"1.0.0\",\"draft\":false,\"assets\":{}}]",
+                                 "[{\"tag_name\":\"1.0.0\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"x-windows.zip\",\"size\":-5,\"browser_"
+                                 "download_url\":\"https://a/b\"}]}]",
+                                 "[{\"tag_name\":\"1.0.0\",\"draft\":false,\"prerelease\":false,\"assets\":[{\"name\":\"x-windows.zip\",\"size\":99999999999,"
+                                 "\"browser_download_url\":\"https://a/b\"}]}]" }) {
             const auto r = ParseReleaseFeed(bad, true, { PlatformOS::Windows, Arch::X64 });
             REQUIRE_FALSE(r.release.has_value());
         }
@@ -202,16 +211,15 @@ TEST_CASE("Update.ParseReleaseFeed", "[update]")
 TEST_CASE("Update.FlattenReleaseNotes", "[update]")
 {
     // the body of the real 0.389.0 release (shortened)
-    const std::string body =
-          "## What's Changed\r\n* 385 add support for themes by @rzaharia in https://github.com/gdt050579/GView/pull/387\r\n"
-          "* 388 convert iniconfigsetting to properties by @rzaharia in https://github.com/gdt050579/GView/pull/390\r\n\r\n\r\n"
-          "**Full Changelog**: https://github.com/gdt050579/GView/compare/0.380.0...0.389.0";
-    REQUIRE(FlattenReleaseNotes(body) ==
-            "What's Changed\n"
-            "- 385 add support for themes by @rzaharia in https://github.com/gdt050579/GView/pull/387\n"
-            "- 388 convert iniconfigsetting to properties by @rzaharia in https://github.com/gdt050579/GView/pull/390\n"
-            "\n"
-            "Full Changelog: https://github.com/gdt050579/GView/compare/0.380.0...0.389.0");
+    const std::string body = "## What's Changed\r\n* 385 add support for themes by @rzaharia in https://github.com/gdt050579/GView/pull/387\r\n"
+                             "* 388 convert iniconfigsetting to properties by @rzaharia in https://github.com/gdt050579/GView/pull/390\r\n\r\n\r\n"
+                             "**Full Changelog**: https://github.com/gdt050579/GView/compare/0.380.0...0.389.0";
+    REQUIRE(
+          FlattenReleaseNotes(body) == "What's Changed\n"
+                                       "- 385 add support for themes by @rzaharia in https://github.com/gdt050579/GView/pull/387\n"
+                                       "- 388 convert iniconfigsetting to properties by @rzaharia in https://github.com/gdt050579/GView/pull/390\n"
+                                       "\n"
+                                       "Full Changelog: https://github.com/gdt050579/GView/compare/0.380.0...0.389.0");
     REQUIRE(FlattenReleaseNotes("See [the docs](https://x.y/z) and `code`\n---\n  - nested") == "See the docs (https://x.y/z) and code\n  - nested");
     // control characters (terminal escape sequences) and invalid UTF-8 never reach the UI
     const auto hostile = FlattenReleaseNotes(std::string("a\x1b[31mred\x07\tb\xff\xc3\x28") + "\xc3\xa9");
@@ -249,8 +257,24 @@ TEST_CASE("Update.NormalizeZipEntryPath", "[update]")
     REQUIRE(NormalizeZipEntryPath("bin/Release/Types/libPE.tpl") == "bin/Release/Types/libPE.tpl");
     REQUIRE(NormalizeZipEntryPath("Types\\libPE.tpl") == "Types/libPE.tpl");
     REQUIRE(NormalizeZipEntryPath("Types/") == "Types/");
-    for (const char* bad : { "", "/etc/passwd", "\\Windows\\x.dll", "../evil", "a/../../evil", "a/./b", "a//b", "C:/x", "C:x", "a/b.", "a/b ",
-                             "Types/CON", "Types/nul.tpl", "COM1", "lpt9.txt", "a\x01" "b", "x/.." })
+    for (const char* bad : { "",
+                             "/etc/passwd",
+                             "\\Windows\\x.dll",
+                             "../evil",
+                             "a/../../evil",
+                             "a/./b",
+                             "a//b",
+                             "C:/x",
+                             "C:x",
+                             "a/b.",
+                             "a/b ",
+                             "Types/CON",
+                             "Types/nul.tpl",
+                             "COM1",
+                             "lpt9.txt",
+                             "a\x01"
+                             "b",
+                             "x/.." })
         REQUIRE_FALSE(NormalizeZipEntryPath(bad).has_value());
     REQUIRE_FALSE(NormalizeZipEntryPath(std::string(600, 'a')).has_value());
     REQUIRE(NormalizeZipEntryPath("console.dll") == "console.dll"); // only exact device names are reserved
@@ -400,11 +424,12 @@ TEST_CASE("Update.ExtractRelease", "[update]")
 
     SECTION("unix layout: prefix stripped, user files skipped, manifest written")
     {
-        MakeZip(t.path / "r.zip",
-                { { "bin/Release/" + exe, "new-exe" },
-                  { "bin/Release/Types/libPE.tpl", "pe" },
-                  { "bin/Release/GView.ini", "user settings must not be shipped" },
-                  { "README.md", "outside the payload" } });
+        MakeZip(
+              t.path / "r.zip",
+              { { "bin/Release/" + exe, "new-exe" },
+                { "bin/Release/Types/libPE.tpl", "pe" },
+                { "bin/Release/GView.ini", "user settings must not be shipped" },
+                { "README.md", "outside the payload" } });
         const auto r = ExtractRelease(t.path / "r.zip", t.path / "staging", Version{ 1, 2, 3 }, progress, cancel);
         REQUIRE(r.ok);
         REQUIRE(r.files == std::vector<std::string>{ exe, "Types/libPE.tpl" });
@@ -483,9 +508,9 @@ struct ApplyFixture {
 
     ApplyFixture()
     {
-        target  = t.path / "install";
-        staging = target / ".update" / "staging-1.0.0";
-        old     = target / ".update" / "old-1.0.0";
+        target         = t.path / "install";
+        staging        = target / ".update" / "staging-1.0.0";
+        old            = target / ".update" / "old-1.0.0";
         const auto exe = ExeName();
         WriteFile(target / exe, "old-exe");
         WriteFile(target / "libGViewCore.dll", "old-core");

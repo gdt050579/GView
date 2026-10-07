@@ -164,16 +164,16 @@ int RunAndWait(const fs::path& executable, const std::vector<NativeString>& args
     posix_spawnattr_setsigdefault(&attr, &defaults);
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF);
 
-    struct sigaction ignore {}, oldInt{}, oldQuit{};
+    struct sigaction ignore{}, oldInt{}, oldQuit{};
     ignore.sa_handler = SIG_IGN;
     sigemptyset(&ignore.sa_mask);
     sigaction(SIGINT, &ignore, &oldInt);
     sigaction(SIGQUIT, &ignore, &oldQuit);
 
-    pid_t pid      = 0;
-    const int rc   = posix_spawn(&pid, executable.c_str(), nullptr, &attr, argv.data(), environ);
+    pid_t pid    = 0;
+    const int rc = posix_spawn(&pid, executable.c_str(), nullptr, &attr, argv.data(), environ);
     posix_spawnattr_destroy(&attr);
-    int result     = -1;
+    int result = -1;
     if (rc == 0) {
         int status = 0;
         while (waitpid(pid, &status, 0) < 0) {
@@ -256,9 +256,8 @@ int Execute()
 
     // 2. swap the files
     const auto oldDir = ChooseOldDir(p.installDir, p.version);
-    const int code    = RunAndWait(
-          helper,
-          { Arg("apply"), Arg("--staging"), p.stagingDir.native(), Arg("--target"), p.installDir.native(), Arg("--old"), oldDir.native() });
+    const int code =
+          RunAndWait(helper, { Arg("apply"), Arg("--staging"), p.stagingDir.native(), Arg("--target"), p.installDir.native(), Arg("--old"), oldDir.native() });
     fs::remove_all(*tempDir, ec);
 
     switch (code) {

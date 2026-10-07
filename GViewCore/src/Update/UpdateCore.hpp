@@ -15,8 +15,8 @@
 namespace GView::Update
 {
 // ------------------------------------------------------------------ limits
-constexpr size_t MAX_FEED_BYTES             = 1024 * 1024;               // GitHub releases JSON (10 releases ~ 60 KB)
-constexpr size_t MAX_MANIFEST_BYTES         = 64 * 1024;                 // SHA256SUMS
+constexpr size_t MAX_FEED_BYTES             = 1024 * 1024;                // GitHub releases JSON (10 releases ~ 60 KB)
+constexpr size_t MAX_MANIFEST_BYTES         = 64 * 1024;                  // SHA256SUMS
 constexpr uint64 MAX_ASSET_BYTES            = 512ull * 1024ull * 1024ull; // release zip
 constexpr uint64 MAX_EXTRACTED_BYTES        = 2048ull * 1024ull * 1024ull;
 constexpr uint32 MAX_ZIP_ENTRIES            = 10000;
@@ -69,7 +69,7 @@ struct ReleaseInfo {
     std::string publishedAt; // "YYYY-MM-DD" (empty when unknown)
     bool prerelease{ false };
     std::string assetName;
-    std::string assetUrl;    // https only
+    std::string assetUrl; // https only
     uint64 assetSize{ 0 };
     std::string checksumsUrl; // SHA256SUMS asset of the same release (empty when not published)
 };

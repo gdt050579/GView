@@ -62,8 +62,8 @@ namespace
     size_t Utf8SequenceLength(std::string_view s, size_t i) noexcept
     {
         const auto c = static_cast<uint8>(s[i]);
-        size_t len = 0;
-        uint32 cp  = 0;
+        size_t len   = 0;
+        uint32 cp    = 0;
         if (c < 0x80)
             return 1;
         if ((c & 0xE0) == 0xC0) {
@@ -427,7 +427,7 @@ std::string FlattenReleaseNotes(std::string_view markdown)
     std::string clean;
     clean.reserve(std::min(markdown.size(), MAX_NOTES_INPUT_BYTES));
     for (size_t i = 0; i < markdown.size() && clean.size() < MAX_NOTES_INPUT_BYTES;) {
-        const char c = markdown[i];
+        const char c   = markdown[i];
         const auto len = Utf8SequenceLength(markdown, i);
         if (len == 0) {
             clean.push_back('?');

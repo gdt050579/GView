@@ -80,8 +80,8 @@ namespace
     bool AutoAcceptForTests()
     {
 #    ifdef _MSC_VER
-        char* value = nullptr;
-        size_t len  = 0;
+        char* value   = nullptr;
+        size_t len    = 0;
         const bool on = _dupenv_s(&value, &len, "GVIEW_UPDATE_TEST_AUTOACCEPT") == 0 && value != nullptr && std::string_view(value) == "1";
         free(value);
         return on;
@@ -162,8 +162,8 @@ namespace
         p.proxy              = settings.proxy;
         p.includePreReleases = settings.includePreReleases;
         if (conditional) {
-            p.etag          = settings.etag;
-            const auto prev = Version::Parse(settings.cachedFeedVersion);
+            p.etag                   = settings.etag;
+            const auto prev          = Version::Parse(settings.cachedFeedVersion);
             p.refetchWhenNotModified = prev.has_value() && settings.ShouldNotify(*prev, CurrentVersion(), now);
         }
         return p;
@@ -306,7 +306,7 @@ namespace
             SaveSettings(settings);
         }
         const bool canInstall = CanWriteInstallDir(GViewExecutable().parent_path());
-        const auto choice = (AutoAcceptForTests() && canInstall) ? DialogChoice::Install : ShowUpdateDialog(release, canInstall, !manual);
+        const auto choice     = (AutoAcceptForTests() && canInstall) ? DialogChoice::Install : ShowUpdateDialog(release, canInstall, !manual);
         switch (choice) {
         case DialogChoice::Install:
             settings.OnNotified(release.version, now);
@@ -363,8 +363,8 @@ namespace Service
             return;
         }
         BusyGuard busy;
-        const auto now = Now();
-        auto settings  = UpdateSettings::Load(AppCUI::Application::GetAppSettings());
+        const auto now    = Now();
+        auto settings     = UpdateSettings::Load(AppCUI::Application::GetAppSettings());
         const auto params = ParamsFrom(settings, false, now);
 
         FetchOutcome outcome;
@@ -404,7 +404,7 @@ namespace Service
 
     void Shutdown() noexcept
     {
-        auto& s = S();
+        auto& s   = S();
         s.enabled = false;
         s.cancel.store(true);
         s.worker.Stop();

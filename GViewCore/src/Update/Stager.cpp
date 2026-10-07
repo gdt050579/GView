@@ -185,7 +185,7 @@ namespace
             return false;
         }
 #ifndef BUILD_FOR_WINDOWS
-        auto perms = fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read | fs::perms::others_read;
+        auto perms          = fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read | fs::perms::others_read;
         const auto fileName = dest.filename().string();
         if ((entry.unixMode & 0111u) != 0 || fileName == GVIEW_EXECUTABLE_NAME || fileName == UPDATER_EXECUTABLE_NAME)
             perms |= fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec;
@@ -274,7 +274,8 @@ std::string Sha256File(const fs::path& file, const std::atomic<bool>& cancel)
     return hex;
 }
 
-StageResult ExtractRelease(const fs::path& zipPath, const fs::path& stagingDir, const Version& version, StageProgress& progress, const std::atomic<bool>& cancel)
+StageResult ExtractRelease(
+      const fs::path& zipPath, const fs::path& stagingDir, const Version& version, StageProgress& progress, const std::atomic<bool>& cancel)
 {
     progress.phase.store(StagePhase::Extracting);
     ZipReader zip;
@@ -355,7 +356,8 @@ StageResult ExtractRelease(const fs::path& zipPath, const fs::path& stagingDir, 
     return result;
 }
 
-StageResult StageRelease(const ReleaseInfo& release, const fs::path& installDir, const UpdateSettings& settings, StageProgress& progress, const std::atomic<bool>& cancel)
+StageResult StageRelease(
+      const ReleaseInfo& release, const fs::path& installDir, const UpdateSettings& settings, StageProgress& progress, const std::atomic<bool>& cancel)
 {
     progress.phase.store(StagePhase::Preparing);
     const auto work = UpdateWorkDir(installDir);

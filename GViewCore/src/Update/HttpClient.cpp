@@ -97,7 +97,7 @@ namespace
 
     int ProgressCallback(void* userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t, curl_off_t) noexcept
     {
-        auto* sink = static_cast<Sink*>(userdata);
+        auto* sink      = static_cast<Sink*>(userdata);
         const auto* req = sink->request;
         if (req->cancel != nullptr && req->cancel->load(std::memory_order_acquire)) {
             sink->response->cancelled = true;
@@ -245,7 +245,7 @@ std::string HttpGetResponse::Describe() const
 
 std::string UserAgent()
 {
-    const auto p = Platform::Current();
+    const auto p   = Platform::Current();
     std::string ua = "GView/" GVIEW_VERSION " (";
     ua += (p.os == PlatformOS::Windows) ? "Windows" : (p.os == PlatformOS::MacOS ? "macOS" : "Linux");
     ua += "; ";

@@ -68,7 +68,6 @@ constexpr GViewMenuCommand menuHelpList[] = {
     { "&About", MenuCommands::ABOUT, Key::None },
 };
 
-
 bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
 {
     while (count > 0) {
