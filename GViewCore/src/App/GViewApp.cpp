@@ -8,6 +8,8 @@
 #ifdef GVIEW_ENABLE_REMOTE
 #    include "../Remote/RemoteConfig.hpp"
 #endif
+#include "../Update/Installer.hpp"
+#include "../Update/UpdateService.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -68,6 +70,23 @@ void GView::App::Run(std::string_view testing_script)
     }
     // learning session: final session_end + bounded telemetry flush, remove restrictions, wipe secrets
     GView::Security::Learning::Hooks::Shutdown();
+    // auto-updater: cancel a running background check (an accepted update is installed by FinishPendingUpdate)
+    GView::Update::Service::Shutdown();
+}
+int GView::App::FinishPendingUpdate()
+{
+    return GView::Update::Installer::Execute();
+}
+#ifdef BUILD_FOR_WINDOWS
+void GView::App::SetCommandLineArguments(int argc, const wchar_t** argv)
+#else
+void GView::App::SetCommandLineArguments(int argc, const char** argv)
+#endif
+{
+    std::vector<GView::Update::Installer::NativeString> args;
+    for (int i = 1; i < argc && argv != nullptr && argv[i] != nullptr; i++)
+        args.emplace_back(argv[i]);
+    GView::Update::Installer::SetRelaunchArguments(std::move(args));
 }
 bool GView::App::ResetConfiguration()
 {
@@ -120,6 +139,17 @@ bool GView::App::ResetConfiguration()
     // remote TUI (see docs/source/remote_protocol.rst)
     GView::Remote::WriteDefaultRemoteConfig(ini);
 #endif
+
+    // Auto-updater (see docs/source/updates.rst)
+    //   UpdateCheck              - daily background check for a newer GView release
+    //   UpdateIncludePreReleases - also offer GitHub pre-releases (every GView release so far is a pre-release)
+    //   UpdateFeedUrl            - GitHub "list releases" API URL (https only)
+    //   UpdateCheckIntervalHours - minimum delay between two automatic checks
+    //   UpdateRemindAfterDays    - "Remind me later" delay (0 = never remind about the same version again)
+    //   UpdateProxy              - optional proxy for the update requests (https_proxy is honoured as well)
+    //   UpdateLastCheck, UpdateLastSeenVersion, UpdateRemindAt, UpdateSkippedVersion, UpdateETag,
+    //   UpdateCachedFeedVersion  - state written by GView
+    GView::Update::UpdateSettings::WriteDefaults(ini);
 
     // key bindings: only the user changes are stored ([Keys.*] sections, written by the "Keyboard shortcuts" window).
     // A reset restores the built-in keys -> saving an empty registry removes every [Keys.*] section and the legacy
