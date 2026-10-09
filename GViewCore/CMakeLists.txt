@@ -125,6 +125,7 @@ include_directories(src/View/DissasmViewer)
 include_directories(src/View/TextViewer)
 include_directories(src/View/ContainerViewer)
 include_directories(src/View/LexicalViewer)
+include_directories(src/View/YaraViewer)
 add_subdirectory(src)
 
 

@@ -1,0 +1,5 @@
+warning: rule "Detect_IMUL_Instruction" in D:\MASTER\reverse\RepoTest\REVERSE_ENGINEERING-PROJECT\3rdPartyLibs\rules\Detect_Imul.yara(10): string "$imul_triple_with_byte" may slow down scanning
+Detect_IMUL_Instruction [] [description="Detecteaza instructiuni IMUL (x86)"] D:\MASTER\reverse\RepoTest\REVERSE_ENGINEERING-PROJECT\3rdPartyLibs\viruses\p12
+0x46b:$imul_standard_2ops: 0F AF 45 F8
+0x475:$imul_standard_2ops: 0F AF 4D F8
+0x479:$imul_triple_with_byte: 6B D1 03

@@ -198,6 +198,10 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     auto pe = win->GetObject()->GetContentType<PE::PEFile>();
     pe->Update();
 
+    GView::View::YaraViewer::Settings settings;
+    settings.SetAnalysisLevel(3);
+    win->CreateViewer(settings);
+
 #ifdef DISSASM_DEV
     CreateDissasmView(win, pe);
     CreateBufferView(win, pe);

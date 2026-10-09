@@ -1,0 +1,87 @@
+=== SCANNING RESULTS ===
+
+Summary:
+    Total Matches: 1
+    Status: INFECTED
+
+-------------------------------------------------------------
+Scanning with rule: Detect_Imul.yara
+    [WARNING] warning: rule "Detect_IMUL_Instruction" in
+        D:\reverse\project\REVERSE_ENGINEERING-PROJECT\3rdPartyLibs\rules\Detect_Imul.yara(10):
+        string "$imul_triple_with_byte" may slow down scanning
+    [MATCH] Rule: Detect_IMUL_Instruction
+        0x46b:$imul_standard_2ops: 0F AF 45 F8
+        At:
+           Hex Dump:
+           File offset: 0x46B
+           Section: .text
+               0x0000042b  CC CC CC CC CC 55 8B EC 5D C3 CC CC CC CC CC CC  .....U..].......
+               0x0000043b  CC CC CC CC CC 55 8B EC 83 EC 4C 53 56 57 B9 A2  .....U....LSVW..
+               0x0000044b  50 40 00 E8 B7 FF FF FF C7 45 FC 02 00 00 00 C7  P@.......E......
+               0x0000045b  45 F8 02 00 00 00 C7 45 F4 02 00 00 00 8B 45 FC  E......E......E.
+               0x0000046b  0F AF 45 F8 83 C0 02 8B 4D FC 0F AF 4D F8 6B D1  ..E.....M...M.k.
+               0x0000047b  03 3B C2 7D 14 8B 45 F4 83 E8 01 83 F8 05 7D 07  .;.}..E.......}.
+               0x0000048b  C7 45 F4 08 00 00 00 EB 1E 8B 45 F4 03 45 FC 03  .E........E..E..
+               0x0000049b  45 F8 83 F8 03 75 09 C7 45 F4 14 00 00 00 EB 07  E....u..E.......
+           Disassembly:
+               0x0000046b imul eax, dword ptr [rbp - 8]
+               0x0000046f add eax, 2
+               0x00000472 mov ecx, dword ptr [rbp - 4]
+               0x00000475 imul ecx, dword ptr [rbp - 8]
+               0x00000479 imul edx, ecx, 3
+               0x0000047c cmp eax, edx
+               0x0000047e jge 0x494
+               0x00000480 mov eax, dword ptr [rbp - 0xc]
+               0x00000483 sub eax, 1
+               0x00000486 cmp eax, 5
+               0x00000489 jge 0x492
+        0x475:$imul_standard_2ops: 0F AF 4D F8
+        At:
+           Hex Dump:
+           File offset: 0x475
+           Section: .text
+               0x00000435  CC CC CC CC CC CC CC CC CC CC CC 55 8B EC 83 EC  ...........U....
+               0x00000445  4C 53 56 57 B9 A2 50 40 00 E8 B7 FF FF FF C7 45  LSVW..P@.......E
+               0x00000455  FC 02 00 00 00 C7 45 F8 02 00 00 00 C7 45 F4 02  ......E......E..
+               0x00000465  00 00 00 8B 45 FC 0F AF 45 F8 83 C0 02 8B 4D FC  ....E...E.....M.
+               0x00000475  0F AF 4D F8 6B D1 03 3B C2 7D 14 8B 45 F4 83 E8  ..M.k..;.}..E...
+               0x00000485  01 83 F8 05 7D 07 C7 45 F4 08 00 00 00 EB 1E 8B  ....}..E........
+               0x00000495  45 F4 03 45 FC 03 45 F8 83 F8 03 75 09 C7 45 F4  E..E..E....u..E.
+               0x000004a5  14 00 00 00 EB 07 C7 45 F4 1E 00 00 00 8B 45 F4  .......E......E.
+           Disassembly:
+               0x00000475 imul ecx, dword ptr [rbp - 8]
+               0x00000479 imul edx, ecx, 3
+               0x0000047c cmp eax, edx
+               0x0000047e jge 0x494
+               0x00000480 mov eax, dword ptr [rbp - 0xc]
+               0x00000483 sub eax, 1
+               0x00000486 cmp eax, 5
+               0x00000489 jge 0x492
+               0x0000048b mov dword ptr [rbp - 0xc], 8
+               0x00000492 jmp 0x4b2
+        0x479:$imul_triple_with_byte: 6B D1 03
+        At:
+           Hex Dump:
+           File offset: 0x479
+           Section: .text
+               0x00000439  CC CC CC CC CC CC CC 55 8B EC 83 EC 4C 53 56 57  .......U....LSVW
+               0x00000449  B9 A2 50 40 00 E8 B7 FF FF FF C7 45 FC 02 00 00  ..P@.......E....
+               0x00000459  00 C7 45 F8 02 00 00 00 C7 45 F4 02 00 00 00 8B  ..E......E......
+               0x00000469  45 FC 0F AF 45 F8 83 C0 02 8B 4D FC 0F AF 4D F8  E...E.....M...M.
+               0x00000479  6B D1 03 3B C2 7D 14 8B 45 F4 83 E8 01 83 F8 05  k..;.}..E.......
+               0x00000489  7D 07 C7 45 F4 08 00 00 00 EB 1E 8B 45 F4 03 45  }..E........E..E
+               0x00000499  FC 03 45 F8 83 F8 03 75 09 C7 45 F4 14 00 00 00  ..E....u..E.....
+               0x000004a9  EB 07 C7 45 F4 1E 00 00 00 8B 45 F4 83 C0 02 89  ...E......E.....
+           Disassembly:
+               0x00000479 imul edx, ecx, 3
+               0x0000047c cmp eax, edx
+               0x0000047e jge 0x494
+               0x00000480 mov eax, dword ptr [rbp - 0xc]
+               0x00000483 sub eax, 1
+               0x00000486 cmp eax, 5
+               0x00000489 jge 0x492
+               0x0000048b mov dword ptr [rbp - 0xc], 8
+               0x00000492 jmp 0x4b2
+               0x00000494 mov eax, dword ptr [rbp - 0xc]
+
+=== SCAN COMPLETE ===
