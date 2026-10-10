@@ -121,6 +121,7 @@ endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
      add_compile_options(-Wall -Wextra
              -Wno-switch
+             -Wno-unused-parameter
              -Wpointer-arith
              -Wcast-qual
              -Wredundant-decls

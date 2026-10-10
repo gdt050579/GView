@@ -5,13 +5,13 @@
 
 namespace MAC
 {
-static void Swap(fat_header& obj)
+inline void Swap(fat_header& obj)
 {
     SwapEndianInplace(obj.magic);
     SwapEndianInplace(obj.nfat_arch);
 }
 
-static void Swap(fat_arch64& obj)
+inline void Swap(fat_arch64& obj)
 {
     SwapEndianInplace(obj.cputype);
     SwapEndianInplace(obj.cpusubtype);
@@ -21,7 +21,7 @@ static void Swap(fat_arch64& obj)
     SwapEndianInplace(obj.reserved);
 }
 
-static void Swap(fat_arch& obj)
+inline void Swap(fat_arch& obj)
 {
     SwapEndianInplace(obj.cputype);
     SwapEndianInplace(obj.cpusubtype);
@@ -30,7 +30,7 @@ static void Swap(fat_arch& obj)
     SwapEndianInplace(obj.align);
 }
 
-static void Swap(mach_header& obj)
+inline void Swap(mach_header& obj)
 {
     SwapEndianInplace(obj.magic);
     SwapEndianInplace(obj.cputype);
@@ -41,28 +41,13 @@ static void Swap(mach_header& obj)
     SwapEndianInplace(obj.flags);
 }
 
-static void Swap(load_command& obj)
+inline void Swap(load_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
 }
 
-static void Swap(segment_command& obj)
-{
-    SwapEndianInplace(obj.cmd);
-    SwapEndianInplace(obj.cmdsize);
-    SwapEndianInplace(obj.segname);
-    SwapEndianInplace(obj.vmaddr);
-    SwapEndianInplace(obj.vmsize);
-    SwapEndianInplace(obj.fileoff);
-    SwapEndianInplace(obj.filesize);
-    SwapEndianInplace(obj.maxprot);
-    SwapEndianInplace(obj.initprot);
-    SwapEndianInplace(obj.nsects);
-    SwapEndianInplace(obj.flags);
-}
-
-static void Swap(segment_command_64& obj)
+inline void Swap(segment_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
@@ -77,7 +62,22 @@ static void Swap(segment_command_64& obj)
     SwapEndianInplace(obj.flags);
 }
 
-static void Swap(section_64& obj)
+inline void Swap(segment_command_64& obj)
+{
+    SwapEndianInplace(obj.cmd);
+    SwapEndianInplace(obj.cmdsize);
+    SwapEndianInplace(obj.segname);
+    SwapEndianInplace(obj.vmaddr);
+    SwapEndianInplace(obj.vmsize);
+    SwapEndianInplace(obj.fileoff);
+    SwapEndianInplace(obj.filesize);
+    SwapEndianInplace(obj.maxprot);
+    SwapEndianInplace(obj.initprot);
+    SwapEndianInplace(obj.nsects);
+    SwapEndianInplace(obj.flags);
+}
+
+inline void Swap(section_64& obj)
 {
     SwapEndianInplace(obj.sectname);
     SwapEndianInplace(obj.segname);
@@ -93,7 +93,7 @@ static void Swap(section_64& obj)
     SwapEndianInplace(obj.reserved3);
 }
 
-static void Swap(section& obj)
+inline void Swap(section& obj)
 {
     SwapEndianInplace(obj.sectname);
     SwapEndianInplace(obj.segname);
@@ -108,7 +108,7 @@ static void Swap(section& obj)
     SwapEndianInplace(obj.reserved2);
 }
 
-static void Swap(dylib_mac& obj)
+inline void Swap(dylib_mac& obj)
 {
     SwapEndianInplace(obj.name.ptr);
     SwapEndianInplace(obj.name.offset);
@@ -117,14 +117,14 @@ static void Swap(dylib_mac& obj)
     SwapEndianInplace(obj.compatibility_version);
 }
 
-static void Swap(dylib_command& obj)
+inline void Swap(dylib_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
     Swap(obj.dylib);
 }
 
-static void Swap(entry_point_command& obj)
+inline void Swap(entry_point_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
@@ -132,7 +132,7 @@ static void Swap(entry_point_command& obj)
     SwapEndianInplace(obj.stacksize);
 }
 
-static void Swap(symtab_command& obj)
+inline void Swap(symtab_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
@@ -142,7 +142,7 @@ static void Swap(symtab_command& obj)
     SwapEndianInplace(obj.strsize);
 }
 
-static void Swap(nlist_64& obj)
+inline void Swap(nlist_64& obj)
 {
     SwapEndianInplace(obj.n_un.n_strx);
     SwapEndianInplace(obj.n_desc);
@@ -151,7 +151,7 @@ static void Swap(nlist_64& obj)
     SwapEndianInplace(obj.n_value);
 }
 
-static void Swap(nlist& obj)
+inline void Swap(nlist& obj)
 {
     SwapEndianInplace(obj.n_un.n_strx);
     SwapEndianInplace(obj.n_desc);
@@ -160,21 +160,21 @@ static void Swap(nlist& obj)
     SwapEndianInplace(obj.n_value);
 }
 
-static void Swap(source_version_command& obj)
+inline void Swap(source_version_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
     SwapEndianInplace(obj.version);
 }
 
-static void Swap(uuid_command& obj)
+inline void Swap(uuid_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
     SwapEndianInplace(obj.uuid);
 }
 
-static void Swap(linkedit_data_command& obj)
+inline void Swap(linkedit_data_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
@@ -182,20 +182,20 @@ static void Swap(linkedit_data_command& obj)
     SwapEndianInplace(obj.datasize);
 }
 
-static void Swap(CS_SuperBlob& obj)
+inline void Swap(CS_SuperBlob& obj)
 {
     SwapEndianInplace(obj.magic);
     SwapEndianInplace(obj.length);
     SwapEndianInplace(obj.count);
 }
 
-static void Swap(CS_BlobIndex& obj)
+inline void Swap(CS_BlobIndex& obj)
 {
     SwapEndianInplace(obj.type);
     SwapEndianInplace(obj.offset);
 }
 
-static void Swap(CS_CodeDirectory& obj)
+inline void Swap(CS_CodeDirectory& obj)
 {
     SwapEndianInplace(obj.magic);
     SwapEndianInplace(obj.length);
@@ -233,20 +233,20 @@ static void Swap(CS_CodeDirectory& obj)
     }
 }
 
-static void Swap(CS_RequirementsBlob& obj)
+inline void Swap(CS_RequirementsBlob& obj)
 {
     SwapEndianInplace(obj.magic);
     SwapEndianInplace(obj.length);
     SwapEndianInplace(obj.data);
 }
 
-static void Swap(CS_GenericBlob& obj)
+inline void Swap(CS_GenericBlob& obj)
 {
     SwapEndianInplace(obj.magic);
     SwapEndianInplace(obj.length);
 }
 
-static void Swap(version_min_command& obj)
+inline void Swap(version_min_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
@@ -254,7 +254,7 @@ static void Swap(version_min_command& obj)
     SwapEndianInplace(obj.sdk);
 }
 
-static void Swap(dyld_info_command& obj)
+inline void Swap(dyld_info_command& obj)
 {
     SwapEndianInplace(obj.cmd);
     SwapEndianInplace(obj.cmdsize);
@@ -270,7 +270,7 @@ static void Swap(dyld_info_command& obj)
     SwapEndianInplace(obj.export_size);
 }
 
-static void Swap(i386_thread_state_t& obj)
+inline void Swap(i386_thread_state_t& obj)
 {
     SwapEndianInplace(obj.eax);
     SwapEndianInplace(obj.ebx);
@@ -290,7 +290,7 @@ static void Swap(i386_thread_state_t& obj)
     SwapEndianInplace(obj.gs);
 }
 
-static void Swap(x86_thread_state64_t& obj)
+inline void Swap(x86_thread_state64_t& obj)
 {
     SwapEndianInplace(obj.rax);
     SwapEndianInplace(obj.rbx);
@@ -315,7 +315,7 @@ static void Swap(x86_thread_state64_t& obj)
     SwapEndianInplace(obj.gs);
 }
 
-static void Swap(ppc_thread_state_t& obj)
+inline void Swap(ppc_thread_state_t& obj)
 {
     SwapEndianInplace(obj.srr0);
     SwapEndianInplace(obj.srr1);
@@ -328,7 +328,7 @@ static void Swap(ppc_thread_state_t& obj)
     SwapEndianInplace(obj.vrsave);
 }
 
-static void Swap(ppc_thread_state64_t& obj)
+inline void Swap(ppc_thread_state64_t& obj)
 {
     SwapEndianInplace(obj.srr0);
     SwapEndianInplace(obj.srr1);

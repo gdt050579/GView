@@ -1,4 +1,4 @@
-﻿#include "Prefetch.hpp"
+#include "Prefetch.hpp"
 
 using namespace GView::Type::Prefetch;
 
@@ -276,13 +276,13 @@ GView::Utils::JsonBuilderInterface* PrefetchFile::GetSmartAssistantContext(const
 
 bool PrefetchFile::UpdateSectionArea()
 {
-    const auto end  = area.sectionC.offset + area.sectionC.length;
-    const auto diff = area.sectionD.offset - end;
+    const auto end     = area.sectionC.offset + area.sectionC.length;
+    const auto lengthC = (area.sectionD.offset < end) ? area.sectionC.length : (area.sectionC.length + (area.sectionD.offset - end));
 
     CHECK(SetEntries(
                 area.sectionA.entries * (uint32) FileMetricsSizes.at(header.version),
                 area.sectionB.entries * (uint32) TraceChainEntrySizes.at(header.version),
-                (uint32) (diff < 0 ? area.sectionC.length : area.sectionC.length + diff)),
+                static_cast<uint32>(lengthC)),
           false,
           "");
 

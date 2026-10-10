@@ -388,7 +388,7 @@ void Instance::AddComment()
     }
 
     uint32 startingLine = zonesFound[0].startingLine;
-    if (startingLine == 0 || startingLine == 1 || Cursor.startViewLine >= startingLine && Cursor.lineInView == 0) {
+    if (startingLine == 0 || startingLine == 1 || (Cursor.startViewLine >= startingLine && Cursor.lineInView == 0)) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
     }

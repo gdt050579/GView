@@ -1,6 +1,7 @@
 #include "BufferViewer.hpp"
 
 #include <algorithm>
+#include <bit>
 
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
@@ -41,7 +42,9 @@ bool DefaultAsciiMask[256] = {
 Config Instance::config;
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : obj(_obj), settings(nullptr), ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+    : ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl),
+      settings(nullptr),
+      obj(_obj)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
 
@@ -439,16 +442,16 @@ void Instance::UpdateStringInfo(uint64 offset)
 
     // check for unicode
     if (this->StringInfo.showUnicode) {
-        auto* s = (char16*) buf.GetData();
-        auto* e = s + buf.GetLength() / 2;
+        const auto* s = (const char16*) buf.GetData();
+        const auto* e = s + buf.GetLength() / 2;
         if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s])) {
             while ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - (char16*) buf.GetData() >= StringInfo.minCount) {
+            if (s - (const char16*) buf.GetData() >= StringInfo.minCount) {
                 // ascii string found
                 StringInfo.start  = offset;
                 StringInfo.end    = offset + ((const uint8*) s - buf.GetData());
-                StringInfo.middle = offset + (s - (char16*) buf.GetData());
+                StringInfo.middle = offset + (s - (const char16*) buf.GetData());
                 StringInfo.type   = StringType::Unicode;
                 return;
             }
@@ -1674,7 +1677,7 @@ int Instance::Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffe
         r.WriteSingleLineText(x, 0, "Hex:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 1, "I32:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x + 4, 0, n.ToString(v_u32, fmt), this->CursorColors.Normal);
-        r.WriteSingleLineText(x + 4, 1, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 1, n.ToString(static_cast<int32>(v_u32), fmtDec), this->CursorColors.Normal);
         if (height >= 3) {
             r.WriteSingleLineText(x, 2, "U32:", this->CursorColors.Highlighted);
             r.WriteSingleLineText(x + 4, 2, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);
@@ -1682,7 +1685,7 @@ int Instance::Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffe
         if (height >= 4) {
             r.WriteSingleLineText(x, 3, "Flt:", this->CursorColors.Highlighted);
             LocalString<32> tmp;
-            tmp.SetFormat("%f", *(const float*) (&v_u32));
+            tmp.SetFormat("%f", std::bit_cast<float>(v_u32));
             if (tmp.Len() > 16)
                 tmp.Truncate(16);
             r.WriteSingleLineText(x + 4, 3, tmp, this->CursorColors.Normal);
@@ -1710,7 +1713,7 @@ int Instance::Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buf
         r.WriteSingleLineText(x, 1, "I32 (BE):", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 2, "U32 (BE):", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x + 9, 0, n.ToString(v_u32, fmt), this->CursorColors.Normal);
-        r.WriteSingleLineText(x + 9, 1, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 9, 1, n.ToString(static_cast<int32>(v_u32), fmtDec), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 9, 2, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);
         r.DrawVerticalLine(x + 27, 0, 2, this->CursorColors.Line);
         return x + 28;
@@ -1721,7 +1724,7 @@ int Instance::Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buf
         r.WriteSingleLineText(x, 2, "I32:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 3, "U32:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x + 4, 1, n.ToString(v_u32, fmt), this->CursorColors.Normal);
-        r.WriteSingleLineText(x + 4, 2, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 2, n.ToString(static_cast<int32>(v_u32), fmtDec), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 3, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);
         r.DrawVerticalLine(x + 20, 0, 3, this->CursorColors.Line);
         return x + 23;

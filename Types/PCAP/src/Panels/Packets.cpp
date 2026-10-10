@@ -101,13 +101,13 @@ void Packets::PacketDialog::Add_PacketHeader(LinkType type, const PacketHeader* 
     packetData.packet     = packet;
     if (type == LinkType::ETHERNET)
     {
-        auto peh = (Package_EthernetHeader*) ((uint8*) packet + sizeof(PacketHeader));
+        auto peh = (const Package_EthernetHeader*) ((const uint8*) packet + sizeof(PacketHeader));
         packetData.physicalLayer = { LinkType::ETHERNET, peh };
         Add_Package_EthernetHeader(&packetData, peh, packet->inclLen);
     }
     if (type == LinkType::NULL_)
     {
-        auto pnh = (Package_NullHeader*) ((uint8*) packet + sizeof(PacketHeader));
+        auto pnh = (const Package_NullHeader*) ((const uint8*) packet + sizeof(PacketHeader));
         packetData.physicalLayer = { LinkType::NULL_, pnh };
         Add_Package_NullHeader(&packetData, pnh, packet->inclLen);
     }
@@ -121,8 +121,8 @@ void Packets::PacketDialog::Add_Package_EthernetHeader(PacketData* packetData, c
     auto pehRef = *peh;
     Swap(pehRef);
 
-    MAC etherDHost{ 0 };
-    MAC etherSHost{ 0 };
+    MAC etherDHost{};
+    MAC etherSHost{};
     memcpy(&etherDHost, pehRef.etherDhost, 6);
     memcpy(&etherSHost, pehRef.etherShost, 6);
 
@@ -137,13 +137,13 @@ void Packets::PacketDialog::Add_Package_EthernetHeader(PacketData* packetData, c
     list->AddItem(etherTypeName).SetType(ListViewItem::Type::Category);
     if (etherType == EtherType::IPv4)
     {
-        auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
+        auto ipv4 = (const IPv4Header*) ((const uint8*) peh + sizeof(Package_EthernetHeader));
         packetData->linkLayer = { LinkType::IPV4, ipv4 };
         Add_IPv4Header(packetData, ipv4, packetInclLen - sizeof(Package_EthernetHeader));
     }
     else if (etherType == EtherType::IPv6)
     {
-        auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
+        auto ipv6 = (const IPv6Header*) ((const uint8*) peh + sizeof(Package_EthernetHeader));
         packetData->linkLayer = { LinkType::IPV6, ipv6 };
         Add_IPv6Header(packetData, ipv6, packetInclLen - sizeof(Package_EthernetHeader));
     }
@@ -156,7 +156,7 @@ void Packets::PacketDialog::Add_Package_NullHeader(PacketData* packetData, const
     {
         list->AddItem({ "Family: IP ", tmp.Format("%u", pnh->family_ip) });
         list->AddItem("IPv4").SetType(ListViewItem::Type::Category);
-        auto ipv4 = (IPv4Header*) ((uint8*) pnh + sizeof(Package_NullHeader));
+        auto ipv4 = (const IPv4Header*) ((const uint8*) pnh + sizeof(Package_NullHeader));
         packetData->linkLayer = { LinkType::IPV4, ipv4 };
         Add_IPv4Header(packetData, ipv4, packetInclLen - sizeof(Package_NullHeader));
     }
@@ -219,19 +219,19 @@ void Packets::PacketDialog::Add_IPv4Header(PacketData* packetData, const IPv4Hea
     list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
     if (ipv4Ref.protocol == IP_Protocol::TCP)
     {
-        auto tcp = (TCPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
+        auto tcp = (const TCPHeader*) ((const uint8*) ipv4 + sizeof(IPv4Header));
         packetData->transportLayer = { IP_Protocol::TCP, tcp };
         Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv4Header));
     }
     else if (ipv4Ref.protocol == IP_Protocol::UDP)
     {
-        auto udp = (UDPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
+        auto udp = (const UDPHeader*) ((const uint8*) ipv4 + sizeof(IPv4Header));
         packetData->transportLayer = { IP_Protocol::UDP, udp };
         Add_UDPHeader(packetData, udp);
     }
     else if (ipv4Ref.protocol == IP_Protocol::ICMP)
     {
-        auto icmpBase = (ICMPHeader_Base*) ((uint8*) ipv4 + sizeof(IPv4Header));
+        auto icmpBase = (const ICMPHeader_Base*) ((const uint8*) ipv4 + sizeof(IPv4Header));
         // TODO: fix this later!!
         packetData->transportLayer = { IP_Protocol::ICMP, icmpBase };
         Add_ICMPHeader(packetData, icmpBase, packetInclLen - sizeof(Package_EthernetHeader) - sizeof(IPv4Header));
@@ -271,13 +271,13 @@ void Packets::PacketDialog::Add_IPv6Header(PacketData* packetData, const IPv6Hea
     list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
     if (ipv6Ref.nextHeader == IP_Protocol::TCP)
     {
-        auto tcp = (TCPHeader*) ((uint8*) ipv6 + sizeof(IPv6Header));
+        auto tcp = (const TCPHeader*) ((const uint8*) ipv6 + sizeof(IPv6Header));
         packetData->transportLayer = { IP_Protocol::TCP, tcp };
         Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv6Header));
     }
     else if (ipv6Ref.nextHeader == IP_Protocol::UDP)
     {
-        auto udp = (UDPHeader*) ((uint8*) ipv6 + sizeof(IPv6Header));
+        auto udp = (const UDPHeader*) ((const uint8*) ipv6 + sizeof(IPv6Header));
         packetData->transportLayer = { IP_Protocol::UDP, udp };
         Add_UDPHeader(packetData, udp);
     }
@@ -300,7 +300,7 @@ void Packets::PacketDialog::Add_UDPHeader(PacketData* packetData, const UDPHeade
     if (udpRef.destPort == 53)
     {
         list->AddItem("DNS").SetType(ListViewItem::Type::Category);
-        auto dns = (DNSHeader*) ((uint8*) udp + sizeof(UDPHeader));
+        auto dns = (const DNSHeader*) ((const uint8*) udp + sizeof(UDPHeader));
         Add_DNSHeader(packetData, dns);
     }
     else
@@ -366,7 +366,7 @@ void Packets::PacketDialog::Add_DNSHeader(PacketData* packetData, const DNSHeade
     list->AddItem({ "Authority Entries #", tmp.Format("%s", GetValue(n, dnsRef.nscount).data()) });
     list->AddItem({ "Resource Entries #", tmp.Format("%s", GetValue(n, dnsRef.arcount).data()) });
 
-    const auto start = (uint8*) dns + sizeof(DNSHeader);
+    const auto start = (const uint8*) dns + sizeof(DNSHeader);
     uint16 offset    = 0;
     for (uint16 i = 0; i < dnsRef.qdcount; i++)
     {
@@ -426,7 +426,7 @@ void Packets::PacketDialog::Add_ICMPHeader(PacketData* packetData, const ICMPHea
     case ICMPHeader_Type::EchoReply:
     case ICMPHeader_Type::Echo:
     {
-        auto icmp8 = *(ICMPHeader_8*) icmpBase;
+        auto icmp8 = *(const ICMPHeader_8*) icmpBase;
         Swap(icmp8);
 
         list->AddItem({ "Identifier", tmp.Format("%s", GetValue(n, icmp8.identifier).data()) });
@@ -443,7 +443,7 @@ void Packets::PacketDialog::Add_ICMPHeader(PacketData* packetData, const ICMPHea
     break;
     case ICMPHeader_Type::Redirect:
     {
-        auto icmp5 = *(ICMPHeader_5*) icmpBase;
+        auto icmp5 = *(const ICMPHeader_5*) icmpBase;
         Swap(icmp5);
 
         const auto& codeName = PCAP::ICMPHeader_Code5Names.at((ICMPHeader_Code5) icmp5.base.code).data();
@@ -467,7 +467,7 @@ void Packets::PacketDialog::Add_ICMPHeader(PacketData* packetData, const ICMPHea
     break;
     case ICMPHeader_Type::ParameterProblem:
     {
-        auto icmp12 = *(ICMPHeader_12*) icmpBase;
+        auto icmp12 = *(const ICMPHeader_12*) icmpBase;
         Swap(icmp12);
 
         const auto& codeName = PCAP::ICMPHeader_Code12Names.at((ICMPHeader_Code12) icmp12.base.code).data();
@@ -480,7 +480,7 @@ void Packets::PacketDialog::Add_ICMPHeader(PacketData* packetData, const ICMPHea
     case ICMPHeader_Type::Timestamp:
     case ICMPHeader_Type::TimestampReply:
     {
-        auto icmp13_14 = *(ICMPHeader_13_14*) icmpBase;
+        auto icmp13_14 = *(const ICMPHeader_13_14*) icmpBase;
         Swap(icmp13_14);
 
         list->AddItem({ "Code", tmp.Format("%s", GetValue(n, icmp13_14.base.base.code).data()) });
@@ -495,7 +495,7 @@ void Packets::PacketDialog::Add_ICMPHeader(PacketData* packetData, const ICMPHea
     case ICMPHeader_Type::InformationRequest:
     case ICMPHeader_Type::InformationReply:
     {
-        auto icmp15_16 = *(ICMPHeader_8*) icmpBase;
+        auto icmp15_16 = *(const ICMPHeader_8*) icmpBase;
         Swap(icmp15_16);
 
         list->AddItem({ "Code", tmp.Format("%s", GetValue(n, icmp15_16.base.code).data()) });
@@ -602,7 +602,7 @@ void Packets::PacketDialog::Add_TCPHeader(PacketData* packetData, const TCPHeade
     if (tcp_header_len < sizeof(TCPHeader))
         return; // err: TODO improve this later
 
-    uint8* data_ptr = ((uint8*) tcp + sizeof(TCPHeader));
+    const uint8* data_ptr = ((const uint8*) tcp + sizeof(TCPHeader));
     if (options_len > 0)
     {
         Add_TCPHeader_Options(data_ptr, options_len);
@@ -625,10 +625,10 @@ void Packets::PacketDialog::Add_TCPHeader_Options(const uint8* optionsPtr, uint3
     auto options   = optionsPtr;
     const auto end = options + optionsLen;
     auto kind      = TCPHeader_OptionsKind::EndOfOptionsList;
-    auto option    = (TCPHeader_Options*) options;
+    auto option    = (const TCPHeader_Options*) options;
     do
     {
-        option               = (TCPHeader_Options*) options;
+        option               = (const TCPHeader_Options*) options;
         kind                 = option->kind;
         const char* kindName = "not_mapped";
         const auto foundName = TCPHeader_OptionsKindNames.find(kind);
@@ -643,40 +643,40 @@ void Packets::PacketDialog::Add_TCPHeader_Options(const uint8* optionsPtr, uint3
             list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, 1).data()) });
             break;
         case TCPHeader_OptionsKind::NoOperation:
-            options = ((uint8*) options + 1);
+            options = options + 1;
             list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, 1).data()) });
             break;
         case TCPHeader_OptionsKind::MaximumSegmentSize:
-            options = ((uint8*) options + option->length);
+            options = options + option->length;
             list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
-            list->AddItem({ "Option: MSS", tmp.Format("%s", GetValue(n, BigToNative(*(uint16*) ((uint8*) option + 2))).data()) });
+            list->AddItem({ "Option: MSS", tmp.Format("%s", GetValue(n, BigToNative(*(const uint16*) ((const uint8*) option + 2))).data()) });
             break;
         case TCPHeader_OptionsKind::WindowScale:
-            options = ((uint8*) options + option->length);
+            options = options + option->length;
             list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
             break;
         case TCPHeader_OptionsKind::SelectiveAcknowledgementPermitted:
-            options = ((uint8*) options + option->length);
+            options = options + option->length;
             list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
             break;
         case TCPHeader_OptionsKind::SACK:
-            options = ((uint8*) options + option->length);
+            options = options + option->length;
             list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
             break;
         case TCPHeader_OptionsKind::TimestampAndEchoOfPreviousTimestamp:
-            options = ((uint8*) options + option->length);
+            options = options + option->length;
             list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
             break;
         case TCPHeader_OptionsKind::TimestampOption:
-            options = ((uint8*) options + option->length);
+            options = options + option->length;
             list->AddItem({ "Option: TimeStamp", tmp.Format("%s", GetValue(n, option->length).data()) });
             break;
         default:
-            options = ((uint8*) options + option->length);
+            options = options + option->length;
             list->AddItem({ "Option: not_mapped" });
             break;
         }
-    } while (kind != TCPHeader_OptionsKind::EndOfOptionsList && (uint8*) option + option->length < end);
+    } while (kind != TCPHeader_OptionsKind::EndOfOptionsList && (const uint8*) option + option->length < end);
 }
 
 Panels::Packets::PacketDialog::PacketDialog(

@@ -62,8 +62,8 @@ void SymTab::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+    [[maybe_unused]] static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+    [[maybe_unused]] static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
     for (auto i = 0U; i < std::min<>(machO->dySymTab->sc.nsyms, static_cast<uint32>(machO->dySymTab->objects.size())); i++)
     {
@@ -77,13 +77,14 @@ void SymTab::Update()
         std::string _1s;
         std::string _2s;
 
-        if ((nl.n_type & (uint32) MAC::N_TYPE::TYPE) == 1)
+        const auto typeBits = static_cast<MAC::N_TYPE_BITS>(nl.n_type & static_cast<uint32>(MAC::N_TYPE::TYPE));
+        if (const auto it = MAC::NTypeBitsNames.find(typeBits); it != MAC::NTypeBitsNames.end())
         {
-            _1s = MAC::NTypeNames.at((MAC::N_TYPE)(nl.n_type & (uint32) MAC::N_TYPE::TYPE));
+            _1s = it->second;
         }
-        else
+        else if (const auto it2 = MAC::NTypeNames.find(static_cast<MAC::N_TYPE>(nl.n_type & static_cast<uint32>(MAC::N_TYPE::TYPE))); it2 != MAC::NTypeNames.end())
         {
-            _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS)(nl.n_type & (uint32) MAC::N_TYPE::TYPE));
+            _1s = it2->second;
         }
 
         if (nl.n_type & (uint32) MAC::N_TYPE::STAB)

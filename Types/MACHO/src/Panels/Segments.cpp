@@ -64,7 +64,7 @@ void Panels::Segments::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    uint32_t i = 0;
+    [[maybe_unused]] uint32_t i = 0;
     for (const auto& s : machO->segments)
     {
         auto item = list->AddItem(s.segname); // name

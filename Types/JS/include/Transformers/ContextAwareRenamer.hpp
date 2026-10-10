@@ -31,20 +31,20 @@ class ContextAwareRenamer : public AST::Plugin
 
     ContextAwareRenamer();
 
-    AST::Action OnEnterFunDecl(AST::FunDecl* node, AST::Decl*& replacement);
-    AST::Action OnExitFunDecl(AST::FunDecl* node, AST::Decl*& replacement);
+    virtual AST::Action OnEnterFunDecl(AST::FunDecl* node, AST::Decl*& replacement) override;
+    virtual AST::Action OnExitFunDecl(AST::FunDecl* node, AST::Decl*& replacement) override;
 
-    AST::Action OnExitVarDecl(AST::VarDecl* node, AST::Decl*& replacement);
-    AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement);
-    AST::Action OnEnterBinop(AST::Binop* node, AST::Expr*& replacement);
-    AST::Action OnEnterBlock(AST::Block* node, AST::Block*& replacement);
+    virtual AST::Action OnExitVarDecl(AST::VarDecl* node, AST::Decl*& replacement) override;
+    virtual AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement) override;
+    virtual AST::Action OnEnterBinop(AST::Binop* node, AST::Expr*& replacement) override;
+    virtual AST::Action OnEnterBlock(AST::Block* node, AST::Block*& replacement) override;
 
-    AST::Action OnExitBlock(AST::Block* node, AST::Block*& replacement);
+    virtual AST::Action OnExitBlock(AST::Block* node, AST::Block*& replacement) override;
 
-    AST::Action OnEnterWhileStmt(AST::WhileStmt* node, AST::Stmt*& replacement);
-    AST::Action OnEnterForStmt(AST::ForStmt* node, AST::Stmt*& replacement);
-    AST::Action OnEnterReturnStmt(AST::ReturnStmt* node, AST::Stmt*& replacement);
-    AST::Action OnEnterExprStmt(AST::ExprStmt* node, AST::Stmt*& replacement);
+    virtual AST::Action OnEnterWhileStmt(AST::WhileStmt* node, AST::Stmt*& replacement) override;
+    virtual AST::Action OnEnterForStmt(AST::ForStmt* node, AST::Stmt*& replacement) override;
+    virtual AST::Action OnEnterReturnStmt(AST::ReturnStmt* node, AST::Stmt*& replacement) override;
+    virtual AST::Action OnEnterExprStmt(AST::ExprStmt* node, AST::Stmt*& replacement) override;
 
     virtual AST::Action OnExitIfStmt(AST::IfStmt* node, AST::Stmt*& replacement) override;
     virtual AST::Action OnExitWhileStmt(AST::WhileStmt* node, AST::Stmt*& replacement) override;
@@ -68,8 +68,8 @@ class ContextAwareLateRenamer : public AST::Plugin
   public:
     ContextAwareLateRenamer(std::unordered_map<AST::Node*, std::u16string>& lateReferences);
 
-    AST::Action OnExitVarDecl(AST::VarDecl* node, AST::Decl*& replacement);
+    virtual AST::Action OnExitVarDecl(AST::VarDecl* node, AST::Decl*& replacement) override;
 
-    AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement);
+    virtual AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement) override;
 };
 } // namespace GView::Type::JS::Transformer

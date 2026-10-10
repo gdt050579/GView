@@ -4,7 +4,7 @@ using namespace GView::Type::SQLite;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-const auto BTN_ID_OK             = 0;
+[[maybe_unused]] const auto BTN_ID_OK             = 0;
 constexpr uint32 SQL_SHOW_DIALOG = 1;
 
 Panels::Information::Information(Reference<GView::Type::SQLite::SQLiteFile> _sqlite) : TabPage("&Tables")
@@ -38,8 +38,8 @@ void Panels::Information::UpdateTablesInfo()
             columnName.Add(columnMetadata[0]);
             columnType.Add(columnMetadata[1]);
             defaultValue.Add(columnMetadata[3]);
-            isPk.Add(columnMetadata[4] == "1" ? "YES" : "NO");
-            isUnique.Add(columnMetadata[2] == "1" ? "YES" : "NO");
+            isPk.Add(columnMetadata[4].Equals("1") ? "YES" : "NO");
+            isUnique.Add(columnMetadata[2].Equals("1") ? "YES" : "NO");
             general->AddItem({ columnName, columnType, isPk, isUnique, defaultValue });
         }
     }

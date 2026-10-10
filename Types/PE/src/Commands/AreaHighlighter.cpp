@@ -218,6 +218,7 @@ bool AreaHighlighter::OnEvent(Reference<Control>, Event evnt, int controlID)
         default:
             break;
         }
+        return false;
     default:
         return false;
     }

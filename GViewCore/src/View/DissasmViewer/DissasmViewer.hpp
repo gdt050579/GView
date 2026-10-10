@@ -86,15 +86,21 @@ namespace View
         };
 
         struct DissasmStructureType {
-            InternalDissasmType primaryType;
-            std::string_view name;
+            InternalDissasmType primaryType{ InternalDissasmType::CustomTypesStartingId };
+            std::string_view name{};
 
-            uint32 secondaryType;
-            uint32 width;
-            uint32 height;
+            uint32 secondaryType{ 0 };
+            uint32 width{ 0 };
+            uint32 height{ 0 };
 
-            std::vector<DissasmStructureType> internalTypes;
+            std::vector<DissasmStructureType> internalTypes{};
             uint32 GetExpandedSize() const;
+
+            DissasmStructureType() = default;
+            DissasmStructureType(InternalDissasmType primary, std::string_view name, uint32 secondary = 0, uint32 width = 0, uint32 height = 0)
+                : primaryType(primary), name(name), secondaryType(secondary), width(width), height(height)
+            {
+            }
         };
 
         enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone };

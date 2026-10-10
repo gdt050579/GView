@@ -412,7 +412,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest UnrollLoop::Execute(GView::
 //    auto index = start;
 //    AppCUI::uint32 type;
 //
-//#define ADVANCE()                                                                                                                                              \
+//#define ADVANCE()
 //    do {                                                                                                                                                       \
 //        ++index;                                                                                                                                               \
 //        if (index >= data.tokens.Len()) {                                                                                                                      \
@@ -422,7 +422,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest UnrollLoop::Execute(GView::
 //    } while (false)
 //    // ADVANCE
 //
-//#define EXPECT(typ)                                                                                                                                            \
+//#define EXPECT(typ)
 //    do {                                                                                                                                                       \
 //        if (type != TokenType::typ) {                                                                                                                          \
 //            return PluginAfterActionRequest::None;                                                                                                             \

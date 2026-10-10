@@ -14,13 +14,13 @@ namespace Panels
 class ByteStream
 {
   private:
-    void* ptr;
+    const void* ptr;
     size_t size;
     size_t cursor;
 
   public:
-    ByteStream(void* ptr, size_t size) : ptr(ptr), size(size), cursor(0){};
-    ByteStream(BufferView view) : ptr((void*) view.GetData()), size(view.GetLength()), cursor(0){};
+    ByteStream(const void* ptr, size_t size) : ptr(ptr), size(size), cursor(0){};
+    ByteStream(BufferView view) : ptr(view.GetData()), size(view.GetLength()), cursor(0){};
 
     BufferView Read(size_t count);
     template <typename T>
@@ -30,7 +30,8 @@ class ByteStream
         if (cursor + count > size) {
             count = size - cursor;
         }
-        T value = *(T*) ((uint8*) ptr + cursor);
+        T value{};
+        std::memcpy(&value, (const uint8*) ptr + cursor, count);
         cursor += count;
         return value;
     }

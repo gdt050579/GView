@@ -245,7 +245,7 @@ namespace Type
 
             inline bool IsClassicKeyword(uint32 tokenType)
             {
-                return (tokenType >= 0 && tokenType <= 100);
+                return tokenType <= 100;
             }
 
         } // namespace TokenType

@@ -72,7 +72,7 @@ class LNKFile : public TypeInterface
 
 namespace Panels
 {
-    static ListViewItem AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, MyGUID& guid)
+    inline ListViewItem AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, MyGUID& guid)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 

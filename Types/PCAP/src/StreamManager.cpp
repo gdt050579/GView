@@ -32,13 +32,13 @@ void StreamManager::Add_Package_EthernetHeader(PacketData* packetData, const Pac
     const auto etherType = PCAP::GetEtherType(pehRef.etherType);
     if (etherType == EtherType::IPv4)
     {
-        auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
+        auto ipv4 = (const IPv4Header*) ((const uint8*) peh + sizeof(Package_EthernetHeader));
         packetData->linkLayer = { LinkType::IPV4, ipv4 };
         Add_IPv4Header(packetData, ipv4, length - sizeof(Package_EthernetHeader), packet);
     }
     else if (etherType == EtherType::IPv6)
     {
-        auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
+        auto ipv6 = (const IPv6Header*) ((const uint8*) peh + sizeof(Package_EthernetHeader));
         packetData->linkLayer = { LinkType::IPV6, ipv6 };
         Add_IPv6Header(packetData, ipv6, length - sizeof(Package_EthernetHeader), packet);
     }
@@ -48,7 +48,7 @@ void StreamManager::Add_Package_NullHeader(PacketData* packetData, const Package
 {
     if (pnh->family_ip == NULL_FAMILY_IP)
     {
-        auto ipv4 = (IPv4Header*) ((uint8*) pnh + sizeof(Package_NullHeader));
+        auto ipv4 = (const IPv4Header*) ((const uint8*) pnh + sizeof(Package_NullHeader));
         packetData->linkLayer = { LinkType::IPV4, ipv4 };
         Add_IPv4Header(packetData, ipv4, length - sizeof(Package_NullHeader), packet);
     }
@@ -58,7 +58,7 @@ void StreamManager::Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv
 {
     if (ipv4->protocol == IP_Protocol::TCP)
     {
-        auto tcp = (TCPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
+        auto tcp = (const TCPHeader*) ((const uint8*) ipv4 + sizeof(IPv4Header));
         packetData->transportLayer = { IP_Protocol::TCP, tcp };
         Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv4Header), ipv4, static_cast<uint32>(EtherType::IPv4), packet);
     }
@@ -74,7 +74,7 @@ void StreamManager::Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv
 {
     if (ipv6->nextHeader == IP_Protocol::TCP)
     {
-        auto tcp = (TCPHeader*) ((uint8*) ipv6 + sizeof(IPv4Header));
+        auto tcp = (const TCPHeader*) ((const uint8*) ipv6 + sizeof(IPv4Header));
         packetData->transportLayer = { IP_Protocol::TCP, tcp };
         Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv6Header), ipv6, static_cast<uint32>(EtherType::IPv6), packet);
     }
@@ -138,7 +138,7 @@ void StreamManager::Add_TCPHeader(
     if (packetInclLen > tcp_header_len)
     {
         payload.size     = static_cast<uint32>(packetInclLen) - tcp_header_len;
-        payload.location = ((uint8*) tcp + sizeof(TCPHeader) + options_len);
+        payload.location = ((const uint8*) tcp + sizeof(TCPHeader) + options_len);
     }
 
     srcPort.Format("%s", n.ToString(tcpRef.sPort, { NumericFormatFlags::None, 10, 3, '.' }).data());
@@ -215,13 +215,13 @@ void StreamManager::AddPacket(const PacketHeader* packet, LinkType network)
     packetData.packet     = packet;
     if (network == LinkType::ETHERNET)
     {
-        auto peh = (Package_EthernetHeader*) ((uint8*) packet + sizeof(PacketHeader));
+        auto peh = (const Package_EthernetHeader*) ((const uint8*) packet + sizeof(PacketHeader));
         packetData.physicalLayer = { LinkType::ETHERNET, peh };
         Add_Package_EthernetHeader(&packetData, peh, packet->inclLen, packet);
     }
     if (network == LinkType::NULL_)
     {
-        auto pnh = (Package_NullHeader*) ((uint8*) packet + sizeof(PacketHeader));
+        auto pnh = (const Package_NullHeader*) ((const uint8*) packet + sizeof(PacketHeader));
         packetData.physicalLayer = { LinkType::NULL_, pnh };
         Add_Package_NullHeader(&packetData, pnh, packet->inclLen, packet);
     }

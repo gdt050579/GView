@@ -50,15 +50,6 @@ bool Panels::LinkTargetIDList::OnUpdateCommandBar(Application::CommandBar& comma
 
 bool Panels::LinkTargetIDList::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    if (evnt == Event::Command)
-    {
-        switch (controlID)
-        {
-        default:
-            break;
-        }
-    }
-
     return false;
 }
 

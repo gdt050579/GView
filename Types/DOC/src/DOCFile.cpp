@@ -56,7 +56,7 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
                 if (flags & 0x01) {
                     // 2 bytes (Copy Token)
 
-                    int offsetBits = ceil(log2(decompressed.GetLength() - decompressedChunkStart)); // number of bits used for the offset value
+                    int offsetBits = static_cast<int>(ceil(log2(decompressed.GetLength() - decompressedChunkStart))); // number of bits used for the offset value
 
                     if (offsetBits < 4) {
                         offsetBits = 4;
@@ -96,7 +96,7 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
 
 bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 {
-    ByteStream stream((void*) bv.GetData(), bv.GetLength());
+    ByteStream stream(bv);
     uint16 check;
 
     // PROJECTINFORMATION
@@ -123,7 +123,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
     CHECK(stream.ReadAs<uint16>() == 0x03, false, "projectcodepage_id");
     CHECK(stream.ReadAs<uint32>() == 0x02, false, "projectcodepage_size");
-    auto codePage = stream.ReadAs<uint16>();
+    [[maybe_unused]] auto codePage = stream.ReadAs<uint16>();
 
     CHECK(stream.ReadAs<uint16>() == 0x04, false, "projectname_id");
     auto projectName_size = stream.ReadAs<uint32>();
@@ -156,7 +156,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
     CHECK(stream.ReadAs<uint16>() == 0x07, false, "projectHelpContext_id");
     CHECK(stream.ReadAs<uint32>() == 0x04, false, "projectHelpContext_size");
-    auto projectHelpContext = stream.ReadAs<uint32>();
+    [[maybe_unused]] auto projectHelpContext = stream.ReadAs<uint32>();
     
     CHECK(stream.ReadAs<uint16>() == 0x08, false, "projectLibFlags_id");
     CHECK(stream.ReadAs<uint32>() == 0x04, false, "projectLibFlags_size");
@@ -417,7 +417,7 @@ Buffer DOCFile::OpenCFStream(const CFDirEntry& entry)
     auto size                    = entry.data.streamSize;
     bool useMiniFAT              = size < miniStreamCutoffSize;
     
-    return OpenCFStream(sect, size, useMiniFAT);
+    return OpenCFStream(sect, static_cast<uint32>(size), useMiniFAT);
 }
 
 Buffer DOCFile::OpenCFStream(uint32 sect, uint32 size, bool useMiniFAT)
@@ -454,7 +454,7 @@ Buffer DOCFile::OpenCFStream(uint32 sect, uint32 size, bool useMiniFAT)
         if (sect * sizeof(uint32) >= fat.GetLength()) {
             return Buffer();
         }
-        sect = *(((uint32*) fat.GetData()) + sect); // get the next sect
+        sect = *(((const uint32*) fat.GetData()) + sect); // get the next sect
     }
 
     if (data.GetLength() > size) {
@@ -484,7 +484,7 @@ void DOCFile::DisplayAllVBAProjectFiles(CFDirEntry& entry)
 
 bool DOCFile::FindModulesPath(const CFDirEntry& entry, UnicodeStringBuilder& path)
 {
-    std::u16string_view name((char16*) entry.data.nameUnicode, entry.data.nameLength / 2 - 1); // take into account the null character
+    std::u16string_view name((const char16*) entry.data.nameUnicode, entry.data.nameLength / 2 - 1); // take into account the null character
 
     if (!entry.children.size()) {
         return name == u"dir";
@@ -562,7 +562,7 @@ bool DOCFile::ParseVBAProject()
     uint32 DIFAT[DIFAT_LOCATIONS_COUNT]; // the first DIFAT sector locations of the compound file
     {
         auto difatBv = stream.Read(DIFAT_LOCATIONS_COUNT * sizeof(*DIFAT));
-        memcpy(DIFAT, (void*) difatBv.GetData(), difatBv.GetLength());
+        memcpy(DIFAT, difatBv.GetData(), difatBv.GetLength());
     }
 
     if (cfMajorVersion == 0x04) {
@@ -586,20 +586,20 @@ bool DOCFile::ParseVBAProject()
         FAT.Add(sector);
     }
 
-    uint16 actualNumberOfSectors = ((vbaProjectBuffer.GetLength() + sectorSize - 1) / sectorSize) - 1;
+    uint32 actualNumberOfSectors = static_cast<uint32>(((vbaProjectBuffer.GetLength() + sectorSize - 1) / sectorSize) - 1);
     if (FAT.GetLength() > actualNumberOfSectors * sizeof(uint32)) {
         FAT.Resize(actualNumberOfSectors * sizeof(uint32));
     }
 
     // load directory
-    Buffer directoryData = OpenCFStream(firstDirectorySectorLocation, vbaProjectBuffer.GetLength(), false);
+    Buffer directoryData = OpenCFStream(firstDirectorySectorLocation, static_cast<uint32>(vbaProjectBuffer.GetLength()), false);
 
     // parse dir entries, starting with root entry
     root = CFDirEntry(directoryData, 0);
     root.BuildStorageTree();
 
     uint32 streamSize = numberOfMiniFatSectors * sectorSize;
-    uint16 actualNumberOfMinisectors = (root.data.streamSize + miniSectorSize - 1) / miniSectorSize;
+    uint32 actualNumberOfMinisectors = static_cast<uint32>((root.data.streamSize + miniSectorSize - 1) / miniSectorSize);
 
     // load miniFAT
     miniFAT = OpenCFStream(firstMiniFatSectorLocation, streamSize, false); // will be interpreted as uint32*
@@ -608,7 +608,7 @@ bool DOCFile::ParseVBAProject()
     }
 
     // load ministream
-    uint32 miniStreamSize = root.data.streamSize;
+    uint32 miniStreamSize = static_cast<uint32>(root.data.streamSize);
     miniStream            = OpenCFStream(root.data.startingSectorLocation, miniStreamSize, false);
 
     // find file

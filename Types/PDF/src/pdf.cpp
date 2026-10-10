@@ -1,6 +1,5 @@
 #include "pdf.hpp"
 #include <deque>
-#include <codecvt>
 #include <sstream>
 #include <iomanip>
 #include <cctype>
@@ -53,6 +52,7 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
 PLUGIN_EXPORT TypeInterface* CreateInstance()
 {
     return new PDF::PDFFile;
+}
 }
 
 bool CheckType(GView::Utils::DataCache& data, uint64& offset, const uint64& size_type, const uint8_t PDF_ARRAY[])
@@ -1782,7 +1782,7 @@ static std::string MakeDateReadable(const std::string& pdfDate)
         sec_ = 0;
     }
 
-    // Format: YYYY-MM-DD HH:MM:SS ±HH:MM
+    // Format: YYYY-MM-DD HH:MM:SS Â±HH:MM
     std::ostringstream out;
     out << std::setw(4) << std::setfill('0') << year << "-" << std::setw(2) << std::setfill('0') << month << "-" << std::setw(2) << std::setfill('0') << day
         << " " << std::setw(2) << std::setfill('0') << hour << ":" << std::setw(2) << std::setfill('0') << min_ << ":" << std::setw(2) << std::setfill('0')
@@ -1834,7 +1834,7 @@ static std::string ParseLiteralString(GView::Utils::DataCache& data, uint64& off
 
             // \( -> '(' , \) -> ')' , \\ -> '\'
             //   Note: These do NOT change parenLevel, because
-            //   they’re considered "escaped" parentheses.
+            //   theyâ€™re considered "escaped" parentheses.
             case PDF::DC::LEFT_PARETHESIS:
             case PDF::DC::RIGHT_PARETHESIS:
             case '\\':
@@ -2885,10 +2885,7 @@ void CreateTextView(const std::string& textToShow, const std::u16string_view& pd
 
 bool SaveExtractedTextToFile(const std::string& text, const std::u16string_view& filePath)
 {
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    std::string utf8FilePath = convert.to_bytes(filePath.data(), filePath.data() + filePath.size());
-
-    std::ofstream ofs(utf8FilePath, std::ios::out | std::ios::binary);
+    std::ofstream ofs(GView::Utils::UTF16ToPath(filePath), std::ios::out | std::ios::binary);
     if (!ofs) {
         return false;
     }
@@ -2910,12 +2907,9 @@ bool PDF::PDFFile::ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFF
     }
 
     // build default ".txt" name based on the PDF filename
-    std::u16string_view pdfU16Path = pdf->obj->GetPath();
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    std::string pdfUTF8Path = convert.to_bytes(pdfU16Path.data(), pdfU16Path.data() + pdfU16Path.size());
-
-    std::filesystem::path pdfFsPath(pdfUTF8Path);
-    std::string defaultTxtName       = pdfFsPath.stem().string() + ".txt";
+    const std::filesystem::path pdfFsPath = GView::Utils::UTF16ToPath(pdf->obj->GetPath());
+    // u16string() instead of string(): on Windows string() converts to the ANSI code page and throws for unrepresentable names
+    std::u16string defaultTxtName    = pdfFsPath.stem().u16string() + u".txt";
     std::filesystem::path defaultDir = pdfFsPath.parent_path();
 
     // show "Save As" dialog
@@ -2960,6 +2954,7 @@ bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)
     return true;
 }
 
+extern "C" {
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto pdf = win->GetObject()->GetContentType<PDF::PDFFile>();

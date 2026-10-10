@@ -107,7 +107,7 @@ bool LNKFile::Update()
     offset += dataStringBufferOffset;
     extraDataBuffer = obj->GetData().CopyToBuffer(offset, (uint32) (obj->GetData().GetSize() - offset));
 
-    auto extraDataBufferOffset = 0;
+    uint32 extraDataBufferOffset = 0;
     while (extraDataBufferOffset < extraDataBuffer.GetLength()) {
         const auto extra = (ExtraDataBase*) ((uint8*) extraDataBuffer.GetData() + extraDataBufferOffset);
         CHECKBK(extra->size != 0, "");

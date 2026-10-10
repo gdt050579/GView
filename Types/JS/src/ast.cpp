@@ -924,7 +924,7 @@ namespace Type
                     break;
                 }
                 default: {
-                    str += ' ? ';
+                    str += u" ? ";
                     break;
                 }
                 }
@@ -1420,17 +1420,7 @@ namespace Type
 
             std::u16string Bool::GenSourceCode()
             {
-                std::u16string str;
-                auto n = value;
-
-                do {
-                    str += '0' + (n % 10);
-                    n /= 10;
-                } while (n != 0);
-
-                std::reverse(str.begin(), str.end());
-
-                return str;
+                return value ? u"true" : u"false";
             }
 
             ConstType Bool::GetConstType()
@@ -2001,7 +1991,7 @@ namespace Type
                 node->sourceSize += offset;
             }
 
-            PluginVisitor::PluginVisitor(Plugin* plugin, TextEditor* editor) : plugin(plugin), tokenOffset(0), editor(editor), dirty(false)
+            PluginVisitor::PluginVisitor(Plugin* plugin, TextEditor* editor) : plugin(plugin), editor(editor), tokenOffset(0), dirty(false)
             {
             }
 
@@ -4190,7 +4180,7 @@ namespace Type
                 switch (type) {
                 case TokenType::DataType_Var:
                 case TokenType::DataType_Let: {
-                    auto sourceStart = GetCurrent();
+                    [[maybe_unused]] auto sourceStart = GetCurrent();
 
                     auto decl = ParseVarDecl();
 
@@ -4314,7 +4304,7 @@ namespace Type
                     return ParseBlock();
                 }
                 default:
-                    auto sourceStart = GetCurrent();
+                    [[maybe_unused]] auto sourceStart = GetCurrent();
                     auto expr        = ParseExprStmt();
 
                     if (GetCurrentType() == TokenType::Semicolumn) {

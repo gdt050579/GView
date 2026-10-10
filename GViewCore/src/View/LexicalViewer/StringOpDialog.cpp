@@ -10,7 +10,7 @@ constexpr int32 BTN_ID_CANCEL = 3;
 constexpr int32 CMD_ID_RELOAD_ORIGINAL   = 10001;
 constexpr int32 CMD_ID_RELOAD            = 10002;
 constexpr int32 CMD_ID_SHOW_LINE_NUMBERS = 10003;
-constexpr int32 INVALID_CMD_ID           = -1;
+[[maybe_unused]] constexpr int32 INVALID_CMD_ID           = -1;
 
 struct
 {

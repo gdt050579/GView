@@ -9,7 +9,7 @@ class ConstFolder : public AST::Plugin
     virtual AST::Action OnEnterBinop(AST::Binop* node, AST::Expr*& replacement) override;
     virtual AST::Action OnExitBinop(AST::Binop* node, AST::Expr*& replacement) override;
     virtual AST::Action OnExitMemberAccess(AST::MemberAccess* node, AST::Expr*& replacement) override;
-    virtual AST::Action OnExitCall(AST::Call* node, AST::Expr*& replacement);
+    virtual AST::Action OnExitCall(AST::Call* node, AST::Expr*& replacement) override;
 
   private:
     AST::Expr* Fold(AST::Number* left, AST::Number* right, uint32 op);

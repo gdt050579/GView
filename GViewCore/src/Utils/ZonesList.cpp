@@ -59,7 +59,7 @@ bool ZonesList::SetCache(const Zone::Interval& interval)
 
     for (const auto& zone : ctx->zones) {
         if ((zone.interval.low >= interval.low && zone.interval.low <= interval.high) ||
-            interval.low >= zone.interval.low && interval.low <= zone.interval.high) {
+            (interval.low >= zone.interval.low && interval.low <= zone.interval.high)) {
             ctx->cache.push_back(zone);
         }
     }

@@ -7,6 +7,11 @@
         x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                       \
     }
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200)
+#endif
+
 namespace GView::Type::Prefetch
 {
 // https://forensicswiki.xyz/wiki/index.php?title=Windows_Prefetch_File_Format#Format_version
@@ -19,7 +24,7 @@ enum class Magic : uint32
     WIN_10_MAM  = 0x044D414D  // Windows 10 compressed
 };
 
-static const std::map<Magic, std::string_view> MagicNames{
+inline const std::map<Magic, std::string_view> MagicNames{
     GET_PAIR_FROM_ENUM(Magic::WIN_XP_2003), GET_PAIR_FROM_ENUM(Magic::WIN_VISTA_7), GET_PAIR_FROM_ENUM(Magic::WIN_8),
     GET_PAIR_FROM_ENUM(Magic::WIN_10),      GET_PAIR_FROM_ENUM(Magic::WIN_10_MAM),
 };
@@ -84,7 +89,7 @@ struct SectionArea
  */
 
 /* clang-format off
-     * The file information – version 17 is 68 bytes of size and consists of:
+     * The file information â€“ version 17 is 68 bytes of size and consists of:
      *
      * Field	Offset	Length	 Type	  Notes
      *          0x0054	4	     DWORD	  The offset to section A. The offset is relative from the start of the file.
@@ -117,7 +122,7 @@ struct FileInformation_17
 static_assert(sizeof(FileInformation_17) == 68);
 
 /* clang-format off
-     * The file metrics entry records – version 17 is 20 bytes in size and consists of:
+     * The file metrics entry records â€“ version 17 is 20 bytes in size and consists of:
      *
      * Field Offset	Length	Type	Notes
      *       0	    4	    DWORD	Start time in ms
@@ -162,7 +167,7 @@ struct TraceChainEntry_17_23_26
 static_assert(sizeof(TraceChainEntry_17_23_26) == 12);
 
 /* clang-format off
- * The volume information – version 17 is 40 bytes in size and consists of:
+ * The volume information â€“ version 17 is 40 bytes in size and consists of:
  * Field	Offset	Length	Type	 Notes
  * VI1	    +0x0000	4	    DWORD	 Offset to volume device path (Unicode, terminated by U+0000)
  * VI2	    +0x0004	4	    DWORD	 Length of volume device path (nr of characters, including terminating U+0000)
@@ -222,7 +227,7 @@ struct FileReference
     Offset	Size	Value	Description
     0       4       1       Unknown (Version?)
     4       4               Number of file references
-    8       …               Array of file references. Contains a file reference or 0 if not set.
+    8       â€¦               Array of file references. Contains a file reference or 0 if not set.
 */
 
 struct FileReferences_17
@@ -232,7 +237,7 @@ struct FileReferences_17
     FileReference fileReferences[0];
 };
 
-static int64 SSCA_XP_HASH(BufferView bv)
+inline int64 SSCA_XP_HASH(BufferView bv)
 {
     CHECK(bv.IsValid(), 0, "");
     int64 hash_value = 0;
@@ -328,7 +333,7 @@ static_assert(sizeof(FileMetricsEntryRecord_23_26_30) == 32);
 
 /* clang-format off
  * Volume information - version 23/26
- * The volume information entry – version 23 is 104 bytes in size and consists of:
+ * The volume information entry â€“ version 23 is 104 bytes in size and consists of:
  * 
  * Field	Offset	Length	Type	 Notes
  * VI1	    +0x0000	4	    DWORD	 Offset to volume device path (Unicode, terminated by U+0000). The offset is relative from the start of the volume information
@@ -383,7 +388,7 @@ struct FileReferences_23_26_30
     FileReference fileReferences[0];
 };
 
-static int64 SSCA_VISTA_HASH(BufferView bv)
+inline int64 SSCA_VISTA_HASH(BufferView bv)
 {
     CHECK(bv.IsValid(), 0, "");
     int64 hash_value = 314159;
@@ -522,7 +527,7 @@ struct TraceChainEntry_30
 
 static_assert(sizeof(TraceChainEntry_30) == 8);
 
-static int64 SSCA_2008_HASH(BufferView bv)
+inline int64 SSCA_2008_HASH(BufferView bv)
 {
     CHECK(bv.IsValid(), 0, "");
     int64 hash_value = 314159;
@@ -616,14 +621,14 @@ const std::map<Magic, uint64> FileInformationSizes{
     { Magic::WIN_10, sizeof(FileInformation_30v2) },
 };
 
-const std::map<Magic, uint64> FileMetricsSizes{
+inline const std::map<Magic, uint64> FileMetricsSizes{
     { Magic::WIN_XP_2003, sizeof(FileMetricsEntryRecord_17) },
     { Magic::WIN_VISTA_7, sizeof(FileMetricsEntryRecord_23_26_30) },
     { Magic::WIN_8, sizeof(FileMetricsEntryRecord_23_26_30) },
     { Magic::WIN_10, sizeof(FileMetricsEntryRecord_23_26_30) },
 };
 
-const std::map<Magic, uint64> TraceChainEntrySizes{
+inline const std::map<Magic, uint64> TraceChainEntrySizes{
     { Magic::WIN_XP_2003, sizeof(TraceChainEntry_17_23_26) },
     { Magic::WIN_VISTA_7, sizeof(TraceChainEntry_17_23_26) },
     { Magic::WIN_8, sizeof(TraceChainEntry_17_23_26) },
@@ -631,3 +636,7 @@ const std::map<Magic, uint64> TraceChainEntrySizes{
 };
 
 } // namespace GView::Type::Prefetch
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

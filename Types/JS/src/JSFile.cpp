@@ -712,7 +712,7 @@ uint32 JSFile::TokenizeList(const TextParser& text, TokensList& tokenList, uint3
 {
     TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
 
-    Token token = tokenList.GetLastToken();
+    [[maybe_unused]] Token token = tokenList.GetLastToken();
     if (GetBlockTypeWhichContainLastToken(tokenList) == BlockType::Block)
         align |= TokenAlignament::NewLineAfter;
     else
@@ -1248,7 +1248,7 @@ bool JSFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeS
 bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
 {
     UnicodeStringBuilder newContent;
-    int32 preview = 0u;
+    size_t preview = 0;
 
     for (auto index = 0u; index < content.length(); index++)
     {

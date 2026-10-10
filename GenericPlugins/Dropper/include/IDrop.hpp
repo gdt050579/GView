@@ -9,6 +9,8 @@ namespace GView::GenericPlugins::Droppper
 class IDrop
 {
   public:
+    virtual ~IDrop() = default;
+
     // virtual methods
     virtual const std::string_view GetName() const            = 0; // specific dropper mini-plugin name
     virtual Category GetCategory() const                      = 0; // archive type recognizer, executables type, etc

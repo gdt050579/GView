@@ -3,7 +3,7 @@
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
 
-constexpr auto SECTION_NAME_VIEW_BUFFER = "View.Buffer";
+[[maybe_unused]] constexpr auto SECTION_NAME_VIEW_BUFFER = "View.Buffer";
 
 void Config::Update(IniSection)
 {
@@ -34,6 +34,8 @@ void GView::View::BufferViewer::Commands::OnKeysChanged()
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32 {
     // display
     Columns = 0,
@@ -72,6 +74,7 @@ enum class PropertyID : uint32 {
     // color behavior
     ShowColorNotFocused,
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)

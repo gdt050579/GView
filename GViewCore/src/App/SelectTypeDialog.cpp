@@ -117,18 +117,18 @@ SelectTypeDialog::SelectTypeDialog(
       AppCUI::Utils::BufferView _buf,
       GView::Type::Matcher::TextParser& _textParser,
       uint64 extensionHash)
-    : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), typePlugins(_typePlugins), buf(_buf), textParser(_textParser),
+    : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), buf(_buf), typePlugins(_typePlugins), textParser(_textParser),
       result(nullptr)
 {
     NumericFormatter num;
     NumericFormat numFormat(NumericFormatFlags::None, 10, 3, ',');
-    auto lbType    = Factory::Label::Create(this, "&Type", "x:1,y:1,w:10");
-    auto lbName    = Factory::Label::Create(this, "&Name", "x:1,y:3,w:10");
-    auto lbSize    = Factory::Label::Create(this, "&Size", "x:50,y:3,w:10");
-    auto lbPath    = Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
-    auto lbView    = Factory::Label::Create(this, "Pre&view", "x:1,y:7,w:10");
-    cbType         = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
-    txName    = Factory::TextField::Create(this, name, "x:12,y:3,w:33", TextFieldFlags::None);
+    Factory::Label::Create(this, "&Type", "x:1,y:1,w:10");
+    Factory::Label::Create(this, "&Name", "x:1,y:3,w:10");
+    Factory::Label::Create(this, "&Size", "x:50,y:3,w:10");
+    Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
+    Factory::Label::Create(this, "Pre&view", "x:1,y:7,w:10");
+    cbType  = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
+    txName  = Factory::TextField::Create(this, name, "x:12,y:3,w:33", TextFieldFlags::None);
     auto txSize    = Factory::TextField::Create(this, num.ToString(dataSize, numFormat), "l:56,t:3,r:1", TextFieldFlags::Readonly);
     auto txPath    = Factory::TextField::Create(this, path, "l:12,t:5,r:1", TextFieldFlags::Readonly);
     cbView         = Factory::ComboBox::Create(this, "l:12,t:7,r:1");
@@ -204,7 +204,7 @@ void SelectTypeDialog::PopulateViewModes()
         // check if the text requires wrap or not
         auto* p         = txt.data();
         auto* e         = p + txt.size();
-        auto nrLines    = 0U;
+        [[maybe_unused]] auto nrLines = 0U;
         auto lineLength = 0U;
         auto largeLines = 0U;
         while (p < e)

@@ -18,8 +18,8 @@ struct CV_INFO_PDB70 {
     uint8 PdbFileName[1]; // zero terminated string with the name of the PDB file
 };
 
-#define CV_SIGNATURE_NB10 '01BN'
-#define CV_SIGNATURE_RSDS 'SDSR'
+constexpr uint32 CV_SIGNATURE_NB10 = 0x3031424EU; // '01BN' ("NB10")
+constexpr uint32 CV_SIGNATURE_RSDS = 0x53445352U; // 'SDSR' ("RSDS")
 
 #define ADD_PANEL(id) this->panelsMask |= (1ULL << (uint8) id);
 
@@ -549,11 +549,13 @@ bool PEFile::BuildExport()
             return false;
         }
         this->dllName = dllName;
-        for (auto ch : dllName)
-            if ((ch < 32) || (ch > 127)) {
+        for (const auto ch : dllName) {
+            const auto uch = static_cast<uint8>(ch);
+            if ((uch < 32) || (uch > 127)) {
                 errList.AddWarning("Export name contains invalid characters !");
                 break;
             }
+        }
     }
     if (exportDir.NumberOfFunctions == 0 && exportDir.NumberOfNames == 0) // no exports
     {
@@ -808,7 +810,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
     r.Image.type = ImageType::Unknown;
     auto buf     = this->obj->GetData().Get(r.Start, sizeof(dibHeader), true);
     if (buf.Empty()) {
-        errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) (sizeof(dibHeader), r.Start));
+        errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) sizeof(dibHeader), r.Start);
         return false;
     }
     auto iconHeader = buf.GetObject<DIBInfoHeader>();
@@ -1145,7 +1147,7 @@ bool PEFile::BuildDebugData()
         errList.AddWarning("Invalid alignament for Debug directory (0x%X)", (uint32) dirDebug.Size);
     }
 
-    for (auto tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory)) {
+    for (auto tr = 0U; tr < size; tr++, faddr += sizeof(ImageDebugDirectory)) {
         ImageDebugDirectory imgd;
         if (obj->GetData().Copy<ImageDebugDirectory>(faddr, imgd) == false) {
             errList.AddError("Unable to read Debug structure from (0x%X)", (uint32) faddr);
@@ -1349,7 +1351,7 @@ bool PEFile::Update()
     fileAlign     = nth32.OptionalHeader.FileAlignment;       // same,  BaseOfData missing on PE32+
     nrSections    = nth32.FileHeader.NumberOfSections;        // same
 
-    poz = static_cast<uint64>(dos.e_lfanew) + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) 0)->Signature) + sizeof(ImageFileHeader);
+    poz = static_cast<uint64>(dos.e_lfanew) + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) nullptr)->Signature) + sizeof(ImageFileHeader);
     sectStart    = static_cast<uint32>(poz);
     peStart      = dos.e_lfanew;
     computedSize = virtualComputedSize = 0;
@@ -1677,7 +1679,7 @@ bool PEFile::ParseGoData()
     // we assume we parsed the symbols first!
     if (symbols.empty() == false) {
         std::map<std::string_view, ImageSymbol> pclntabSymbols{
-            { "runtime.pclntab", { 0 } }, { "runtime.epclntab", { 0 } }, { "pclntab", { 0 } }, { "epclntab", { 0 } }
+            { "runtime.pclntab", {} }, { "runtime.epclntab", {} }, { "pclntab", {} }, { "epclntab", {} }
         };
 
         for (const auto& symbol : symbols) {
@@ -1939,6 +1941,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
                 } // do not break
             }
         }
+        [[fallthrough]];
     case 0x50:
         if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header)) {
             if (buf.GetLength() >= 4) {
@@ -1951,6 +1954,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
                 } // do not break
             }
         }
+        [[fallthrough]];
     default:
         switch ((PE::MachineType) nth32.FileHeader.Machine) {
         case PE::MachineType::I386:

@@ -1,7 +1,6 @@
 #include "xml.hpp"
 #include <string>
 #include <set>
-#include <codecvt>
 
 // Extract from key:
 //     w:name sau w:var
@@ -161,8 +160,7 @@ bool ExtractContent::CanBeAppliedOn(const PluginData& data)
 
 std::string u16stringToString(const std::u16string& u16str)
 {
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-    return converter.to_bytes(u16str);
+    return GView::Utils::UTF16ToUTF8(u16str);
 }
 
 PluginAfterActionRequest ExtractContent::Execute(PluginData& data, Reference<Window> parent)

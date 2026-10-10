@@ -177,7 +177,7 @@ uint32_t BSwap32(uint32_t d);
 /* OpenSSL defines OPENSSL_free as a macro, which we can't use with decltype.
  * So we wrap it here for use with unique_ptr.
  */
-static void My_OpenSSL_free(void* ptr)
+inline void My_OpenSSL_free(void* ptr)
 {
     OPENSSL_free(ptr);
 }

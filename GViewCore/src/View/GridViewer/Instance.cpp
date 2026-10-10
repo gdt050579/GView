@@ -6,14 +6,14 @@ using namespace GView::View::GridViewer;
 using namespace GView::View::GridViewer::Commands;
 using namespace AppCUI::Input;
 
-constexpr uint32 PROP_ID_REPLACE_HEADER_WITH_1ST_ROW = 0;
-constexpr uint32 PROP_ID_TOGGLE_HORIZONTAL_LINES     = 1;
-constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
+[[maybe_unused]] constexpr uint32 PROP_ID_REPLACE_HEADER_WITH_1ST_ROW = 0;
+[[maybe_unused]] constexpr uint32 PROP_ID_TOGGLE_HORIZONTAL_LINES     = 1;
+[[maybe_unused]] constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 
 Config Instance::config;
 
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Grid View")
+    : ViewControl("Grid View"), settings(nullptr)
 {
     this->obj = obj;
     // settings
@@ -169,7 +169,7 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             auto content = grid->GetSelectedCellContent();
 
             if (content.has_value()) {
-                std::time_t t      = std::time(0);
+                std::time_t t      = std::time(nullptr);
                 auto timestampPath = this->exportedPathUTF8 + "_" + std::to_string(t);
 
                 std::ofstream file(timestampPath.c_str(), std::ios::binary); // Open the file in binary mode
@@ -188,7 +188,7 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                 auto index = 0;
 
                 auto folderPath = this->exportedFolderPath + data.value().first + "_";
-                std::time_t t   = std::time(0);
+                std::time_t t   = std::time(nullptr);
                 folderPath += std::to_string(t);
 
                 if (!std::filesystem::exists(folderPath)) {
@@ -453,7 +453,10 @@ void GView::View::GridViewer::Instance::PaintCursorInformationSeparator(AppCUI::
     renderer.DrawVerticalLine(x, y, y + 4, config.color.cursorInformation.value);
 }
 
+namespace
+{
 enum class PropertyID : uint32 { None };
+}
 
 bool Instance::GetPropertyValue(uint32, PropertyValue&)
 {

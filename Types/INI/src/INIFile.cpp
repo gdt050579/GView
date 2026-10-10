@@ -110,7 +110,7 @@ struct ParserData
     uint32 pos;
     int32 arrayLevel;
     ParserData(const TextParser& _text, TokensList& _tokenList)
-        : text(_text), tokenList(_tokenList), pos(0), state(ParserState::ExpectKeyValueOrSection)
+        : text(_text), tokenList(_tokenList), state(ParserState::ExpectKeyValueOrSection), pos(0)
     {
         len        = text.Len();
         arrayLevel = 0;

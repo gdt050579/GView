@@ -5,7 +5,7 @@
 
 namespace GView::Type::ELF
 {
-static std::string_view GetNameFromElfClass(uint8 elfClass)
+inline std::string_view GetNameFromElfClass(uint8 elfClass)
 {
     switch (elfClass)
     {
@@ -20,7 +20,7 @@ static std::string_view GetNameFromElfClass(uint8 elfClass)
     }
 }
 
-static std::string_view GetNameFromElfData(uint8 elfData)
+inline std::string_view GetNameFromElfData(uint8 elfData)
 {
     switch (elfData)
     {
@@ -35,7 +35,7 @@ static std::string_view GetNameFromElfData(uint8 elfData)
     }
 }
 
-static std::string_view GetNameFromElfVersion(uint8 elfVersion)
+inline std::string_view GetNameFromElfVersion(uint8 elfVersion)
 {
     switch (elfVersion)
     {
@@ -48,7 +48,7 @@ static std::string_view GetNameFromElfVersion(uint8 elfVersion)
     }
 }
 
-static std::string_view GetNameFromElfOsAbi(uint8 elfOsAbi)
+inline std::string_view GetNameFromElfOsAbi(uint8 elfOsAbi)
 {
     switch (elfOsAbi)
     {
@@ -99,7 +99,7 @@ static std::string_view GetNameFromElfOsAbi(uint8 elfOsAbi)
     }
 }
 
-static std::string_view GetNameFromElfAbiVersion(uint8 elfOsAbi, uint8 elfAbiVersion)
+inline std::string_view GetNameFromElfAbiVersion(uint8 elfOsAbi, uint8 elfAbiVersion)
 {
     switch (elfOsAbi)
     {
@@ -141,7 +141,7 @@ static std::pair<std::string_view, std::string_view> GetNameAndDecriptionFromElf
     }
 }
 
-static std::string_view GetNameFromElfMachine(uint16 elfMachine)
+inline std::string_view GetNameFromElfMachine(uint16 elfMachine)
 {
     switch (elfMachine)
     {
@@ -561,7 +561,7 @@ static std::string_view GetNameFromElfMachine(uint16 elfMachine)
     case EM_CEVA_X2:
         return "CEVA X2 Processor Family";
     case EM_BPF:
-        return "Linux BPF – in-kernel virtual machine";
+        return "Linux BPF - in-kernel virtual machine";
     case EM_GRAPHCORE_IPU:
         return "Graphcore Intelligent Processing Unit";
     case EM_IMG1:
@@ -614,7 +614,7 @@ static std::string_view GetNameFromElfMachine(uint16 elfMachine)
     }
 }
 
-static std::string_view GetNameFromElfProgramHeaderType(uint32 programHeaderType)
+inline std::string_view GetNameFromElfProgramHeaderType(uint32 programHeaderType)
 {
     switch (programHeaderType)
     {
@@ -669,7 +669,7 @@ static std::string_view GetNameFromElfProgramHeaderType(uint32 programHeaderType
     }
 }
 
-static const std::string GetPermissionsFromSegmentFlags(uint32 segmentFlags)
+inline const std::string GetPermissionsFromSegmentFlags(uint32 segmentFlags)
 {
     std::string permissions = "---";
 
@@ -691,7 +691,7 @@ static const std::string GetPermissionsFromSegmentFlags(uint32 segmentFlags)
     return permissions;
 }
 
-static const std::string GetPermissionsFromSegmentPaxFlags(uint32 segmentPaxFlags)
+inline const std::string GetPermissionsFromSegmentPaxFlags(uint32 segmentPaxFlags)
 {
     /*
         PF_PAGEEXEC PF_NOPAGEEXEC
@@ -745,7 +745,7 @@ static const std::string GetPermissionsFromSegmentPaxFlags(uint32 segmentPaxFlag
     return "[" + output + "]";
 };
 
-static std::string_view GetNameFromSectionType(uint32 sectionType)
+inline std::string_view GetNameFromSectionType(uint32 sectionType)
 {
     switch (sectionType)
     {
@@ -820,7 +820,7 @@ static std::string_view GetNameFromSectionType(uint32 sectionType)
     }
 }
 
-static const std::string GetNamesFromSectionFlags(uint64 sectionFlags)
+inline const std::string GetNamesFromSectionFlags(uint64 sectionFlags)
 {
     static const std::initializer_list<uint32> types{ SHF_WRITE,     SHF_ALLOC,      SHF_EXECINSTR,        SHF_MERGE, SHF_STRINGS,
                                                       SHF_INFO_LINK, SHF_LINK_ORDER, SHF_OS_NONCONFORMING, SHF_GROUP, SHF_TLS };
@@ -860,7 +860,7 @@ static const std::string GetNamesFromSectionFlags(uint64 sectionFlags)
     return "[" + output + "]";
 };
 
-static std::string_view GetSectionSpecialIndexFromSymbolIndex(uint16 index)
+inline std::string_view GetSectionSpecialIndexFromSymbolIndex(uint16 index)
 {
     switch (index)
     {
@@ -885,7 +885,7 @@ static std::string_view GetSectionSpecialIndexFromSymbolIndex(uint16 index)
     }
 }
 
-static std::string_view GetNameFromSymbolBinding(uint8 bind)
+inline std::string_view GetNameFromSymbolBinding(uint8 bind)
 {
     switch (bind)
     {
@@ -908,7 +908,7 @@ static std::string_view GetNameFromSymbolBinding(uint8 bind)
     }
 }
 
-static std::string_view GetNameFromSymbolType(uint8 type)
+inline std::string_view GetNameFromSymbolType(uint8 type)
 {
     switch (type)
     {
@@ -939,7 +939,7 @@ static std::string_view GetNameFromSymbolType(uint8 type)
     }
 }
 
-static std::string_view GetNameFromSymbolVisibility(uint8 visibility)
+inline std::string_view GetNameFromSymbolVisibility(uint8 visibility)
 {
     switch (visibility)
     {

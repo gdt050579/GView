@@ -637,7 +637,7 @@ bool MachOFile::SetCodeSignature()
             }
 
             for (auto slot = 1U; slot <= codeSignature->codeDirectory.nSpecialSlots; slot++) {
-                const auto hashOffset = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * -slot;
+                const auto hashOffset = codeSignature->codeDirectory.hashOffset - codeSignature->codeDirectory.hashSize * slot;
 
                 const auto& [it, ok] = codeSignature->specialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
                 CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
@@ -747,7 +747,7 @@ bool MachOFile::SetCodeSignature()
             }
 
             for (auto slot = 1U; slot <= cd.nSpecialSlots; slot++) {
-                const auto hashOffset = cd.hashOffset + cd.hashSize * -slot;
+                const auto hashOffset = cd.hashOffset - cd.hashSize * slot;
 
                 const auto& [it, ok] = cdSpecialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
                 CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
@@ -1129,7 +1129,7 @@ bool MachOFile::PopulateItem(TreeViewItem item)
 {
     LocalString<128> tmp;
     NumericFormatter nf;
-    const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
+    [[maybe_unused]] const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
     const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
     const auto& arch = archs.at(currentItemIndex);
@@ -1271,6 +1271,7 @@ bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Bu
                     } // do not break
                 }
             }
+            [[fallthrough]];
         default:
             for (const auto& [start, end] : executableZonesFAs) {
                 if (offset >= start && offset < end) {
