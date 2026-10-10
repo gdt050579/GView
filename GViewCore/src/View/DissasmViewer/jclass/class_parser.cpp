@@ -1,5 +1,6 @@
 #include "class_parser.hpp"
 #include "raw_opcodes.hpp"
+#include <bit>
 
 namespace GView::View::DissasmViewer::JClass
 {
@@ -48,7 +49,7 @@ bool CONSTANT_Double_info::read(BufferReader& reader)
 {
     uint64 v;
     READB(v);
-    value = *reinterpret_cast<double*>(&v);
+    value = std::bit_cast<double>(v);
     return true;
 }
 

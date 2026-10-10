@@ -70,7 +70,7 @@ void Panels::Sections::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    uint32_t i = 0;
+    [[maybe_unused]] uint32_t i = 0;
     for (const auto& segment : machO->segments)
     {
         for (const auto& s : segment.sections)

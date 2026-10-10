@@ -122,7 +122,7 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
         CHECK(bufferView.IsValid(), false, "");
 
         auto& entry = tocEntries.emplace_back();
-        memcpy(&entry, bufferView.GetData(), TOC_ENTRY_KNOWN_SIZE);
+        memcpy(static_cast<TOCEntryHeader*>(&entry), bufferView.GetData(), TOC_ENTRY_KNOWN_SIZE);
         Swap(entry);
 
         const auto nameLen = entry.entrySize - TOC_ENTRY_KNOWN_SIZE;
@@ -167,7 +167,7 @@ bool PYEXTRACTORFile::BeginIteration(std::u16string_view path, AppCUI::Controls:
 bool PYEXTRACTORFile::PopulateItem(TreeViewItem item)
 {
     const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
-    const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+    [[maybe_unused]] const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
     NumericFormatter n;
     LocalString<128> tmp;
 

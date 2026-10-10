@@ -386,6 +386,7 @@ namespace Type
         };
         struct Interface
         {
+            virtual ~Interface()                                                = default;
             virtual bool Init(std::string_view text)                            = 0;
             virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) = 0;
         };

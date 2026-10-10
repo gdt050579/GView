@@ -82,7 +82,7 @@ bool ELFFile::Update()
             offset += sizeof(entry);
 
             auto& segmentIdx = sectionsToSegments.emplace_back(-1);
-            for (auto i = 0; i < segments64.size(); i++)
+            for (auto i = 0U; i < segments64.size(); i++)
             {
                 const auto& segment = segments64.at(i);
                 if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
@@ -123,7 +123,7 @@ bool ELFFile::Update()
             offset += sizeof(entry);
 
             auto& segmentIdx = sectionsToSegments.emplace_back(-1);
-            for (auto i = 0; i < segments32.size(); i++)
+            for (auto i = 0U; i < segments32.size(); i++)
             {
                 const auto& segment = segments32.at(i);
                 if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
@@ -245,7 +245,7 @@ bool ELFFile::ParseSymbols()
 {
     if (is64)
     {
-        for (auto i = 0; i < sections64.size(); i++)
+        for (auto i = 0U; i < sections64.size(); i++)
         {
             const auto& section = sections64.at(i);
             if (section.sh_type == SHT_SYMTAB) /* Static symbol table */
@@ -302,7 +302,7 @@ bool ELFFile::ParseSymbols()
     }
     else
     {
-        for (auto i = 0; i < sections32.size(); i++)
+        for (auto i = 0U; i < sections32.size(); i++)
         {
             const auto& section = sections32.at(i);
             if (section.sh_type == SHT_SYMTAB) /* Static symbol table */
@@ -612,6 +612,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 } // do not break
             }
         }
+        [[fallthrough]];
     default:
         switch (machine)
         {

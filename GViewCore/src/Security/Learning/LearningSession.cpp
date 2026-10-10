@@ -10,8 +10,8 @@ using RestrictedMode::StorageMode;
 
 namespace
 {
-    constexpr uint64 TICK_INTERVAL_MS    = 200;
-    constexpr uint64 FOCUS_VALIDITY_MS   = 1000;
+    constexpr uint64 TICK_INTERVAL_MS                  = 200;
+    [[maybe_unused]] constexpr uint64 FOCUS_VALIDITY_MS = 1000;
     constexpr uint64 MAX_ACCOUNT_STEP_MS = 2000; // the UI loop may stall (modal dialogs); never credit more per tick
     constexpr long FINAL_FLUSH_TIMEOUT_S = 2;
 

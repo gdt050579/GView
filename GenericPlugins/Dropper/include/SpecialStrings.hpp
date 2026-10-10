@@ -14,7 +14,7 @@ constexpr int32 STRINGS_CHARSET_MATRIX_SIZE{ 256 };
  *
  *     Type	  First Seen    BTC Supply*	 Use*	    Encoding	Prefix	Characters
  *     P2PK	  Jan 2009	    9% (1.7M)	 Obsolete
- *     P2PKH  Jan 2009	    43% (8.3M)	 Decreasing	Base58	    1	    26 – 34
+ *     P2PKH  Jan 2009	    43% (8.3M)	 Decreasing	Base58	    1	    26 â€“ 34
  *     P2MS	  Jan 2012	    Negligible	 Obsolete
  *     P2SH	  Apr 2012	    24% (4.6M)	 Decreasing	Base58	    3	    34
  *     P2WPKH Aug 2017	    20% (3.8M)	 Increasing	Bech32	    bc1q	42

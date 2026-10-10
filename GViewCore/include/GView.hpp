@@ -1200,7 +1200,7 @@ namespace View
         virtual GView::Utils::ZonesList& GetObjectsHighlightingZonesList();
 
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
-            : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
+            : UserControl("d:c", flags), Cfg(*AppCUI::Application::GetAppConfig()), name(name)
         {
         }
     };

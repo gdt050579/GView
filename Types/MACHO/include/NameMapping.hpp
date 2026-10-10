@@ -13,13 +13,13 @@ namespace MAC
         x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                                           \
     }
 
-static const std::map<ByteOrder, std::string_view> ByteOrderNames{
+inline const std::map<ByteOrder, std::string_view> ByteOrderNames{
     GET_PAIR_FROM_ENUM(ByteOrder::Unknown),
     GET_PAIR_FROM_ENUM(ByteOrder::LittleEndian),
     GET_PAIR_FROM_ENUM(ByteOrder::BigEndian),
 };
 
-static const ArchInfo ArchInfoTable[] = {
+inline const ArchInfo ArchInfoTable[] = {
     /* architecture families */
     { "hppa", CPU_TYPE_HPPA, CPU_SUBTYPE_HPPA_ALL, ByteOrder::BigEndian, "HP-PA" },
     { "i386", CPU_TYPE_I386, CPU_SUBTYPE_I386_ALL, ByteOrder::LittleEndian, "Intel 80x86" },
@@ -79,13 +79,13 @@ static const ArchInfo ArchInfoTable[] = {
     { "veo2", CPU_TYPE_VEO, CPU_SUBTYPE_VEO_2, ByteOrder::BigEndian, "veo 2" }
 };
 
-static const std::map<FileType, std::string_view> FileTypeNames{ GET_PAIR_FROM_ENUM(FileType::OBJECT),  GET_PAIR_FROM_ENUM(FileType::EXECUTE),
+inline const std::map<FileType, std::string_view> FileTypeNames{ GET_PAIR_FROM_ENUM(FileType::OBJECT),  GET_PAIR_FROM_ENUM(FileType::EXECUTE),
                                                                  GET_PAIR_FROM_ENUM(FileType::FVMLIB),  GET_PAIR_FROM_ENUM(FileType::CORE),
                                                                  GET_PAIR_FROM_ENUM(FileType::PRELOAD), GET_PAIR_FROM_ENUM(FileType::DYLIB),
                                                                  GET_PAIR_FROM_ENUM(FileType::BUNDLE),  GET_PAIR_FROM_ENUM(FileType::DYLIB_STUB),
                                                                  GET_PAIR_FROM_ENUM(FileType::DSYM),    GET_PAIR_FROM_ENUM(FileType::KEXT_BUNDLE) };
 
-static const std::map<FileType, std::string_view> FileTypeDescriptions{ { FileType::OBJECT, "Relocatable object file." },
+inline const std::map<FileType, std::string_view> FileTypeDescriptions{ { FileType::OBJECT, "Relocatable object file." },
                                                                         { FileType::EXECUTE, "Demand paged executable file." },
                                                                         { FileType::FVMLIB, "Fixed VM shared library file." },
                                                                         { FileType::CORE, "Core file." },
@@ -97,7 +97,7 @@ static const std::map<FileType, std::string_view> FileTypeDescriptions{ { FileTy
                                                                         { FileType::DSYM, "Companion file with only debug | sections." },
                                                                         { FileType::KEXT_BUNDLE, "X86_64 kexts." } };
 
-static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescriptions{
+inline const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescriptions{
     { MachHeaderFlags::NOUNDEFS, "The object file has no undefined references." },
     { MachHeaderFlags::INCRLINK, "The object file is the output of an incremental link against a base file and can't be link edited again." },
     { MachHeaderFlags::DYLDLINK, "The object file is input for the dynamic linker and can't be staticly link edited again." },
@@ -144,7 +144,7 @@ static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescript
       "tvOSSimulator and watchOSSimulator." }
 };
 
-static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsNames{ GET_PAIR_FROM_ENUM(MachHeaderFlags::NOUNDEFS),
+inline const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsNames{ GET_PAIR_FROM_ENUM(MachHeaderFlags::NOUNDEFS),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::INCRLINK),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::DYLDLINK),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::BINDATLOAD),
@@ -173,7 +173,7 @@ static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsNames{ G
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::NLIST_OUTOFSYNC_WITH_DYLDINFO),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::SIM_SUPPORT) };
 
-static const std::map<LoadCommandType, std::string_view> LoadCommandNames{ GET_PAIR_FROM_ENUM(LoadCommandType::REQ_DYLD),
+inline const std::map<LoadCommandType, std::string_view> LoadCommandNames{ GET_PAIR_FROM_ENUM(LoadCommandType::REQ_DYLD),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::SEGMENT),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::SYMTAB),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::SYMSEG),
@@ -229,7 +229,7 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandNames{ GET_P
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_CHAINED_FIXUPS),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::FILESET_ENTRY) };
 
-static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions{
+inline const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions{
     { LoadCommandType::REQ_DYLD, "Requires dynamic linker." },
     { LoadCommandType::SEGMENT, "Segment of this file to be mapped." },
     { LoadCommandType::SYMTAB, "Link-edit stab symbol table info." },
@@ -287,20 +287,20 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions
     { LoadCommandType::FILESET_ENTRY, "Used with fileset_entry_command." },
 };
 
-static const std::map<VMProtectionFlags, std::string_view> VMProtectionNames{
+inline const std::map<VMProtectionFlags, std::string_view> VMProtectionNames{
     GET_PAIR_FROM_ENUM(VMProtectionFlags::NONE),      GET_PAIR_FROM_ENUM(VMProtectionFlags::READ),    GET_PAIR_FROM_ENUM(VMProtectionFlags::WRITE),
     GET_PAIR_FROM_ENUM(VMProtectionFlags::EXECUTE),   GET_PAIR_FROM_ENUM(VMProtectionFlags::DEFAULT), GET_PAIR_FROM_ENUM(VMProtectionFlags::ALL),
     GET_PAIR_FROM_ENUM(VMProtectionFlags::NO_CHANGE), GET_PAIR_FROM_ENUM(VMProtectionFlags::COPY),    GET_PAIR_FROM_ENUM(VMProtectionFlags::WANTS_COPY)
 };
 
-static const std::map<SegmentCommandFlags, std::string_view> SegmentCommandFlagsNames{ GET_PAIR_FROM_ENUM(SegmentCommandFlags::NONE),
+inline const std::map<SegmentCommandFlags, std::string_view> SegmentCommandFlagsNames{ GET_PAIR_FROM_ENUM(SegmentCommandFlags::NONE),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::HIGHVM),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::FVMLIB),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::NORELOC),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::PROTECTED_VERSION_1),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::READONLY) };
 
-static const std::map<SectionType, std::string_view> SectionTypeNames{ GET_PAIR_FROM_ENUM(SectionType::REGULAR),
+inline const std::map<SectionType, std::string_view> SectionTypeNames{ GET_PAIR_FROM_ENUM(SectionType::REGULAR),
                                                                        GET_PAIR_FROM_ENUM(SectionType::ZEROFILL),
                                                                        GET_PAIR_FROM_ENUM(SectionType::CSTRING_LITERALS),
                                                                        GET_PAIR_FROM_ENUM(SectionType::_4BYTE_LITERALS),
@@ -324,7 +324,7 @@ static const std::map<SectionType, std::string_view> SectionTypeNames{ GET_PAIR_
                                                                        GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_INIT_FUNCTION_POINTERS),
                                                                        GET_PAIR_FROM_ENUM(SectionType::S_INIT_FUNC_OFFSETS) };
 
-static const std::map<SectionAttributtes, std::string_view> SectionAttributtesNames{ GET_PAIR_FROM_ENUM(SectionAttributtes::USR),
+inline const std::map<SectionAttributtes, std::string_view> SectionAttributtesNames{ GET_PAIR_FROM_ENUM(SectionAttributtes::USR),
                                                                                      GET_PAIR_FROM_ENUM(SectionAttributtes::PURE_INSTRUCTIONS),
                                                                                      GET_PAIR_FROM_ENUM(SectionAttributtes::NO_TOC),
                                                                                      GET_PAIR_FROM_ENUM(SectionAttributtes::STRIP_STATIC_SYMS),
@@ -337,29 +337,29 @@ static const std::map<SectionAttributtes, std::string_view> SectionAttributtesNa
                                                                                      GET_PAIR_FROM_ENUM(SectionAttributtes::EXT_RELOC),
                                                                                      GET_PAIR_FROM_ENUM(SectionAttributtes::LOC_RELOC) };
 
-static const std::map<N_TYPE, std::string_view> NTypeNames{
+inline const std::map<N_TYPE, std::string_view> NTypeNames{
     GET_PAIR_FROM_ENUM(N_TYPE::STAB), GET_PAIR_FROM_ENUM(N_TYPE::PEXT), GET_PAIR_FROM_ENUM(N_TYPE::TYPE), GET_PAIR_FROM_ENUM(N_TYPE::EXT)
 };
 
-static const std::map<N_TYPE_BITS, std::string_view> NTypeBitsNames{ GET_PAIR_FROM_ENUM(N_TYPE_BITS::UNDF), GET_PAIR_FROM_ENUM(N_TYPE_BITS::ABS),
+inline const std::map<N_TYPE_BITS, std::string_view> NTypeBitsNames{ GET_PAIR_FROM_ENUM(N_TYPE_BITS::UNDF), GET_PAIR_FROM_ENUM(N_TYPE_BITS::ABS),
                                                                      GET_PAIR_FROM_ENUM(N_TYPE_BITS::TEXT), GET_PAIR_FROM_ENUM(N_TYPE_BITS::DATA),
                                                                      GET_PAIR_FROM_ENUM(N_TYPE_BITS::BSS),  GET_PAIR_FROM_ENUM(N_TYPE_BITS::SECT),
                                                                      GET_PAIR_FROM_ENUM(N_TYPE_BITS::PBUD), GET_PAIR_FROM_ENUM(N_TYPE_BITS::INDR),
                                                                      GET_PAIR_FROM_ENUM(N_TYPE_BITS::COMM), GET_PAIR_FROM_ENUM(N_TYPE_BITS::FN) };
 
-static const std::map<ReferenceFlag, std::string_view> ReferenceFlagNames{ GET_PAIR_FROM_ENUM(ReferenceFlag::UNDEFINED_NON_LAZY),
+inline const std::map<ReferenceFlag, std::string_view> ReferenceFlagNames{ GET_PAIR_FROM_ENUM(ReferenceFlag::UNDEFINED_NON_LAZY),
                                                                            GET_PAIR_FROM_ENUM(ReferenceFlag::UNDEFINED_LAZY),
                                                                            GET_PAIR_FROM_ENUM(ReferenceFlag::DEFINED),
                                                                            GET_PAIR_FROM_ENUM(ReferenceFlag::PRIVATE_DEFINED),
                                                                            GET_PAIR_FROM_ENUM(ReferenceFlag::PRIVATE_UNDEFINED_NON_LAZY),
                                                                            GET_PAIR_FROM_ENUM(ReferenceFlag::PRIVATE_UNDEFINED_LAZY) };
 
-static const std::map<OrdinalType, std::string_view> OrdinalTypeNames{ GET_PAIR_FROM_ENUM(OrdinalType::SELF_LIBRARY),
+inline const std::map<OrdinalType, std::string_view> OrdinalTypeNames{ GET_PAIR_FROM_ENUM(OrdinalType::SELF_LIBRARY),
                                                                        GET_PAIR_FROM_ENUM(OrdinalType::MAX_LIBRARY),
                                                                        GET_PAIR_FROM_ENUM(OrdinalType::DYNAMIC_LOOKUP),
                                                                        GET_PAIR_FROM_ENUM(OrdinalType::EXECUTABLE) };
 
-static const std::map<N_DESC_BIT_TYPE, std::string_view> NDescBitTypeNames{ GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::REFERENCED_DYNAMICALLY),
+inline const std::map<N_DESC_BIT_TYPE, std::string_view> NDescBitTypeNames{ GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::REFERENCED_DYNAMICALLY),
                                                                             GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::NO_DEAD_STRIP),
                                                                             GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::DESC_DISCARDED),
                                                                             GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::WEAK_REF),
@@ -369,7 +369,7 @@ static const std::map<N_DESC_BIT_TYPE, std::string_view> NDescBitTypeNames{ GET_
                                                                             GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::SYMBOL_RESOLVER),
                                                                             GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::ALT_ENTRY) };
 
-static const std::map<N_STAB_TYPE, std::string_view> NStabTypeNames{
+inline const std::map<N_STAB_TYPE, std::string_view> NStabTypeNames{
     GET_PAIR_FROM_ENUM(N_STAB_TYPE::GSYM),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::FNAME),
     GET_PAIR_FROM_ENUM(N_STAB_TYPE::FUN),    GET_PAIR_FROM_ENUM(N_STAB_TYPE::STSYM),
     GET_PAIR_FROM_ENUM(N_STAB_TYPE::LCSYM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::MAIN),
@@ -395,7 +395,7 @@ static const std::map<N_STAB_TYPE, std::string_view> NStabTypeNames{
     GET_PAIR_FROM_ENUM(N_STAB_TYPE::LENG)
 };
 
-static const std::map<PlatformType, std::string_view> CodeSignPlatformNames{
+inline const std::map<PlatformType, std::string_view> CodeSignPlatformNames{
     GET_PAIR_FROM_ENUM(PlatformType::UNKNOWN),
     GET_PAIR_FROM_ENUM(PlatformType::MACOS),
     GET_PAIR_FROM_ENUM(PlatformType::IOS),
@@ -414,7 +414,7 @@ static const std::map<PlatformType, std::string_view> CodeSignPlatformNames{
     GET_PAIR_FROM_ENUM(PlatformType::ANY),
 };
 
-static const std::map<CodeSignFlags, std::string_view> CodeSignFlagNames{ GET_PAIR_FROM_ENUM(CodeSignFlags::VALID),
+inline const std::map<CodeSignFlags, std::string_view> CodeSignFlagNames{ GET_PAIR_FROM_ENUM(CodeSignFlags::VALID),
                                                                           GET_PAIR_FROM_ENUM(CodeSignFlags::ADHOC),
                                                                           GET_PAIR_FROM_ENUM(CodeSignFlags::GET_TASK_ALLOW),
                                                                           GET_PAIR_FROM_ENUM(CodeSignFlags::INSTALLER),
@@ -445,14 +445,14 @@ static const std::map<CodeSignFlags, std::string_view> CodeSignFlagNames{ GET_PA
                                                                           GET_PAIR_FROM_ENUM(CodeSignFlags::DATAVAULT_CONTROLLER),
                                                                           GET_PAIR_FROM_ENUM(CodeSignFlags::ENTITLEMENT_FLAGS) };
 
-static const std::map<CodeSignExecSegFlags, std::string_view> CodeSignExecSegFlagNames{
+inline const std::map<CodeSignExecSegFlags, std::string_view> CodeSignExecSegFlagNames{
     GET_PAIR_FROM_ENUM(CodeSignExecSegFlags::MAIN_BINARY),    GET_PAIR_FROM_ENUM(CodeSignExecSegFlags::ALLOW_UNSIGNED),
     GET_PAIR_FROM_ENUM(CodeSignExecSegFlags::DEBUGGER),       GET_PAIR_FROM_ENUM(CodeSignExecSegFlags::JIT),
     GET_PAIR_FROM_ENUM(CodeSignExecSegFlags::SKIP_LV),        GET_PAIR_FROM_ENUM(CodeSignExecSegFlags::CAN_LOAD_CDHASH),
     GET_PAIR_FROM_ENUM(CodeSignExecSegFlags::CAN_EXEC_CDHASH)
 };
 
-static const std::map<CodeSignExecSegFlags, std::string_view> CodeSignExecSegFlagsDescriptions{
+inline const std::map<CodeSignExecSegFlags, std::string_view> CodeSignExecSegFlagsDescriptions{
     { CodeSignExecSegFlags::MAIN_BINARY, "Executable segment denotes main binary." },
     { CodeSignExecSegFlags::ALLOW_UNSIGNED, "Allow unsigned pages (for debugging)." },
     { CodeSignExecSegFlags::DEBUGGER, "Main binary is debugger." },
@@ -462,13 +462,13 @@ static const std::map<CodeSignExecSegFlags, std::string_view> CodeSignExecSegFla
     { CodeSignExecSegFlags::CAN_EXEC_CDHASH, "Can execute blessed cdhash." }
 };
 
-static const std::map<CodeSignMagic, std::string_view> CodeSignHashTypeNames{
+inline const std::map<CodeSignMagic, std::string_view> CodeSignHashTypeNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_NO_HASH), GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_SHA1),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_SHA256),  GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_SHA256_TRUNCATED),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_SHA384),  GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_SHA512)
 };
 
-static const std::map<CodeSignMagic, std::string_view> CodeSignMagicNames{
+inline const std::map<CodeSignMagic, std::string_view> CodeSignMagicNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_REQUIREMENT),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_REQUIREMENTS),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_CODEDIRECTORY),
@@ -480,7 +480,7 @@ static const std::map<CodeSignMagic, std::string_view> CodeSignMagicNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_BYTE),
 };
 
-static const std::map<CodeSignMagic, std::string_view> CodeSignSlotNames{
+inline const std::map<CodeSignMagic, std::string_view> CodeSignSlotNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSSLOT_CODEDIRECTORY),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSSLOT_INFOSLOT),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSSLOT_REQUIREMENTS),
@@ -501,7 +501,7 @@ static const std::map<CodeSignMagic, std::string_view> CodeSignSlotNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CS_SUPPL_SIGNER_TYPE_LOCAL),
 };
 
-static const std::map<CodeSignFlags, std::string_view> CodeSignFlagsDescriptions{
+inline const std::map<CodeSignFlags, std::string_view> CodeSignFlagsDescriptions{
     { CodeSignFlags::VALID, "Dynamically valid." },
     { CodeSignFlags::ADHOC, "Ad hoc signed." },
     { CodeSignFlags::GET_TASK_ALLOW, "Has get-task-allow entitlement." },

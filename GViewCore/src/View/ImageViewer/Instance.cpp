@@ -7,7 +7,7 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Image View")
+    : ViewControl("Image View"), settings(nullptr)
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
     imgView->SetVScrollBarTopMargin(4);
@@ -205,6 +205,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32
 {
     // display
@@ -213,6 +215,7 @@ enum class PropertyID : uint32
     CurrentImageIndex,
     CurrentImageSize
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)

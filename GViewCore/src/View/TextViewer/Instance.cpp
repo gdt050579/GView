@@ -189,7 +189,7 @@ uint8 CharsGroups[128] = { 0,  2,  2,  2,  2,  2,  2,  2,  2,  0,  0,  2,  2,  0
                            96, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1, 1,  1,  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  123, 124, 125, 126, 127 };
 uint8 GetCharGroup(char16 ch)
 {
-    if ((ch >= 128) || (ch < 0))
+    if (ch >= 128)
         return 1; // group for letters
     return CharsGroups[static_cast<uint8>(ch)];
 }
@@ -214,7 +214,7 @@ class DataCharacterStream
 
   public:
     DataCharacterStream(std::vector<LineInfo>& li, Reference<SettingsData> _settings, GView::Utils::DataCache& cache)
-        : settings(_settings), dataCache(cache), lines(li)
+        : dataCache(cache), settings(_settings), lines(li)
     {
         linesCount  = static_cast<uint32>(li.size());
         currentLine = 0;
@@ -268,7 +268,7 @@ class DataCharacterStream
 };
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Text View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+    : ViewControl("Text View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl), settings(nullptr)
 {
     this->obj = _obj;
 
@@ -1671,6 +1671,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32
 {
     // display
@@ -1682,6 +1684,7 @@ enum class PropertyID : uint32
     ShowTabCharacter,
     WrapMethodKey,
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)

@@ -8,7 +8,7 @@ PCAPFile::PCAPFile()
 
 bool PCAPFile::Update()
 {
-    auto offset = 0;
+    auto offset = 0ULL;
     CHECK(obj->GetData().Copy<Header>(offset, header), false, "");
     offset += sizeof(Header);
     if (header.magicNumber == Magic::Swapped)

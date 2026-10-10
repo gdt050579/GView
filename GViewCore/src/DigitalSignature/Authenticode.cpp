@@ -320,7 +320,7 @@ static void ExtractCertificatesFromMSCountersignature(const uint8_t* data, int l
     ParseCertificates(certs, result);
 }
 
-static void ParseMSCountersignature(PKCS7_ptr& p7, AuthenticodeSignature& auth)
+[[maybe_unused]] static void ParseMSCountersignature(PKCS7_ptr& p7, AuthenticodeSignature& auth)
 {
     PKCS7_SIGNER_INFO* si           = sk_PKCS7_SIGNER_INFO_value(PKCS7_get_signer_info(p7.get()), 0);
     STACK_OF(X509_ATTRIBUTE)* attrs = PKCS7_get_attributes(si);
@@ -947,7 +947,7 @@ bool Certificate::Parse(X509* x509)
     return true;
 }
 
-static void ToHex(const unsigned char* v, char* b, int len)
+[[maybe_unused]] static void ToHex(const unsigned char* v, char* b, int len)
 {
     int i, j = 0;
     for (i = 0; i < len; i++)
@@ -1413,7 +1413,7 @@ end:
 
 time_t ASN1_TIME_to_time_t(const ASN1_TIME* time)
 {
-    struct tm t = { 0 };
+    struct tm t = {};
     if (!time)
         return timegm(&t);
 

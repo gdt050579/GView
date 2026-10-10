@@ -38,9 +38,9 @@ extern "C"
         return new JOB::JOBFile();
     }
 
-    static constexpr auto MagentaDarkBlue = ColorPair{ Color::Magenta, Color::DarkBlue };
-    static constexpr auto DarkGreenBlue   = ColorPair{ Color::DarkGreen, Color::DarkBlue };
-    static constexpr auto DarkRedBlue     = ColorPair{ Color::DarkRed, Color::DarkBlue };
+    [[maybe_unused]] static constexpr auto MagentaDarkBlue = ColorPair{ Color::Magenta, Color::DarkBlue };
+    [[maybe_unused]] static constexpr auto DarkGreenBlue   = ColorPair{ Color::DarkGreen, Color::DarkBlue };
+    [[maybe_unused]] static constexpr auto DarkRedBlue     = ColorPair{ Color::DarkRed, Color::DarkBlue };
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<JOB::JOBFile> job)
     {

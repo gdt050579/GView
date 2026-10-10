@@ -99,7 +99,8 @@ bool DissasemblerIntel::DissasembleInstruction(BufferView buf, uint64 va, Instru
     CHECK(handle != 0, false, "");
 
     cs_detail detail{};
-    cs_insn insn{ .detail = &detail };
+    cs_insn insn{};
+    insn.detail = &detail;
 
     auto data   = buf.GetData();
     auto length = buf.GetLength();
@@ -116,7 +117,8 @@ bool DissasemblerIntel::DissasembleInstructions(BufferView buf, uint64 va, std::
     CHECK(handle != 0, false, "");
 
     cs_detail detail{};
-    cs_insn insn{ .detail = &detail };
+    cs_insn insn{};
+    insn.detail = &detail;
 
     auto data    = buf.GetData();
     auto length  = buf.GetLength();

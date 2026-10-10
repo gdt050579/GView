@@ -30,7 +30,7 @@ bool Selection::Clear(int index)
 
 bool Selection::GetSelection(uint32 index, uint64& Start, uint64& End)
 {
-    CHECK((index < Selection::MAX_SELECTION_ZONES) && (index >= 0),
+    CHECK(index < Selection::MAX_SELECTION_ZONES,
           false,
           "Invalid selection index (%d) - should be between 0 and %d",
           index,

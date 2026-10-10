@@ -55,7 +55,7 @@ bool ISOFile::Update()
         root                 = *reinterpret_cast<ECMA_119_DirectoryRecord*>(&pvd.vdd.directoryEntryForTheRootDirectory);
         auto fileEntryOffset = root.locationOfExtent.LSB * blockSize;
         auto block           = 0;
-        CHECK(fileEntryOffset == ptr.locationOfExtent * blockSize, false, "");
+        CHECK(static_cast<uint32>(fileEntryOffset) == ptr.locationOfExtent * blockSize, false, "");
 
         std::queue<ECMA_119_DirectoryRecord> drs;
         drs.emplace(root);

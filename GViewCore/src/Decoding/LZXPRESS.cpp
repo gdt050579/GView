@@ -11,13 +11,13 @@
 
 namespace GView::Decoding::LZXPRESS::Huffman
 {
-constexpr uint32 MAX_BITS_COUNT     = 32U;
-constexpr uint32 UINT32_BITS_COUNT  = 32U;
-constexpr uint32 UINT16_BITS_COUNT  = 16U;
-constexpr uint32 CHUNK_SIZE         = 0x10000;
-constexpr uint32 MAXIMUM_CODE_SIZE  = 15U;
-constexpr uint32 SYMBOLS_ARRAY_SIZE = 512U;
-constexpr uint32 SYMBOL_MAX_SIZE    = 256U;
+[[maybe_unused]] constexpr uint32 MAX_BITS_COUNT     = 32U;
+[[maybe_unused]] constexpr uint32 UINT32_BITS_COUNT  = 32U;
+[[maybe_unused]] constexpr uint32 UINT16_BITS_COUNT  = 16U;
+[[maybe_unused]] constexpr uint32 CHUNK_SIZE         = 0x10000;
+[[maybe_unused]] constexpr uint32 MAXIMUM_CODE_SIZE  = 15U;
+[[maybe_unused]] constexpr uint32 SYMBOLS_ARRAY_SIZE = 512U;
+[[maybe_unused]] constexpr uint32 SYMBOL_MAX_SIZE    = 256U;
 
 struct Stream
 {
@@ -48,7 +48,9 @@ struct Stream
 
         if (size >= sizeof(uint16) || offset <= (size - sizeof(uint16)))
         {
-            *((uint16*) &bits) = *((uint16*) (stream + offset));
+            uint16 val = 0;
+            std::memcpy(&val, stream + offset, sizeof(uint16));
+            bits |= val;
             offset += sizeof(uint16);
         }
     }

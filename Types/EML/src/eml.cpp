@@ -1,7 +1,5 @@
 #include "eml.hpp"
 #include <string>
-#include <locale>
-#include <codecvt>
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;
@@ -32,12 +30,9 @@ constexpr string_view EML_ICON = "1111111111111111"  // 1
 template <typename T>
 std::string toUTF8(const std::basic_string<T>& source)
 {
-    std::string result;
-
-    std::wstring_convert<std::codecvt_utf8_utf16<T>, T> convertor;
-    result = convertor.to_bytes(source);
-
-    return result;
+    LocalString<256> s;
+    s.Set(source);
+    return std::string(s.GetText(), s.Len());
 }
 
 void BuildViews(Reference<GView::View::WindowInterface> win, Reference<EML::EMLFile> eml)

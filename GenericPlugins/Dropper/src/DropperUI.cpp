@@ -1,5 +1,3 @@
-#pragma once
-
 #include "DropperUI.hpp"
 #include "Artefacts.hpp"
 #include <cassert>
@@ -26,7 +24,7 @@ constexpr int32 RADIO_ID_SELECTION      = 2;
 constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE          = 1;
 constexpr int32 CHECKBOX_ID_RECURSIVE_OBJECTS          = 2;
 constexpr int32 CHECKBOX_ID_WRITE_LOG_OBJECTS          = 3;
-constexpr int32 CHECKBOX_ID_OPEN_LOG_OBJECTS           = 4;
+[[maybe_unused]] constexpr int32 CHECKBOX_ID_OPEN_LOG_OBJECTS = 4;
 constexpr int32 CHECKBOX_ID_OPEN_DROPPED_OBJECTS       = 5;
 constexpr int32 CHECKBOX_ID_HIGHLIGHT_DROPPED_OBJECTS  = 6;
 constexpr int32 CHECKBOX_ID_DROP_ASCII_STRINGS         = 7;

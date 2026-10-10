@@ -396,7 +396,7 @@ class Emulator : public AST::ConstVisitor
 
     void EvalStringCharCodeAt(std::u16string_view callee, int32 arg)
     {
-        if (arg >= callee.size()) {
+        if (arg < 0 || static_cast<size_t>(arg) >= callee.size()) {
             return;
         }
 

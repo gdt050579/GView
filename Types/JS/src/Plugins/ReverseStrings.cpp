@@ -25,7 +25,7 @@ bool ReverseStrings::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData
 }
 GView::View::LexicalViewer::PluginAfterActionRequest ReverseStrings::Execute(GView::View::LexicalViewer::PluginData& data, Reference<Window> parent)
 {
-    for (int32 index = (int32) data.startIndex; index < data.endIndex; index++)
+    for (auto index = data.startIndex; index < data.endIndex; index++)
     {
         Token currentToken = data.tokens[index];
         if (currentToken.GetTypeID(TokenType::None) == TokenType::String)

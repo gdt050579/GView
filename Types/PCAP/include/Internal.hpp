@@ -170,7 +170,7 @@ enum class LinkType : uint32
     ZBOSS_NCP                  = 292,
 };
 
-static const std::map<LinkType, std::string_view> LinkTypeNames{ GET_PAIR_FROM_ENUM(LinkType::NULL_),
+inline const std::map<LinkType, std::string_view> LinkTypeNames{ GET_PAIR_FROM_ENUM(LinkType::NULL_),
                                                                  GET_PAIR_FROM_ENUM(LinkType::ETHERNET),
                                                                  GET_PAIR_FROM_ENUM(LinkType::AX25),
                                                                  GET_PAIR_FROM_ENUM(LinkType::IEEE802_5),
@@ -354,8 +354,8 @@ static const std::map<LinkType, std::string_view> LinkTypeDescriptions
     { LinkType::USER15                       , "Reserved for private use." },
     { LinkType::USER16                       , "Reserved for private use." },
     { LinkType::IEEE802_11_AVS               , "AVS monitor mode information followed by an 802.11 header." },
-    { LinkType::BACNET_MS_TP                 , "BACnet MS/TP frames, as specified by section 9.3 MS/TP Frame Format of ANSI/ASHRAE Standard 135, BACnet® - A Data Communication Protocol for Building Automation and Control Networks, including the preamble and, if present, the Data CRC." },
-    { LinkType::PPP_PPPD                     , "PPP in HDLC-like encapsulation, like LINKTYPE_PPP_HDLC, but with the 0xff address byte replaced by a direction indication—0x00 for incoming and 0x01 for outgoing." },
+    { LinkType::BACNET_MS_TP                 , "BACnet MS/TP frames, as specified by section 9.3 MS/TP Frame Format of ANSI/ASHRAE Standard 135, BACnetÂ® - A Data Communication Protocol for Building Automation and Control Networks, including the preamble and, if present, the Data CRC." },
+    { LinkType::PPP_PPPD                     , "PPP in HDLC-like encapsulation, like LINKTYPE_PPP_HDLC, but with the 0xff address byte replaced by a direction indicationâ€”0x00 for incoming and 0x01 for outgoing." },
     { LinkType::GPRS_LLC                     , "General Packet Radio Service Logical Link Control, as defined by 3GPP TS 04.64." },
     { LinkType::GPF_T                        , "Transparent-mapped generic framing procedure, as specified by ITU-T Recommendation G.7041/Y.1303." },
     { LinkType::GPF_F                        , "Frame-mapped generic framing procedure, as specified by ITU-T Recommendation G.7041/Y.1303." },
@@ -391,13 +391,13 @@ static const std::map<LinkType, std::string_view> LinkTypeDescriptions
     { LinkType::MUX27010                     , "Variant of 3GPP TS 27.010 multiplexing protocol (similar to, but not the same as, 27.010)." },
     { LinkType::STANAG_5066_D_PDU            , "D_PDUs as described by NATO standard STANAG 5066, starting with the synchronization sequence, and including both header and data CRCs. The current version of STANAG 5066 is backwards-compatible with the 1.0.2 version, although newer versions are classified." },
     { LinkType::NFLOG                        , "Linux netlink NETLINK NFLOG socket log messages." },
-    { LinkType::NETANALYZER                  , "Pseudo-header for Hilscher Gesellschaft für Systemautomation mbH netANALYZER devices, followed by an Ethernet frame, beginning with the MAC header and ending with the FCS." },
-    { LinkType::NETANALYZER_TRANSPARENT      , "Pseudo-header for Hilscher Gesellschaft für Systemautomation mbH netANALYZER devices, followed by an Ethernet frame, beginning with the preamble, SFD, and MAC header, and ending with the FCS." },
+    { LinkType::NETANALYZER                  , "Pseudo-header for Hilscher Gesellschaft fÃ¼r Systemautomation mbH netANALYZER devices, followed by an Ethernet frame, beginning with the MAC header and ending with the FCS." },
+    { LinkType::NETANALYZER_TRANSPARENT      , "Pseudo-header for Hilscher Gesellschaft fÃ¼r Systemautomation mbH netANALYZER devices, followed by an Ethernet frame, beginning with the preamble, SFD, and MAC header, and ending with the FCS." },
     { LinkType::IPOIB                        , "IP-over-InfiniBand, as specified by RFC 4391 section 6." },
     { LinkType::MPEG_2_TS                    , "MPEG-2 Transport Stream transport packets, as specified by ISO 13818-1/ITU-T Recommendation H.222.0 (see table 2-2 of section 2.4.3.2 \"Transport Stream packet layer\")." },
     { LinkType::NG40                         , "Pseudo-header for ng4T GmbH's UMTS Iub/Iur-over-ATM and Iub/Iur-over-IP format as used by their ng40 protocol tester, followed by frames for the Frame Protocol as specified by 3GPP TS 25.427 for dedicated channels and 3GPP TS 25.435 for common/shared channels in the case of ATM AAL2 or UDP traffic, by SSCOP packets as specified by ITU-T Recommendation Q.2110 for ATM AAL5 traffic, and by NBAP packets for SCTP traffic." },
     { LinkType::NFC_LLCP                     , "Pseudo-header for NFC LLCP packet captures, followed by frame data for the LLCP Protocol as specified by NFCForum-TS-LLCP_1.1." },
-    { LinkType::INFINIBAND                   , "Raw InfiniBand frames, starting with the Local Routing Header, as specified in Chapter 5 \"Data packet format\" of InfiniBand™ Architectural Specification Release 1.2.1 Volume 1 - General Specifications." },
+    { LinkType::INFINIBAND                   , "Raw InfiniBand frames, starting with the Local Routing Header, as specified in Chapter 5 \"Data packet format\" of InfiniBandâ„¢ Architectural Specification Release 1.2.1 Volume 1 - General Specifications." },
     { LinkType::SCTP                         , "SCTP packets, as defined by RFC 4960, with no lower-level protocols such as IPv4 or IPv6." },
     { LinkType::USBPCAP                      , "USB packets, beginning with a USBPcap header." },
     { LinkType::RTAC_SERIAL                  , "Serial-line packet header for the Schweitzer Engineering Laboratories \"RTAC\" product, followed by a payload for one of a number of industrial control protocols." },
@@ -451,7 +451,7 @@ struct Header
     uint16 versionMinor; /* The version number of this file format 4. */
     int32 thiszone;      /* The correction time in seconds between GMT (UTC) and the local timezone of the following packet header timestamps.
                             Examples: If the timestamps are in GMT (UTC), thiszone is simply 0. If the timestamps are in Central European time
-                            (Amsterdam, Berlin, …) which is GMT + 1:00, thiszone must be -3600. In practice, time stamps are always in GMT, so
+                            (Amsterdam, Berlin, â€¦) which is GMT + 1:00, thiszone must be -3600. In practice, time stamps are always in GMT, so
                             thiszone is always 0. */
     uint32 sigfigs;      /* In theory, the accuracy of time stamps in the capture; in practice, all tools set it to 0. */
     uint32 snaplen;      /* Max length of captured packets, in octets. The "snapshot length" for the capture (typically 65535 or even more, but
@@ -461,7 +461,7 @@ struct Header
 
 static_assert(sizeof(Header) == 24);
 
-static void Swap(Header& header)
+inline void Swap(Header& header)
 {
     header.magicNumber  = (Magic) AppCUI::Endian::BigToNative((uint32) header.magicNumber);
     header.versionMajor = AppCUI::Endian::BigToNative(header.versionMajor);
@@ -616,9 +616,9 @@ constexpr uint32 NULL_FAMILY_IP = 2;
     case x:                                                                                                                                                    \
         return y;
 
-static EtherType GetEtherType(uint16 value)
+inline EtherType GetEtherType(uint16 value)
 {
-    if (value >= 0 && value <= 0x05DC)
+    if (value <= 0x05DC)
     {
         return EtherType::IEEE802_3LengthFields;
     }
@@ -1016,10 +1016,10 @@ struct Package_NullHeader
 
 static_assert(sizeof(Package_EthernetHeader) == 14);
 
-static void Swap(Package_EthernetHeader& peh)
+inline void Swap(Package_EthernetHeader& peh)
 {
-    MAC etherDHost{ 0 };
-    MAC etherSHost{ 0 };
+    MAC etherDHost{};
+    MAC etherSHost{};
     memcpy(&etherDHost, peh.etherDhost, 6);
     memcpy(&etherSHost, peh.etherShost, 6);
 
@@ -1426,7 +1426,7 @@ struct IPv4Header
 
 static_assert(sizeof(IPv4Header) == 20);
 
-static void Swap(IPv4Header& ipv4)
+inline void Swap(IPv4Header& ipv4)
 {
     *(uint8*) (&ipv4)                          = AppCUI::Endian::BigToNative(*(uint8*) (&ipv4));
     *(uint8*) ((uint8*) &ipv4 + sizeof(uint8)) = AppCUI::Endian::BigToNative(*(uint8*) ((uint8*) &ipv4 + sizeof(uint8)));
@@ -1468,7 +1468,7 @@ struct IPv6Header
 
 static_assert(sizeof(IPv6Header) == 40);
 
-static void Swap(IPv6Header& ipv6)
+inline void Swap(IPv6Header& ipv6)
 {
     ipv6.first.value   = AppCUI::Endian::BigToNative(ipv6.first.value);
     ipv6.payloadLength = AppCUI::Endian::BigToNative(ipv6.payloadLength);
@@ -1492,7 +1492,7 @@ struct UDPHeader
 
 static_assert(sizeof(UDPHeader) == 8);
 
-static void Swap(UDPHeader& udp)
+inline void Swap(UDPHeader& udp)
 {
     udp.srcPort  = AppCUI::Endian::BigToNative(udp.srcPort);
     udp.destPort = AppCUI::Endian::BigToNative(udp.destPort);
@@ -1507,7 +1507,7 @@ enum class DNSHeader_Opcode : uint8
     ServerStatusRequest = 2,
 };
 
-static const std::map<DNSHeader_Opcode, std::string_view> DNSHeader_OpcodeNames{ GET_PAIR_FROM_ENUM(DNSHeader_Opcode::StandardQuery),
+inline const std::map<DNSHeader_Opcode, std::string_view> DNSHeader_OpcodeNames{ GET_PAIR_FROM_ENUM(DNSHeader_Opcode::StandardQuery),
                                                                                  GET_PAIR_FROM_ENUM(DNSHeader_Opcode::InverseQuery),
                                                                                  GET_PAIR_FROM_ENUM(
                                                                                        DNSHeader_Opcode::ServerStatusRequest) };
@@ -1542,7 +1542,7 @@ struct DNSHeader
 
 static_assert(sizeof(DNSHeader) == 12);
 
-static void Swap(DNSHeader& dns)
+inline void Swap(DNSHeader& dns)
 {
     dns.id      = AppCUI::Endian::BigToNative(dns.id);
     dns.flags   = AppCUI::Endian::BigToNative(dns.flags);
@@ -1608,7 +1608,7 @@ struct DNSHeader_Question
     DNSHeader_Question_QClass qclass;
 };
 
-static void Swap(DNSHeader_Question& question)
+inline void Swap(DNSHeader_Question& question)
 {
     question.qtype  = (DNSHeader_Question_QType) AppCUI::Endian::BigToNative((uint16) question.qtype);
     question.qclass = (DNSHeader_Question_QClass) AppCUI::Endian::BigToNative((uint16) question.qclass);
@@ -1619,10 +1619,10 @@ enum TCPHeader_Flags
     NONE = 0,
     FIN  = 1, // Used to end the TCP connection. TCP is full duplex so both parties will have to use the FIN bit to end the connection. This
               // is the normal method how we end an connection.
-    SYN = 2,  // Initial three way handshake and it’s used to set the initial sequence number.
+    SYN = 2,  // Initial three way handshake and itâ€™s used to set the initial sequence number.
     RST = 4,  // Resets the connection, when you receive this you have to terminate the connection right away. This is only used when
-              // there are unrecoverable errors and it’s not a normal way to finish the TCP connection.
-    PSH = 8,  // Push function. This tells an application that the data should be transmitted immediately and that we don’t want
+              // there are unrecoverable errors and itâ€™s not a normal way to finish the TCP connection.
+    PSH = 8,  // Push function. This tells an application that the data should be transmitted immediately and that we donâ€™t want
               // to wait to fill the entire TCP segment.
     ACK = 16, // used for the acknowledgment.
     URG = 32, // Urgent pointer. When this bit is set, the data should be treated as priority over other data.
@@ -1675,7 +1675,7 @@ struct TCPHeader
 
 static_assert(sizeof(TCPHeader) == 20);
 
-static void Swap(TCPHeader& tcp)
+inline void Swap(TCPHeader& tcp)
 {
     tcp.sPort = AppCUI::Endian::BigToNative(tcp.sPort);
     tcp.dPort = AppCUI::Endian::BigToNative(tcp.dPort);
@@ -1863,7 +1863,7 @@ struct ICMPHeader_Base // TODO: on top of this all types should be constructed
 };
 #pragma pack(pop)
 
-static void Swap(ICMPHeader_Base& icmpBase)
+inline void Swap(ICMPHeader_Base& icmpBase)
 {
     icmpBase.type     = (ICMPHeader_Type) AppCUI::Endian::BigToNative((uint8) icmpBase.type);
     icmpBase.code     = AppCUI::Endian::BigToNative(icmpBase.code);
@@ -1879,7 +1879,7 @@ struct ICMPHeader_5
 };
 #pragma pack(pop)
 
-static void Swap(ICMPHeader_5& icmp5)
+inline void Swap(ICMPHeader_5& icmp5)
 {
     Swap(icmp5.base);
     icmp5.gatewayInternetAddress = AppCUI::Endian::BigToNative(icmp5.gatewayInternetAddress);
@@ -1894,7 +1894,7 @@ struct ICMPHeader_8
 };
 #pragma pack(pop)
 
-static void Swap(ICMPHeader_8& icmp8)
+inline void Swap(ICMPHeader_8& icmp8)
 {
     Swap(icmp8.base);
     icmp8.identifier     = AppCUI::Endian::BigToNative(icmp8.identifier);
@@ -1909,7 +1909,7 @@ struct ICMPHeader_12
 };
 #pragma pack(pop)
 
-static void Swap(ICMPHeader_12& icmp12)
+inline void Swap(ICMPHeader_12& icmp12)
 {
     Swap(icmp12.base);
     icmp12.pointer = AppCUI::Endian::BigToNative(icmp12.pointer);
@@ -1925,7 +1925,7 @@ struct ICMPHeader_13_14
 };
 #pragma pack(pop)
 
-static void Swap(ICMPHeader_13_14& icmp13_14)
+inline void Swap(ICMPHeader_13_14& icmp13_14)
 {
     Swap(icmp13_14.base);
     icmp13_14.originateTimestamp = AppCUI::Endian::BigToNative(icmp13_14.originateTimestamp);
@@ -1935,7 +1935,7 @@ static void Swap(ICMPHeader_13_14& icmp13_14)
 
 struct StreamPayload
 {
-    uint8* location;
+    const uint8* location;
     uint32 size;
 };
 
@@ -1950,12 +1950,12 @@ struct StreamTCPOrder
 
 struct LinkTypeInfo {
     LinkType type;
-    void* header;
+    const void* header;
 };
 
 struct TransportLayerInfo {
     IP_Protocol transportLayer;
-    void* transportLayerHeader;
+    const void* transportLayerHeader;
 };
 
 struct PacketData {

@@ -41,7 +41,7 @@ bool JPG::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Find
     finding.start = offset;
     finding.end   = offset + sizeof(IMAGE_JPG_MAGIC_SOI);
     auto pos      = finding.end;
-    auto found    = false;
+    [[maybe_unused]] auto found = false;
 
     while (true) {
         auto buffer = file.CopyToBuffer(pos, sizeof(uint32), true);

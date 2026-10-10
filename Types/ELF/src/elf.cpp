@@ -46,7 +46,7 @@ extern "C"
             size   = elf->header64.e_shnum * elf->header64.e_shentsize;
             settings.AddZone(offset, size, SHT_COLOR, "SHT64");
 
-            auto i = 0;
+            size_t i = 0;
             for (const auto& section : elf->sections64)
             {
                 if (i >= elf->sectionNames.size()) // truncated binaries
@@ -81,7 +81,7 @@ extern "C"
             size   = elf->header32.e_shnum * elf->header32.e_shentsize;
             settings.AddZone(offset, size, SHT_COLOR, "SHT32");
 
-            auto i = 0;
+            size_t i = 0;
             for (const auto& section : elf->sections32)
             {
                 if (i >= elf->sectionNames.size()) // truncated binaries

@@ -110,7 +110,7 @@ struct CONSTANT_Integer_info {
 };
 
 struct ConstantData {
-    ConstantKind kind;
+    ConstantKind kind{ ConstantKind::Nothing };
     union {
         CONSTANT_Class_info clazz;
         CONSTANT_NameAndType_info name_and_type;
@@ -123,6 +123,9 @@ struct ConstantData {
         CONSTANT_Double_info double_;
         CONSTANT_Integer_info integer;
     };
+
+    ConstantData() : kind(ConstantKind::Nothing) {}
+    ConstantData(ConstantKind k) : kind(k) {}
 };
 
 struct ExceptionTable {

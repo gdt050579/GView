@@ -2,7 +2,7 @@
 
 using namespace GView::Type::BMP;
 
-constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
+[[maybe_unused]] constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
 
 BMPFile::BMPFile()
 {

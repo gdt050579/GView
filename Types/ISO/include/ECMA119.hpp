@@ -369,7 +369,7 @@ inline static const std::string RecordingDateAndTimeToString(const unsigned char
     return ls.GetText();
 }
 
-inline static const auto DRCRC64(const ECMA_119_DirectoryRecord& dr)
+inline auto DRCRC64(const ECMA_119_DirectoryRecord& dr)
 {
     constexpr auto sizeDelta = sizeof(ECMA_119_DirectoryRecord) -
                                sizeof(ECMA_119_DirectoryRecord::fileIdentifier) / sizeof(ECMA_119_DirectoryRecord::fileIdentifier[0]);

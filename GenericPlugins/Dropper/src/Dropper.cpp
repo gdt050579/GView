@@ -468,7 +468,7 @@ bool Instance::DropBinaryData(
     CHECK(context.initialized, false, "");
     CHECK(ProcessBinaryDataCharset(includedCharSet, excludedCharSet), false, "");
 
-    std::u16string_view fp = object->GetPath();
+    [[maybe_unused]] std::u16string_view fp = object->GetPath();
 
     LocalUnicodeStringBuilder<4096> lusb;
     CHECK(lusb.Add(object->GetPath()), false, "");
@@ -512,7 +512,7 @@ bool Instance::DropBinaryData(
             offset += cacheSize;
 
             while (bf.IsValid() && !bf.Empty()) {
-                for (int32 i = 0; i < bf.GetLength(); i++) {
+                for (uint32 i = 0; i < bf.GetLength(); i++) {
                     const auto c = bf[i];
                     if (context.binaryCharSetMatrix[c]) {
                         droppedFile << c;

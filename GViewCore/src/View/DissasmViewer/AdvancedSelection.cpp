@@ -15,7 +15,7 @@ void GView::View::DissasmViewer::AdvancedSelection::Clear()
 
 bool GView::View::DissasmViewer::AdvancedSelection::Clear(uint32 index)
 {
-    CHECK((index < MAX_SELECTION_ZONES) && (index >= 0),
+    CHECK(index < MAX_SELECTION_ZONES,
           false,
           "Invalid selection index (%d) - should be between 0 and %d",
           index,
@@ -29,7 +29,7 @@ bool GView::View::DissasmViewer::AdvancedSelection::Clear(uint32 index)
 
 bool GView::View::DissasmViewer::AdvancedSelection::UpdateSelection(uint32 index, LinePosition position, bool ctrl_down, bool alt_down)
 {
-    CHECK((index < MAX_SELECTION_ZONES) && (index >= 0), false, "Invalid selection index (%d) - should be between 0 and %d", index, MAX_SELECTION_ZONES - 1);
+    CHECK(index < MAX_SELECTION_ZONES, false, "Invalid selection index (%d) - should be between 0 and %d", index, MAX_SELECTION_ZONES - 1);
     auto sel = &zones[index];
     if (position < sel->originalPoint)
     {

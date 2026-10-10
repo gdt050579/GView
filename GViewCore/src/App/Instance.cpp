@@ -550,7 +550,7 @@ bool Instance::AddFileWindow(
             }
             return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName, parent, creationProcess);
         }
-    } catch (std::filesystem::filesystem_error /* e */) {
+    } catch (const std::filesystem::filesystem_error& /* e */) {
         errList.AddError("Fail to open file: %s", path.u8string().c_str());
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }

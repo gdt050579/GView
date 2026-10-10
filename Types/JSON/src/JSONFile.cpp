@@ -174,12 +174,7 @@ void JSONFile::PreprocessText(GView::View::LexicalViewer::TextEditor&)
 }
 void JSONFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
 {
-    switch (id)
-    {
-    default:
-        str.SetFormat("Unknown: 0x%08X", id);
-        break;
-    }
+    str.SetFormat("Unknown: 0x%08X", id);
 }
 void JSONFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {

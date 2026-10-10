@@ -38,7 +38,7 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
     if (path.empty()) {
         for (uint32 i = 0; i < count; i++) {
-            GView::Decoding::ZIP::Entry entry{ 0 };
+            GView::Decoding::ZIP::Entry entry{};
             CHECK(this->info.GetEntry(i, entry), false, "");
 
             auto filename        = entry.GetFilename();
@@ -59,7 +59,7 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
     UnicodeStringBuilder usb;
     for (uint32 i = 0; i < count; i++) {
-        GView::Decoding::ZIP::Entry entry{ 0 };
+        GView::Decoding::ZIP::Entry entry{};
         CHECK(this->info.GetEntry(i, entry), false, "");
 
         auto filename        = entry.GetFilename();
@@ -92,7 +92,7 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     const static NumericFormat NUMERIC_FORMAT{ NumericFormatFlags::HexPrefix, 16 };
 
     const auto realIndex = curentChildIndexes.at(currentItemIndex);
-    GView::Decoding::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{};
     CHECK(this->info.GetEntry(realIndex, entry), false, "");
 
     auto filename = entry.GetFilename();
@@ -210,9 +210,9 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
 
-    const auto index = item.GetData(-1);
-    CHECKRET(index != -1, "");
-    GView::Decoding::ZIP::Entry entry{ 0 };
+    const auto index = item.GetData(static_cast<uint64>(-1));
+    CHECKRET(index != static_cast<uint64>(-1), "");
+    GView::Decoding::ZIP::Entry entry{};
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
     Buffer buffer{};

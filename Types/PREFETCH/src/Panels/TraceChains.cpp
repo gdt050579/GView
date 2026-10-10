@@ -18,27 +18,17 @@ TraceChains::TraceChains(Reference<PrefetchFile> _prefetch, Reference<GView::Vie
     win      = _win;
     base     = 16;
 
-    auto columns = std::initializer_list<ConstString>{
+    const std::initializer_list<ConstString> defaultColumns = {
         "n:Next Entry Index,a:r,w:14", "n:Blocks Fetched,a:r,w:10", "n:Unknown,a:r,w:18", "n:Duration,a:r,w:10", "n:Unknown2,a:r,w:18"
     };
+    const std::initializer_list<ConstString> win10Columns = {
+        "n:Next Entry Index,a:r,w:14",
+        "n:Unknown0,a:r,w:18",
+        "n:Unknown1,a:r,w:18",
+        "n:Unknown2,a:r,w:18",
+    };
 
-    switch (prefetch->header.version)
-    {
-    case Magic::WIN_XP_2003:
-    case Magic::WIN_VISTA_7:
-    case Magic::WIN_8:
-        break;
-    case Magic::WIN_10:
-        columns = {
-            "n:Next Entry Index,a:r,w:14",
-            "n:Unknown0,a:r,w:18",
-            "n:Unknown1,a:r,w:18",
-            "n:Unknown2,a:r,w:18",
-        };
-        break;
-    default:
-        break;
-    }
+    const auto& columns = (prefetch->header.version == Magic::WIN_10) ? win10Columns : defaultColumns;
 
     list = Factory::ListView::Create(this, "d:c", columns, ListViewFlags::AllowMultipleItemsSelection);
 

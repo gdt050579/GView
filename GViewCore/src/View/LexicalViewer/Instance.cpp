@@ -7,7 +7,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
+[[maybe_unused]] constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
 
 /*
 void TestTextEditor()
@@ -71,7 +71,7 @@ inline std::string_view TokenDataTypeToString(TokenDataType dataType)
 }
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+    : ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl), settings(nullptr)
 {
     this->obj = _obj;
 
@@ -2185,6 +2185,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32
 {
     // display
@@ -2201,6 +2203,7 @@ enum class PropertyID : uint32
     ShowMetaData,
     HighlightSimilarTokens,
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)

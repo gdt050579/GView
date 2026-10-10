@@ -8,8 +8,6 @@
 #include <mz_zip.h>
 #include <mz_zip_rw.h>
 
-#include <locale>
-#include <codecvt>
 
 namespace GView::Decoding::ZIP
 {
@@ -363,10 +361,10 @@ bool GetInfo(std::u16string_view path, Info& info)
     internalInfo->reader.Reset();
     internalInfo->reader.value = mz_zip_reader_create();
 
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    std::u16string p(path);
+    LocalString<512> ls;
+    ls.Set(path);
     internalInfo->entries.clear();
-    internalInfo->path = convert.to_bytes(p);
+    internalInfo->path = ls.GetText();
 
     CHECK(mz_zip_reader_open_file(internalInfo->reader.value, internalInfo->path.c_str()) == MZ_OK, false, "");
     CHECK(mz_zip_reader_goto_first_entry(internalInfo->reader.value) == MZ_OK, false, "");

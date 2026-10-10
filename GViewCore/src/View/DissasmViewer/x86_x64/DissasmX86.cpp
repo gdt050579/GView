@@ -20,7 +20,9 @@ constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 150;
 constexpr uint32 DISSASM_ASSISTANT_MAX_API_CALLS              = 10;
 constexpr uint32 DISSASM_ASSISTANT_MAX_BYTE_TO_SEND           = 640;
 
+#ifdef _MSC_VER
 #pragma warning(disable : 4996) // The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name
+#endif
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -397,7 +399,7 @@ std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone
     DissasmCodeInternalType& currentType = zone->types.back();
     // TODO: do a faster search using a binary search using the annotations and start from there
     // TODO: maybe use some caching here?
-    if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach) {
+    if (reAdapt || (levelNow < levelToReach && levelNow + 1 != levelToReach) || (levelNow > levelToReach && levelNow - 1 != levelToReach)) {
         currentType.textLinesPassed = 0;
         currentType.asmLinesPassed  = 0;
         for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
@@ -1013,7 +1015,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] == 'j' || insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP) {
+        if (insn->mnemonic[0] == 'j' || (insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)) {
             jumpFromAddress = insn->address;
             for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
                 jumpMnemonic[i] = insn->mnemonic[i];
@@ -1452,8 +1454,8 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, Dissas
             if (!zone.internalTypes.empty() || zone.name.empty())
                 return false;
 
-            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed ||
-                collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed)
+            if ((collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed) ||
+                (collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed))
                 return false;
 
             if (collapse == DissasmCodeZone::CollapseExpandType::NegateCurrentState)
@@ -1869,7 +1871,6 @@ std::string wrapText(const std::string& code, size_t windowWidth)
     std::string word;
     LocalString<2048> currentLine;
 
-    bool lastLineWasEmpty = false;
     while (std::getline(codeStream, line)) {
         if (line.empty()) {
             if (currentLine.Len()) {
@@ -1878,10 +1879,8 @@ std::string wrapText(const std::string& code, size_t windowWidth)
             } else {
                 wrappedLines.AddFormat("\n");
             }
-            lastLineWasEmpty = true;
             continue;
         }
-        lastLineWasEmpty = false;
         std::istringstream lineStream(line);
         while (lineStream >> word) {
             if (currentLine.Len() + word.length() + 1 > windowWidth) {

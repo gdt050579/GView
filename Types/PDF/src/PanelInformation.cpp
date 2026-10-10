@@ -1,6 +1,5 @@
 #include "pdf.hpp"
 #include <podofo/podofo.h>
-#include <codecvt>
 #include <cmath>
 
 using namespace GView::Type::PDF;
@@ -87,7 +86,7 @@ static int GetPDFPageCount(const PoDoFo::PdfMemDocument& doc)
 {
     try {
         return static_cast<int>(doc.GetPages().GetCount());
-    } catch (const PoDoFo::PdfError& e) {
+    } catch (const PoDoFo::PdfError&) {
         return 0;
     }
 }
@@ -123,8 +122,8 @@ void Panels::Information::UpdateGeneralInformation()
 
     // Filename
     general->DeleteAllItems();
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    std::string fileName = convert.to_bytes(pdf->obj->GetPath().data(), pdf->obj->GetPath().data() + pdf->obj->GetPath().size());
+    LocalString<512> fileName;
+    fileName.Set(pdf->obj->GetPath());
     general->AddItem({ "File", fileName });
 
     // File size

@@ -182,7 +182,7 @@ void GView::App::OpenFile(
                 gviewAppInstance->AddFileWindow(absPath, method, typeName, parent, creationProcess);
             }
         }
-        catch (std::filesystem::filesystem_error /* e */)
+        catch (const std::filesystem::filesystem_error& /* e */)
         {
             gviewAppInstance->AddFileWindow(path, method, typeName, parent, creationProcess);
         }
