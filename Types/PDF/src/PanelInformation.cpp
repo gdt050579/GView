@@ -122,9 +122,7 @@ void Panels::Information::UpdateGeneralInformation()
 
     // Filename
     general->DeleteAllItems();
-    LocalString<512> fileName;
-    fileName.Set(pdf->obj->GetPath());
-    general->AddItem({ "File", fileName });
+    general->AddItem({ "File", pdf->obj->GetPath() });
 
     // File size
     LocalString<256> tempStr;

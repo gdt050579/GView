@@ -46,7 +46,7 @@ struct Stream
         bits <<= UINT16_BITS_COUNT;
         bitsCount += UINT16_BITS_COUNT;
 
-        if (size >= sizeof(uint16) || offset <= (size - sizeof(uint16)))
+        if (size >= sizeof(uint16) && offset <= (size - sizeof(uint16)))
         {
             uint16 val = 0;
             std::memcpy(&val, stream + offset, sizeof(uint16));
@@ -120,9 +120,9 @@ struct Stream
     template <typename V>
     inline bool Read(V& value)
     {
-        CHECK(offset <= size - sizeof(V), false, "");
+        CHECK(size >= sizeof(V) && offset <= size - sizeof(V), false, "");
 
-        value = *(V*) (stream + offset);
+        std::memcpy(&value, stream + offset, sizeof(V));
         offset += sizeof(V);
 
         return true;

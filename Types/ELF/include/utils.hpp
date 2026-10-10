@@ -561,7 +561,7 @@ inline std::string_view GetNameFromElfMachine(uint16 elfMachine)
     case EM_CEVA_X2:
         return "CEVA X2 Processor Family";
     case EM_BPF:
-        return "Linux BPF – in-kernel virtual machine";
+        return "Linux BPF - in-kernel virtual machine";
     case EM_GRAPHCORE_IPU:
         return "Graphcore Intelligent Processing Unit";
     case EM_IMG1:

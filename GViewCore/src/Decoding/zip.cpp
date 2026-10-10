@@ -361,10 +361,8 @@ bool GetInfo(std::u16string_view path, Info& info)
     internalInfo->reader.Reset();
     internalInfo->reader.value = mz_zip_reader_create();
 
-    LocalString<512> ls;
-    ls.Set(path);
     internalInfo->entries.clear();
-    internalInfo->path = ls.GetText();
+    internalInfo->path = GView::Utils::UTF16ToUTF8(path); // minizip-ng expects UTF-8 paths on every platform
 
     CHECK(mz_zip_reader_open_file(internalInfo->reader.value, internalInfo->path.c_str()) == MZ_OK, false, "");
     CHECK(mz_zip_reader_goto_first_entry(internalInfo->reader.value) == MZ_OK, false, "");

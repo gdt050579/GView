@@ -2885,11 +2885,7 @@ void CreateTextView(const std::string& textToShow, const std::u16string_view& pd
 
 bool SaveExtractedTextToFile(const std::string& text, const std::u16string_view& filePath)
 {
-    LocalString<512> ls;
-    ls.Set(filePath);
-    std::string utf8FilePath(ls.GetText(), ls.Len());
-
-    std::ofstream ofs(utf8FilePath, std::ios::out | std::ios::binary);
+    std::ofstream ofs(GView::Utils::UTF16ToPath(filePath), std::ios::out | std::ios::binary);
     if (!ofs) {
         return false;
     }
@@ -2911,13 +2907,9 @@ bool PDF::PDFFile::ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFF
     }
 
     // build default ".txt" name based on the PDF filename
-    std::u16string_view pdfU16Path = pdf->obj->GetPath();
-    LocalString<512> ls;
-    ls.Set(pdfU16Path);
-    std::string pdfUTF8Path(ls.GetText(), ls.Len());
-
-    std::filesystem::path pdfFsPath(pdfUTF8Path);
-    std::string defaultTxtName       = pdfFsPath.stem().string() + ".txt";
+    const std::filesystem::path pdfFsPath = GView::Utils::UTF16ToPath(pdf->obj->GetPath());
+    // u16string() instead of string(): on Windows string() converts to the ANSI code page and throws for unrepresentable names
+    std::u16string defaultTxtName    = pdfFsPath.stem().u16string() + u".txt";
     std::filesystem::path defaultDir = pdfFsPath.parent_path();
 
     // show "Save As" dialog

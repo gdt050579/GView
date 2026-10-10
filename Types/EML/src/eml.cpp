@@ -30,9 +30,7 @@ constexpr string_view EML_ICON = "1111111111111111"  // 1
 template <typename T>
 std::string toUTF8(const std::basic_string<T>& source)
 {
-    LocalString<256> s;
-    s.Set(source);
-    return std::string(s.GetText(), s.Len());
+    return GView::Utils::UTF16ToUTF8(source);
 }
 
 void BuildViews(Reference<GView::View::WindowInterface> win, Reference<EML::EMLFile> eml)

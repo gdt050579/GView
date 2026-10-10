@@ -160,9 +160,7 @@ bool ExtractContent::CanBeAppliedOn(const PluginData& data)
 
 std::string u16stringToString(const std::u16string& u16str)
 {
-    LocalString<512> ls;
-    ls.Set(u16str);
-    return std::string(ls.GetText(), ls.Len());
+    return GView::Utils::UTF16ToUTF8(u16str);
 }
 
 PluginAfterActionRequest ExtractContent::Execute(PluginData& data, Reference<Window> parent)

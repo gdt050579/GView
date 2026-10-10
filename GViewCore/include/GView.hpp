@@ -321,6 +321,49 @@ namespace Utils
             return { .ok = false, .message = std::move(msg) };
         }
     };
+
+    // UTF-16 -> UTF-8 that never throws
+    // Unpaired surrogates are replaced with U+FFFD so the output is always valid UTF-8.
+    inline std::string UTF16ToUTF8(std::u16string_view text)
+    {
+        std::string result;
+        result.reserve(text.size());
+
+        const size_t count = text.size();
+        for (size_t i = 0; i < count; i++) {
+            uint32 cp = text[i];
+            if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < count && text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF) {
+                cp = 0x10000 + ((cp - 0xD800) << 10) + (static_cast<uint32>(text[i + 1]) - 0xDC00);
+                i++;
+            } else if (cp >= 0xD800 && cp <= 0xDFFF) {
+                cp = 0xFFFD;
+            }
+
+            if (cp < 0x80) {
+                result.push_back(static_cast<char>(cp));
+            } else if (cp < 0x800) {
+                result.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                result.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else if (cp < 0x10000) {
+                result.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                result.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                result.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else {
+                result.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+                result.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+                result.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                result.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+        }
+        return result;
+    }
+
+    // Builds a filesystem path from UTF-16 without going through the narrow (ANSI on Windows) code page.
+    inline std::filesystem::path UTF16ToPath(std::u16string_view text)
+    {
+        const auto utf8 = UTF16ToUTF8(text);
+        return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+    }
 } // namespace Utils
 
 namespace CommonInterfaces
