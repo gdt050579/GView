@@ -1,12 +1,15 @@
 #include "LearningHttp.hpp"
 
-#include <curl/curl.h>
+#ifdef GVIEW_ENABLE_NETWORK
+#    include <curl/curl.h>
+#endif
 #include <mutex>
 
 namespace GView::Security::Learning
 {
 namespace
 {
+#ifdef GVIEW_ENABLE_NETWORK
     constexpr size_t MAX_HEADER_COUNT       = 64;
     constexpr size_t MAX_HEADER_LINE_LENGTH = 8 * 1024;
 
@@ -273,6 +276,25 @@ namespace
             return resp;
         }
     };
+#else
+    // built without libcurl (GVIEW_ENABLE_NETWORK=OFF, e.g. WebAssembly): every request fails with a transport error
+    class CurlTransport : public IHttpTransport
+    {
+      public:
+        explicit CurlTransport(TransportConfig)
+        {
+        }
+        void SetPolicyId(std::string_view) override
+        {
+        }
+        HttpResponse Post(const HttpRequest&) override
+        {
+            HttpResponse resp;
+            resp.transportError = "network access is not available in this build of GView";
+            return resp;
+        }
+    };
+#endif
 } // namespace
 
 bool Detail::AppendBodyWithCap(HttpResponse& response, const uint8* data, size_t size, size_t cap)

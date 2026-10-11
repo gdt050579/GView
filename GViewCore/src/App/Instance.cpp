@@ -46,8 +46,10 @@ constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 constexpr GViewMenuCommand menuOptionsList[] = { 
     { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
     { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None },
+#ifdef GVIEW_ENABLE_NETWORK
     { "", 0, Key::None },
     { "&Learning and Evaluation Mode", MenuCommands::OPEN_RESTRICTED_MODE, Key::None },
+#endif
 };
 
 constexpr GViewMenuCommand menuWindowList[] = {
@@ -63,7 +65,9 @@ constexpr GViewMenuCommand menuWindowList[] = {
     { "&Windows manager", MenuCommands::SHOW_WINDOW_MANAGER, Key::None, &INSTANCE_WINDOWS_MANAGER },
 };
 constexpr GViewMenuCommand menuHelpList[] = {
+#ifdef GVIEW_ENABLE_NETWORK
     { "Check for &updates", MenuCommands::CHECK_FOR_UPDATES, Key::None },
+#endif
     { "&Keyboard shortcuts", MenuCommands::AVAILABLE_KEYS, Key::None, &INSTANCE_KEY_CONFIGURATOR },
     { "&About", MenuCommands::ABOUT, Key::None },
 };
@@ -218,6 +222,14 @@ bool Instance::Init(bool isTestingEnabled)
         initData.Flags |= InitializationFlags::DisableAutoCloseDesktop;
         headlessFrontend = nullptr;
     }
+#ifdef BUILD_FOR_WASM
+    // inside a web page: closing the last window must not end GView (the page would only show "exited"), and the
+    // files given to the page are opened from the in-memory folder that becomes the current one. The settings of the
+    // previous visit are restored before they are looked for (the in-memory file system starts empty on every load).
+    initData.Flags |= InitializationFlags::DisableAutoCloseDesktop;
+    GView::App::Browser::PrepareFilesFolder();
+    GView::App::Browser::RestoreSettings();
+#endif
     // the GView desktop runs the background update check (see Update/UpdateService.hpp)
     if (!isTestingEnabled && !isRemoteServer)
         initData.CustomDesktopConstructor = GView::App::CreateDesktop;
@@ -264,10 +276,12 @@ bool Instance::Init(bool isTestingEnabled)
     this->defaultPlugin.InitDefaultPlugin();
 
     if (!isTestingEnabled) {
+#ifdef GVIEW_ENABLE_NETWORK
         // leftovers of a previous update (staging folders, replaced files of a completed update)
         GView::Update::CleanupWorkDir(AppCUI::OS::GetCurrentApplicationPath().parent_path());
         if (!isRemoteServer)
             GView::Update::Service::Enable(); // also gates Help > Check for updates
+#endif
     }
 
     // set up handlers

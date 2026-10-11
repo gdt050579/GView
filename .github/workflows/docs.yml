@@ -3,6 +3,11 @@
 # Builds the Sphinx documentation on every PR that touches it (warnings are errors) and publishes it to
 # GitHub Pages from main through the Pages deployment API (no bot commits, no push token).
 #
+# The published site also delivers GView itself, compiled to WebAssembly (docs/source/wasm.rst): the app runs from
+# app/GView.html and app/GView-Web-wasm32.zip holds the same files for self-hosting. Every commit to main changes the
+# app, so pushes to main publish regardless of the files they touch. PRs only build the documentation: the
+# WebAssembly build of a PR is checked (and kept as an artifact) by ci.yml.
+#
 # One-time repository setting: Settings -> Pages -> "Build and deployment" -> Source: "GitHub Actions".
 name: docs
 
@@ -11,9 +16,6 @@ permissions: {}
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'docs/**'
@@ -27,13 +29,15 @@ concurrency:
 jobs:
   build:
     name: Build documentation
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # AppCUI (and its vcpkg) are only needed to build the web app
+          submodules: ${{ github.event_name != 'pull_request' && 'recursive' || 'false' }}
           persist-credentials: false
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -47,6 +51,31 @@ jobs:
 
       - name: Build HTML (warnings are errors)
         run: python -m sphinx -b html -W --keep-going docs/source docs/build/html
+
+      - name: Build GView for web browsers
+        id: wasm
+        if: github.event_name != 'pull_request'
+        uses: $/.github/actions/build-wasm
+        with:
+          use_cache: "true"
+          jobs_count: "0"
+          package: "true"
+
+      # app/ is linked by docs/source/wasm.rst: the file names below are part of the published URLs
+      - name: Add the web app to the site
+        if: github.event_name != 'pull_request'
+        env:
+          SITE_DIR: ${{ steps.wasm.outputs.site_dir }}
+          ARCHIVE: ${{ steps.wasm.outputs.archive }}
+        run: |
+          set -euo pipefail
+          app=docs/build/html/app
+          mkdir -p "$app"
+          cp "$SITE_DIR"/* "$app/"
+          cp "$ARCHIVE" "$app/GView-Web-wasm32.zip"
+          ( cd "$app" && sha256sum GView-Web-wasm32.zip > GView-Web-wasm32.zip.sha256 && cat GView-Web-wasm32.zip.sha256 )
+          ls -la "$app"
+          du -sh docs/build/html
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'

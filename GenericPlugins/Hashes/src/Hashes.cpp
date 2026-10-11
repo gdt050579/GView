@@ -906,7 +906,7 @@ static bool ComputeHash(
 }
 } // namespace GView::GenericPlugins::Hashes
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
     PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
     {

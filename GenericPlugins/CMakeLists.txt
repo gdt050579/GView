@@ -6,5 +6,7 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
         add_subdirectory(EntropyVisualizer)
         add_subdirectory(Dropper)
         add_subdirectory(Unpacker)
-        add_subdirectory(FileDownloader)
+        if (GVIEW_ENABLE_NETWORK) # libcurl
+            add_subdirectory(FileDownloader)
+        endif()
 endif()

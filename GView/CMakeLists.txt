@@ -37,3 +37,13 @@ if (MSVC)
     include(windows_resource)
     add_windows_resource("GView.exe" "GView.rc")
 endif()
+
+if (EMSCRIPTEN)
+    # a static web site: GView.html + GView.mjs + GView.wasm, next to AppCUI's host script, font and dev server
+    set_target_properties(GView PROPERTIES SUFFIX ".mjs")
+    set(APPCUI_WEB_DIR "${CMAKE_SOURCE_DIR}/AppCUI/AppCUI/web")
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/web/GView.html.in" "${GVIEW_BINARIES_OUT_DIR}/GView.html" @ONLY)
+    configure_file("${APPCUI_WEB_DIR}/appcui-host.js" "${GVIEW_BINARIES_OUT_DIR}/appcui-host.js" COPYONLY)
+    configure_file("${APPCUI_WEB_DIR}/serve.py" "${GVIEW_BINARIES_OUT_DIR}/serve.py" COPYONLY)
+    configure_file("${CMAKE_SOURCE_DIR}/AppCUI/AppCUI/resources/JuliaMono-Regular.ttf" "${GVIEW_BINARIES_OUT_DIR}/JuliaMono-Regular.ttf" COPYONLY)
+endif()

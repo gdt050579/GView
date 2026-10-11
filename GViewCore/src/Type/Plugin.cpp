@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include "StaticPlugins.hpp"
 
 using namespace GView::Type;
 using namespace GView::Utils;
@@ -157,6 +158,14 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 }
 bool Plugin::LoadPlugin()
 {
+#ifdef GVIEW_STATIC_PLUGINS
+    const auto* entry = GView::StaticPlugins::FindTypePlugin(this->GetName());
+    CHECK(entry, false, "Type plugin '%.*s' is not linked into this build", (int) this->GetName().size(), this->GetName().data());
+    this->fnValidate       = entry->fnValidate;
+    this->fnCreateInstance = entry->fnCreateInstance;
+    this->fnPopulateWindow = entry->fnPopulateWindow;
+    return true;
+#else
     AppCUI::OS::Library lib;
     auto path = AppCUI::OS::GetCurrentApplicationPath();
     path.remove_filename();
@@ -175,6 +184,7 @@ bool Plugin::LoadPlugin()
     CHECK(fnPopulateWindow, false, "Missing 'PopulateWindow' export !");
 
     return true;
+#endif
 }
 bool Plugin::MatchExtension(uint64 extensionHash)
 {

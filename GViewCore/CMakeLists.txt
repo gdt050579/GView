@@ -6,7 +6,11 @@ project(GViewCore VERSION 1.0)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
-    add_library(${PROJECT_NAME} SHARED)
+    if (GVIEW_STATIC_PLUGINS)
+        add_library(${PROJECT_NAME} STATIC) # linked into GView together with every plugin
+    else()
+        add_library(${PROJECT_NAME} SHARED)
+    endif()
 else()
     add_executable(${PROJECT_NAME})
 
@@ -65,8 +69,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::sqlite3::sqlite3)
 find_package(re2 CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE re2::re2)
 
-find_package(CURL REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
+if (GVIEW_ENABLE_NETWORK)
+    find_package(CURL REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
+endif()
 
 find_package(nlohmann_json REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)

@@ -149,6 +149,13 @@ TEST_CASE("Update.SelectAsset", "[update]")
     REQUIRE(SelectAsset(multiArch, { PlatformOS::Windows, Arch::X64 }) == -1);
 
     REQUIRE(SelectAsset({ "build-Windows-Release.tar.gz", "windows-notes.txt" }, { PlatformOS::Windows, Arch::X64 }) == -1);
+
+    // the WebAssembly archive of a release (deploy_release.yml) is never an update for a native install
+    const std::vector<std::string> withWeb = { "GView-0.401.0-Web-wasm32.zip", "GView-0.401.0-Linux-X64.zip", "GView-0.401.0-Windows-X64.zip" };
+    REQUIRE(SelectAsset(withWeb, { PlatformOS::Linux, Arch::X64 }) == 1);
+    REQUIRE(SelectAsset(withWeb, { PlatformOS::Windows, Arch::X64 }) == 2);
+    REQUIRE(SelectAsset(withWeb, { PlatformOS::MacOS, Arch::Arm64 }) == -1);
+    REQUIRE(SelectAsset({ "GView-0.401.0-Web-wasm32.zip" }, { PlatformOS::Linux, Arch::Arm64 }) == -1);
 }
 
 TEST_CASE("Update.ParseReleaseFeed", "[update]")

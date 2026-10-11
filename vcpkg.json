@@ -36,24 +36,30 @@
     },
     {
       "name": "openssl",
-      "platform": "windows | linux | osx"
+      "platform": "windows | linux | osx | emscripten"
     },
     {
       "name": "zlib",
-      "platform": "windows | linux | osx"
+      "platform": "windows | linux | osx | emscripten"
     },
     {
       "name": "capstone",
       "features": [ "x86", "arm", "arm64" ],
-      "platform": "windows | linux | osx"
+      "platform": "windows | linux | osx | emscripten"
     },
     {
       "name": "minizip-ng",
       "platform": "windows | linux | osx"
     },
     {
+      "name": "minizip-ng",
+      "default-features": false,
+      "features": [ "zlib", "pkcrypt" ],
+      "platform": "emscripten"
+    },
+    {
       "name": "sqlite3",
-      "platform": "windows | linux | osx"
+      "platform": "windows | linux | osx | emscripten"
     },
     {
       "name": "catch2",
@@ -61,7 +67,7 @@
     },
     {
       "name": "re2",
-      "platform": "windows | linux | osx"
+      "platform": "windows | linux | osx | emscripten"
     },
     {
         "name": "libjpeg-turbo",
@@ -73,7 +79,7 @@
     },
     {
       "name": "nlohmann-json",
-      "platform": "windows | linux | osx"
+      "platform": "windows | linux | osx | emscripten"
     },
 	{
 		"name": "openjpeg",

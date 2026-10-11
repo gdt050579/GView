@@ -188,7 +188,7 @@ bool CopyDialog::Process()
             for (uint64 i = 0ull; i < bf.GetLength(); i++)
             {
                 Info info{ GView::Utils::INVALID_OFFSET, GView::Utils::INVALID_OFFSET, GView::Utils::INVALID_OFFSET };
-                if (UpdateStringInfo(i, BufferView{ bf.GetData() + i, bf.GetLength() - i }, info))
+                if (UpdateStringInfo(i, BufferView{ bf.GetData() + i, static_cast<size_t>(bf.GetLength() - i) }, info))
                 {
                     uint32 a;
                     for (a = 2ull, i += 1ull; i < info.middle; i++, a += 2)

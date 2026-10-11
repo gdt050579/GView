@@ -6,6 +6,7 @@ updates:
     directories:
       - "/"
       - "/.github/actions/build"
+      - "/.github/actions/build-wasm"
     schedule:
       interval: weekly
       day: monday

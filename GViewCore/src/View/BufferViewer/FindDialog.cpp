@@ -588,7 +588,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                 current = input.size();
             }
 
-            std::string_view number{ input.data() + last, current - last };
+            std::string_view number{ input.data() + last, static_cast<size_t>(current - last) };
 
             if (textDec->IsChecked())
             {

@@ -29,7 +29,7 @@ constexpr string_view PCAP_ICON = "WWWWWWW.WWWWWWW."  // 1
                                   "W.....W.W......."  // 15
                                   "W.....W.W......."; // 16
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {

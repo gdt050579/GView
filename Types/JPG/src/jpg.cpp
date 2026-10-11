@@ -9,7 +9,7 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
@@ -143,9 +143,4 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
         sect["Priority"]    = 1;
         sect["Description"] = "JPEG image file (*.jpg, *.jpeg)";
     }
-}
-
-int main()
-{
-    return 0;
 }

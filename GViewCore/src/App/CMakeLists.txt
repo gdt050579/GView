@@ -18,4 +18,8 @@ target_sources(GViewCore PRIVATE
     GViewDesktop.cpp
 )
 
+if (EMSCRIPTEN)
+    target_sources(GViewCore PRIVATE BrowserHost.cpp)
+endif()
+
 add_testing_sources(GViewCore tests_keybindings.cpp)

@@ -175,7 +175,7 @@ class FileDownloaderWindow : public Window, public Handlers::OnButtonPressedInte
     }
 };
 
-extern "C" {
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> currentObject)
 {
     // all good

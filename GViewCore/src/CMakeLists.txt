@@ -15,6 +15,6 @@ add_subdirectory(Security)
 add_subdirectory(Remote)
 add_subdirectory(Update)
 
-if(NOT DEFINED CMAKE_TESTING_ENABLED)
+if(NOT DEFINED CMAKE_TESTING_ENABLED AND NOT GVIEW_STATIC_PLUGINS)
     target_sources(GViewCore PRIVATE main.cpp)
 endif()
