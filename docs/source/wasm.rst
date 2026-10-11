@@ -5,6 +5,36 @@ GView can be compiled with `Emscripten <https://emscripten.org>`_ into a static 
 draws the interface in an HTML5 canvas and the whole application (viewers and plugins) runs inside the page. Nothing is
 sent to a server - the files you open are read by the WebAssembly module in your browser tab.
 
+Try it
+------
+
+**Open GView in your browser:** `app/GView.html <app/GView.html>`_
+
+Drop files on the page (or use **Open files...**) to analyze them. Click inside the page to give GView the keyboard
+focus. The app is rebuilt from every commit to ``main``, so it can be ahead of the latest release.
+
+..
+   docs.yml copies the web build next to this page as app/ (GView.html, GView.mjs, GView.wasm, appcui-host.js, the
+   font, serve.py) plus app/GView-Web-wasm32.zip(.sha256). Keep the links above and below in sync with that step.
+
+Downloads
+---------
+
+The same static site can be run offline or put on your own web server:
+
+* **Latest build from main:** `GView-Web-wasm32.zip <app/GView-Web-wasm32.zip>`_
+  (`SHA-256 <app/GView-Web-wasm32.zip.sha256>`_).
+* **Releases:** every `GitHub Release <https://github.com/gdt050579/GView/releases>`_ carries
+  ``GView-<version>-Web-wasm32.zip``. It is built from source like the native archives, is listed in ``SHA256SUMS``, has
+  a SLSA provenance attestation, and its code files (``GView.wasm``, ``GView.mjs``, ``GView.html``,
+  ``appcui-host.js``) are signed with Sigstore. The release notes list the verification commands.
+
+Unzip the archive and serve the folder over HTTP (see `Building`_ for why ``file://`` does not work):
+
+.. code-block:: bash
+
+   python serve.py GView
+
 What is different from the native GView
 ---------------------------------------
 
@@ -49,6 +79,23 @@ and ``serve.py``. Browsers do not load WebAssembly from ``file://`` URLs, so ser
 
 Any static web server works, as long as it serves ``.mjs`` as ``text/javascript`` and ``.wasm`` as
 ``application/wasm``.
+
+Continuous integration
+----------------------
+
+The WebAssembly build is part of CI and uses the composite action ``.github/actions/build-wasm``. That action runs on
+Linux, installs the pinned emsdk release (the tag is checked against its commit), configures with the ``wasm`` preset
+and copies the files of the site out of ``bin/wasm``. ``bin/wasm`` also holds the static libraries of the build, so the
+action copies an explicit list of files.
+
+* ``ci.yml`` builds it for every push and pull request. The site is kept for 7 days as the ``GView-Web-wasm32``
+  artifact of the run.
+* ``docs.yml`` builds it for every push to ``main`` and publishes it with the documentation (`Try it`_).
+* ``deploy_release.yml`` builds it without caches, signs it and attaches ``GView-<version>-Web-wasm32.zip`` to the
+  release (`Downloads`_).
+
+To move to another Emscripten release, update ``emsdk_version`` and ``emsdk_commit`` (the commit of that emsdk tag) in
+``.github/actions/build-wasm/action.yml`` and the version mentioned in `Building`_.
 
 How it works
 ------------

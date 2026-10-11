@@ -1,0 +1,209 @@
+name: "Reusable WebAssembly build (composite)"
+description: "Build GView for web browsers (wasm32-emscripten, docs/source/wasm.rst) and collect the static site"
+inputs:
+  emsdk_version:
+    description: "Emscripten release (the browser build is tested with this one)"
+    default: "6.0.12"
+  emsdk_commit:
+    description: "Commit of the emsdk tag named by emsdk_version (the clone is refused when the tag points elsewhere)"
+    default: "35ff8a6d150541276abbc6bae512ca90bcfbe220"
+  use_cache:
+    description: "Cache emsdk and the vcpkg packages? ('true'|'false'). Keep 'false' for release builds so the toolchain and the dependencies are always installed / built from source."
+    default: "true"
+  jobs_count:
+    description: "Number of parallel jobs for build (string number, '0' = auto)"
+    default: "0"
+  sign_binaries:
+    description: "Sign the code of the site using Sigstore keyless signing (requires 'id-token: write')"
+    default: "false"
+  package:
+    description: "Zip the site as GView-<version>-Web-wasm32.zip (+ .sha256)? ('true'|'false')"
+    default: "false"
+outputs:
+  version:
+    description: "GVIEW_VERSION read from GViewCore/include/GView.hpp"
+    value: ${{ steps.meta.outputs.version }}
+  site_dir:
+    description: "Absolute path of the folder holding the static site (only the files a web server needs)"
+    value: ${{ steps.site.outputs.site_dir }}
+  archive:
+    description: "Absolute path of the packaged archive (when package is 'true')"
+    value: ${{ steps.pkg.outputs.zip_path }}
+runs:
+  using: "composite"
+  steps:
+    # --------------------------
+    # NOTE: Do NOT checkout here (same contract as .github/actions/build).
+    # Linux runners only: emsdk_env.sh, apt and the vcpkg wasm32-emscripten triplet are used as on a developer machine.
+    # --------------------------
+    - name: Check runner
+      if: ${{ runner.os != 'Linux' }}
+      shell: bash
+      run: |
+        echo "::error::The WebAssembly build runs on Linux runners only"
+        exit 1
+
+    - name: Read build metadata
+      id: meta
+      shell: bash
+      env:
+        JOBS_INPUT: ${{ inputs.jobs_count }}
+      run: |
+        set -euo pipefail
+        if [ "$JOBS_INPUT" = "0" ]; then
+          jobs=$(nproc)
+        else
+          jobs="$JOBS_INPUT"
+        fi
+        ver=$(sed -n 's/^#define GVIEW_VERSION "\([0-9][0-9.]*\)".*/\1/p' GViewCore/include/GView.hpp | head -n 1)
+        if [ -z "$ver" ]; then
+          echo "::error::Could not read GVIEW_VERSION from GViewCore/include/GView.hpp"
+          exit 1
+        fi
+        echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
+        echo "version=$ver" >> "$GITHUB_OUTPUT"
+        echo "GView version: $ver, parallel jobs: $jobs"
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update -y
+        sudo apt-get install -y ninja-build pkg-config zip
+
+    # --------------------------
+    # Emscripten SDK. The cache also keeps the Emscripten system libraries built by the first compilation.
+    # --------------------------
+    - name: Cache emsdk
+      id: cache-emsdk
+      if: ${{ inputs.use_cache == 'true' }}
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/emsdk
+        key: emsdk-${{ inputs.emsdk_version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install emsdk
+      if: ${{ steps.cache-emsdk.outputs.cache-hit != 'true' }}
+      shell: bash
+      env:
+        EMSDK_VERSION: ${{ inputs.emsdk_version }}
+        EMSDK_COMMIT: ${{ inputs.emsdk_commit }}
+      run: |
+        set -euo pipefail
+        rm -rf ~/emsdk
+        git clone --depth 1 --branch "$EMSDK_VERSION" https://github.com/emscripten-core/emsdk.git ~/emsdk
+        actual=$(git -C ~/emsdk rev-parse HEAD)
+        if [ "$actual" != "$EMSDK_COMMIT" ]; then
+          echo "::error::emsdk tag $EMSDK_VERSION points to $actual, expected $EMSDK_COMMIT"
+          exit 1
+        fi
+        ~/emsdk/emsdk install "$EMSDK_VERSION"
+
+    - name: Activate emsdk
+      shell: bash
+      env:
+        EMSDK_VERSION: ${{ inputs.emsdk_version }}
+      run: |
+        set -euo pipefail
+        ~/emsdk/emsdk activate "$EMSDK_VERSION"
+        ~/emsdk/upstream/emscripten/emcc --version | head -n 1
+
+    # --------------------------
+    # vcpkg binary cache (see .github/actions/build). The packages depend on the Emscripten release, so it is part of
+    # the key.
+    # --------------------------
+    - name: Create vcpkg binary cache directory
+      if: ${{ inputs.use_cache == 'true' }}
+      shell: bash
+      run: mkdir -p "$GITHUB_WORKSPACE/.vcpkg-binary-cache"
+
+    - name: Cache vcpkg packages
+      if: ${{ inputs.use_cache == 'true' }}
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ github.workspace }}/.vcpkg-binary-cache
+        key: vcpkg-bin-wasm32-emscripten-${{ inputs.emsdk_version }}-${{ hashFiles('vcpkg.json', 'AppCUI/vcpkg/versions/baseline.json', 'AppCUI/vcpkg-ports/**') }}
+        restore-keys: |
+          vcpkg-bin-wasm32-emscripten-${{ inputs.emsdk_version }}-
+
+    # --------------------------
+    # Configure + build with the `wasm` preset of CMakePresets.json (build/wasm -> bin/wasm), exactly as documented.
+    # Each step sources emsdk_env.sh (EMSDK, PATH) itself instead of exporting it through GITHUB_ENV / GITHUB_PATH: the
+    # preset and the vcpkg wasm32-emscripten triplet find Emscripten through EMSDK.
+    # --------------------------
+    - name: Configure CMake
+      shell: bash
+      env:
+        VCPKG_BINARY_SOURCES: ${{ inputs.use_cache == 'true' && format('clear;files,{0}/.vcpkg-binary-cache,readwrite', github.workspace) || 'clear' }}
+      run: |
+        set -eo pipefail
+        # shellcheck disable=SC1090
+        source ~/emsdk/emsdk_env.sh > /dev/null
+        cmake --preset wasm
+
+    - name: Build
+      shell: bash
+      env:
+        JOBS: ${{ steps.meta.outputs.jobs }}
+      run: |
+        set -eo pipefail
+        # shellcheck disable=SC1090
+        source ~/emsdk/emsdk_env.sh > /dev/null
+        cmake --build build/wasm --target GView --parallel "$JOBS"
+
+    # --------------------------
+    # bin/wasm also holds the static libraries of the build: the site is an explicit list of files (cp fails on a
+    # missing one, so a renamed output breaks the build instead of publishing a broken page)
+    # --------------------------
+    - name: Collect site
+      id: site
+      shell: bash
+      run: |
+        set -euo pipefail
+        site="$GITHUB_WORKSPACE/gview-web"
+        rm -rf "$site"
+        mkdir -p "$site"
+        for f in GView.html GView.mjs GView.wasm appcui-host.js JuliaMono-Regular.ttf serve.py; do
+          cp "bin/wasm/$f" "$site/"
+        done
+        ls -la "$site"
+        du -sh "$site"
+        echo "site_dir=$site" >> "$GITHUB_OUTPUT"
+
+    # --------------------------
+    # Sign the code files (Sigstore keyless, as .github/actions/build does for the native binaries). The .sig / .cert /
+    # .bundle files are stored next to each file and end up in the archive.
+    # --------------------------
+    - name: Install cosign
+      if: ${{ inputs.sign_binaries == 'true' }}
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+    - name: Sign site
+      if: ${{ inputs.sign_binaries == 'true' }}
+      shell: bash
+      env:
+        SITE_DIR: ${{ steps.site.outputs.site_dir }}
+      run: |
+        set -euo pipefail
+        for f in GView.wasm GView.mjs GView.html appcui-host.js; do
+          cosign sign-blob --yes \
+            --output-signature "$SITE_DIR/$f.sig" \
+            --output-certificate "$SITE_DIR/$f.cert" \
+            --bundle "$SITE_DIR/$f.bundle" \
+            "$SITE_DIR/$f"
+        done
+
+    - name: Package site
+      id: pkg
+      if: ${{ inputs.package == 'true' }}
+      shell: bash
+      env:
+        SITE_DIR: ${{ steps.site.outputs.site_dir }}
+        GVIEW_VERSION: ${{ steps.meta.outputs.version }}
+      run: |
+        set -euo pipefail
+        # no OS name in the archive name: the in-app updater (SelectAsset) must never pick it for a native install
+        zip_name="GView-${GVIEW_VERSION}-Web-wasm32.zip"
+        ( cd "$SITE_DIR" && zip -9 -r -X "$GITHUB_WORKSPACE/$zip_name" . )
+        ( cd "$GITHUB_WORKSPACE" && sha256sum "$zip_name" > "$zip_name.sha256" && cat "$zip_name.sha256" )
+        echo "zip_path=$GITHUB_WORKSPACE/$zip_name" >> "$GITHUB_OUTPUT"

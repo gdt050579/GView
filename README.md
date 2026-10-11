@@ -11,6 +11,8 @@
 
 GView framework is a powerful tool for examining files or any data with a defined structure, such as buffers or memory zones.
 
+**[Try GView in your browser](https://gdt050579.github.io/GView/app/GView.html)**: GView compiled to WebAssembly, with nothing to install. The files you open never leave your browser tab. It is rebuilt from every commit to `main`.
+
 ![Logo](./docs/source/_static/logo.png)
 
 - [GView](#gview)
@@ -33,12 +35,14 @@ GView framework is a powerful tool for examining files or any data with a define
 			- [OSX](#osx)
 			- [Linux (Intel)](#linux-intel)
 			- [Linux (ARM (M1))](#linux-arm-m1)
+			- [WebAssembly (browser)](#webassembly-browser)
 	- [CI/CD](#cicd)
 	- [Documentation](#documentation)
 	- [First run](#first-run)
 		- [Windows](#windows-1)
 		- [Linux](#linux)
 		- [MacOS / OSX](#macos--osx)
+		- [Web browser](#web-browser)
 	- [Start contributing](#start-contributing)
 
 ## General description 
@@ -164,21 +168,31 @@ This will require manual installation of ninja (ninja-build).
 ```
 # set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
 ```
+
+#### WebAssembly (browser)
+GView compiles with [Emscripten](https://emscripten.org) into a static web site (`GView.html`, `GView.mjs`, `GView.wasm`). Every plugin is linked into the module. The PDF plugin, FileDownloader and the network features (auto-updater, Learning Mode, Smart Assistant) are not available in this build.
+```bash
+# with an activated emsdk (EMSDK set) and ninja in PATH
+cmake --preset wasm
+cmake --build build/wasm --target GView
+python bin/wasm/serve.py GView
+```
+See the [WebAssembly documentation](https://gdt050579.github.io/GView/wasm.html) for the requirements and the differences from the native GView.
 ## CI/CD
-All automation lives in `.github/workflows/` and shares one composite build action (`.github/actions/build`). Every third-party action is pinned to a commit SHA and kept current by Dependabot.
+All automation lives in `.github/workflows/` and shares one composite build action (`.github/actions/build`, plus `.github/actions/build-wasm` for the WebAssembly build). Every third-party action is pinned to a commit SHA and kept current by Dependabot.
 
 | Workflow | Runs on | What it does |
 |---|---|---|
-| `ci.yml` | push, PR | Release build on Windows, macOS (Intel) and Linux. Apple Silicon and Linux arm64 run as non-blocking experimental lanes. |
+| `ci.yml` | push, PR | Release build on Windows, macOS (Intel) and Linux, plus the WebAssembly build (the site is kept as the `GView-Web-wasm32` artifact). Apple Silicon and Linux arm64 run as non-blocking experimental lanes. |
 | `testing.yml` | push, PR | Catch2 unit tests (`-DENABLE_TESTS=ON`). Windows is gating; Linux and macOS report only until proven green. |
 | `codeql-analysis.yml` | push, PR, weekly | CodeQL `security-extended` for C/C++, Python and the workflows themselves. |
 | `sanitizers.yml` | weekly, manual | Unit tests under AddressSanitizer + UndefinedBehaviorSanitizer. |
 | `format-check.yml` | PR | `clang-format` (LLVM 19) on the changed lines only. |
 | `workflow-lint.yml` | push, PR | `zizmor` security audit and `actionlint` for the workflow files. |
 | `scorecard.yml` | push, weekly | OpenSSF Scorecard supply-chain health checks. |
-| `docs.yml` | push, PR | Builds the Sphinx documentation (warnings are errors) and publishes it to GitHub Pages. |
+| `docs.yml` | push, PR | Builds the Sphinx documentation (warnings are errors). On every push to `main`, it also builds the WebAssembly app and publishes both to GitHub Pages. |
 | `increase_version.yml` | push to `main` | Bumps `GVIEW_VERSION` automatically. |
-| `deploy_release.yml` | manual, push to `release` | Builds from source on all platforms, signs every binary with Sigstore, attests the archives (SLSA provenance) and publishes a GitHub Release. |
+| `deploy_release.yml` | manual, push to `release` | Builds from source on all platforms (plus `GView-<version>-Web-wasm32.zip`), signs every binary with Sigstore, attests the archives (SLSA provenance) and publishes a GitHub Release. |
 
 ### Verifying a release
 Each release page lists the exact commands. In short: `gh attestation verify <archive>.zip --repo gdt050579/GView` checks the archive provenance, `sha256sum -c SHA256SUMS` checks the checksums, and `cosign verify-blob` with the `.bundle` next to every binary checks the individual files.
@@ -186,7 +200,7 @@ Each release page lists the exact commands. In short: `gh attestation verify <ar
 ## Documentation 
 The project uses Sphinx as the main documentation engine. Sphinx sources can be located under `docs` folder.
 
-On every commit to `main`, a compiled version of the Sphinx documentation is published to `gh-pages` and then to docs.
+On every commit to `main`, the Sphinx documentation is published to [GitHub Pages](https://gdt050579.github.io/GView/). The same deployment delivers GView compiled to WebAssembly: the [live app](https://gdt050579.github.io/GView/app/GView.html) and a [downloadable archive](https://gdt050579.github.io/GView/app/GView-Web-wasm32.zip) of the same files.
 
 ## First run
 
@@ -212,6 +226,10 @@ macOS cannot verify that this app is free from malware.
 Chrome downloaded this file today at 22:31.
 ```
 Unfortunately, unless you entirely temporarily disable `Gatekeeper` (which would put your computer to a risk) you need to manually allow all the binaries, one by one, to run. This process cannot be avoided until we digitally sign the binaries (MacOS signing and notarization). 
+
+### Web browser
+
+[Open GView in your browser](https://gdt050579.github.io/GView/app/GView.html). There is nothing to install, and the files you open never leave the browser tab. To run a pinned version offline, download `GView-<version>-Web-wasm32.zip` from a [release](https://github.com/gdt050579/GView/releases), unzip it and run `python serve.py GView`. Browsers do not load WebAssembly from `file://` URLs.
 
 ## Start contributing
 - Clone this repository using recurse submodules: 

@@ -7,6 +7,9 @@ Welcome to GView's documentation!
 It lets you examine files, buffers, or memory through multiple visualization options
 and a plugin-based architecture for file formats and generic operations.
 
+**Try it without installing anything:** `GView in your browser <app/GView.html>`_ is GView compiled to WebAssembly.
+The files you open stay in your browser tab. See :doc:`wasm`.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents
