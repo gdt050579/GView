@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
-# Uncomment this for Linux ARM architectures.
-# This will require manual installation of ninja (ninja-build).
-# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
+# Do not force vcpkg to use the system tools (VCPKG_FORCE_SYSTEM_BINARIES), not even on Linux ARM: vcpkg downloads
+# its own CMake and Ninja for arm64 too, and the system CMake 3.x can not run the vcpkg scripts any more.
 
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/AppCUI/vcpkg/scripts/buildsystems/vcpkg.cmake"
   CACHE STRING "Vcpkg toolchain file")

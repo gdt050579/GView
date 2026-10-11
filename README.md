@@ -163,14 +163,7 @@ sudo apt install build-essential ninja-build pkg-config libsdl2-dev libsdl2-ttf-
 Works using [vcpkg](https://github.com/microsoft/vcpkg) and [curl](https://curl.se) (for vcpkg).
 
 #### Linux (ARM (M1))
-Requires the same packages as Linux (Intel).
-
-Uncomment this line in top level CMakeLists.txt for Linux ARM architectures.
-
-This will require manual installation of ninja (ninja-build).
-```
-# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
-```
+Requires the same packages as Linux (Intel). vcpkg downloads its own CMake and Ninja for arm64 as well, so do not set `VCPKG_FORCE_SYSTEM_BINARIES`. With it set, vcpkg uses the system CMake, and CMake 3.x can no longer run the vcpkg scripts.
 
 #### WebAssembly (browser)
 GView compiles with [Emscripten](https://emscripten.org) into a static web site (`GView.html`, `GView.mjs`, `GView.wasm`). Every plugin is linked into the module. The PDF plugin, FileDownloader and the network features (auto-updater, Learning Mode, Smart Assistant) are not available in this build.
