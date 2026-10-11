@@ -96,7 +96,9 @@ runs:
       run: |
         set -euo pipefail
         sudo apt-get update -y
-        pkgs=(build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev)
+        # autoconf, autoconf-archive, automake, libtool: vcpkg ports built with vcpkg_make_configure run autoreconf
+        # (e.g. gperf, a host tool of libsystemd / fontconfig)
+        pkgs=(build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev autoconf autoconf-archive automake libtool)
         # The multilib packages only exist on x86 (they add the 32-bit cross toolchain). Nothing in GView needs
         # them, but they stay on X64 so that lane is unchanged.
         if [ "$RUNNER_ARCH_NAME" = "X64" ]; then

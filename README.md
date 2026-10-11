@@ -155,12 +155,15 @@ We are using [vcpkg](https://github.com/microsoft/vcpkg). It requires [curl](htt
 
 Unfortunately, some vcpkg ports require manual installation via [brew package manager](https://brew.sh) of [pkg-config](https://formulae.brew.sh/formula/pkg-config) before building the project.
 #### Linux (Intel)
-Requires pkg-config package.
+Requires pkg-config and the autotools that some vcpkg ports run (the packages the CI installs, see `.github/actions/build`):
+```bash
+sudo apt install build-essential ninja-build pkg-config libsdl2-dev libsdl2-ttf-dev libltdl-dev autoconf autoconf-archive automake libtool
+```
 
 Works using [vcpkg](https://github.com/microsoft/vcpkg) and [curl](https://curl.se) (for vcpkg).
 
 #### Linux (ARM (M1))
-Requires pkg-config package.
+Requires the same packages as Linux (Intel).
 
 Uncomment this line in top level CMakeLists.txt for Linux ARM architectures.
 
