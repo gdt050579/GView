@@ -71,7 +71,7 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     // keys are handled by the key bindings registry ([Keys.View.Dissasm], "Keyboard shortcuts" window)
     sect.UpdateValue("Config.ShowFileContent", true, true);
     sect.UpdateValue("Config.ShowOnlyDissasm", false, true);
-    sect.UpdateValue("Config.DeepScanDissasmOnStart", false, true);
+    sect.UpdateValue("Config.DeepScanDissasmOnStart", true, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
 }
 
@@ -143,7 +143,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
         if (sect.Exists()) {
             this->ShowFileContent                 = sect.GetValue("Config.ShowFileContent").ToBool(true);
             this->ShowOnlyDissasm                 = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
-            this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
+            this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(true);
             this->CacheSameLocationAsAnalyzedFile = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
             foundSettings                         = true;
         }
@@ -151,7 +151,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
     if (!foundSettings) {
         this->ShowFileContent                 = true;
         this->ShowOnlyDissasm                 = false;
-        this->EnableDeepScanDissasmOnStart    = false;
+        this->EnableDeepScanDissasmOnStart    = true;
         this->CacheSameLocationAsAnalyzedFile = true;
     }
 

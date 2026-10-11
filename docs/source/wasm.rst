@@ -40,7 +40,13 @@ What is different from the native GView
 
 * **Files.** The page has an in-memory file system. Files given to the page with the **Open files...** button or by
   dropping them on the page are copied to ``/files`` and opened right away. **File > Open** browses that folder too.
-  The files (and ``GView.ini``) are lost when the tab is closed or reloaded.
+  The files are lost when the tab is closed or reloaded.
+* **Settings.** The settings file is ``/app.ini`` (AppCUI names it after the virtual executable ``/app.wasm``) and
+  holds the same content as ``GView.ini``. GView keeps a copy in the ``localStorage`` of the site (key
+  ``GView/GView.ini``). The copy is restored when the page loads and updated within about half a second of every
+  change, so settings, key bindings and the theme survive a reload. Clearing the site data of the page resets them,
+  and the first-run tutorial is shown again. When the browser blocks ``localStorage`` (some private modes, blocked
+  site data), the settings last only as long as the tab. With several tabs open, the last change wins.
 * **Plugins** are linked into the executable (``GVIEW_STATIC_PLUGINS``) instead of being loaded from ``Types/`` and
   ``GenericPlugins/``. Not available in the browser build:
 

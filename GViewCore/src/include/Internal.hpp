@@ -575,6 +575,7 @@ namespace App
     namespace Browser
     {
         void PrepareFilesFolder(); // creates the folder the files are copied to and makes it the current folder
+        void RestoreSettings();    // writes the settings kept in the localStorage of the page to the settings file
         bool OnFrame(bool desktopHasFocus);
     } // namespace Browser
 #endif

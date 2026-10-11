@@ -6,14 +6,55 @@
 //   ptr = _gview_browser_alloc(size)                                  0 = out of memory
 //   ... JS copies the bytes into HEAPU8[ptr, ptr + size) ...
 //   _gview_browser_add_file(namePtr, nameSize, dataPtr, dataSize)    1 = queued, 0 = rejected; frees both buffers
+//
+// The settings file (AppCUI names it after the virtual executable: /app.ini) also lives in the in-memory file system and
+// would be lost on every reload. It is kept in the localStorage of the page (SETTINGS_KEY): restored before AppCUI
+// loads it, stored back from OnFrame when its size or modification time changes - whoever wrote it (the first-run
+// defaults, a settings dialog, the keyboard shortcuts window, the theme editor, ...).
 
 #include "Internal.hpp"
 
 #include <emscripten/emscripten.h>
+#include <sys/stat.h>
 
 #include <deque>
 #include <fstream>
 #include <new>
+#include <optional>
+
+// localStorage may be unavailable (private mode, blocked site data, sandboxed frame) or full: every access is guarded and
+// the settings then simply stay in memory, as before
+EM_JS_DEPS(gview_browser_settings, "$UTF8ToString,$stringToUTF8,$lengthBytesUTF8");
+
+// size in bytes of the stored settings (UTF-8), -1 = nothing stored or no localStorage
+EM_JS(int32_t, gview_js_settings_size, (const char* key), {
+    try {
+        const text = globalThis.localStorage.getItem(UTF8ToString(key));
+        return text === null ? -1 : lengthBytesUTF8(text);
+    } catch (e) {
+        return -1;
+    }
+});
+
+// copies the stored settings and a terminating 0 into buffer; returns the bytes written (without the 0), -1 = failed
+EM_JS(int32_t, gview_js_settings_read, (const char* key, char* buffer, uint32_t capacity), {
+    try {
+        const text = globalThis.localStorage.getItem(UTF8ToString(key));
+        return text === null ? -1 : stringToUTF8(text, buffer, capacity);
+    } catch (e) {
+        return -1;
+    }
+});
+
+// 1 = stored, 0 = failed (quota exceeded or no localStorage)
+EM_JS(int32_t, gview_js_settings_write, (const char* key, const char* data, uint32_t size), {
+    try {
+        globalThis.localStorage.setItem(UTF8ToString(key), UTF8ToString(data, size));
+        return 1;
+    } catch (e) {
+        return 0;
+    }
+});
 
 namespace GView::App::Browser
 {
@@ -22,7 +63,53 @@ namespace
     constexpr std::string_view FILES_FOLDER = "/files";
     constexpr size_t MAX_FILE_NAME          = 255;
 
+    // the origin (e.g. <user>.github.io) can be shared with other pages: the key carries the application name
+    constexpr const char* SETTINGS_KEY          = "GView/GView.ini";
+    constexpr uint32 MAX_SETTINGS_SIZE          = 1024 * 1024; // a generated GView.ini is a few tens of KB
+    constexpr uint32 SETTINGS_CHECK_FRAME_COUNT = 15;          // ~0.5 s (OnFrameUpdate runs at ~30 Hz in FPS mode)
+
     std::deque<std::filesystem::path> pendingFiles;
+
+    struct SettingsStamp
+    {
+        off_t size;
+        time_t seconds;
+        long nanoseconds;
+        bool operator==(const SettingsStamp&) const = default;
+    };
+    std::string settingsPath; // cached: the check runs from OnFrame
+    std::optional<SettingsStamp> storedSettingsStamp;
+    uint32 framesUntilSettingsCheck = 0;
+
+    std::optional<SettingsStamp> GetSettingsStamp()
+    {
+        struct stat st{};
+        if (settingsPath.empty() || (::stat(settingsPath.c_str(), &st) != 0) || !S_ISREG(st.st_mode))
+            return std::nullopt;
+        return SettingsStamp{ st.st_size, st.st_mtim.tv_sec, st.st_mtim.tv_nsec };
+    }
+
+    void StoreSettingsIfChanged()
+    {
+        if (framesUntilSettingsCheck > 0) {
+            framesUntilSettingsCheck--;
+            return;
+        }
+        framesUntilSettingsCheck = SETTINGS_CHECK_FRAME_COUNT;
+
+        const auto stamp = GetSettingsStamp();
+        if (!stamp.has_value() || (stamp == storedSettingsStamp))
+            return;
+        // remembered even when it can not be stored: a failing localStorage is not retried twice a second
+        storedSettingsStamp = stamp;
+        CHECKRET((stamp->size > 0) && (static_cast<uint64>(stamp->size) <= MAX_SETTINGS_SIZE), "Settings file too large to be kept");
+
+        std::string content(static_cast<size_t>(stamp->size), '\0');
+        std::ifstream in(settingsPath, std::ios::binary);
+        CHECKRET(in.read(content.data(), static_cast<std::streamsize>(content.size())), "Unable to read: %s", settingsPath.c_str());
+        CHECKRET(gview_js_settings_write(SETTINGS_KEY, content.data(), static_cast<uint32_t>(content.size())) == 1,
+                 "Unable to keep the settings in the localStorage of the page");
+    }
 
     // keeps only the name of the file (no folders, no control characters); empty when nothing usable is left
     std::string SanitizeFileName(std::string_view name)
@@ -79,8 +166,32 @@ void PrepareFilesFolder()
     std::filesystem::current_path(FILES_FOLDER, ec);
 }
 
+void RestoreSettings()
+{
+    settingsPath = AppCUI::Application::GetAppSettingsFile().string();
+    CHECKRET(!settingsPath.empty(), "Unknown settings file");
+
+    // nothing stored (first run, or no localStorage): GView creates the default settings, stored by the next check.
+    // The stored text is parsed like any GView.ini (an invalid one is renamed to .ini.bak and replaced).
+    const int32 size = gview_js_settings_size(SETTINGS_KEY);
+    if ((size <= 0) || (static_cast<uint32>(size) > MAX_SETTINGS_SIZE))
+        return;
+    std::string content(static_cast<size_t>(size) + 1, '\0'); // + the 0 written by stringToUTF8
+    const int32 copied = gview_js_settings_read(SETTINGS_KEY, content.data(), static_cast<uint32_t>(content.size()));
+    CHECKRET(copied == size, "The stored settings changed while they were read"); // e.g. saved by another tab
+    content.resize(static_cast<size_t>(size));
+    {
+        std::ofstream out(settingsPath, std::ios::binary | std::ios::trunc);
+        CHECKRET(out.write(content.data(), static_cast<std::streamsize>(content.size())), "Unable to write: %s", settingsPath.c_str());
+    }
+    storedSettingsStamp = GetSettingsStamp(); // already stored: no need to store it back
+}
+
 bool OnFrame(bool desktopHasFocus)
 {
+    // runs under modal windows too: settings are often saved from a dialog
+    StoreSettingsIfChanged();
+
     // a file window is not opened under a modal window (it would get the focus while the modal one waits for input)
     if (pendingFiles.empty() || !desktopHasFocus)
         return false;

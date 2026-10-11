@@ -224,9 +224,11 @@ bool Instance::Init(bool isTestingEnabled)
     }
 #ifdef BUILD_FOR_WASM
     // inside a web page: closing the last window must not end GView (the page would only show "exited"), and the
-    // files given to the page are opened from the in-memory folder that becomes the current one
+    // files given to the page are opened from the in-memory folder that becomes the current one. The settings of the
+    // previous visit are restored before they are looked for (the in-memory file system starts empty on every load).
     initData.Flags |= InitializationFlags::DisableAutoCloseDesktop;
     GView::App::Browser::PrepareFilesFolder();
+    GView::App::Browser::RestoreSettings();
 #endif
     // the GView desktop runs the background update check (see Update/UpdateService.hpp)
     if (!isTestingEnabled && !isRemoteServer)
