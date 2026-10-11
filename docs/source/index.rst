@@ -20,6 +20,7 @@ and a plugin-based architecture for file formats and generic operations.
    architecture
    configuration
    updates
+   wasm
    security
    plugin_development
    core

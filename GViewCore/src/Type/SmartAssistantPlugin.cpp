@@ -1,7 +1,9 @@
 #include <codecvt>
 
 #include "Internal.hpp"
-#include <curl/curl.h>
+#ifdef GVIEW_ENABLE_NETWORK
+#    include <curl/curl.h>
+#endif
 #include <nlohmann/json.hpp>
 
 //#define DISABLE_GPT4o
@@ -30,6 +32,7 @@ std::string callGeminiAPI(const std::string& apiKey, std::string_view prompt, bo
     is_ok = true;
     std::string readBuffer;
 
+#ifdef GVIEW_ENABLE_NETWORK
     CURL* curl = curl_easy_init();
     if (curl) {
         const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" + apiKey;
@@ -60,6 +63,12 @@ std::string callGeminiAPI(const std::string& apiKey, std::string_view prompt, bo
     } else {
         is_ok = false;
     }
+#else
+    // built without libcurl (GVIEW_ENABLE_NETWORK=OFF, e.g. WebAssembly)
+    (void) apiKey;
+    (void) prompt;
+    is_ok = false;
+#endif
     return readBuffer;
 }
 
@@ -93,6 +102,7 @@ std::string callGPT4oAPI(const std::string& apiKey, std::string_view prompt, boo
     is_ok = true;
     std::string readBuffer;
 
+#ifdef GVIEW_ENABLE_NETWORK
     CURL* curl = curl_easy_init();
     if (curl) {
         const std::string url = "https://api.openai.com/v1/chat/completions";
@@ -124,6 +134,12 @@ std::string callGPT4oAPI(const std::string& apiKey, std::string_view prompt, boo
     } else {
         is_ok = false;
     }
+#else
+    // built without libcurl (GVIEW_ENABLE_NETWORK=OFF, e.g. WebAssembly)
+    (void) apiKey;
+    (void) prompt;
+    is_ok = false;
+#endif
     return readBuffer;
 }
 

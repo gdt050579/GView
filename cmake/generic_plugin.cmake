@@ -4,8 +4,15 @@ function (create_generic_plugin generic_plugin_name)
 	
 	include_directories(../../GViewCore/include)
 	
-	add_library(${PROJECT_NAME} SHARED)
-	
+	if (GVIEW_STATIC_PLUGINS)
+		# linked into the GView executable (see cmake/static_plugins.cmake)
+		add_library(${PROJECT_NAME} STATIC)
+		target_compile_definitions(${PROJECT_NAME} PRIVATE GVIEW_PLUGIN_ID=${PROJECT_NAME})
+		set_property(GLOBAL APPEND PROPERTY GVIEW_STATIC_GENERIC_PLUGINS ${PROJECT_NAME})
+	else()
+		add_library(${PROJECT_NAME} SHARED)
+	endif()
+
 	if (MSVC)
 	    add_definitions(-DBUILD_FOR_WINDOWS)
 	    add_compile_options(-W3)

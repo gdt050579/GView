@@ -14,9 +14,9 @@ using namespace GView::Utils;
 using namespace GView;
 using namespace GView::View;
 
-namespace GView::GenericPlugins::Droppper
-{
-extern "C" {
+using namespace GView::GenericPlugins::Droppper;
+
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "Dropper") {
@@ -48,6 +48,8 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 }
 }
 
+namespace GView::GenericPlugins::Droppper
+{
 bool Instance::Init(Reference<GView::Object> object)
 {
     CHECK(object.IsValid(), false, "");

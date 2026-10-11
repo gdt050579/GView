@@ -24,7 +24,7 @@ class CharacterTableExample : public Window, public Handlers::OnButtonPressedInt
     }
 };
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
     PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> currentObject)
     {

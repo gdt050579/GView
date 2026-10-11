@@ -569,6 +569,16 @@ namespace App
     // GView desktop (App/GViewDesktop.cpp): drives the auto-updater from OnFrameUpdate
     AppCUI::Controls::Desktop* CreateDesktop();
 
+#ifdef BUILD_FOR_WASM
+    // GView inside a web page (App/BrowserHost.cpp): the files given to the page (file picker / drag & drop) are copied
+    // into the in-memory file system and opened from the desktop's OnFrameUpdate
+    namespace Browser
+    {
+        void PrepareFilesFolder(); // creates the folder the files are copied to and makes it the current folder
+        bool OnFrame(bool desktopHasFocus);
+    } // namespace Browser
+#endif
+
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
                      public AppCUI::Controls::Handlers::OnStartInterface

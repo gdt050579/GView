@@ -23,10 +23,23 @@ using namespace AppCUI;
 #    define CORE_EXPORT
 #endif
 
-#ifdef BUILD_FOR_WINDOWS
+#if defined(BUILD_FOR_WINDOWS) && !defined(GVIEW_STATIC_PLUGINS)
 #    define PLUGIN_EXPORT __declspec(dllexport)
 #else
 #    define PLUGIN_EXPORT
+#endif
+
+// Opens the block that holds the entry points of a plugin (Validate / CreateInstance / PopulateWindow / Run /
+// UpdateSettings). Plugins are normally shared libraries and the entry points are C symbols resolved at runtime.
+// With GVIEW_STATIC_PLUGINS (WebAssembly builds) every plugin is linked into the executable: the block becomes a
+// namespace unique to the plugin (GVIEW_PLUGIN_ID is set by the build) and the entry points are found through
+// GView::StaticPlugins (see GViewCore/include/GView/StaticPlugins.hpp).
+#ifdef GVIEW_STATIC_PLUGINS
+#    define GVIEW_PLUGIN_NAMESPACE_CONCAT(id)    GViewStaticPlugin_##id
+#    define GVIEW_PLUGIN_NAMESPACE_OF(id)        GVIEW_PLUGIN_NAMESPACE_CONCAT(id)
+#    define GVIEW_PLUGIN_ENTRY_POINTS            namespace GVIEW_PLUGIN_NAMESPACE_OF(GVIEW_PLUGIN_ID)
+#else
+#    define GVIEW_PLUGIN_ENTRY_POINTS extern "C"
 #endif
 
 namespace GView

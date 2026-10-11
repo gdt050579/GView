@@ -1,8 +1,8 @@
 #include "EntropyVisualizer.hpp"
 
-namespace GView::GenericPlugins::EntropyVisualizer
-{
-extern "C" {
+using namespace GView::GenericPlugins::EntropyVisualizer;
+
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "EntropyVisualizer") {
@@ -18,4 +18,3 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     sect["Command.EntropyVisualizer"] = Input::Key::F12;
 }
 }
-} // namespace GView::GenericPlugins::EntropyVisualizer

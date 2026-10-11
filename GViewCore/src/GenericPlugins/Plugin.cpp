@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include "StaticPlugins.hpp"
 
 using namespace GView::Generic;
 using namespace GView::Utils;
@@ -41,6 +42,17 @@ void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
 {
     if (!this->fnRun)
     {
+#ifdef GVIEW_STATIC_PLUGINS
+        const auto* entry = GView::StaticPlugins::FindGenericPlugin((std::string_view) this->Name);
+        if (!entry)
+        {
+            LocalString<1024> info;
+            info.Format("Generic plugin `%s` is not available in this build", this->Name.GetText());
+            AppCUI::Dialogs::MessageBox::ShowError("Error", info);
+            return;
+        }
+        this->fnRun = entry->fnRun;
+#else
         // we need to load the library
         AppCUI::OS::Library lib;
         auto path = AppCUI::OS::GetCurrentApplicationPath();
@@ -65,6 +77,7 @@ void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
             AppCUI::Dialogs::MessageBox::ShowError("Error", info);
             return;
         }
+#endif
     }
     // all good -> is loaded ==> try to run
     if (!this->fnRun(this->Commands[commandIndex].Name, currentObject))

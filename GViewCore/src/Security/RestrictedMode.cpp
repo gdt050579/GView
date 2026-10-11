@@ -30,7 +30,7 @@
 #    include <Windows.h>
 #elif defined(BUILD_FOR_OSX) || defined(BUILD_FOR_UNIX)
 #    include <unistd.h>
-#    ifdef BUILD_FOR_UNIX
+#    if defined(BUILD_FOR_UNIX) && !defined(BUILD_FOR_WASM)
 #        include <sys/prctl.h>
 #    endif
 #endif
@@ -983,8 +983,10 @@ Utils::GStatus EnableWindowScreenProtection(void* nativeWindowHandle) noexcept
 #elif defined(BUILD_FOR_UNIX)
     // Prevent core dumps (reduces leakage in crash scenarios)
     (void) nativeWindowHandle;
+#    ifndef BUILD_FOR_WASM // a web page has no core dumps
     if (prctl(PR_SET_DUMPABLE, 0) != 0)
         return Utils::GStatus::Error("ScreenProtect: prctl(PR_SET_DUMPABLE,0) failed");
+#    endif
     return Utils::GStatus::Ok();
 #else
     (void) nativeWindowHandle;
@@ -1000,7 +1002,9 @@ void DisableWindowScreenProtection(void* nativeWindowHandle) noexcept
     SetWindowDisplayAffinity(static_cast<HWND>(nativeWindowHandle), 0 /* WDA_NONE */);
 #elif defined(BUILD_FOR_UNIX)
     (void) nativeWindowHandle;
+#    ifndef BUILD_FOR_WASM
     prctl(PR_SET_DUMPABLE, 1);
+#    endif
 #else
     (void) nativeWindowHandle;
 #endif

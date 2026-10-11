@@ -7,9 +7,9 @@ using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
-    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::Buffer& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
         CHECK(extension == ".tsv" || extension == ".csv", false, "Wrong extension: [%.*s]!", extension.length(), extension.data());
         if (extension == ".tsv")
@@ -69,9 +69,4 @@ extern "C"
         sect["Priority"]    = 1;
         sect["Description"] = "Comma or Tab separated values (*.csv, *.tsv)";
     }
-}
-
-int main()
-{
-    return 0;
 }
