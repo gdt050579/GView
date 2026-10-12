@@ -54,8 +54,8 @@ Learning::LearningSettings LoadLearningSettings()
 // frontends (console and SDL) honour FPS mode; on Linux/macOS only SDL does (ncurses never delivers frame updates).
 bool FrontendDeliversFrameUpdates()
 {
-#ifdef BUILD_FOR_WINDOWS
-    return true;
+#if defined(BUILD_FOR_WINDOWS) || defined(BUILD_FOR_WASM)
+    return true; // the browser frontend runs the AppCUI loop from the frames of the page
 #else
     auto ini = AppCUI::Application::GetAppSettings();
     if (!ini)
@@ -71,8 +71,27 @@ bool FrontendDeliversFrameUpdates()
 #endif
 }
 
+// Web build: the connection string (it contains the access token) is kept encrypted by the page
+// (Browser::Secrets), never in GView.ini - the page mirrors GView.ini in clear into its localStorage.
 std::string LoadSavedConnectionString()
 {
+#ifdef BUILD_FOR_WASM
+    if (auto ini = AppCUI::Application::GetAppSettings(); ini)
+    {
+        // migrate a value saved in GView.ini by an older web build
+        auto sect = ini->GetSection("GView");
+        if (sect.Exists())
+        {
+            if (auto v = sect.GetValue("ServerConnectionString").AsStringView(); v.has_value() && !v->empty())
+            {
+                GView::App::Browser::Secrets::Set(GView::App::Browser::Secrets::LEARNING_CONNECTION, *v);
+                (*ini)["GView"]["ServerConnectionString"] = "";
+                AppCUI::Application::SaveAppSettings();
+            }
+        }
+    }
+    return GView::App::Browser::Secrets::Get(GView::App::Browser::Secrets::LEARNING_CONNECTION).value_or(std::string());
+#else
     auto ini = AppCUI::Application::GetAppSettings();
     if (!ini)
         return {};
@@ -81,10 +100,15 @@ std::string LoadSavedConnectionString()
         return {};
     auto v = sect.GetValue("ServerConnectionString").AsStringView();
     return v.has_value() ? std::string(*v) : std::string();
+#endif
 }
 
 void SaveConnectionString(const std::string& cs)
 {
+#ifdef BUILD_FOR_WASM
+    if (!cs.empty() && LoadSavedConnectionString() != cs)
+        GView::App::Browser::Secrets::Set(GView::App::Browser::Secrets::LEARNING_CONNECTION, cs);
+#else
     auto ini = AppCUI::Application::GetAppSettings();
     if (!ini || cs.empty())
         return;
@@ -92,6 +116,7 @@ void SaveConnectionString(const std::string& cs)
         return;
     (*ini)["GView"]["ServerConnectionString"] = cs;
     AppCUI::Application::SaveAppSettings();
+#endif
 }
 
 std::string FormatRemaining(uint64 endsAt, uint64 now)

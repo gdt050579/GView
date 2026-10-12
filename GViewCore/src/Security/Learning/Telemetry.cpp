@@ -133,6 +133,8 @@ std::string_view CurrentPlatform() noexcept
 #    else
     return "windows-x64";
 #    endif
+#elif defined(BUILD_FOR_WASM)
+    return "web-wasm32"; // GView inside a web page (the server may issue a web-specific policy, or refuse)
 #elif defined(BUILD_FOR_OSX)
 #    if defined(__aarch64__) || defined(__arm64__)
     return "macos-arm64";
@@ -466,7 +468,8 @@ std::optional<FlushOutcome> TelemetryFlusher::FlushOnce(
       IHttpTransport& transport, TelemetryCollector& collector, const BatchMeta& meta, long timeoutSeconds, const std::atomic<bool>* cancel,
       bool* policyExpired)
 {
-    auto body = collector.BeginBatch(meta);
+    // a job of the web build may run several times (JobReplay.hpp): the batch is taken from the collector only once
+    auto body = JobReplay::Once([&]() { return collector.BeginBatch(meta); });
     if (!body.has_value())
         return std::nullopt;
     HttpRequest req;
@@ -479,10 +482,41 @@ std::optional<FlushOutcome> TelemetryFlusher::FlushOnce(
     const auto outcome      = ClassifyTelemetryResponse(resp);
     if (policyExpired != nullptr && resp.transportOk && resp.status == 403)
         *policyExpired = resp.ToError().code == ErrorCode::PolicyExpired;
-    collector.OnFlushResult(outcome);
+    JobReplay::Once([&]() {
+        collector.OnFlushResult(outcome);
+        return true;
+    });
     return outcome;
 }
 
+void TelemetryFlusher::FlushRound()
+{
+    try
+    {
+        bool expired = false;
+        // drain: keep sending while full batches are accepted
+        for (int round = 0; round < 8; round++)
+        {
+            auto outcome = FlushOnce(*transport, *collector, metaProvider(), 15, &cancel, &expired);
+            if (!outcome.has_value() || *outcome != FlushOutcome::Accepted || collector->PendingCount() == 0)
+                break;
+        }
+        if (expired && onPolicyExpired)
+            onPolicyExpired();
+    }
+#ifdef BUILD_FOR_WASM
+    catch (const JobReplay::NetworkPending&)
+    {
+        throw; // the job waits for a response (JobReplay.hpp)
+    }
+#endif
+    catch (...)
+    {
+        // never let telemetry take the process down
+    }
+}
+
+#ifndef BUILD_FOR_WASM
 void TelemetryFlusher::Start(std::shared_ptr<IHttpTransport> t, TelemetryCollector* c, MetaProvider meta, ExpiredSignal expired, uint32 interval)
 {
     Stop();
@@ -514,16 +548,7 @@ void TelemetryFlusher::Run()
         try
         {
             std::lock_guard<std::mutex> fl(flushMutex);
-            bool expired = false;
-            // drain: keep sending while full batches are accepted
-            for (int round = 0; round < 8; round++)
-            {
-                auto outcome = FlushOnce(*transport, *collector, metaProvider(), 15, &cancel, &expired);
-                if (!outcome.has_value() || *outcome != FlushOutcome::Accepted || collector->PendingCount() == 0)
-                    break;
-            }
-            if (expired && onPolicyExpired)
-                onPolicyExpired();
+            FlushRound();
         }
         catch (...)
         {
@@ -572,4 +597,74 @@ void TelemetryFlusher::StopAndFlush(long timeoutSeconds)
     {
     }
 }
+#else
+void TelemetryFlusher::Start(std::shared_ptr<IHttpTransport> t, TelemetryCollector* c, MetaProvider meta, ExpiredSignal expired, uint32 interval)
+{
+    Stop();
+    transport       = std::move(t);
+    collector       = c;
+    metaProvider    = std::move(meta);
+    onPolicyExpired = std::move(expired);
+    intervalSeconds = std::max<uint32>(5, interval);
+    flushRequested  = false;
+    nextFlushMs     = 0; // the first Poll() schedules the first periodic flush
+    cancel.store(false);
+    flushWorker.Start();
+    running = true;
+}
+
+void TelemetryFlusher::Poll(uint64 nowMs)
+{
+    if (!running || flushInFlight)
+        return;
+    if (nextFlushMs == 0)
+        nextFlushMs = nowMs + static_cast<uint64>(intervalSeconds) * 1000;
+    if (!flushRequested && nowMs < nextFlushMs)
+        return;
+    flushRequested = false;
+    nextFlushMs    = nowMs + static_cast<uint64>(intervalSeconds) * 1000;
+    flushInFlight  = true;
+    if (!flushWorker.Post([this]() -> BackgroundWorker::Completion {
+            FlushRound();
+            flushInFlight = false;
+            return nullptr;
+        }))
+        flushInFlight = false;
+}
+
+void TelemetryFlusher::RequestFlush()
+{
+    if (running)
+        flushRequested = true;
+}
+
+void TelemetryFlusher::Stop()
+{
+    if (!running)
+        return;
+    running = false;
+    // the in-flight flush (if any) aborts its request when it sees the flag; Stop() resumes it right away
+    cancel.store(true);
+    flushWorker.Stop();
+    cancel.store(false);
+    flushRequested = false;
+}
+
+void TelemetryFlusher::StopAndFlush(long timeoutSeconds)
+{
+    const bool wasRunning = running;
+    Stop();
+    if (!wasRunning || !transport || collector == nullptr)
+        return;
+    try
+    {
+        // UI context: the transport blocks the page until the request ends (bounded by timeoutSeconds), as the native
+        // client blocks its UI thread here
+        FlushOnce(*transport, *collector, metaProvider(), std::max<long>(1, timeoutSeconds), nullptr);
+    }
+    catch (...)
+    {
+    }
+}
+#endif
 } // namespace GView::Security::Learning

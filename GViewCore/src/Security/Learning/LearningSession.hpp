@@ -10,6 +10,8 @@
 //
 // Threading: every public non-static method is UI-thread only, except the ones documented otherwise. Network work
 // runs in Perform* (static, pure) on the BackgroundWorker; completions are applied on the UI thread.
+// WebAssembly: the BackgroundWorker runs its jobs on the UI thread and re-runs them when their responses arrive
+// (JobReplay.hpp); the telemetry flusher is driven by Tick() - same code paths, no thread.
 
 #include "BackgroundWorker.hpp"
 #include "ContentDelivery.hpp"
@@ -227,6 +229,10 @@ class LearningSession
     size_t DrainCompletions()
     {
         return worker.DrainCompletions();
+    }
+    void RequestTelemetryFlush()
+    {
+        flusher.RequestFlush();
     }
 
     // ---------------- queries ----------------

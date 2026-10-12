@@ -1,11 +1,15 @@
 // GView inside a web page (wasm32-emscripten). The page (GView/web/GView.html.in) gives files to GView through the
-// exports below: the bytes are copied into the in-memory file system (FILES_FOLDER) and the file is opened from the
-// desktop's OnFrameUpdate - never from the export itself, which may run while a modal window is suspended.
+// exports below: the bytes are copied into the in-memory file system ($HOME/Files, also reachable as /files) and the
+// file is opened from the desktop's OnFrameUpdate - never from the export itself, which may run while a modal window
+// is suspended.
 //
 // ABI (numbers only, like AppCUI's BrowserExports.cpp - JS never writes into wasm memory outside a buffer it was given):
 //   ptr = _gview_browser_alloc(size)                                  0 = out of memory
 //   ... JS copies the bytes into HEAPU8[ptr, ptr + size) ...
 //   _gview_browser_add_file(namePtr, nameSize, dataPtr, dataSize)    1 = queued, 0 = rejected; frees both buffers
+//   _gview_browser_last_stored()                                     "<path relative to $HOME>\n<mtime ms>" (UTF-8,
+//                                                                    0-terminated) of the last accepted file: the page
+//                                                                    keeps that file in the persistent storage itself
 //
 // The settings file (AppCUI names it after the virtual executable: /app.ini) also lives in the in-memory file system and
 // would be lost on every reload. It is kept in the localStorage of the page (SETTINGS_KEY): restored before AppCUI
@@ -13,11 +17,13 @@
 // defaults, a settings dialog, the keyboard shortcuts window, the theme editor, ...).
 
 #include "Internal.hpp"
+#include "Learning/BackgroundWorker.hpp"
 
 #include <emscripten/emscripten.h>
 #include <sys/stat.h>
 
 #include <deque>
+#include <utility>
 #include <fstream>
 #include <new>
 #include <optional>
@@ -60,8 +66,13 @@ namespace GView::App::Browser
 {
 namespace
 {
-    constexpr std::string_view FILES_FOLDER = "/files";
-    constexpr size_t MAX_FILE_NAME          = 255;
+    constexpr std::string_view FILES_SUBFOLDER = "Files";  // under $HOME: kept across visits (BrowserStorage.cpp)
+    constexpr std::string_view FILES_LINK      = "/files"; // where the files were before the persistent storage
+    constexpr size_t MAX_FILE_NAME             = 255;
+
+    std::filesystem::path filesFolder;
+    std::string lastStored; // see _gview_browser_last_stored
+    bool pageHidden = false; // set by _gview_browser_page_hidden, handled by the next frame
 
     // the origin (e.g. <user>.github.io) can be shared with other pages: the key carries the application name
     constexpr const char* SETTINGS_KEY          = "GView/GView.ini";
@@ -133,12 +144,16 @@ namespace
     // "name.ext", "name (1).ext", "name (2).ext", ... - a file given twice does not replace the opened one
     std::filesystem::path UniquePath(const std::string& fileName)
     {
-        const std::filesystem::path folder(FILES_FOLDER);
+        const std::filesystem::path& folder = filesFolder;
         auto path = folder / fileName;
         std::error_code ec;
         const auto stem      = path.stem().string();
         const auto extension = path.extension().string();
-        for (uint32 index = 1; std::filesystem::exists(path, ec) && index < 10000; index++)
+        // a stored file that is not loaded into memory yet keeps its name too (it would be replaced in the store)
+        const auto taken = [&](const std::filesystem::path& p) {
+            return std::filesystem::exists(p, ec) || IsStoredPath(p.lexically_relative(HomeFolder()).generic_string());
+        };
+        for (uint32 index = 1; taken(path) && index < 10000; index++)
             path = folder / (stem + " (" + std::to_string(index) + ")" + extension);
         return path;
     }
@@ -154,16 +169,55 @@ namespace
             out.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
             CHECK(out.good(), false, "Unable to write: %s", path.string().c_str());
         }
+        NoteFileStoredByPage(path);
         pendingFiles.push_back(path);
         return true;
     }
 } // namespace
 
+const char* LastStoredDescription()
+{
+    return lastStored.c_str();
+}
+
+void ClearLastStored()
+{
+    lastStored.clear();
+}
+
+void NotePageHidden()
+{
+    pageHidden = true;
+}
+
+std::filesystem::path HomeFolder()
+{
+    const char* home = std::getenv("HOME"); // /home/web_user (Emscripten)
+    return std::filesystem::path((home != nullptr && home[0] == '/') ? home : "/home/web_user");
+}
+
 void PrepareFilesFolder()
 {
     std::error_code ec;
-    std::filesystem::create_directories(FILES_FOLDER, ec);
-    std::filesystem::current_path(FILES_FOLDER, ec);
+    filesFolder = HomeFolder() / FILES_SUBFOLDER;
+    std::filesystem::create_directories(filesFolder, ec);
+    if (!std::filesystem::exists(FILES_LINK, ec))
+        std::filesystem::create_directory_symlink(filesFolder, FILES_LINK, ec);
+    std::filesystem::current_path(filesFolder, ec);
+}
+
+void NoteFileStoredByPage(const std::filesystem::path& file)
+{
+    lastStored.clear();
+    struct stat st{};
+    if (::stat(file.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+        return;
+    const auto relative = file.lexically_relative(HomeFolder()).generic_string();
+    if (!Storage::IsStorablePath(relative))
+        return;
+    const int64 mtimeMs = static_cast<int64>(st.st_mtim.tv_sec) * 1000 + static_cast<int64>(st.st_mtim.tv_nsec / 1000000);
+    lastStored          = relative + "\n" + std::to_string(mtimeMs);
+    StorageMarkStored(relative, Storage::Stamp{ static_cast<uint64>(st.st_size), mtimeMs });
 }
 
 void RestoreSettings()
@@ -191,6 +245,11 @@ bool OnFrame(bool desktopHasFocus)
 {
     // runs under modal windows too: settings are often saved from a dialog
     StoreSettingsIfChanged();
+    const bool hidden = std::exchange(pageHidden, false);
+    StorageOnFrame(hidden);
+    // the jobs of Learning and Evaluation Mode that wait for the network (no threads in a page, BackgroundWorker.hpp)
+    GView::Security::Learning::Cooperative::Pump();
+    GView::Security::Learning::Hooks::OnBrowserFrame(hidden);
 
     // a file window is not opened under a modal window (it would get the focus while the modal one waits for input)
     if (pendingFiles.empty() || !desktopHasFocus)
@@ -214,6 +273,17 @@ EMSCRIPTEN_KEEPALIVE uint8* gview_browser_alloc(uint32 size)
     return new (std::nothrow) uint8[size];
 }
 
+// the page became hidden (visibilitychange): only records it - this export may run while GView is suspended
+EMSCRIPTEN_KEEPALIVE void gview_browser_page_hidden()
+{
+    GView::App::Browser::NotePageHidden();
+}
+
+EMSCRIPTEN_KEEPALIVE const char* gview_browser_last_stored()
+{
+    return GView::App::Browser::LastStoredDescription();
+}
+
 EMSCRIPTEN_KEEPALIVE int32 gview_browser_add_file(uint8* name, uint32 nameSize, uint8* data, uint32 dataSize)
 {
     // both buffers come from gview_browser_alloc (or are null for an empty name / file)
@@ -223,6 +293,7 @@ EMSCRIPTEN_KEEPALIVE int32 gview_browser_add_file(uint8* name, uint32 nameSize, 
         return 0;
     static const uint8 emptyFile = 0;
     const std::string_view fileName(reinterpret_cast<const char*>(name), nameSize);
+    GView::App::Browser::ClearLastStored();
     return GView::App::Browser::StoreFile(fileName, data ? data : &emptyFile, dataSize) ? 1 : 0;
 }
 }

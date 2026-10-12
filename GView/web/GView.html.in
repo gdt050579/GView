@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Content-Security-Policy: no inline script, no plugin, no foreign code. connect-src: the page itself (GView.wasm) and
+     the course servers of Learning and Evaluation Mode (https; plain http only towards the local machine, which GView
+     itself only accepts for a page served from the local machine - development). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>GView @GVIEW_VERSION@</title>
 <style>
   @font-face { font-family: "JuliaMono"; src: url("JuliaMono-Regular.ttf") format("truetype"); font-display: block; }
@@ -27,69 +31,11 @@
   <b>GView</b>
   <button id="open" type="button">Open files…</button>
   <input id="picker" type="file" multiple hidden>
-  <span id="status">Drop files anywhere on the page. They stay in this tab only (in-memory file system).</span>
+  <!-- replaced by gview-page.js once GView starts; stays when the page is opened from file:// (modules do not load) -->
+  <span id="status">Loading GView... If this message stays, the page was opened from a file: serve this folder over HTTP
+    (for example: python serve.py GView) and open the http:// address.</span>
 </div>
 <div id="term-host"><canvas id="term"></canvas><div id="drop">Drop to open in GView</div></div>
-<script>
-  // browsers do not load ES modules / WebAssembly from file:// - explain it instead of failing silently
-  if (location.protocol === 'file:') {
-    document.body.innerHTML =
-      '<pre style="color:#ccc;font:15px monospace;padding:24px;white-space:pre-wrap">' +
-      'This page must be served over HTTP: browsers do not load WebAssembly from file:// URLs.\n\n' +
-      'Run, in the folder of this page:\n\n    python serve.py GView\n\n' +
-      'It serves the folder on http://127.0.0.1 and opens GView in your browser.</pre>';
-  }
-</script>
-<script type="module">
-  import createGViewModule from './GView.mjs';
-  import { startAppCUI } from './appcui-host.js';
-
-  const canvas = document.getElementById('term');
-  const status = document.getElementById('status');
-  const host = await startAppCUI(createGViewModule, canvas, document.getElementById('term-host'),
-                                 { fontFamily: '"JuliaMono", monospace', fontSizeCss: 16 });
-  window.appcuiHost = host; // diagnostics / automation
-
-  // Copies a File into GView's in-memory file system (GViewCore/src/App/BrowserHost.cpp); GView opens it on its next
-  // frame. Buffers are allocated by GView and released by gview_browser_add_file.
-  async function addFile(file) {
-    const mod = host.mod;
-    if (!mod || host.exited) return false;
-    const data = new Uint8Array(await file.arrayBuffer());
-    const name = new TextEncoder().encode(file.name);
-    const namePtr = mod._gview_browser_alloc(name.length) >>> 0;
-    const dataPtr = data.length ? (mod._gview_browser_alloc(data.length) >>> 0) : 0;
-    if (namePtr === 0 || (data.length && dataPtr === 0)) {
-      mod._gview_browser_add_file(namePtr, 0, dataPtr, 0); // rejected, but releases whatever was allocated
-      return false;
-    }
-    mod.HEAPU8.set(name, namePtr); // HEAPU8 is re-read after the allocations (memory may have grown)
-    if (data.length) mod.HEAPU8.set(data, dataPtr);
-    return mod._gview_browser_add_file(namePtr, name.length, dataPtr, data.length) === 1;
-  }
-  async function addFiles(files) {
-    let ok = 0, failed = 0;
-    for (const file of files) (await addFile(file)) ? ok++ : failed++;
-    status.textContent = `${ok} file(s) opened` + (failed ? `, ${failed} failed (too large or invalid name)` : '') +
-                         ' - files stay in this tab only.';
-    host.wake();
-    canvas.focus();
-  }
-
-  const picker = document.getElementById('picker');
-  document.getElementById('open').addEventListener('click', () => picker.click());
-  picker.addEventListener('change', () => { addFiles([...picker.files]); picker.value = ''; });
-
-  let dragDepth = 0;
-  window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
-  window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
-  window.addEventListener('dragover', (e) => e.preventDefault());
-  window.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dragDepth = 0;
-    document.body.classList.remove('dragging');
-    if (e.dataTransfer && e.dataTransfer.files.length) addFiles([...e.dataTransfer.files]);
-  });
-</script>
+<script type="module" src="gview-page.js"></script>
 </body>
 </html>

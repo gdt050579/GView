@@ -91,6 +91,8 @@ Header                      Value
 ``XAppUserID``              the access token
 ``X-GView-Client``          client version (``GVIEW_VERSION``, e.g. ``0.390.0``)
 ``X-GView-Protocol``        ``2``
+``X-GView-Platform``        ``CurrentPlatform()``: ``windows-x64``, ``linux-arm64``, ``macos-arm64``, ... and
+                            ``web-wasm32`` for GView running in a web page (`16. Browser clients`_)
 ``X-GView-Policy``          id of the policy currently in force (omitted before the first policy)
 ``Content-Type``            ``application/json; charset=utf-8`` (body ``{}`` unless noted)
 ``Accept``                  ``application/json, application/octet-stream``
@@ -486,8 +488,8 @@ T8   ``telemetry whitelist, bounds and flush outcomes`` (network failure keeps e
      ``reconnect re-validates``, ``requireScreenProtect unsupported => refusal``
 ==== ========================================================================================== ========================
 
-Totals on this machine: 27 learning unit test cases / 635 assertions pass (the two end-to-end cases
-are hidden and need the stub server: 58 + 12 assertions pass, 705 in total); the full ``ctest`` suite (33 cases) passes. Cross-implementation
+Totals on this machine: 29 learning unit test cases / 646 assertions pass (the two end-to-end cases
+are hidden and need the stub server: 58 + 12 assertions pass, 716 in total); the full ``ctest`` suite (80 cases) passes. Cross-implementation
 vectors (`Test vectors`_) are asserted by ``cross-implementation test vectors``.
 
 How to reproduce::
@@ -568,6 +570,8 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 15. Open questions for the server implementer
 ---------------------------------------------
 
+0. Browser clients need CORS and a platform-aware policy: see `16. Browser clients`_.
+
 1. Please make sure ``policy.serverUrl`` is exactly the URL put in connection strings (otherwise use an empty
    ``serverUrl``) - the client rejects mismatches.
 2. Accept the ``note_add`` counter and the ``reason`` values listed for ``session_end``.
@@ -577,3 +581,68 @@ All of these are additional strictness or clarifications; ``plans/LEARNING_MODE_
 5. Confirm that a protocol-2 download of a ``kind=link`` resource is never needed (the client uses the catalogue URL).
 6. Legacy flat ``GetProblems`` items carry no ``deliveryMode``/``sha256``; for v2 clients please always serve
    ``GetWeeks``.
+
+16. Browser clients
+-------------------
+
+GView also runs inside a web page (``docs/source/wasm.rst``, ``GVIEW_ENABLE_BROWSER_NETWORK``, ON by default for the
+WebAssembly build). The protocol is unchanged; the transport and the platform are different.
+
+**Transport.** A page has no sockets: requests go through ``fetch()`` (``LearningHttpFetch.cpp``) and the browser owns
+TLS. The desktop rules map as follows:
+
+=================================== ====================================================================================
+Desktop (libcurl)                   Browser (fetch)
+=================================== ====================================================================================
+``VERIFYPEER``/``VERIFYHOST``,      enforced by the browser (a page can not skip certificate validation)
+TLS >= 1.2
+``https`` only (localhost http      ``CheckTransportRequirements``: ``https://`` only; ``http://`` only when the page itself
+exception)                          is served from the local machine *and* ``LearningAllowPlainHttpLocalhost=true``
+redirects never followed            ``redirect: "error"``
+``caPem`` as the only trust anchor  **impossible** - the browser always uses the system store. A connection string with
+                                    ``caPem`` is refused before any request (fail closed), never widened silently
+response caps, timeouts, cancel     ``Content-Length`` check + counting stream reader, ``AbortController``
+-                                   ``credentials: "omit"``, ``referrerPolicy: "no-referrer"``, ``cache: "no-store"``;
+                                    the page CSP allows ``connect-src`` to ``https:`` (and the loopback for development)
+=================================== ====================================================================================
+
+**CORS (server side, required).** Every endpoint answers the ``OPTIONS`` preflight of the allowed GView web origins
+(exact origins, e.g. the GitHub Pages site or the self-hosted one; no ``*`` is needed since no cookie is sent):
+
+::
+
+   Access-Control-Allow-Origin:   <origin of the GView page>      (and Vary: Origin)
+   Access-Control-Allow-Methods:  POST
+   Access-Control-Allow-Headers:  XAppUserID, X-GView-Client, X-GView-Protocol, X-GView-Policy, X-GView-Platform,
+                                  Content-Type, Accept
+   Access-Control-Expose-Headers: X-GView-Delivery, X-GView-SHA256, X-GView-Encrypted, X-GView-Filename,
+                                  X-GView-Item-Version, Retry-After, Content-Length
+   Access-Control-Max-Age:        600
+
+Without ``Expose-Headers`` the delivery headers are invisible to the page and every download is refused (they are
+mandatory in protocol 2). ``tools/learning_mode_stub_server.py --cors-origin <origin>`` implements all of this.
+
+**Platform-aware policies (server decides, client fails closed).** Every request carries
+``X-GView-Platform: web-wasm32``. A page can not exclude itself from screen capture, can not pin memory and is open to
+the developer tools of the browser, so:
+
+* ``requireScreenProtect`` is never met in a browser: the session goes to *Error* and no task can be opened (as on the
+  other platforms without capture exclusion);
+* ``LockedBuffer`` reports ``IsLocked() == false`` (the memory of the page is a JavaScript ``ArrayBuffer``): memory
+  mode still decrypts in place, wipes on close and never touches the file system, but cannot prevent paging;
+* the server may issue a dedicated policy for ``web-wasm32`` (e.g. ``bestEffortScreenProtect: false``), refuse with
+  ``426 UNSUPPORTED_CLIENT``, or keep the same policy and accept the weaker guarantees.
+
+**No threads.** A page has none (they would need COOP/COEP headers). A network job runs on the UI thread and is
+re-run from the start each time one of its responses arrives (``JobReplay.hpp``, ``BackgroundWorkerWasm.cpp``); the
+side effects before a request (a telemetry batch) run once. The UI keeps running while requests are in flight;
+*End session* aborts the request in flight. Telemetry is flushed every ``flushIntervalSeconds`` from the session tick,
+and once more when the page is hidden; at *End session* the last batch is sent with ``keepalive`` without waiting for
+the answer. A tab in the background is throttled by the browser (down to one timer per minute after a few minutes),
+so its network jobs complete only when it becomes visible again.
+
+**Secrets at rest.** ``ServerConnectionString`` is not stored in ``GView.ini`` by the web build (the page keeps
+``GView.ini`` in clear in its ``localStorage``): it is kept AES-GCM encrypted by the persistent storage of the page,
+under a non-extractable key (*File > Stored files > Forget Learning connection*). Learning task files saved in
+``file`` mode land in the home folder and are kept like any other file; ``memory`` content is never written to the
+file system and therefore never stored.

@@ -39,6 +39,10 @@ constexpr GViewMenuCommand menuFileList[] = {
     { "&Wait for a reverse connection", MenuCommands::REMOTE_LISTEN, Key::None },
     { "", 0, Key::None },
 #endif
+#ifdef BUILD_FOR_WASM
+    { "&Stored files", MenuCommands::STORED_FILES, Key::None },
+    { "", 0, Key::None },
+#endif
     { "E&xit", MenuCommands::EXIT_GVIEW, Key::None, &INSTANCE_EXIT },
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
@@ -46,7 +50,7 @@ constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 constexpr GViewMenuCommand menuOptionsList[] = { 
     { "&Change theme", MenuCommands::CHANGE_THEME, Key::None },
     { "Op&en Theme Editor", MenuCommands::OPEN_THEME_EDITOR, Key::None },
-#ifdef GVIEW_ENABLE_NETWORK
+#ifdef GVIEW_HAS_LEARNING_NETWORK
     { "", 0, Key::None },
     { "&Learning and Evaluation Mode", MenuCommands::OPEN_RESTRICTED_MODE, Key::None },
 #endif
@@ -224,10 +228,12 @@ bool Instance::Init(bool isTestingEnabled)
     }
 #ifdef BUILD_FOR_WASM
     // inside a web page: closing the last window must not end GView (the page would only show "exited"), and the
-    // files given to the page are opened from the in-memory folder that becomes the current one. The settings of the
-    // previous visit are restored before they are looked for (the in-memory file system starts empty on every load).
+    // files given to the page are opened from the in-memory folder that becomes the current one. The settings and the
+    // files of the previous visits are restored before they are looked for (the in-memory file system starts empty on
+    // every load).
     initData.Flags |= InitializationFlags::DisableAutoCloseDesktop;
     GView::App::Browser::PrepareFilesFolder();
+    GView::App::Browser::RestoreStorage();
     GView::App::Browser::RestoreSettings();
 #endif
     // the GView desktop runs the background update check (see Update/UpdateService.hpp)
@@ -712,6 +718,11 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         case MenuCommands::OPEN_FOLDER:
             OpenFolder();
             return true;
+#ifdef BUILD_FOR_WASM
+        case MenuCommands::STORED_FILES:
+            GView::App::Browser::ShowStoredFilesWindow();
+            return true;
+#endif
         case MenuCommands::ABOUT:
             ShowAboutWindow();
             return true;
