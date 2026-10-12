@@ -12,8 +12,8 @@ using AppCUI::Input::MouseWheel;
 
 namespace
 {
-    constexpr uint32 KEY_BASE_MASK      = 0x0FFF;
-    constexpr uint32 KEY_MODIFIERS_MASK = static_cast<uint32>(Key::Alt) | static_cast<uint32>(Key::Ctrl) | static_cast<uint32>(Key::Shift);
+    constexpr uint32 KEY_BASE_MASK                     = 0x0FFF;
+    [[maybe_unused]] constexpr uint32 KEY_MODIFIERS_MASK = static_cast<uint32>(Key::Alt) | static_cast<uint32>(Key::Ctrl) | static_cast<uint32>(Key::Shift);
     constexpr uint32 MERGE_GAP          = 2; // unchanged cells absorbed into a delta span (cheaper than a new span header)
     constexpr uint32 MIN_REPEAT_RUN     = 3; // shorter runs are emitted as literals
 

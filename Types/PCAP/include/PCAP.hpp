@@ -80,7 +80,7 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
 
 namespace Panels
 {
-    static ListViewItem AddMACElement(Reference<ListView> list, std::string_view name, const MAC& mac)
+    inline ListViewItem AddMACElement(Reference<ListView> list, std::string_view name, const MAC& mac)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 
@@ -90,7 +90,7 @@ namespace Panels
                 tmp.Format("%02X:%02X:%02X:%02X:%02X:%02X (0x%X)", mac.arr[0], mac.arr[1], mac.arr[2], mac.arr[3], mac.arr[4], mac.arr[5], mac.value) });
     }
 
-    static ListViewItem AddIPv4Element(Reference<ListView> list, std::string_view name, uint32 ip)
+    inline ListViewItem AddIPv4Element(Reference<ListView> list, std::string_view name, uint32 ip)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 
@@ -99,7 +99,7 @@ namespace Panels
         return list->AddItem({ name.data(), tmp.GetText() });
     }
 
-    static ListViewItem AddIPv6Element(Reference<ListView> list, std::string_view name, uint16 ipv6[8])
+    inline ListViewItem AddIPv6Element(Reference<ListView> list, std::string_view name, uint16 ipv6[8])
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 
@@ -192,12 +192,13 @@ namespace Panels
             void Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 packetInclLen);
             void Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, uint32 packetInclLen);
             void Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, uint32 packetInclLen);
-            void Add_UDPHeader(PacketData* packetData, const UDPHeader* udp);
-            void Add_DNSHeader(PacketData* packetData, const DNSHeader* dns);
+            void Add_UDPHeader(PacketData* packetData, const UDPHeader* udp, uint32 udpSize);
+            void Add_DNSHeader(PacketData* packetData, const DNSHeader* dns, uint32 dnsSize);
             void Add_ICMPHeader(PacketData* packetData, const ICMPHeader_Base* icmpBase, uint32 icmpSize);
             void Add_DNSHeader_Question(const DNSHeader_Question& question);
             void Add_TCPHeader(PacketData* packetData, const TCPHeader* tcp, uint32 packetInclLen);
             void Add_TCPHeader_Options(const uint8* optionsPtr, uint32 optionsLen);
+            void AddTruncated();
 
           public:
             PacketDialog(

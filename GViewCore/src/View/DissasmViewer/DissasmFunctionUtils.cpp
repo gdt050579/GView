@@ -15,7 +15,7 @@ bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
 
     auto checkValidSequence = [&ptr, &insideBrackets]() -> bool {
         while (ptr && *ptr != '\0') {
-            if (*ptr == ' ' || *ptr == '[' || *ptr >= 'a' && *ptr <= 'z' || *ptr >= 'A' && *ptr <= 'Z') {
+            if (*ptr == ' ' || *ptr == '[' || (*ptr >= 'a' && *ptr <= 'z') || (*ptr >= 'A' && *ptr <= 'Z')) {
                 if (*ptr == '[') {
                     if (insideBrackets)
                         return false;
@@ -72,7 +72,7 @@ bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
                 continue;
             }
         } else {
-            if (*ptr >= '0' && *ptr <= '9' || *ptr >= 'a' && *ptr <= 'f') {
+            if ((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f')) {
                 size++;
             } else {
                 if (size < maxSize - 2)
@@ -103,7 +103,7 @@ bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
     if (size < 2) {
         ptr = !is_hex ? op_str : op_str + 2;
         while (ptr && *ptr != '\0') {
-            if (!(*ptr >= '0' && *ptr <= '9' || *ptr >= 'a' && *ptr <= 'f'))
+            if (!((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f')))
                 return false;
             ptr++;
         }

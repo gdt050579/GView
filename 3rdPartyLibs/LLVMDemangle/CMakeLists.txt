@@ -8,9 +8,12 @@ add_library(LLVMDemangle STATIC
   src/RustDemangle.cpp
 )
 
-target_include_directories(LLVMDemangle PUBLIC include/)
-if (NOT MSVC)
-  target_compile_options(LLVMDemangle PRIVATE -Wno-deprecated-declarations)
+target_include_directories(LLVMDemangle SYSTEM PUBLIC include/)
+if (MSVC)
+  target_compile_options(LLVMDemangle PRIVATE /W0)
+else()
+  target_compile_options(LLVMDemangle PRIVATE -w)
+endif()
 
   if (APPLE)
     if (CMAKE_GENERATOR STREQUAL "Xcode")
@@ -23,4 +26,3 @@ if (NOT MSVC)
             RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
     endif()
   endif()
-endif()

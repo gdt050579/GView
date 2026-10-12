@@ -72,15 +72,6 @@ bool Information::OnUpdateCommandBar(CommandBar& commandBar)
 
 bool Information::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    if (evnt == Event::Command)
-    {
-        switch (controlID)
-        {
-        default:
-            break;
-        }
-    }
-
     return false;
 }
 

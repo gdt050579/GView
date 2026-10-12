@@ -5,13 +5,13 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
-constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
-constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
-constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
+[[maybe_unused]] constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
+[[maybe_unused]] constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
+[[maybe_unused]] constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
+[[maybe_unused]] constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Container View")
+    : ViewControl("Container View"), settings(nullptr)
 {
     this->obj                     = _obj;
     this->tempCountRecursiveItems = 0;
@@ -184,20 +184,18 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32
 {
     // display
     None
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
-bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
+bool Instance::GetPropertyValue(uint32, PropertyValue&)
 {
-    switch (static_cast<PropertyID>(id))
-    {
-    default:
-        break;
-    }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)

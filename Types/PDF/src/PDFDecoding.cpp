@@ -685,7 +685,7 @@ bool PDF::PDFFile::JBIG2Decode(const BufferView& input, Buffer& output, String& 
         return false;
     }
 
-    const int parse_result = jbig2_data_in(ctx, (unsigned char*) input.GetData(), (size_t) input.GetLength());
+    const int parse_result = jbig2_data_in(ctx, input.GetData(), (size_t) input.GetLength());
     if (parse_result < 0) {
         jbig2_ctx_free(ctx);
         message.Set("JBIG2Decode: parse error from jbig2_data_in!");
@@ -698,7 +698,6 @@ bool PDF::PDFFile::JBIG2Decode(const BufferView& input, Buffer& output, String& 
         message.Set("JBIG2Decode: no page image found!");
         return false;
     }
-    const uint32_t w        = pageImage->width;
     const uint32_t h        = pageImage->height;
     const uint32_t stride   = pageImage->stride;
     const size_t totalBytes = (size_t) stride * (size_t) h;

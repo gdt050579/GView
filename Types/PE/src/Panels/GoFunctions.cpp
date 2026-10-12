@@ -49,8 +49,8 @@ std::string_view GoFunctions::GetValue(NumericFormatter& n, uint64 value)
 
 void GoFunctions::GoToSelectedSection()
 {
-    auto i = list->GetCurrentItem().GetData(-1);
-    CHECKRET(i != -1, "");
+    auto i = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(i != static_cast<uint64>(-1), "");
 
     Golang::Function f{};
     CHECKRET(pe->pcLnTab.GetFunction(i, f), "");
@@ -60,8 +60,8 @@ void GoFunctions::GoToSelectedSection()
 
 void GoFunctions::SelectCurrentSection()
 {
-    auto i = list->GetCurrentItem().GetData(-1);
-    CHECKRET(i != -1, "");
+    auto i = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(i != static_cast<uint64>(-1), "");
 
     Golang::Function f1{};
     CHECKRET(pe->pcLnTab.GetFunction(i, f1), "");

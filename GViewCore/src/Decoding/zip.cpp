@@ -8,8 +8,6 @@
 #include <mz_zip.h>
 #include <mz_zip_rw.h>
 
-#include <locale>
-#include <codecvt>
 
 namespace GView::Decoding::ZIP
 {
@@ -64,6 +62,21 @@ struct _Entry
     EntryType type{};
 };
 
+// mz_zip_entry_is_dir / mz_zip_entry_is_symlink take the zip *handle* (they inspect its current entry), so they can not be
+// called with an entry. These are the same checks (minizip-ng 4.x) done on the entry itself.
+static bool IsDirectoryEntry(const mz_zip_entry* zipFile)
+{
+    if (mz_zip_attrib_is_dir(zipFile->external_fa, zipFile->version_madeby) == MZ_OK)
+        return true;
+    const auto filenameLength = zipFile->filename ? strlen(zipFile->filename) : 0;
+    return filenameLength > 0 && mz_os_is_dir_separator(zipFile->filename[filenameLength - 1]);
+}
+
+static bool IsSymlinkEntry(const mz_zip_entry* zipFile)
+{
+    return mz_zip_attrib_is_symlink(zipFile->external_fa, zipFile->version_madeby) == MZ_OK;
+}
+
 void ConvertZipFileInfoToEntry(const mz_zip_entry* zipFile, _Entry& entry)
 {
     entry.version_madeby     = zipFile->version_madeby;
@@ -103,8 +116,8 @@ void ConvertZipFileInfoToEntry(const mz_zip_entry* zipFile, _Entry& entry)
 
     entry.type = EntryType::Unknown;
 
-    const bool isDir     = (mz_zip_entry_is_dir((void*) zipFile) == MZ_OK);
-    const bool isSymlink = (mz_zip_entry_is_symlink((void*) zipFile) == MZ_OK);
+    const bool isDir     = IsDirectoryEntry(zipFile);
+    const bool isSymlink = IsSymlinkEntry(zipFile);
     if (isDir)
     {
         entry.type = EntryType::Directory;
@@ -363,10 +376,8 @@ bool GetInfo(std::u16string_view path, Info& info)
     internalInfo->reader.Reset();
     internalInfo->reader.value = mz_zip_reader_create();
 
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    std::u16string p(path);
     internalInfo->entries.clear();
-    internalInfo->path = convert.to_bytes(p);
+    internalInfo->path = GView::Utils::UTF16ToUTF8(path); // minizip-ng expects UTF-8 paths on every platform
 
     CHECK(mz_zip_reader_open_file(internalInfo->reader.value, internalInfo->path.c_str()) == MZ_OK, false, "");
     CHECK(mz_zip_reader_goto_first_entry(internalInfo->reader.value) == MZ_OK, false, "");
@@ -403,7 +414,7 @@ bool GetInfo(std::u16string_view path, Info& info)
             if (it == internalInfo->entries.end()) {
                 auto& parentEntry          = internalInfo->entries.emplace_back();
                 parentEntry.filename       = parentFilename;
-                parentEntry.filename_size  = parentFilename.size();
+                parentEntry.filename_size  = static_cast<uint16_t>(parentFilename.size());
                 parentEntry.type           = EntryType::Directory;
                 parentEntry.version_madeby = entry.version_madeby;
                 parentEntry.version_needed = entry.version_needed;
@@ -475,7 +486,7 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
             if (it == internalInfo->entries.end()) {
                 auto& parentEntry          = internalInfo->entries.emplace_back();
                 parentEntry.filename       = parentFilename;
-                parentEntry.filename_size  = parentFilename.size();
+                parentEntry.filename_size  = static_cast<uint16_t>(parentFilename.size());
                 parentEntry.type           = EntryType::Directory;
                 parentEntry.version_madeby = entry.version_madeby;
                 parentEntry.version_needed = entry.version_needed;

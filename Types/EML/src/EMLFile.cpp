@@ -318,7 +318,7 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
 
             partEnd = text.ParseUntilText(partStart, boundary, false);
 
-            items.emplace_back(EML_Item_Record{.startOffset = partStart, .dataLength = partEnd - partStart, .partIndex = (uint32) items.size(), .leafNode = false });
+            items.emplace_back(EML_Item_Record{ .startOffset = partStart, .dataLength = partEnd - partStart, .partIndex = (uint32) items.size(), .contentType = {}, .identifier = {}, .leafNode = false });
 
             partStart = partEnd;
         } while (partEnd < end);
@@ -327,13 +327,13 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
     }
 
     if (type == u"message") {
-        items.emplace_back(EML_Item_Record{.startOffset = start, .dataLength = end - start, .partIndex = (uint32) items.size(), .leafNode = false });
+        items.emplace_back(EML_Item_Record{ .startOffset = start, .dataLength = end - start, .partIndex = (uint32) items.size(), .contentType = {}, .identifier = {}, .leafNode = false });
         return;
     }
 
     // base case
     // simple type (text|application|...)
-    items.emplace_back(EML_Item_Record{ .startOffset = start, .dataLength = end - start, .partIndex = (uint32) items.size(), .leafNode = true });
+    items.emplace_back(EML_Item_Record{ .startOffset = start, .dataLength = end - start, .partIndex = (uint32) items.size(), .contentType = {}, .identifier = {}, .leafNode = true });
     return;
 }
 } // namespace GView::Type::EML

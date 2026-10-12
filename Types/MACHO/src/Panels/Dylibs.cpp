@@ -66,9 +66,6 @@ void Dylib::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-
     for (const auto& d : machO->dylibs)
     {
         tmp.Format(

@@ -36,7 +36,7 @@ int Run(int argc, const CharT** argv)
         return GViewUpdater::EXIT_USAGE;
     }
     GViewUpdater::Options options;
-    for (int i = 2; i < argc; i++) {
+    for (int i = 2; i < argc; i += 2) {
         if (i + 1 >= argc) {
             Usage();
             return GViewUpdater::EXIT_USAGE;
@@ -54,7 +54,6 @@ int Run(int argc, const CharT** argv)
             Usage();
             return GViewUpdater::EXIT_USAGE;
         }
-        i++;
     }
     if (options.staging.empty() || options.target.empty() || options.old.empty() || !options.staging.is_absolute() ||
         !options.target.is_absolute() || !options.old.is_absolute()) {

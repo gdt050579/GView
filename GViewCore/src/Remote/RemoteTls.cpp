@@ -256,7 +256,7 @@ std::shared_ptr<Context> Context::Create(const Settings& settings, Role role, st
     auto ctx = c->ctx;
     // protocol hardening
     if (SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) != 1 || SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) != 1 ||
-        SSL_CTX_set_ciphersuites(ctx, CIPHER_SUITES) != 1 || SSL_CTX_set1_groups_list(ctx, KEY_EXCHANGE) != 1) {
+        SSL_CTX_set_ciphersuites(ctx, CIPHER_SUITES) != 1 || SSL_CTX_set1_groups_list(ctx, const_cast<char*>(KEY_EXCHANGE)) != 1) {
         error = "cannot configure TLS 1.3: " + OpenSslErrors();
         return nullptr;
     }

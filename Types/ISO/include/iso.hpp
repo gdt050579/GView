@@ -141,7 +141,7 @@ namespace Panels
                   date.milliseconds,
                   date.timezone);
 
-            const auto dateBuffer = (unsigned char*) &date;
+            const auto dateBuffer = (const unsigned char*) &date;
             constexpr auto size   = sizeof(date);
             ls2.Format("0x");
             for (auto i = 0ULL; i < size; i++)

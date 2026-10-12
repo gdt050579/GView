@@ -30,7 +30,7 @@ void Encode(BufferView view, Buffer& output)
 // Decode function
 bool Decode(BufferView view, Buffer& output)
 {
-    for (uint32 i = 0; i < view.GetLength(); ++i) {
+    for (size_t i = 0; i < view.GetLength(); ++i) {
         char c = view[i];
 
         if (c == '&') {
@@ -40,7 +40,7 @@ bool Decode(BufferView view, Buffer& output)
             }
 
             if (semiPos < view.GetLength() && view[semiPos] == ';') {
-                std::string entity((char*)view.GetData() + i + 1, semiPos - i - 1);
+                std::string entity(reinterpret_cast<const char*>(view.GetData()) + i + 1, semiPos - i - 1);
 
                 auto it = HTML_DECODE_MAP.find(entity);
                 if (it != HTML_DECODE_MAP.end()) {

@@ -303,9 +303,8 @@ bool Plugin::DrawEmbeddedObjects()
             const auto blockEnd    = zone->interval.high / this->blockSize;
             const auto deltaBlocks = blockEnd - blockStart;
 
-            x = blockStart % maxX;
-            y = blockStart / maxX;
-            y = blockStart / maxX;
+            x = static_cast<uint32>(blockStart % maxX);
+            y = static_cast<uint32>(blockStart / maxX);
 
             // bad.. TODO: change
             Color c       = EmbeddedObjectValueToColor("Executable");
@@ -473,10 +472,10 @@ bool Plugin::OnEvent(Reference<Control> sender, Event eventType, int controlID)
         break;
     case AppCUI::Controls::Event::NumericSelectorValueChanged:
         if (sender == this->blockSizeSelector.ToBase<Control>()) {
-            this->blockSize = this->blockSizeSelector->GetValue();
+            this->blockSize = static_cast<uint32>(std::clamp<int64>(this->blockSizeSelector->GetValue(), MINIMUM_BLOCK_SIZE, 0xFFFFFFFF));
             return drawSelectedEntropyType();
         } else if (sender == this->alphaSelector.ToBase<Control>()) {
-            this->renyiAlpha = this->alphaSelector->GetValue() / 10;
+            this->renyiAlpha = static_cast<double>(this->alphaSelector->GetValue()) / 10.0;
             return drawSelectedEntropyType();
         }
         break;

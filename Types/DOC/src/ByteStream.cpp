@@ -8,7 +8,7 @@ BufferView ByteStream::Read(size_t count)
         count = size - cursor;
     }
 
-    BufferView view((uint8*) ptr + cursor, count);
+    BufferView view((const uint8*) ptr + cursor, count);
     cursor += count;
 
     return view;

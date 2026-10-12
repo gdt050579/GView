@@ -70,10 +70,9 @@ bool XML::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Find
     CHECK(foundHeader, false, "");
     offset += i + 1;
 
-    buffer          = file.Get(offset, file.GetCacheSize() / 12, false);
-    i               = 0;
-    uint32 tagStart = 0;
-    bool inside     = false;
+    buffer      = file.Get(offset, file.GetCacheSize() / 12, false);
+    i           = 0;
+    bool inside = false;
     while (buffer.GetLength()) {
         const auto c = buffer.GetData()[i];
         i++;

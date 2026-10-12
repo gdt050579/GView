@@ -75,7 +75,7 @@ void Information::UpdateGeneralInformation()
 
     if (pe->pdbName)
     {
-        general->AddItem({ "PDB File", (char8_t*) pe->pdbName.GetText() }).SetType(ListViewItem::Type::Emphasized_3);
+        general->AddItem({ "PDB File", (const char8_t*) pe->pdbName.GetText() }).SetType(ListViewItem::Type::Emphasized_3);
     }
 
     SetLanguage();

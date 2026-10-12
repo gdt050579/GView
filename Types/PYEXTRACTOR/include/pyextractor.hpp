@@ -33,15 +33,18 @@ constexpr std::string_view GetNameForPyInstallerVersion(PyInstallerVersion v)
     }
 }
 
-struct TOCEntry {
 #pragma pack(push, 1)
+struct TOCEntryHeader {
     uint32 entrySize{ 0 };
     uint32 entryPos{ 0 };
     uint32 cmprsdDataSize{ 0 };
     uint32 uncmprsdDataSize{ 0 };
     uint8 cmprsFlag{ 0 };
     uint8 typeCmprsData{ 0 };
+};
 #pragma pack(pop)
+
+struct TOCEntry : public TOCEntryHeader {
     Buffer name;
 };
 

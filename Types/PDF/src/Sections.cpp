@@ -122,7 +122,7 @@ void Panels::Sections::Update()
     }
 }
 
-std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
+std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint64 value)
 {
     if (Base == 10) {
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });

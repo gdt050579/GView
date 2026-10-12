@@ -44,7 +44,7 @@ void Panels::Directories::SelectCurrentDirectory()
     if (idx == INVALID_DIRECTORY)
         return;
     auto* dir = &pe->dirs[idx];
-    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
+    [[maybe_unused]] auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     uint64_t result;
     if (idx == (uint8_t) DirectoryType::Security)
         result = dir->VirtualAddress > 0 ? dir->VirtualAddress : PE_INVALID_ADDRESS;

@@ -56,7 +56,10 @@ bool ICOFile::LoadImageToObject(Image& img, uint32 index)
         bf = (BufferView) buf;
     }
     // now `bf` points to the image buffer
-    if ((bf.GetLength() >= 4) && ((*(uint32*) bf.GetData()) == IMAGE_PNG_MAGIC))
+    uint32 magic = 0;
+    if (bf.GetLength() >= 4)
+        memcpy(&magic, bf.GetData(), sizeof(magic));
+    if ((bf.GetLength() >= 4) && (magic == IMAGE_PNG_MAGIC))
     {
         // PNG file
         CHECK(img.Create(bf), false, "");

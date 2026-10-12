@@ -12,7 +12,7 @@ constexpr auto ID_CHECKBOX_FEND   = 0x1009U;
 
 namespace GView::Type::PE::Panels
 {
-OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::PE::PEFile> _pe) : TabPage("Op&Codes"), object(_object), pe(_pe)
+OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::PE::PEFile> _pe) : TabPage("Op&Codes"), pe(_pe), object(_object)
 {
     value = Factory::Label::Create(this, "Mask", "x:1,y:1,w:60");
 

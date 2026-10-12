@@ -20,7 +20,9 @@ constexpr uint32 DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED = 150;
 constexpr uint32 DISSASM_ASSISTANT_MAX_API_CALLS              = 10;
 constexpr uint32 DISSASM_ASSISTANT_MAX_BYTE_TO_SEND           = 640;
 
+#ifdef _MSC_VER
 #pragma warning(disable : 4996) // The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name
+#endif
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -52,7 +54,8 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, DissasmColor
 
     LocalString<4> holder;
     holder.Set(keyword);
-    const uint32 val = *reinterpret_cast<const uint32*>(holder.GetText());
+    uint32 val;
+    memcpy(&val, holder.GetText(), sizeof(val));
 
     const auto it = data.instructionToColor.find(val);
     if (it != data.instructionToColor.end()) {
@@ -397,7 +400,7 @@ std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone
     DissasmCodeInternalType& currentType = zone->types.back();
     // TODO: do a faster search using a binary search using the annotations and start from there
     // TODO: maybe use some caching here?
-    if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach) {
+    if (reAdapt || (levelNow < levelToReach && levelNow + 1 != levelToReach) || (levelNow > levelToReach && levelNow - 1 != levelToReach)) {
         currentType.textLinesPassed = 0;
         currentType.asmLinesPassed  = 0;
         for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
@@ -636,9 +639,6 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         }
 
         const char* prefix = !shouldConsiderCall ? "offset_0x" : "sub_0x";
-
-        NumericFormatter n;
-        const auto res = n.ToString(hexValue.value(), { NumericFormatFlags::HexPrefix, 16 });
 
         auto fnName = FormatFunctionName(hexValue.value(), prefix);
         // fnName.AddFormat(" (%s)", res.data());
@@ -1013,7 +1013,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] == 'j' || insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP) {
+        if (insn->mnemonic[0] == 'j' || (insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)) {
             jumpFromAddress = insn->address;
             for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
                 jumpMnemonic[i] = insn->mnemonic[i];
@@ -1069,7 +1069,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     decltype(DissasmCodeZone::levels) levels              = zone->levels;
 
     // TODO: can be improved by extracting the common part of the calculation of the actual line and to search for the closest zone directly
-    const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
+    DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
     const auto& targetType  = zone->types.back().get();
 
     // diffLines is the instruction index: every text line (label, local variable) placed before the instruction moves it down
@@ -1426,7 +1426,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     paramsPtr->isCollapsed = currentType.isCollapsed;
     paramsPtr->zoneName    = &currentType.name;
 
-    const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
+    [[maybe_unused]] const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
     assert(isValidData);
     lastDrawnLine = asmLine;
 
@@ -1452,8 +1452,8 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, Dissas
             if (!zone.internalTypes.empty() || zone.name.empty())
                 return false;
 
-            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed ||
-                collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed)
+            if ((collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed) ||
+                (collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed))
                 return false;
 
             if (collapse == DissasmCodeZone::CollapseExpandType::NegateCurrentState)
@@ -1869,7 +1869,6 @@ std::string wrapText(const std::string& code, size_t windowWidth)
     std::string word;
     LocalString<2048> currentLine;
 
-    bool lastLineWasEmpty = false;
     while (std::getline(codeStream, line)) {
         if (line.empty()) {
             if (currentLine.Len()) {
@@ -1878,10 +1877,8 @@ std::string wrapText(const std::string& code, size_t windowWidth)
             } else {
                 wrappedLines.AddFormat("\n");
             }
-            lastLineWasEmpty = true;
             continue;
         }
-        lastLineWasEmpty = false;
         std::istringstream lineStream(line);
         while (lineStream >> word) {
             if (currentLine.Len() + word.length() + 1 > windowWidth) {
@@ -1904,18 +1901,15 @@ std::string wrapText(const std::string& code, size_t windowWidth)
 
 void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
 {
-    Graphics::Character* end   = chars + charsCount;
-    Graphics::Character* start = nullptr;
+    Graphics::Character* end = chars + charsCount;
     // ColorPair col;
     while (chars < end) {
         if (chars->Code == '*') // Check for '**'
         {
-            start = chars;
             chars++;
             if ((chars < end) && (chars->Code == '*')) // Confirm second '*'
             {
                 chars++;
-                start += 2; // Move past '**'
                 while ((chars < end) && !(chars->Code == '*' && (chars + 1 < end) && (chars + 1)->Code == '*')) {
                     chars->Color = ColorPair{ Color::Yellow, Color::Transparent }; // Color for '**...**'
                     chars++;
@@ -1926,7 +1920,6 @@ void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCo
             }
         } else if (chars->Code == '`') // Check for backticks '`'
         {
-            start = chars;
             chars++;
             while ((chars < end) && (chars->Code != '`')) {
                 chars->Color = ColorPair{ Color::Green, Color::Transparent }; // Color for `...`
@@ -1937,7 +1930,6 @@ void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCo
             }
         } else if (chars->Code == '"') // Check for double quotes '"'
         {
-            start = chars;
             chars++;
             while ((chars < end) && (chars->Code != '"')) {
                 chars->Color = ColorPair{ Color::DarkRed, Color::Transparent }; // Color for "..."

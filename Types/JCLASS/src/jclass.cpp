@@ -25,7 +25,7 @@ PLUGIN_EXPORT GView::TypeInterface* CreateInstance()
 
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
-    auto plugin = win->GetObject()->GetContentType()->To<ClassViewer>();
+    [[maybe_unused]] auto plugin = win->GetObject()->GetContentType()->To<ClassViewer>();
 
     BufferViewer::Settings bufferViewerSettings;
     bufferViewerSettings.SetName("BufferViewer");

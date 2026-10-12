@@ -130,6 +130,7 @@ bool TOCEntries::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
             return true;
         case ENTRY_SELECT:
             SelectCurrentEntry();
+            return true;
         case ENTRY_OPEN:
             OpenCurrentEntry();
             return true;

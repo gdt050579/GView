@@ -61,8 +61,8 @@ void StaticSymbols::GoToSelectedSection()
       TODO: handle above ^
    */
 
-    auto i = list->GetCurrentItem().GetData(-1);
-    CHECKRET(i != -1, "");
+    auto i = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(i != static_cast<uint64>(-1), "");
 
     auto offset = 0ULL;
     if (elf->is64)
@@ -84,8 +84,8 @@ void StaticSymbols::SelectCurrentSection()
     auto offset = 0ULL;
     auto size   = 0ULL;
 
-    auto i = list->GetCurrentItem().GetData(-1);
-    CHECKRET(i != -1, "");
+    auto i = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(i != static_cast<uint64>(-1), "");
 
     if (elf->is64)
     {

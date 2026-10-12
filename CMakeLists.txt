@@ -141,6 +141,16 @@ elseif (APPLE)
     SET(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
     SET(CMAKE_INSTALL_RPATH @executable_path)
     message(STATUS "CMAKE_INSTALL_RPATH => ${CMAKE_INSTALL_RPATH}")
+
+    # The static vcpkg archives (libcrypto, libssl, libz, libtiff ...) reach a link line through several packages and
+    # CMake repeats them on purpose (static link order). The Xcode 15+ linker warns about every repeat - silence it.
+    if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+        include(CheckLinkerFlag)
+        check_linker_flag(CXX "-Wl,-no_warn_duplicate_libraries" GVIEW_LINKER_HAS_NO_WARN_DUPLICATE_LIBRARIES)
+        if (GVIEW_LINKER_HAS_NO_WARN_DUPLICATE_LIBRARIES)
+            add_link_options("-Wl,-no_warn_duplicate_libraries")
+        endif()
+    endif()
     
     if(CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED)
         message(STATUS "${PROJECT_NAME} => CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED")
@@ -173,12 +183,15 @@ elseif (UNIX)
     add_compile_options(-g)
     add_compile_options(-W)
     
-    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
+    # Let CMake emit the RPATH: "$ORIGIN" written into the linker flags reached the shell unescaped and was expanded to an
+    # empty string, which left an empty RUNPATH entry (= the current working directory) instead of the binary's folder.
+    SET(CMAKE_BUILD_RPATH "$ORIGIN")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
      add_compile_options(-Wall -Wextra
              -Wno-switch
+             -Wno-unused-parameter
              -Wpointer-arith
              -Wcast-qual
              -Wredundant-decls

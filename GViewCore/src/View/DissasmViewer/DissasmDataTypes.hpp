@@ -10,8 +10,10 @@ namespace View
     {
         struct LinePosition
         {
-            uint32 line;
-            uint32 offset;
+            uint32 line{ 0 };
+            uint32 offset{ 0 };
+
+            constexpr LinePosition(uint32 l = 0, uint32 o = 0) : line(l), offset(o) {}
 
             bool operator==(const LinePosition& other) const
             {
@@ -20,22 +22,22 @@ namespace View
 
             bool operator>(const LinePosition& other) const
             {
-                return line > other.line || line == other.line && offset > other.offset;
+                return line > other.line || (line == other.line && offset > other.offset);
             }
 
             bool operator>=(const LinePosition& other) const
             {
-                return line > other.line || line == other.line && offset >= other.offset;
+                return line > other.line || (line == other.line && offset >= other.offset);
             }
 
             bool operator<(const LinePosition& other) const
             {
-                return line < other.line || line == other.line && offset < other.offset;
+                return line < other.line || (line == other.line && offset < other.offset);
             }
 
             bool operator<=(const LinePosition& other) const
             {
-                return line < other.line || line == other.line && offset <= other.offset;
+                return line < other.line || (line == other.line && offset <= other.offset);
             }
         };
 

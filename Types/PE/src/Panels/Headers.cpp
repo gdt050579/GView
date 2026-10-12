@@ -4,7 +4,7 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr uint32 PE_EXP_GOTO = 1;
+[[maybe_unused]] constexpr uint32 PE_EXP_GOTO = 1;
 
 Panels::Headers::Headers(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Headers")
 {

@@ -165,7 +165,8 @@ bool Plugin::SetAreaToDecode(Buffer& b, BufferView& bv, uint64& start, uint64& e
         end   = selectedZones[selectedZones.size() - 1].end;
         for (auto& sz : selectedZones) {
             const auto size = sz.end - sz.start + 1;
-            b.Add(this->object->GetData().Get(sz.start, size, true));
+            CHECK(size <= 0xFFFFFFFFULL, false, "Selection too large!");
+            b.Add(this->object->GetData().Get(sz.start, static_cast<uint32>(size), true));
         }
         bv = b;
     }

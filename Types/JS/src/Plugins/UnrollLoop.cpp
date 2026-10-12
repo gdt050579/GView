@@ -358,7 +358,7 @@ class UnrollLoopWindow : public AppCUI::Controls::Window
 
     uint32 GetLimit()
     {
-        return limit->GetValue();
+        return static_cast<uint32>(limit->GetValue());
     }
 };
 
@@ -412,21 +412,21 @@ GView::View::LexicalViewer::PluginAfterActionRequest UnrollLoop::Execute(GView::
 //    auto index = start;
 //    AppCUI::uint32 type;
 //
-//#define ADVANCE()                                                                                                                                              \
-//    do {                                                                                                                                                       \
-//        ++index;                                                                                                                                               \
-//        if (index >= data.tokens.Len()) {                                                                                                                      \
-//            return PluginAfterActionRequest::None;                                                                                                             \
-//        }                                                                                                                                                      \
-//        type = data.tokens[index].GetTypeID(TokenType::None);                                                                                                  \
+//#define ADVANCE()
+//    do {
+//        ++index;
+//        if (index >= data.tokens.Len()) {
+//            return PluginAfterActionRequest::None;
+//        }
+//        type = data.tokens[index].GetTypeID(TokenType::None);
 //    } while (false)
 //    // ADVANCE
 //
-//#define EXPECT(typ)                                                                                                                                            \
-//    do {                                                                                                                                                       \
-//        if (type != TokenType::typ) {                                                                                                                          \
-//            return PluginAfterActionRequest::None;                                                                                                             \
-//        }                                                                                                                                                      \
+//#define EXPECT(typ)
+//    do {
+//        if (type != TokenType::typ) {
+//            return PluginAfterActionRequest::None;
+//        }
 //    } while (false)
 //    // EXPECT
 //

@@ -121,6 +121,6 @@ void Text::SetMatrix(bool matrix[STRINGS_CHARSET_MATRIX_SIZE])
 
 bool Text::IsValidChar(char c) const
 {
-    return this->stringsCharSetMatrix[c];
+    return this->stringsCharSetMatrix[static_cast<uint8>(c)];
 }
 } // namespace GView::GenericPlugins::Droppper::SpecialStrings

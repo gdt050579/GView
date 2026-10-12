@@ -101,8 +101,6 @@ inline bool ExtractCallsToInsertFunctionNames(
         return false;
     }
 
-    auto val = callsFound[0].first;
-
     enum labelType { SUB, OFFSET, OTHER };
     auto getLabelType = [](const std::string& s) -> labelType {
         assert(!s.empty());
@@ -285,7 +283,7 @@ inline bool populateOffsetsVector(
                     char* ptr = &insn->op_str[2];
                     // TODO: also check not to overflow access!
                     while (*ptr && *ptr != ' ' && *ptr != ',') {
-                        if (!(*ptr >= 'a' && *ptr <= 'f' || *ptr >= '0' && *ptr <= '9')) {
+                        if (!((*ptr >= 'a' && *ptr <= 'f') || (*ptr >= '0' && *ptr <= '9'))) {
                             computedValue = 0;
                             break;
                         }
@@ -482,7 +480,7 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     DissasmCodeInternalType& currentType = types.back();
     // TODO: do a faster search using a binary search using the annotations and start from there
     // TODO: maybe use some caching here?
-    if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach) {
+    if (reAdapt || (levelNow < levelToReach && levelNow + 1 != levelToReach) || (levelNow > levelToReach && levelNow - 1 != levelToReach)) {
         currentType.textLinesPassed = 0;
         currentType.asmLinesPassed  = 0;
         for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {

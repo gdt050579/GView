@@ -42,7 +42,7 @@ enum class SectorType : uint8
     SetTerminator = 255
 };
 
-static const std::string_view GetSectorTypeName(SectorType sectorType)
+inline const std::string_view GetSectorTypeName(SectorType sectorType)
 {
     switch (sectorType)
     {

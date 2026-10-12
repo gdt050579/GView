@@ -309,7 +309,7 @@ uint32 TextParser::ParseString(uint32 index, StringFormat format) const
     const auto forbidMultiLine              = !(HAS_FLAG(format, StringFormat::MultiLine));
     const auto searchForTripleQuotes = (supportsTripleQuoted && (index + 3 < size) && (text[index + 1] == ch) && (text[index + 2] == ch));
     index                            = searchForTripleQuotes ? index + 3 : index + 1;
-    auto validString                 = false;
+    [[maybe_unused]] auto validString = false;
     while (index < size)
     {
         const auto currentChar = text[index];

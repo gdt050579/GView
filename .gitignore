@@ -9,6 +9,7 @@ build-test
 bin
 *.log
 .idea/
+logs
 CMakeFiles/
 cmake-build-*/
 vcpkg_installed/

@@ -455,7 +455,10 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
 
     // Get extension as UTF-16 and convert it to UTF-8
     auto u16Extension             = pos != u16string_view::npos ? (temp.ToStringView().substr(pos)) : std::u16string_view();
-    std::string extensionAsString = { u16Extension.begin(), u16Extension.end() };
+    std::string extensionAsString;
+    extensionAsString.reserve(u16Extension.size());
+    for (const auto ch : u16Extension)
+        extensionAsString.push_back(static_cast<char>(ch));
     std::string_view extension(extensionAsString.c_str(), extensionAsString.size());
 
     switch (method) {
@@ -570,7 +573,7 @@ bool Instance::AddFileWindow(
             }
             return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName, parent, creationProcess);
         }
-    } catch (std::filesystem::filesystem_error /* e */) {
+    } catch (const std::filesystem::filesystem_error& /* e */) {
         errList.AddError("Fail to open file: %s", path.u8string().c_str());
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }
@@ -750,7 +753,7 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
 #endif
         }
-        if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
+        if ((ID >= 0) && ((uint32) ID >= GENERIC_PLUGINS_CMDID) && ((uint32) ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000)) {
             auto packedValue       = ((uint32) ID) - GENERIC_PLUGINS_CMDID;
             const auto pluginIndex = packedValue / GENERIC_PLUGINS_FRAME;
             if (pluginIndex >= this->genericPlugins.size())

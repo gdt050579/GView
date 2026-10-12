@@ -8,7 +8,7 @@ JOBFile::JOBFile()
 
 bool JOBFile::Update()
 {
-    auto offset = 0;
+    auto offset = 0ULL;
     CHECK(obj->GetData().Copy<FIXDLEN_DATA>(offset, fixedLengthData), false, "");
     offset += sizeof(FIXDLEN_DATA);
 

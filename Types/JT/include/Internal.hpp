@@ -41,7 +41,7 @@ struct FileHeader
 
 static_assert(sizeof(FileHeader) == 105);
 
-static std::string_view GetByteOrder(uint8 byteOrder)
+inline std::string_view GetByteOrder(uint8 byteOrder)
 {
     switch (byteOrder)
     {
@@ -63,7 +63,7 @@ struct TOCEntry
     uint32 segmentAttributes;
 };
 
-static bool operator==(const TOCEntry& e1, const TOCEntry& e2)
+inline bool operator==(const TOCEntry& e1, const TOCEntry& e2)
 {
     return memcmp(&e1, &e2, sizeof(TOCEntry)) == 0;
 }
@@ -109,7 +109,7 @@ struct SegmentAttributesAndTypes
 
 static_assert(sizeof(SegmentAttributesAndTypes) == sizeof(uint32));
 
-static std::string GetSegmentAttributes(uint32 segmentAttributes)
+inline std::string GetSegmentAttributes(uint32 segmentAttributes)
 {
     SegmentAttributesAndTypes sat{};
     memcpy(&sat, &segmentAttributes, sizeof(uint32));

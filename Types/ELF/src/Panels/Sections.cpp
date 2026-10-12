@@ -101,7 +101,7 @@ void Sections::Update()
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
             const auto& segmentIdx = elf->sectionsToSegments.at(i);
-            if (segmentIdx != -1)
+            if (segmentIdx != static_cast<uint32>(-1))
             {
                 const auto& segment = elf->segments64.at(segmentIdx);
                 item.SetText(
@@ -137,7 +137,7 @@ void Sections::Update()
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
             const auto& segmentIdx = elf->sectionsToSegments.at(i);
-            if (segmentIdx != -1)
+            if (segmentIdx != static_cast<uint32>(-1))
             {
                 const auto& segment = elf->segments32.at(segmentIdx);
                 item.SetText(

@@ -22,7 +22,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest UpperCase::Execute(GView::V
         if (token.GetTypeID(TokenType::invalid) == TokenType::key)
         {
             tmp = token.GetText();
-            std::transform(tmp.begin(), tmp.end(), tmp.begin(), [](unsigned char c) { return std::toupper(c); });
+            std::transform(tmp.begin(), tmp.end(), tmp.begin(), [](char16_t c) { return c < 0x80 ? static_cast<char16_t>(std::toupper(c)) : c; });
             token.SetText(tmp);
         }
     }

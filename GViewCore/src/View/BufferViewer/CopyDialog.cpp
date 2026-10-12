@@ -173,7 +173,7 @@ bool CopyDialog::Process()
                         s++;
                     }
 
-                    if (s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData())) >= instance->GetStringInfo().minCount)
+                    if (static_cast<size_t>(s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData()))) >= instance->GetStringInfo().minCount)
                     {
                         info.start  = offset;
                         info.middle = offset + (s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData())));
