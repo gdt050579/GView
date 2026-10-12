@@ -2,6 +2,8 @@
 
 #include "GView.hpp"
 
+#include <cstring>
+
 #define NOSTREAM 0xffffffff
 
 namespace GView::Type::DOC

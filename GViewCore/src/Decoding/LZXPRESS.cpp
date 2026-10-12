@@ -1,5 +1,7 @@
 #include "Internal.hpp"
 
+#include <cstring>
+
 // https://github.com/libyal/libfwnt/blob/main/documentation/Compression%20methods.asciidoc
 // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/a8b7cb0a-92a6-4187-a23b-5e14273b96f8
 
