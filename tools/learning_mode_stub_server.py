@@ -233,10 +233,14 @@ class Handler(BaseHTTPRequestHandler):
         if not self.state.args.quiet:
             print("[stub] " + text, flush=True)
 
+    @staticmethod
+    def _sanitize_header_component(value):
+        return str(value).replace("\r", "").replace("\n", "")
+
     def cors_headers(self):
         origin = self.headers.get("Origin")
         if origin and origin in self.state.args.cors_origin:
-            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Origin", self._sanitize_header_component(origin))
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Expose-Headers", EXPOSED_RESPONSE_HEADERS)
 
@@ -247,7 +251,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         for k, v in (extra or {}).items():
-            self.send_header(k, v)
+            self.send_header(self._sanitize_header_component(k), self._sanitize_header_component(v))
         self.end_headers()
         self.wfile.write(body)
 
@@ -265,7 +269,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Origin", self._sanitize_header_component(origin))
         self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "POST")
         self.send_header("Access-Control-Allow-Headers", ALLOWED_REQUEST_HEADERS)
