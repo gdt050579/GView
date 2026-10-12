@@ -146,7 +146,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
             i.SetType(ListViewItem::Type::GrayedOut);
         }
 
-        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = parent, .category = category, .subcategory = subcategory });
+        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = parent, .children = {}, .category = category, .subcategory = subcategory });
         i.SetData<ItemMetadata>(&metadata);
 
         return i;
@@ -156,7 +156,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
         auto item = this->objectsPlugins->AddItem(v);
         item.SetCheck(true);
 
-        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = std::nullopt, .category = k, .subcategory = Subcategory::None });
+        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = std::nullopt, .children = {}, .category = k, .subcategory = Subcategory::None });
         item.SetData<ItemMetadata>(&metadata);
 
         auto& subcategories = CATEGORY_TO_SUBCATEGORY_MAP.at(k);

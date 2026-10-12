@@ -779,7 +779,7 @@ class EmulateWindow : public AppCUI::Controls::Window
 
     uint32 GetLimit()
     {
-        return limit->GetValue();
+        return static_cast<uint32>(limit->GetValue());
     }
 
     std::u16string GetTarget()

@@ -896,8 +896,6 @@ bool MachOFile::ParseGoBuild()
 inline static bool GetUVariantSizes(const std::string_view buf, uint64& x, uint32& s)
 {
     // See issue https://golang.org/issues/41185
-    constexpr auto MaxVarintLen16 = 3;
-    constexpr auto MaxVarintLen32 = 5;
     constexpr auto MaxVarintLen64 = 10;
 
     for (auto i = 0u; i < buf.size(); i++) {
@@ -954,7 +952,6 @@ bool MachOFile::ParseGoBuildInfo()
     CHECK(address, false, "");
 
     constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
-    constexpr uint16 buildInfoAlign{ 16 };
     constexpr uint16 buildInfoSize{ 32 };
 
     const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(address, static_cast<uint32>(size), false);

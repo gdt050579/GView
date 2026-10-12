@@ -49,12 +49,12 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     auto lastSlash              = path.rfind(u".");
     std::u16string exportedPath = std::u16string(path.substr(0, lastSlash));
     exportedPath.append(u"_exported");
-    this->exportedPathUTF8           = { exportedPath.begin(), exportedPath.end() };
+    this->exportedPathUTF8           = GView::Utils::UTF16ToUTF8(exportedPath);
     auto lastP                       = path.rfind(u"\\");
     std::u16string exportedPathSlash = std::u16string(path.substr(0, lastP));
     exportedPathSlash.append(u"\\");
 
-    this->exportedFolderPath = { exportedPathSlash.begin(), exportedPathSlash.end() };
+    this->exportedFolderPath = GView::Utils::UTF16ToUTF8(exportedPathSlash);
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -97,7 +97,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         const uint32 x3 = x2 + config.cursorInformationCellSpace + 1;
         const uint32 x4 = x3 + config.cursorInformationCellSpace + 1;
         const uint32 x5 = x4 + config.cursorInformationCellSpace + 1;
-        const uint32 x6 = x5 + config.cursorInformationCellSpace + 1;
         const uint32 y  = 0;
 
         PaintCursorInformationWidth(renderer, x1, y);
@@ -115,7 +114,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         const uint32 x3 = x1 + config.cursorInformationCellSpace + 1;
         const uint32 x4 = x2 + config.cursorInformationCellSpace + 1;
         const uint32 x5 = x3 + config.cursorInformationCellSpace + 1;
-        const uint32 x6 = x4 + config.cursorInformationCellSpace + 1;
         const uint32 y1 = 0;
         const uint32 y2 = 1;
 

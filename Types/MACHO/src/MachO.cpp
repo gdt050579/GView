@@ -138,9 +138,9 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 settings.AddZone(offsetHeaders, structSize, machO->colors.arch, temp);
                 offsetHeaders += structSize;
 
-                const auto& ai = machO->archs[objectCount].info;
+                const auto& ai = vArch.info;
                 temp.Format("#%u %s", objectCount, ai.name.c_str());
-                settings.AddZone(machO->archs[objectCount].offset, machO->archs[objectCount].size, machO->colors.object, temp);
+                settings.AddZone(vArch.offset, vArch.size, machO->colors.object, temp);
 
                 objectCount++;
             }

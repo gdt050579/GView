@@ -117,7 +117,7 @@ SelectTypeDialog::SelectTypeDialog(
       AppCUI::Utils::BufferView _buf,
       GView::Type::Matcher::TextParser& _textParser,
       uint64 extensionHash)
-    : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), buf(_buf), typePlugins(_typePlugins), textParser(_textParser),
+    : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), buf(_buf), textParser(_textParser), typePlugins(_typePlugins),
       result(nullptr)
 {
     NumericFormatter num;
@@ -134,7 +134,7 @@ SelectTypeDialog::SelectTypeDialog(
     cbView         = Factory::ComboBox::Create(this, "l:12,t:7,r:1");
     canvas         = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
     auto btnOK     = Factory::Button::Create(this, "&Ok", "b:0,l:22,w:15", BTN_COMMAND_OK);
-    auto btnCancel = Factory::Button::Create(this, "&Cancel", "b:0,l:41,w:15", BTN_COMMAND_CANCEL);
+    Factory::Button::Create(this, "&Cancel", "b:0,l:41,w:15", BTN_COMMAND_CANCEL);
     // hot keys
     cbView->SetHotKey('V');
     cbType->SetHotKey('T');

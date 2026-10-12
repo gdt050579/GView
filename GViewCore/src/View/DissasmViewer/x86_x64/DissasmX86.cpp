@@ -54,7 +54,8 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, DissasmColor
 
     LocalString<4> holder;
     holder.Set(keyword);
-    const uint32 val = *reinterpret_cast<const uint32*>(holder.GetText());
+    uint32 val;
+    memcpy(&val, holder.GetText(), sizeof(val));
 
     const auto it = data.instructionToColor.find(val);
     if (it != data.instructionToColor.end()) {
@@ -639,9 +640,6 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
         const char* prefix = !shouldConsiderCall ? "offset_0x" : "sub_0x";
 
-        NumericFormatter n;
-        const auto res = n.ToString(hexValue.value(), { NumericFormatFlags::HexPrefix, 16 });
-
         auto fnName = FormatFunctionName(hexValue.value(), prefix);
         // fnName.AddFormat(" (%s)", res.data());
 
@@ -1071,7 +1069,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     decltype(DissasmCodeZone::levels) levels              = zone->levels;
 
     // TODO: can be improved by extracting the common part of the calculation of the actual line and to search for the closest zone directly
-    const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
+    DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
     const auto& targetType  = zone->types.back().get();
 
     // diffLines is the instruction index: every text line (label, local variable) placed before the instruction moves it down
@@ -1428,7 +1426,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     paramsPtr->isCollapsed = currentType.isCollapsed;
     paramsPtr->zoneName    = &currentType.name;
 
-    const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
+    [[maybe_unused]] const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
     assert(isValidData);
     lastDrawnLine = asmLine;
 
@@ -1903,18 +1901,15 @@ std::string wrapText(const std::string& code, size_t windowWidth)
 
 void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
 {
-    Graphics::Character* end   = chars + charsCount;
-    Graphics::Character* start = nullptr;
+    Graphics::Character* end = chars + charsCount;
     // ColorPair col;
     while (chars < end) {
         if (chars->Code == '*') // Check for '**'
         {
-            start = chars;
             chars++;
             if ((chars < end) && (chars->Code == '*')) // Confirm second '*'
             {
                 chars++;
-                start += 2; // Move past '**'
                 while ((chars < end) && !(chars->Code == '*' && (chars + 1 < end) && (chars + 1)->Code == '*')) {
                     chars->Color = ColorPair{ Color::Yellow, Color::Transparent }; // Color for '**...**'
                     chars++;
@@ -1925,7 +1920,6 @@ void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCo
             }
         } else if (chars->Code == '`') // Check for backticks '`'
         {
-            start = chars;
             chars++;
             while ((chars < end) && (chars->Code != '`')) {
                 chars->Color = ColorPair{ Color::Green, Color::Transparent }; // Color for `...`
@@ -1936,7 +1930,6 @@ void TextHighligh(Reference<Control>, Graphics::Character* chars, uint32 charsCo
             }
         } else if (chars->Code == '"') // Check for double quotes '"'
         {
-            start = chars;
             chars++;
             while ((chars < end) && (chars->Code != '"')) {
                 chars->Color = ColorPair{ Color::DarkRed, Color::Transparent }; // Color for "..."

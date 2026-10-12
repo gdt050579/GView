@@ -890,7 +890,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
     return true;
 }
 
-bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName)
+bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, const char* resName)
 {
     ImageResourceDataEntry resDE;
     uint64_t fileAddress;
@@ -925,7 +925,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
     return true;
 }
 
-bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* parentName)
+bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, const char* parentName)
 {
     ImageResourceDirectory resDir;
     ImageResourceDirectoryEntry dirEnt;
@@ -999,7 +999,7 @@ bool PEFile::BuildResources()
         return false;
     }
 
-    return ProcessResourceDirTable(0, addr, level, 0, (char*) "");
+    return ProcessResourceDirTable(0, addr, level, 0, "");
 }
 
 bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD)
@@ -1165,21 +1165,25 @@ bool PEFile::BuildDebugData()
             auto buf = obj->GetData().Get(imgd.PointerToRawData, bufSize, false);
             if (buf.IsValid() && buf.GetLength() >= 5) // at least the first 32 bytes
             {
-                std::string_view name = "";
-                switch (*(uint32*) buf.GetData()) {
+                uint32 cvSignature;
+                memcpy(&cvSignature, buf.GetData(), sizeof(cvSignature));
+                size_t nameOffset = 0;
+                switch (cvSignature) {
                 case CV_SIGNATURE_NB10:
-                    name = std::string_view{ (const char*) ((CV_INFO_PDB20*) buf.GetData())->PdbFileName, MAX_PDB_NAME };
+                    nameOffset = offsetof(CV_INFO_PDB20, PdbFileName);
                     break;
                 case CV_SIGNATURE_RSDS:
-                    name = std::string_view{ (const char*) ((CV_INFO_PDB70*) buf.GetData())->PdbFileName, MAX_PDB_NAME };
+                    nameOffset = offsetof(CV_INFO_PDB70, PdbFileName);
                     break;
                 default:
-                    errList.AddWarning("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", (*(uint32*) buf.GetData()));
+                    errList.AddWarning("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", cvSignature);
                     break;
                 }
 
-                if (name.size() > 0) {
-                    pdbName.Set(std::string_view{ name.data(), name.find_first_of('\0') });
+                if (nameOffset > 0 && nameOffset < buf.GetLength()) {
+                    const std::string_view name{ reinterpret_cast<const char*>(buf.GetData()) + nameOffset,
+                                                 std::min<size_t>(buf.GetLength() - nameOffset, MAX_PDB_NAME) };
+                    pdbName.Set(name.substr(0, name.find('\0')));
                 }
             } else {
                 errList.AddError("Unable to read IMAGE_DEBUG_TYPE_CODEVIEW (%d bytes) from (0x%X)", bufSize, imgd.PointerToRawData);
@@ -1711,7 +1715,6 @@ bool PEFile::ParseGoData()
     const auto pcLnTabSigsCandidates = FindPcLnTabSigsCandidates();
     CHECK(pcLnTabSigsCandidates.empty() == false, false, "");
 
-    bool found = false;
     for (const auto& candidatesVA : pcLnTabSigsCandidates) {
         const auto cacheSize = obj->GetData().GetCacheSize();
         const auto fa        = VAtoFA(candidatesVA);
@@ -1730,7 +1733,6 @@ bool PEFile::ParseGoBuild()
     constexpr std::string_view goBuildEnd{ "\"\n \xff" };
 
     const auto cacheSize = obj->GetData().GetCacheSize();
-    const auto fileSize  = obj->GetData().GetSize();
 
     const auto fileViewBuildId = obj->GetData().CopyToBuffer(0, cacheSize, false);
 
@@ -1762,11 +1764,9 @@ bool PEFile::ParseGoBuildInfo()
     CHECK(dataOffset != 0, false, "");
 
     constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
-    constexpr uint16 buildInfoAlign{ 16 };
     constexpr uint16 buildInfoSize{ 32 };
 
     const auto cacheSize = obj->GetData().GetCacheSize();
-    const auto fileSize  = obj->GetData().GetSize();
 
     const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(dataOffset, cacheSize, false);
     CHECK(fileViewBuildInfo.IsValid(), false, "");
@@ -1780,7 +1780,6 @@ bool PEFile::ParseGoBuildInfo()
 
     constexpr auto ptrOffset = 13;
     const uint8 ptrSize      = buildInfo[ptrOffset];
-    const uint8 endianess    = buildInfo[ptrOffset + 1];
 
     uint64 runtimeBuildVersionVA = 0;
     uint64 runtimeModInfoVA      = 0;

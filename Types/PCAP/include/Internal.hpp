@@ -1636,7 +1636,7 @@ static const std::map<TCPHeader_Flags, std::string_view> TCPHeader_FlagsNames{
     GET_PAIR_FROM_ENUM(TCPHeader_Flags::URG),  GET_PAIR_FROM_ENUM(TCPHeader_Flags::ECE), GET_PAIR_FROM_ENUM(TCPHeader_Flags::CWR),
 };
 
-static const std::map<TCPHeader_Flags, std::string_view> GetTCPHeader_Flags(uint32 flags)
+inline const std::map<TCPHeader_Flags, std::string_view> GetTCPHeader_Flags(uint32 flags)
 {
     std::map<TCPHeader_Flags, std::string_view> output;
 

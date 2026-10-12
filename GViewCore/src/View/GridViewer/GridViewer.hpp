@@ -57,7 +57,6 @@ namespace View
         {
           private:
             Reference<GView::Object> object;
-            uint64 currentPos;
 
             Reference<CanvasViewer> description;
             Reference<TextField> input;
@@ -78,9 +77,6 @@ namespace View
 
             Reference<CheckBox> ignoreCase;
             Reference<CheckBox> alingTextToUpperLeftCorner;
-
-            uint64 position{ 0 };
-            uint64 length{ 0 };
 
             UnicodeStringBuilder usb;
             std::pair<uint64, uint64> match;

@@ -80,9 +80,6 @@ class FindDialog : public Window, public Handlers::OnCheckInterface
     Reference<CheckBox> ignoreCase;
     Reference<CheckBox> alingTextToUpperLeftCorner;
 
-    uint64 position{ 0 };
-    uint64 length{ 0 };
-
     UnicodeStringBuilder usb;
     std::pair<uint64, uint64> match;
     bool newRequest{ true };

@@ -501,7 +501,7 @@ bool Instance::DropBinaryData(
             auto bf = cache.Get(area.first, static_cast<int32>(size), true);
             CHECK(bf.IsValid(), false, "");
 
-            for (int32 i = 0; i < bf.GetLength(); i++) {
+            for (size_t i = 0; i < bf.GetLength(); i++) {
                 const auto c = bf[i];
                 if (context.binaryCharSetMatrix[c]) {
                     droppedFile << c;
@@ -564,8 +564,8 @@ bool Instance::FillCharSetMatrix(bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_
     const auto static ValidateHex = [](std::string_view s) -> bool {
         CHECK(s[0] == '\\', false, "");
         CHECK(s[1] == 'x', false, "");
-        CHECK(s[2] >= '0' && s[2] <= '9' || s[2] >= 'a' && s[2] <= 'z' || s[2] >= 'A' && s[2] <= 'Z', false, "");
-        CHECK(s[3] >= '0' && s[3] <= '9' || s[3] >= 'a' && s[3] <= 'z' || s[3] >= 'A' && s[3] <= 'Z', false, "");
+        CHECK((s[2] >= '0' && s[2] <= '9') || (s[2] >= 'a' && s[2] <= 'z') || (s[2] >= 'A' && s[2] <= 'Z'), false, "");
+        CHECK((s[3] >= '0' && s[3] <= '9') || (s[3] >= 'a' && s[3] <= 'z') || (s[3] >= 'A' && s[3] <= 'Z'), false, "");
         return true;
     };
 

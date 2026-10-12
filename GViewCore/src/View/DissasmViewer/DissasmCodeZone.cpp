@@ -101,8 +101,6 @@ inline bool ExtractCallsToInsertFunctionNames(
         return false;
     }
 
-    auto val = callsFound[0].first;
-
     enum labelType { SUB, OFFSET, OTHER };
     auto getLabelType = [](const std::string& s) -> labelType {
         assert(!s.empty());

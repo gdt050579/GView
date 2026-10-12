@@ -47,6 +47,16 @@ namespace
     };
     using CipherCtxPtr = std::unique_ptr<EVP_CIPHER_CTX, CipherCtxDeleter>;
 
+    // RAII wrapper for EVP_MD_CTX
+    struct MdCtxDeleter {
+        void operator()(EVP_MD_CTX* ctx) const noexcept
+        {
+            if (ctx != nullptr)
+                EVP_MD_CTX_free(ctx);
+        }
+    };
+    using MdCtxPtr = std::unique_ptr<EVP_MD_CTX, MdCtxDeleter>;
+
     // Secure memory operations
     void SecureZero(void* ptr, size_t size) noexcept
     {
@@ -333,26 +343,27 @@ Utils::GStatus ComputeFileSHA256(
             return Utils::GStatus::Error("Failed to open file: " + filePath.string());
         }
 
-        SHA256_CTX ctx;
-        if (SHA256_Init(&ctx) != 1)
+        MdCtxPtr ctx(EVP_MD_CTX_new());
+        if (!ctx || EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
         {
-            return Utils::GStatus::Error("SHA256_Init failed");
+            return Utils::GStatus::Error("EVP_DigestInit_ex failed: " + GetOpenSSLError());
         }
 
         char buffer[8192];
         while (file.read(buffer, sizeof(buffer)) || file.gcount() > 0)
         {
-            if (SHA256_Update(&ctx, buffer, static_cast<size_t>(file.gcount())) != 1)
+            if (EVP_DigestUpdate(ctx.get(), buffer, static_cast<size_t>(file.gcount())) != 1)
             {
-                return Utils::GStatus::Error("SHA256_Update failed");
+                return Utils::GStatus::Error("EVP_DigestUpdate failed: " + GetOpenSSLError());
             }
         }
 
         outHash.resize(SHA256_DIGEST_LENGTH);
-        if (SHA256_Final(outHash.data(), &ctx) != 1)
+        unsigned int digestLen = 0;
+        if (EVP_DigestFinal_ex(ctx.get(), outHash.data(), &digestLen) != 1 || digestLen != SHA256_DIGEST_LENGTH)
         {
             outHash.clear();
-            return Utils::GStatus::Error("SHA256_Final failed");
+            return Utils::GStatus::Error("EVP_DigestFinal_ex failed: " + GetOpenSSLError());
         }
 
         return Utils::GStatus::Ok();

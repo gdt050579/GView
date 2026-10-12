@@ -18,7 +18,7 @@ PluginDialog::PluginDialog(
       uint32 _selectionEnd,
       uint32 _blockStart,
       uint32 _blockEnd)
-    : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), parent(parent), settings(_settings),
+    : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), parent(parent), pluginData(data), settings(_settings),
       afterActionRequest(PluginAfterActionRequest::None), selectionStart(_selectionStart), selectionEnd(_selectionEnd), blockStart(_blockStart),
       blockEnd(_blockEnd)
 {

@@ -19,7 +19,7 @@ void Selection::Clear()
 }
 bool Selection::Clear(int index)
 {
-    CHECK((index < Selection::MAX_SELECTION_ZONES) && (index >= 0),
+    CHECK((index >= 0) && ((uint32) index < Selection::MAX_SELECTION_ZONES),
           false,
           "Invalid selection index (%d) - should be between 0 and %d",
           index,
@@ -115,7 +115,7 @@ bool Selection::Contains(uint64 position) const
 }
 bool Selection::UpdateSelection(int index, uint64 position)
 {
-    CHECK((index < Selection::MAX_SELECTION_ZONES) && (index >= 0),
+    CHECK((index >= 0) && ((uint32) index < Selection::MAX_SELECTION_ZONES),
           false,
           "Invalid selection index (%d) - should be between 0 and %d",
           index,

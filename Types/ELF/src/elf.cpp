@@ -14,7 +14,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
         CHECK(buf.GetLength() > sizeof(uint32), false, "");
-        auto magic = *(uint32*) buf.GetData();
+        uint32 magic;
+        memcpy(&magic, buf.GetData(), sizeof(magic));
         CHECK(magic == GView::Type::ELF::MAGIC, false, "");
         return true;
     }

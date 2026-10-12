@@ -99,7 +99,7 @@ bool Instance::GetViewData(ViewData& vd, uint64 offset)
 bool Instance::AdvanceStartView(int64 offset)
 {
     if (offset < 0) {
-        if (static_cast<uint64>(abs(offset)) > cursor.GetStartView()) {
+        if (static_cast<uint64>(std::abs(offset)) > cursor.GetStartView()) {
             offset = -1ll * cursor.GetStartView();
         }
     }
@@ -430,7 +430,7 @@ void Instance::UpdateStringInfo(uint64 offset)
         if (StringInfo.AsciiMask[*s]) {
             while ((s < e) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - buf.GetData() >= StringInfo.minCount) {
+            if (static_cast<size_t>(s - buf.GetData()) >= StringInfo.minCount) {
                 // ascii string found
                 StringInfo.start = offset;
                 StringInfo.end   = offset + (s - buf.GetData());
@@ -447,7 +447,7 @@ void Instance::UpdateStringInfo(uint64 offset)
         if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s])) {
             while ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - (const char16*) buf.GetData() >= StringInfo.minCount) {
+            if (static_cast<size_t>(s - (const char16*) buf.GetData()) >= StringInfo.minCount) {
                 // ascii string found
                 StringInfo.start  = offset;
                 StringInfo.end    = offset + ((const uint8*) s - buf.GetData());
@@ -485,7 +485,7 @@ void Instance::UpdateStringInfo(uint64 offset)
                 }
             }
             // check if not an unicode string
-            auto* u_s = (char16_t*) s;
+            auto* u_s = (const char16_t*) s;
             auto* u_e = u_s + StringInfo.minCount;
             if ((((const uint8*) u_e) + 1) <= e) {
                 while ((u_s < u_e) && (*u_s < 256) && (StringInfo.AsciiMask[*u_s]))
@@ -1610,7 +1610,8 @@ int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffe
 {
     if (buffer.GetLength() < 2)
         return x;
-    const uint16 v_u16 = *(uint16*) buffer.GetData();
+    uint16 v_u16;
+    memcpy(&v_u16, buffer.GetData(), sizeof(v_u16));
     NumericFormatter n;
     NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 4 };
     switch (height) {
@@ -1660,7 +1661,8 @@ int Instance::Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffe
 {
     if (buffer.GetLength() < 4)
         return x;
-    const uint32 v_u32 = *(uint32*) buffer.GetData();
+    uint32 v_u32;
+    memcpy(&v_u32, buffer.GetData(), sizeof(v_u32));
     NumericFormatter n;
     NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
     NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };

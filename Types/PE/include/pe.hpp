@@ -828,8 +828,8 @@ namespace Type
             bool BuildExport();
             void BuildVersionInfo();
             bool ProcessResourceImageInformation(ResourceInformation& res);
-            bool ProcessResourceDataEntry(uint64 relAddress, uint64 startRes, uint32* level, uint32 indexLevel, char* resName);
-            bool ProcessResourceDirTable(uint64 relAddress, uint64 startRes, uint32* level, uint32 indexLevel, char* parentName);
+            bool ProcessResourceDataEntry(uint64 relAddress, uint64 startRes, uint32* level, uint32 indexLevel, const char* resName);
+            bool ProcessResourceDirTable(uint64 relAddress, uint64 startRes, uint32* level, uint32 indexLevel, const char* parentName);
             bool BuildResources();
             bool BuildImportDLLFunctions(uint32 index, ImageImportDescriptor* impD);
             bool BuildImport();

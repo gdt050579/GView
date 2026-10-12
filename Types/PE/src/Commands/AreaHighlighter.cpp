@@ -102,7 +102,6 @@ bool AreaHighlighter::FindExecutedCode()
     }
 
     std::string line;
-    auto offset = 0u;
     while (std::getline(infile, line))
     {
         if (!filter.empty())
@@ -113,9 +112,8 @@ bool AreaHighlighter::FindExecutedCode()
             }
         }
 
-        const auto initialStart = reinterpret_cast<char const*>(line.c_str());
-        auto start              = reinterpret_cast<char const*>(line.c_str());
-        const auto end          = reinterpret_cast<char const*>(start + line.size());
+        auto start      = reinterpret_cast<char const*>(line.c_str());
+        const auto end  = reinterpret_cast<char const*>(start + line.size());
         std::cmatch matches{};
         while (std::regex_search(start, end, matches, pattern))
         {

@@ -42,7 +42,6 @@ bool PNG::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Find
     finding.start = offset;
     finding.end   = offset + sizeof(IMAGE_PNG_MAGIC);
     auto found    = false;
-    auto pos      = finding.end;
 
     do {
         auto buffer = file.CopyToBuffer(finding.end, sizeof(uint32), true);

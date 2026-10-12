@@ -122,7 +122,7 @@ inline std::string_view GetNameFromElfAbiVersion(uint8 elfOsAbi, uint8 elfAbiVer
     }
 }
 
-static std::pair<std::string_view, std::string_view> GetNameAndDecriptionFromElfType(uint16 elfType)
+inline std::pair<std::string_view, std::string_view> GetNameAndDecriptionFromElfType(uint16 elfType)
 {
     switch (elfType)
     {

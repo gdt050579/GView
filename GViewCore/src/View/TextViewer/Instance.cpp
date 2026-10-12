@@ -214,7 +214,7 @@ class DataCharacterStream
 
   public:
     DataCharacterStream(std::vector<LineInfo>& li, Reference<SettingsData> _settings, GView::Utils::DataCache& cache)
-        : dataCache(cache), settings(_settings), lines(li)
+        : dataCache(cache), lines(li), settings(_settings)
     {
         linesCount  = static_cast<uint32>(li.size());
         currentLine = 0;
@@ -988,7 +988,6 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
         auto lineNo = this->Cursor.lineNo;
         ComputeSubLineIndexes(lineNo);
         auto slIndex              = CharacterIndexToSubLineNo(this->Cursor.charIndex);
-        const auto initialSubLine = slIndex;
         const auto charIndexDif   = this->Cursor.charIndex > this->SubLines.entries[slIndex].relativeCharIndex
                                           ? this->Cursor.charIndex - this->SubLines.entries[slIndex].relativeCharIndex
                                           : 0U;
@@ -1518,7 +1517,6 @@ void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIn
                     }
                 }
             }
-            auto bufPos  = cs.GetCurrentBufferPos();
             auto bestDif = 0xFFFFFF; // a large number
             lineNo       = vd->lineNo;
             while (cs.Next())

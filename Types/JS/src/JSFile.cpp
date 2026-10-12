@@ -487,7 +487,6 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
     auto tokColor = TokenColor::Word;
     auto tokType  = Keyword::TextToKeywordID(text, pos, next);
     auto align    = TokenAlignament::None;
-    auto opID     = 0U;
     auto flags    = TokenFlags::None;
 
     if (tokType == TokenType::None)
@@ -661,8 +660,6 @@ BlockType JSFile::GetBlockTypeWhichContainLastToken(const TokensList& tokenList)
 {
     TokenIndexStack blockToken;
 
-    auto indexArrayBlock      = 0u;
-    auto len                  = tokenList.Len();
     Token currentToken        = tokenList.GetLastToken();
     uint32_t currentTokenType = currentToken.GetTypeID(TokenType::None);
     while (currentTokenType != TokenType::None)
@@ -739,7 +736,6 @@ uint32 JSFile::TokenizePreprocessDirective(const TextParser& text, TokensList& l
         return eol;
     }
     // we have a good preprocess directive ==> lets formalize it
-    auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
     list.Add(
           TokenType::Preprocess,
           start,

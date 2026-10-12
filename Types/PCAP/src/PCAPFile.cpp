@@ -17,13 +17,15 @@ bool PCAPFile::Update()
     }
 
     // TODO: check for future, is this really ok? test with big pcap files
-    data = obj->GetData().CopyToBuffer(offset, (uint32) obj->GetData().GetSize() - offset);
+    const auto fileSize = obj->GetData().GetSize();
+    CHECK(fileSize > offset && fileSize <= 0xFFFFFFFFULL, false, ""); // packet offsets are stored as uint32
+    data = obj->GetData().CopyToBuffer(offset, static_cast<uint32>(fileSize - offset));
     CHECK(data.IsValid(), false, "");
 
     const auto delta = offset;
     do
     {
-        const auto& [header, _] = packetHeaders.emplace_back((PacketHeader*) (data.GetData() + offset - delta), offset);
+        const auto& [header, _] = packetHeaders.emplace_back((PacketHeader*) (data.GetData() + offset - delta), static_cast<uint32>(offset));
         offset += (sizeof(PacketHeader) + header->origLen);
     } while (offset < obj->GetData().GetSize());
 

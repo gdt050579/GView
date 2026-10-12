@@ -388,7 +388,6 @@ bool Plugin::FindNextDifference()
 
         for (uint32 i = 0; i < windowsNo; i++)
         {
-            auto& view             = views.at(i);
             auto& data             = viewsData.at(i);
             auto& cache            = caches.at(i);
             buffers.emplace_back() = cache->Get(data.viewStartOffset, static_cast<uint32>(bufferSize), false);

@@ -603,7 +603,9 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
         {
             if (buf.GetLength() >= 4)
             {
-                if ((*(uint32*) p) == 0x464C457F)
+                uint32 magic;
+                memcpy(&magic, p, sizeof(magic));
+                if (magic == 0x464C457F)
                 {
                     result.start = offset;
                     result.end   = offset + 3;

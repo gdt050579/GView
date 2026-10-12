@@ -825,7 +825,6 @@ void Instance::BakupTokensPositions()
 void Instance::RestoreTokensPositionsFromBackup()
 {
     ASSERT(this->tokens.size() == this->backupedTokenPositionList.size(), "Expecting backup list to be of the same size as tokens list");
-    auto sz    = this->tokens.size();
     auto index = static_cast<size_t>(0);
     for (auto& tok : this->tokens)
     {

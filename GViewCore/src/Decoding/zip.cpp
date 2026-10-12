@@ -101,8 +101,8 @@ void ConvertZipFileInfoToEntry(const mz_zip_entry* zipFile, _Entry& entry)
 
     entry.type = EntryType::Unknown;
 
-    const bool isDir     = (mz_zip_entry_is_dir((void*) zipFile) == MZ_OK);
-    const bool isSymlink = (mz_zip_entry_is_symlink((void*) zipFile) == MZ_OK);
+    const bool isDir     = (mz_zip_entry_is_dir(const_cast<mz_zip_entry*>(zipFile)) == MZ_OK);
+    const bool isSymlink = (mz_zip_entry_is_symlink(const_cast<mz_zip_entry*>(zipFile)) == MZ_OK);
     if (isDir)
     {
         entry.type = EntryType::Directory;
@@ -399,7 +399,7 @@ bool GetInfo(std::u16string_view path, Info& info)
             if (it == internalInfo->entries.end()) {
                 auto& parentEntry          = internalInfo->entries.emplace_back();
                 parentEntry.filename       = parentFilename;
-                parentEntry.filename_size  = parentFilename.size();
+                parentEntry.filename_size  = static_cast<uint16_t>(parentFilename.size());
                 parentEntry.type           = EntryType::Directory;
                 parentEntry.version_madeby = entry.version_madeby;
                 parentEntry.version_needed = entry.version_needed;
@@ -471,7 +471,7 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
             if (it == internalInfo->entries.end()) {
                 auto& parentEntry          = internalInfo->entries.emplace_back();
                 parentEntry.filename       = parentFilename;
-                parentEntry.filename_size  = parentFilename.size();
+                parentEntry.filename_size  = static_cast<uint16_t>(parentFilename.size());
                 parentEntry.type           = EntryType::Directory;
                 parentEntry.version_madeby = entry.version_madeby;
                 parentEntry.version_needed = entry.version_needed;

@@ -213,16 +213,22 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     // rightClickOffset = 0;
 
     // TODO: to be moved inside plugin for some sort of API for token<->color
+    // keys are the first 4 bytes of the mnemonic, read in host byte order (must match GetASMColorPairByKeyword)
+    const auto key = [](const char* text) {
+        uint32 value;
+        memcpy(&value, text, sizeof(value));
+        return value;
+    };
     asmData.instructionToColor = {
-        { *((uint32*) "int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
-        { *((uint32*) "ret"), ColorMan.Colors.AsmFunctionColor },
-        { *((uint32*) "call"), ColorMan.Colors.AsmFunctionColor },
-        { *((uint32*) "cmp"), ColorMan.Colors.AsmCompareInstructionColor },
-        { *((uint32*) "test"), ColorMan.Colors.AsmCompareInstructionColor },
-        { *((uint32*) "word"), ColorMan.Colors.AsmLocationInstruction },
-        { *((uint32*) "dwor"), ColorMan.Colors.AsmLocationInstruction },
-        { *((uint32*) "qwor"), ColorMan.Colors.AsmLocationInstruction },
-        { *((uint32*) "ptr"), ColorMan.Colors.AsmLocationInstruction },
+        { key("int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
+        { key("ret"), ColorMan.Colors.AsmFunctionColor },
+        { key("call"), ColorMan.Colors.AsmFunctionColor },
+        { key("cmp"), ColorMan.Colors.AsmCompareInstructionColor },
+        { key("test"), ColorMan.Colors.AsmCompareInstructionColor },
+        { key("word"), ColorMan.Colors.AsmLocationInstruction },
+        { key("dwor"), ColorMan.Colors.AsmLocationInstruction },
+        { key("qwor"), ColorMan.Colors.AsmLocationInstruction },
+        { key("ptr"), ColorMan.Colors.AsmLocationInstruction },
     };
 }
 
@@ -609,7 +615,7 @@ inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(
 
 bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone)
 {
-    if (structureZone->structureIndex == structureZone->extendedSize) {
+    if (structureZone->structureIndex >= 0 && (uint32) structureZone->structureIndex == structureZone->extendedSize) {
         while (structureZone->levels.size() > 1) {
             structureZone->types.pop_back();
             structureZone->levels.pop_back();
@@ -637,7 +643,7 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
         switch (currentType.primaryType) {
         case InternalDissasmType::UnidimnsionalArray:
         case InternalDissasmType::UserDefined:
-            if (currentLevel < currentType.internalTypes.size()) {
+            if (currentLevel >= 0 && (size_t) currentLevel < currentType.internalTypes.size()) {
                 UpdateCurrentZoneIndex(currentType.internalTypes[currentLevel], structureZone, true);
                 structureZone->types.push_back(currentType.internalTypes[currentLevel]);
                 structureZone->levels.push_back(0);

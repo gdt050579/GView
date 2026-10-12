@@ -126,7 +126,7 @@ bool LNKFile::Update()
 
             for (auto& [key, values] : propertyStores) {
                 offset    = sizeof(PropertyStore);
-                auto& sps = values.emplace_back((PropertyStore_ShellPropertySheet*) (((uint8*) key) + offset));
+                values.emplace_back((PropertyStore_ShellPropertySheet*) (((uint8*) key) + offset));
                 offset += sizeof(PropertyStore_ShellPropertySheet);
                 while (offset < key->size - sizeof(uint32) /* terminal */) {
                     auto snpp = (PropertyStore_ShellPropertyNumeric*) ((uint8*) key + offset);

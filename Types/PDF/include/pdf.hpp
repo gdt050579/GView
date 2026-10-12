@@ -483,7 +483,7 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> list;
                 int Base;
 
-                std::string_view GetValue(NumericFormatter& n, uint32 value);
+                std::string_view GetValue(NumericFormatter& n, uint64 value);
                 void GoToSelectedSection();
                 void SelectCurrentSection();
 

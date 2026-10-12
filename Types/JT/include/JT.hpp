@@ -63,7 +63,7 @@ class JTFile : public TypeInterface
 
 namespace Panels
 {
-    static ListViewItem AddGUIDElement(Reference<ListView> list, std::string_view name, MyGUID& guid)
+    inline ListViewItem AddGUIDElement(Reference<ListView> list, std::string_view name, MyGUID& guid)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 

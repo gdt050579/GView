@@ -34,7 +34,7 @@ StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference
     mnuView->AddCheckItem("Show &line numbers", 1, true);
     mnuView->AddCheckItem("&Word wrap", 1, false);
     auto mnuPlugins = this->AddMenu("&Plugins");
-    for (auto index = 0; index < ARRAY_LEN(plugins); index++)
+    for (int index = 0; index < (int) ARRAY_LEN(plugins); index++)
     {
         mnuPlugins->AddCommandItem(plugins[index].name, index);
     }

@@ -378,14 +378,15 @@ void Packets::PacketDialog::Add_DNSHeader(PacketData* packetData, const DNSHeade
             length = *(start + offset);
             if (length > 0)
             {
-                names.emplace_back(std::string_view{ (char*) (start + offset + 1), length });
+                names.emplace_back(std::string_view{ (const char*) (start + offset + 1), length });
             }
             offset += sizeof(uint8) + length;
         } while (length != 0);
 
-        DNSHeader_Question question{ names,
-                                     (DNSHeader_Question_QType) (*(uint16*) (start + offset)),
-                                     (DNSHeader_Question_QClass) (*(uint16*) (start + offset + sizeof(uint16))) };
+        uint16 qType, qClass;
+        memcpy(&qType, start + offset, sizeof(qType));
+        memcpy(&qClass, start + offset + sizeof(uint16), sizeof(qClass));
+        DNSHeader_Question question{ names, (DNSHeader_Question_QType) qType, (DNSHeader_Question_QClass) qClass };
         Swap(question);
         offset += 2 * sizeof(uint16);
 

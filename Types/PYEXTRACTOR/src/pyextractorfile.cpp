@@ -43,7 +43,7 @@ bool PYEXTRACTORFile::SetCookiePosition()
     uint64 index         = 0;
 
     do {
-        const auto buffer = obj->GetData().CopyToBuffer(index, sizeToRead);
+        const auto buffer = obj->GetData().CopyToBuffer(index, static_cast<uint32>(sizeToRead));
         CHECK(buffer.IsValid(), false, "");
 
         const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
@@ -112,10 +112,7 @@ inline void Swap(TOCEntry& entry)
 
 bool PYEXTRACTORFile::SetTableOfContentEntries()
 {
-    const auto a = obj->GetData().CopyToBuffer(archive.info.tableOfContentPosition, archive.info.tableOfContentSize);
-    const auto b = a.GetData();
-
-    uint64 i             = archive.info.tableOfContentPosition;
+    uint64 i            = archive.info.tableOfContentPosition;
     const auto maxOffset = archive.info.tableOfContentPosition + archive.info.tableOfContentSize;
     while (i < maxOffset) {
         const auto bufferView = obj->GetData().CopyToBuffer(i, TOC_ENTRY_KNOWN_SIZE);
