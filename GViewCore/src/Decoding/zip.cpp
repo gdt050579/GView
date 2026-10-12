@@ -62,6 +62,21 @@ struct _Entry
     EntryType type{};
 };
 
+// mz_zip_entry_is_dir / mz_zip_entry_is_symlink take the zip *handle* (they inspect its current entry), so they can not be
+// called with an entry. These are the same checks (minizip-ng 4.x) done on the entry itself.
+static bool IsDirectoryEntry(const mz_zip_entry* zipFile)
+{
+    if (mz_zip_attrib_is_dir(zipFile->external_fa, zipFile->version_madeby) == MZ_OK)
+        return true;
+    const auto filenameLength = zipFile->filename ? strlen(zipFile->filename) : 0;
+    return filenameLength > 0 && mz_os_is_dir_separator(zipFile->filename[filenameLength - 1]);
+}
+
+static bool IsSymlinkEntry(const mz_zip_entry* zipFile)
+{
+    return mz_zip_attrib_is_symlink(zipFile->external_fa, zipFile->version_madeby) == MZ_OK;
+}
+
 void ConvertZipFileInfoToEntry(const mz_zip_entry* zipFile, _Entry& entry)
 {
     entry.version_madeby     = zipFile->version_madeby;
@@ -101,8 +116,8 @@ void ConvertZipFileInfoToEntry(const mz_zip_entry* zipFile, _Entry& entry)
 
     entry.type = EntryType::Unknown;
 
-    const bool isDir     = (mz_zip_entry_is_dir(const_cast<mz_zip_entry*>(zipFile)) == MZ_OK);
-    const bool isSymlink = (mz_zip_entry_is_symlink(const_cast<mz_zip_entry*>(zipFile)) == MZ_OK);
+    const bool isDir     = IsDirectoryEntry(zipFile);
+    const bool isSymlink = IsSymlinkEntry(zipFile);
     if (isDir)
     {
         entry.type = EntryType::Directory;

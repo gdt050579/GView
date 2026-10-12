@@ -23,6 +23,14 @@ namespace GView::Type::PCAP
     ....
 */
 
+// Name lookup for values read from the capture: unknown values must not throw (std::map::at would)
+template <typename Map, typename Key>
+inline std::string_view GetNameOrUnknown(const Map& names, Key key)
+{
+    const auto it = names.find(static_cast<typename Map::key_type>(key));
+    return it == names.end() ? std::string_view{ "Unknown" } : it->second;
+}
+
 enum class Magic : uint32
 {
     Identical = 0xA1B2C3D4,
@@ -2078,14 +2086,14 @@ struct StreamData
     {
         if (ipProtocol == INVALID_IP_PROTOCOL_VALUE)
             return "null";
-        return EtherTypeNames.at(static_cast<EtherType>(ipProtocol));
+        return GetNameOrUnknown(EtherTypeNames, static_cast<EtherType>(ipProtocol));
     }
 
     std::string_view GetTransportProtocolName() const
     {
         if (transportProtocol == INVALID_TRANSPORT_PROTOCOL_VALUE)
             return "null";
-        return IP_ProtocolNames.at(static_cast<IP_Protocol>(transportProtocol));
+        return GetNameOrUnknown(IP_ProtocolNames, static_cast<IP_Protocol>(transportProtocol));
     }
 
     void SortPackets()

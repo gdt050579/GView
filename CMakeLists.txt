@@ -183,7 +183,9 @@ elseif (UNIX)
     add_compile_options(-g)
     add_compile_options(-W)
     
-    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
+    # Let CMake emit the RPATH: "$ORIGIN" written into the linker flags reached the shell unescaped and was expanded to an
+    # empty string, which left an empty RUNPATH entry (= the current working directory) instead of the binary's folder.
+    SET(CMAKE_BUILD_RPATH "$ORIGIN")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")

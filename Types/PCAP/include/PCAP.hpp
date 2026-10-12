@@ -192,12 +192,13 @@ namespace Panels
             void Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 packetInclLen);
             void Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, uint32 packetInclLen);
             void Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, uint32 packetInclLen);
-            void Add_UDPHeader(PacketData* packetData, const UDPHeader* udp);
-            void Add_DNSHeader(PacketData* packetData, const DNSHeader* dns);
+            void Add_UDPHeader(PacketData* packetData, const UDPHeader* udp, uint32 udpSize);
+            void Add_DNSHeader(PacketData* packetData, const DNSHeader* dns, uint32 dnsSize);
             void Add_ICMPHeader(PacketData* packetData, const ICMPHeader_Base* icmpBase, uint32 icmpSize);
             void Add_DNSHeader_Question(const DNSHeader_Question& question);
             void Add_TCPHeader(PacketData* packetData, const TCPHeader* tcp, uint32 packetInclLen);
             void Add_TCPHeader_Options(const uint8* optionsPtr, uint32 optionsLen);
+            void AddTruncated();
 
           public:
             PacketDialog(

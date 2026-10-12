@@ -37,24 +37,29 @@ bool PYEXTRACTORFile::SetCookiePosition()
         return false;
     }
 
-    const auto fileSize  = obj->GetData().GetSize();
-    const auto cacheSize = (uint64) obj->GetData().GetCacheSize();
-    uint64 sizeToRead    = cacheSize;
-    uint64 index         = 0;
+    // Chunked search. Consecutive chunks overlap by (magic size - 1) bytes so a magic split across two chunks is still
+    // found, and a match is converted back to a file offset.
+    const auto fileSize    = obj->GetData().GetSize();
+    const uint64 chunkSize = std::max<uint64>(obj->GetData().GetCacheSize(), PYINSTALLER_MAGIC.size() * 2);
+    const uint64 overlap   = PYINSTALLER_MAGIC.size() - 1;
+    uint64 position        = 0;
 
-    do {
-        const auto buffer = obj->GetData().CopyToBuffer(index, static_cast<uint32>(sizeToRead));
+    while (position < fileSize) {
+        const auto toRead = std::min<uint64>(chunkSize, fileSize - position);
+        const auto buffer = obj->GetData().CopyToBuffer(position, static_cast<uint32>(toRead));
         CHECK(buffer.IsValid(), false, "");
 
-        const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
-        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos) {
-            archive.cookiePosition = index;
+        const std::string_view view{ reinterpret_cast<const char*>(buffer.GetData()), buffer.GetLength() };
+        if (const auto found = view.find(PYINSTALLER_MAGIC, 0); found != std::string::npos) {
+            archive.cookiePosition = position + found;
             return true;
         }
 
-        index += sizeToRead;
-        sizeToRead = std::min(fileSize, cacheSize);
-    } while (index < fileSize);
+        if (position + toRead >= fileSize) {
+            break;
+        }
+        position += toRead - overlap;
+    }
 
     return false;
 }
@@ -67,11 +72,14 @@ inline void tolower(std::string& s)
 bool PYEXTRACTORFile::SetInstallerVersion()
 {
     constexpr std::string_view marker{ "python" };
-    const auto bufferView = obj->GetData().CopyToBuffer(archive.cookiePosition + PYINSTALLER20_COOKIE_SIZE, 64);
-    CHECK(bufferView.IsValid(), false, "");
-    std::string version{ (char*) bufferView.GetData(), bufferView.GetLength() };
+    // a 2.0 cookie can be the last bytes of the file, so the 2.1+ library name that would follow it may be missing
+    const auto bufferView = obj->GetData().CopyToBuffer(archive.cookiePosition + PYINSTALLER20_COOKIE_SIZE, 64, false);
+    std::string version;
+    if (bufferView.IsValid()) {
+        version.assign(reinterpret_cast<const char*>(bufferView.GetData()), bufferView.GetLength());
+    }
     tolower(version);
-    if (version.find(marker)) {
+    if (version.find(marker) != std::string::npos) {
         archive.version = PyInstallerVersion::V21Plus;
     } else {
         archive.version = PyInstallerVersion::V20;
@@ -112,8 +120,11 @@ inline void Swap(TOCEntry& entry)
 
 bool PYEXTRACTORFile::SetTableOfContentEntries()
 {
-    uint64 i            = archive.info.tableOfContentPosition;
-    const auto maxOffset = archive.info.tableOfContentPosition + archive.info.tableOfContentSize;
+    // 64-bit sum (no wrap) and never past the end of the file: every entry is at least TOC_ENTRY_KNOWN_SIZE bytes, so the loop is bounded
+    uint64 i             = archive.info.tableOfContentPosition;
+    const auto maxOffset = std::min<uint64>(static_cast<uint64>(archive.info.tableOfContentPosition) + archive.info.tableOfContentSize,
+                                            obj->GetData().GetSize());
+    uint32 countUnnamed  = 0;
     while (i < maxOffset) {
         const auto bufferView = obj->GetData().CopyToBuffer(i, TOC_ENTRY_KNOWN_SIZE);
         CHECK(bufferView.IsValid(), false, "");
@@ -122,14 +133,18 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
         memcpy(static_cast<TOCEntryHeader*>(&entry), bufferView.GetData(), TOC_ENTRY_KNOWN_SIZE);
         Swap(entry);
 
+        // an entry smaller than its own header would underflow the name length and never advance (entrySize == 0)
+        if (entry.entrySize < TOC_ENTRY_KNOWN_SIZE) {
+            tocEntries.pop_back();
+            return false;
+        }
         const auto nameLen = entry.entrySize - TOC_ENTRY_KNOWN_SIZE;
 
         if (nameLen != 0) {
             entry.name = obj->GetData().CopyToBuffer(i + TOC_ENTRY_KNOWN_SIZE, static_cast<uint32>(nameLen));
         } else {
-            static uint32 countUnnamed = 0;
             LocalString<30> ls;
-            ls.Format("unnamed_%u", countUnnamed);
+            ls.Format("unnamed_%u", countUnnamed++);
             entry.name.Add(ls);
         }
         i += entry.entrySize;
@@ -148,8 +163,10 @@ GView::Utils::JsonBuilderInterface* PYEXTRACTORFile::GetSmartAssistantContext(co
     builder->AddUInt("TableOfContentPosition", archive.info.tableOfContentPosition);
     builder->AddUInt("TableOfContentSize", archive.info.tableOfContentSize);
     builder->AddUInt("PyVersion", archive.info.pyver);
-    if (std::strlen(archive.info.pylibname) > 0)
-        builder->AddString("PylibName", archive.info.pylibname);
+    // pylibname comes from the file and is not guaranteed to be NUL terminated
+    const std::string_view pylibname{ archive.info.pylibname, strnlen(archive.info.pylibname, sizeof(archive.info.pylibname)) };
+    if (!pylibname.empty())
+        builder->AddString("PylibName", pylibname);
 
     return builder;
 }

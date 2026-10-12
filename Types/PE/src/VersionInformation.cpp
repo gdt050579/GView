@@ -15,12 +15,13 @@ static uint32 ReadU32(const uint8* p)
     return value;
 }
 
-bool StartWith(const uint16_t* Buffer, int size, const char* text)
+// Buffer holds `size` UTF-16 characters (not necessarily aligned)
+static bool StartWith(const uint8* Buffer, int size, const char* text)
 {
     int tr;
     for (tr = 0; (tr < size) && (text[tr] != 0); tr++)
     {
-        if (Buffer[tr] != (uint16_t) text[tr])
+        if (ReadU16(Buffer + 2 * tr) != (uint16_t) text[tr])
             return false;
     }
     if (text[tr] != 0)
@@ -37,7 +38,7 @@ VersionInformation::~VersionInformation(void)
 }
 bool VersionInformation::TestIfValidKey(const uint8* Buffer, int size, int poz)
 {
-    auto* w = (const uint16_t*) &Buffer[poz];
+    const auto w = &Buffer[poz];
     int szW = (size - poz) / 2 - 1;
 
     if (StartWith(w, szW, "Comments"))
@@ -87,15 +88,18 @@ int VersionInformation::AddPair(const uint8* Buffer, int size, int poz)
     Key->Set("");
     Value->Set("");
     tmp = &Buffer[poz] + offsetof(VersionString, Key);
+    // wLength covers the whole record (header included): key and value are read only from the bytes after the header,
+    // so every 2-byte read stays inside this record
+    const int keyBytes = wLength - static_cast<int>(offsetof(VersionString, Key));
     // adaug la cheie
-    for (tr = 0; (tr < wLength - 1) && (ReadU16(&tmp[tr]) != 0); tr += 2)
+    for (tr = 0; (tr + 1 < keyBytes) && (ReadU16(&tmp[tr]) != 0); tr += 2)
         Key->AddChar((char) tmp[tr]);
     // merg pana gasesc ceva diferit de 0
-    for (; (tr < wLength - 1) && (ReadU16(&tmp[tr]) == 0); tr += 2)
+    for (; (tr + 1 < keyBytes) && (ReadU16(&tmp[tr]) == 0); tr += 2)
         ;
     // adaug la cheie
     u_poz = 0;
-    for (; (tr < wLength - 1) && (ReadU16(&tmp[tr]) != 0); tr += 2, u_poz++)
+    for (; (tr + 1 < keyBytes) && (ReadU16(&tmp[tr]) != 0); tr += 2, u_poz++)
     {
         Value->AddChar((char) tmp[tr]);
         if (u_poz < MAX_VERSION_UNICODE - 1)

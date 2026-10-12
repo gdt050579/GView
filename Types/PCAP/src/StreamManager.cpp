@@ -26,6 +26,9 @@ void StreamData::ComputeFinalPayload()
 
 void StreamManager::Add_Package_EthernetHeader(PacketData* packetData, const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet)
 {
+    if (length < sizeof(Package_EthernetHeader))
+        return;
+
     auto pehRef = *peh;
     Swap(pehRef);
 
@@ -46,6 +49,8 @@ void StreamManager::Add_Package_EthernetHeader(PacketData* packetData, const Pac
 
 void StreamManager::Add_Package_NullHeader(PacketData* packetData, const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet)
 {
+    if (length < sizeof(Package_NullHeader))
+        return;
     if (pnh->family_ip == NULL_FAMILY_IP)
     {
         auto ipv4 = (const IPv4Header*) ((const uint8*) pnh + sizeof(Package_NullHeader));
@@ -56,6 +61,8 @@ void StreamManager::Add_Package_NullHeader(PacketData* packetData, const Package
 
 void StreamManager::Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet)
 {
+    if (packetInclLen < sizeof(IPv4Header))
+        return;
     if (ipv4->protocol == IP_Protocol::TCP)
     {
         auto tcp = (const TCPHeader*) ((const uint8*) ipv4 + sizeof(IPv4Header));
@@ -72,9 +79,11 @@ void StreamManager::Add_IPv4Header(PacketData* packetData, const IPv4Header* ipv
 
 void StreamManager::Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet)
 {
+    if (packetInclLen < sizeof(IPv6Header))
+        return;
     if (ipv6->nextHeader == IP_Protocol::TCP)
     {
-        auto tcp = (const TCPHeader*) ((const uint8*) ipv6 + sizeof(IPv4Header));
+        auto tcp = (const TCPHeader*) ((const uint8*) ipv6 + sizeof(IPv6Header));
         packetData->transportLayer = { IP_Protocol::TCP, tcp };
         Add_TCPHeader(packetData, tcp, packetInclLen - sizeof(IPv6Header), ipv6, static_cast<uint32>(EtherType::IPv6), packet);
     }
@@ -89,6 +98,9 @@ void StreamManager::Add_IPv6Header(PacketData* packetData, const IPv6Header* ipv
 void StreamManager::Add_TCPHeader(
       PacketData* packetData, const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet)
 {
+    if (packetInclLen < sizeof(TCPHeader))
+        return;
+
     const auto etherProto = static_cast<EtherType>(ipProto);
     LocalString<64> srcIp, dstIp, srcPort, dstPort;
     NumericFormatter n;
@@ -129,16 +141,15 @@ void StreamManager::Add_TCPHeader(
     Swap(tcpRef);
 
     const uint32 tcp_header_len = tcpRef.dataOffset * 4;
-    const uint32 options_len    = tcp_header_len - sizeof(TCPHeader);
-
     if (tcp_header_len < sizeof(TCPHeader))
         return; // err: TODO improve this later
 
+    // packetInclLen is what the capture saved after the IP header, so the payload never leaves the packet
     StreamPayload payload{};
     if (packetInclLen > tcp_header_len)
     {
-        payload.size     = static_cast<uint32>(packetInclLen) - tcp_header_len;
-        payload.location = ((const uint8*) tcp + sizeof(TCPHeader) + options_len);
+        payload.size     = static_cast<uint32>(packetInclLen - tcp_header_len);
+        payload.location = (const uint8*) tcp + tcp_header_len;
     }
 
     srcPort.Format("%s", n.ToString(tcpRef.sPort, { NumericFormatFlags::None, 10, 3, '.' }).data());

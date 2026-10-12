@@ -38,7 +38,7 @@ void Information::UpdatePcapHeader()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    const auto magicName = PCAP::MagicNames.at(pcap->header.magicNumber).data();
+    const auto magicName = GetNameOrUnknown(PCAP::MagicNames, pcap->header.magicNumber).data();
     const auto magicHex  = nf.ToString((uint32) pcap->header.magicNumber, hexUint32);
     general->AddItem({ "Magic", ls.Format("%-20s (%s)", magicName, magicHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
@@ -48,8 +48,8 @@ void Information::UpdatePcapHeader()
     AddDecAndHexElement("Sigfigs", "%-20s (%s)", pcap->header.sigfigs);
     AddDecAndHexElement("Snaplen", "%-20s (%s)", pcap->header.snaplen);
 
-    const auto networkName        = PCAP::LinkTypeNames.at(pcap->header.network).data();
-    const auto networkDescription = PCAP::LinkTypeDescriptions.at(pcap->header.network).data();
+    const auto networkName        = GetNameOrUnknown(PCAP::LinkTypeNames, pcap->header.network).data();
+    const auto networkDescription = GetNameOrUnknown(PCAP::LinkTypeDescriptions, pcap->header.network).data();
     const auto networkHex         = nf.ToString((uint32) pcap->header.network, hexUint32);
     general->AddItem({ "Network", ls.Format("%-20s (%s) %s", networkName, networkHex.data(), networkDescription) })
           .SetType(ListViewItem::Type::Emphasized_2);

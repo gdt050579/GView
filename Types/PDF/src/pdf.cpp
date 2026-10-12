@@ -422,8 +422,11 @@ uint64 GetNumberOfEntries(uint64& offset, const uint64& dataSize, GView::Utils::
             offset++;
         }
 
-        if (!numEntriesStr.empty()) {
-            numEntries = static_cast<uint16_t>(std::stoi(numEntriesStr));
+        // only digits were collected, but there may be too many of them for std::stoi (it would throw)
+        uint64_t parsedEntries = 0;
+        const auto entriesResult = std::from_chars(numEntriesStr.data(), numEntriesStr.data() + numEntriesStr.size(), parsedEntries, 10);
+        if (entriesResult.ec == std::errc()) {
+            numEntries = SaturateTo<uint16_t>(parsedEntries);
         }
     }
     return numEntries;
@@ -784,8 +787,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     }
                     offset--;
                 }
-                if (!xrefOffsetStr.empty()) {
-                    crossRefOffset = std::stoull(xrefOffsetStr);
+                // from_chars also rejects an empty string and a value that does not fit (std::stoull would throw)
+                uint64_t parsedXrefOffset = 0;
+                const auto xrefResult = std::from_chars(xrefOffsetStr.data(), xrefOffsetStr.data() + xrefOffsetStr.size(), parsedXrefOffset, 10);
+                if (xrefResult.ec == std::errc()) {
+                    crossRefOffset = parsedXrefOffset;
                 } else {
                     Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find the xref offset!");
                     pdf->errList.AddError("Couldn't find the xref offset (0x%llX)", (uint64_t) offset);
