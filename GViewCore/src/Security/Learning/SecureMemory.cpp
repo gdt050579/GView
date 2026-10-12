@@ -42,6 +42,12 @@ namespace
         if (!SetProcessWorkingSetSize(self, minWs + n + margin, maxWs + n + margin))
             return false;
         return VirtualLock(p, n) != FALSE;
+#elif defined(BUILD_FOR_WASM)
+        // the WebAssembly memory is a JavaScript ArrayBuffer: the page can not pin it (mlock is a no-op stub that
+        // reports success) - report the truth so IsLocked() is never misleading
+        (void) p;
+        (void) n;
+        return false;
 #else
         return mlock(p, n) == 0;
 #endif
@@ -121,7 +127,7 @@ bool LockedBuffer::Allocate(size_t bytes) noexcept
     void* p = mmap(nullptr, full, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (p == MAP_FAILED)
         return false;
-#    ifdef MADV_DONTDUMP
+#    if defined(MADV_DONTDUMP) && !defined(BUILD_FOR_WASM) // a web page has no core dumps (and no madvise)
     madvise(p, full, MADV_DONTDUMP); // keep task content out of core dumps
 #    endif
 #endif

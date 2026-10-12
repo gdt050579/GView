@@ -108,10 +108,14 @@ void FileWindow::RefreshTitle()
         this->SetText(obj->GetName());
         return;
     }
+    // The watermark (UTF-8) is converted on its own: AppCUI's UnicodeStringBuilder::Add miscounts the length when it
+    // appends UTF-8 text to a non-empty builder (the title then shows uninitialized characters after the watermark).
+    LocalUnicodeStringBuilder<256> mark;
+    mark.Set(std::u8string_view(reinterpret_cast<const char8_t*>(watermark.data()), watermark.size()));
     LocalUnicodeStringBuilder<512> title;
     title.Set(obj->GetName());
     title.Add(u" - ");
-    title.Add(std::u8string_view(reinterpret_cast<const char8_t*>(watermark.data()), watermark.size()));
+    title.Add(mark.ToStringView());
     this->SetText(title);
 }
 std::string_view FileWindow::GetCurrentViewerKind()

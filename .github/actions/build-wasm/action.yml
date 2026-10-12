@@ -163,7 +163,7 @@ runs:
         site="$GITHUB_WORKSPACE/gview-web"
         rm -rf "$site"
         mkdir -p "$site"
-        for f in GView.html GView.mjs GView.wasm appcui-host.js JuliaMono-Regular.ttf serve.py; do
+        for f in GView.html GView.mjs GView.wasm appcui-host.js gview-page.js gview-storage.js gview-storage-worker.js JuliaMono-Regular.ttf serve.py; do
           cp "bin/wasm/$f" "$site/"
         done
         ls -la "$site"
@@ -185,7 +185,7 @@ runs:
         SITE_DIR: ${{ steps.site.outputs.site_dir }}
       run: |
         set -euo pipefail
-        for f in GView.wasm GView.mjs GView.html appcui-host.js; do
+        for f in GView.wasm GView.mjs GView.html appcui-host.js gview-page.js gview-storage.js gview-storage-worker.js; do
           cosign sign-blob --yes \
             --output-signature "$SITE_DIR/$f.sig" \
             --output-certificate "$SITE_DIR/$f.cert" \

@@ -417,19 +417,57 @@ TEST_CASE("Learning: connection string v1/v2 parsing", "[learning][protocol]")
     }
 }
 
+TEST_CASE("Learning: transport requirements of the browser build", "[learning][protocol]")
+{
+    TransportConfig cfg;
+    cfg.serverUrl = "https://course.example.edu";
+
+    // desktop transport (libcurl): every connection string the protocol accepts can be honoured
+    cfg.caPem = "-----BEGIN CERTIFICATE-----";
+    REQUIRE(CheckTransportRequirements(cfg, false, false).ok);
+
+    // browser: a private CA can not be pinned -> refused (fail closed), never silently widened to the OS store
+    auto st = CheckTransportRequirements(cfg, true, true);
+    REQUIRE_FALSE(st.ok);
+    REQUIRE(st.message.find("private certificate authority") != std::string::npos);
+
+    cfg.caPem.clear();
+    REQUIRE(CheckTransportRequirements(cfg, true, false).ok);
+
+    // plain HTTP only for local development: allowed by the setting AND page served from the same machine
+    cfg.serverUrl               = "http://127.0.0.1:8770";
+    cfg.allowPlainHttpLocalhost = false;
+    REQUIRE_FALSE(CheckTransportRequirements(cfg, true, true).ok);
+    cfg.allowPlainHttpLocalhost = true;
+    REQUIRE_FALSE(CheckTransportRequirements(cfg, true, false).ok); // a public page must not reach the local machine
+    REQUIRE(CheckTransportRequirements(cfg, true, true).ok);
+
+    cfg.serverUrl = "ftp://course.example.edu";
+    REQUIRE_FALSE(CheckTransportRequirements(cfg, true, true).ok);
+}
+
+TEST_CASE("Learning: Once runs the function on the desktop build", "[learning]")
+{
+    // re-runnable jobs only exist in the web build (JobReplay.hpp); elsewhere Once() is a plain call
+    int calls = 0;
+    REQUIRE(JobReplay::Once([&]() { return ++calls; }) == 1);
+    REQUIRE(JobReplay::Once([&]() { return ++calls; }) == 2);
+}
+
 TEST_CASE("Learning: request headers", "[learning][protocol]")
 {
     auto h = BuildRequestHeaders(Token(), "0.391.0", "");
     std::vector<std::string> v;
     for (auto& s : h)
         v.emplace_back(s.data(), s.size());
-    REQUIRE(v.size() == 3);
+    REQUIRE(v.size() == 4);
     REQUIRE(v[0] == "XAppUserID: " + std::string(TEST_TOKEN));
     REQUIRE(v[1] == "X-GView-Client: 0.391.0");
     REQUIRE(v[2] == "X-GView-Protocol: 2");
+    REQUIRE(v[3] == "X-GView-Platform: " + std::string(CurrentPlatform()));
     auto h2 = BuildRequestHeaders(Token(), "0.391.0", "pol_x");
-    REQUIRE(h2.size() == 4);
-    REQUIRE(std::string(h2[3].data(), h2[3].size()) == "X-GView-Policy: pol_x");
+    REQUIRE(h2.size() == 5);
+    REQUIRE(std::string(h2[4].data(), h2[4].size()) == "X-GView-Policy: pol_x");
 }
 
 TEST_CASE("Learning: response size caps", "[learning][protocol]")
