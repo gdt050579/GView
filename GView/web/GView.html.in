@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Content-Security-Policy: no inline script, no plugin, no foreign code. connect-src: the page itself (GView.wasm) and
+     the course servers of Learning and Evaluation Mode (https; plain http only towards the local machine, which GView
+     itself only accepts for a page served from the local machine - development). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>GView @GVIEW_VERSION@</title>
+<style>
+  @font-face { font-family: "JuliaMono"; src: url("JuliaMono-Regular.ttf") format("truetype"); font-display: block; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: flex; flex-direction: column; font: 13px system-ui, sans-serif; color: #ccc; }
+  #bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 4px 10px; background: #1b1b1b;
+         border-bottom: 1px solid #333; }
+  #bar b { color: #fff; }
+  #bar button { font: inherit; color: #fff; background: #2d5fb4; border: 0; border-radius: 3px; padding: 3px 10px;
+                cursor: pointer; }
+  #bar button:hover { background: #3a73d4; }
+  #status { color: #999; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #term-host { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+  #term { display: block; cursor: default; }
+  #drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+          background: rgba(45, 95, 180, 0.35); border: 3px dashed #7aa7f0; color: #fff; font-size: 22px; }
+  body.dragging #drop { display: flex; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <b>GView</b>
+  <button id="open" type="button">Open files…</button>
+  <input id="picker" type="file" multiple hidden>
+  <!-- replaced by gview-page.js once GView starts; stays when the page is opened from file:// (modules do not load) -->
+  <span id="status">Loading GView... If this message stays, the page was opened from a file: serve this folder over HTTP
+    (for example: python serve.py GView) and open the http:// address.</span>
+</div>
+<div id="term-host"><canvas id="term"></canvas><div id="drop">Drop to open in GView</div></div>
+<script type="module" src="gview-page.js"></script>
+</body>
+</html>

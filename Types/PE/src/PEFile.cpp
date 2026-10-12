@@ -1821,14 +1821,14 @@ bool PEFile::ParseGoBuildInfo()
 
     const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, static_cast<uint32>(strRuntimeBuildVersionLength), false);
     CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
-    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()), strRuntimeBuildVersionLength };
+    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()), static_cast<size_t>(strRuntimeBuildVersionLength) };
     pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
 
     const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, static_cast<uint32>(strViewRuntimeModInfoLength), false);
     CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
-    std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
+    std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), static_cast<size_t>(strViewRuntimeModInfoLength) };
     if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n') {
-        runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
+        runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, static_cast<size_t>(strViewRuntimeModInfoLength - 16 - 16) };
     }
     pcLnTab.SetRuntimeBuildModInfo(runtimeModInfo);
 

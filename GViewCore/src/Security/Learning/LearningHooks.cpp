@@ -181,6 +181,25 @@ void Shutdown() noexcept
 {
     GetSession().Shutdown();
 }
+
+#ifdef BUILD_FOR_WASM
+void OnBrowserFrame(bool pageHidden) noexcept
+{
+    try
+    {
+        auto& s = GetSession();
+        if (!s.HasSession())
+            return;
+        // the page is being hidden (tab switched, minimized, closing): send the pending telemetry while it still can
+        if (pageHidden)
+            s.RequestTelemetryFlush();
+        s.Tick(false); // timers of the session (expiry, telemetry) even when no learning window is open
+    }
+    catch (...)
+    {
+    }
+}
+#endif
 } // namespace GView::Security::Learning::Hooks
 
 namespace GView::App

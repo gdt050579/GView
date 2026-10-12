@@ -28,7 +28,7 @@ constexpr string_view FAT_ICON = "................"  // 1
                                  "................"  // 15
                                  "................"; // 16
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
     PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view&)
     {
@@ -53,9 +53,9 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<DataCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new MachOFile(file);
+        return new MachOFile(nullptr);
     }
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)

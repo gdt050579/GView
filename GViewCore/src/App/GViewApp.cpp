@@ -5,6 +5,7 @@
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
 #include "LexicalViewer.hpp"
+#include "StaticPlugins.hpp"
 #ifdef GVIEW_ENABLE_REMOTE
 #    include "../Remote/RemoteConfig.hpp"
 #endif
@@ -103,6 +104,13 @@ bool GView::App::ResetConfiguration()
     GView::View::DissasmViewer::Config::Update(ini["View.Dissasm"]);
     GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
 
+#ifdef GVIEW_STATIC_PLUGINS
+    // the plugins are linked into the executable
+    for (const auto& plugin : GView::StaticPlugins::GetTypePlugins())
+        plugin.fnUpdateSettings(ini[std::string("Type.").append(plugin.name)]);
+    for (const auto& plugin : GView::StaticPlugins::GetGenericPlugins())
+        plugin.fnUpdateSettings(ini[std::string("Generic.").append(plugin.name)]);
+#else
     // parse types and add specs
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();
     typesPath.remove_filename();
@@ -122,6 +130,7 @@ bool GView::App::ResetConfiguration()
         if ((fileEntry.path().extension() == ".gpl") && (fileEntry.path().filename().string().starts_with("lib")))
             UpdateSettingsForGenericPlugin(ini, fileEntry.path());
     }
+#endif
 
     // generic GView settings
     ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;

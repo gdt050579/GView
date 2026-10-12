@@ -47,3 +47,28 @@ jobs:
           use_vcpkg_cache: "true"
           upload_artifact: "false"
           jobs_count: "0"
+
+  # GView for web browsers (wasm32-emscripten, docs/source/wasm.rst). The site is kept as an artifact so a PR can be
+  # tried in a browser: unzip it and run `python serve.py GView`.
+  wasm:
+    name: Build (WebAssembly)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - id: build
+        uses: $/.github/actions/build-wasm
+        with:
+          use_cache: "true"
+          jobs_count: "0"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: GView-Web-wasm32
+          path: ${{ steps.build.outputs.site_dir }}
+          if-no-files-found: error
+          retention-days: 7

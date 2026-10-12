@@ -33,6 +33,19 @@
                     "value": true
                 }
             }
+        },
+        {
+            "name": "wasm",
+            "displayName": "WebAssembly (browser)",
+            "description": "GView for web browsers (wasm32-emscripten). Needs an activated emsdk (EMSDK) and ninja in PATH. See docs/source/wasm.rst",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/wasm",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VCPKG_TARGET_TRIPLET": "wasm32-emscripten",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+                "GVIEW_BINARIES_OUT_DIR": "${sourceDir}/bin/wasm"
+            }
         }
     ]
 }

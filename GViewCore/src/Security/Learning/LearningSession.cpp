@@ -251,7 +251,7 @@ LearningSession::LearningSession(Dependencies d) : deps(std::move(d)), telemetry
             cfg.caPem                   = ci.caPem;
             cfg.allowPlainHttpLocalhost = s.allowPlainHttpLocalhost;
             cfg.clientVersion           = ClientVersion();
-            return std::shared_ptr<IHttpTransport>(CreateCurlTransport(std::move(cfg)));
+            return std::shared_ptr<IHttpTransport>(CreateDefaultTransport(std::move(cfg)));
         };
     }
     if (!deps.activate)
@@ -290,6 +290,12 @@ void LearningSession::RunJob(BackgroundWorker::Job job)
         {
             c = job();
         }
+#ifdef BUILD_FOR_WASM
+        catch (const JobReplay::NetworkPending&)
+        {
+            throw; // the job waits for a response and will be run again (JobReplay.hpp)
+        }
+#endif
         catch (...)
         {
             c = nullptr;
@@ -301,7 +307,13 @@ void LearningSession::RunJob(BackgroundWorker::Job job)
                 c();
         };
     };
-    if (deps.synchronous || !frameUpdatesSeen.load(std::memory_order_acquire))
+#ifdef BUILD_FOR_WASM
+    // the page always delivers frames: jobs run on the cooperative worker (the UI keeps running while they wait)
+    const bool runInline = deps.synchronous;
+#else
+    const bool runInline = deps.synchronous || !frameUpdatesSeen.load(std::memory_order_acquire);
+#endif
+    if (runInline)
     {
         // no frame updates on this frontend (or tests): run inline, bounded by the network timeouts
         auto c = wrapped();
@@ -412,6 +424,15 @@ Utils::GStatus LearningSession::Connect(std::string_view connectionString, const
         return Utils::GStatus::Error("Invalid connection string: " + st.message);
     if (ci.publicKey.empty() && s.fallbackPublicKey.size() == 32)
         ci.publicKey = s.fallbackPublicKey;
+    {
+        // what the transport of this build can honour (the browser can not pin a private CA): refuse before connecting
+        TransportConfig probe;
+        probe.serverUrl               = ci.serverUrl;
+        probe.caPem                   = ci.caPem;
+        probe.allowPlainHttpLocalhost = s.allowPlainHttpLocalhost;
+        if (auto req = CheckTransportRequirements(probe, BROWSER_TRANSPORT, PageIsServedLocally()); !req.ok)
+            return req;
+    }
     if (HasSession() && !bindings.empty() &&
         (ci.serverUrl != info.serverUrl || ci.token.size() != info.token.size() ||
          !Crypto::Internal::ConstantTimeEquals(ci.token.data(), info.token.data(), ci.token.size())))
@@ -742,6 +763,9 @@ void LearningSession::Tick(bool drainCompletions)
         return;
     if (serverReportedExpiry.exchange(false, std::memory_order_acq_rel))
         ExpireLocally("policy_expired");
+#ifdef BUILD_FOR_WASM
+    flusher.Poll(nowMs); // no flusher thread in a web page
+#endif
     if (policy.has_value() && (state == SessionState::Active || state == SessionState::Error) &&
         Now() > policy->endsAt + RestrictedMode::POLICY_CLOCK_SKEW_SECONDS)
         ExpireLocally("policy_ended");

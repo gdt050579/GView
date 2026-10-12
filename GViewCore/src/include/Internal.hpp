@@ -7,6 +7,8 @@
 #include <span>
 #include <array>
 #include <filesystem>
+#include <map>
+#include <optional>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
@@ -510,6 +512,7 @@ namespace App
         constexpr int OPEN_PROCESS_TREE = 120003;
         constexpr int REMOTE_CONNECT    = 120004;
         constexpr int REMOTE_LISTEN     = 120005;
+        constexpr int STORED_FILES      = 120006; // web build only
 
         constexpr int CHANGE_THEME         = 130000;
         constexpr int OPEN_THEME_EDITOR    = 130001;
@@ -569,6 +572,72 @@ namespace App
     class FileWindow;
     // GView desktop (App/GViewDesktop.cpp): drives the auto-updater from OnFrameUpdate
     AppCUI::Controls::Desktop* CreateDesktop();
+
+    namespace Browser::Storage
+    {
+        // Persistent storage of the web build (App/BrowserStorage.cpp): what changed in GView's home folder since the
+        // last scan. Pure logic, compiled in every build (unit tests). Paths are relative to the home folder.
+        struct Stamp {
+            uint64 size{ 0 };
+            int64 mtimeMs{ 0 };
+            bool operator==(const Stamp&) const = default;
+        };
+        using Snapshot = std::map<std::string, Stamp>;
+        struct Changes {
+            std::vector<std::string> persist; // new or modified, unchanged for two scans in a row
+            std::vector<std::string> remove;  // stored, and missing from two scans in a row
+        };
+        constexpr size_t MAX_PATH_LENGTH = 1024;
+        // previousScan / currentScan: the last two scans; stored: what the store holds for the files of the folder
+        Changes Diff(const Snapshot& previousScan, const Snapshot& currentScan, const Snapshot& stored);
+        // relative, '/' separated, no empty / "." / ".." component, no control character or backslash
+        bool IsStorablePath(std::string_view relativePath) noexcept;
+    } // namespace Browser::Storage
+
+#ifdef BUILD_FOR_WASM
+    // GView inside a web page (App/BrowserHost.cpp, App/BrowserStorage.cpp): the files given to the page (file picker /
+    // drag & drop) are copied into the in-memory file system and opened from the desktop's OnFrameUpdate. Everything
+    // under the home folder is kept across visits in the storage of the browser (OPFS, see GView/web/gview-storage.js).
+    namespace Browser
+    {
+        void PrepareFilesFolder(); // creates $HOME/Files (where the files are copied) and makes it the current folder
+        void RestoreSettings();    // writes the settings kept in the localStorage of the page to the settings file
+        void RestoreStorage();     // copies the files kept by the previous visits back into the home folder (bounded)
+        bool OnFrame(bool desktopHasFocus);
+        // BrowserStorage.cpp: keeps the home folder in the persistent storage; pageHidden: the page was just hidden
+        bool StorageOnFrame(bool pageHidden);
+        // a file was copied into the home folder by the page, which keeps it itself (no copy through the module)
+        void NoteFileStoredByPage(const std::filesystem::path& file);
+        // the store holds this version of a file of the home folder (BrowserStorage.cpp)
+        void StorageMarkStored(const std::string& relativePath, const Storage::Stamp& stamp);
+        std::filesystem::path HomeFolder();
+        void ShowStoredFilesWindow();
+        struct StoredFile {
+            std::string path; // relative to the home folder
+            uint64 size{ 0 };
+            int64 storedAtMs{ 0 };
+            bool materialized{ false }; // also in the in-memory file system
+        };
+        bool StorageAvailable();
+        std::vector<StoredFile> StoredFiles();
+        bool IsStoredPath(const std::string& relativePath); // in the store, even if not loaded into memory
+        std::string StorageStatus();
+        // copies a stored file into the home folder (suspends GView until it is there)
+        bool MaterializeStoredFile(const std::string& relativePath, std::filesystem::path& outPath);
+        void ForgetStoredFile(const std::string& relativePath); // removes it from the store and from memory
+        void ForgetAllStoredFiles();
+        // Secrets kept by the page, encrypted in the persistent storage (never in GView.ini, which is mirrored in clear
+        // into the localStorage of the page): e.g. the Learning connection string
+        namespace Secrets
+        {
+            // Learning and Evaluation Mode keeps its connection string (it contains the access token) under this name
+            constexpr std::string_view LEARNING_CONNECTION = "learning.connectionString";
+            std::optional<std::string> Get(std::string_view name);
+            void Set(std::string_view name, std::string_view value);
+            void Remove(std::string_view name);
+        } // namespace Secrets
+    } // namespace Browser
+#endif
 
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
@@ -987,6 +1056,10 @@ namespace Security
         void ReportClientError(std::string_view constantMessage, bool fatal) noexcept;
         void ShowSubmitDialogForObject(const GView::Object* obj);
         void Shutdown() noexcept;
+#ifdef BUILD_FOR_WASM
+        // every frame of the desktop (BrowserHost.cpp); pageHidden: the page has just been hidden
+        void OnBrowserFrame(bool pageHidden) noexcept;
+#endif
 
         // convenience overloads for viewers that hold a Reference<GView::Object>
         inline void OnSimpleEvent(Reference<GView::Object> obj, SimpleEvent ev) noexcept

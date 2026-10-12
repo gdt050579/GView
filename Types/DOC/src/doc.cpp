@@ -55,7 +55,7 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
     win->CreateViewer(settings);
 }
 
-extern "C" {
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
     return true;
@@ -85,9 +85,4 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     sect["Priority"]    = 1;
     sect["Description"] = "Compound file containing VBA macros (vbaProject.bin)";
 }
-}
-
-int main()
-{
-    return 0;
 }

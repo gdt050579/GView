@@ -1,7 +1,9 @@
 #include "HttpClient.hpp"
 #include "UpdateCore.hpp"
 
-#include <curl/curl.h>
+#ifdef GVIEW_ENABLE_NETWORK
+#    include <curl/curl.h>
+#endif
 
 #include <cstdio>
 #include <fstream>
@@ -11,6 +13,7 @@ namespace GView::Update
 {
 namespace
 {
+#ifdef GVIEW_ENABLE_NETWORK
     std::once_flag g_curlInitFlag;
     bool g_curlInitOk = false;
 
@@ -230,6 +233,15 @@ namespace
             resp.body.clear();
         return resp;
     }
+#else
+    // built without libcurl (GVIEW_ENABLE_NETWORK=OFF, e.g. WebAssembly): every request fails
+    HttpGetResponse Perform(const HttpGetRequest&, std::ofstream*)
+    {
+        HttpGetResponse resp;
+        resp.error = "network access is not available in this build of GView";
+        return resp;
+    }
+#endif
 } // namespace
 
 std::string HttpGetResponse::Describe() const

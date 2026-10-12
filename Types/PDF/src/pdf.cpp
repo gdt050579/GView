@@ -33,7 +33,7 @@ constexpr string_view PDF_ICON = "................"  // 1
                                  "................"  // 15
                                  "................"; // 16
 
-extern "C" {
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
     CHECK(buf.GetLength() >= sizeof(PDF::Header), false, "");

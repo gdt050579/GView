@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
-# Uncomment this for Linux ARM architectures.
-# This will require manual installation of ninja (ninja-build).
-# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
+# Do not force vcpkg to use the system tools (VCPKG_FORCE_SYSTEM_BINARIES), not even on Linux ARM: vcpkg downloads
+# its own CMake and Ninja for arm64 too, and the system CMake 3.x can not run the vcpkg scripts any more.
 
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/AppCUI/vcpkg/scripts/buildsystems/vcpkg.cmake"
   CACHE STRING "Vcpkg toolchain file")
@@ -27,10 +26,50 @@ endif()
 
 project(${CURRENT_PROJECT_NAME} VERSION 1.0 DESCRIPTION "GView - GenericViewer" LANGUAGES C CXX)
 
+# WebAssembly (wasm32-emscripten, see docs/source/wasm.rst): GView runs inside a web page, where shared libraries can
+# not be loaded and there is no network stack, worker thread or child process available to GView.
+if (EMSCRIPTEN)
+    set(GVIEW_STATIC_PLUGINS_DEFAULT ON)
+    set(GVIEW_ENABLE_NETWORK_DEFAULT OFF)
+    set(GVIEW_ENABLE_BROWSER_NETWORK_DEFAULT ON)
+    set(GVIEW_ENABLE_REMOTE OFF CACHE BOOL "Build the remote TUI client/server (TLS 1.3, mutual TLS, OpenSSL)" FORCE)
+else()
+    set(GVIEW_STATIC_PLUGINS_DEFAULT OFF)
+    set(GVIEW_ENABLE_NETWORK_DEFAULT ON)
+    set(GVIEW_ENABLE_BROWSER_NETWORK_DEFAULT OFF)
+endif()
+option(GVIEW_STATIC_PLUGINS "Link every plugin into the GView executable instead of loading it at runtime" ${GVIEW_STATIC_PLUGINS_DEFAULT})
+# OFF: no libcurl - the auto-updater, Learning and Evaluation Mode, the Smart Assistant and FileDownloader are not
+# available (the GViewUpdater helper is not built either)
+option(GVIEW_ENABLE_NETWORK "Build the features that need network access (libcurl)" ${GVIEW_ENABLE_NETWORK_DEFAULT})
+# WebAssembly only: Learning and Evaluation Mode talks to the course server through the fetch() API of the page (the
+# browser owns TLS). The other network features (auto-updater, Smart Assistant, FileDownloader) stay unavailable.
+option(GVIEW_ENABLE_BROWSER_NETWORK "WebAssembly: Learning and Evaluation Mode over the fetch() API of the web page" ${GVIEW_ENABLE_BROWSER_NETWORK_DEFAULT})
+if (GVIEW_ENABLE_BROWSER_NETWORK AND NOT EMSCRIPTEN)
+    message(FATAL_ERROR "GVIEW_ENABLE_BROWSER_NETWORK is only available for WebAssembly (Emscripten) builds")
+endif()
+message("GVIEW_STATIC_PLUGINS => ${GVIEW_STATIC_PLUGINS}")
+message("GVIEW_ENABLE_NETWORK => ${GVIEW_ENABLE_NETWORK}")
+message("GVIEW_ENABLE_BROWSER_NETWORK => ${GVIEW_ENABLE_BROWSER_NETWORK}")
+if (GVIEW_STATIC_PLUGINS)
+    add_compile_definitions(GVIEW_STATIC_PLUGINS)
+endif()
+if (GVIEW_ENABLE_NETWORK)
+    add_compile_definitions(GVIEW_ENABLE_NETWORK)
+endif()
+if (GVIEW_ENABLE_BROWSER_NETWORK)
+    add_compile_definitions(GVIEW_BROWSER_NETWORK)
+endif()
+# Learning and Evaluation Mode can reach its course server (libcurl, or fetch() in the browser)
+if (GVIEW_ENABLE_NETWORK OR GVIEW_ENABLE_BROWSER_NETWORK)
+    add_compile_definitions(GVIEW_HAS_LEARNING_NETWORK)
+endif()
+
 include(CheckIPOSupported)
 check_ipo_supported(RESULT supported OUTPUT error)
 
-if( supported )
+# no LTO for wasm32-emscripten: the link of the single GView module is already the slowest step
+if( supported AND NOT EMSCRIPTEN )
 	message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
 	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 else()
@@ -53,7 +92,9 @@ set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(core_testing)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+if (NOT EMSCRIPTEN) # wasm32-emscripten links one static module (-fPIC would require dynamic linking)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING 
@@ -110,6 +151,23 @@ elseif (APPLE)
     endif()
     
     # install(TARGETS ${CURSES_LIBRARIES} LIBRARY DESTINATION "." NAMELINK_ONLY)    
+elseif (EMSCRIPTEN)
+    # emscripten also sets UNIX: POSIX code paths (BUILD_FOR_UNIX) + BUILD_FOR_WASM for what the browser can not do
+    add_definitions(-DBUILD_FOR_UNIX -DBUILD_FOR_WASM)
+    add_compile_options(-W)
+    # every translation unit must use the exception model AppCUI is built with (see AppCUI/CMakeLists.txt)
+    if (APPCUI_WASM_JSPI)
+        add_compile_options(-fwasm-exceptions)
+        add_link_options(-fwasm-exceptions)
+    else()
+        add_compile_options(-fexceptions)
+        add_link_options(-fexceptions)
+    endif()
+    # AppCUI is linked whole-archive (its frontends register themselves from static initializers)
+    if (NOT CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED)
+        set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE "LINKER:--whole-archive" "<LINK_ITEM>" "LINKER:--no-whole-archive")
+        set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED TRUE)
+    endif()
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
@@ -163,7 +221,9 @@ add_subdirectory(GViewCore)
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(GView)
-    add_subdirectory(GViewUpdater)
+    if (GVIEW_ENABLE_NETWORK) # helper of the auto-updater
+        add_subdirectory(GViewUpdater)
+    endif()
 endif()
 
 if (APPLE)
@@ -207,10 +267,17 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/DOC)
     add_subdirectory(Types/JPG)
     add_subdirectory(Types/XML)
-    add_subdirectory(Types/PDF)
+    if (NOT EMSCRIPTEN) # podofo, openjpeg, tiff and jbig2dec are not built for wasm32-emscripten
+        add_subdirectory(Types/PDF)
+    endif()
 
     # Generic plugins supported by GView
     add_subdirectory(GenericPlugins)
+
+    if (GVIEW_STATIC_PLUGINS)
+        include(static_plugins)
+        gview_link_static_plugins(GView)
+    endif()
                                     
     if (APPLE)
             set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")

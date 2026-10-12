@@ -2,10 +2,13 @@
 #
 # Builds, signs, attests and publishes a GitHub Release named after GVIEW_VERSION (GViewCore/include/GView.hpp).
 #
+# Assets: one native archive per OS / architecture, GView-<version>-Web-wasm32.zip (the WebAssembly build, see
+# docs/source/wasm.rst) and SHA256SUMS.
+#
 # Supply-chain properties of a release produced by this workflow:
 #   * dependencies are built from source (no vcpkg binary cache, no compiler cache) in a clean runner;
-#   * every executable / shared library / plugin inside an archive is signed with Sigstore keyless signing
-#     (the signing identity is this workflow, there is no long-lived key to leak);
+#   * every executable / shared library / plugin (and the code files of the web build) inside an archive is signed
+#     with Sigstore keyless signing (the signing identity is this workflow, there is no long-lived key to leak);
 #   * every archive gets a SLSA build-provenance attestation (`gh attestation verify`);
 #   * SHA256SUMS lists every archive.
 name: "Deploy release"
@@ -69,13 +72,53 @@ jobs:
           sign_binaries: "true"
 
   # --------------------------------------------------
+  # GView for web browsers (docs/source/wasm.rst): the static site as GView-<version>-Web-wasm32.zip, for running a
+  # pinned, verifiable version offline or on an own web server. Same guarantees as the native archives: fresh emsdk,
+  # dependencies built from source, signed code files, provenance + SHA256SUMS below. The name carries no OS, so the
+  # in-app updater never selects it.
+  # --------------------------------------------------
+  build-wasm:
+    name: Build (WebAssembly)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write   # Sigstore keyless signing (cosign)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Build, sign & package
+        id: build
+        uses: $/.github/actions/build-wasm
+        with:
+          use_cache: "false"
+          jobs_count: "0"
+          sign_binaries: "true"
+          package: "true"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # matches the build-*-Release pattern of the publish job
+          name: build-Web-wasm32-Release
+          path: |
+            ${{ steps.build.outputs.archive }}
+            ${{ steps.build.outputs.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  # --------------------------------------------------
   # Publish to GitHub Release
   # --------------------------------------------------
   publish:
     name: "Publish to GitHub Release"
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [build-all]
+    needs: [build-all, build-wasm]
     permissions:
       contents: write       # create the tag + release and upload assets
       id-token: write       # sign the provenance attestation
@@ -157,6 +200,12 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
             libPE.tpl
           \`\`\`
+
+          ## GView in a web browser
+
+          \`GView-${GVIEW_VERSION}-Web-wasm32.zip\` is GView compiled to WebAssembly: unzip it and run
+          \`python serve.py GView\` (or put the files on any static web server). The files you open never leave the
+          browser tab. The latest build from \`main\` also runs at https://${REPO%%/*}.github.io/${REPO#*/}/app/GView.html.
 
           EOF
           cat release-notes.md

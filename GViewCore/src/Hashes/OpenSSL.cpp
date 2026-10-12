@@ -77,7 +77,7 @@ std::string_view OpenSSLHash::GetHexValue()
     }
     memcpy(hexDigest, ls.GetText(), size * 2ULL);
 
-    return { hexDigest, size * 2ULL };
+    return { hexDigest, static_cast<size_t>(size * 2ULL) };
 }
 
 const uint8* OpenSSLHash::Get() const

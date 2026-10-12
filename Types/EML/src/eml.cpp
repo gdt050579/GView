@@ -60,7 +60,7 @@ void BuildViews(Reference<GView::View::WindowInterface> win, Reference<EML::EMLF
     eml->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(bSettings);
 }
 
-extern "C" {
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView&, const std::string_view&)
 {
     // no validation atm

@@ -10,6 +10,7 @@
 //  - when the policy disables telemetry (or there is no policy) Record() is a no-op and no thread is started.
 
 #include "LearningHttp.hpp"
+#include "BackgroundWorker.hpp"
 
 #include <condition_variable>
 #include <deque>
@@ -152,6 +153,16 @@ class TelemetryFlusher
     ExpiredSignal onPolicyExpired;
     uint32 intervalSeconds{ 60 };
 
+#ifdef BUILD_FOR_WASM
+    // No threads in a web page: LearningSession::Tick calls Poll() and the flushes run as jobs of a BackgroundWorker
+    // (re-run when their response arrives, JobReplay.hpp). Everything runs on the UI thread: no lock is needed.
+    BackgroundWorker flushWorker;
+    bool running{ false };
+    bool flushRequested{ false };
+    bool flushInFlight{ false };
+    uint64 nextFlushMs{ 0 };
+    std::atomic<bool> cancel{ false };
+#else
     std::thread worker;
     std::mutex mtx;
     std::condition_variable cv;
@@ -161,6 +172,9 @@ class TelemetryFlusher
     std::mutex flushMutex; // serialises FlushOnce between the worker and FlushSync
 
     void Run();
+#endif
+    // one flush cycle: keeps sending while full batches are accepted (bounded)
+    void FlushRound();
 
   public:
     TelemetryFlusher() = default;
@@ -175,8 +189,16 @@ class TelemetryFlusher
     void Stop();
     bool IsRunning() const noexcept
     {
+#ifdef BUILD_FOR_WASM
+        return running;
+#else
         return worker.joinable();
+#endif
     }
+#ifdef BUILD_FOR_WASM
+    // UI thread (LearningSession::Tick): starts a flush when the interval elapsed or one was requested
+    void Poll(uint64 nowMs);
+#endif
     // One flush attempt (used by the thread and by tests). Returns the outcome, or nullopt if nothing was sent.
     static std::optional<FlushOutcome> FlushOnce(
           IHttpTransport& transport, TelemetryCollector& collector, const BatchMeta& meta, long timeoutSeconds, const std::atomic<bool>* cancel,

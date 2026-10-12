@@ -96,7 +96,9 @@ runs:
       run: |
         set -euo pipefail
         sudo apt-get update -y
-        pkgs=(build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev)
+        # autoconf, autoconf-archive, automake, libtool: vcpkg ports built with vcpkg_make_configure run autoreconf
+        # (e.g. gperf, a host tool of libsystemd / fontconfig)
+        pkgs=(build-essential ninja-build libsdl2-dev libsdl2-ttf-dev libltdl-dev autoconf autoconf-archive automake libtool)
         # The multilib packages only exist on x86 (they add the 32-bit cross toolchain). Nothing in GView needs
         # them, but they stay on X64 so that lane is unchanged.
         if [ "$RUNNER_ARCH_NAME" = "X64" ]; then
@@ -165,6 +167,14 @@ runs:
         CMAKE_C_COMPILER_LAUNCHER: ${{ inputs.use_ccache == 'true' && runner.os == 'Linux' && 'ccache' || '' }}
         CMAKE_CXX_COMPILER_LAUNCHER: ${{ inputs.use_ccache == 'true' && runner.os == 'Linux' && 'ccache' || '' }}
       run: |
+        # VCPKG_FORCE_SYSTEM_BINARIES makes vcpkg use the CMake / Ninja found in PATH whatever their version. Runner
+        # images can export it (from the time vcpkg had no arm64 tools), but the runner's CMake 3.x can not run the
+        # vcpkg scripts any more (string(JSON ... STRING_ENCODE) needs CMake 4). Without it vcpkg uses its pinned,
+        # checksum-verified CMake and Ninja on every architecture (AppCUI/vcpkg/scripts/vcpkg-tools.json).
+        if [ -n "${VCPKG_FORCE_SYSTEM_BINARIES+x}" ]; then
+          echo "Ignoring VCPKG_FORCE_SYSTEM_BINARIES='$VCPKG_FORCE_SYSTEM_BINARIES' set by the runner image"
+          unset VCPKG_FORCE_SYSTEM_BINARIES
+        fi
         cmake -S . -B build \
           -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
           -DENABLE_TESTS="$ENABLE_TESTS" \

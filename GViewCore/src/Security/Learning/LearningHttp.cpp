@@ -1,12 +1,16 @@
 #include "LearningHttp.hpp"
+#include "Telemetry.hpp" // CurrentPlatform()
 
-#include <curl/curl.h>
+#ifdef GVIEW_ENABLE_NETWORK
+#    include <curl/curl.h>
+#endif
 #include <mutex>
 
 namespace GView::Security::Learning
 {
 namespace
 {
+#ifdef GVIEW_ENABLE_NETWORK
     constexpr size_t MAX_HEADER_COUNT       = 64;
     constexpr size_t MAX_HEADER_LINE_LENGTH = 8 * 1024;
 
@@ -17,18 +21,6 @@ namespace
     {
         std::call_once(g_curlInitFlag, []() { g_curlInitOk = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK; });
         return g_curlInitOk;
-    }
-
-    bool IsValidRequestPath(std::string_view path) noexcept
-    {
-        if (!path.starts_with("/GView/") || path.size() > 256)
-            return false;
-        for (char c : path)
-        {
-            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' || c == '_' || c == '-'))
-                return false;
-        }
-        return path.find("//") == std::string_view::npos;
     }
 
     struct TransferContext {
@@ -145,7 +137,7 @@ namespace
         HttpResponse Post(const HttpRequest& req) override
         {
             HttpResponse resp;
-            if (!IsValidRequestPath(req.path))
+            if (!Detail::IsValidRequestPath(req.path))
             {
                 resp.transportError = "invalid request path";
                 return resp;
@@ -273,7 +265,38 @@ namespace
             return resp;
         }
     };
+#else
+    // built without libcurl (GVIEW_ENABLE_NETWORK=OFF, e.g. WebAssembly): every request fails with a transport error
+    class CurlTransport : public IHttpTransport
+    {
+      public:
+        explicit CurlTransport(TransportConfig)
+        {
+        }
+        void SetPolicyId(std::string_view) override
+        {
+        }
+        HttpResponse Post(const HttpRequest&) override
+        {
+            HttpResponse resp;
+            resp.transportError = "network access is not available in this build of GView";
+            return resp;
+        }
+    };
+#endif
 } // namespace
+
+bool Detail::IsValidRequestPath(std::string_view path) noexcept
+{
+    if (!path.starts_with("/GView/") || path.size() > 256)
+        return false;
+    for (char c : path)
+    {
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' || c == '_' || c == '-'))
+            return false;
+    }
+    return path.find("//") == std::string_view::npos;
+}
 
 bool Detail::AppendBodyWithCap(HttpResponse& response, const uint8* data, size_t size, size_t cap)
 {
@@ -317,7 +340,7 @@ ServerError HttpResponse::ToError() const
 std::vector<SecureString> BuildRequestHeaders(const SecureString& token, std::string_view clientVersion, std::string_view policyId)
 {
     std::vector<SecureString> h;
-    h.reserve(4);
+    h.reserve(5);
     SecureString auth("XAppUserID: ");
     auth.append(token.data(), token.size());
     h.push_back(std::move(auth));
@@ -325,6 +348,11 @@ std::vector<SecureString> BuildRequestHeaders(const SecureString& token, std::st
     client.append(clientVersion.data(), clientVersion.size());
     h.push_back(std::move(client));
     h.emplace_back("X-GView-Protocol: 2");
+    // lets the server issue a policy suited to the platform (e.g. "web-wasm32": no screen protection, no locked memory)
+    SecureString platform("X-GView-Platform: ");
+    const auto platformName = CurrentPlatform();
+    platform.append(platformName.data(), platformName.size());
+    h.push_back(std::move(platform));
     if (!policyId.empty())
     {
         SecureString pol("X-GView-Policy: ");
@@ -337,5 +365,42 @@ std::vector<SecureString> BuildRequestHeaders(const SecureString& token, std::st
 std::unique_ptr<IHttpTransport> CreateCurlTransport(TransportConfig config)
 {
     return std::make_unique<CurlTransport>(std::move(config));
+}
+
+#ifndef GVIEW_BROWSER_NETWORK
+bool PageIsServedLocally() noexcept
+{
+    return false;
+}
+#endif
+
+std::unique_ptr<IHttpTransport> CreateDefaultTransport(TransportConfig config)
+{
+#ifdef GVIEW_BROWSER_NETWORK
+    return CreateFetchTransport(std::move(config));
+#else
+    return CreateCurlTransport(std::move(config));
+#endif
+}
+
+Utils::GStatus CheckTransportRequirements(const TransportConfig& config, bool browserTransport, bool pageIsLocal)
+{
+    if (!browserTransport)
+        return Utils::GStatus::Ok();
+    if (!config.caPem.empty())
+        return Utils::GStatus::Error(
+              "This course server uses a private certificate authority (caPem in the connection string). The browser always "
+              "uses the certificate store of the system and can not be restricted to that authority, so the connection is "
+              "refused. Use the desktop GView, or ask for a server certificate issued by a public authority.");
+    if (config.serverUrl.starts_with("http://"))
+    {
+        if (!config.allowPlainHttpLocalhost || !pageIsLocal)
+            return Utils::GStatus::Error(
+                  "Plain HTTP is refused in the browser. It is only allowed for local development: the page served from the "
+                  "same machine and [GView] LearningAllowPlainHttpLocalhost=true.");
+    }
+    else if (!config.serverUrl.starts_with("https://"))
+        return Utils::GStatus::Error("The course server must be an https:// URL.");
+    return Utils::GStatus::Ok();
 }
 } // namespace GView::Security::Learning
