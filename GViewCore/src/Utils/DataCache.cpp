@@ -2,7 +2,7 @@
 
 using namespace GView::Utils;
 
-constexpr uint32 MAX_CACHE_SIZE = 0x20000000U; // 16 M
+constexpr uint32 MAX_CACHE_SIZE = 0x20000000U; // 512 M
 
 DataCache::DataCache()
 {
@@ -68,78 +68,69 @@ BufferView DataCache::Get(uint64 offset, uint32 requestedSize, bool failIfReques
     CHECK(this->fileObj, BufferView(), "File was not properly initialized !");
     CHECK(requestedSize > 0, BufferView(), "'requestedSize' has to be bigger than 0 ");
 
-    if (offset >= this->start)
-    {
-        // data is cached --> return from here
-        if ((offset + requestedSize) <= this->end)
-        {
-            this->currentPos = offset + requestedSize;
-            return BufferView(&this->cache[offset - this->start], requestedSize);
-        }
-        if (this->end == this->fileSize)
-        {
-            // data is not cache (and we are at the end of the file with the case)
-            if (failIfRequestedSizeCanNotBeRead)
-                return BufferView();
-            this->currentPos = this->fileSize;
-            return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
-        }
-    }
-    // request outside file
+    // request outside file (this also covers empty files)
     if (offset >= this->fileSize)
         return BufferView();
+
+    // number of bytes that can be returned: limited by the end of the file and by the cache size
+    // (offset < fileSize, so the subtraction can not underflow and no 'offset + size' sum is ever computed)
+    const uint64 availableInFile = this->fileSize - offset;
+    const uint32 sz              = (uint32) std::min<uint64>(std::min<uint64>(requestedSize, availableInFile), this->cacheSize);
+    if ((sz < requestedSize) && (failIfRequestedSizeCanNotBeRead))
+        return BufferView();
+
+    // data is cached --> return from here
+    if ((offset >= this->start) && (offset < this->end) && (sz <= this->end - offset))
+    {
+        this->currentPos = offset + sz;
+        return BufferView(&this->cache[offset - this->start], sz);
+    }
+
     // data is not available in cache ==> read it
-    uint64 _start, _end;
+    uint64 newStart, newEnd;
     if (this->fileSize <= this->cacheSize)
     {
         // read everything
-        _start = 0;
-        _end   = this->fileSize;
+        newStart = 0;
+        newEnd   = this->fileSize;
     }
     else
     {
-        // compute the new buffer to read
-        auto sz = requestedSize;
-        if ((offset + sz) > this->fileSize)
-            sz = (uint32) (this->fileSize - offset);
-        if (sz > this->cacheSize)
-            sz = this->cacheSize;
-        auto diff = this->cacheSize - sz;
-        if (diff <= offset)
-            _start = offset - diff;
+        // Always fill the entire cache, positioned so that most of it is read-ahead in the direction of the access.
+        // A small slack is kept on the opposite side so that re-reading data just before (or after) the request is still a hit.
+        // Without this, a forward sequential parse of small objects reloads the whole cache for every object.
+        const uint64 slack   = std::min<uint64>(this->cacheSize >> 4, this->cacheSize - sz);
+        const bool backwards = (offset < this->start) && (this->start - offset <= this->cacheSize);
+        if (backwards)
+        {
+            // scrolling / reading backwards --> keep the request at the end of the window
+            const uint64 before = this->cacheSize - (sz + slack);
+            newStart            = offset > before ? offset - before : 0;
+        }
         else
-            _start = 0;
-        _end = _start + this->cacheSize;
-        if (_end > this->fileSize)
-            _end = this->fileSize;
+        {
+            // forward or random access --> keep the request at the start of the window
+            newStart = offset > slack ? offset - slack : 0;
+        }
+        // keep the window inside the file (and full)
+        newStart = std::min<uint64>(newStart, this->fileSize - this->cacheSize);
+        newEnd   = newStart + this->cacheSize;
     }
     // read new data in cache
-    if (this->fileObj->SetCurrentPos(_start) == false)
+    if (this->fileObj->SetCurrentPos(newStart) == false)
         return BufferView();
-    if (this->fileObj->Read(this->cache, (uint32) (_end - _start)) == false)
+    if (this->fileObj->Read(this->cache, (uint32) (newEnd - newStart)) == false)
     {
         this->start = 0;
         this->end   = 0;
         return BufferView();
     }
-    // return new pointer
-    this->start = _start;
-    this->end   = _end;
-    if ((offset + requestedSize) <= this->end)
-    {
-        this->currentPos = offset + requestedSize;
-        return BufferView(&this->cache[offset - this->start], requestedSize);
-    }
-    // the entire data is not in our cache
-    if (failIfRequestedSizeCanNotBeRead)
-        return BufferView();
-    if (this->end == this->fileSize)
-    {
-        this->currentPos = this->fileSize;
-        return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
-    }
-    this->currentPos = this->end;
-    return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
+    this->start = newStart;
+    this->end   = newEnd;
+    // the new window always contains [offset, offset + sz) - fail closed if that invariant is ever broken
+    CHECK((offset >= this->start) && (offset < this->end) && (sz <= this->end - offset), BufferView(), "Invalid cache window computed !");
+    this->currentPos = offset + sz;
+    return BufferView(&this->cache[offset - this->start], sz);
 }
 bool DataCache::CopyObject(void* buffer, uint64 offset, uint32 requestedSize)
 {
@@ -161,7 +152,8 @@ Buffer DataCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
 
     Buffer b{};
     b.Resize(requestedSize);
-    uint32 toRead = this->cacheSize >> 1;
+    // whole-cache chunks: every cache refill is fully consumed
+    uint32 toRead = this->cacheSize;
     auto p        = b.GetData();
     while (requestedSize)
     {
@@ -206,7 +198,8 @@ bool DataCache::WriteTo(Reference<AppCUI::OS::DataObject> output, uint64 offset,
     if (size == 0)
         return true; // nothing to write
 
-    uint32 toRead = this->cacheSize >> 1;
+    // whole-cache chunks: every cache refill is fully consumed
+    uint32 toRead = this->cacheSize;
     while (size)
     {
         toRead  = std::min(toRead, size);
