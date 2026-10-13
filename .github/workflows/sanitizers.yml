@@ -32,7 +32,11 @@ jobs:
       LDFLAGS: -fsanitize=address,undefined
       # LeakSanitizer stays off until the leak baseline (third-party static initialisers included) is triaged;
       # memory-safety errors are the signal this lane exists for.
-      ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1:strict_string_checks=1
+      # detect_odr_violation=1: C++17 inline variables (e.g. std::piecewise_construct) are emitted both in the test
+      # executable and in the instrumented libAppCUI.so; symbol interposition makes GCC's ASan register the same address
+      # twice and level 2 (default) reports that as an ODR violation. Level 1 still reports real ones (size mismatch).
+      # This env is also in effect at build time, where catch_discover_tests runs the test binary.
+      ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1:strict_string_checks=1:detect_odr_violation=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

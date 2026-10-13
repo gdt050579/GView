@@ -1,8 +1,8 @@
-#include <catch.hpp>
 #include "DissasmCodeZone.hpp"
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
+#include <catch.hpp>
 #include <array>
 
 using namespace GView::View::DissasmViewer;
@@ -31,10 +31,6 @@ class DummyType : public GView::TypeInterface
 
     TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
     {
-        static auto d = TypeInterface::SelectionZone{ 0, 0 };
-        // CHECK(selectionZoneInterface.IsValid(), d, "");
-        // CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
-
         return selectionZoneInterface->GetSelectionZone(index);
     }
 };
@@ -42,7 +38,7 @@ class DummyType : public GView::TypeInterface
 struct ZoneCheckData {
     uint32 indexZoneStart;
     uint32 indexZoneEnd;
-    bool shouldHaveName;
+    bool shouldHaveName = false;
 };
 
 struct ZoneBeforeLines {
@@ -374,7 +370,7 @@ class DissasmTestInstance
     bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
     {
         if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
+            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
             return false;
         }
 
@@ -383,7 +379,7 @@ class DissasmTestInstance
             childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
 
         if (childrenToCheck->size() != zones.size()) {
-            printf("ERROR: invalid zone length %d >= %llu", zoneIndex, childrenToCheck->size());
+            printf("ERROR: invalid zone length %d >= %zu", zoneIndex, childrenToCheck->size());
             return false;
         }
 
@@ -407,7 +403,7 @@ class DissasmTestInstance
     bool CheckBeforeLinesData(uint32 zoneIndex, std::initializer_list<ZoneBeforeLines> zones)
     {
         if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
+            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
             return false;
         }
 
@@ -417,7 +413,7 @@ class DissasmTestInstance
 
         for (auto& z : zones) {
             if (z.zoneIndex >= childrenToCheck->size()) {
-                printf("ERROR: invalid zone index %d >= %llu", z.zoneIndex, childrenToCheck->size());
+                printf("ERROR: invalid zone index %d >= %zu", z.zoneIndex, childrenToCheck->size());
                 return false;
             }
             const auto& it = (*childrenToCheck)[z.zoneIndex];
@@ -948,7 +944,6 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
-    uint32 zoneEndingIndex = 4572;
     // dissasmInstance.PrintInstructions(20);
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));

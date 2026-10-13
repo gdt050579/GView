@@ -1,9 +1,9 @@
 // Unit tests for GView::Utils::UTF16ToUTF8 / UTF16ToPath. The input is usually attacker-controlled (file paths, e-mail
 // headers, document content), so unpaired surrogates must never throw and must always produce valid UTF-8.
 
-#include <catch.hpp>
-
 #include "Internal.hpp"
+
+#include <catch.hpp>
 
 #include <string>
 

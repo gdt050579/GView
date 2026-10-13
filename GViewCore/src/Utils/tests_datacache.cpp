@@ -2,9 +2,9 @@
 // (attacker-controlled) files, so out-of-range and overflowing requests are exercised next to the I/O behaviour
 // (number of reads issued to the underlying object for sequential, backward and random access patterns).
 
-#include <catch.hpp>
-
 #include "Internal.hpp"
+
+#include <catch.hpp>
 
 #include <algorithm>
 #include <cstring>

@@ -1,9 +1,9 @@
 // Unit tests for Learning and Evaluation Mode (plans/LEARNING_MODE_PROTOCOL_SPEC.md §8, T1-T8).
 // No network: an in-process FakeTransport plays the course server; policies are signed with a fresh Ed25519 key.
 
-#include <catch.hpp>
-
 #include "Learning/LearningSession.hpp"
+
+#include <catch.hpp>
 
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>

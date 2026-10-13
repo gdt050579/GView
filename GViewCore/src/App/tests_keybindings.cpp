@@ -1,5 +1,5 @@
-#include <catch.hpp>
 #include "KeyBindings.hpp"
+#include <catch.hpp>
 
 using namespace GView::App::Keys;
 using AppCUI::Input::Key;
