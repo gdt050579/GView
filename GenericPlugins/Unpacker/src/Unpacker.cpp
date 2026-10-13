@@ -400,6 +400,11 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
     return false;
 }
 
+PLUGIN_EXPORT void RegisterPlugin([[maybe_unused]] Reference<GView::PluginRegistry> registry)
+{
+    // static metadata of the plugin: no HDF vocabulary yet (see docs/source/hdf.rst)
+}
+
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
     sect["Command.Unpacker"] = Input::Key::Alt | Input::Key::F10;

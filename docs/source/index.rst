@@ -21,6 +21,7 @@ The files you open stay in your browser tab. See :doc:`wasm`.
    learning_mode_protocol
    remote_protocol
    architecture
+   hdf
    configuration
    updates
    wasm

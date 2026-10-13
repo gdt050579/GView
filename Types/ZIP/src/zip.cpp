@@ -105,6 +105,11 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     return true;
 }
 
+PLUGIN_EXPORT void RegisterPlugin([[maybe_unused]] Reference<GView::PluginRegistry> registry)
+{
+    // static metadata of the plugin: no HDF vocabulary yet (see docs/source/hdf.rst)
+}
+
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
     static const std::initializer_list<std::string> patterns = {

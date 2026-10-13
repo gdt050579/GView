@@ -19,3 +19,8 @@ void GView::View::ImageViewer::Commands::RegisterKeys(KeyboardControlsInterface*
     interface->RegisterKeyText("+ / =", "ZoomInChar", "Zoom in the picture");
     interface->RegisterKeyText("- / _", "ZoomOutChar", "Zoom out the picture");
 }
+
+void GView::View::ImageViewer::RegisterHDFVocabulary([[maybe_unused]] GView::HDF::VocabularyBuilderInterface& builder)
+{
+    // the Image viewer discloses no HDF assertions today
+}

@@ -252,10 +252,10 @@ void StreamManager::InitStreamManager(Reference<GView::View::WindowInterface> wi
 std::vector<uint16> StreamManager::GetConnectionsWithJSScripts() const
 {
     if (empty())
-    return {};
+        return {};
 
     std::vector<uint16> result;
-    for (uint16 i=0;i<(uint16)finalStreams.size();i++) {
+    for (uint16 i = 0; i < (uint16) finalStreams.size(); i++) {
         const auto& stream = finalStreams[i];
         if (stream.summary.ends_with(".js"))
             result.push_back(i);

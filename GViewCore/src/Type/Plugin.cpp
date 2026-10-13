@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "StaticPlugins.hpp"
+#include "../HDF/Engine.hpp"
 
 using namespace GView::Type;
 using namespace GView::Utils;
@@ -63,6 +64,7 @@ Plugin::Plugin()
     this->fnValidate       = nullptr;
     this->fnCreateInstance = nullptr;
     this->fnPopulateWindow = nullptr;
+    this->fnRegisterPlugin = nullptr;
 }
 void Plugin::InitDefaultPlugin()
 {
@@ -164,6 +166,9 @@ bool Plugin::LoadPlugin()
     this->fnValidate       = entry->fnValidate;
     this->fnCreateInstance = entry->fnCreateInstance;
     this->fnPopulateWindow = entry->fnPopulateWindow;
+    this->fnRegisterPlugin = entry->fnRegisterPlugin;
+    if (auto hdf = GView::App::GetHDFEngine(); hdf.IsValid())
+        hdf->OnModuleLoaded(GView::HDF::TypePluginGenerator(this->GetName()), this->fnRegisterPlugin);
     return true;
 #else
     AppCUI::OS::Library lib;
@@ -182,6 +187,11 @@ bool Plugin::LoadPlugin()
     CHECK(fnValidate, false, "Missing 'Validate' export !");
     CHECK(fnCreateInstance, false, "Missing 'CreateInstance' export !");
     CHECK(fnPopulateWindow, false, "Missing 'PopulateWindow' export !");
+
+    // optional: the HDF vocabulary the plugin can disclose, checked against HDF.json (runtime drift check)
+    this->fnRegisterPlugin = lib.GetFunction<decltype(this->fnRegisterPlugin)>("RegisterPlugin");
+    if (auto hdf = GView::App::GetHDFEngine(); hdf.IsValid())
+        hdf->OnModuleLoaded(GView::HDF::TypePluginGenerator(this->GetName()), this->fnRegisterPlugin);
 
     return true;
 #endif

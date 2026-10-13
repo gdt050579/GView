@@ -295,3 +295,8 @@ const vector<Property> Instance::GetPropertiesList()
     };
 }
 #undef BT
+
+void GView::View::BufferViewer::RegisterHDFVocabulary([[maybe_unused]] GView::HDF::VocabularyBuilderInterface& builder)
+{
+    // the Buffer viewer discloses no HDF assertions today
+}

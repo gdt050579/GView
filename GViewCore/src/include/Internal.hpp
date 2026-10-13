@@ -16,6 +16,10 @@ using namespace AppCUI::Utils;
 
 namespace GView
 {
+namespace HDF
+{
+    class Engine; // GViewCore/src/HDF/Engine.hpp
+}
 namespace Utils
 {
     class Selection
@@ -299,6 +303,7 @@ namespace Generic
         } Commands[MAX_PLUGINS_COMMANDS];
         uint32 CommandsCount;
         bool (*fnRun)(const string_view command, Reference<GView::Object> currentObject);
+        void (*fnRegisterPlugin)(Reference<GView::PluginRegistry> registry); // optional static metadata (HDF vocabulary)
 
       public:
         Plugin();
@@ -452,6 +457,7 @@ namespace Type
         bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
         TypeInterface* (*fnCreateInstance)();
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
+        void (*fnRegisterPlugin)(Reference<GView::PluginRegistry> registry); // optional static metadata (HDF vocabulary)
 
         bool LoadPlugin();
 
@@ -531,7 +537,7 @@ namespace App
         constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
         constexpr int CMD_OPEN_ADD_NOTE         = 30012352;
         constexpr int CMD_LEARNING_SUBMIT_FLAG  = 30012353;
-        constexpr int CMD_ANALYSIS_ENGINE       = 30012354;
+        constexpr int CMD_HDF                   = 30012354;
 
         using KF = GView::KeyboardControlFlags;
         // GView (window level) keys. `inline` -> one object shared by every translation unit (the key bindings
@@ -551,7 +557,7 @@ namespace App
         inline GView::KeyboardControl INSTANCE_PREVIOUS_WINDOW   = { Input::Key::Shift | Input::Key::Tab, "PreviousWindow", "Switch to the previous window (when the viewer has the focus)", 0 };
         inline GView::KeyboardControl INSTANCE_FOCUS_VIEWER      = { Input::Key::Escape, "FocusViewer", "Move the focus from a panel back to the viewer", 0 };
         inline GView::KeyboardControl INSTANCE_WINDOWS_MANAGER   = { Input::Key::Alt | Input::Key::N0, "WindowsManager", "Show the windows manager", MenuCommands::SHOW_WINDOW_MANAGER, KF::RequiresRestart };
-        inline GView::KeyboardControl INSTANCE_ANALYSIS_ENGINE   = { Input::Key::Alt | Input::Key::F12, "AnalysisEngine", "Show the AnalysisEngine", CMD_ANALYSIS_ENGINE };
+        inline GView::KeyboardControl INSTANCE_HDF = { Input::Key::Alt | Input::Key::F12, "HDF", "Show the Hybrid Disclosure Framework window", CMD_HDF };
         inline GView::KeyboardControl INSTANCE_LEARNING_SUBMIT_FLAG = {
             Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
         };
@@ -562,16 +568,26 @@ namespace App
         };
 
         inline const std::array<GView::KeyboardControl*, 18> GViewKeys = {
-            &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_CHANGE_VIEW,     &INSTANCE_SWITCH_TO_VIEW,  &INSTANCE_COMMAND_GOTO,  &FILE_WINDOW_COMMAND_GOTO,
-            &FILE_WINDOW_COMMAND_FIND,  &INSTANCE_COMMAND_FIND,    &FILE_WINDOW_COMMAND_COPY, &FILE_WINDOW_COMMAND_INSERT, &INSTANCE_CHOOSE_TYPE,
-            &INSTANCE_OPEN_ADD_NOTE,    &INSTANCE_NEXT_WINDOW,     &INSTANCE_PREVIOUS_WINDOW, &INSTANCE_FOCUS_VIEWER,  &INSTANCE_WINDOWS_MANAGER,
-            &INSTANCE_EXIT,             &INSTANCE_LEARNING_SUBMIT_FLAG, &INSTANCE_ANALYSIS_ENGINE,
+            &INSTANCE_KEY_CONFIGURATOR,     &INSTANCE_CHANGE_VIEW,
+            &INSTANCE_SWITCH_TO_VIEW,       &INSTANCE_COMMAND_GOTO,
+            &FILE_WINDOW_COMMAND_GOTO,      &FILE_WINDOW_COMMAND_FIND,
+            &INSTANCE_COMMAND_FIND,         &FILE_WINDOW_COMMAND_COPY,
+            &FILE_WINDOW_COMMAND_INSERT,    &INSTANCE_CHOOSE_TYPE,
+            &INSTANCE_OPEN_ADD_NOTE,        &INSTANCE_NEXT_WINDOW,
+            &INSTANCE_PREVIOUS_WINDOW,      &INSTANCE_FOCUS_VIEWER,
+            &INSTANCE_WINDOWS_MANAGER,      &INSTANCE_EXIT,
+            &INSTANCE_LEARNING_SUBMIT_FLAG, &INSTANCE_HDF,
         };
         // registers the GView keys (section "GView")
         void RegisterGViewKeys(KeyboardControlsInterface* interface);
     } // namespace InstanceCommands
 
     class FileWindow;
+    // HDF (GViewCore/src/HDF): the engine of the running application (invalid in the unit tests and the CLI tooling)
+    Reference<GView::HDF::Engine> GetHDFEngine();
+    // <ReanalyzeSelection>(x) for the subject of the current file window: open() opens the selected range [offset, offset+size)
+    // as a new object whose window attaches to the subject created by the step (falls back to open() alone)
+    bool ReanalyzeSelection(uint64 offset, uint64 size, std::string_view name, const std::function<bool()>& open);
     // GView desktop (App/GViewDesktop.cpp): drives the auto-updater from OnFrameUpdate
     AppCUI::Controls::Desktop* CreateDesktop();
 
@@ -651,7 +667,7 @@ namespace App
         AppCUI::Controls::Menu* mnuOptions;
         std::vector<GView::Type::Plugin> typePlugins;
         std::vector<GView::Generic::Plugin> genericPlugins;
-        Pointer<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
+        Pointer<GView::HDF::Engine> hdf;
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
@@ -721,7 +737,7 @@ namespace App
 
       public:
         Instance();
-        virtual ~Instance() {}
+        virtual ~Instance();
         bool Init(bool isTestingEnabled);
         bool AddFileWindow(
               const std::filesystem::path& path,
@@ -797,9 +813,9 @@ namespace App
         uint32 GetTypePluginsCount();
         std::string_view GetTypePluginName(uint32 index);
         std::string_view GetTypePluginDescription(uint32 index);
-        Reference<Components::AnalysisEngine::AnalysisEngineInterface> GetAnalysisEngine() const
+        Reference<GView::HDF::Engine> GetHDF() const
         {
-            return analysisEngine.get();
+            return hdf.get();
         }
     };
 
@@ -909,7 +925,7 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
         QueryInterfaceImpl::GViewQueryInterface queryInterface;
-        Components::AnalysisEngine::Subject subject;
+        GView::HDF::Subject subject;
 
         void ShowFilePropertiesDialog();
         void ShowGoToDialog();
@@ -918,7 +934,10 @@ namespace App
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
-        void InitialiseAnalysisEngineData(Reference<GView::Components::AnalysisEngine::Subject> parentSubject = nullptr);
+        // the HDF subject of the window: attaches to the subject created by a running step, to a child of parent, or starts a new
+        // disclosure session; EndHDFAttach closes the initial extraction Init_T(subject) once PopulateWindow returned
+        void AttachToHDF(Reference<Window> parent, bool hasContent);
+        void EndHDFAttach();
         void Start();
 
         Reference<Object> GetObject() override;
@@ -931,8 +950,8 @@ namespace App
         bool CreateViewer(View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(View::LexicalViewer::Settings& settings) override;
         Reference<CommonInterfaces::QueryInterface> GetQueryInterface() override;
-        Reference<Components::AnalysisEngine::AnalysisEngineInterface> GetAnalysisEngine() override;
-        Reference<Components::AnalysisEngine::Subject> GetCurrentWindowSubject() override;
+        Reference<GView::HDF::EngineInterface> GetHDF() override;
+        GView::HDF::Subject GetSubject() const override;
 
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 

@@ -607,3 +607,9 @@ class DissasmDialog : public Window, public Handlers::OnCheckInterface
 };
 
 } // namespace GView::View::BufferViewer
+
+namespace GView::View::BufferViewer
+{
+// HDF vocabulary declared by this viewer (generator "SmartViewer:Buffer", see GViewCore/src/HDF/CoreVocabulary.cpp)
+void RegisterHDFVocabulary(GView::HDF::VocabularyBuilderInterface& builder);
+} // namespace GView::View::BufferViewer

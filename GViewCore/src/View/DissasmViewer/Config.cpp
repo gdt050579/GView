@@ -285,3 +285,8 @@ void GView::View::DissasmViewer::OnKeysChanged()
 {
     Config::Map.Build(Config::KeyEventCommands);
 }
+
+void GView::View::DissasmViewer::RegisterHDFVocabulary([[maybe_unused]] GView::HDF::VocabularyBuilderInterface& builder)
+{
+    // the Dissasm viewer discloses no HDF assertions today
+}

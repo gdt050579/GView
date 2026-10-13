@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "StaticPlugins.hpp"
+#include "../HDF/Engine.hpp"
 
 using namespace GView::Generic;
 using namespace GView::Utils;
@@ -10,8 +11,9 @@ namespace GView::Generic
 
 Plugin::Plugin()
 {
-    this->CommandsCount = 0;
-    this->fnRun         = nullptr;
+    this->CommandsCount    = 0;
+    this->fnRun            = nullptr;
+    this->fnRegisterPlugin = nullptr;
 }
 bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
@@ -51,7 +53,8 @@ void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
             AppCUI::Dialogs::MessageBox::ShowError("Error", info);
             return;
         }
-        this->fnRun = entry->fnRun;
+        this->fnRun            = entry->fnRun;
+        this->fnRegisterPlugin = entry->fnRegisterPlugin;
 #else
         // we need to load the library
         AppCUI::OS::Library lib;
@@ -70,6 +73,7 @@ void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
         }
 
         this->fnRun            = lib.GetFunction<decltype(this->fnRun)>("Run");
+        this->fnRegisterPlugin = lib.GetFunction<decltype(this->fnRegisterPlugin)>("RegisterPlugin");
         if (!this->fnRun)
         {
             LocalString<1024> info;
@@ -78,6 +82,9 @@ void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
             return;
         }
 #endif
+        // optional static metadata: the HDF vocabulary of the plugin (runtime drift check against HDF.json)
+        if (auto hdf = GView::App::GetHDFEngine(); hdf.IsValid())
+            hdf->OnModuleLoaded(GView::HDF::GenericPluginGenerator((std::string_view) this->Name), this->fnRegisterPlugin);
     }
     // all good -> is loaded ==> try to run
     if (!this->fnRun(this->Commands[commandIndex].Name, currentObject))

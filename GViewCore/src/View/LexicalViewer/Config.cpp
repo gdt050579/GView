@@ -25,3 +25,8 @@ void GView::View::LexicalViewer::Commands::OnKeysChanged()
 {
     Map.Build(NavigationKeys);
 }
+
+void GView::View::LexicalViewer::RegisterHDFVocabulary([[maybe_unused]] GView::HDF::VocabularyBuilderInterface& builder)
+{
+    // the Lexical viewer discloses no HDF assertions today
+}

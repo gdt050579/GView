@@ -806,3 +806,9 @@ namespace View
     } // namespace DissasmViewer
 } // namespace View
 }; // namespace GView
+
+namespace GView::View::DissasmViewer
+{
+// HDF vocabulary declared by this viewer (generator "SmartViewer:Dissasm", see GViewCore/src/HDF/CoreVocabulary.cpp)
+void RegisterHDFVocabulary(GView::HDF::VocabularyBuilderInterface& builder);
+} // namespace GView::View::DissasmViewer

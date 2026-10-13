@@ -680,3 +680,9 @@ namespace View
 } // namespace View
 
 }; // namespace GView
+
+namespace GView::View::LexicalViewer
+{
+// HDF vocabulary declared by this viewer (generator "SmartViewer:Lexical", see GViewCore/src/HDF/CoreVocabulary.cpp)
+void RegisterHDFVocabulary(GView::HDF::VocabularyBuilderInterface& builder);
+} // namespace GView::View::LexicalViewer

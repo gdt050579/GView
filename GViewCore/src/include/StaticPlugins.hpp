@@ -19,12 +19,14 @@ struct TypePlugin {
     TypeInterface* (*fnCreateInstance)();
     bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
     void (*fnUpdateSettings)(AppCUI::Utils::IniSection sect);
+    void (*fnRegisterPlugin)(Reference<GView::PluginRegistry> registry); // static metadata (HDF vocabulary)
 };
 
 struct GenericPlugin {
     std::string_view name; // the name of the [Generic.<name>] section
     bool (*fnRun)(const std::string_view command, Reference<GView::Object> currentObject);
     void (*fnUpdateSettings)(AppCUI::Utils::IniSection sect);
+    void (*fnRegisterPlugin)(Reference<GView::PluginRegistry> registry); // static metadata (HDF vocabulary)
 };
 
 // generated (see cmake/StaticPlugins.cpp.in)

@@ -2989,6 +2989,11 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     return true;
 }
 
+PLUGIN_EXPORT void RegisterPlugin([[maybe_unused]] Reference<GView::PluginRegistry> registry)
+{
+    // static metadata of the plugin: no HDF vocabulary yet (see docs/source/hdf.rst)
+}
+
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
     sect["Extension"]   = { "pdf" };

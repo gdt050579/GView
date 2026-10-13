@@ -14,6 +14,7 @@ enum class CommandID {
     Connect,
     Listen,
     RemoteCerts,
+    HDF,
 };
 
 struct CommandInfo
@@ -48,6 +49,7 @@ CommandInfo commands[] = {
     { CommandID::Connect, _U("connect") },
     { CommandID::Listen, _U("listen") },
     { CommandID::RemoteCerts, _U("remote-certs") },
+    { CommandID::HDF, _U("hdf") },
 };
 
 std::string_view help = R"HELP(
@@ -79,6 +81,21 @@ Where <command> is on of:
 
    list-types               List all available types (as loaded from gview.ini).
                             Ex: 'GView list-types' 
+
+Hybrid Disclosure Framework (HDF.json, see docs/source/hdf.rst):
+   hdf validate [file] [--json]
+                            Checks the specification (sorts, rules, verdicts,
+                            interpretation) and its drift against the vocabulary
+                            declared by the installed plugins (RegisterPlugin).
+                            Exit code 0 when there is no error.
+                            Ex: 'GView hdf validate HDF.json'
+   hdf augment [file] [--output <file>] [--dry-run] [--check]
+                            Regenerates the "predicates" and "actions" sections
+                            from the plugins and the rule heads (Manual entries
+                            are kept), then validates the result.
+                            --dry-run prints the diff, --check fails when the
+                            file is not up to date (CI).
+                            Ex: 'GView hdf augment HDF.json --check'
 
 Remote mode (requires a build with -DGVIEW_ENABLE_REMOTE=ON):
    serve [files] [options]  Runs GView as a server: the analysis runs here and
@@ -315,6 +332,20 @@ int main(int argc, const char** argv)
         return ProcessRemoteCommand("listen", argc, argv);
     case CommandID::RemoteCerts:
         return ProcessRemoteCommand("remote-certs", argc, argv);
+    case CommandID::HDF: {
+        // no App::Init: the tooling only loads the plugins to call their RegisterPlugin export
+        const std::string sub = argc >= 3 ? ArgumentToUtf8(argv[2]) : std::string();
+        std::vector<std::string> arguments;
+        for (int index = 3; index < argc; index++)
+            arguments.push_back(ArgumentToUtf8(argv[index]));
+        if (sub == "validate")
+            return GView::App::HDFValidate(arguments);
+        if (sub == "augment")
+            return GView::App::HDFAugment(arguments);
+        std::cout << "Use: GView hdf validate [file] [--json]" << std::endl;
+        std::cout << "     GView hdf augment [file] [--output <file>] [--dry-run] [--check]" << std::endl;
+        return 1;
+    }
     case CommandID::Unknown:
         return ProcessOpenCommand(argc, argv, 1);
     default:

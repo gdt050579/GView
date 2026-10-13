@@ -33,6 +33,13 @@ if (APPLE)
     endif()
 endif()
 
+# the Hybrid Disclosure Framework specification is loaded from the current folder, then from the executable's folder
+if (NOT EMSCRIPTEN)
+    add_custom_command(TARGET GView POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/HDF.json" "$<TARGET_FILE_DIR:GView>/HDF.json"
+        COMMENT "Copying HDF.json next to the GView executable")
+endif()
+
 if (MSVC)
     include(windows_resource)
     add_windows_resource("GView.exe" "GView.rc")

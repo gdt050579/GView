@@ -12,20 +12,23 @@ inline KeyboardControl PANEL_OPEN_PACKET = {
     Input::Key::Ctrl | Input::Key::Enter, "PanelOpenPacket", "Open the current packet (Packets panel)", 0
 };
 
-struct PCAPPredicates
-{
-    Components::AnalysisEngine::PredId IsPCAP, HasNetworkConnections, HasConnectionWithExecutable, HasConnectionWithScript;
+// HDF vocabulary of the PCAP plugin (declared in RegisterPlugin, PCAP.cpp)
+struct PCAPPredicates {
+    GView::HDF::PredicateId IsPCAP{ GView::HDF::INVALID_PREDICATE_ID }, HasNetworkConnections{ GView::HDF::INVALID_PREDICATE_ID },
+          HasConnectionWithExecutable{ GView::HDF::INVALID_PREDICATE_ID }, HasConnectionWithScript{ GView::HDF::INVALID_PREDICATE_ID };
 };
 
-struct PCAPActions
-{
-    Components::AnalysisEngine::ActId CheckNetworkConnections, ViewExecutableFromConnection, ViewScriptFromConnection;
+struct PCAPActions {
+    GView::HDF::ActionId CheckConnections{ GView::HDF::INVALID_ACTION_ID }, ExtractConnectionData{ GView::HDF::INVALID_ACTION_ID };
 };
+
+// connections disclosed as subjects by <CheckConnections>(x) (bounded: the capture is attacker-controlled)
+constexpr uint32 MAX_CONNECTION_SUBJECTS = 4096;
 
 class PCAPFile : public TypeInterface,
                  public View::ContainerViewer::EnumerateInterface,
                  public View::ContainerViewer::OpenItemInterface,
-                 public Components::AnalysisEngine::RuleTriggerInterface
+                 public GView::HDF::ActionExecutorInterface
 {
   public:
     Buffer data; // it's maximum 0xFFFF so just save it here
@@ -35,9 +38,10 @@ class PCAPFile : public TypeInterface,
     StreamManager streamManager;
     PCAPPredicates predicates;
     PCAPActions actions;
-    Reference<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
+    Reference<GView::HDF::EngineInterface> hdf;
+    std::unordered_map<GView::HDF::SubjectId, uint16> connectionOfSubject; // connection subject -> stream index
 
-	uint32 currentItemIndex{ 0 };
+    uint32 currentItemIndex{ 0 };
     std::vector<uint32> currentChildIndexes{};
 
     PCAPFile();
@@ -93,7 +97,11 @@ class PCAPFile : public TypeInterface,
 
 	std::vector<std::pair<std::string, std::string>> GetPropertiesForContainerView();
     GView::Utils::JsonBuilderInterface* GetSmartAssistantContext(const std::string_view& prompt, std::string_view displayPrompt) override;
-    void OnRuleTrigger(const Components::AnalysisEngine::Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow) override;
+    // the tool T for <CheckConnections>(x) and <ExtractConnectionData>(c)
+    GView::HDF::ActionStatus Execute(
+          const GView::HDF::GroundActionView& action, const GView::HDF::ActionInput* input, GView::HDF::DisclosureSink& out) override;
+    // opens the payload of layer `layer` of stream `stream` (the new window becomes a child subject); false when there is none
+    bool OpenStreamPayload(uint32 stream, uint32 layer);
 };
 
 namespace Panels

@@ -6,6 +6,7 @@
 #include "TextViewer.hpp"
 #include "ContainerViewer.hpp"
 #include "LexicalViewer.hpp"
+#include "../HDF/Engine.hpp"
 
 using namespace GView::App;
 using namespace GView::App::InstanceCommands;
@@ -53,7 +54,6 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     // CursorInformation
     horizontalPanels->CreateChildControl<CursorInformation>(this);
     horizontalPanels->SetCurrentTabPageByIndex(0);
-    subject = { Components::AnalysisEngine::Subject::SubjectType::File, 0 };
 
     // configuration menu
     char16_t menuSymbol = 0x2261;
@@ -75,8 +75,6 @@ FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App
     this->SetTag(obj->GetContentType()->GetTypeName(), "");
 
     queryInterface.fileWindow = this;
-    if (this->gviewApp.IsValid() && this->gviewApp->GetAnalysisEngine().IsValid())
-        subject = this->gviewApp->GetAnalysisEngine()->GetSubjectForNewWindow(obj->GetObjectType());
 
     // push the configured keys into the keys registered by the type plugin instance
     if (this->gviewApp.IsValid())
@@ -101,6 +99,9 @@ void FileWindow::ApplyKeyBindings(const Keys::Registry& registry)
 }
 FileWindow::~FileWindow()
 {
+    // the subject stays in Gamma; the window reference and the executors of its plugin instance are dropped
+    if (this->gviewApp.IsValid() && this->gviewApp->GetHDF().IsValid())
+        this->gviewApp->GetHDF()->DetachWindow(subject);
     GView::Security::Learning::Hooks::OnFileWindowClosed(this->obj.get());
 }
 void FileWindow::RefreshTitle()
@@ -335,10 +336,9 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         case CMD_OPEN_ADD_NOTE:
             GView::App::ShowAddNoteDialog();
             return true;
-        case CMD_ANALYSIS_ENGINE:
-            if (gviewApp->GetAnalysisEngine().IsValid()) {
-                gviewApp->GetAnalysisEngine()->ShowAnalysisEngineWindow();
-            }
+        case CMD_HDF:
+            if (gviewApp->GetHDF().IsValid())
+                gviewApp->GetHDF()->ShowWindow();
             return true;
         case CMD_LEARNING_SUBMIT_FLAG:
             GView::Security::Learning::Hooks::ShowSubmitDialogForObject(this->obj.get());
@@ -380,7 +380,7 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     if (INSTANCE_KEY_CONFIGURATOR.Key != Key::None)
         commandBar.SetCommand(INSTANCE_KEY_CONFIGURATOR.Key, "Keys", CMD_SHOW_KEY_CONFIGURATOR);
     commandBar.SetCommand(INSTANCE_OPEN_ADD_NOTE, CMD_OPEN_ADD_NOTE);
-    commandBar.SetCommand(INSTANCE_ANALYSIS_ENGINE, CMD_ANALYSIS_ENGINE);
+    commandBar.SetCommand(INSTANCE_HDF, CMD_HDF);
     if (GView::Security::Learning::Hooks::IsLearningProblem(this->obj.get()) && INSTANCE_LEARNING_SUBMIT_FLAG.Key != Key::None)
         commandBar.SetCommand(INSTANCE_LEARNING_SUBMIT_FLAG.Key, "SubmitFlag", CMD_LEARNING_SUBMIT_FLAG);
     // add commands from type plugin
@@ -399,18 +399,28 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     return true;
 }
 
-void FileWindow::InitialiseAnalysisEngineData(Reference<GView::Components::AnalysisEngine::Subject> parentSubject)
+void FileWindow::AttachToHDF(Reference<Window> parent, bool hasContent)
 {
-    auto analysisEngine = GetAnalysisEngine();
-    if (!analysisEngine.IsValid())
+    auto hdf = this->gviewApp.IsValid() ? this->gviewApp->GetHDF() : Reference<GView::HDF::Engine>();
+    if (!hdf.IsValid())
         return;
-    analysisEngine->RegisterSubjectWithParent(subject, this, parentSubject);
-    UnicodeStringBuilder sb;
-    sb.Add("Opening ");
-    sb.Add(obj->GetName());
-    std::string opening_note = {};
-    sb.ToString(opening_note);
-    analysisEngine->AddAnalysisNotes(subject, std::move(opening_note));
+    GView::HDF::Subject parentSubject;
+    if (parent.IsValid()) {
+        auto parentWindow = parent.ToObjectRef<FileWindow>();
+        if (parentWindow.IsValid())
+            parentSubject = parentWindow->GetSubject();
+    }
+    std::string name;
+    UnicodeStringBuilder nameBuilder;
+    nameBuilder.Set(obj->GetName());
+    nameBuilder.ToString(name);
+    subject = hdf->AttachWindow(this, name, hasContent, parentSubject);
+}
+
+void FileWindow::EndHDFAttach()
+{
+    if (this->gviewApp.IsValid() && this->gviewApp->GetHDF().IsValid() && subject.IsValid())
+        this->gviewApp->GetHDF()->EndAttach(subject);
 }
 
 void FileWindow::Start()

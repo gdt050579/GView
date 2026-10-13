@@ -12,7 +12,7 @@ add_subdirectory(SQLite3)
 add_subdirectory(Regex)
 add_subdirectory(Entropy)
 add_subdirectory(Security)
-add_subdirectory(Components)
+add_subdirectory(HDF)
 add_subdirectory(Remote)
 add_subdirectory(Update)
 

@@ -11,23 +11,27 @@
         GView::TypeInterface* CreateInstance();                                                                        \
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);                                              \
         void UpdateSettings(AppCUI::Utils::IniSection sect);                                                           \
+        void RegisterPlugin(Reference<GView::PluginRegistry> registry);                                                \
     }
 #define GVIEW_DECLARE_GENERIC_PLUGIN(id)                                                                               \
     namespace GViewStaticPlugin_##id                                                                                   \
     {                                                                                                                  \
         bool Run(const std::string_view command, Reference<GView::Object> currentObject);                              \
         void UpdateSettings(AppCUI::Utils::IniSection sect);                                                           \
+        void RegisterPlugin(Reference<GView::PluginRegistry> registry);                                                \
     }
 #define GVIEW_TYPE_PLUGIN(id)                                                                                          \
     GView::StaticPlugins::TypePlugin                                                                                   \
     {                                                                                                                  \
         #id, GViewStaticPlugin_##id::Validate, GViewStaticPlugin_##id::CreateInstance,                                 \
-              GViewStaticPlugin_##id::PopulateWindow, GViewStaticPlugin_##id::UpdateSettings                           \
+              GViewStaticPlugin_##id::PopulateWindow, GViewStaticPlugin_##id::UpdateSettings,                          \
+              GViewStaticPlugin_##id::RegisterPlugin                                                                   \
     }
 #define GVIEW_GENERIC_PLUGIN(id)                                                                                       \
     GView::StaticPlugins::GenericPlugin                                                                                \
     {                                                                                                                  \
-        #id, GViewStaticPlugin_##id::Run, GViewStaticPlugin_##id::UpdateSettings                                       \
+        #id, GViewStaticPlugin_##id::Run, GViewStaticPlugin_##id::UpdateSettings,                                      \
+              GViewStaticPlugin_##id::RegisterPlugin                                                                   \
     }
 
 @GVIEW_STATIC_PLUGIN_DECLARATIONS@

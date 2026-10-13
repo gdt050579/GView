@@ -21,3 +21,8 @@ void Config::Initialize()
 
     this->Loaded = true;
 }
+
+void GView::View::ContainerViewer::RegisterHDFVocabulary([[maybe_unused]] GView::HDF::VocabularyBuilderInterface& builder)
+{
+    // the Container viewer discloses no HDF assertions today
+}

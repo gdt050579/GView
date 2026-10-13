@@ -172,3 +172,9 @@ namespace View
     } // namespace GridViewer
 } // namespace View
 }; // namespace GView
+
+namespace GView::View::GridViewer
+{
+// HDF vocabulary declared by this viewer (generator "SmartViewer:Grid", see GViewCore/src/HDF/CoreVocabulary.cpp)
+void RegisterHDFVocabulary(GView::HDF::VocabularyBuilderInterface& builder);
+} // namespace GView::View::GridViewer

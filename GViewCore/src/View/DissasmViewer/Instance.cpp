@@ -353,8 +353,13 @@ void Instance::OpenCurrentSelection()
     fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
     fullPath.Add("temp_dissasm");
 
-    BufferView buffer = { out.data(), out.size() };
-    GView::App::OpenBuffer(buffer, "temp_dissasm", fullPath, GView::App::OpenMethod::Select);
+    // <ReanalyzeSelection>(x) without a byte range: the selection is rendered disassembly text, not content of x
+    const std::function<bool()> open = [&]() {
+        BufferView buffer = { out.data(), out.size() };
+        GView::App::OpenBuffer(buffer, "temp_dissasm", fullPath, GView::App::OpenMethod::Select);
+        return true;
+    };
+    GView::App::ReanalyzeSelection(0, 0, "temp_dissasm", open);
 }
 
 // TODO:Collaasible zone for text --> valid code, don't delete

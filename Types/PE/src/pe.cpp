@@ -9,7 +9,6 @@ using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
-using namespace GView::Components;
 
 constexpr auto OVERLAY_BOOKMARK_VALUE = 0;
 
@@ -194,103 +193,53 @@ UInt16 e_res[4];)");
     win->CreateViewer(settings);
 }
 
-bool InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
+// the PE vocabulary of HDF.json, resolved once per window (missing symbols are logged; their disclosures are skipped)
+void InitPePredicates(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
 {
-    auto engine = win->GetAnalysisEngine();
-    if (!engine.IsValid())
-        return false;
-    std::vector<Components::AnalysisEngine::PredId*> preds = {
-        &pe->predicates.IsPe,
-        //&pe->predicates.IsPacked,
-        &pe->predicates.HasOverlayData,
-        //&pe->predicates.HasObfuscatedStrings,
-        //&pe->predicates.ContainsEmbeddedArchive,
-        //&pe->predicates.ContainsEmbeddedExecutable,
-        //&pe->predicates.ContainsEmbeddedScript,
-        &pe->predicates.IsSigned,
-        &pe->predicates.SignatureValid,
-        &pe->predicates.IsLikelyPacked,
-        &pe->predicates.HasRWXSection,
-        &pe->predicates.HasTLSCallbacks,
-        &pe->predicates.UsesDynamicApiResolution,
-        &pe->predicates.ImportsProcessInjectionAPIs,
-        //&pe->predicates.ContainsUrl,
-        //&pe->predicates.ContainsIpLiteral,
-        //&pe->predicates.ContainsEmailAddress,
-        //&pe->predicates.ContainsSuspiciousKeywords,
-        //&pe->predicates.ContainsBase64Blobs,
-        //&pe->predicates.ContainsPersistenceArtifacts
-    };
-    std::vector<std::string_view> predNames = {
-        "IsPE",
-        //"IsPacked",
-        "HasOverlayData",
-        //"HasObfuscatedStrings",
-        //"ContainsEmbeddedArchive",
-        //"ContainsEmbeddedExecutable",
-        //"ContainsEmbeddedScript",
-        "IsSigned",
-        "SignatureValid",
-        "IsLikelyPacked",
-        "HasRWXSection",
-        "HasTLSCallbacks",
-        "UsesDynamicApiResolution",
-        "ImportsProcessInjectionAPIs",
-        //"ContainsUrl",
-        //"ContainsIpLiteral",
-        //"ContainsEmailAddress",
-        //"ContainsSuspiciousKeywords",
-        //"ContainsBase64Blobs",
-        //"ContainsPersistenceArtifacts"
-    };
-    bool res_value = true;
-    for (uint32 i = 0; i < predNames.size(); i++) {
-        const auto& p = predNames[i];
-        auto res      = engine->GetPredId(p);
-        if (AnalysisEngine::AnalysisEngineInterface::IsValidPredicateId(res)) {
-            *preds[i] = res;
-        } else {
-            AppCUI::Dialogs::MessageBox::ShowError("Failed to get predicate", p);
-            res_value = false;
-        }
-    }
-    pe->analysisEngine = engine;
-    return res_value;
-};
+    auto hdf = win->GetHDF();
+    if (!hdf.IsValid())
+        return;
+    const std::string_view names[] = { "IsPE",
+                                       "HasOverlayData",
+                                       "IsSigned",
+                                       "HasValidSignature",
+                                       "IsLikelyPacked",
+                                       "HasRWXSection",
+                                       "HasTLSCallbacks",
+                                       "UsesDynamicApiResolution",
+                                       "ImportsProcessInjectionAPIs" };
+    HDF::PredicateId ids[std::size(names)];
+    HDF::EngineInterface::Lookup report;
+    if (!hdf->LookupPredicates(names, ids, &report))
+        for ([[maybe_unused]] const auto& missing : report.missing)
+            LOG_ERROR("HDF: the PE predicate %s is not declared in HDF.json", missing.c_str());
+    auto& p                       = pe->predicates;
+    p.IsPE                        = ids[0];
+    p.HasOverlayData              = ids[1];
+    p.IsSigned                    = ids[2];
+    p.HasValidSignature           = ids[3];
+    p.IsLikelyPacked              = ids[4];
+    p.HasRWXSection               = ids[5];
+    p.HasTLSCallbacks             = ids[6];
+    p.UsesDynamicApiResolution    = ids[7];
+    p.ImportsProcessInjectionAPIs = ids[8];
+    pe->hdf                       = hdf;
+}
 
 PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 {
     auto pe = win->GetObject()->GetContentType<PE::PEFile>();
     pe->win = win;
     pe->Update();
-    if (InitPePredicates(win, pe)) {
-        auto u16_name         = win->GetObject()->GetName();
-        std::string file_name = {};
-        UnicodeStringBuilder sb(u16_name);
-        sb.ToString(file_name);
-        if (file_name.empty())
-            file_name = "Unknown";
-        std::vector<AnalysisEngine::Arg> args = { { "filename", file_name } };
-
-        auto subject = win->GetCurrentWindowSubject();
-        auto fact    = AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-              pe->predicates.IsPe, subject, "static analysis", "parsed the PE header", args);
-        auto res = pe->analysisEngine->SubmitFact(fact);
-        if (!res) {
-            LOG_ERROR("Failed to add IsPe fact");
-        }
-
-        if (pe->hasOverlay) {
-            args = { { "size", pe->overlaySize } };
-            auto overlayFact = AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  pe->predicates.HasOverlayData, subject, "static analysis", "PE has overlay data", args);
-            auto res2 = pe->analysisEngine->SubmitFact(overlayFact);
-            if (!res2) {
-                LOG_ERROR("Failed to add HasOverlayData fact");
-            }
-        }
-
-        pe->EmitAnalysisEngineStaticHeuristics(pe->analysisEngine, subject);
+    InitPePredicates(win, pe);
+    if (pe->hdf.IsValid()) {
+        // everything disclosed here is part of Init_T(x), the initial extraction the core opened for the window's subject
+        const auto subject = win->GetSubject();
+        if (HDF::EngineInterface::IsValid(pe->predicates.IsPE))
+            pe->hdf->Disclose(subject, pe->predicates.IsPE, { subject });
+        if (pe->hasOverlay && HDF::EngineInterface::IsValid(pe->predicates.HasOverlayData))
+            pe->hdf->Disclose(subject, pe->predicates.HasOverlayData, { subject, pe->overlaySize });
+        pe->EmitHDFStaticHeuristics(pe->hdf, subject);
     }
 
 #ifdef DISSASM_DEV
@@ -329,6 +278,30 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     }
 
     return true;
+}
+
+// static metadata: the HDF vocabulary the PE plugin discloses (checked against HDF.json by "GView hdf validate")
+PLUGIN_EXPORT void RegisterPlugin(Reference<GView::PluginRegistry> registry)
+{
+    auto& v = registry->HDFVocabulary();
+    v.Predicate("IsPE", { { "x", "Subject" } }, "{x} is a PE file");
+    v.Predicate("HasOverlayData", { { "x", "Subject" }, { "size", "Int" } }, "{x} has {size} bytes of overlay data");
+    v.Predicate("IsSigned", { { "x", "Subject" } }, "{x} has an Authenticode signature");
+    v.Predicate("HasValidSignature", { { "x", "Subject" } }, "the signature of {x} is valid");
+    v.Predicate(
+          "IsLikelyPacked",
+          { { "x", "Subject" }, { "hint", "String" }, { "section", "String" }, { "entropy", "Real" } },
+          "{x} is likely packed ({hint}): section {section} has entropy {entropy}");
+    v.Predicate("HasRWXSection", { { "x", "Subject" }, { "section", "String" }, { "size", "Int" } }, "section {section} of {x} is RWX (size {size})");
+    v.Predicate("HasTLSCallbacks", { { "x", "Subject" }, { "count", "Int" } }, "{x} defines {count} TLS callback(s)");
+    v.Predicate(
+          "UsesDynamicApiResolution",
+          { { "x", "Subject" }, { "count", "Int" }, { "sample", "String" } },
+          "{x} likely resolves APIs dynamically ({count} indicators, e.g. {sample})");
+    v.Predicate(
+          "ImportsProcessInjectionAPIs",
+          { { "x", "Subject" }, { "count", "Int" }, { "sample", "String" } },
+          "{x} imports {count} process-injection related APIs (e.g. {sample})");
 }
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)

@@ -128,18 +128,23 @@ void Instance::OpenCurrentSelection()
     if (res >= 0) {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
-        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start + 1));
-        if (buf.IsValid() == false) {
-            Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
-            return;
-        }
+        // <ReanalyzeSelection>(x): the new object is a subject extracted from x (HasOffset / HasSize record the range)
+        const std::function<bool()> open = [&]() {
+            auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start + 1));
+            if (buf.IsValid() == false) {
+                Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
+                return false;
+            }
 
-        LocalUnicodeStringBuilder<2048> fullPath;
-        fullPath.Add(this->obj->GetPath());
-        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
-        fullPath.Add(temp);
+            LocalUnicodeStringBuilder<2048> fullPath;
+            fullPath.Add(this->obj->GetPath());
+            fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+            fullPath.Add(temp);
 
-        GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select,"",Application::GetCurrentWindow(),"buffer extraction");
+            GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select, "", Application::GetCurrentWindow(), "buffer extraction");
+            return true;
+        };
+        GView::App::ReanalyzeSelection(start, end - start + 1, temp.ToStringView(), open);
     } else {
         Dialogs::MessageBox::ShowNotification("Open selection", "There is no selection at the cursor position !");
     }

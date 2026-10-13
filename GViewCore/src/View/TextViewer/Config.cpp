@@ -22,3 +22,8 @@ void GView::View::TextViewer::Commands::OnKeysChanged()
 {
     Map.Build(NavigationKeys);
 }
+
+void GView::View::TextViewer::RegisterHDFVocabulary([[maybe_unused]] GView::HDF::VocabularyBuilderInterface& builder)
+{
+    // the Text viewer discloses no HDF assertions today
+}

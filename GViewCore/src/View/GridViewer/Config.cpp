@@ -28,3 +28,8 @@ void GView::View::GridViewer::Commands::RegisterKeys(KeyboardControlsInterface* 
     interface->RegisterKeyText("Ctrl+C", "CopyCells", "Copy the selected cells");
     interface->RegisterKeyText("Escape", "ClearSelection", "Clear the selection");
 }
+
+void GView::View::GridViewer::RegisterHDFVocabulary([[maybe_unused]] GView::HDF::VocabularyBuilderInterface& builder)
+{
+    // the Grid viewer discloses no HDF assertions today
+}

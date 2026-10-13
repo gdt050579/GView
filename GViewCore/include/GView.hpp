@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <vector>
 #include <cstdint>
+#include <span>
+#include <type_traits>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Utils;
@@ -1186,141 +1188,203 @@ class CORE_EXPORT Object
     }
 };
 
-namespace Components
+// Hybrid Disclosure Framework (docs/source/hdf.rst). The vocabulary (sorts, predicate and action symbols) and the rules
+// live in HDF.json; plugins disclose ground assertions about subjects and execute ground actions selected by the analyst.
+namespace HDF
 {
-    namespace AnalysisEngine
-    {
-        // Subjects of analysis
-        using FileId = uint64;
-        using UserId = uint64;
-        using ProcId = uint64;
-        using CaseId = uint64;
-        using SubjectId = uint64;
+    using SortId      = uint16;
+    using PredicateId = uint32;
+    using ActionId    = uint32;
+    using SubjectId   = uint32;
+    using ConstantId  = uint32;
 
-        // Subject of a fact: file/user/process or engine itself
-        struct CORE_EXPORT Subject {
-            enum class SubjectType : uint8 {
-                None    = 0,
-                File    = 1,
-                User    = 2,
-                Process = 3,
-                Case    = 4,
-            };
-            SubjectType kind{ SubjectType::None };
-            SubjectId value;
-        };
-        inline bool operator==(const Subject& a, const Subject& b) noexcept
+    constexpr PredicateId INVALID_PREDICATE_ID = 0xFFFFFFFFu;
+    constexpr ActionId INVALID_ACTION_ID       = 0xFFFFFFFFu;
+    constexpr SubjectId INVALID_SUBJECT_ID     = 0xFFFFFFFFu;
+    constexpr ConstantId INVALID_CONSTANT_ID   = 0; // slot 0 of the constant pool is reserved
+    constexpr SortId INVALID_SORT_ID           = 0xFFFFu;
+    constexpr uint32 MAX_ARITY                 = 8;
+
+    class DisclosureSession; // GViewCore internal
+    class ConstantPool;      // GViewCore internal
+
+    // a constant of sort Subject (a file, a buffer, a connection, ...); trivially copyable, plugins may store it
+    struct Subject {
+        SubjectId id{ INVALID_SUBJECT_ID };
+        inline bool IsValid() const
         {
-            return a.kind == b.kind && a.value == b.value;
+            return id != INVALID_SUBJECT_ID;
         }
+        inline bool operator==(const Subject& other) const
+        {
+            return id == other.id;
+        }
+    };
 
-        // Predicates & Actions
-        using PredId                     = uint64;
-        using ActId                      = uint64;
-        using RuleId                     = uint64;
-        using SuggestionId               = uint64;
-        constexpr PredId INVALID_PRED_ID = UINT64_MAX;
-        constexpr ActId INVALID_ACT_ID   = UINT64_MAX;
-        constexpr RuleId INVALID_RULE_ID = UINT64_MAX;
-
-        // Data model for facts
-        // Value carried by a predicate argument (e.g., severity, string, number)
-        using Value = std::variant<std::monostate, bool, int64, uint64, double, std::string>;
-        struct Arg {
-            std::string name; // optional name (e.g., "level", "format")
-            Value value;
+    // a transient argument value; converted to a constant of the declared sort when the assertion is disclosed
+    // (signed integers -> Int, unsigned -> Int if it fits, floating point -> Real, text -> String-kind sorts)
+    struct ArgValue {
+        enum class Kind : uint8 { Subject, String, Int, UInt, Real, Bool };
+        Kind kind;
+        union {
+            SubjectId subject;
+            int64 i;
+            uint64 u;
+            double d;
+            bool b;
         };
+        std::string_view s;
 
-        // A single atom: PredKey + Subject + optional args
-        struct Atom {
-            PredId pred;
-            Subject subject; //TODO: move in Fact
-            std::vector<Arg> args; /* small, usually empty*/
-        };
-
-        using Clock      = std::chrono::steady_clock;
-        using TimePoint  = std::chrono::time_point<Clock>;
-        using Confidence = uint8; // 0-100
-        // A fact: atom + truth (true only in this engine), timestamp and provenance
-        struct Fact {
-            Atom atom;
-            //Subject subject; // TODO: move from Atom
-            TimePoint time;
-            std::string source;
-            std::string details;
-        };
-
-        struct PredicateEntry {
-            std::string name;
-            PredId id;
-        };
-
-        struct PredicateStorage {
-            std::vector<PredicateEntry> predicates;
-            std::vector<std::string> failed_predicates;
-        };
-
-        struct PredOrAction {
-            enum class PredOrActionType : uint8 {
-                Predicate = 0,
-                Action    = 1,
-            };
-            union Data {
-                PredId pred_id;
-                ActId action_id;
-            } data;
-            PredOrActionType type{ PredOrActionType::Predicate };
-        };
-
-        struct Suggestion {
-            Subject subject{};
-            std::vector<PredOrAction> results;
-            Confidence confidence;
-            std::string message;
-            // std::chrono::milliseconds cooldown{ std::chrono::minutes(30) }; // suppression interval TODO ?
-            TimePoint last_emitted{}; // zero == never
-            RuleId rule_id;
-            SuggestionId id;
-        };
-
-        struct CORE_EXPORT RuleTriggerInterface {
-            virtual void OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow) = 0;
-            virtual ~RuleTriggerInterface()                                                                                   = default;
-        };
-
-        struct CORE_EXPORT AnalysisEngineInterface {
-            virtual bool SubmitFact(const Fact& fact) = 0;
-            // virtual ActId RegisterAct(std::string_view name)        = 0; // WIP for future use
-            // virtual PredId RegisterPredicate(std::string_view name) = 0; // WIP for future use
-            virtual ActId GetActId(std::string_view name) const                                                                            = 0;
-            virtual PredId GetPredId(std::string_view name) const                                                                          = 0;
-            virtual bool Init()                                                                                                            = 0;
-            virtual ~AnalysisEngineInterface()                                                                                             = default;
-            virtual void ShowAnalysisEngineWindow()                                                                                        = 0;
-            virtual std::vector<bool> RegisterActionTrigger(const std::vector<ActId>& action_ids, Reference<RuleTriggerInterface> trigger) = 0;
-            virtual Subject GetSubjectForNewWindow(Object::Type objectType)                                                                = 0;
-            virtual void RegisterSubjectWithParent(const Subject& currentWindowSubject, Reference<Window> currentWindow, Reference<Subject> parentWindow) = 0;
-            virtual void AddAnalysisNotes(const Subject& currentWindow, std::string data)                                                  = 0;
-
-            PredicateStorage RequestPredicateStorage(const std::vector<std::string_view>& predicates) const;
-            bool RequestPredicate(PredicateStorage& predicateStorage, std::string_view predicate) const;
-
-            static bool IsValidPredicateId(PredId pred)
-            {
-                return pred != INVALID_PRED_ID;
+        ArgValue(Subject value) : kind(Kind::Subject), subject(value.id)
+        {
+        }
+        ArgValue(std::string_view value) : kind(Kind::String), u(0), s(value)
+        {
+        }
+        ArgValue(const char* value) : kind(Kind::String), u(0), s(value ? std::string_view(value) : std::string_view())
+        {
+        }
+        ArgValue(const std::string& value) : kind(Kind::String), u(0), s(value)
+        {
+        }
+        ArgValue(bool value) : kind(Kind::Bool), b(value)
+        {
+        }
+        ArgValue(double value) : kind(Kind::Real), d(value)
+        {
+        }
+        ArgValue(float value) : kind(Kind::Real), d(static_cast<double>(value))
+        {
+        }
+        template <typename T>
+            requires(std::is_integral_v<T> && !std::is_same_v<T, bool>)
+        ArgValue(T value)
+        {
+            if constexpr (std::is_signed_v<T>) {
+                kind = Kind::Int;
+                i    = static_cast<int64>(value);
+            } else {
+                kind = Kind::UInt;
+                u    = static_cast<uint64>(value);
             }
+        }
+    };
 
-            static bool IsValidActionId(ActId act)
-            {
-                return act != INVALID_ACT_ID;
-            }
+    enum class ActionStatus : uint8 { Success = 0, Failed = 1, Cancelled = 2 };
 
-            static Atom CreateAtomFromPredicateAndSubject(PredId pred, Reference<Subject> subject, std::vector<Arg> args = {});
-            static Fact CreateFactFromPredicateAndSubject(
-                  PredId pred, Reference<Subject> subject, std::string_view source, std::string_view details = "", std::vector<Arg> args = {});
+    // execution input of a ground action (not a rule argument), e.g. the selected range for ReanalyzeSelection
+    struct ActionInput {
+        uint64 selectionOffset{ 0 };
+        uint64 selectionSize{ 0 };
+    };
+
+    // a ground action beta = <a>(c1..ck) as seen by the executor (members exported one by one: an exported struct would
+    // export its std::string_view / std::span members, C4251)
+    struct GroundActionView {
+        ActionId action{ INVALID_ACTION_ID };
+        std::string_view name;
+        std::span<const ConstantId> args;
+        const ConstantPool* pool{ nullptr };
+
+        CORE_EXPORT Subject SubjectArg(uint32 index) const;
+        CORE_EXPORT std::string_view StringArg(uint32 index) const;
+        CORE_EXPORT int64 IntArg(uint32 index) const;
+        CORE_EXPORT double RealArg(uint32 index) const;
+        CORE_EXPORT bool BoolArg(uint32 index) const;
+    };
+
+    // collects the assertions disclosed by the execution of a ground action (Gamma_beta)
+    class CORE_EXPORT DisclosureSink
+    {
+        DisclosureSession* session;
+        Subject self;
+
+      public:
+        DisclosureSink(DisclosureSession* session, Subject self);
+        DisclosureSink(const DisclosureSink&)            = delete;
+        DisclosureSink& operator=(const DisclosureSink&) = delete;
+
+        // false (and LOG_ERROR) on unknown predicate, wrong arity, value not representable in the declared sort, invalid subject
+        bool Assert(PredicateId p, std::initializer_list<ArgValue> args, std::string_view explanation = {});
+        bool Assert(PredicateId p, std::span<const ArgValue> args, std::string_view explanation = {});
+        // a fresh Subject constant y with ExtractedFrom(y, parent) and HasName(y, name); a window opened for it by the
+        // executor (OpenBuffer / OpenItem) attaches to y
+        Subject CreateSubject(std::string_view name, Subject parent);
+        // the subject the step was selected on (the first Subject argument of beta)
+        Subject Self() const;
+    };
+
+    struct CORE_EXPORT ActionExecutorInterface {
+        virtual ActionStatus Execute(const GroundActionView& action, const ActionInput* input, DisclosureSink& out) = 0;
+        virtual ~ActionExecutorInterface()                                                                          = default;
+    };
+
+    // RAII observation scope: everything disclosed until it is destroyed is one transition (closure runs once at the end)
+    class CORE_EXPORT ObservationScope
+    {
+        DisclosureSession* session{ nullptr };
+
+      public:
+        ObservationScope() = default;
+        explicit ObservationScope(DisclosureSession* session);
+        ObservationScope(const ObservationScope&)            = delete;
+        ObservationScope& operator=(const ObservationScope&) = delete;
+        ObservationScope(ObservationScope&& other) noexcept;
+        ObservationScope& operator=(ObservationScope&& other) noexcept;
+        ~ObservationScope();
+        inline bool IsActive() const
+        {
+            return session != nullptr;
+        }
+    };
+
+    struct CORE_EXPORT EngineInterface {
+        virtual PredicateId Predicate(std::string_view name) const = 0;
+        virtual ActionId Action(std::string_view name) const       = 0;
+        // one executor per (action symbol, owner subject); a ground action is executed by the executor whose owner is
+        // the closest ancestor (via ExtractedFrom) of its first Subject argument. Executors are dropped when the window
+        // of their owner subject closes.
+        virtual bool RegisterActionExecutor(ActionId a, Subject owner, Reference<ActionExecutorInterface> executor) = 0;
+        virtual void UnregisterActionExecutor(Reference<ActionExecutorInterface> executor)                          = 0;
+        // an observation of subject s (inside the current scope, or a one-call observation when no scope is open)
+        virtual bool Disclose(Subject s, PredicateId p, std::initializer_list<ArgValue> args, std::string_view explanation = {}) = 0;
+        virtual ObservationScope BeginObservation(Subject s, std::string_view label)                                             = 0;
+        virtual void ShowWindow()                                                                                                = 0;
+        virtual ~EngineInterface()                                                                                               = default;
+
+        static inline bool IsValid(PredicateId id)
+        {
+            return id != INVALID_PREDICATE_ID;
+        }
+        // convenience: resolve many names at once and report the missing ones
+        struct Lookup {
+            std::vector<std::string> missing;
         };
-    } // namespace AnalysisEngine
-} // namespace Components
+        bool LookupPredicates(std::span<const std::string_view> names, std::span<PredicateId> out, Lookup* report = nullptr) const;
+        bool LookupActions(std::span<const std::string_view> names, std::span<ActionId> out, Lookup* report = nullptr) const;
+    };
+
+    // static vocabulary declared by a module (see RegisterPlugin); checked against HDF.json by "GView hdf validate"
+    struct CORE_EXPORT VocabularyBuilderInterface {
+        struct Argument {
+            std::string_view name;
+            std::string_view sort;
+        };
+        // false (and an error is recorded) on a duplicate name within the module, an unknown sort or arity > MAX_ARITY
+        virtual bool Predicate(std::string_view name, std::initializer_list<Argument> arity, std::string_view denotation)                       = 0;
+        virtual bool Action(std::string_view name, std::initializer_list<Argument> arity, std::string_view denotation, bool repeatable = false) = 0;
+        // optional domain sort (kind is one of Subject|String|Int|Real|Bool); the first declaration wins, conflicting kinds are an error
+        virtual bool Sort(std::string_view name, std::string_view kind) = 0;
+        virtual ~VocabularyBuilderInterface()                           = default;
+    };
+} // namespace HDF
+
+// Static metadata of a plugin, filled by its optional `RegisterPlugin(Reference<GView::PluginRegistry>)` export
+// (mandatory for in-tree plugins). Sections are obtained on demand; new sections are appended here (ABI: append-only).
+struct CORE_EXPORT PluginRegistry {
+    virtual HDF::VocabularyBuilderInterface& HDFVocabulary() = 0;
+    virtual ~PluginRegistry()                                = default;
+};
 
 namespace View
 {
@@ -1949,22 +2013,24 @@ namespace View
     }; // namespace DissasmViewer
 
     struct CORE_EXPORT WindowInterface {
-        virtual Reference<Object> GetObject()                                                      = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                                = 0;
-        virtual bool CreateViewer(BufferViewer::Settings& settings)                                = 0;
-        virtual bool CreateViewer(ImageViewer::Settings& settings)                                 = 0;
-        virtual bool CreateViewer(GridViewer::Settings& settings)                                  = 0;
-        virtual bool CreateViewer(DissasmViewer::Settings& settings)                               = 0;
-        virtual bool CreateViewer(TextViewer::Settings& settings)                                  = 0;
-        virtual bool CreateViewer(ContainerViewer::Settings& settings)                             = 0;
-        virtual bool CreateViewer(LexicalViewer::Settings& settings)                               = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                            = 0;
-        virtual uint32 GetViewsCount()                                                             = 0;
-        virtual Reference<ViewControl> GetViewByIndex(uint32 index)                                = 0;
-        virtual bool SetViewByIndex(uint32 index)                                                  = 0;
-        virtual Reference<CommonInterfaces::QueryInterface> GetQueryInterface()                    = 0;
-        virtual Reference<Components::AnalysisEngine::AnalysisEngineInterface> GetAnalysisEngine() = 0;
-        virtual Reference<Components::AnalysisEngine::Subject> GetCurrentWindowSubject()           = 0;
+        virtual Reference<Object> GetObject()                                   = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)             = 0;
+        virtual bool CreateViewer(BufferViewer::Settings& settings)             = 0;
+        virtual bool CreateViewer(ImageViewer::Settings& settings)              = 0;
+        virtual bool CreateViewer(GridViewer::Settings& settings)               = 0;
+        virtual bool CreateViewer(DissasmViewer::Settings& settings)            = 0;
+        virtual bool CreateViewer(TextViewer::Settings& settings)               = 0;
+        virtual bool CreateViewer(ContainerViewer::Settings& settings)          = 0;
+        virtual bool CreateViewer(LexicalViewer::Settings& settings)            = 0;
+        virtual Reference<ViewControl> GetCurrentView()                         = 0;
+        virtual uint32 GetViewsCount()                                          = 0;
+        virtual Reference<ViewControl> GetViewByIndex(uint32 index)             = 0;
+        virtual bool SetViewByIndex(uint32 index)                               = 0;
+        virtual Reference<CommonInterfaces::QueryInterface> GetQueryInterface() = 0;
+        // the Hybrid Disclosure Framework engine and the subject of this window (the constant of sort Subject the type plugin
+        // discloses about in PopulateWindow)
+        virtual Reference<HDF::EngineInterface> GetHDF() = 0;
+        virtual HDF::Subject GetSubject() const          = 0;
 
         template <typename T>
         inline bool CreateViewer(const std::optional<std::string_view> name = {})
@@ -1985,6 +2051,10 @@ namespace App
     bool CORE_EXPORT Init(bool isTestingEnabled);
     void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
+    // CLI "GView hdf validate|augment ..." (arguments after the sub-command, UTF-8); returns the process exit code.
+    // Neither initializes the application: only the plugins' RegisterPlugin exports are called.
+    int CORE_EXPORT HDFValidate(const std::vector<std::string>& arguments);
+    int CORE_EXPORT HDFAugment(const std::vector<std::string>& arguments);
     // Auto-updater: the command line is reused to restart GView after an update; call FinishPendingUpdate after Run
     // (it installs an update accepted by the user, restarts GView and returns the exit code to use, 0 when idle).
 #ifdef BUILD_FOR_WINDOWS

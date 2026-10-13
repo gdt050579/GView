@@ -56,7 +56,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
     {
         BufferViewer::Settings settings;
-        
+
         auto offset = 0ULL;
         settings.AddZone(offset, sizeof(pcap->header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
         offset += sizeof(pcap->header);
@@ -103,77 +103,33 @@ GVIEW_PLUGIN_ENTRY_POINTS
         win->CreateViewer(settings);
     }
 
-    bool InitPredicates(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
+    // the PCAP vocabulary of HDF.json, resolved once per window; the plugin instance is the tool that executes
+    // <CheckConnections>(x) and <ExtractConnectionData>(c) for the subjects of this capture
+    void InitHDF(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
     {
-        auto engine = win->GetAnalysisEngine();
-        if (!engine.IsValid())
-            return false;
-        std::vector<Components::AnalysisEngine::PredId*> preds = { &pcap->predicates.IsPCAP,
-                                                                   &pcap->predicates.HasNetworkConnections,
-                                                                   &pcap->predicates.HasConnectionWithExecutable,
-                                                                   &pcap->predicates.HasConnectionWithScript };
-        std::vector<std::string_view> predNames                = { "IsPCAP",
-                                                                   "HasNetworkConnections",
-                                                                   "HasConnectionWithExecutable",
-                                                                   "HasConnectionWithScript"};
-        bool res_value                                         = true;
-        for (uint32 i = 0; i < predNames.size(); i++) {
-            const auto& p = predNames[i];
-            auto res      = engine->GetPredId(p);
-            if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidPredicateId(res)) {
-                *preds[i] = res;
-            } else {
-                AppCUI::Dialogs::MessageBox::ShowError("Failed to get predicate", p);
-                res_value = false;
-            }
-        }
-        pcap->analysisEngine = engine;
-        return res_value;
-    }
-
-    void SendInitialPredicates(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
-    {
-        if (pcap->streamManager.empty())
+        auto hdf = win->GetHDF();
+        if (!hdf.IsValid())
             return;
-        {
-            auto subject                           = win->GetCurrentWindowSubject();
-
-            std::vector<Components::AnalysisEngine::Arg> args = { { "count", pcap->streamManager.size() } };
-
-            const auto has_network_connection_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  pcap->predicates.HasNetworkConnections, subject, "static analysis", "parsed the PCAP file", args);
-
-            auto res = pcap->analysisEngine->SubmitFact(has_network_connection_fact);
-            if (!res) {
-                LOG_ERROR("Failed to add HasNetworkConnections fact");
-            }
-        }
-        std::vector<Components::AnalysisEngine::ActId> actions;
-        auto checkConnectionAction = pcap->analysisEngine->GetActId("CheckNetworkConnections");
-        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(checkConnectionAction)) {
-            pcap->actions.CheckNetworkConnections = checkConnectionAction;
-            actions.push_back(checkConnectionAction);
-        }
-
-        auto viewConnectionWithExecutableAction = pcap->analysisEngine->GetActId("ViewExecutableFromConnection");
-        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(viewConnectionWithExecutableAction)) {
-            pcap->actions.ViewExecutableFromConnection = viewConnectionWithExecutableAction;
-            actions.push_back(viewConnectionWithExecutableAction);
-        }
-
-        auto viewConnectionWithScriptAction= pcap->analysisEngine->GetActId("ViewScriptFromConnection");
-        if (Components::AnalysisEngine::AnalysisEngineInterface::IsValidActionId(viewConnectionWithScriptAction)) {
-            pcap->actions.ViewScriptFromConnection = viewConnectionWithScriptAction;
-            actions.push_back(viewConnectionWithScriptAction);
-        }
-
-        auto results = pcap->analysisEngine->RegisterActionTrigger(actions, pcap.ToObjectRef<Components::AnalysisEngine::RuleTriggerInterface>());
-        for (size_t i = 0; i < results.size(); i++) {
-            if (results[i] == false) {
-                LOG_ERROR("Failed to register action trigger for action id {}", actions[i]);
-                assert(false);
-            }
-        }
+        const std::string_view predicateNames[] = { "IsPCAP", "HasNetworkConnections", "HasConnectionWithExecutable", "HasConnectionWithScript" };
+        const std::string_view actionNames[]    = { "CheckConnections", "ExtractConnectionData" };
+        HDF::PredicateId p[std::size(predicateNames)];
+        HDF::ActionId a[std::size(actionNames)];
+        HDF::EngineInterface::Lookup report;
+        hdf->LookupPredicates(predicateNames, p, &report);
+        hdf->LookupActions(actionNames, a, &report);
+        for ([[maybe_unused]] const auto& missing : report.missing)
+            LOG_ERROR("HDF: the PCAP symbol %s is not declared in HDF.json", missing.c_str());
+        pcap->predicates.IsPCAP                      = p[0];
+        pcap->predicates.HasNetworkConnections       = p[1];
+        pcap->predicates.HasConnectionWithExecutable = p[2];
+        pcap->predicates.HasConnectionWithScript     = p[3];
+        pcap->actions.CheckConnections               = a[0];
+        pcap->actions.ExtractConnectionData          = a[1];
+        pcap->hdf                                    = hdf;
+        const auto subject                           = win->GetSubject();
+        for (const auto action : a)
+            if (action != HDF::INVALID_ACTION_ID)
+                hdf->RegisterActionExecutor(action, subject, Reference<HDF::ActionExecutorInterface>(pcap.operator->()));
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
@@ -183,40 +139,38 @@ GVIEW_PLUGIN_ENTRY_POINTS
         pcap->RegisterPayloadParser(std::make_unique<PCAP::HTTP::HTTPParser>());
         pcap->Update();
 
-        auto u16_name = win->GetObject()->GetName();
-        std::string file_name = {};
-        UnicodeStringBuilder sb(u16_name);
-        sb.ToString(file_name);
-        if (file_name.empty())
-            file_name = "Unknown";
-
-        const bool has_init_predicates = InitPredicates(win, pcap);
-        if (has_init_predicates) {
-            auto subject      = win->GetCurrentWindowSubject();
-
-            std::vector<Components::AnalysisEngine::Arg> args = { { "filename", file_name } };
-
-            auto is_pcap_fact = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  pcap->predicates.IsPCAP, subject, "static analysis", "parsed the PCAP header", args);
-            auto res = pcap->analysisEngine->SubmitFact(is_pcap_fact);
-            if (!res) {
-                LOG_ERROR("Failed to add IsPCAP fact");
-            }
-        }
+        // everything disclosed here is part of Init_T(x), the initial extraction the core opened for the window's subject
+        InitHDF(win, pcap);
+        const auto subject = win->GetSubject();
+        if (pcap->hdf.IsValid() && HDF::EngineInterface::IsValid(pcap->predicates.IsPCAP))
+            pcap->hdf->Disclose(subject, pcap->predicates.IsPCAP, { subject }, "parsed the PCAP header");
 
         // add views
         CreateContainerView(win, pcap);
         CreateBufferView(win, pcap);
 
-        if (has_init_predicates) {
-            SendInitialPredicates(win, pcap);
-        }
+        // the streams are known once the container view enumerated the packets
+        if (pcap->hdf.IsValid() && !pcap->streamManager.empty() && HDF::EngineInterface::IsValid(pcap->predicates.HasNetworkConnections))
+            pcap->hdf->Disclose(
+                  subject, pcap->predicates.HasNetworkConnections, { subject, static_cast<uint64>(pcap->streamManager.size()) }, "parsed the PCAP file");
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new PCAP::Panels::Information(win->GetObject(), pcap)), true);
         win->AddPanel(Pointer<TabPage>(new PCAP::Panels::Packets(pcap, win)), false);
 
         return true;
+    }
+
+    // static metadata: the HDF vocabulary the PCAP plugin discloses and the actions it executes
+    PLUGIN_EXPORT void RegisterPlugin(Reference<GView::PluginRegistry> registry)
+    {
+        auto& v = registry->HDFVocabulary();
+        v.Predicate("IsPCAP", { { "x", "Subject" } }, "{x} is a network capture");
+        v.Predicate("HasNetworkConnections", { { "x", "Subject" }, { "count", "Int" } }, "{x} has {count} connections");
+        v.Predicate("HasConnectionWithExecutable", { { "c", "Subject" }, { "name", "String" } }, "connection {c} transfers the executable {name}");
+        v.Predicate("HasConnectionWithScript", { { "c", "Subject" }, { "name", "String" } }, "connection {c} transfers the script {name}");
+        v.Action("CheckConnections", { { "x", "Subject" } }, "Identify the connections in {x}");
+        v.Action("ExtractConnectionData", { { "c", "Subject" } }, "Extract the data transferred over {c}");
     }
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)

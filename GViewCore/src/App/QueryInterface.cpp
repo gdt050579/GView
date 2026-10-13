@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include "Internal.hpp"
+#include "../HDF/Engine.hpp"
 #include <nlohmann/json.hpp>
 
 using namespace GView::App;
@@ -21,14 +22,14 @@ Reference<GView::CommonInterfaces::QueryInterface> FileWindow::GetQueryInterface
     return &queryInterface;
 }
 
-Reference<GView::Components::AnalysisEngine::AnalysisEngineInterface> FileWindow::GetAnalysisEngine()
+Reference<GView::HDF::EngineInterface> FileWindow::GetHDF()
 {
-    return gviewApp->GetAnalysisEngine();
+    return gviewApp.IsValid() ? Reference<GView::HDF::EngineInterface>(gviewApp->GetHDF().operator->()) : Reference<GView::HDF::EngineInterface>();
 }
 
-Reference<GView::Components::AnalysisEngine::Subject> FileWindow::GetCurrentWindowSubject()
+GView::HDF::Subject FileWindow::GetSubject() const
 {
-    return &subject;
+    return subject;
 }
 
 void TextHighlighAdvanced(Reference<Control>, Graphics::Character* chars, uint32 charsCount)

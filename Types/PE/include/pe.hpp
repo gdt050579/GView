@@ -574,17 +574,13 @@ namespace Type
             VA         = 2
         };
 
-        struct PEPredicates
-        {
-            Components::AnalysisEngine::PredId IsPe, /*IsPacked,*/ HasOverlayData;//, HasObfuscatedStrings, ContainsEmbeddedArchive, ContainsEmbeddedExecutable, ContainsEmbeddedScript;
-
-            Components::AnalysisEngine::PredId IsSigned, SignatureValid;
-
-            Components::AnalysisEngine::PredId IsLikelyPacked, HasRWXSection, HasTLSCallbacks, UsesDynamicApiResolution, ImportsProcessInjectionAPIs;
-            //Components::AnalysisEngine::PredId ContainsUrl, ContainsIpLiteral, ContainsEmailAddress, ContainsSuspiciousKeywords, ContainsBase64Blobs,
-                  //ContainsPersistenceArtifacts;
-
-            // Components::AnalysisEngine::PredId CreatesRunKey, ContainsDownloaderCode; // TODO
+        // HDF vocabulary disclosed by the PE plugin (declared in RegisterPlugin, pe.cpp)
+        struct PEPredicates {
+            GView::HDF::PredicateId IsPE{ GView::HDF::INVALID_PREDICATE_ID }, HasOverlayData{ GView::HDF::INVALID_PREDICATE_ID },
+                  IsSigned{ GView::HDF::INVALID_PREDICATE_ID }, HasValidSignature{ GView::HDF::INVALID_PREDICATE_ID },
+                  IsLikelyPacked{ GView::HDF::INVALID_PREDICATE_ID }, HasRWXSection{ GView::HDF::INVALID_PREDICATE_ID },
+                  HasTLSCallbacks{ GView::HDF::INVALID_PREDICATE_ID }, UsesDynamicApiResolution{ GView::HDF::INVALID_PREDICATE_ID },
+                  ImportsProcessInjectionAPIs{ GView::HDF::INVALID_PREDICATE_ID };
         };
 
         enum class MachineType : uint16
@@ -815,9 +811,9 @@ namespace Type
             bool signatureChecked{ false };
             DigitalSignature::AuthenticodeMS data{};
             PEPredicates predicates;
-            Reference<Components::AnalysisEngine::AnalysisEngineInterface> analysisEngine;
+            Reference<GView::HDF::EngineInterface> hdf;
             Reference<GView::View::WindowInterface> win;
-        
+
             PEFile();
             ~PEFile() override = default;
 
@@ -851,8 +847,8 @@ namespace Type
             bool BuildTLS();
             bool BuildDebugData();
 
-            void EmitAnalysisEngineStaticHeuristics(
-                  Reference<Components::AnalysisEngine::AnalysisEngineInterface> engine, Reference<Components::AnalysisEngine::Subject> subject);
+            // static heuristics disclosed during the initial extraction (HasRWXSection, HasTLSCallbacks, imports, packing)
+            void EmitHDFStaticHeuristics(Reference<GView::HDF::EngineInterface> engine, GView::HDF::Subject subject);
             bool BuildSymbols();
 
             // GO

@@ -5,7 +5,8 @@
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
 #include "LexicalViewer.hpp"
-#include "../Components/AnalysisEngine/AnalysisEngineInternal.hpp"
+#include "../HDF/Engine.hpp"
+#include "../HDF/Tooling.hpp"
 #include "StaticPlugins.hpp"
 #ifdef GVIEW_ENABLE_REMOTE
 #    include "../Remote/RemoteConfig.hpp"
@@ -104,7 +105,8 @@ bool GView::App::ResetConfiguration()
     GView::View::GridViewer::Config::Update(ini["View.Grid"]);
     GView::View::DissasmViewer::Config::Update(ini["View.Dissasm"]);
     GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
-    GView::Components::AnalysisEngine::AnalysisEngineConfig::Update(ini["AnalysisEngine"]);
+    // Hybrid Disclosure Framework: SpecificationFile, StopOnVerdict, MaxSteps, MaxDerivedPerStep
+    GView::HDF::EngineConfig::Update(ini["HDF"]);
 
 #ifdef GVIEW_STATIC_PLUGINS
     // the plugins are linked into the executable
@@ -171,6 +173,34 @@ bool GView::App::ResetConfiguration()
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
 
+Reference<GView::HDF::Engine> GView::App::GetHDFEngine()
+{
+    return gviewAppInstance ? gviewAppInstance->GetHDF() : Reference<GView::HDF::Engine>();
+}
+bool GView::App::ReanalyzeSelection(uint64 offset, uint64 size, std::string_view name, const std::function<bool()>& open)
+{
+    auto hdf = GetHDFEngine();
+    if (!hdf.IsValid())
+        return open();
+    GView::HDF::Subject subject;
+    auto current = AppCUI::Application::GetCurrentWindow();
+    if (current.IsValid()) {
+        auto fileWindow = current.ToObjectRef<FileWindow>();
+        if (fileWindow.IsValid())
+            subject = fileWindow->GetSubject();
+    }
+    if (!subject.IsValid())
+        return open();
+    return hdf->ReanalyzeSelection(subject, GView::HDF::ActionInput{ offset, size }, name, open);
+}
+int GView::App::HDFValidate(const std::vector<std::string>& arguments)
+{
+    return GView::HDF::Tooling::RunValidate(arguments);
+}
+int GView::App::HDFAugment(const std::vector<std::string>& arguments)
+{
+    return GView::HDF::Tooling::RunAugment(arguments);
+}
 void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent, const ConstString& creationProcess)
 {
     OpenFile(path, OpenMethod::ForceType, typeName, parent, creationProcess);

@@ -1,9 +1,8 @@
-#include <codecvt>
-
 #include "PCAP.hpp"
 
+#include <algorithm>
+
 using namespace GView::Type::PCAP;
-using namespace GView::Components::AnalysisEngine;
 
 PCAPFile::PCAPFile()
 {
@@ -161,16 +160,21 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     if (!appLayerVar.has_value())
         return;
 
-    const auto& stream = streamManager[streamIdVar.value()];
+    OpenStreamPayload(streamIdVar.value(), appLayerVar.value());
+}
+
+bool PCAPFile::OpenStreamPayload(uint32 streamId, uint32 layerIndex)
+{
+    const auto& stream = streamManager[streamId];
     if (!stream)
-        return;
+        return false;
 
-    if (appLayerVar.value() >= stream->applicationLayers.size())
-        return;
+    if (layerIndex >= stream->applicationLayers.size())
+        return false;
 
-    const auto& layer = stream->applicationLayers[appLayerVar.value()];
+    const auto& layer = stream->applicationLayers[layerIndex];
     if (layer.payload.size == 0)
-        return;
+        return false;
 
     uint8* payload = new uint8[layer.payload.size];
     memcpy(payload, layer.payload.location, layer.payload.size);
@@ -185,8 +189,9 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
 
     auto parent = AppCUI::Application::GetCurrentWindow();
     LocalString<128> creation_method;
-    creation_method.SetFormat("Stream %u, layer %u", streamIdVar.value(), appLayerVar.value());
+    creation_method.SetFormat("Stream %u, layer %u", streamId, layerIndex);
     GView::App::OpenBuffer(buffer, extractionName, extractionName, GView::App::OpenMethod::BestMatch, "", parent, creation_method.GetText());
+    return true;
 }
 
 std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForContainerView()
@@ -216,87 +221,49 @@ GView::Utils::JsonBuilderInterface* PCAPFile::GetSmartAssistantContext(const std
     return builder;
 }
 
-void GetArgsForConnections(std::vector<GView::Components::AnalysisEngine::Arg>& args, const std::vector<uint16>& connections)
+GView::HDF::ActionStatus PCAPFile::Execute(const GView::HDF::GroundActionView& action, const GView::HDF::ActionInput*, GView::HDF::DisclosureSink& out)
 {
-    args.reserve(connections.size());
-    for (const auto& conn : connections) {
-        args.emplace_back("", (uint64) conn);
-    }
-}
-
-std::u16string utf8_to_u16(const std::string& utf8_str)
-{
-    try {
-        // Create a converter for UTF-8 <-> UTF-16
-        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
-
-        // Perform the conversion
-        return converter.from_bytes(utf8_str);
-    } catch (const std::range_error& e) {
-        return std::u16string{}; // Return empty or handle error
-    }
-}
-
-void PCAPFile::OnRuleTrigger(const Suggestion& suggestion, bool& shouldDeleteSuggestion, bool& closeAnalysisWindow)
-{
-    for (const auto& res : suggestion.results) {
-        if (res.type != PredOrAction::PredOrActionType::Action)
-            continue;
-        if (res.data.action_id == actions.CheckNetworkConnections) // CheckConnection
-        {
-            auto subject                       = streamManager.GetWindow()->GetCurrentWindowSubject();
-            std::vector<uint16> js_connections = streamManager.GetConnectionsWithJSScripts();
-            if (!js_connections.empty()) {
-                auto script_name                   = streamManager.GetScriptNameFromConnection(js_connections[0]);
-                std::vector<Arg> args              = { { "script_name", script_name }, { "connection_id", std::to_string(js_connections[0]) } };
-                const auto has_js_connections_fact = AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                      predicates.HasConnectionWithScript, subject, "static analysis", "parsed the PCAP file", args);
-                auto res = analysisEngine->SubmitFact(has_js_connections_fact);
-                if (!res) {
-                    LOG_ERROR("Failed to add HasConnectionWithScript fact");
-                }
-                //std::vector<Components::AnalysisEngine::Arg> args;
-                // GetArgsForConnections(args, js_connections); //TODO: ajust to send multiple connections
-            }
-
-            std::vector<uint16> exe_connections = streamManager.GetConnectionsWithExecutables();
-            if (!exe_connections.empty()) {
-                auto executable_name                = streamManager.GetExecutableNameFromConnection(exe_connections[0]);
-                std::vector<Arg> args               = { { "executable_name", executable_name }, { "connection_id", std::to_string(exe_connections[0]) } };
-                const auto has_exe_connections_fact = AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                      predicates.HasConnectionWithExecutable, subject, "static analysis", "parsed the PCAP file", args);
-                auto res = analysisEngine->SubmitFact(has_exe_connections_fact);
-                if (!res) {
-                    LOG_ERROR("Failed to add HasConnectionWithExecutable fact");
-                }
-            }
-            closeAnalysisWindow = false;
-            break;
+    using GView::HDF::ActionStatus;
+    if (action.action == actions.CheckConnections) {
+        // every connection that transfers an executable or a script becomes a subject extracted from the capture
+        const auto self         = out.Self();
+        const auto executables  = streamManager.GetConnectionsWithExecutables();
+        const auto scripts      = streamManager.GetConnectionsWithJSScripts();
+        std::vector<uint16> all = executables;
+        all.insert(all.end(), scripts.begin(), scripts.end());
+        std::sort(all.begin(), all.end());
+        all.erase(std::unique(all.begin(), all.end()), all.end());
+        if (all.size() > MAX_CONNECTION_SUBJECTS)
+            all.resize(MAX_CONNECTION_SUBJECTS);
+        for (const auto id : all) {
+            LocalString<64> name;
+            name.SetFormat("Connection %u", static_cast<uint32>(id));
+            const auto connection = out.CreateSubject(name.ToStringView(), self);
+            if (!connection.IsValid())
+                continue;
+            connectionOfSubject[connection.id] = id;
+            if (std::binary_search(executables.begin(), executables.end(), id))
+                out.Assert(predicates.HasConnectionWithExecutable, { connection, streamManager.GetExecutableNameFromConnection(id) });
+            if (std::binary_search(scripts.begin(), scripts.end(), id))
+                out.Assert(predicates.HasConnectionWithScript, { connection, streamManager.GetScriptNameFromConnection(id) });
         }
-        if (res.data.action_id == actions.ViewExecutableFromConnection) // ViewExecutableFromConnection
-        {
-            // TODO: send args and check if they are received correctly
-            std::vector<uint16> exe_connections = streamManager.GetConnectionsWithExecutables();
-            if (exe_connections.empty())
-                return;
-            std::string f    = std::to_string(exe_connections[0]) + "\\1";
-            auto initial_pos = utf8_to_u16(f);
-            OnOpenItem(initial_pos, {});
-            closeAnalysisWindow = true;
-            break;
-        }
-
-        if (res.data.action_id == actions.ViewScriptFromConnection) // ViewConnectionWithScript
-        {
-            // TODO: send args and check if they are received correctly
-            std::vector<uint16> script_connections = streamManager.GetConnectionsWithJSScripts();
-            if (script_connections.empty())
-                return;
-            std::string f    = std::to_string(script_connections[0]) + "\\1";
-            auto initial_pos = utf8_to_u16(f);
-            OnOpenItem(initial_pos, {});
-            closeAnalysisWindow = true;
-            break;
-        }
+        return ActionStatus::Success;
     }
+    if (action.action == actions.ExtractConnectionData) {
+        const auto connection = action.SubjectArg(0);
+        const auto it         = connectionOfSubject.find(connection.id);
+        if (it == connectionOfSubject.end())
+            return ActionStatus::Failed;
+        const auto* stream = streamManager[it->second];
+        if (!stream || stream->applicationLayers.size() < 2 || stream->applicationLayers[1].payload.size == 0)
+            return ActionStatus::Failed; // nothing transferred over this connection
+        const auto& layer = stream->applicationLayers[1];
+        std::string name  = !layer.extractionName.empty() ? std::string(layer.extractionName.data(), layer.extractionName.size())
+                                                          : std::string((const char*) layer.name.get());
+        // the payload is a new subject; the window opened for it attaches to it (its PopulateWindow discloses into Gamma_beta)
+        if (!out.CreateSubject(name, connection).IsValid())
+            return ActionStatus::Failed;
+        return OpenStreamPayload(it->second, 1) ? ActionStatus::Success : ActionStatus::Failed;
+    }
+    return ActionStatus::Failed;
 }

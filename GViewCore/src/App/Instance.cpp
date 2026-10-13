@@ -6,7 +6,7 @@
 #include "../Update/Stager.hpp"
 #include "../Update/UpdateService.hpp"
 #include <array>
-#include "../Components/AnalysisEngine/AnalysisEngine.hpp"
+#include "../HDF/Engine.hpp"
 
 using namespace GView::App;
 using namespace GView::App::InstanceCommands;
@@ -14,7 +14,6 @@ using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
-using namespace GView::Components::AnalysisEngine;
 
 constexpr uint32 DEFAULT_CACHE_SIZE    = 0xA00000; // 10 MB
 constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
@@ -103,7 +102,7 @@ void GView::App::SetHeadlessFrontend(AppCUI::Application::CustomFrontendInterfac
     headlessFrontend = frontend;
 }
 
-Instance::Instance() : analysisEngine(new RuleEngine())
+Instance::Instance() : hdf(new GView::HDF::Engine())
 {
     this->defaultCacheSize         = DEFAULT_CACHE_SIZE;
     this->mnuWindow                = nullptr;
@@ -112,6 +111,7 @@ Instance::Instance() : analysisEngine(new RuleEngine())
     this->mnuOptions               = nullptr;
     this->lastOpenedFolderLocation = ".";
 }
+Instance::~Instance() = default;
 bool Instance::LoadSettings()
 {
     auto ini = AppCUI::Application::GetAppSettings();
@@ -301,10 +301,8 @@ bool Instance::Init(bool isTestingEnabled)
     dsk->Handlers()->OnEvent = this;
     dsk->Handlers()->OnStart = this;
 
-    if (!analysisEngine->Init()) {
-        Dialogs::MessageBox::ShowError("Error", "Fail to init the analysis engine!");
-        return false;
-    }
+    // Hybrid Disclosure Framework: HDF.json problems are logged, they never prevent GView from starting
+    hdf->Init();
     return true;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
@@ -497,11 +495,11 @@ bool Instance::Add(
       Reference<Window> parent,
       const ConstString& creationProcess)
 {
+    // HDF provenance: a file opened from disk without an explicit parent (menu, command line, stored files) is a new input
+    // subject; buffers extracted by a plugin default to the current window as their parent (ExtractedFrom)
+    const bool hdfChild = parent != nullptr || objType != GView::Object::Type::File;
     if (parent == nullptr)
         parent = GetCurrentWindow();
-    Reference<Subject> subject = nullptr;
-    if (parent)
-        subject = parent.ToObjectRef<FileWindow>()->GetCurrentWindowSubject();
 
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
@@ -530,8 +528,11 @@ bool Instance::Add(
 
     // instantiate window
     while (true) {
-        win->InitialiseAnalysisEngineData(subject);
-        CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
+        // Init_T(subject): everything PopulateWindow discloses is the initial extraction of the window's subject
+        win->AttachToHDF(hdfChild ? parent : Reference<Window>(), true);
+        const bool populated = plg->PopulateWindow(win.get());
+        win->EndHDFAttach();
+        CHECKBK(populated, "Failed to populate file window!");
         // LLM hints disabled by the course policy => no Smart Assistants tab (prompts are also gated centrally)
         if (!Security::RestrictedMode::IsFeatureDisabled(Security::RestrictedMode::Feature::LLMHints)) {
             CHECKBK(Type::InterfaceTabs::PopulateWindowSmartAssistantsTab(win.get()), "Failed to populate file window!");
@@ -559,8 +560,9 @@ bool Instance::AddFolder(const std::filesystem::path& path, const ConstString& c
 
     // instantiate window
     while (true) {
-        win->InitialiseAnalysisEngineData();
+        win->AttachToHDF(parent, false); // a folder has no content
         GView::Type::FolderViewPlugin::PopulateWindow(win.get());
+        win->EndHDFAttach();
         win->Start(); // starts the window and set focus
 
         auto res = AppCUI::Application::AddWindow(std::move(win), parent, creationProcess);

@@ -976,6 +976,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
         return false;
     }
 
+    PLUGIN_EXPORT void RegisterPlugin([[maybe_unused]] Reference<GView::PluginRegistry> registry)
+    {
+        // static metadata of the plugin: no HDF vocabulary yet (see docs/source/hdf.rst)
+    }
+
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect[GView::GenericPlugins::Hashes::CMD_FULL_NAME_HASHES]         = Input::Key::Shift | Input::Key::F5;

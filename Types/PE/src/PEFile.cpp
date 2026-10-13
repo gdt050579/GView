@@ -7,7 +7,6 @@
 #include <string>
 
 using namespace GView::Type::PE;
-using namespace GView::Components::AnalysisEngine;
 
 struct CV_INFO_PDB20 {
     uint32 CvSignature;   // NBxx
@@ -1982,155 +1981,138 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
 
 namespace
 {
-    constexpr double ENTROPY_PACKED_THRESHOLD        = 7.2;
-    constexpr uint32 MIN_SECTION_BYTES_FOR_ENTROPY   = 256;
-    constexpr uint32 TINY_CODE_SECTION_VIRTUAL_LIMIT = 0x1000;
-    constexpr uint32 SMALL_IAT_IMPORT_THRESHOLD      = 48;
+constexpr double ENTROPY_PACKED_THRESHOLD        = 7.2;
+constexpr uint32 MIN_SECTION_BYTES_FOR_ENTROPY   = 256;
+constexpr uint32 TINY_CODE_SECTION_VIRTUAL_LIMIT = 0x1000;
+constexpr uint32 SMALL_IAT_IMPORT_THRESHOLD      = 48;
 
-    constexpr uint32 RWX_MASK = __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE | __IMAGE_SCN_MEM_EXECUTE;
+constexpr uint32 RWX_MASK = __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE | __IMAGE_SCN_MEM_EXECUTE;
 
-    static bool ImportNameEqualsI(const char* a, const char* b)
-    {
-        if (a == nullptr || b == nullptr)
-            return false;
-        while (*a && *b) {
-            if (std::tolower(static_cast<unsigned char>(*a)) != std::tolower(static_cast<unsigned char>(*b)))
-                return false;
-            ++a;
-            ++b;
-        }
-        return *a == *b;
-    }
-
-    static bool SectionNameLooksLikePacker(std::string_view raw)
-    {
-        std::string s(raw.begin(), raw.end());
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        static constexpr std::string_view hints[] = {
-              "upx",     ".aspack", "aspack", ".petite", "petite", ".mpress", "mpress", "nsp0",     "nsp1",
-              ".nsp",    ".packed", "themida", "vmp",     ".arch",  "enigma",  ".upx",  "packed",   "aspack",
-              "petite",  "mpress",  "upack",   ".adata",  ".udata", "pec",     "pklite"
-        };
-        for (auto h : hints) {
-            if (s.find(h) != std::string::npos)
-                return true;
-        }
+static bool ImportNameEqualsI(const char* a, const char* b)
+{
+    if (a == nullptr || b == nullptr)
         return false;
+    while (*a && *b) {
+        if (std::tolower(static_cast<unsigned char>(*a)) != std::tolower(static_cast<unsigned char>(*b)))
+            return false;
+        ++a;
+        ++b;
     }
+    return *a == *b;
+}
 
-    static uint32 CountTlsCallbacksForPe(PEFile& pe)
-    {
-        auto& dir = pe.GetDirectory(DirectoryType::TLS);
-        if (dir.VirtualAddress == 0 || dir.Size == 0)
-            return 0;
-        const uint64 faddr = pe.RVAToFA(dir.VirtualAddress);
-        if (faddr == PE_INVALID_ADDRESS)
-            return 0;
-
-        uint64 callbacksVA = 0;
-        if (pe.hdr64) {
-            if (pe.obj->GetData().Copy<uint64>(faddr + 24u, callbacksVA) == false)
-                return 0;
-        } else {
-            uint32 cb = 0;
-            if (pe.obj->GetData().Copy<uint32>(faddr + 12u, cb) == false)
-                return 0;
-            callbacksVA = cb;
-        }
-        if (callbacksVA == 0)
-            return 0;
-
-        uint64 fa = pe.VAtoFA(callbacksVA);
-        if (fa == PE_INVALID_ADDRESS)
-            return 0;
-
-        uint32 count = 0;
-        if (pe.hdr64) {
-            while (true) {
-                uint64 p = 0;
-                if (pe.obj->GetData().Copy<uint64>(fa, p) == false)
-                    break;
-                if (p == 0)
-                    break;
-                count++;
-                fa += 8;
-            }
-        } else {
-            while (true) {
-                uint32 p = 0;
-                if (pe.obj->GetData().Copy<uint32>(fa, p) == false)
-                    break;
-                if (p == 0)
-                    break;
-                count++;
-                fa += 4;
-            }
-        }
-        return count;
+static bool SectionNameLooksLikePacker(std::string_view raw)
+{
+    std::string s(raw.begin(), raw.end());
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    static constexpr std::string_view hints[] = { "upx",    ".aspack", "aspack",  ".petite", "petite", ".mpress", "mpress", "nsp0",   "nsp1",
+                                                  ".nsp",   ".packed", "themida", "vmp",     ".arch",  "enigma",  ".upx",   "packed", "aspack",
+                                                  "petite", "mpress",  "upack",   ".adata",  ".udata", "pec",     "pklite" };
+    for (auto h : hints) {
+        if (s.find(h) != std::string::npos)
+            return true;
     }
+    return false;
+}
 
-    static const char* DYNAMIC_RESOLUTION_APIS[] = {
-        "LoadLibraryA", "LoadLibraryW", "LoadLibraryExA", "LoadLibraryExW", "GetProcAddress", "LdrLoadDll", "LdrGetProcedureAddress"
-    };
+static uint32 CountTlsCallbacksForPe(PEFile& pe)
+{
+    auto& dir = pe.GetDirectory(DirectoryType::TLS);
+    if (dir.VirtualAddress == 0 || dir.Size == 0)
+        return 0;
+    const uint64 faddr = pe.RVAToFA(dir.VirtualAddress);
+    if (faddr == PE_INVALID_ADDRESS)
+        return 0;
 
-    static const char* PROCESS_INJECTION_APIS[] = { "OpenProcess",
-                                                    "VirtualAllocEx",
-                                                    "WriteProcessMemory",
-                                                    "CreateRemoteThread",
-                                                    "NtUnmapViewOfSection",
-                                                    "SetThreadContext",
-                                                    "ResumeThread",
-                                                    "QueueUserAPC",
-                                                    "NtQueueApcThread",
-                                                    "CreateToolhelp32Snapshot",
-                                                    "RtlCreateUserThread",
-                                                    "NtCreateThreadEx" };
-
-    static void AppendCsvUnique(std::vector<std::string>& out, std::string_view add)
-    {
-        for (const auto& e : out) {
-            if (e == add)
-                return;
-        }
-        out.emplace_back(std::string{ add });
+    uint64 callbacksVA = 0;
+    if (pe.hdr64) {
+        if (pe.obj->GetData().Copy<uint64>(faddr + 24u, callbacksVA) == false)
+            return 0;
+    } else {
+        uint32 cb = 0;
+        if (pe.obj->GetData().Copy<uint32>(faddr + 12u, cb) == false)
+            return 0;
+        callbacksVA = cb;
     }
+    if (callbacksVA == 0)
+        return 0;
+
+    uint64 fa = pe.VAtoFA(callbacksVA);
+    if (fa == PE_INVALID_ADDRESS)
+        return 0;
+
+    uint32 count = 0;
+    if (pe.hdr64) {
+        while (true) {
+            uint64 p = 0;
+            if (pe.obj->GetData().Copy<uint64>(fa, p) == false)
+                break;
+            if (p == 0)
+                break;
+            count++;
+            fa += 8;
+        }
+    } else {
+        while (true) {
+            uint32 p = 0;
+            if (pe.obj->GetData().Copy<uint32>(fa, p) == false)
+                break;
+            if (p == 0)
+                break;
+            count++;
+            fa += 4;
+        }
+    }
+    return count;
+}
+
+static const char* DYNAMIC_RESOLUTION_APIS[] = { "LoadLibraryA",   "LoadLibraryW", "LoadLibraryExA",        "LoadLibraryExW",
+                                                 "GetProcAddress", "LdrLoadDll",   "LdrGetProcedureAddress" };
+
+static const char* PROCESS_INJECTION_APIS[] = { "OpenProcess",          "VirtualAllocEx",           "WriteProcessMemory",  "CreateRemoteThread",
+                                                "NtUnmapViewOfSection", "SetThreadContext",         "ResumeThread",        "QueueUserAPC",
+                                                "NtQueueApcThread",     "CreateToolhelp32Snapshot", "RtlCreateUserThread", "NtCreateThreadEx" };
+
+static void AppendCsvUnique(std::vector<std::string>& out, std::string_view add)
+{
+    for (const auto& e : out) {
+        if (e == add)
+            return;
+    }
+    out.emplace_back(std::string{ add });
+}
 
 } // namespace
 
-void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterface> engine, Reference<Subject> subject)
+void PEFile::EmitHDFStaticHeuristics(Reference<GView::HDF::EngineInterface> engine, GView::HDF::Subject subject)
 {
-    if (!engine.IsValid())
+    if (!engine.IsValid() || !subject.IsValid())
         return;
 
-    auto submit = [&](PredId pid, std::vector<Arg> args, std::string_view details) {
-        if (!AnalysisEngineInterface::IsValidPredicateId(pid))
-            return;
-        auto fact = AnalysisEngineInterface::CreateFactFromPredicateAndSubject(pid, subject, "static analysis", details, std::move(args));
-        engine->SubmitFact(fact);
+    auto disclose = [&](GView::HDF::PredicateId p, std::initializer_list<GView::HDF::ArgValue> args, std::string_view explanation) {
+        if (GView::HDF::EngineInterface::IsValid(p))
+            engine->Disclose(subject, p, args, explanation);
     };
 
-    // --- RWX: first section only (one fact; rule engine stores latest per predicate)
+    // --- RWX: every RWX section (set semantics: one assertion per (section, size))
     std::string firstRwxName;
-    uint64 firstRwxVirtSize = 0;
     for (uint32 i = 0; i < nrSections; i++) {
         if ((sect[i].Characteristics & RWX_MASK) == RWX_MASK) {
             String sn;
             CopySectionName(i, sn);
-            firstRwxName    = sn.GetText() != nullptr ? sn.GetText() : "";
-            firstRwxVirtSize = sect[i].Misc.VirtualSize;
+            std::string sectionName = sn.GetText() != nullptr ? sn.GetText() : "";
+            if (sectionName.empty())
+                sectionName = "(unnamed)";
             if (firstRwxName.empty())
-                firstRwxName = "(unnamed)";
-            submit(predicates.HasRWXSection,
-                  { { "section_name", firstRwxName }, { "size", firstRwxVirtSize } },
-                  "Section has RWX characteristics");
-            break;
+                firstRwxName = sectionName;
+            disclose(predicates.HasRWXSection, { subject, sectionName, static_cast<uint64>(sect[i].Misc.VirtualSize) }, "Section has RWX characteristics");
         }
     }
 
     // --- TLS callbacks
     const uint32 tlsCb = CountTlsCallbacksForPe(*this);
-    if (tlsCb > 0 && AnalysisEngineInterface::IsValidPredicateId(predicates.HasTLSCallbacks))
-        submit(predicates.HasTLSCallbacks, { { "callback_count", static_cast<uint64>(tlsCb) } }, "TLS callback array present");
+    if (tlsCb > 0)
+        disclose(predicates.HasTLSCallbacks, { subject, tlsCb }, "TLS callback array present");
 
     // --- Imports: dynamic resolution & injection
     std::vector<std::string> dynHits;
@@ -2157,11 +2139,9 @@ void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterfac
             dynSample << ", ";
         dynSample << dynHits[i];
     }
-    if (!dynHits.empty() && AnalysisEngineInterface::IsValidPredicateId(predicates.UsesDynamicApiResolution)) {
-        submit(predicates.UsesDynamicApiResolution,
-              { { "indicator_count", static_cast<uint64>(dynHits.size()) }, { "apis_sample", dynSample.str() } },
-              "Imports suggest dynamic API resolution");
-    }
+    if (!dynHits.empty())
+        disclose(
+              predicates.UsesDynamicApiResolution, { subject, static_cast<uint64>(dynHits.size()), dynSample.str() }, "Imports suggest dynamic API resolution");
 
     std::ostringstream injSample;
     for (size_t i = 0; i < injHits.size() && i < 8; i++) {
@@ -2169,11 +2149,11 @@ void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterfac
             injSample << ", ";
         injSample << injHits[i];
     }
-    if (!injHits.empty() && AnalysisEngineInterface::IsValidPredicateId(predicates.ImportsProcessInjectionAPIs)) {
-        submit(predicates.ImportsProcessInjectionAPIs,
-              { { "api_count", static_cast<uint64>(injHits.size()) }, { "apis_sample", injSample.str() } },
+    if (!injHits.empty())
+        disclose(
+              predicates.ImportsProcessInjectionAPIs,
+              { subject, static_cast<uint64>(injHits.size()), injSample.str() },
               "Imports process-injection-related APIs");
-    }
 
     // --- Packing heuristics: entropy, section names, small IAT + dynamic load, tiny EP code section
     double maxEntropy       = 0.0;
@@ -2212,13 +2192,12 @@ void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterfac
             hintSection = maxSn.GetText();
     }
 
-    const bool hasLoadLib =
-          std::any_of(impFunc.begin(), impFunc.end(), [](const ImportFunctionInformation& f) {
-              const char* n = f.Name.GetText();
-              return n && (ImportNameEqualsI(n, "LoadLibraryA") || ImportNameEqualsI(n, "LoadLibraryW") || ImportNameEqualsI(n, "LoadLibraryExA")
-                             || ImportNameEqualsI(n, "LoadLibraryExW"));
-          });
-    const bool hasGPA = std::any_of(impFunc.begin(), impFunc.end(), [](const ImportFunctionInformation& f) {
+    const bool hasLoadLib      = std::any_of(impFunc.begin(), impFunc.end(), [](const ImportFunctionInformation& f) {
+        const char* n = f.Name.GetText();
+        return n && (ImportNameEqualsI(n, "LoadLibraryA") || ImportNameEqualsI(n, "LoadLibraryW") || ImportNameEqualsI(n, "LoadLibraryExA") ||
+                     ImportNameEqualsI(n, "LoadLibraryExW"));
+    });
+    const bool hasGPA          = std::any_of(impFunc.begin(), impFunc.end(), [](const ImportFunctionInformation& f) {
         const char* n = f.Name.GetText();
         return n && ImportNameEqualsI(n, "GetProcAddress");
     });
@@ -2229,7 +2208,7 @@ void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterfac
     if (epIdx >= 0) {
         String epSn;
         CopySectionName(static_cast<uint32>(epIdx), epSn);
-        const char* es = epSn.GetText();
+        const char* es     = epSn.GetText();
         std::string epName = es ? es : "";
         std::transform(epName.begin(), epName.end(), epName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (epName.find("text") != std::string::npos && sect[static_cast<uint32>(epIdx)].Misc.VirtualSize < TINY_CODE_SECTION_VIRTUAL_LIMIT)
@@ -2238,7 +2217,7 @@ void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterfac
 
     const bool likelyPacked = highEntropy || nameHint || smallIatDynamic || tinyTextEp;
 
-    if (!likelyPacked || !AnalysisEngineInterface::IsValidPredicateId(predicates.IsLikelyPacked))
+    if (!likelyPacked || !GView::HDF::EngineInterface::IsValid(predicates.IsLikelyPacked))
         return;
 
     std::ostringstream ph;
@@ -2264,14 +2243,17 @@ void PEFile::EmitAnalysisEngineStaticHeuristics(Reference<AnalysisEngineInterfac
     if (!firstRwxName.empty())
         sectionReport = firstRwxName;
 
-    submit(predicates.IsLikelyPacked,
-          { { "packer_hint", ph.str() }, { "section_name", sectionReport }, { "entropy", maxEntropy } },
-          "Heuristic packing/protection signals");
+    disclose(predicates.IsLikelyPacked, { subject, ph.str(), sectionReport, maxEntropy }, "Heuristic packing/protection signals");
 }
 
 void PEFile::RunCommand(std::string_view commandName)
 {
     if (commandName == "DigitalSignature" || commandName == "DigitalSignatureCmd") {
+        // a tool operation that is not an HDF action: its disclosures form one observation transition
+        const auto subject = win.IsValid() ? win->GetSubject() : GView::HDF::Subject{};
+        GView::HDF::ObservationScope observation;
+        if (hdf.IsValid() && subject.IsValid())
+            observation = hdf->BeginObservation(subject, "DigitalSignature");
         while (!signatureChecked) {
             data.winTrust.errorMessage = "Digital signature not found!";
 
@@ -2281,13 +2263,8 @@ void PEFile::RunCommand(std::string_view commandName)
             CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
             CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
 
-            auto subject = win->GetCurrentWindowSubject();
-            auto fact    = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  predicates.IsSigned, subject, "static analysis", "Has digital signature");
-            auto res = analysisEngine->SubmitFact(fact);
-            if (!res) {
-                LOG_ERROR("Failed to add IsSigned fact");
-            }   
+            if (hdf.IsValid() && GView::HDF::EngineInterface::IsValid(predicates.IsSigned))
+                hdf->Disclose(subject, predicates.IsSigned, { subject }, "Has digital signature");
 
             CHECKBK(GView::DigitalSignature::VerifyEmbeddedSignature(data, obj->GetData()), "");
 #ifdef BUILD_FOR_WINDOWS
@@ -2328,13 +2305,8 @@ void PEFile::RunCommand(std::string_view commandName)
             if (commandName != "DigitalSignatureCmd") {
                 PE::Commands::DigitalSignature(this).Show();
             }
-            auto subject = win->GetCurrentWindowSubject();
-            auto fact    = Components::AnalysisEngine::AnalysisEngineInterface::CreateFactFromPredicateAndSubject(
-                  predicates.SignatureValid, subject, "static analysis", "Has valid signature");
-            auto res = analysisEngine->SubmitFact(fact);
-            if (!res) {
-                LOG_ERROR("Failed to add SignatureValid fact");
-            }  
+            if (hdf.IsValid() && GView::HDF::EngineInterface::IsValid(predicates.HasValidSignature))
+                hdf->Disclose(subject, predicates.HasValidSignature, { subject }, "the embedded signature verifies");
         } else {
             AppCUI::Dialogs::MessageBox::ShowError("Error", data.winTrust.errorMessage);
         }
