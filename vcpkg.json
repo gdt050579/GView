@@ -86,10 +86,6 @@
 		"platform": "windows | linux | osx"
 	},
 	{
-		"name": "tiff",
-		"platform": "windows | linux | osx"
-	},
-	{
 		"name": "jbig2dec",
 		"platform": "windows | linux | osx"
 	},

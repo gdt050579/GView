@@ -11,15 +11,6 @@ target_include_directories(PDF PRIVATE ${OpenJPEG_INCLUDE_DIRS})
 # Link OpenJPEG (use dynamic or static depending on availability)
 target_link_libraries(PDF PRIVATE openjp2)
 
-find_package(TIFF REQUIRED)
-
-message(STATUS "TIFF_INCLUDE_DIRS: ${TIFF_INCLUDE_DIRS}")
-message(STATUS "TIFF_LIBRARIES: ${TIFF_LIBRARIES}")
-
-target_include_directories(PDF PRIVATE ${TIFF_INCLUDE_DIRS})
-
-target_link_libraries(PDF PRIVATE TIFF::TIFF)
-
 if(DEFINED ENV{VCPKG_ROOT})
     set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_ROOT}/installed")
 endif()

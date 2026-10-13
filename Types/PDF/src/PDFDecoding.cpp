@@ -1,7 +1,6 @@
 #include "pdf.hpp"
 #include <openjpeg.h>
 #include <jbig2.h>
-// #include <tiffio.h>
 
 using namespace GView::Type;
 using namespace GView;
