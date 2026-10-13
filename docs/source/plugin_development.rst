@@ -167,6 +167,19 @@ Use ``Object::GetData()`` to get a ``DataCache&``. Use ``Copy<T>`` for structs a
        return true;
    }
 
+When a library or OS API needs a real file and the object is not ``Object::Type::File`` (e.g. it was extracted from
+a container), use ``GView::App::DropToTemporaryFile``. Never write the content next to the container or under a
+path built from the object's path. The copy lives in GView's private temporary folder (see :doc:`configuration`) and
+is deleted when the ``TemporaryFile`` handle is destroyed. Close the file before that happens. The call fails
+(silently) for Learning and Evaluation Mode content that must stay in memory, so always keep a fallback::
+
+   GView::App::TemporaryFile copy;
+   if (auto status = GView::App::DropToTemporaryFile(obj, copy); status.ok) {
+       VerifyWithAnApiThatNeedsAFile(copy.GetPath());
+   } else {
+       // in-memory processing, or report status.message
+   }
+
 PositionToColorInterface (buffer highlighting)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

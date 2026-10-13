@@ -11,6 +11,28 @@ The following section should be seen in a ``GView.ini`` file:
 * ``[Type.<XXX>]`` - various sections that describe characteristics of each supported type in GView
 * ``[View.<xxx>]`` - various section for each smart view
 
+Temporary folder
+----------------
+
+Some operations need a real file on disk: the WinTrust verification of a PE extracted from a container, or a ZIP
+archive nested in another one that is larger than the cache. GView then writes a copy of that object to a private
+folder ``GView-<random>``, created on first use, that only the current user can access. Each copy is deleted as soon
+as it is no longer needed and the folder is deleted when GView exits. Copies are named ``<n>-<object name>``, using
+only ``[A-Za-z0-9._-]`` characters; names taken from archive entries are never used as paths.
+
+The folder is created in the system temporary directory, or in the folder set by ``Config.TemporaryFolder`` in the
+``[GView]`` section. Because these copies are often malware, pointing this setting to a folder excluded from the
+antivirus avoids copies being quarantined while they are in use. If the configured folder does not exist, nothing is
+written anywhere else: the operation is skipped (WinTrust) or fails (archives that do not fit in the cache).
+
+..  code-block:: ini
+
+    [GView]
+    Config.TemporaryFolder = D:\Analysis\GViewTemp
+
+Learning and Evaluation Mode never writes memory-only task content (or anything extracted from it) to this folder, and
+nothing at all while the course policy restricts ``Export``.
+
 Types
 -----
 

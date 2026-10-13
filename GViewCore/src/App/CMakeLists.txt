@@ -16,6 +16,7 @@ target_sources(GViewCore PRIVATE
     LearningSubmitDialog.cpp
     UpdateDialog.cpp
     GViewDesktop.cpp
+    TemporaryFolder.cpp
 )
 
 # change detection of the persistent storage of the web build: pure logic, built everywhere for the unit tests
@@ -27,3 +28,4 @@ endif()
 
 add_testing_sources(GViewCore tests_keybindings.cpp)
 add_testing_sources(GViewCore tests_browserstorage.cpp)
+add_testing_sources(GViewCore tests_temporaryfolder.cpp)

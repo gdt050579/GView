@@ -1313,6 +1313,53 @@ TEST_CASE("Learning: submission flow and idempotent retries (T6)", "[learning][s
     REQUIRE_FALSE(s.Submit("w1_stack_var", SecureString(std::string(600, 'a')), SecureString("x"), cb).ok);
 }
 
+TEST_CASE("Learning: in-memory objects opened while memory-only content is open are memory-only", "[learning][session]")
+{
+    SessionFixture fx;
+    fx.ServePolicy(BuildPolicy(PolicyOptions{}));
+    REQUIRE(fx.Connect().ok);
+    auto& s = *fx.session;
+    int taskObject = 0, extracted = 0, ownFile = 0, nested = 0, later = 0; // stand-ins for GView::Object addresses
+    ItemBinding b;
+    b.item = "w1_memory";
+    b.mode = DeliveryMode::Memory;
+    s.SetPendingBinding(b);
+    s.OnObjectCreated(&taskObject, true);
+    s.OnObjectCreated(&extracted, true); // e.g. an entry extracted from the memory-only archive
+    s.OnObjectCreated(&ownFile, false);  // opened from disk => can not hold derived content
+    REQUIRE(s.IsMemoryDerived(&extracted));
+    REQUIRE(s.FindBinding(&extracted) == nullptr); // not a course window (no telemetry, no time accounting)
+    REQUIRE_FALSE(s.IsMemoryDerived(&ownFile));
+    REQUIRE_FALSE(s.IsMemoryDerived(&taskObject)); // protected by its own binding
+
+    // the task window is closed, but derived content is still open => what is extracted from it is tainted as well
+    s.OnObjectClosed(&taskObject);
+    s.OnObjectCreated(&nested, true);
+    REQUIRE(s.IsMemoryDerived(&nested));
+    s.OnObjectClosed(&extracted);
+    s.OnObjectClosed(&nested);
+    REQUIRE_FALSE(s.IsMemoryDerived(&extracted));
+
+    // nothing memory-only is open anymore
+    s.OnObjectCreated(&later, true);
+    REQUIRE_FALSE(s.IsMemoryDerived(&later));
+
+    // file-mode items do not taint
+    int fileTask = 0, fromFileTask = 0;
+    ItemBinding f;
+    f.item = "w2_file";
+    f.mode = DeliveryMode::File;
+    s.SetPendingBinding(f);
+    s.OnObjectCreated(&fileTask, false);
+    s.OnObjectCreated(&fromFileTask, true);
+    REQUIRE_FALSE(s.IsMemoryDerived(&fromFileTask));
+
+    s.OnObjectClosed(&fileTask);
+    s.OnObjectClosed(&fromFileTask);
+    s.OnObjectClosed(&later);
+    s.OnObjectClosed(&ownFile);
+}
+
 TEST_CASE("Learning: window bindings, telemetry scope and time accounting", "[learning][session]")
 {
     SessionFixture fx;

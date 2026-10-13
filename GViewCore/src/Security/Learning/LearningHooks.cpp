@@ -116,7 +116,7 @@ void OnFileWindowCreated(const GView::Object* obj) noexcept
 {
     try
     {
-        GetSession().OnObjectCreated(obj);
+        GetSession().OnObjectCreated(obj, obj != nullptr && obj->GetObjectType() == GView::Object::Type::MemoryBuffer);
     }
     catch (...)
     {
@@ -154,6 +154,9 @@ bool IsMemoryOnlyObject(const GView::Object* obj) noexcept
 {
     const auto* b = GetSession().FindBinding(obj);
     if (b != nullptr && b->mode == DeliveryMode::Memory)
+        return true;
+    // extracted / opened while memory-only content was open (see LearningSession::OnObjectCreated)
+    if (GetSession().IsMemoryDerived(obj))
         return true;
     // defence in depth: under a memory-mode policy nothing derived from any analysed object is persisted
     const auto& pol = GetSession().GetPolicy();

@@ -863,16 +863,29 @@ void LearningSession::ClearPendingBinding() noexcept
     pendingBinding.reset();
 }
 
-void LearningSession::OnObjectCreated(const void* obj)
+void LearningSession::OnObjectCreated(const void* obj, bool inMemory)
 {
-    if (!pendingBinding.has_value() || obj == nullptr)
+    if (obj == nullptr)
         return;
-    bindings[obj] = std::move(*pendingBinding);
-    pendingBinding.reset();
+    if (pendingBinding.has_value()) {
+        bindings[obj] = std::move(*pendingBinding);
+        pendingBinding.reset();
+        return;
+    }
+    if (!inMemory)
+        return;
+    // GView does not track which window an in-memory object was extracted from, so while any memory-only content is open
+    // every new in-memory object is assumed to derive from it (fail closed: it may not be written to disk either)
+    bool memoryContentOpen = !memoryDerived.empty();
+    for (auto it = bindings.begin(); it != bindings.end() && !memoryContentOpen; ++it)
+        memoryContentOpen = it->second.mode == DeliveryMode::Memory;
+    if (memoryContentOpen)
+        memoryDerived.insert(obj);
 }
 
 void LearningSession::OnObjectClosed(const void* obj)
 {
+    memoryDerived.erase(obj);
     auto it = bindings.find(obj);
     if (it == bindings.end())
         return;

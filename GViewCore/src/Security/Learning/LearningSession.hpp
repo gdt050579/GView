@@ -19,6 +19,7 @@
 
 #include <array>
 #include <map>
+#include <set>
 
 namespace GView::Security::Learning
 {
@@ -162,6 +163,9 @@ class LearningSession
 
     std::map<const void*, ItemBinding> bindings;
     std::optional<ItemBinding> pendingBinding;
+    // in-memory objects created while memory-only content was open (e.g. an entry extracted from a memory-only archive):
+    // they may hold derived content, so they are treated as memory-only until their window closes
+    std::set<const void*> memoryDerived;
     SubmissionTracker submissions;
 
     // activity / time accounting (monotonic ms)
@@ -275,9 +279,14 @@ class LearningSession
     // ---------------- window bindings / hooks (UI thread) ----------------
     void SetPendingBinding(ItemBinding binding);
     void ClearPendingBinding() noexcept;
-    void OnObjectCreated(const void* obj);
+    // inMemory: the object is not backed by a file on disk, so it may hold content derived from other open objects
+    void OnObjectCreated(const void* obj, bool inMemory = false);
     void OnObjectClosed(const void* obj);
     const ItemBinding* FindBinding(const void* obj) const noexcept;
+    bool IsMemoryDerived(const void* obj) const noexcept
+    {
+        return memoryDerived.find(obj) != memoryDerived.end();
+    }
     size_t OpenLearningWindows() const noexcept
     {
         return bindings.size();
