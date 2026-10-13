@@ -141,6 +141,9 @@ bool Instance::LoadSettings()
     // read instance settings
     auto sect                                  = ini->GetSection("GView");
     this->defaultCacheSize                     = std::max<>(sect.GetValue("Config.CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
+    // base of the private temporary folder (e.g. a folder excluded from the antivirus); empty => system temporary directory
+    const auto tempFolder = sect.GetValue("Config.TemporaryFolder").AsStringView().value_or(std::string_view());
+    TemporaryFolderAccess::SetBaseFolder(std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(tempFolder.data()), tempFolder.size())));
 
     // key bindings (must be applied before the menus and the first window are created)
     this->keyBindings.Load(*ini);

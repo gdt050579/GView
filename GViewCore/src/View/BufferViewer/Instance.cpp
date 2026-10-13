@@ -140,6 +140,8 @@ void Instance::OpenCurrentSelection()
         fullPath.Add(temp);
 
         GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select,"",Application::GetCurrentWindow(),"buffer extraction");
+    } else {
+        Dialogs::MessageBox::ShowNotification("Open selection", "There is no selection at the cursor position !");
     }
 }
 void Instance::UpdateCurrentSelection()
@@ -1140,6 +1142,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     }
 
     commandBar.SetCommand(DissasmDialogCmd.Key, "Dissasm", BUFFERVIEW_CMD_DISSASM_DIALOG);
+    commandBar.SetCommand(OpenSelection.Key, OpenSelection.Caption, BUFFERVIEW_NAV_OPEN_SELECTION);
 
     if (this->showColorNotFocused) {
         commandBar.SetCommand(ShowColorNotFocused.Key, "ShowColorWhenNotFocused:ON", BUFFERVIEW_CMD_SHOW_COLOR);
@@ -1366,6 +1369,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         } else {
             this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
         }
+        return true;
+    case BUFFERVIEW_NAV_OPEN_SELECTION:
+        OpenCurrentSelection();
         return true;
     case BUFFERVIEW_CMD_FINDNEXT: {
         selection.Clear();

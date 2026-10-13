@@ -284,6 +284,11 @@ zeroes memory before freeing it, and the viewer reads straight from the locked b
 to the item; for memory items GView never reads or writes the disassembly cache, never exports, and skips WinTrust
 (which would need the file on disk; the embedded OpenSSL signature check still runs).
 
+Derived objects: GView does not track which window an in-memory object (``Object::Type::MemoryBuffer``, e.g. an entry
+extracted from an archive) was opened from. While a memory item - or an object derived from one - is open, every new
+in-memory object is therefore treated as memory-only as well (``LearningSession::OnObjectCreated``), until its own
+window closes. Objects opened from disk are never affected.
+
 Known residual plaintext copies (honest list): GView's ``DataCache`` chunk cache (up to ``CacheSize``, 10 MiB by
 default, ordinary heap), parser/viewer-derived structures (strings, disassembly text, images), AppCUI screen buffers.
 Pinning can fail silently (Windows working-set quota, Linux ``RLIMIT_MEMLOCK``); content is then still wiped but may
@@ -316,7 +321,9 @@ Clipboard      ``GView::App::SetClipboardText`` (BufferViewer ``CopyDialog``, Te
                plugin MD5/SHA256 copy, learning link dialog - the Copy button is disabled)
 Export         GridViewer export cell/column (hidden + gated); ``DissasmViewer::CommandExportAsmFile``;
                ``DissasmViewer::SaveCacheData``/``LoadCacheData`` (skipped); Dropper generic plugin; PE
-               ``Resources::SaveCurrentResource``; PE ``DigitalSignature`` drop-to-disk for WinTrust; PDF
+               ``Resources::SaveCurrentResource``; ``GView::App::DropToTemporaryFile`` (silent: no notice, no
+               ``feature_blocked``; used by the PE ``DigitalSignature`` WinTrust copy and by ZIP for nested archives
+               larger than the cache); PDF
                ``ExtractAndSaveTextWithDialog``; JS ``AST::DumpVisitor`` debug dumps
 SaveAs         ``LexicalViewer::Instance::ShowSaveAsDialog`` (hidden + gated; memory items also blocked)
 Plugins        runtime filter in ``Instance::IdentifyTypePlugin_FirstMatch/BestMatch/WithSelectedType``,

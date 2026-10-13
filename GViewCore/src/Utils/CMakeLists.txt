@@ -9,3 +9,5 @@ target_sources(GViewCore PRIVATE
     JsonBuilder.cpp
 )
 
+add_testing_sources(GViewCore tests_datacache.cpp)
+

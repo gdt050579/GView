@@ -13,7 +13,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
+constexpr size_t DISSASM_MAX_STORED_JUMPS = 64; // visited locations (a jump stores both its source and its destination)
 
 const std::array<AsmFunctionDetails, 58> KNOWN_FUNCTIONS = { {
       { "WriteFile",
@@ -266,12 +266,30 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
     case 1:
         x = PrintCursorPosInfo(x, 0, 16, false, renderer);
         x = PrintCursorLineInfo(x, 0, 16, false, renderer);
+        PrintCursorValueInfo(x, 0, renderer);
         break;
     default:
-        PrintCursorPosInfo(x, 0, 16, false, renderer);
-        PrintCursorLineInfo(x, 1, 16, false, renderer);
+        x = std::max<int>(PrintCursorPosInfo(x, 0, 16, false, renderer), PrintCursorLineInfo(x, 1, 16, false, renderer));
+        PrintCursorValueInfo(x, 0, renderer);
         break;
     }
+}
+
+int Instance::PrintCursorValueInfo(int x, int y, Renderer& r)
+{
+    // the number H would convert, in both bases (and signed when the sign bit of a 32 / 64 bit value is set)
+    const auto number = GetCursorLineNumber();
+    if (!number)
+        return x;
+    LocalString<96> tmp;
+    tmp.Format("0x%llX = %llu", static_cast<unsigned long long>(number->value), static_cast<unsigned long long>(number->value));
+    if (number->value >= 0x80000000ULL && number->value <= 0xFFFFFFFFULL)
+        tmp.AddFormat(" (%d)", static_cast<int32>(static_cast<uint32>(number->value)));
+    else if (number->value >= 0x8000000000000000ULL)
+        tmp.AddFormat(" (%lld)", static_cast<long long>(number->value));
+    r.WriteSingleLineText(x, y, "Val:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 5, y, tmp.GetText(), this->ColorMan.Colors.CursorNormal);
+    return x + 5 + static_cast<int>(tmp.Len()) + 1;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
@@ -320,6 +338,10 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
 
 void Instance::OpenCurrentSelection()
 {
+    if (!selection.HasAnySelection()) {
+        Dialogs::MessageBox::ShowNotification("Open selection", "Select a zone first !");
+        return;
+    }
     UnicodeStringBuilder usb{};
     if (!ProcessSelectedDataToPrintable(usb))
         return;
@@ -806,15 +828,18 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
         // TODO: check textFileOffset!!
         const BufferView buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
 
+        // the cache may return fewer bytes than requested (end of file): never index past what was returned
         char buffer[9] = {};
-        for (uint32 i = 0; i < typeSize; i++)
+        for (uint32 i = 0; i < typeSize && i < buf.GetLength(); i++)
             buffer[i] = static_cast<char>(buf[i]);
 
         if (isSignedValue) {
-            int64 value = *(int64*) buffer;
+            int64 value;
+            memcpy(&value, buffer, sizeof(value));
             AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), value);
         } else {
-            uint64 value = *(uint64*) buffer;
+            uint64 value;
+            memcpy(&value, buffer, sizeof(value));
             AddStringToChars(dli, normalColor, "%s: %llu", currentType.name.data(), value);
         }
     }
@@ -1439,8 +1464,9 @@ bool Instance::ShowGoToDialog()
     if (dlg.Show() == Dialogs::Result::Ok) {
         const auto lineToReach = dlg.GetResultedLine();
         if (lineToReach != currentLine) {
-            jumps_holder.insert(Cursor.saveState());
+            const auto from = SaveCursorState();
             MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), Key::None, false);
+            RecordJump(from);
         }
     }
     /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
@@ -1626,6 +1652,56 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
     if (goToEntryPoint)
         offsetToReach = &convertedZone->zoneDetails.entryPoint;
     DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine, offsetToReach);
+}
+
+CursorState Instance::SaveCursorState() const
+{
+    CursorState state;
+    const uint32 line = Cursor.startViewLine + Cursor.lineInView;
+    state.lineInView  = Cursor.lineInView;
+    state.offset      = Cursor.offset;
+    state.lineInZone  = line;
+
+    const auto zonesFound = GetZonesIndexesFromLinePosition(line);
+    if (zonesFound.size() == 1) {
+        state.zoneIndex  = zonesFound[0].zoneIndex;
+        state.lineInZone = zonesFound[0].startingLine;
+    }
+    return state;
+}
+
+void Instance::RestoreCursorState(const CursorState& state)
+{
+    uint32 line       = state.lineInZone;
+    const auto& zones = settings->parseZones;
+    if (state.zoneIndex != CursorState::NO_ZONE && state.zoneIndex < zones.size()) {
+        const auto& zone = zones[state.zoneIndex];
+        // the zone may have been collapsed in the meantime (only its title line is left)
+        const uint32 zoneLines = zone->endingLineIndex > zone->startLineIndex ? zone->endingLineIndex - zone->startLineIndex : 1u;
+        line                   = zone->startLineIndex + std::min<uint32>(state.lineInZone, zoneLines - 1u);
+    }
+    line = std::min<uint32>(line, Layout.totalLinesSize);
+
+    const uint32 lastRow = Layout.visibleRows > 0 ? Layout.visibleRows - 1u : 0u;
+    Cursor.lineInView    = std::min<uint32>(std::min<uint32>(state.lineInView, line), lastRow);
+    Cursor.startViewLine = line - Cursor.lineInView;
+    Cursor.offset        = std::min<uint32>(state.offset, Layout.textSize);
+    // the view changed -> the cached lines of the dissasm zones must be recomputed
+    Cursor.hasMovedView = true;
+}
+
+void Instance::RecordJump(const CursorState& from)
+{
+    jumps_holder.Record(from, SaveCursorState());
+}
+
+bool Instance::JumpInHistory(bool back)
+{
+    const auto target = back ? jumps_holder.JumpBack() : jumps_holder.JumpForward();
+    if (!target.has_value())
+        return false;
+    RestoreCursorState(target.value());
+    return true;
 }
 
 void DrawLineInfo::WriteErrorToScreen(std::string_view error) const

@@ -68,10 +68,39 @@ void Instance::LoadImage()
         RedrawImage();
     }
 }
+void Instance::OpenCurrentImage()
+{
+    if (this->currentImageIndex >= this->settings->imgList.size()) {
+        Dialogs::MessageBox::ShowNotification("Open image", "There is no image to open !");
+        return;
+    }
+    const auto& info = this->settings->imgList[this->currentImageIndex];
+    if ((info.end <= info.start) || (info.end - info.start > 0xFFFFFFFFULL)) {
+        Dialogs::MessageBox::ShowNotification("Open image", "The current image does not have a valid file range !");
+        return;
+    }
+
+    LocalString<128> temp;
+    temp.Format("Image_%u_%llx_%llx", this->currentImageIndex, info.start, info.end);
+    auto buf = this->obj->GetData().CopyToBuffer(info.start, (uint32) (info.end - info.start));
+    if (buf.IsValid() == false) {
+        Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
+        return;
+    }
+
+    LocalUnicodeStringBuilder<2048> fullPath;
+    fullPath.Add(this->obj->GetPath());
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add(temp);
+
+    GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select, "", Application::GetCurrentWindow(), "image extraction");
+}
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(ZoomIn.Key, ZoomIn.Caption, ZoomIn.CommandId);
     commandBar.SetCommand(ZoomOut.Key, ZoomOut.Caption, ZoomOut.CommandId);
+    if (this->settings->imgList.empty() == false)
+        commandBar.SetCommand(OpenImage.Key, OpenImage.Caption, OpenImage.CommandId);
     if (this->settings->imgList.size() > 1)
     {
         //prev/next image
@@ -98,6 +127,10 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
             this->currentImageIndex++;
             LoadImage();
         }
+        return true;
+    }
+    if (OpenImage.Matches(keyCode)) {
+        OpenCurrentImage();
         return true;
     }
 
@@ -144,6 +177,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             this->currentImageIndex++;
             LoadImage();
         }
+        return true;
+    case CMD_ID_OPEN_IMAGE:
+        OpenCurrentImage();
         return true;
     }
     return false;

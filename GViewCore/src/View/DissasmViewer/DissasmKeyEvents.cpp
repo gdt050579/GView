@@ -258,6 +258,9 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_SAVE_DISSASM_CACHE:
         SaveCacheData();
         return true;
+    case COMMAND_TOGGLE_NUMBER_BASE:
+        ToggleNumberBase();
+        return true;
     }
     return false;
 }
@@ -278,6 +281,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     for (const auto& cmd : config.CommandBarCommands)
         commandBar.SetCommand(cmd.get().Key, cmd.get().Caption, cmd.get().CommandId);
+    commandBar.SetCommand(config.OpenSelectionCommand.Key, config.OpenSelectionCommand.Caption, COMMAND_NAV_OPEN);
 
     return false;
 }
@@ -349,24 +353,21 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case RIGHT_CLICK_DISSASM_COLLAPSE_ZONE:
             CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Collapse);
             return true;
-        case COMMAND_JUMP_BACK: {
-            if (const auto [canJump, location] = jumps_holder.JumpBack(); canJump) {
-                Cursor.restorePosition(location);
+        case COMMAND_JUMP_BACK:
+            if (JumpInHistory(true))
                 GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::JumpBack);
-            }
             return true;
-        }
-        case COMMAND_JUMP_FORWARD: {
-            if (const auto [canJump, location] = jumps_holder.JumpFront(); canJump) {
-                Cursor.restorePosition(location);
+        case COMMAND_JUMP_FORWARD:
+            if (JumpInHistory(false))
                 GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::JumpForward);
-            }
             return true;
-        }
         case COMMAND_DISSAM_GOTO_ENTRYPOINT: {
             ProcessSpaceKey(true);
             return true;
         }
+        case COMMAND_NAV_OPEN:
+            OpenCurrentSelection();
+            return true;
         default:
             return false;
         }

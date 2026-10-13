@@ -1,11 +1,11 @@
 // Unit tests for the auto-updater: release feed, versioning, settings state machine, zip staging and the
 // GViewUpdater apply/rollback logic. No network access.
 
-#include <catch.hpp>
-
 #include "UpdateCore.hpp"
 #include "Stager.hpp"
 #include "../../../GViewUpdater/src/Apply.hpp"
+
+#include <catch.hpp>
 
 #include <mz.h>
 #include <mz_strm.h>
@@ -230,7 +230,7 @@ TEST_CASE("Update.FlattenReleaseNotes", "[update]")
     REQUIRE(FlattenReleaseNotes("See [the docs](https://x.y/z) and `code`\n---\n  - nested") == "See the docs (https://x.y/z) and code\n  - nested");
     // control characters (terminal escape sequences) and invalid UTF-8 never reach the UI
     const auto hostile = FlattenReleaseNotes(std::string("a\x1b[31mred\x07\tb\xff\xc3\x28") + "\xc3\xa9");
-    REQUIRE(hostile == "a[31mred b??(\xc3\xa9");
+    REQUIRE(hostile == "a[31mred b?\?(\xc3\xa9"); // "?\?" keeps "??(" from being read as a trigraph
     // caps
     std::string many;
     for (int i = 0; i < 1000; i++)

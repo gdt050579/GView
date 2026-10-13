@@ -969,6 +969,21 @@ namespace App
           Reference<Window> parent,
           const ConstString& creationProcess);
 
+    // Private temporary folder (TemporaryFolder.cpp). No policy checks here: plugins go through DropToTemporaryFile.
+    struct TemporaryFolderAccess {
+        // empty => the system temporary directory; only affects a folder that was not created yet
+        static void SetBaseFolder(const std::filesystem::path& base);
+        // creates the folder on first use (fails closed when the configured base folder is unusable)
+        static std::optional<std::filesystem::path> GetFolder(std::string& error);
+        static Utils::GStatus Write(Utils::DataCache& cache, std::u16string_view nameHint, TemporaryFile& output);
+        // last path component of an untrusted name, restricted to [A-Za-z0-9._-], at most MAX_NAME_LENGTH characters
+        static std::string SanitizeFileName(std::u16string_view name);
+        // removes the folder and everything in it (application exit); the next GetFolder creates a new one
+        static void RemoveFolder() noexcept;
+
+        static constexpr size_t MAX_NAME_LENGTH = 64;
+    };
+
     class ErrorDialog : public AppCUI::Controls::Window
     {
       public:

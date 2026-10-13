@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <utility>
 #include <deque>
+#include <optional>
 #include <list>
 #include <cassert>
 #include <capstone/capstone.h>
@@ -163,16 +164,17 @@ namespace View
 
             enum class LocalVariableKind : uint8 { None, Definition, Reference };
 
-            enum LineArrowToDrawFlag : uint8 {
-                NoLines   = 0x00,
-                DrawLine1 = 0x1,
-                DrawLine2 = 0x2,
-                DrawLine3 = 0x4,
-                DrawLine4 = 0x8,
-                DrawLine5 = 0x10,
-
-                DrawStartingLine = 0x20,
-                DrawEndingLine   = 0x40
+            // the jump arrows are drawn left of the instructions: ARROW_LANES vertical lanes followed by a column for the arrow heads
+            static constexpr uint32 ARROW_LANES   = 3;
+            static constexpr uint32 ARROW_COLUMNS = ARROW_LANES + 1;
+            // the sides of an arrow cell that are connected to its neighbours
+            enum ArrowCellFlag : uint8 {
+                ArrowNone  = 0x00,
+                ArrowUp    = 0x01,
+                ArrowDown  = 0x02,
+                ArrowLeft  = 0x04,
+                ArrowRight = 0x08,
+                ArrowHead  = 0x10, // the arrow reaches its target on this line
             };
 
             uint64 address     = 0;
@@ -185,7 +187,7 @@ namespace View
             std::optional<uint64> hexValue;
             std::optional<uint64> branchTarget; // target of a direct jump / call, same base as `address`
             uint8 flags                           = 0;
-            uint8 lineArrowToDraw                 = 0;
+            uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
             const void* mapping                   = nullptr;
             const DissasmCodeInternalType* parent = nullptr;
 
@@ -243,7 +245,7 @@ namespace View
                 hexValue               = other.hexValue;
                 branchTarget           = other.branchTarget;
                 flags                  = other.flags;
-                lineArrowToDraw        = other.lineArrowToDraw;
+                memcpy(arrowCells, other.arrowCells, sizeof(arrowCells));
                 mapping                = other.mapping;
                 parent                 = other.parent;
                 shouldAddButton        = other.shouldAddButton;
@@ -485,52 +487,70 @@ namespace View
             void WriteErrorToScreen(std::string_view error) const;
         };
 
+        // A cursor location stored by the jumps history. The line is kept relative to the zone that contains it, so the
+        // location survives other zones being collapsed / expanded (that shifts the absolute line numbers).
         struct CursorState {
-            uint32 startViewLine, lineInView;
+            static constexpr uint32 NO_ZONE = 0xFFFFFFFFu;
+
+            uint32 zoneIndex{ NO_ZONE }; // NO_ZONE -> lineInZone is an absolute line
+            uint32 lineInZone{ 0 };
+            uint32 lineInView{ 0 }; // the row of the cursor on the screen
+            uint32 offset{ 0 };     // the column of the cursor
 
             bool operator==(const CursorState& other) const
             {
-                return startViewLine == other.startViewLine && lineInView == other.lineInView;
+                return zoneIndex == other.zoneIndex && lineInZone == other.lineInZone && lineInView == other.lineInView && offset == other.offset;
             }
         };
 
+        // Back / forward history of the jumps (follow call / jump, go to entry point, go to line), like in a browser:
+        // the list holds the visited locations (oldest first) and `current` is the one the cursor arrived at last.
         class JumpsHolder
         {
             const size_t maxCapacity;
-            int32 current_index;
-            std::deque<CursorState> jumps;
+            size_t current;
+            std::deque<CursorState> history;
 
           public:
-            JumpsHolder(size_t maxCapacity) : maxCapacity(maxCapacity), current_index(-1)
+            JumpsHolder(size_t maxCapacity) : maxCapacity(maxCapacity), current(0)
             {
-                assert(maxCapacity > 0);
+                assert(maxCapacity >= 2);
             }
 
-            void insert(CursorState&& newState)
+            // records a jump: `from` replaces the current entry (the cursor may have moved since it arrived there) and the
+            // locations that could be reached with "forward" are dropped
+            void Record(const CursorState& from, const CursorState& to)
             {
-                for (uint32 i = 0u; i < jumps.size(); i++)
-                    if (jumps[i] == newState) {
-                        current_index = i;
-                        return;
-                    }
-                if (jumps.size() == maxCapacity)
-                    jumps.pop_back();
-                jumps.push_back(newState);
-                current_index = static_cast<int32>(jumps.size()) - 1;
+                if (history.empty())
+                    history.push_back(from);
+                else {
+                    history.erase(history.begin() + static_cast<std::ptrdiff_t>(current) + 1, history.end());
+                    history[current] = from;
+                }
+                if (!(to == from))
+                    history.push_back(to);
+                while (history.size() > maxCapacity)
+                    history.pop_front();
+                current = history.size() - 1;
             }
 
-            std::pair<bool, CursorState> JumpBack()
+            std::optional<CursorState> JumpBack()
             {
-                if (current_index >= 0)
-                    return { true, jumps[current_index--] };
-                return { false, {} };
+                if (history.empty() || current == 0)
+                    return std::nullopt;
+                return history[--current];
             }
 
-            std::pair<bool, CursorState> JumpFront()
+            std::optional<CursorState> JumpForward()
             {
-                if (current_index + 1 < static_cast<int32>(jumps.size()))
-                    return { true, jumps[++current_index] };
-                return { false, {} };
+                if (current + 1 >= history.size())
+                    return std::nullopt;
+                return history[++current];
+            }
+
+            size_t Size() const
+            {
+                return history.size();
             }
         };
 
@@ -549,15 +569,6 @@ namespace View
                 uint32 startViewLine, lineInView, offset;
                 [[nodiscard]] LinePosition ToLinePosition() const;
                 uint64 GetOffset(uint32 textSize) const;
-                void restorePosition(const CursorState& oldState)
-                {
-                    lineInView    = oldState.lineInView;
-                    startViewLine = oldState.startViewLine;
-                }
-                CursorState saveState() const
-                {
-                    return CursorState{ startViewLine, lineInView };
-                }
                 bool hasMovedView;
             } Cursor;
 
@@ -603,6 +614,26 @@ namespace View
 
             AsmData asmData;
             JumpsHolder jumps_holder;
+
+            // the operand numbers of the instruction on the cursor line, used by the hexadecimal <-> decimal switch (H key) and
+            // by the cursor information; computed when needed and kept until the cursor line or the drawn lines change
+            struct CursorLineNumber {
+                uint32 column; // same base as Cursor.offset
+                uint32 length;
+                uint32 index; // FindOperandNumbers index (bit of DissasmCodeZone::decimalOperands)
+                uint64 value;
+                bool isHex;
+            };
+            struct {
+                bool computed         = false;
+                uint32 line           = 0;
+                uint64 generation     = 0;
+                bool valid            = false; // the cursor line is an instruction
+                DissasmCodeZone* zone = nullptr;
+                uint64 address        = 0;
+                std::vector<CursorLineNumber> numbers;
+            } cursorLineNumbers;
+            uint64 drawnLinesGeneration = 0; // changes every time the lines of a dissasm zone are recomputed
             DissasmCache cacheData;
             CommonInterfaces::QueryInterface* queryInterface;
 
@@ -657,6 +688,19 @@ namespace View
             bool InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
+
+            // jumps history (back / forward)
+            CursorState SaveCursorState() const;
+            void RestoreCursorState(const CursorState& state);
+            void RecordJump(const CursorState& from);
+            bool JumpInHistory(bool back);
+
+            // hexadecimal <-> decimal operand numbers
+            void RefreshCursorLineNumbers();
+            // the number under the cursor, or the only number of the cursor line
+            const CursorLineNumber* GetCursorLineNumber();
+            void ToggleNumberBase();
+            int PrintCursorValueInfo(int x, int y, Renderer& r);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 

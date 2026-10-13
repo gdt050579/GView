@@ -1913,6 +1913,47 @@ namespace App
      */
     bool CORE_EXPORT SetClipboardText(const ConstString& text, bool isSelectionCopy = true);
 
+    struct TemporaryFolderAccess; // GViewCore internal
+
+    /**
+     * A file in GView's private temporary folder, for APIs that only work on a real file (WinVerifyTrust, minizip-ng for
+     * archives that do not fit in the cache, ...). The folder is created on first use under [GView] Config.TemporaryFolder
+     * (default: the system temporary directory), is accessible only to the current user and is removed when GView exits.
+     * Move-only: the file is deleted when the handle is destroyed (callers must close it first).
+     */
+    class TemporaryFile // members exported one by one: an exported class would export its std::filesystem::path (C4251)
+    {
+        std::filesystem::path path;
+        friend struct TemporaryFolderAccess;
+
+      public:
+        TemporaryFile()                                = default;
+        TemporaryFile(const TemporaryFile&)            = delete;
+        TemporaryFile& operator=(const TemporaryFile&) = delete;
+        CORE_EXPORT TemporaryFile(TemporaryFile&& other) noexcept;
+        CORE_EXPORT TemporaryFile& operator=(TemporaryFile&& other) noexcept;
+        CORE_EXPORT ~TemporaryFile();
+
+        CORE_EXPORT void Remove() noexcept;
+        inline bool IsValid() const
+        {
+            return !path.empty();
+        }
+        inline const std::filesystem::path& GetPath() const
+        {
+            return path;
+        }
+    };
+
+    /**
+     * Writes the content of the object to a new TemporaryFile (named after the sanitized object name; never after its
+     * path). Fails closed when nothing derived from the object may be written to disk (memory-only Learning and Evaluation
+     * Mode content, Export restricted by policy). The check is silent (no notification, no telemetry): callers are expected
+     * to fall back to in-memory processing. UI thread only. Moves the object's DataCache window, so BufferViews obtained
+     * from it before the call must not be used afterwards.
+     */
+    Utils::GStatus CORE_EXPORT DropToTemporaryFile(Reference<GView::Object> object, TemporaryFile& output);
+
     /**
      * Remote TUI (docs/source/remote_protocol.rst): runs one of the "serve", "connect", "listen" or "remote-certs"
      * command line commands (arguments in UTF-8) and returns the process exit code. The remote mode is compiled only

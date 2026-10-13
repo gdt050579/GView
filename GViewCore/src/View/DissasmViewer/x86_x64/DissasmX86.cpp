@@ -37,7 +37,7 @@ constexpr uint32 opCodesTotalLength                 = opCodesGroupsShown * 3 + 1
 constexpr uint32 textColumnTextLength               = opCodesGroupsShown;
 constexpr uint32 textColumnSpacesLength             = 4;
 constexpr uint32 textColumnTotalLength              = textColumnTextLength + textColumnSpacesLength;
-constexpr uint32 textColumnIndicatorArrowLinesSpace = 3;
+constexpr uint32 textColumnIndicatorArrowLinesSpace = DissasmAsmPreCacheLine::ARROW_COLUMNS;
 constexpr uint32 textAndOpCodesTotalLength          = opCodesTotalLength + textColumnTotalLength;
 constexpr uint32 textTotalColumnLength =
       addressTotalLength + textColumnTextLength + opCodesTotalLength + textColumnTotalLength + textColumnIndicatorArrowLinesSpace;
@@ -85,9 +85,52 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, DissasmColor
     return colors.AsmDefaultColor;
 }
 
+struct ArrowCellCharacter {
+    SpecialChars special; // drawn on the screen, from the character set of the terminal
+    char ascii;           // kept in the line text (selection copy, column computations)
+};
+
+// indexed by the ArrowUp | ArrowDown | ArrowLeft | ArrowRight sides of an arrow cell
+constexpr ArrowCellCharacter ARROW_CELL_CHARACTERS[16] = {
+    { SpecialChars::Block0, ' ' },                         // none
+    { SpecialChars::BoxVerticalSingleLine, '|' },          // up
+    { SpecialChars::BoxVerticalSingleLine, '|' },          // down
+    { SpecialChars::BoxVerticalSingleLine, '|' },          // up, down
+    { SpecialChars::BoxHorizontalSingleLine, '-' },        // left
+    { SpecialChars::BoxBottomRightCornerSingleLine, '+' }, // up, left
+    { SpecialChars::BoxTopRightCornerSingleLine, '+' },    // down, left
+    { SpecialChars::BoxMidleRight, '+' },                  // up, down, left
+    { SpecialChars::BoxHorizontalSingleLine, '-' },        // right
+    { SpecialChars::BoxBottomLeftCornerSingleLine, '+' },  // up, right
+    { SpecialChars::BoxTopLeftCornerSingleLine, '+' },     // down, right
+    { SpecialChars::BoxMidleLeft, '+' },                   // up, down, right
+    { SpecialChars::BoxHorizontalSingleLine, '-' },        // left, right
+    { SpecialChars::BoxMidleBottom, '+' },                 // up, left, right
+    { SpecialChars::BoxMidleTop, '+' },                    // down, left, right
+    { SpecialChars::BoxCrossSingleLine, '+' },             // up, down, left, right
+};
+
+inline ArrowCellCharacter GetArrowCellCharacter(uint8 cell)
+{
+    if (cell & DissasmAsmPreCacheLine::ArrowHead)
+        return { SpecialChars::TriangleRight, '>' };
+    return ARROW_CELL_CHARACTERS[cell & 0x0F];
+}
+
 // TODO: to be moved inside plugin for some sort of API for token<->color
+// `opStrColumns` (optional) receives the column (inside `cb`) where every character of insn.op_str is drawn
+// (UINT32_MAX for the separators that are not drawn at a fixed place)
+// `arrowsColumn` (optional) receives the column (inside `cb`) of the first arrow cell
 inline void DissasmAddColorsToInstruction(
-      DissasmAsmPreCacheLine& insn, CharacterBuffer& cb, Config& cfg, DissasmColors& colors, AsmData& data, const CodePage& codePage, uint64 addressPadding = 0)
+      DissasmAsmPreCacheLine& insn,
+      CharacterBuffer& cb,
+      Config& cfg,
+      DissasmColors& colors,
+      AsmData& data,
+      const CodePage& codePage,
+      uint64 addressPadding             = 0,
+      std::vector<uint32>* opStrColumns = nullptr,
+      uint32* arrowsColumn              = nullptr)
 {
     // TODO: replace CharacterBuffer with Canvas;
 
@@ -144,24 +187,15 @@ inline void DissasmAddColorsToInstruction(
     string.Clear();
     string.SetChars(' ', textColumnIndicatorArrowLinesSpace);
 
-    if (insn.lineArrowToDraw && cfg.EnableDeepScanDissasmOnStart) {
-        // string.SetChars(' ', textColumnIndicatorArrowLinesSpace);
-        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1)
-            string[0] = '|';
-        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2)
-            string[1] = '|';
-        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3)
-            string[2] = '|';
-        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine ||
-            insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawEndingLine) {
-            for (int32 i = 0; i < static_cast<int32>(textColumnIndicatorArrowLinesSpace); i++)
-                if (string[i] == ' ')
-                    string[i] = '-';
-            const bool is_start = (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine) > 0;
-            string[2]           = is_start ? '<' : '>';
-        }
+    // the ASCII form of the arrows, the screen shows their box characters (see DrawDissasmX86AndX64CodeZone)
+    if (cfg.EnableDeepScanDissasmOnStart) {
+        for (uint32 i = 0; i < textColumnIndicatorArrowLinesSpace; i++)
+            if (insn.arrowCells[i] != DissasmAsmPreCacheLine::ArrowNone)
+                string[i] = GetArrowCellCharacter(insn.arrowCells[i]).ascii;
     }
 
+    if (arrowsColumn)
+        *arrowsColumn = cb.Len();
     cb.Add(string, colors.AsmDefaultColor);
 
     if (insn.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition && insn.op_str) {
@@ -189,11 +223,20 @@ inline void DissasmAddColorsToInstruction(
 
     if (insn.op_str) {
         const std::string_view op_str = insn.op_str;
+        if (opStrColumns)
+            opStrColumns->assign(op_str.size(), UINT32_MAX);
+        auto recordColumns = [opStrColumns, &cb](size_t opStrStart, size_t count) {
+            if (!opStrColumns)
+                return;
+            for (size_t i = 0; i < count && opStrStart + i < opStrColumns->size(); i++)
+                (*opStrColumns)[opStrStart + i] = cb.Len() + static_cast<uint32>(i);
+        };
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
         auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer, &data](std::string_view token) {
             lambdaBuffer.Clear();
-            if (token.length() > 2 && token[0] == '0' && token[1] == 'x') {
+            // numbers: hexadecimal (0x...) or decimal (small values, or switched to decimal with the H key)
+            if (!token.empty() && token[0] >= '0' && token[0] <= '9') {
                 cb.Add(token.data(), colors.AsmOffsetColor);
                 return;
             }
@@ -204,6 +247,7 @@ inline void DissasmAddColorsToInstruction(
 
         if (op_str.length() > 2 && op_str[0] == '0' && op_str[1] == 'x') {
             cb.Add(" ");
+            recordColumns(0, op_str.size());
             checkValidAndAdd(op_str);
             return;
         }
@@ -213,6 +257,7 @@ inline void DissasmAddColorsToInstruction(
         size_t tokenStart           = 0;
         LocalString<32> buffer;
         auto addToken = [&]() {
+            recordColumns(tokenStart, buffer.Len());
             if (hasVariableToken && tokenStart == insn.localVariableNameStart)
                 cb.Add(buffer.GetText(), colors.AsmLocalVariableColor);
             else
@@ -315,6 +360,7 @@ inline cs_insn* GetCurrentInstructionByLine(
         }
         lineDifferences--;
     }
+    zone->lastDrawnLine = lineToReach; // the decoding position is right after this line, whoever asked for it
 
     cs_close(&handle);
     return insn;
@@ -373,53 +419,12 @@ inline optional<vector<uint8>> TryExtractPushText(Reference<GView::Object> obj, 
 
 std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine)
 {
-    const uint32 levelToReach = currentLine;
-    uint32& levelNow          = zone->structureIndex;
-    bool reAdapt              = false;
-    while (true) {
-        const DissasmCodeInternalType& currentType = zone->types.back();
-        if (currentType.indexZoneStart <= levelToReach && currentType.indexZoneEnd >= levelToReach)
-            break;
-        zone->types.pop_back();
-        zone->levels.pop_back();
-        reAdapt = true;
-    }
+    // the same bookkeeping as the drawn lines: a second incremental walker counted the line it was already on (or the previous
+    // line) as the next one, so the instruction below the cursor was followed and the shared counters were left out of sync
+    zone->ReachZoneLine(currentLine);
 
-    while (reAdapt && !zone->types.back().get().internalTypes.empty()) {
-        DissasmCodeInternalType& currentType = zone->types.back();
-        for (uint32 i = 0; i < currentType.internalTypes.size(); i++) {
-            auto& internalType = currentType.internalTypes[i];
-            if (internalType.indexZoneStart <= levelToReach && internalType.indexZoneEnd >= levelToReach) {
-                zone->types.push_back(internalType);
-                zone->levels.push_back(i);
-                break;
-            }
-        }
-    }
-
-    DissasmCodeInternalType& currentType = zone->types.back();
-    // TODO: do a faster search using a binary search using the annotations and start from there
-    // TODO: maybe use some caching here?
-    if (reAdapt || (levelNow < levelToReach && levelNow + 1 != levelToReach) || (levelNow > levelToReach && levelNow - 1 != levelToReach)) {
-        currentType.textLinesPassed = 0;
-        currentType.asmLinesPassed  = 0;
-        for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
-            if (currentType.annotations.contains(i)) {
-                currentType.textLinesPassed++;
-                continue;
-            }
-            currentType.asmLinesPassed++;
-        }
-    } else {
-        if (currentType.annotations.contains(levelToReach))
-            currentType.textLinesPassed++;
-        else
-            currentType.asmLinesPassed++;
-    }
-
-    levelNow = levelToReach;
-
-    if (currentType.annotations.contains(levelToReach))
+    const DissasmCodeInternalType& currentType = zone->types.back();
+    if (currentType.annotations.contains(currentLine))
         return {};
 
     const uint32 value = currentType.GetCurrentAsmLine();
@@ -491,7 +496,16 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         function = zone->localVariables.FindFunctionByAddress(address);
         variable = function ? function->FindVariable(frameOperand.frameOffset) : nullptr;
     }
+    // numbers the user switched to decimal (H key)
+    const uint32 decimalMask = zone ? zone->GetDecimalOperandsMask(address) : 0u;
+
     if (!variable) {
+        if (decimalMask != 0) {
+            const auto formatted = FormatOperandNumbers(text, decimalMask);
+            op_str               = portable_strdup(formatted.c_str());
+            op_str_size          = static_cast<uint32>(formatted.size());
+            return;
+        }
         op_str      = portable_strdup(operands ? operands : "");
         op_str_size = static_cast<uint32>(text.size());
         return;
@@ -504,6 +518,8 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     localVariableNameStart = static_cast<uint32>(rewritten.size());
     rewritten.append(variable->name);
     rewritten.append(text.substr(frameOperand.replaceEnd));
+    if (decimalMask != 0)
+        rewritten = FormatOperandNumbers(rewritten, decimalMask, &localVariableNameStart);
 
     op_str                = portable_strdup(rewritten.c_str());
     op_str_size           = static_cast<uint32>(rewritten.size());
@@ -540,7 +556,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         return true;
     }
 
-    switch (*((uint32*) insn->mnemonic)) {
+    switch (TextPrefixAsUInt32(insn->mnemonic)) {
     case pushOP:
         flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
         break;
@@ -557,15 +573,18 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     }
 
     // TODO: improve efficiency by filtering instructions
-    uint64 hexVal = 0;
-    if (CheckExtractInsnHexValue(insn->op_str, hexVal, params.settings->maxLocationMemoryMappingSize)) {
+    uint64 hexVal = 0; // memory mappings (imports) and pushed strings
+    if (CheckExtractInsnHexValue(insn->op_str, hexVal, params.settings->maxLocationMemoryMappingSize))
         hexValue = hexVal;
-        if (flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag))
-            branchTarget = hexVal; // same base as the decoded addresses, used by the jump arrows
-        if (hexVal == 0 && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
-            hexValue = params.zone->cachedCodeOffsets[0].offset;
-        else if (hexVal < params.zone->cachedCodeOffsets[0].offset)
-            hexValue = hexVal + params.zone->cachedCodeOffsets[0].offset;
+    // direct jump / call: the target has the same base as `address`; only a target inside the decoded code has a file offset
+    std::optional<uint64> targetFileOffset;
+    if (flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag)) {
+        const auto target = GetDirectBranchTarget(insn->op_str);
+        if (target.has_value()) {
+            targetFileOffset = params.zone->GetFileOffsetOfAddress(target.value());
+            if (targetFileOffset.has_value())
+                branchTarget = target; // used by the jump arrows
+        }
     }
     bool alreadyInitComment = false;
     if (params.zone->asmPreCacheData.HasAnyFlag(params.asmLine))
@@ -632,7 +651,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     }
 
     if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
-        if (!hexValue.has_value()) {
+        if (!targetFileOffset.has_value()) { // indirect, or outside of the decoded code: the operands are shown as they are
             flags = 0;
             SetOperands(insn->op_str, params.zone);
             return true;
@@ -640,7 +659,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
         const char* prefix = !shouldConsiderCall ? "offset_0x" : "sub_0x";
 
-        auto fnName = FormatFunctionName(hexValue.value(), prefix);
+        auto fnName = FormatFunctionName(targetFileOffset.value(), prefix);
         // fnName.AddFormat(" (%s)", res.data());
 
         if (parent) {
@@ -678,21 +697,27 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
 void DissasmAsmPreCacheData::PrepareLabelArrows()
 {
+    using Line = DissasmAsmPreCacheLine;
     for (auto& line : cachedAsmLines)
-        line.lineArrowToDraw = 0;
-    if (cachedAsmLines.empty())
+        memset(line.arrowCells, 0, sizeof(line.arrowCells));
+    const size_t linesCount = cachedAsmLines.size();
+    if (linesCount < 2)
         return;
 
     const uint64 minimalAddress = cachedAsmLines.front().address;
     const uint64 maximalAddress = cachedAsmLines.back().address;
 
-    constexpr uint8 ARROW_COLUMNS[textColumnIndicatorArrowLinesSpace] = { DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1,
-                                                                          DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2,
-                                                                          DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3 };
-    uint32 arrowsCount                                                = 0;
-    for (size_t sourceIndex = 0; sourceIndex < cachedAsmLines.size() && arrowsCount < textColumnIndicatorArrowLinesSpace; sourceIndex++) {
+    // the branches going to the same line share one arrow: its lane spans the target and all its sources
+    constexpr uint32 NO_LANE = UINT32_MAX;
+    struct Arrow {
+        size_t first, last, target;
+        uint32 lane;
+    };
+    std::vector<Arrow> arrows;
+    std::vector<size_t> targetOfLine(linesCount, SIZE_MAX);
+    for (size_t sourceIndex = 0; sourceIndex < linesCount; sourceIndex++) {
         const auto& source = cachedAsmLines[sourceIndex];
-        if (source.flags != DissasmAsmPreCacheLine::InstructionFlag::CallFlag && source.flags != DissasmAsmPreCacheLine::InstructionFlag::JmpFlag)
+        if (source.flags != Line::InstructionFlag::CallFlag && source.flags != Line::InstructionFlag::JmpFlag)
             continue;
         if (!source.branchTarget.has_value())
             continue;
@@ -700,20 +725,65 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
         if (target < minimalAddress || target > maximalAddress)
             continue;
         // first visible line placed at the target (its label when it has one); a target in the middle of an instruction has no line
-        const auto targetIt =
-              std::find_if(cachedAsmLines.begin(), cachedAsmLines.end(), [target](const DissasmAsmPreCacheLine& line) { return line.address == target; });
+        const auto targetIt = std::find_if(cachedAsmLines.begin(), cachedAsmLines.end(), [target](const Line& line) { return line.address == target; });
         if (targetIt == cachedAsmLines.end())
             continue;
-
         const size_t targetIndex = static_cast<size_t>(targetIt - cachedAsmLines.begin());
-        const size_t firstIndex  = std::min(sourceIndex, targetIndex);
-        const size_t lastIndex   = std::max(sourceIndex, targetIndex);
-        cachedAsmLines[firstIndex].lineArrowToDraw |= DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine;
-        cachedAsmLines[lastIndex].lineArrowToDraw |= DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawEndingLine;
-        for (size_t i = firstIndex; i <= lastIndex; i++)
-            cachedAsmLines[i].lineArrowToDraw |= ARROW_COLUMNS[arrowsCount];
-        arrowsCount++;
+        if (targetIndex == sourceIndex)
+            continue;
+
+        targetOfLine[sourceIndex] = targetIndex;
+        const auto arrow          = std::find_if(arrows.begin(), arrows.end(), [targetIndex](const Arrow& a) { return a.target == targetIndex; });
+        if (arrow == arrows.end()) {
+            arrows.push_back({ std::min(sourceIndex, targetIndex), std::max(sourceIndex, targetIndex), targetIndex, NO_LANE });
+        } else {
+            arrow->first = std::min(arrow->first, sourceIndex);
+            arrow->last  = std::max(arrow->last, sourceIndex);
+        }
     }
+
+    // the shortest arrows get the lanes next to the code and the longer ones go around them; arrows sharing a line never share a
+    // lane, the ones that do not fit are not drawn
+    std::sort(arrows.begin(), arrows.end(), [](const Arrow& a, const Arrow& b) {
+        if (a.last - a.first != b.last - b.first)
+            return a.last - a.first < b.last - b.first;
+        return a.target < b.target; // one arrow per target
+    });
+    for (size_t i = 0; i < arrows.size(); i++) {
+        for (uint32 lane = Line::ARROW_LANES; lane-- > 0;) {
+            bool isFree = true;
+            for (size_t j = 0; j < i && isFree; j++)
+                isFree = arrows[j].lane != lane || arrows[j].last < arrows[i].first || arrows[i].last < arrows[j].first;
+            if (isFree) {
+                arrows[i].lane = lane;
+                break;
+            }
+        }
+    }
+
+    // the horizontal line from the lane to the code, ending with the arrow head on the target
+    auto addHorizontalLine = [](Line& line, uint32 lane, bool isTarget) {
+        line.arrowCells[lane] |= Line::ArrowRight;
+        for (uint32 column = lane + 1; column < Line::ARROW_LANES; column++)
+            line.arrowCells[column] |= Line::ArrowLeft | Line::ArrowRight;
+        line.arrowCells[Line::ARROW_LANES] |= Line::ArrowLeft | (isTarget ? Line::ArrowHead : Line::ArrowNone);
+    };
+    std::vector<uint32> laneOfTarget(linesCount, NO_LANE);
+    for (const auto& arrow : arrows) {
+        if (arrow.lane == NO_LANE)
+            continue;
+        laneOfTarget[arrow.target] = arrow.lane;
+        for (size_t i = arrow.first; i <= arrow.last; i++) {
+            if (i > arrow.first)
+                cachedAsmLines[i].arrowCells[arrow.lane] |= Line::ArrowUp;
+            if (i < arrow.last)
+                cachedAsmLines[i].arrowCells[arrow.lane] |= Line::ArrowDown;
+        }
+        addHorizontalLine(cachedAsmLines[arrow.target], arrow.lane, true);
+    }
+    for (size_t i = 0; i < linesCount; i++)
+        if (targetOfLine[i] != SIZE_MAX && laneOfTarget[targetOfLine[i]] != NO_LANE)
+            addHorizontalLine(cachedAsmLines[i], laneOfTarget[targetOfLine[i]], false);
 }
 
 bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
@@ -826,6 +896,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         asmPreCacheData.ComputeMaxLine();
         if (config.EnableDeepScanDissasmOnStart)
             asmPreCacheData.PrepareLabelArrows();
+        drawnLinesGeneration++; // the lines may have changed (renames, collapsed zones, numbers base)
     }
 
     const auto asmCacheLine = zone->asmPreCacheData.GetLine();
@@ -835,7 +906,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         RegisterStructureCollapseButton(
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
-    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset);
+    uint32 arrowsColumn = UINT32_MAX;
+    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, nullptr, &arrowsColumn);
     std::string comment;
     if (!asmCacheLine->parent)
         return false;
@@ -863,6 +935,17 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
           dli, static_cast<uint32>(bufferToDraw.length() - Layout.startingTextLineOffset), static_cast<uint32>(bufferToDraw.length()));
 
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    if (config.EnableDeepScanDissasmOnStart && arrowsColumn != UINT32_MAX) {
+        // the arrows with the box characters of the terminal character set, in the colors of the line (cursor, selection)
+        for (uint32 i = 0; i < textColumnIndicatorArrowLinesSpace; i++) {
+            const uint8 cell    = asmCacheLine->arrowCells[i];
+            const uint32 column = arrowsColumn + i;
+            if (cell == DissasmAsmPreCacheLine::ArrowNone || column >= bufferToDraw.length())
+                continue;
+            dli.renderer.WriteSpecialCharacter(
+                  static_cast<int>(column), static_cast<int>(dli.screenLineToDraw) + 1, GetArrowCellCharacter(cell).special, bufferToDraw[column].Color);
+        }
+    }
     // poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
     bool foundZone = false;
     for (const auto& z : asmData.zonesToClear)
@@ -995,16 +1078,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         if (line <= 1)
             return;
 
-        const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
-        decltype(DissasmCodeZone::types) types                = zone->types;
-        decltype(DissasmCodeZone::levels) levels              = zone->levels;
-
+        // the reached line state (structureIndex, types, levels and the counters inside the types) is kept as a whole: restoring
+        // only a part of it desynchronized the counters from the line they belong to
         const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, line - 2);
-
-        zone->structureIndex = index;
-        zone->types          = std::move(types);
-        zone->levels         = std::move(levels);
-
         if (!adjustedLine.has_value())
             return;
 
@@ -1013,44 +1089,28 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] == 'j' || (insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)) {
-            jumpFromAddress = insn->address;
-            for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
-                jumpMnemonic[i] = insn->mnemonic[i];
-            if (insn->op_str[0] == '0' && insn->op_str[1] == 'x') {
-                char* val = &insn->op_str[2];
-
-                while (*val && *val != ',' && *val != ' ') {
-                    if (*val >= '0' && *val <= '9')
-                        computedValue = computedValue * 16 + (*val - '0');
-                    else if (*val >= 'a' && *val <= 'f')
-                        computedValue = computedValue * 16 + (*val - 'a' + 10);
-                    else {
-                        Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
-                        computedValue = 0;
-                        break;
-                    }
-                    val++;
-                }
-            } else if (insn->op_str[0] >= '0' && insn->op_str[0] <= '9' && insn->op_str[1] == '\0') {
-                computedValue = zone->cachedCodeOffsets[0].offset + (insn->op_str[0] - '0');
-            } else {
-                cs_free(insn, 1);
-                return;
-            }
-            cs_free(insn, 1);
-        } else {
+        if (insn->mnemonic[0] != 'j' && TextPrefixAsUInt32(insn->mnemonic) != callOP) {
             cs_free(insn, 1);
             return;
         }
-    } else
+        // file offsets, like the displayed operand (TryGetDataFromInsn): the decoded addresses start at the first decoded instruction
+        jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
+        for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
+            jumpMnemonic[i] = insn->mnemonic[i];
+        const auto target       = GetDirectBranchTarget(insn->op_str);
+        const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
+        cs_free(insn, 1);
+        if (!targetOffset.has_value()) {
+            if (target.has_value())
+                Dialogs::MessageBox::ShowNotification("Warning", "The target is outside of this dissasm zone!");
+            return; // indirect jump / call: nothing to follow
+        }
+        computedValue = targetOffset.value();
+    } else {
         computedValue = *offsetToReach;
-
-    if (computedValue == 0 || computedValue > zone->zoneDetails.startingZonePoint + zone->zoneDetails.size)
-        return;
-
-    if (computedValue < zone->zoneDetails.startingZonePoint)
-        computedValue += zone->zoneDetails.startingZonePoint;
+        if (computedValue < zone->cachedCodeOffsets[0].offset || !zone->GetFileOffsetOfAddress(computedValue - zone->cachedCodeOffsets[0].offset))
+            return;
+    }
 
     // computedValue = 1064;
 
@@ -1063,10 +1123,6 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     cs_free(insn, 1);
 
     // diffLines++; // increased because of the menu bar
-
-    const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
-    decltype(DissasmCodeZone::types) types                = zone->types;
-    decltype(DissasmCodeZone::levels) levels              = zone->levels;
 
     // TODO: can be improved by extracting the common part of the calculation of the actual line and to search for the closest zone directly
     DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
@@ -1087,20 +1143,113 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     // if (adjustedLine.has_value())
     //     actualLine += adjustedLine.value() + 1;
 
-    zone->structureIndex = index;
-    zone->types          = std::move(types);
-    zone->levels         = std::move(levels);
-
     diffLines = landingLine + 2u; //+1 for menu, +1 for title
 
-    jumps_holder.insert(Cursor.saveState());
+    const auto from      = SaveCursorState();
     Cursor.lineInView    = std::min<uint32>(5, diffLines);
     Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
     Cursor.hasMovedView  = true;
+    RecordJump(from);
     if (offsetToReach != nullptr)
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
     else
         GView::Security::Learning::Hooks::OnJumpFollow(obj, jumpFromAddress, computedValue, jumpMnemonic);
+}
+
+void Instance::RefreshCursorLineNumbers()
+{
+    const uint32 line = Cursor.startViewLine + Cursor.lineInView;
+    if (cursorLineNumbers.computed && cursorLineNumbers.line == line && cursorLineNumbers.generation == drawnLinesGeneration)
+        return;
+    cursorLineNumbers.computed   = true;
+    cursorLineNumbers.line       = line;
+    cursorLineNumbers.generation = drawnLinesGeneration;
+    cursorLineNumbers.valid      = false;
+    cursorLineNumbers.zone       = nullptr;
+    cursorLineNumbers.numbers.clear();
+
+    const auto zonesFound = GetZonesIndexesFromLinePosition(line);
+    if (zonesFound.size() != 1)
+        return;
+    const auto& parseZone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed)
+        return;
+    const auto zone     = static_cast<DissasmCodeZone*>(parseZone.get());
+    const auto language = zone->zoneDetails.language;
+    if (!zone->isInit || zone->cachedCodeOffsets.empty() || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+        return;
+    // zone line 0 is the title and line 1 the columns header; when the zone title is scrolled out, the first row shows the header
+    const uint32 zoneLine = zonesFound[0].startingLine;
+    if (zoneLine < 2 || Cursor.lineInView == 0)
+        return;
+
+    // the same line (and layout) as the one that is drawn
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    params.dli      = nullptr;
+    params.zone     = zone;
+    auto asmLine    = zone->GetCurrentAsmLine(zoneLine - 2u, obj, &params);
+
+    // only instructions: not labels, local variable lines or collapsed zones
+    const bool isCollapsedZoneLine = asmLine.shouldAddButton && asmLine.isZoneCollapsed;
+    if (!asmLine.op_str || asmLine.size == 0 || isCollapsedZoneLine || asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
+        return;
+
+    CharacterBuffer lineText; // drawn without the left margin: its columns have the same base as Cursor.offset
+    std::vector<uint32> opStrColumns;
+    DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, &opStrColumns);
+    if (opStrColumns.size() != asmLine.op_str_size)
+        return;
+
+    cursorLineNumbers.valid   = true;
+    cursorLineNumbers.zone    = zone;
+    cursorLineNumbers.address = asmLine.address;
+
+    const auto numbers = FindOperandNumbers({ asmLine.op_str, asmLine.op_str_size });
+    for (uint32 index = 0; index < static_cast<uint32>(numbers.size()) && index < 32u; index++) {
+        const auto& number  = numbers[index];
+        const uint32 column = opStrColumns[number.start];
+        if (column != UINT32_MAX)
+            cursorLineNumbers.numbers.push_back({ column, number.length, index, number.value, number.isHex });
+    }
+}
+
+const Instance::CursorLineNumber* Instance::GetCursorLineNumber()
+{
+    RefreshCursorLineNumbers();
+    if (!cursorLineNumbers.valid)
+        return nullptr;
+    for (const auto& number : cursorLineNumbers.numbers)
+        if (Cursor.offset >= number.column && Cursor.offset < number.column + number.length)
+            return &number;
+    // most instructions have a single number (mov eax, 0x10 / push 0x40): no need to place the cursor on it
+    if (cursorLineNumbers.numbers.size() == 1)
+        return &cursorLineNumbers.numbers[0];
+    return nullptr;
+}
+
+void Instance::ToggleNumberBase()
+{
+    const auto number = GetCursorLineNumber();
+    if (!number) {
+        if (cursorLineNumbers.numbers.size() > 1)
+            Dialogs::MessageBox::ShowNotification("Warning", "Please move the cursor on the number to convert!");
+        else
+            Dialogs::MessageBox::ShowNotification("Warning", "There is no number on this line!");
+        return;
+    }
+    const auto zone        = cursorLineNumbers.zone;
+    const bool isConverted = (zone->GetDecimalOperandsMask(cursorLineNumbers.address) & (1u << number->index)) != 0;
+    if (!number->isHex && !isConverted) {
+        Dialogs::MessageBox::ShowNotification("Info", "Values below 10 look the same in both bases!");
+        return;
+    }
+
+    zone->ToggleDecimalOperand(cursorLineNumbers.address, number->index);
+    zone->asmPreCacheData.Clear(); // the lines are rebuilt with the new operands
+    drawnLinesGeneration++;
 }
 
 void Instance::EditDissasmCodeZoneCommand()
@@ -2173,7 +2322,7 @@ void Instance::QuerySmartAssistantX86X64(
                 assemblyLines.emplace_back(isVariable ? currentLine.op_str : currentLine.mnemonic);
             }
         }
-        if (queryParams.stopAtTheEndOfTheFunction && *(uint32*) currentLine.mnemonic == retOP)
+        if (queryParams.stopAtTheEndOfTheFunction && TextPrefixAsUInt32(currentLine.mnemonic) == retOP)
             break;
         actualLineInDocument++;
         lineIndex++;

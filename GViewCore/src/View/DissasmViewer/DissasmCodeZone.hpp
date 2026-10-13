@@ -35,6 +35,9 @@ struct DissasmCodeZone : public ParseZone {
     uint32 asmLinesCount = 0;
     // x86/x64: local variables of the frame based functions, filled only by the deep scan
     DissasmLocalVariables localVariables;
+    // x86/x64: instruction address (relative, as DissasmAsmPreCacheLine::address) -> bit mask of the operand numbers
+    // (FindOperandNumbers order) that are shown as decimal numbers instead of hexadecimal
+    std::map<uint64, uint32> decimalOperands;
 
     void ResetZoneCaching();
     bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
@@ -61,6 +64,9 @@ struct DissasmCodeZone : public ParseZone {
 
     // x86/x64 code window: bytes from cachedCodeOffsets[0].offset until the end of the zone
     uint64 GetCodeSize() const;
+    // file offset of an address decoded by this zone (the decoded addresses start at 0 on cachedCodeOffsets[0].offset), none when the
+    // address is not inside the decoded code (another section, a backward branch that wrapped around, ...)
+    std::optional<uint64> GetFileOffsetOfAddress(uint64 address) const;
     // points asmData/asmSize/asmAddress to [relativeStart, relativeEnd), clamped to the zone and to what the data cache returns
     bool FetchCodeWindow(Reference<GView::Object> obj, uint64 relativeStart, uint64 relativeEnd);
 
@@ -79,6 +85,14 @@ struct DissasmCodeZone : public ParseZone {
     uint32 GetRootZoneLinesCount() const
     {
         return asmLinesCount + static_cast<uint32>(dissasmType.annotations.size());
+    }
+
+    // switches the operand number `numberIndex` of the instruction at `address` between hexadecimal and decimal
+    void ToggleDecimalOperand(uint64 address, uint32 numberIndex);
+    uint32 GetDecimalOperandsMask(uint64 address) const
+    {
+        const auto it = decimalOperands.find(address);
+        return it != decimalOperands.end() ? it->second : 0u;
     }
 
     bool ToBuffer(std::vector<std::byte>& buffer) const;

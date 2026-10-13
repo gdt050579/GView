@@ -10,9 +10,11 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 {
   public:
     uint32 currentItemIndex{ 0 };
+    // declared before 'info': the minizip-ng reader (in 'info') closes the copy before the copy is deleted
+    GView::App::TemporaryFile tempCopy{};
     GView::Decoding::ZIP::Info info{};
     std::vector<uint32> curentChildIndexes{};
-    bool isTopContainer{ true };
+    bool isTopContainer{ true }; // true: the reader owns a file (the archive itself or tempCopy); false: in-memory archive
     std::string password;
 
   public:

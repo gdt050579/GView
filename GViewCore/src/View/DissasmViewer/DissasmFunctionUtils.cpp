@@ -138,6 +138,115 @@ LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
     return callName;
 }
 
+std::optional<uint64> GetDirectBranchTarget(std::string_view operands)
+{
+    const bool isHex          = operands.size() > 2 && operands[0] == '0' && operands[1] == 'x';
+    const std::string_view sv = isHex ? operands.substr(2) : operands;
+    const uint64 base         = isHex ? 16u : 10u;
+    if (sv.empty())
+        return {};
+    uint64 value = 0;
+    for (const char c : sv) {
+        uint64 digit;
+        if (c >= '0' && c <= '9')
+            digit = static_cast<uint64>(c - '0');
+        else if (isHex && c >= 'a' && c <= 'f')
+            digit = static_cast<uint64>(c - 'a' + 10);
+        else
+            return {};
+        if (value > (UINT64_MAX - digit) / base)
+            return {};
+        value = value * base + digit;
+    }
+    return value;
+}
+
+namespace
+{
+int32 HexDigitValue(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+bool IsNameCharacter(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+bool CanPrecedeNumber(char c)
+{
+    return c == ' ' || c == '[' || c == ',' || c == '+' || c == '-' || c == '*' || c == ':';
+}
+} // namespace
+
+std::vector<OperandNumber> FindOperandNumbers(std::string_view operands)
+{
+    std::vector<OperandNumber> numbers;
+    const auto size = static_cast<uint32>(operands.size());
+    uint32 pos      = 0;
+    while (pos < size) {
+        const char c = operands[pos];
+        if (c < '0' || c > '9' || (pos > 0 && !CanPrecedeNumber(operands[pos - 1]))) {
+            pos++;
+            continue;
+        }
+
+        const uint32 start = pos;
+        const bool isHex   = c == '0' && pos + 2 < size && operands[pos + 1] == 'x' && HexDigitValue(operands[pos + 2]) >= 0;
+        uint64 value       = 0;
+        bool fits          = true;
+        if (isHex) {
+            pos += 2;
+            for (; pos < size && HexDigitValue(operands[pos]) >= 0; pos++) {
+                fits  = fits && (value >> 60) == 0;
+                value = (value << 4) | static_cast<uint64>(HexDigitValue(operands[pos]));
+            }
+        } else {
+            for (; pos < size && operands[pos] >= '0' && operands[pos] <= '9'; pos++) {
+                const auto digit = static_cast<uint64>(operands[pos] - '0');
+                fits             = fits && value <= (UINT64_MAX - digit) / 10u;
+                value            = value * 10u + digit;
+            }
+        }
+        // a number glued to a name (e.g. "1st") or one that does not fit in 64 bits is not a value
+        if (pos < size && IsNameCharacter(operands[pos])) {
+            while (pos < size && IsNameCharacter(operands[pos]))
+                pos++;
+            continue;
+        }
+        if (fits)
+            numbers.push_back({ start, pos - start, value, isHex });
+    }
+    return numbers;
+}
+
+std::string FormatOperandNumbers(std::string_view operands, uint32 decimalMask, uint32* trackedPosition)
+{
+    std::string result;
+    result.reserve(operands.size() + 16u);
+
+    const auto numbers   = FindOperandNumbers(operands);
+    const uint32 tracked = trackedPosition ? *trackedPosition : 0;
+    uint32 copied        = 0;
+    for (uint32 index = 0; index < static_cast<uint32>(numbers.size()) && index < 32u; index++) {
+        const auto& number = numbers[index];
+        if (!number.isHex || (decimalMask & (1u << index)) == 0)
+            continue;
+        result.append(operands.substr(copied, number.start - copied));
+        const auto decimal = std::to_string(number.value);
+        if (trackedPosition && number.start < tracked)
+            *trackedPosition = *trackedPosition + static_cast<uint32>(decimal.size()) - number.length;
+        result.append(decimal);
+        copied = number.start + number.length;
+    }
+    result.append(operands.substr(copied));
+    return result;
+}
+
 AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetLine>& values, uint64 searchedOffset, uint32* index)
 {
     assert(!values.empty());

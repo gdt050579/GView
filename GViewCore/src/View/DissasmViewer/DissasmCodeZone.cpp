@@ -9,24 +9,21 @@ using GView::Utils::GStatus;
 
 constexpr uint64 DISSASM_MAX_ANALYZED_FUNCTION_SIZE = 0x1000000; // 16 MB, larger functions are analyzed only partially
 
-const uint8 HEX_MAPPER[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15 };
-
 inline bool ExtractCallsToInsertFunctionNames(
       vector<AsmOffsetLine>& offsets,
       DissasmCodeZone* zone,
       Reference<GView::Object> obj,
       int internalArchitecture,
       uint32& totalLines,
-      uint64 maxLocationMemoryMappingSize,
       bool detectLocalVariables)
 {
     DisassemblyZone& zoneDetails = zone->zoneDetails;
     const auto instructionData   = obj->GetData().Get(zoneDetails.startingZonePoint, static_cast<uint32>(zoneDetails.size), false);
-    uint64 address               = offsets[0].offset - zoneDetails.startingZonePoint;
+    if (offsets[0].offset < zoneDetails.startingZonePoint)
+        return false;
+    const uint64 codeOffset = offsets[0].offset - zoneDetails.startingZonePoint;
     // the data cache may return less than requested (end of file, zone bigger than the cache): never decode past what was returned
-    if (!instructionData.IsValid() || address >= instructionData.GetLength())
+    if (!instructionData.IsValid() || codeOffset >= instructionData.GetLength())
         return false;
 
     csh handle;
@@ -40,8 +37,10 @@ inline bool ExtractCallsToInsertFunctionNames(
 
     const uint32 asmLines = totalLines;
     uint32 linesToDecode  = totalLines;
-    size_t size           = static_cast<size_t>(instructionData.GetLength() - address);
-    auto data             = instructionData.GetData() + address;
+    // the same addresses as the drawn lines: 0 is the first decoded instruction (offsets[0])
+    uint64 address = 0;
+    size_t size    = static_cast<size_t>(instructionData.GetLength() - codeOffset);
+    auto data      = instructionData.GetData() + codeOffset;
 
     std::vector<std::pair<uint64, std::string>> callsFound;
     std::unordered_map<uint64, bool> callsMap; // true for offset, false for sub
@@ -51,12 +50,11 @@ inline bool ExtractCallsToInsertFunctionNames(
     while (cs_disasm_iter(handle, &data, &size, &address, insn) && linesToDecode > 0) {
         linesToDecode--;
         const bool isJump = insn->mnemonic[0] == 'j';
-        if (*(uint32*) insn->mnemonic == callOP || isJump) {
-            uint64 value;
-            const bool foundValue = CheckExtractInsnHexValue(insn->op_str, value, maxLocationMemoryMappingSize);
-            if (foundValue && value < zoneDetails.startingZonePoint + zoneDetails.size) {
-                if (value < offsets[0].offset)
-                    value += offsets[0].offset;
+        if (TextPrefixAsUInt32(insn->mnemonic) == callOP || isJump) {
+            const auto target    = GetDirectBranchTarget(insn->op_str);
+            const auto offsetOpt = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
+            if (offsetOpt.has_value()) {
+                const uint64 value = offsetOpt.value();
                 const char* prefix = isJump ? "offset_0x" : "sub_0x";
                 const auto it      = callsMap.find(value);
                 if (it != callsMap.end()) {
@@ -68,11 +66,9 @@ inline bool ExtractCallsToInsertFunctionNames(
                 callsMap.insert({ value, isJump });
             }
         } else {
-            const auto mnemonicVal = *(uint32*) insn->mnemonic;
+            const auto mnemonicVal = TextPrefixAsUInt32(insn->mnemonic);
             if (foundCall) {
                 if (mnemonicVal == movOP && strcmp(insn->op_str, "ebp, esp") == 0) {
-                    if (callAddress < offsets[0].offset)
-                        callAddress += offsets[0].offset;
                     const auto it = callsMap.find(callAddress);
                     if (it != callsMap.end()) {
                         if (!it->second)
@@ -87,7 +83,7 @@ inline bool ExtractCallsToInsertFunctionNames(
             } else {
                 if (mnemonicVal == pushOP) {
                     if (strcmp(insn->op_str, "ebp") == 0) {
-                        callAddress = insn->address;
+                        callAddress = offsets[0].offset + insn->address; // decoded inside the code: can not overflow
                         foundCall   = true;
                     }
                 }
@@ -214,6 +210,14 @@ inline bool ExtractCallsToInsertFunctionNames(
 inline bool populateOffsetsVector(
       vector<AsmOffsetLine>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj, int internalArchitecture, uint32& totalLines)
 {
+    const auto instructionData = obj.GetData().Get(zoneDetails.startingZonePoint, static_cast<uint32>(zoneDetails.size), false);
+    if (!instructionData.IsValid())
+        return false;
+    // the data cache may return less than requested (end of file, zone bigger than the cache): never decode past what was returned
+    const uint64 availableSize = std::min<uint64>(zoneDetails.size, instructionData.GetLength());
+    if (zoneDetails.entryPoint < zoneDetails.startingZonePoint || zoneDetails.entryPoint - zoneDetails.startingZonePoint >= availableSize)
+        return false;
+
     csh handle;
     const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle);
     if (resCode != CS_ERR_OK) {
@@ -221,139 +225,31 @@ inline bool populateOffsetsVector(
         return false;
     }
 
-    const auto instructionData = obj.GetData().Get(zoneDetails.startingZonePoint, static_cast<uint32>(zoneDetails.size), false);
-    if (!instructionData.IsValid()) {
-        cs_close(&handle);
-        return false;
-    }
-    // the data cache may return less than requested (end of file, zone bigger than the cache): never decode past what was returned
-    const uint64 availableSize = std::min<uint64>(zoneDetails.size, instructionData.GetLength());
+    // The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it.
+    // The previous backward search for the lowest branch target below the entry point read any operand that is not a hex number
+    // (registers, memory) as the zone start, so the zone start was already the first decoded instruction for nearly every binary;
+    // the cached zones (labels, comments) are keyed on these lines.
+    uint64 address = 0;
+    size_t size    = static_cast<size_t>(availableSize);
+    auto data      = instructionData.GetData();
 
-    if (offsets.empty()) {
-        offsets.reserve(256);
-        offsets.push_back({ zoneDetails.entryPoint, 0 });
-    }
-
-    size_t minimalValue = offsets[0].offset;
-
-    cs_insn* insn     = cs_malloc(handle);
-    size_t lastOffset = offsets[0].offset;
-
-    constexpr uint32 addInstructionsStop = 30; // TODO: update this -> for now it stops, later will fold
-
-    std::list<uint64> finalOffsets;
-
-    if (zoneDetails.entryPoint < zoneDetails.startingZonePoint) {
-        cs_close(&handle);
-        return false;
-    }
-    uint64 address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
-    uint64 endAddress = availableSize;
-
-    if (address >= endAddress) {
-        cs_close(&handle);
-        return false;
-    }
-    size_t size = static_cast<size_t>(availableSize - address);
-
-    auto data = instructionData.GetData() + address;
-
-    // std::string saved1 = "s1", saved2 = "s2";
-    uint64 startingOffset = offsets[0].offset;
-
-    size_t lastSize = size;
-    // std::vector<uint64> tempStorage;
-    // tempStorage.push_back(lastOffset);
-
-    do {
-        if (size > lastSize) {
-            lastSize = size;
-            // tempStorage.reserve(size / DISSASM_INSTRUCTION_OFFSET_MARGIN + 1);
-        }
-
-        while (address < endAddress) {
-            if (!cs_disasm_iter(handle, &data, &size, &address, insn))
-                break;
-
-            if ((insn->mnemonic[0] == 'j' || *(uint32*) insn->mnemonic == callOP)) // && insn->op_str[0] == '0' /* && insn->op_str[1] == 'x'*/)
-            {
-                uint64 computedValue = 0;
-                if (insn->op_str[1] == 'x') {
-                    // uint64 computedValue = 0;
-                    char* ptr = &insn->op_str[2];
-                    // TODO: also check not to overflow access!
-                    while (*ptr && *ptr != ' ' && *ptr != ',') {
-                        if (!((*ptr >= 'a' && *ptr <= 'f') || (*ptr >= '0' && *ptr <= '9'))) {
-                            computedValue = 0;
-                            break;
-                        }
-                        computedValue = computedValue * 16 + HEX_MAPPER[static_cast<uint8>(*ptr)];
-                        ptr++;
-                    }
-                } else {
-                    char* ptr = &insn->op_str[0];
-                    while (*ptr && *ptr != ' ' && *ptr != ',') {
-                        if (*ptr < '0' || *ptr > '9') {
-                            computedValue = 0;
-                            break;
-                        }
-                        computedValue = computedValue * 10 + (static_cast<uint8>(*ptr) - '0');
-                        ptr++;
-                    }
-                    if (computedValue < zoneDetails.startingZonePoint)
-                        computedValue += zoneDetails.startingZonePoint;
-                    // if (insn->op_str[1] == '\0') {
-                    //     computedValue = zoneDetails.startingZonePoint;
-                    // }
-                }
-
-                if (computedValue < minimalValue && computedValue >= zoneDetails.startingZonePoint) {
-                    minimalValue = computedValue;
-                    // saved1       = insn->mnemonic;
-                    // saved2       = insn->op_str;
-                }
-            }
-            const size_t adjustedSize = address + zoneDetails.startingZonePoint;
-            if (adjustedSize - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN) {
-                lastOffset = adjustedSize;
-            }
-        }
-        if (minimalValue >= startingOffset)
-            break;
-
-        // pushBack                       = false;
-        const size_t zoneSizeToAnalyze = startingOffset - minimalValue;
-        // finalOffsets.push_front(minimalValue);
-
-        address        = minimalValue - zoneDetails.startingZonePoint;
-        endAddress     = zoneSizeToAnalyze + address;
-        size           = static_cast<size_t>(availableSize - address); // the loop stops at endAddress, the last instruction may cross it
-        data           = instructionData.GetData() + address;
-        lastOffset     = minimalValue;
-        startingOffset = minimalValue;
-    } while (true);
-
-    address    = minimalValue - zoneDetails.startingZonePoint;
-    size       = static_cast<size_t>(availableSize - address);
-    data       = instructionData.GetData() + address;
-    lastOffset = address;
-
-    uint32 lineIndex = 0;
+    constexpr uint32 addInstructionsStop = 30;       // TODO: update this -> for now it stops, later will fold
+    constexpr uint32 alOpStr             = 7102752u; //* (uint32*) " al";
+    uint32 continuousAddInstructions     = 0;
+    uint32 lineIndex                     = 0;
+    uint64 lastOffset                    = 0;
     offsets.clear();
-    offsets.push_back({ minimalValue, 0 });
+    offsets.push_back({ zoneDetails.startingZonePoint, 0 });
 
-    constexpr uint32 alOpStr         = 7102752u; //* (uint32*) " al";
-    uint32 continuousAddInstructions = 0;
-
+    cs_insn* insn = cs_malloc(handle);
     while (cs_disasm_iter(handle, &data, &size, &address, insn)) {
         lineIndex++;
         if (address - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN) {
-            lastOffset                = address;
-            const size_t adjustedSize = address + zoneDetails.startingZonePoint;
-            offsets.push_back({ adjustedSize, lineIndex });
+            lastOffset = address;
+            offsets.push_back({ address + zoneDetails.startingZonePoint, lineIndex });
         }
 
-        if (*(uint32*) insn->mnemonic == addOP && insn->op_str[0] == 'b' && *(uint32*) &insn->op_str[15] == alOpStr) {
+        if (TextPrefixAsUInt32(insn->mnemonic) == addOP && insn->op_str[0] == 'b' && TextPrefixAsUInt32(&insn->op_str[15]) == alOpStr) {
             if (++continuousAddInstructions == addInstructionsStop) {
                 lineIndex -= continuousAddInstructions;
                 break;
@@ -400,13 +296,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     localVariables.functions.clear();
     if (initData.enableDeepScanDissasmOnStart) {
         const bool scanned = ExtractCallsToInsertFunctionNames(
-              cachedCodeOffsets,
-              this,
-              initData.obj,
-              internalArchitecture,
-              totalLines,
-              initData.maxLocationMemoryMappingSize,
-              initData.enableLocalVariablesDetection);
+              cachedCodeOffsets, this, initData.obj, internalArchitecture, totalLines, initData.enableLocalVariablesDetection);
         if (!scanned) {
             initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;
@@ -480,7 +370,10 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     DissasmCodeInternalType& currentType = types.back();
     // TODO: do a faster search using a binary search using the annotations and start from there
     // TODO: maybe use some caching here?
-    if (reAdapt || (levelNow < levelToReach && levelNow + 1 != levelToReach) || (levelNow > levelToReach && levelNow - 1 != levelToReach)) {
+    // the counters include the reached line: the next line adds itself, the previous line removes the line that is left
+    const bool isNextLine     = levelNow + 1u == levelToReach;
+    const bool isPreviousLine = levelToReach + 1u == levelNow;
+    if (reAdapt || (!isNextLine && !isPreviousLine)) {
         currentType.textLinesPassed = 0;
         currentType.asmLinesPassed  = 0;
         for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
@@ -490,11 +383,16 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
             }
             currentType.asmLinesPassed++;
         }
-    } else {
+    } else if (isNextLine) {
         if (currentType.annotations.contains(levelToReach))
             currentType.textLinesPassed++;
         else
             currentType.asmLinesPassed++;
+    } else {
+        if (currentType.annotations.contains(levelNow))
+            currentType.textLinesPassed--;
+        else
+            currentType.asmLinesPassed--;
     }
 
     levelNow        = levelToReach;
@@ -521,6 +419,13 @@ uint64 DissasmCodeZone::GetCodeSize() const
     if (codeStart < zoneDetails.startingZonePoint || codeStart >= zoneEnd)
         return 0;
     return zoneEnd - codeStart;
+}
+
+std::optional<uint64> DissasmCodeZone::GetFileOffsetOfAddress(uint64 address) const
+{
+    if (address >= GetCodeSize()) // GetCodeSize is 0 for an invalid zone, cachedCodeOffsets[0].offset + address can not overflow
+        return {};
+    return cachedCodeOffsets[0].offset + address;
 }
 
 bool DissasmCodeZone::FetchCodeWindow(Reference<GView::Object> obj, uint64 relativeStart, uint64 relativeEnd)
@@ -657,4 +562,15 @@ bool DissasmCodeZone::ResetTypesReferenceList()
     levels.push_back(0);
     ResetZoneCaching();
     return true;
+}
+
+void DissasmCodeZone::ToggleDecimalOperand(uint64 address, uint32 numberIndex)
+{
+    if (numberIndex >= 32u)
+        return;
+    const uint32 mask = GetDecimalOperandsMask(address) ^ (1u << numberIndex);
+    if (mask == 0)
+        decimalOperands.erase(address);
+    else
+        decimalOperands[address] = mask;
 }

@@ -1,8 +1,8 @@
-#include <catch.hpp>
 #include "DissasmCodeZone.hpp"
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
+#include <catch.hpp>
 #include <array>
 
 using namespace GView::View::DissasmViewer;
@@ -31,10 +31,6 @@ class DummyType : public GView::TypeInterface
 
     TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
     {
-        static auto d = TypeInterface::SelectionZone{ 0, 0 };
-        // CHECK(selectionZoneInterface.IsValid(), d, "");
-        // CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
-
         return selectionZoneInterface->GetSelectionZone(index);
     }
 };
@@ -42,7 +38,7 @@ class DummyType : public GView::TypeInterface
 struct ZoneCheckData {
     uint32 indexZoneStart;
     uint32 indexZoneEnd;
-    bool shouldHaveName;
+    bool shouldHaveName = false;
 };
 
 struct ZoneBeforeLines {
@@ -274,6 +270,14 @@ unsigned char exampleTest1BinaryCode[] = {
 };
 constexpr size_t exampleTest1BinaryCodeSize = sizeof(exampleTest1BinaryCode);
 
+// namespace scope (not nested in DissasmTestInstance): GCC rejects "= {}" as a default argument of the enclosing class
+// when the nested struct has default member initializers, because they are only parsed once the enclosing class is complete
+struct ZoneLayout {
+    uint64 start      = 0;
+    uint64 size       = 5120;
+    uint64 entryPoint = 10;
+};
+
 class DissasmTestInstance
 {
     bool CheckLinesWorkingIndexesSameAsZonesRecursive(std::vector<DissasmCodeInternalType>* childrenToCheck)
@@ -305,8 +309,10 @@ class DissasmTestInstance
     std::unique_ptr<DissasmCodeZone> zone;
 
     bool enableLocalVariables;
+    ZoneLayout layout;
 
-    DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false) : enableLocalVariables(enableLocalVariables)
+    DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false, ZoneLayout layout = {})
+        : enableLocalVariables(enableLocalVariables), layout(layout)
     {
         instance = nullptr;
         // assert() is compiled out in RelWithDebInfo/Release (NDEBUG): a failed init would otherwise continue with a
@@ -347,9 +353,9 @@ class DissasmTestInstance
         zone->zoneType                      = DissasmParseZoneType::DissasmCodeParseZone;
         zone->startLineIndex                = 0;
         zone->zoneDetails.language          = DisassemblyLanguage::x86;
-        zone->zoneDetails.startingZonePoint = 0;
-        zone->zoneDetails.size              = 5120;
-        zone->zoneDetails.entryPoint        = 10;
+        zone->zoneDetails.startingZonePoint = layout.start;
+        zone->zoneDetails.size              = layout.size;
+        zone->zoneDetails.entryPoint        = layout.entryPoint;
 
         DissasmCodeZoneInitData initData      = {};
         initData.enableDeepScanDissasmOnStart  = true;
@@ -366,7 +372,7 @@ class DissasmTestInstance
     bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
     {
         if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
+            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
             return false;
         }
 
@@ -375,7 +381,7 @@ class DissasmTestInstance
             childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
 
         if (childrenToCheck->size() != zones.size()) {
-            printf("ERROR: invalid zone length %d >= %llu", zoneIndex, childrenToCheck->size());
+            printf("ERROR: invalid zone length %d >= %zu", zoneIndex, childrenToCheck->size());
             return false;
         }
 
@@ -399,7 +405,7 @@ class DissasmTestInstance
     bool CheckBeforeLinesData(uint32 zoneIndex, std::initializer_list<ZoneBeforeLines> zones)
     {
         if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
+            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
             return false;
         }
 
@@ -409,7 +415,7 @@ class DissasmTestInstance
 
         for (auto& z : zones) {
             if (z.zoneIndex >= childrenToCheck->size()) {
-                printf("ERROR: invalid zone index %d >= %llu", z.zoneIndex, childrenToCheck->size());
+                printf("ERROR: invalid zone index %d >= %zu", z.zoneIndex, childrenToCheck->size());
                 return false;
             }
             const auto& it = (*childrenToCheck)[z.zoneIndex];
@@ -546,6 +552,45 @@ class DissasmTestInstance
             result.append(val.op_str, val.op_str_size);
         }
         return result;
+    }
+
+    // the line as it is drawn: jump / call targets replaced by their labels (needs the viewer settings)
+    DissasmAsmPreCacheLine GetDrawnAsmLine(uint32 line)
+    {
+        struct IdentityTranslation : public GView::View::BufferViewer::OffsetTranslateInterface {
+            uint64_t TranslateToFileOffset(uint64 value, uint32) override
+            {
+                return value;
+            }
+            uint64_t TranslateFromFileOffset(uint64 value, uint32) override
+            {
+                return value;
+            }
+        };
+        IdentityTranslation translation;
+        SettingsData settings;
+        settings.offsetTranslateCallback = &translation;
+        AsmData asmData;
+
+        DissasmInsnExtractLineParams params{};
+        params.obj      = &objects[0];
+        params.settings = &settings;
+        params.asmData  = &asmData;
+        params.zone     = zone.get();
+        return zone->GetCurrentAsmLine(line, &objects[0], &params);
+    }
+
+    bool CheckDrawnLineText(uint32 line, std::string_view expected)
+    {
+        const auto val     = GetDrawnAsmLine(line);
+        std::string result = val.mnemonic;
+        if (val.op_str)
+            result.append(" ").append(val.op_str, val.op_str_size);
+        if (result != expected) {
+            printf("[%u] expected: \"%.*s\", found: \"%s\"\n", line, (int) expected.size(), expected.data(), result.c_str());
+            return false;
+        }
+        return true;
     }
 
     bool CheckLineText(uint32 line, std::string_view expected)
@@ -901,7 +946,6 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
-    uint32 zoneEndingIndex = 4572;
     // dissasmInstance.PrintInstructions(20);
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
@@ -1397,16 +1441,354 @@ TEST_CASE("DissasmLabelArrows", "[Dissasm]Functions")
     data.cachedAsmLines.push_back(makeLine(0x16, 2, 4, 0x10)); // jmp backward
     data.PrepareLabelArrows();
 
-    using F = DissasmAsmPreCacheLine::LineArrowToDrawFlag;
-    REQUIRE((data.cachedAsmLines[0].lineArrowToDraw & F::DrawStartingLine));
-    REQUIRE((data.cachedAsmLines[3].lineArrowToDraw & F::DrawEndingLine)); // ends on the label of the target
-    REQUIRE((data.cachedAsmLines[2].lineArrowToDraw & F::DrawLine1));
-    REQUIRE(!(data.cachedAsmLines[2].lineArrowToDraw & (F::DrawStartingLine | F::DrawEndingLine)));
-    REQUIRE((data.cachedAsmLines[4].lineArrowToDraw & F::DrawEndingLine));
-    REQUIRE((data.cachedAsmLines[4].lineArrowToDraw & F::DrawLine2));
-    REQUIRE(!(data.cachedAsmLines[4].lineArrowToDraw & F::DrawLine1));
+    using L = DissasmAsmPreCacheLine;
+    static_assert(L::ARROW_COLUMNS == 4);
+    // the forward jump 0 -> 3 is the shortest arrow: the lane next to the code; the backward jump 4 -> 0 goes around it
+    const auto& lines = data.cachedAsmLines;
+    REQUIRE(lines[0].arrowCells[0] == L::ArrowNone);
+    REQUIRE(lines[0].arrowCells[1] == (L::ArrowDown | L::ArrowRight));                // target of the backward jump
+    REQUIRE(lines[0].arrowCells[2] == (L::ArrowDown | L::ArrowLeft | L::ArrowRight)); // source of the forward jump, crossed
+    REQUIRE(lines[0].arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
+    REQUIRE(lines[1].arrowCells[1] == (L::ArrowUp | L::ArrowDown)); // no arrow to the middle of an instruction
+    REQUIRE(lines[2].arrowCells[2] == (L::ArrowUp | L::ArrowDown));
+    REQUIRE(lines[2].arrowCells[3] == L::ArrowNone);
+    REQUIRE(lines[3].arrowCells[1] == (L::ArrowUp | L::ArrowDown));
+    REQUIRE(lines[3].arrowCells[2] == (L::ArrowUp | L::ArrowRight)); // ends on the label of the target
+    REQUIRE(lines[3].arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
+    REQUIRE(lines[4].arrowCells[1] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(lines[4].arrowCells[2] == (L::ArrowLeft | L::ArrowRight));
+    REQUIRE(lines[4].arrowCells[3] == L::ArrowLeft);
 
-    // the cached lines keep the branch targets when moved / copied
+    // the jumps to the same target share one arrow, every source gets its horizontal line
+    DissasmAsmPreCacheData shared;
+    shared.cachedAsmLines.push_back(makeLine(0x20, 2, 0, 0x28)); // je
+    shared.cachedAsmLines.push_back(makeLine(0x22, 2, 1, {}));
+    shared.cachedAsmLines.push_back(makeLine(0x24, 2, 2, 0x28)); // je
+    shared.cachedAsmLines.push_back(makeLine(0x26, 2, 3, 0x28)); // jne
+    shared.cachedAsmLines.push_back(makeLine(0x28, 0, 4, {}));   // label
+    shared.PrepareLabelArrows();
+    for (const auto& line : shared.cachedAsmLines) {
+        REQUIRE(line.arrowCells[0] == L::ArrowNone);
+        REQUIRE(line.arrowCells[1] == L::ArrowNone);
+    }
+    REQUIRE(shared.cachedAsmLines[0].arrowCells[2] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[0].arrowCells[3] == L::ArrowLeft);
+    REQUIRE(shared.cachedAsmLines[1].arrowCells[2] == (L::ArrowUp | L::ArrowDown));
+    REQUIRE(shared.cachedAsmLines[1].arrowCells[3] == L::ArrowNone);
+    REQUIRE(shared.cachedAsmLines[2].arrowCells[2] == (L::ArrowUp | L::ArrowDown | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[3].arrowCells[2] == (L::ArrowUp | L::ArrowDown | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[4].arrowCells[2] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[4].arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
+
+    // more nested arrows than lanes: the longest one is not drawn
+    DissasmAsmPreCacheData nested;
+    for (uint32 i = 0; i < 4; i++)
+        nested.cachedAsmLines.push_back(makeLine(0x40 + i * 2, 2, i, 0x50 - i * 2));
+    for (uint32 i = 0; i < 4; i++)
+        nested.cachedAsmLines.push_back(makeLine(0x4A + i * 2, 0, 4 + i, {})); // labels 0x4A .. 0x50
+    nested.PrepareLabelArrows();
+    for (const auto cell : nested.cachedAsmLines[0].arrowCells)
+        REQUIRE(cell == L::ArrowNone);
+    REQUIRE(nested.cachedAsmLines[1].arrowCells[0] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[2].arrowCells[1] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[3].arrowCells[2] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[4].arrowCells[2] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[6].arrowCells[0] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[7].arrowCells[3] == L::ArrowNone);
+
+    // the cached lines keep the branch targets and the arrows when moved / copied
     DissasmAsmPreCacheLine copy(data.cachedAsmLines[0]);
     REQUIRE(copy.branchTarget == 0x16);
+    REQUIRE(copy.arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
+}
+
+TEST_CASE("JumpsHistory", "[Dissasm]Jumps")
+{
+    const auto at = [](uint32 line) { return CursorState{ 0, line, 5, 0 }; };
+
+    JumpsHolder jumps(64);
+    REQUIRE(!jumps.JumpBack().has_value());
+    REQUIRE(!jumps.JumpForward().has_value());
+
+    // A -> B -> C
+    jumps.Record(at(10), at(100));
+    jumps.Record(at(100), at(200));
+    REQUIRE(jumps.Size() == 3);
+    REQUIRE(!jumps.JumpForward().has_value());
+
+    // back to B, back to A, nothing before A
+    REQUIRE(jumps.JumpBack() == at(100));
+    REQUIRE(jumps.JumpBack() == at(10));
+    REQUIRE(!jumps.JumpBack().has_value());
+
+    // forward reaches the destinations of the jumps (B, then C)
+    REQUIRE(jumps.JumpForward() == at(100));
+    REQUIRE(jumps.JumpForward() == at(200));
+    REQUIRE(!jumps.JumpForward().has_value());
+
+    // back to B, the cursor moves (B') and a new jump is made -> the forward history (C) is dropped
+    REQUIRE(jumps.JumpBack() == at(100));
+    jumps.Record(at(110), at(300));
+    REQUIRE(!jumps.JumpForward().has_value());
+    REQUIRE(jumps.JumpBack() == at(110));
+    REQUIRE(jumps.JumpBack() == at(10));
+    REQUIRE(!jumps.JumpBack().has_value());
+
+    // a jump to the same location adds a single entry
+    JumpsHolder same(64);
+    same.Record(at(10), at(10));
+    REQUIRE(same.Size() == 1);
+    REQUIRE(!same.JumpBack().has_value());
+
+    // when the history is full the oldest locations are dropped (the newest ones are kept)
+    JumpsHolder small(4);
+    for (uint32 i = 0; i < 10; i++)
+        small.Record(at(i * 10), at(i * 10 + 10));
+    REQUIRE(small.Size() == 4);
+    REQUIRE(small.JumpBack() == at(90));
+    REQUIRE(small.JumpBack() == at(80));
+    REQUIRE(small.JumpBack() == at(70));
+    REQUIRE(!small.JumpBack().has_value());
+    REQUIRE(small.JumpForward() == at(80));
+}
+
+TEST_CASE("OperandNumbers", "[Dissasm]DecimalOperands")
+{
+    auto numbersOf = [](std::string_view text) {
+        std::vector<std::string> result;
+        for (const auto& number : FindOperandNumbers(text))
+            result.emplace_back(text.substr(number.start, number.length));
+        return result;
+    };
+    REQUIRE(numbersOf("byte ptr [edx + 0x4011b8]") == std::vector<std::string>{ "0x4011b8" });
+    REQUIRE(numbersOf("eax, 0x10") == std::vector<std::string>{ "0x10" });
+    REQUIRE(numbersOf("0x40") == std::vector<std::string>{ "0x40" });
+    REQUIRE(numbersOf("dword ptr [ebp - 0x44], 0x20") == std::vector<std::string>{ "0x44", "0x20" });
+    REQUIRE(numbersOf("dword ptr [eax + ebx*4 + 0x10], 1") == std::vector<std::string>{ "4", "0x10", "1" });
+    REQUIRE(numbersOf("dword ptr fs:[0x30]") == std::vector<std::string>{ "0x30" });
+    // names are not numbers
+    REQUIRE(numbersOf("dword ptr [ebp + var_8], r8d").empty());
+    REQUIRE(numbersOf("xmm0, xmm1").empty());
+    REQUIRE(numbersOf("st(0)").empty());
+    REQUIRE(numbersOf("sub_0x000000030").empty());
+    REQUIRE(numbersOf("eax, 1st").empty());
+
+    const auto numbers = FindOperandNumbers("eax, 0xffffffff");
+    REQUIRE(numbers.size() == 1);
+    REQUIRE(numbers[0].isHex);
+    REQUIRE(numbers[0].value == 0xffffffffULL);
+    const auto decimals = FindOperandNumbers("rax, 18446744073709551615");
+    REQUIRE(decimals.size() == 1);
+    REQUIRE(!decimals[0].isHex);
+    REQUIRE(decimals[0].value == UINT64_MAX);
+    REQUIRE(FindOperandNumbers("rax, 18446744073709551616").empty()); // does not fit in 64 bits
+    REQUIRE(FindOperandNumbers("rax, 0x10000000000000000").empty());
+
+    REQUIRE(FormatOperandNumbers("byte ptr [edx + 0x4011b8]", 1) == "byte ptr [edx + 4198840]");
+    REQUIRE(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 2) == "dword ptr [ebp - 0x44], 32");
+    REQUIRE(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 3) == "dword ptr [ebp - 68], 32");
+    REQUIRE(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 0) == "dword ptr [ebp - 0x44], 0x20");
+    REQUIRE(FormatOperandNumbers("eax, 1", 1) == "eax, 1"); // already decimal
+    // the indexes stay the same once the numbers are decimal (the cursor uses the displayed text)
+    REQUIRE(FindOperandNumbers(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 1)).size() == 2);
+
+    // a position after a converted number follows it
+    uint32 tracked = 22; // "var_8"
+    REQUIRE(FormatOperandNumbers("dword ptr [0x4011b8 + var_8]", 1, &tracked) == "dword ptr [4198840 + var_8]");
+    REQUIRE(tracked == 21);
+    tracked = 10; // before the number
+    REQUIRE(FormatOperandNumbers("dword ptr [var_8 + 0x4011b8]", 1, &tracked) == "dword ptr [var_8 + 4198840]");
+    REQUIRE(tracked == 10);
+}
+
+TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
+{
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+    const uint64 address = dissasmInstance.GetCurrentAsmLine(62).address;
+    zone.ToggleDecimalOperand(address, 0);
+    REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 4198840]"));
+    REQUIRE(dissasmInstance.CheckLineText(46, "cmp dword ptr [ebp + arg_0], 1")); // other instructions are not changed
+    zone.ToggleDecimalOperand(address, 0);
+    REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+    REQUIRE(zone.decimalOperands.empty());
+
+    // an instruction that uses a local variable and has a hexadecimal number: the variable name position follows the conversion
+    bool foundVariableLine = false;
+    for (uint32 line = 0; line < zone.GetRootZoneLinesCount() && !foundVariableLine; line++) {
+        const auto asmLine = dissasmInstance.GetCurrentAsmLine(line);
+        if (asmLine.localVariableKind != DissasmAsmPreCacheLine::LocalVariableKind::Reference || !asmLine.op_str)
+            continue;
+        const std::string original(asmLine.op_str, asmLine.op_str_size);
+        const auto numbers = FindOperandNumbers(original);
+        for (uint32 index = 0; index < numbers.size(); index++) {
+            if (!numbers[index].isHex || numbers[index].value < 10)
+                continue;
+            const std::string variableName = original.substr(asmLine.localVariableNameStart, asmLine.localVariableNameSize);
+            zone.ToggleDecimalOperand(asmLine.address, index);
+            const auto converted = dissasmInstance.GetCurrentAsmLine(line);
+            const std::string text(converted.op_str, converted.op_str_size);
+            REQUIRE(text == FormatOperandNumbers(original, 1u << index));
+            REQUIRE(text.substr(converted.localVariableNameStart, converted.localVariableNameSize) == variableName);
+            zone.ToggleDecimalOperand(asmLine.address, index);
+            foundVariableLine = true;
+            break;
+        }
+    }
+    REQUIRE(foundVariableLine);
+
+    // saved in the cache (version 2) and restored
+    std::vector<std::byte> buffer;
+    zone.ToggleDecimalOperand(address, 0);
+    REQUIRE(zone.ToBuffer(buffer));
+    auto cache      = std::make_unique<DissasmCache>();
+    cache->hasCache = true;
+    cache->AddRegion("DissasmParseZoneType.0", buffer.data(), static_cast<uint32>(buffer.size()));
+
+    DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    bool zoneLinesChanged = false;
+    REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+    REQUIRE(restored.CheckLineText(62, "movzx eax, byte ptr [edx + 4198840]"));
+
+    // a version 1 record (no decimal operands) is still loaded
+    std::vector<std::byte> versionOne(buffer.begin(), buffer.end() - static_cast<std::ptrdiff_t>(sizeof(uint32) + sizeof(uint64) + sizeof(uint32)));
+    const uint32 version = 1;
+    memcpy(versionOne.data() + sizeof(uint32), &version, sizeof(version));
+    auto cacheV1      = std::make_unique<DissasmCache>();
+    cacheV1->hasCache = true;
+    cacheV1->AddRegion("DissasmParseZoneType.0", versionOne.data(), static_cast<uint32>(versionOne.size()));
+    DissasmTestInstance restoredV1(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    REQUIRE(restoredV1.zone->TryLoadDataFromCache(*cacheV1, zoneLinesChanged));
+    REQUIRE(restoredV1.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+
+    // a truncated decimal operands section is rejected
+    std::vector<std::byte> truncated(buffer.begin(), buffer.end() - 2);
+    auto cacheTruncated      = std::make_unique<DissasmCache>();
+    cacheTruncated->hasCache = true;
+    cacheTruncated->AddRegion("DissasmParseZoneType.0", truncated.data(), static_cast<uint32>(truncated.size()));
+    DissasmTestInstance restoredTruncated(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    REQUIRE(!restoredTruncated.zone->TryLoadDataFromCache(*cacheTruncated, zoneLinesChanged));
+    REQUIRE(restoredTruncated.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+}
+
+TEST_CASE("DirectBranchTargets", "[Dissasm]Jumps")
+{
+    REQUIRE(GetDirectBranchTarget("0x1f4") == 0x1f4u);
+    REQUIRE(GetDirectBranchTarget("7") == 7u);
+    REQUIRE(GetDirectBranchTarget("0xffffffffffffffff") == UINT64_MAX);
+    REQUIRE(!GetDirectBranchTarget("0x10000000000000000").has_value()); // does not fit in 64 bits
+    REQUIRE(!GetDirectBranchTarget("18446744073709551616").has_value());
+    REQUIRE(!GetDirectBranchTarget("").has_value());
+    REQUIRE(!GetDirectBranchTarget("0x").has_value());
+    REQUIRE(!GetDirectBranchTarget("eax").has_value());
+    REQUIRE(!GetDirectBranchTarget("dword ptr [0x404000]").has_value());
+    REQUIRE(!GetDirectBranchTarget("0x10:0x20").has_value()); // far pointer
+    REQUIRE(!GetDirectBranchTarget("0x1F4").has_value());     // capstone prints lower case hex digits
+}
+
+TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
+{
+    // a zone placed at file offset 0x100 with more code than its offset: the decoded addresses (and the branch targets) start at 0 on
+    // the first instruction, a target >= 0x100 was taken for a file offset and named / followed to the wrong place
+    constexpr uint64 zoneStart = 0x100;
+    constexpr uint64 codeSize  = 0x220;
+    std::vector<unsigned char> file(zoneStart, 0xCC);
+    const unsigned char head[] = {
+        0xE9, 0xFB, 0x01, 0x00, 0x00,       // 0x000: jmp 0x200
+        0xE8, 0x76, 0x01, 0x00, 0x00,       // 0x005: call 0x180
+        0xE9, 0xE1, 0xFF, 0xFF, 0xFF,       // 0x00a: jmp -0x10 (before the zone, wraps around)
+        0xFF, 0x15, 0x00, 0x40, 0x40, 0x00, // 0x00f: call dword ptr [0x404000]
+        0xE9, 0xE6, 0x02, 0x00, 0x00,       // 0x015: jmp 0x300 (after the zone)
+    };
+    file.insert(file.end(), std::begin(head), std::end(head));
+    file.resize(zoneStart + 0x180, 0x90);
+    const unsigned char function[] = { 0x55, 0x8B, 0xEC, 0x5D, 0xC3 }; // 0x180: push ebp; mov ebp, esp; pop ebp; ret
+    file.insert(file.end(), std::begin(function), std::end(function));
+    file.resize(zoneStart + 0x200, 0x90);
+    file.push_back(0xC3); // 0x200: ret
+    file.resize(zoneStart + codeSize, 0x90);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, { zoneStart, codeSize, zoneStart });
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.cachedCodeOffsets[0].offset == zoneStart);
+
+    REQUIRE(zone.GetFileOffsetOfAddress(0) == zoneStart);
+    REQUIRE(zone.GetFileOffsetOfAddress(codeSize - 1) == zoneStart + codeSize - 1);
+    REQUIRE(!zone.GetFileOffsetOfAddress(codeSize).has_value());
+    REQUIRE(!zone.GetFileOffsetOfAddress(UINT64_MAX).has_value());
+
+    // the labels are placed on the targets and keep their address relative to the code
+    const auto& annotations = zone.dissasmType.annotations;
+    const auto subLine      = annotations.get_line_by_annotation_name("sub_0x000000280");
+    const auto offsetLine   = annotations.get_line_by_annotation_name("offset_0x000000300");
+    REQUIRE(subLine.has_value());
+    REQUIRE(offsetLine.has_value());
+    REQUIRE(annotations.find(subLine.value())->second.second == 0x180);
+    REQUIRE(annotations.find(offsetLine.value())->second.second == 0x200);
+    REQUIRE(annotations.size() == 3); // and the entry point, nothing for the targets outside of the code
+    REQUIRE(dissasmInstance.CheckLineText(subLine.value() + 1, "push ebp"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(offsetLine.value() + 1, "ret"));
+
+    // the drawn operands use the same labels, the targets outside of the code keep their operands
+    REQUIRE(dissasmInstance.CheckDrawnLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "jmp offset_0x000000300"));
+    REQUIRE(dissasmInstance.GetDrawnAsmLine(1).branchTarget == 0x200u);
+    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "call sub_0x000000280"));
+    REQUIRE(dissasmInstance.GetDrawnAsmLine(2).branchTarget == 0x180u);
+    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0xfffffff0"));
+    REQUIRE(!dissasmInstance.GetDrawnAsmLine(3).branchTarget.has_value());
+    REQUIRE(dissasmInstance.CheckDrawnLineText(4, "call dword ptr [0x404000]"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(5, "jmp 0x300"));
+    REQUIRE(!dissasmInstance.GetDrawnAsmLine(5).branchTarget.has_value());
+}
+
+std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine); // DissasmX86.cpp
+
+TEST_CASE("FollowJumpLineState", "[Dissasm]Jumps")
+{
+    // SPACE (follow a jump) maps the cursor line to its instruction right after the lines around it were decoded (drawing, cursor
+    // refresh): the same line, the previous or the next one must give the instruction of the cursor line and keep the lines unchanged
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    const auto zone          = dissasmInstance.zone.get();
+    const auto& annotations  = zone->dissasmType.annotations;
+    auto expectedInstruction = [&annotations](uint32 line) -> std::optional<uint32> {
+        if (annotations.contains(line))
+            return {};
+        uint32 textLines = 0;
+        for (const auto& entry : annotations.mappings) {
+            if (entry.first > line)
+                break;
+            textLines++;
+        }
+        return line - textLines;
+    };
+
+    for (uint32 line = 30; line <= 80; line++) { // labels and local variable lines inside
+        const auto text = dissasmInstance.GetLineText(line);
+        for (const uint32 reachedLine : { line, line + 1u, line - 1u }) {
+            dissasmInstance.GetLineText(reachedLine);
+            REQUIRE(DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, line) == expectedInstruction(line));
+            REQUIRE(dissasmInstance.CheckLineText(line, text));
+        }
+    }
+}
+
+TEST_CASE("DecodeLinesBackwards", "[Dissasm]Functions")
+{
+    // the lines decoded one by one upwards (cursor moving up) must be the same as the ones decoded downwards (drawing)
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    constexpr uint32 firstLine = 30;
+    constexpr uint32 lastLine  = 80; // labels and local variable lines inside
+    std::vector<std::string> downwards;
+    for (uint32 line = firstLine; line <= lastLine; line++)
+        downwards.push_back(dissasmInstance.GetLineText(line));
+    for (uint32 line = lastLine + 1; line-- > firstLine;)
+        REQUIRE(dissasmInstance.CheckLineText(line, downwards[line - firstLine]));
+    // and up / down around the same place
+    REQUIRE(dissasmInstance.CheckLineText(50, downwards[50 - firstLine]));
+    REQUIRE(dissasmInstance.CheckLineText(49, downwards[49 - firstLine]));
+    REQUIRE(dissasmInstance.CheckLineText(50, downwards[50 - firstLine]));
+    REQUIRE(dissasmInstance.CheckLineText(49, downwards[49 - firstLine]));
 }

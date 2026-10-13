@@ -2,9 +2,9 @@
 // alphabet check is exercised with every byte value, including the ones above 0x7F that behave differently on
 // targets where `char` is unsigned.
 
-#include <catch.hpp>
-
 #include "Internal.hpp"
+
+#include <catch.hpp>
 
 #include <string>
 #include <vector>

@@ -1,11 +1,11 @@
 // Unit tests of the remote TUI (docs/source/remote_protocol.rst): wire format, input mapping, frame encoding /
 // decoding (including hostile inputs) and loopback TLS 1.3 + mutual TLS integration tests with generated certificates.
 
-#include <catch.hpp>
-
 #include "RemoteChannel.hpp"
 #include "RemoteClient.hpp"
 #include "RemoteServer.hpp"
+
+#include <catch.hpp>
 
 #include <filesystem>
 #include <random>

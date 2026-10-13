@@ -12,19 +12,31 @@ ZIPFile::ZIPFile()
 
 bool ZIPFile::Update()
 {
-    LocalUnicodeStringBuilder<1024> ub;
-    ub.Set(obj->GetPath());
-    std::u16string sv{ ub.GetString(), ub.Len() };
-
-    isTopContainer = std::filesystem::exists(sv);
-    if (isTopContainer) // top container (exists on disk)
-    {
+    // top container: minizip-ng reads the file itself
+    // (decided by the object type: the logical path of a child may also exist on disk and be a different file)
+    if (obj->GetObjectType() == GView::Object::Type::File) {
+        isTopContainer = true;
         CHECK(GView::Decoding::ZIP::GetInfo(obj->GetPath(), this->info), false, "");
-    } else // child container (does not exist on disk)
-    {
-        CHECK(GView::Decoding::ZIP::GetInfo(obj->GetData(), this->info), false, "");
+        return true;
     }
 
+    // child container that fits in the cache: read in memory (nothing written to disk)
+    if (obj->GetData().GetSize() <= obj->GetData().GetCacheSize()) {
+        isTopContainer = false;
+        CHECK(GView::Decoding::ZIP::GetInfo(obj->GetData(), this->info), false, "");
+        return true;
+    }
+
+    // larger child container: read from a copy in GView's private temporary folder (refused for Learning and Evaluation
+    // Mode memory-only content and when the policy restricts Export)
+    GView::App::TemporaryFile copy;
+    const auto dropped = GView::App::DropToTemporaryFile(obj, copy);
+    CHECK(dropped.ok, false, "Archive larger than the cache that can not be copied to the temporary folder: %s", dropped.message.c_str());
+    const bool opened = GView::Decoding::ZIP::GetInfo(copy.GetPath().u16string(), this->info);
+    // kept even on failure (the reader may still have it open); GetInfo closed the previous copy, which is removed here
+    tempCopy = std::move(copy);
+    CHECK(opened, false, "");
+    isTopContainer = true; // the reader owns a file
     return true;
 }
 

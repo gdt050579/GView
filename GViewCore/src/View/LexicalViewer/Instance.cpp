@@ -1064,8 +1064,10 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     else
         commandBar.SetCommand(ShowMetaDataCmd.Key, "ShowMetaData:OFF", ShowMetaDataCmd.CommandId);
 
-    if (this->noItemsVisible == false)
+    if (this->noItemsVisible == false) {
         commandBar.SetCommand(DeleteCmd.Key, DeleteCmd.Caption, DeleteCmd.CommandId);
+        commandBar.SetCommand(EditTokenKey.Key, EditTokenKey.Caption, EditTokenKey.CommandId);
+    }
 
     if (this->selection.IsSingleSelectionEnabled())
         commandBar.SetCommand(ChangeSelectionTypeCmd.Key, "Select:Single", ChangeSelectionTypeCmd.CommandId);
@@ -1481,13 +1483,11 @@ void Instance::ShowRefactorDialog(TokenObject& tok)
 void Instance::EditCurrentToken()
 {
     // sanity checks
-    if (this->noItemsVisible)
+    if ((this->noItemsVisible) || ((size_t) this->currentTokenIndex >= this->tokens.size()) || (!this->tokens[this->currentTokenIndex].IsVisible())) {
+        AppCUI::Dialogs::MessageBox::ShowNotification("Edit token", "There is no token to edit at the cursor position !");
         return;
-    if ((size_t) this->currentTokenIndex >= this->tokens.size())
-        return;
+    }
     auto& tok = this->tokens[this->currentTokenIndex];
-    if (!tok.IsVisible())
-        return;
     if (tok.error.Len() > 0)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
@@ -1689,6 +1689,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     case CMD_ID_SAVE_AS:
         this->ShowSaveAsDialog();
+        return true;
+    case CMD_NAV_EDIT_TOKEN:
+        this->EditCurrentToken();
         return true;
     }
     return false;
@@ -2013,7 +2016,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, I
         }
         if ((button & MouseButton::DoubleClicked) != MouseButton::None)
         {
-            OnKeyEvent(Key::Enter, 0);
+            EditCurrentToken(); // works even when the edit command is bound to another key
         }
     }
 }
