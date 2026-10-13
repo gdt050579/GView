@@ -214,10 +214,38 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
     return true;
 }
 
-// Code zone records: [magic][version][comments][annotations][local variables]. The records saved before the local variables existed start
-// directly with the comments count (a count equal to the magic is not a realistic value) and their lines do not contain the variable lines.
+// Code zone records: [magic][version][comments][annotations][local variables] and, from version 2, [decimal operands]. The records saved
+// before the local variables existed start directly with the comments count (a count equal to the magic is not a realistic value) and
+// their lines do not contain the variable lines.
 constexpr uint32 DISSASM_CODE_ZONE_CACHE_MAGIC   = 0x5A434447; // "GDCZ"
-constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 1;
+constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 2;
+
+// decimal operands: [count] then count x [instruction address (uint64)][numbers mask (uint32)]
+static void DecimalOperandsToBuffer(const std::map<uint64, uint32>& decimalOperands, std::vector<std::byte>& buffer)
+{
+    append_bytes(buffer, static_cast<uint32>(decimalOperands.size()));
+    for (const auto& [address, mask] : decimalOperands) {
+        append_bytes(buffer, address);
+        append_bytes(buffer, mask);
+    }
+}
+
+static bool DecimalOperandsFromBuffer(const std::byte*& start, const std::byte* end, std::map<uint64, uint32>& decimalOperands)
+{
+    constexpr size_t RECORD_SIZE = sizeof(uint64) + sizeof(uint32);
+    uint32 count                 = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / RECORD_SIZE)
+        return false;
+    for (uint32 i = 0; i < count; i++) {
+        uint64 address = 0;
+        uint32 mask    = 0;
+        if (!read_primitive(start, end, address) || !read_primitive(start, end, mask))
+            return false;
+        if (mask != 0)
+            decimalOperands[address] = mask;
+    }
+    return true;
+}
 
 bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
 {
@@ -234,6 +262,8 @@ bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
     dissasmType.annotations.ToBuffer(buffer);
     // local variables
     localVariables.ToBuffer(buffer);
+    // numbers shown as decimal (version 2)
+    DecimalOperandsToBuffer(decimalOperands, buffer);
     return true;
 }
 
@@ -391,12 +421,22 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         return false;
     if (magic == DISSASM_CODE_ZONE_CACHE_MAGIC) {
         uint32 version = 0;
-        if (!read_primitive(dataPtr, dataPtrEnd, version) || version != DISSASM_CODE_ZONE_CACHE_VERSION)
+        if (!read_primitive(dataPtr, dataPtrEnd, version) || version < 1 || version > DISSASM_CODE_ZONE_CACHE_VERSION)
             return false;
         DissasmLocalVariables variables;
         if (!comments.LoadFromBuffer(dataPtr, dataPtrEnd) || !annotations.LoadFromBuffer(dataPtr, dataPtrEnd) || !variables.LoadFromBuffer(dataPtr, dataPtrEnd))
             return false;
-        return ApplyCachedZoneData(*this, comments, annotations, variables, zoneLinesChanged);
+        std::map<uint64, uint32> cachedDecimalOperands; // version 1 records do not have them
+        if (version >= 2 && !DecimalOperandsFromBuffer(dataPtr, dataPtrEnd, cachedDecimalOperands))
+            return false;
+        if (!ApplyCachedZoneData(*this, comments, annotations, variables, zoneLinesChanged))
+            return false;
+        // the addresses are only display preferences: the ones outside of the code are ignored
+        const uint64 codeSize = GetCodeSize();
+        for (const auto& [address, mask] : cachedDecimalOperands)
+            if (codeSize == 0 || address < codeSize)
+                decimalOperands[address] = mask;
+        return true;
     }
 
     // legacy record: the first value was the comments count
