@@ -50,7 +50,7 @@ inline bool ExtractCallsToInsertFunctionNames(
     while (cs_disasm_iter(handle, &data, &size, &address, insn) && linesToDecode > 0) {
         linesToDecode--;
         const bool isJump = insn->mnemonic[0] == 'j';
-        if (*(uint32*) insn->mnemonic == callOP || isJump) {
+        if (TextPrefixAsUInt32(insn->mnemonic) == callOP || isJump) {
             const auto target    = GetDirectBranchTarget(insn->op_str);
             const auto offsetOpt = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
             if (offsetOpt.has_value()) {
@@ -66,7 +66,7 @@ inline bool ExtractCallsToInsertFunctionNames(
                 callsMap.insert({ value, isJump });
             }
         } else {
-            const auto mnemonicVal = *(uint32*) insn->mnemonic;
+            const auto mnemonicVal = TextPrefixAsUInt32(insn->mnemonic);
             if (foundCall) {
                 if (mnemonicVal == movOP && strcmp(insn->op_str, "ebp, esp") == 0) {
                     const auto it = callsMap.find(callAddress);
@@ -249,7 +249,7 @@ inline bool populateOffsetsVector(
             offsets.push_back({ address + zoneDetails.startingZonePoint, lineIndex });
         }
 
-        if (*(uint32*) insn->mnemonic == addOP && insn->op_str[0] == 'b' && *(uint32*) &insn->op_str[15] == alOpStr) {
+        if (TextPrefixAsUInt32(insn->mnemonic) == addOP && insn->op_str[0] == 'b' && TextPrefixAsUInt32(&insn->op_str[15]) == alOpStr) {
             if (++continuousAddInstructions == addInstructionsStop) {
                 lineIndex -= continuousAddInstructions;
                 break;

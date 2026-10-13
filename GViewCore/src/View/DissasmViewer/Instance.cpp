@@ -828,15 +828,18 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
         // TODO: check textFileOffset!!
         const BufferView buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
 
+        // the cache may return fewer bytes than requested (end of file): never index past what was returned
         char buffer[9] = {};
-        for (uint32 i = 0; i < typeSize; i++)
+        for (uint32 i = 0; i < typeSize && i < buf.GetLength(); i++)
             buffer[i] = static_cast<char>(buf[i]);
 
         if (isSignedValue) {
-            int64 value = *(int64*) buffer;
+            int64 value;
+            memcpy(&value, buffer, sizeof(value));
             AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), value);
         } else {
-            uint64 value = *(uint64*) buffer;
+            uint64 value;
+            memcpy(&value, buffer, sizeof(value));
             AddStringToChars(dli, normalColor, "%s: %llu", currentType.name.data(), value);
         }
     }

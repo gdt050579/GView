@@ -270,6 +270,14 @@ unsigned char exampleTest1BinaryCode[] = {
 };
 constexpr size_t exampleTest1BinaryCodeSize = sizeof(exampleTest1BinaryCode);
 
+// namespace scope (not nested in DissasmTestInstance): GCC rejects "= {}" as a default argument of the enclosing class
+// when the nested struct has default member initializers, because they are only parsed once the enclosing class is complete
+struct ZoneLayout {
+    uint64 start      = 0;
+    uint64 size       = 5120;
+    uint64 entryPoint = 10;
+};
+
 class DissasmTestInstance
 {
     bool CheckLinesWorkingIndexesSameAsZonesRecursive(std::vector<DissasmCodeInternalType>* childrenToCheck)
@@ -296,12 +304,6 @@ class DissasmTestInstance
     }
 
   public:
-    struct ZoneLayout {
-        uint64 start      = 0;
-        uint64 size       = 5120;
-        uint64 entryPoint = 10;
-    };
-
     Instance* instance;
     std::vector<GView::Object> objects;
     std::unique_ptr<DissasmCodeZone> zone;

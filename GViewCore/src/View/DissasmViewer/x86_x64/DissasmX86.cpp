@@ -556,7 +556,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         return true;
     }
 
-    switch (*((uint32*) insn->mnemonic)) {
+    switch (TextPrefixAsUInt32(insn->mnemonic)) {
     case pushOP:
         flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
         break;
@@ -1089,7 +1089,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] != 'j' && *(uint32*) insn->mnemonic != callOP) {
+        if (insn->mnemonic[0] != 'j' && TextPrefixAsUInt32(insn->mnemonic) != callOP) {
             cs_free(insn, 1);
             return;
         }
@@ -2324,7 +2324,7 @@ void Instance::QuerySmartAssistantX86X64(
                 assemblyLines.emplace_back(isVariable ? currentLine.op_str : currentLine.mnemonic);
             }
         }
-        if (queryParams.stopAtTheEndOfTheFunction && *(uint32*) currentLine.mnemonic == retOP)
+        if (queryParams.stopAtTheEndOfTheFunction && TextPrefixAsUInt32(currentLine.mnemonic) == retOP)
             break;
         actualLineInDocument++;
         lineIndex++;

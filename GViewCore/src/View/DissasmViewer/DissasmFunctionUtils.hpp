@@ -2,11 +2,22 @@
 #include "AppCUI/include/AppCUI.hpp"
 #include "Internal.hpp"
 
+#include <cstring>
+
 constexpr uint32 callOP = 1819042147u; //*(uint32*) "call";
 constexpr uint32 addOP  = 6579297u;    //*((uint32*) "add");
 constexpr uint32 pushOP = 1752397168u; //*((uint32*) "push");
 constexpr uint32 movOP  = 7761773u;    //*((uint32*) "mov");
 constexpr uint32 retOP  = 7628146u;    //*((uint32*) "ret");
+
+// first 4 bytes of a mnemonic / operands text, to compare with the constants above. cs_insn::mnemonic is not 4-byte aligned
+// (it follows bytes[24]), so a *(uint32*) read is undefined behavior; memcpy compiles to the same single load.
+inline uint32 TextPrefixAsUInt32(const char* text)
+{
+    uint32 value;
+    std::memcpy(&value, text, sizeof(value));
+    return value;
+}
 
 // TODO: maybe add also minimum number?
 bool CheckExtractInsnHexValue(const char* op_str, AppCUI::uint64& value, AppCUI::uint64 maxSize);
