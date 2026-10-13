@@ -129,7 +129,7 @@ TEST_CASE("TemporaryFolder: content is written inside the private folder", "[Tem
     REQUIRE_FALSE(tmp.IsValid());
     REQUIRE(fs::exists(firstPath));
     const auto secondPath = second.GetPath();
-    moved = std::move(second);
+    moved                 = std::move(second);
     REQUIRE_FALSE(fs::exists(firstPath));
     REQUIRE(fs::exists(secondPath));
     moved.Remove();
@@ -169,7 +169,7 @@ TEST_CASE("TemporaryFolder: empty objects and unusable base folders", "[Temporar
 TEST_CASE("TemporaryFolder: folders of GView instances that are gone are removed", "[TemporaryFolder]")
 {
     ScratchFolder scratch;
-    const auto old = fs::file_time_type::clock::now() - std::chrono::minutes(10);
+    const auto old        = fs::file_time_type::clock::now() - std::chrono::minutes(10);
     const auto makeFolder = [&](const char* name, bool withLock, bool oldLock) {
         const auto folder = scratch.path / name;
         fs::create_directories(folder / "sub");

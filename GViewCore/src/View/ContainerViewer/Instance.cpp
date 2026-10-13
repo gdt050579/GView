@@ -130,19 +130,16 @@ void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
 void Instance::OpenCurrentItem()
 {
     auto item = this->items->GetCurrentItem();
-    if (item.IsValid() == false)
-    {
+    if (item.IsValid() == false) {
         Dialogs::MessageBox::ShowNotification("Open item", "Select an item first !");
         return;
     }
-    if (item.IsExpandable())
-    {
+    if (item.IsExpandable()) {
         // same behavior as Enter in the tree (expand / collapse + refresh of the visible items)
         this->items->OnKeyEvent(Key::Enter, 0);
         return;
     }
-    if (this->settings->openItemInterface.IsValid() == false)
-    {
+    if (this->settings->openItemInterface.IsValid() == false) {
         Dialogs::MessageBox::ShowNotification("Open item", "This container does not support opening its items !");
         return;
     }
@@ -177,8 +174,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
     // only reached when the key is not handled by the tree (e.g. the command was assigned to another key)
-    if (Commands::OpenItem.Matches(keyCode))
-    {
+    if (Commands::OpenItem.Matches(keyCode)) {
         OpenCurrentItem();
         return true;
     }
@@ -186,8 +182,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
-    if ((eventType == Event::Command) && (ID == Commands::CMD_ID_OPEN_ITEM))
-    {
+    if ((eventType == Event::Command) && (ID == Commands::CMD_ID_OPEN_ITEM)) {
         OpenCurrentItem();
         return true;
     }

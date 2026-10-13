@@ -320,9 +320,7 @@ void Instance::OpenCurrentSelection()
         fullPath.Add(temp);
 
         GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select);
-    }
-    else
-    {
+    } else {
         Dialogs::MessageBox::ShowNotification("Open selection", "There is no selection at the cursor position !");
     }
 }

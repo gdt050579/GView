@@ -1318,7 +1318,7 @@ TEST_CASE("Learning: in-memory objects opened while memory-only content is open 
     SessionFixture fx;
     fx.ServePolicy(BuildPolicy(PolicyOptions{}));
     REQUIRE(fx.Connect().ok);
-    auto& s = *fx.session;
+    auto& s        = *fx.session;
     int taskObject = 0, extracted = 0, ownFile = 0, nested = 0, later = 0; // stand-ins for GView::Object addresses
     ItemBinding b;
     b.item = "w1_memory";

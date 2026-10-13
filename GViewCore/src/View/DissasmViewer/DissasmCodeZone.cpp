@@ -233,7 +233,7 @@ inline bool populateOffsetsVector(
     size_t size    = static_cast<size_t>(availableSize);
     auto data      = instructionData.GetData();
 
-    constexpr uint32 addInstructionsStop = 30; // TODO: update this -> for now it stops, later will fold
+    constexpr uint32 addInstructionsStop = 30;       // TODO: update this -> for now it stops, later will fold
     constexpr uint32 alOpStr             = 7102752u; //* (uint32*) " al";
     uint32 continuousAddInstructions     = 0;
     uint32 lineIndex                     = 0;
@@ -296,12 +296,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     localVariables.functions.clear();
     if (initData.enableDeepScanDissasmOnStart) {
         const bool scanned = ExtractCallsToInsertFunctionNames(
-              cachedCodeOffsets,
-              this,
-              initData.obj,
-              internalArchitecture,
-              totalLines,
-              initData.enableLocalVariablesDetection);
+              cachedCodeOffsets, this, initData.obj, internalArchitecture, totalLines, initData.enableLocalVariablesDetection);
         if (!scanned) {
             initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;

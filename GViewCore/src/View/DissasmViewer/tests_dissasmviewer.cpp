@@ -1446,10 +1446,10 @@ TEST_CASE("DissasmLabelArrows", "[Dissasm]Functions")
     // the forward jump 0 -> 3 is the shortest arrow: the lane next to the code; the backward jump 4 -> 0 goes around it
     const auto& lines = data.cachedAsmLines;
     REQUIRE(lines[0].arrowCells[0] == L::ArrowNone);
-    REQUIRE(lines[0].arrowCells[1] == (L::ArrowDown | L::ArrowRight));                 // target of the backward jump
-    REQUIRE(lines[0].arrowCells[2] == (L::ArrowDown | L::ArrowLeft | L::ArrowRight));  // source of the forward jump, crossed
+    REQUIRE(lines[0].arrowCells[1] == (L::ArrowDown | L::ArrowRight));                // target of the backward jump
+    REQUIRE(lines[0].arrowCells[2] == (L::ArrowDown | L::ArrowLeft | L::ArrowRight)); // source of the forward jump, crossed
     REQUIRE(lines[0].arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
-    REQUIRE(lines[1].arrowCells[1] == (L::ArrowUp | L::ArrowDown));                    // no arrow to the middle of an instruction
+    REQUIRE(lines[1].arrowCells[1] == (L::ArrowUp | L::ArrowDown)); // no arrow to the middle of an instruction
     REQUIRE(lines[2].arrowCells[2] == (L::ArrowUp | L::ArrowDown));
     REQUIRE(lines[2].arrowCells[3] == L::ArrowNone);
     REQUIRE(lines[3].arrowCells[1] == (L::ArrowUp | L::ArrowDown));
@@ -1696,11 +1696,11 @@ TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
     constexpr uint64 codeSize  = 0x220;
     std::vector<unsigned char> file(zoneStart, 0xCC);
     const unsigned char head[] = {
-        0xE9, 0xFB, 0x01, 0x00, 0x00,      // 0x000: jmp 0x200
-        0xE8, 0x76, 0x01, 0x00, 0x00,      // 0x005: call 0x180
-        0xE9, 0xE1, 0xFF, 0xFF, 0xFF,      // 0x00a: jmp -0x10 (before the zone, wraps around)
+        0xE9, 0xFB, 0x01, 0x00, 0x00,       // 0x000: jmp 0x200
+        0xE8, 0x76, 0x01, 0x00, 0x00,       // 0x005: call 0x180
+        0xE9, 0xE1, 0xFF, 0xFF, 0xFF,       // 0x00a: jmp -0x10 (before the zone, wraps around)
         0xFF, 0x15, 0x00, 0x40, 0x40, 0x00, // 0x00f: call dword ptr [0x404000]
-        0xE9, 0xE6, 0x02, 0x00, 0x00,      // 0x015: jmp 0x300 (after the zone)
+        0xE9, 0xE6, 0x02, 0x00, 0x00,       // 0x015: jmp 0x300 (after the zone)
     };
     file.insert(file.end(), std::begin(head), std::end(head));
     file.resize(zoneStart + 0x180, 0x90);
@@ -1751,8 +1751,8 @@ TEST_CASE("FollowJumpLineState", "[Dissasm]Jumps")
     // SPACE (follow a jump) maps the cursor line to its instruction right after the lines around it were decoded (drawing, cursor
     // refresh): the same line, the previous or the next one must give the instruction of the cursor line and keep the lines unchanged
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
-    const auto zone         = dissasmInstance.zone.get();
-    const auto& annotations = zone->dissasmType.annotations;
+    const auto zone          = dissasmInstance.zone.get();
+    const auto& annotations  = zone->dissasmType.annotations;
     auto expectedInstruction = [&annotations](uint32 line) -> std::optional<uint32> {
         if (annotations.contains(line))
             return {};

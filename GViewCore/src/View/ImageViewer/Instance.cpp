@@ -70,14 +70,12 @@ void Instance::LoadImage()
 }
 void Instance::OpenCurrentImage()
 {
-    if (this->currentImageIndex >= this->settings->imgList.size())
-    {
+    if (this->currentImageIndex >= this->settings->imgList.size()) {
         Dialogs::MessageBox::ShowNotification("Open image", "There is no image to open !");
         return;
     }
     const auto& info = this->settings->imgList[this->currentImageIndex];
-    if ((info.end <= info.start) || (info.end - info.start > 0xFFFFFFFFULL))
-    {
+    if ((info.end <= info.start) || (info.end - info.start > 0xFFFFFFFFULL)) {
         Dialogs::MessageBox::ShowNotification("Open image", "The current image does not have a valid file range !");
         return;
     }
@@ -85,8 +83,7 @@ void Instance::OpenCurrentImage()
     LocalString<128> temp;
     temp.Format("Image_%u_%llx_%llx", this->currentImageIndex, info.start, info.end);
     auto buf = this->obj->GetData().CopyToBuffer(info.start, (uint32) (info.end - info.start));
-    if (buf.IsValid() == false)
-    {
+    if (buf.IsValid() == false) {
         Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
         return;
     }
@@ -132,8 +129,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         }
         return true;
     }
-    if (OpenImage.Matches(keyCode))
-    {
+    if (OpenImage.Matches(keyCode)) {
         OpenCurrentImage();
         return true;
     }

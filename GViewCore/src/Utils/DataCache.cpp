@@ -80,8 +80,7 @@ BufferView DataCache::Get(uint64 offset, uint32 requestedSize, bool failIfReques
         return BufferView();
 
     // data is cached --> return from here
-    if ((offset >= this->start) && (offset < this->end) && (sz <= this->end - offset))
-    {
+    if ((offset >= this->start) && (offset < this->end) && (sz <= this->end - offset)) {
         this->currentPos = offset + sz;
         return BufferView(&this->cache[offset - this->start], sz);
     }
@@ -101,14 +100,11 @@ BufferView DataCache::Get(uint64 offset, uint32 requestedSize, bool failIfReques
         // Without this, a forward sequential parse of small objects reloads the whole cache for every object.
         const uint64 slack   = std::min<uint64>(this->cacheSize >> 4, this->cacheSize - sz);
         const bool backwards = (offset < this->start) && (this->start - offset <= this->cacheSize);
-        if (backwards)
-        {
+        if (backwards) {
             // scrolling / reading backwards --> keep the request at the end of the window
             const uint64 before = this->cacheSize - (sz + slack);
             newStart            = offset > before ? offset - before : 0;
-        }
-        else
-        {
+        } else {
             // forward or random access --> keep the request at the start of the window
             newStart = offset > slack ? offset - slack : 0;
         }
@@ -119,8 +115,7 @@ BufferView DataCache::Get(uint64 offset, uint32 requestedSize, bool failIfReques
     // read new data in cache
     if (this->fileObj->SetCurrentPos(newStart) == false)
         return BufferView();
-    if (this->fileObj->Read(this->cache, (uint32) (newEnd - newStart)) == false)
-    {
+    if (this->fileObj->Read(this->cache, (uint32) (newEnd - newStart)) == false) {
         this->start = 0;
         this->end   = 0;
         return BufferView();

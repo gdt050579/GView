@@ -1064,8 +1064,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     else
         commandBar.SetCommand(ShowMetaDataCmd.Key, "ShowMetaData:OFF", ShowMetaDataCmd.CommandId);
 
-    if (this->noItemsVisible == false)
-    {
+    if (this->noItemsVisible == false) {
         commandBar.SetCommand(DeleteCmd.Key, DeleteCmd.Caption, DeleteCmd.CommandId);
         commandBar.SetCommand(EditTokenKey.Key, EditTokenKey.Caption, EditTokenKey.CommandId);
     }
@@ -1484,9 +1483,7 @@ void Instance::ShowRefactorDialog(TokenObject& tok)
 void Instance::EditCurrentToken()
 {
     // sanity checks
-    if ((this->noItemsVisible) || ((size_t) this->currentTokenIndex >= this->tokens.size()) ||
-        (!this->tokens[this->currentTokenIndex].IsVisible()))
-    {
+    if ((this->noItemsVisible) || ((size_t) this->currentTokenIndex >= this->tokens.size()) || (!this->tokens[this->currentTokenIndex].IsVisible())) {
         AppCUI::Dialogs::MessageBox::ShowNotification("Edit token", "There is no token to edit at the cursor position !");
         return;
     }

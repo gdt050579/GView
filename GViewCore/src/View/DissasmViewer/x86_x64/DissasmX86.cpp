@@ -128,9 +128,9 @@ inline void DissasmAddColorsToInstruction(
       DissasmColors& colors,
       AsmData& data,
       const CodePage& codePage,
-      uint64 addressPadding              = 0,
+      uint64 addressPadding             = 0,
       std::vector<uint32>* opStrColumns = nullptr,
-      uint32* arrowsColumn               = nullptr)
+      uint32* arrowsColumn              = nullptr)
 {
     // TODO: replace CharacterBuffer with Canvas;
 
@@ -733,7 +733,7 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
             continue;
 
         targetOfLine[sourceIndex] = targetIndex;
-        const auto arrow = std::find_if(arrows.begin(), arrows.end(), [targetIndex](const Arrow& a) { return a.target == targetIndex; });
+        const auto arrow          = std::find_if(arrows.begin(), arrows.end(), [targetIndex](const Arrow& a) { return a.target == targetIndex; });
         if (arrow == arrows.end()) {
             arrows.push_back({ std::min(sourceIndex, targetIndex), std::max(sourceIndex, targetIndex), targetIndex, NO_LANE });
         } else {
@@ -1190,18 +1190,16 @@ void Instance::RefreshCursorLineNumbers()
     params.asmData  = &asmData;
     params.dli      = nullptr;
     params.zone     = zone;
-    auto asmLine = zone->GetCurrentAsmLine(zoneLine - 2u, obj, &params);
+    auto asmLine    = zone->GetCurrentAsmLine(zoneLine - 2u, obj, &params);
 
     // only instructions: not labels, local variable lines or collapsed zones
     const bool isCollapsedZoneLine = asmLine.shouldAddButton && asmLine.isZoneCollapsed;
-    if (!asmLine.op_str || asmLine.size == 0 || isCollapsedZoneLine ||
-        asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
+    if (!asmLine.op_str || asmLine.size == 0 || isCollapsedZoneLine || asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
         return;
 
     CharacterBuffer lineText; // drawn without the left margin: its columns have the same base as Cursor.offset
     std::vector<uint32> opStrColumns;
-    DissasmAddColorsToInstruction(
-          asmLine, lineText, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, &opStrColumns);
+    DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, &opStrColumns);
     if (opStrColumns.size() != asmLine.op_str_size)
         return;
 

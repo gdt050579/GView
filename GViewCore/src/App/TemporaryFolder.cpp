@@ -34,7 +34,7 @@ namespace fs = std::filesystem;
 
 namespace
 {
-    constexpr std::string_view FOLDER_PREFIX = "GView-";
+    constexpr std::string_view FOLDER_PREFIX  = "GView-";
     constexpr std::string_view LOCK_FILE_NAME = ".gview-folder.lock";
     constexpr auto STALE_FOLDER_AGE           = std::chrono::minutes(1);
 
@@ -295,8 +295,7 @@ std::string TemporaryFolderAccess::SanitizeFileName(std::u16string_view name)
     for (const auto ch : name) {
         if (result.size() >= MAX_NAME_LENGTH * 2) // only the tail (extension) of very long names matters
             result.erase(0, MAX_NAME_LENGTH);
-        const bool allowed = (ch >= u'a' && ch <= u'z') || (ch >= u'A' && ch <= u'Z') || (ch >= u'0' && ch <= u'9') || ch == u'.' || ch == u'-' ||
-                             ch == u'_';
+        const bool allowed = (ch >= u'a' && ch <= u'z') || (ch >= u'A' && ch <= u'Z') || (ch >= u'0' && ch <= u'9') || ch == u'.' || ch == u'-' || ch == u'_';
         result.push_back(allowed ? static_cast<char>(ch) : '_');
     }
 

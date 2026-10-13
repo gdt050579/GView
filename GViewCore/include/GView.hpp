@@ -1927,7 +1927,7 @@ namespace App
         friend struct TemporaryFolderAccess;
 
       public:
-        TemporaryFile() = default;
+        TemporaryFile()                                = default;
         TemporaryFile(const TemporaryFile&)            = delete;
         TemporaryFile& operator=(const TemporaryFile&) = delete;
         CORE_EXPORT TemporaryFile(TemporaryFile&& other) noexcept;
