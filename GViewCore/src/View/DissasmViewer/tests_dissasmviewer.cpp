@@ -1581,3 +1581,21 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     REQUIRE(!restoredTruncated.zone->TryLoadDataFromCache(*cacheTruncated, zoneLinesChanged));
     REQUIRE(restoredTruncated.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
 }
+
+TEST_CASE("DecodeLinesBackwards", "[Dissasm]Functions")
+{
+    // the lines decoded one by one upwards (cursor moving up) must be the same as the ones decoded downwards (drawing)
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    constexpr uint32 firstLine = 30;
+    constexpr uint32 lastLine  = 80; // labels and local variable lines inside
+    std::vector<std::string> downwards;
+    for (uint32 line = firstLine; line <= lastLine; line++)
+        downwards.push_back(dissasmInstance.GetLineText(line));
+    for (uint32 line = lastLine + 1; line-- > firstLine;)
+        REQUIRE(dissasmInstance.CheckLineText(line, downwards[line - firstLine]));
+    // and up / down around the same place
+    REQUIRE(dissasmInstance.CheckLineText(50, downwards[50 - firstLine]));
+    REQUIRE(dissasmInstance.CheckLineText(49, downwards[49 - firstLine]));
+    REQUIRE(dissasmInstance.CheckLineText(50, downwards[50 - firstLine]));
+    REQUIRE(dissasmInstance.CheckLineText(49, downwards[49 - firstLine]));
+}

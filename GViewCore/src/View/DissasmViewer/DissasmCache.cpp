@@ -128,8 +128,27 @@ bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::
     buffer.reserve(hashValue.size() + sizeof(DisassemblyZone));
     buffer.clear();
     buffer.insert(buffer.end(), (const std::byte*) hashValue.data(), (const std::byte*) hashValue.data() + hashValue.size());
-    buffer.insert(buffer.end(), reinterpret_cast<const std::byte*>(this), reinterpret_cast<const std::byte*>(this) + sizeof(DisassemblyZone));
+    // field by field: the raw structure has padding bytes that are not initialized, they made the validation fail at random
+    append_bytes(buffer, startingZonePoint);
+    append_bytes(buffer, size);
+    append_bytes(buffer, entryPoint);
+    append_bytes(buffer, static_cast<uint32>(language));
     return true;
+}
+
+// caches saved before the field by field format contain the hash followed by the raw DisassemblyZone structure
+static bool IsSameLegacyDisassemblyZone(const DissasmCacheEntry& entry, const std::vector<std::byte>& buffer, const DisassemblyZone& zone)
+{
+    constexpr size_t fieldsSize = 3 * sizeof(uint64) + sizeof(uint32);
+    if (buffer.size() < fieldsSize || entry.size != buffer.size() - fieldsSize + sizeof(DisassemblyZone))
+        return false;
+    const size_t hashSize = buffer.size() - fieldsSize;
+    if (memcmp(entry.data.get(), buffer.data(), hashSize) != 0)
+        return false;
+    DisassemblyZone cached{};
+    memcpy(&cached, entry.data.get() + hashSize, sizeof(DisassemblyZone));
+    return cached.startingZonePoint == zone.startingZonePoint && cached.size == zone.size && cached.entryPoint == zone.entryPoint &&
+           cached.language == zone.language;
 }
 
 void Instance::LoadCacheData()
@@ -206,6 +225,8 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
         const auto& entry = cache.zonesData[zoneName.GetText()];
         if (!zone.ToBuffer(buffer, obj))
             return false;
+        if (IsSameLegacyDisassemblyZone(entry, buffer, zone))
+            continue;
         if (entry.size != buffer.size())
             return false;
         if (memcmp(entry.data.get(), buffer.data(), buffer.size()) != 0)

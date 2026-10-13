@@ -480,7 +480,10 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     DissasmCodeInternalType& currentType = types.back();
     // TODO: do a faster search using a binary search using the annotations and start from there
     // TODO: maybe use some caching here?
-    if (reAdapt || (levelNow < levelToReach && levelNow + 1 != levelToReach) || (levelNow > levelToReach && levelNow - 1 != levelToReach)) {
+    // the counters include the reached line: the next line adds itself, the previous line removes the line that is left
+    const bool isNextLine     = levelNow + 1u == levelToReach;
+    const bool isPreviousLine = levelToReach + 1u == levelNow;
+    if (reAdapt || (!isNextLine && !isPreviousLine)) {
         currentType.textLinesPassed = 0;
         currentType.asmLinesPassed  = 0;
         for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
@@ -490,11 +493,16 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
             }
             currentType.asmLinesPassed++;
         }
-    } else {
+    } else if (isNextLine) {
         if (currentType.annotations.contains(levelToReach))
             currentType.textLinesPassed++;
         else
             currentType.asmLinesPassed++;
+    } else {
+        if (currentType.annotations.contains(levelNow))
+            currentType.textLinesPassed--;
+        else
+            currentType.asmLinesPassed--;
     }
 
     levelNow        = levelToReach;
