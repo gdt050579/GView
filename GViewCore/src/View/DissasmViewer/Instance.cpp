@@ -320,6 +320,10 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
 
 void Instance::OpenCurrentSelection()
 {
+    if (!selection.HasAnySelection()) {
+        Dialogs::MessageBox::ShowNotification("Open selection", "Select a zone first !");
+        return;
+    }
     UnicodeStringBuilder usb{};
     if (!ProcessSelectedDataToPrintable(usb))
         return;
