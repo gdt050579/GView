@@ -164,16 +164,17 @@ namespace View
 
             enum class LocalVariableKind : uint8 { None, Definition, Reference };
 
-            enum LineArrowToDrawFlag : uint8 {
-                NoLines   = 0x00,
-                DrawLine1 = 0x1,
-                DrawLine2 = 0x2,
-                DrawLine3 = 0x4,
-                DrawLine4 = 0x8,
-                DrawLine5 = 0x10,
-
-                DrawStartingLine = 0x20,
-                DrawEndingLine   = 0x40
+            // the jump arrows are drawn left of the instructions: ARROW_LANES vertical lanes followed by a column for the arrow heads
+            static constexpr uint32 ARROW_LANES   = 3;
+            static constexpr uint32 ARROW_COLUMNS = ARROW_LANES + 1;
+            // the sides of an arrow cell that are connected to its neighbours
+            enum ArrowCellFlag : uint8 {
+                ArrowNone  = 0x00,
+                ArrowUp    = 0x01,
+                ArrowDown  = 0x02,
+                ArrowLeft  = 0x04,
+                ArrowRight = 0x08,
+                ArrowHead  = 0x10, // the arrow reaches its target on this line
             };
 
             uint64 address     = 0;
@@ -186,7 +187,7 @@ namespace View
             std::optional<uint64> hexValue;
             std::optional<uint64> branchTarget; // target of a direct jump / call, same base as `address`
             uint8 flags                           = 0;
-            uint8 lineArrowToDraw                 = 0;
+            uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
             const void* mapping                   = nullptr;
             const DissasmCodeInternalType* parent = nullptr;
 
@@ -244,7 +245,7 @@ namespace View
                 hexValue               = other.hexValue;
                 branchTarget           = other.branchTarget;
                 flags                  = other.flags;
-                lineArrowToDraw        = other.lineArrowToDraw;
+                memcpy(arrowCells, other.arrowCells, sizeof(arrowCells));
                 mapping                = other.mapping;
                 parent                 = other.parent;
                 shouldAddButton        = other.shouldAddButton;

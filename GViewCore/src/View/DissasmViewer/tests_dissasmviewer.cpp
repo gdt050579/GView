@@ -1397,18 +1397,65 @@ TEST_CASE("DissasmLabelArrows", "[Dissasm]Functions")
     data.cachedAsmLines.push_back(makeLine(0x16, 2, 4, 0x10)); // jmp backward
     data.PrepareLabelArrows();
 
-    using F = DissasmAsmPreCacheLine::LineArrowToDrawFlag;
-    REQUIRE((data.cachedAsmLines[0].lineArrowToDraw & F::DrawStartingLine));
-    REQUIRE((data.cachedAsmLines[3].lineArrowToDraw & F::DrawEndingLine)); // ends on the label of the target
-    REQUIRE((data.cachedAsmLines[2].lineArrowToDraw & F::DrawLine1));
-    REQUIRE(!(data.cachedAsmLines[2].lineArrowToDraw & (F::DrawStartingLine | F::DrawEndingLine)));
-    REQUIRE((data.cachedAsmLines[4].lineArrowToDraw & F::DrawEndingLine));
-    REQUIRE((data.cachedAsmLines[4].lineArrowToDraw & F::DrawLine2));
-    REQUIRE(!(data.cachedAsmLines[4].lineArrowToDraw & F::DrawLine1));
+    using L = DissasmAsmPreCacheLine;
+    static_assert(L::ARROW_COLUMNS == 4);
+    // the forward jump 0 -> 3 is the shortest arrow: the lane next to the code; the backward jump 4 -> 0 goes around it
+    const auto& lines = data.cachedAsmLines;
+    REQUIRE(lines[0].arrowCells[0] == L::ArrowNone);
+    REQUIRE(lines[0].arrowCells[1] == (L::ArrowDown | L::ArrowRight));                 // target of the backward jump
+    REQUIRE(lines[0].arrowCells[2] == (L::ArrowDown | L::ArrowLeft | L::ArrowRight));  // source of the forward jump, crossed
+    REQUIRE(lines[0].arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
+    REQUIRE(lines[1].arrowCells[1] == (L::ArrowUp | L::ArrowDown));                    // no arrow to the middle of an instruction
+    REQUIRE(lines[2].arrowCells[2] == (L::ArrowUp | L::ArrowDown));
+    REQUIRE(lines[2].arrowCells[3] == L::ArrowNone);
+    REQUIRE(lines[3].arrowCells[1] == (L::ArrowUp | L::ArrowDown));
+    REQUIRE(lines[3].arrowCells[2] == (L::ArrowUp | L::ArrowRight)); // ends on the label of the target
+    REQUIRE(lines[3].arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
+    REQUIRE(lines[4].arrowCells[1] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(lines[4].arrowCells[2] == (L::ArrowLeft | L::ArrowRight));
+    REQUIRE(lines[4].arrowCells[3] == L::ArrowLeft);
 
-    // the cached lines keep the branch targets when moved / copied
+    // the jumps to the same target share one arrow, every source gets its horizontal line
+    DissasmAsmPreCacheData shared;
+    shared.cachedAsmLines.push_back(makeLine(0x20, 2, 0, 0x28)); // je
+    shared.cachedAsmLines.push_back(makeLine(0x22, 2, 1, {}));
+    shared.cachedAsmLines.push_back(makeLine(0x24, 2, 2, 0x28)); // je
+    shared.cachedAsmLines.push_back(makeLine(0x26, 2, 3, 0x28)); // jne
+    shared.cachedAsmLines.push_back(makeLine(0x28, 0, 4, {}));   // label
+    shared.PrepareLabelArrows();
+    for (const auto& line : shared.cachedAsmLines) {
+        REQUIRE(line.arrowCells[0] == L::ArrowNone);
+        REQUIRE(line.arrowCells[1] == L::ArrowNone);
+    }
+    REQUIRE(shared.cachedAsmLines[0].arrowCells[2] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[0].arrowCells[3] == L::ArrowLeft);
+    REQUIRE(shared.cachedAsmLines[1].arrowCells[2] == (L::ArrowUp | L::ArrowDown));
+    REQUIRE(shared.cachedAsmLines[1].arrowCells[3] == L::ArrowNone);
+    REQUIRE(shared.cachedAsmLines[2].arrowCells[2] == (L::ArrowUp | L::ArrowDown | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[3].arrowCells[2] == (L::ArrowUp | L::ArrowDown | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[4].arrowCells[2] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(shared.cachedAsmLines[4].arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
+
+    // more nested arrows than lanes: the longest one is not drawn
+    DissasmAsmPreCacheData nested;
+    for (uint32 i = 0; i < 4; i++)
+        nested.cachedAsmLines.push_back(makeLine(0x40 + i * 2, 2, i, 0x50 - i * 2));
+    for (uint32 i = 0; i < 4; i++)
+        nested.cachedAsmLines.push_back(makeLine(0x4A + i * 2, 0, 4 + i, {})); // labels 0x4A .. 0x50
+    nested.PrepareLabelArrows();
+    for (const auto cell : nested.cachedAsmLines[0].arrowCells)
+        REQUIRE(cell == L::ArrowNone);
+    REQUIRE(nested.cachedAsmLines[1].arrowCells[0] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[2].arrowCells[1] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[3].arrowCells[2] == (L::ArrowDown | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[4].arrowCells[2] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[6].arrowCells[0] == (L::ArrowUp | L::ArrowRight));
+    REQUIRE(nested.cachedAsmLines[7].arrowCells[3] == L::ArrowNone);
+
+    // the cached lines keep the branch targets and the arrows when moved / copied
     DissasmAsmPreCacheLine copy(data.cachedAsmLines[0]);
     REQUIRE(copy.branchTarget == 0x16);
+    REQUIRE(copy.arrowCells[3] == (L::ArrowLeft | L::ArrowHead));
 }
 
 TEST_CASE("JumpsHistory", "[Dissasm]Jumps")
@@ -1580,6 +1627,37 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     DissasmTestInstance restoredTruncated(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
     REQUIRE(!restoredTruncated.zone->TryLoadDataFromCache(*cacheTruncated, zoneLinesChanged));
     REQUIRE(restoredTruncated.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+}
+
+std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine); // DissasmX86.cpp
+
+TEST_CASE("FollowJumpLineState", "[Dissasm]Jumps")
+{
+    // SPACE (follow a jump) maps the cursor line to its instruction right after the lines around it were decoded (drawing, cursor
+    // refresh): the same line, the previous or the next one must give the instruction of the cursor line and keep the lines unchanged
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    const auto zone         = dissasmInstance.zone.get();
+    const auto& annotations = zone->dissasmType.annotations;
+    auto expectedInstruction = [&annotations](uint32 line) -> std::optional<uint32> {
+        if (annotations.contains(line))
+            return {};
+        uint32 textLines = 0;
+        for (const auto& entry : annotations.mappings) {
+            if (entry.first > line)
+                break;
+            textLines++;
+        }
+        return line - textLines;
+    };
+
+    for (uint32 line = 30; line <= 80; line++) { // labels and local variable lines inside
+        const auto text = dissasmInstance.GetLineText(line);
+        for (const uint32 reachedLine : { line, line + 1u, line - 1u }) {
+            dissasmInstance.GetLineText(reachedLine);
+            REQUIRE(DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, line) == expectedInstruction(line));
+            REQUIRE(dissasmInstance.CheckLineText(line, text));
+        }
+    }
 }
 
 TEST_CASE("DecodeLinesBackwards", "[Dissasm]Functions")
