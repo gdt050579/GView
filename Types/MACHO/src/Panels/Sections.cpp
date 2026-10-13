@@ -70,7 +70,7 @@ void Panels::Sections::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    uint32_t i = 0;
+    [[maybe_unused]] uint32_t i = 0;
     for (const auto& segment : machO->segments)
     {
         for (const auto& s : segment.sections)
@@ -105,8 +105,8 @@ void Panels::Sections::Update()
 bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(Action::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(Action::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(Action::ChangeBase));
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", static_cast<int32_t>(Action::Select));
+    commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(Action::ChangeBase));
 
     return true;
 }

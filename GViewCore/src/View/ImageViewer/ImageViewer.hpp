@@ -18,13 +18,17 @@ namespace View
             constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
             constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
             constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
+            constexpr int32 CMD_ID_OPEN_IMAGE = 0xBF04;
 
-            static KeyboardControl ZoomIn    = { Key::F3, "ZoomIn", "Zoom in the picture", CMD_ID_ZOOMIN };
-            static KeyboardControl ZoomOut   = { Key::F2, "ZoomOut", "Zoom out the picture", CMD_ID_ZOOMOUT };
-            static KeyboardControl NextImage = { Key::PageUp, "PrevImage", "Go to the previous image", CMD_ID_NEXT_IMAGE };
-            static KeyboardControl PrevImage = { Key::PageDown, "NextImage", "Go to the next image", CMD_ID_PREV_IMAGE };
+            inline KeyboardControl ZoomIn    = { Key::F3, "ZoomIn", "Zoom in the picture", CMD_ID_ZOOMIN };
+            inline KeyboardControl ZoomOut   = { Key::F2, "ZoomOut", "Zoom out the picture", CMD_ID_ZOOMOUT };
+            inline KeyboardControl PrevImage = { Key::PageUp, "PrevImage", "Go to the previous image", CMD_ID_PREV_IMAGE };
+            inline KeyboardControl NextImage = { Key::PageDown, "NextImage", "Go to the next image", CMD_ID_NEXT_IMAGE };
+            inline KeyboardControl OpenImage = { Key::Enter, "OpenImage", "Open the current image as a new object", CMD_ID_OPEN_IMAGE };
 
-            static std::array ImageViewCommands = { &ZoomIn, &ZoomOut, &NextImage, &PrevImage };
+            inline const std::array<KeyboardControl*, 5> ImageViewCommands = { &ZoomIn, &ZoomOut, &PrevImage, &NextImage, &OpenImage };
+
+            void RegisterKeys(KeyboardControlsInterface* interface);
         }
 
         struct ImageInfo
@@ -60,6 +64,7 @@ namespace View
 
             void LoadImage();
             void RedrawImage();
+            void OpenCurrentImage();
             ImageScaleMethod NextPreviousScale(bool next);
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);

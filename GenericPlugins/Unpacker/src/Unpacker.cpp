@@ -165,7 +165,8 @@ bool Plugin::SetAreaToDecode(Buffer& b, BufferView& bv, uint64& start, uint64& e
         end   = selectedZones[selectedZones.size() - 1].end;
         for (auto& sz : selectedZones) {
             const auto size = sz.end - sz.start + 1;
-            b.Add(this->object->GetData().Get(sz.start, size, true));
+            CHECK(size <= 0xFFFFFFFFULL, false, "Selection too large!");
+            b.Add(this->object->GetData().Get(sz.start, static_cast<uint32>(size), true));
         }
         bv = b;
     }
@@ -262,7 +263,7 @@ bool Plugin::DecodeZLib(BufferView input, uint64 start, uint64 end)
             break;
         }
 
-        input = { input.GetData() + sizeConsumed, input.GetLength() - sizeConsumed };
+        input = { input.GetData() + sizeConsumed, static_cast<size_t>(input.GetLength() - sizeConsumed) };
     } while (sizeConsumed < input.GetLength() && sizeConsumed > 0);
 
     for (const auto& output : outputs) {
@@ -357,7 +358,11 @@ bool Plugin::DecodeHTMLCharacters(BufferView input, uint64 start, uint64 end)
     return false;
 }
 
-extern "C" {
+} // namespace GView::GenericPlugins::Unpacker
+
+using namespace GView::GenericPlugins::Unpacker;
+
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "Unpacker") {
@@ -400,4 +405,3 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     sect["Command.Unpacker"] = Input::Key::Alt | Input::Key::F10;
 }
 }
-} // namespace GView::GenericPlugins::Unpacker

@@ -10,7 +10,7 @@ constexpr int32 BTN_ID_CANCEL = 3;
 constexpr int32 CMD_ID_RELOAD_ORIGINAL   = 10001;
 constexpr int32 CMD_ID_RELOAD            = 10002;
 constexpr int32 CMD_ID_SHOW_LINE_NUMBERS = 10003;
-constexpr int32 INVALID_CMD_ID           = -1;
+[[maybe_unused]] constexpr int32 INVALID_CMD_ID           = -1;
 
 struct
 {
@@ -34,7 +34,7 @@ StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference
     mnuView->AddCheckItem("Show &line numbers", 1, true);
     mnuView->AddCheckItem("&Word wrap", 1, false);
     auto mnuPlugins = this->AddMenu("&Plugins");
-    for (auto index = 0; index < ARRAY_LEN(plugins); index++)
+    for (int index = 0; index < (int) ARRAY_LEN(plugins); index++)
     {
         mnuPlugins->AddCommandItem(plugins[index].name, index);
     }

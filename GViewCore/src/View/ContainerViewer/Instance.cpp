@@ -5,13 +5,13 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
-constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
-constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
-constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
+[[maybe_unused]] constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
+[[maybe_unused]] constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
+[[maybe_unused]] constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
+[[maybe_unused]] constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Container View")
+    : ViewControl("Container View"), settings(nullptr)
 {
     this->obj                     = _obj;
     this->tempCountRecursiveItems = 0;
@@ -125,6 +125,28 @@ bool Instance::OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item, boo
 }
 void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
 {
+    OpenItem(item);
+}
+void Instance::OpenCurrentItem()
+{
+    auto item = this->items->GetCurrentItem();
+    if (item.IsValid() == false) {
+        Dialogs::MessageBox::ShowNotification("Open item", "Select an item first !");
+        return;
+    }
+    if (item.IsExpandable()) {
+        // same behavior as Enter in the tree (expand / collapse + refresh of the visible items)
+        this->items->OnKeyEvent(Key::Enter, 0);
+        return;
+    }
+    if (this->settings->openItemInterface.IsValid() == false) {
+        Dialogs::MessageBox::ShowNotification("Open item", "This container does not support opening its items !");
+        return;
+    }
+    OpenItem(item);
+}
+void Instance::OpenItem(TreeViewItem item)
+{
     if ((item.GetChildrenCount() == 0) && (this->settings->openItemInterface))
     {
         UpdatePathForItem(item);
@@ -146,14 +168,24 @@ void Instance::OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& i
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    commandBar.SetCommand(Commands::OpenItem.Key, Commands::OpenItem.Caption, Commands::OpenItem.CommandId);
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
+    // only reached when the key is not handled by the tree (e.g. the command was assigned to another key)
+    if (Commands::OpenItem.Matches(keyCode)) {
+        OpenCurrentItem();
+        return true;
+    }
     return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
+    if ((eventType == Event::Command) && (ID == Commands::CMD_ID_OPEN_ITEM)) {
+        OpenCurrentItem();
+        return true;
+    }
     return false;
 }
 bool Instance::GoTo(uint64 offset)
@@ -184,20 +216,18 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32
 {
     // display
     None
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
-bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
+bool Instance::GetPropertyValue(uint32, PropertyValue&)
 {
-    switch (static_cast<PropertyID>(id))
-    {
-    default:
-        break;
-    }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
@@ -217,3 +247,20 @@ const vector<Property> Instance::GetPropertiesList()
     return {};
 }
 #undef BT
+bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
+{
+    RegisterKeys(interface);
+    return true;
+}
+void GView::View::ContainerViewer::RegisterKeys(KeyboardControlsInterface* interface)
+{
+    interface->BeginCategory("Navigation & editing");
+    interface->RegisterKeyText("Up / Down / PageUp / PageDown / Home / End", "Move", "Move in the tree");
+    interface->RegisterKey(&Commands::OpenItem);
+    interface->RegisterKeyText("Space", "ToggleOrOpen", "Expand / collapse the current item (or open it if it has no children)");
+    interface->RegisterKeyText("Shift+Space / Shift+Enter", "Open", "Open the current item");
+    interface->RegisterKeyText("Ctrl+Space", "ToggleRecursive", "Expand / collapse the current item and all its children");
+    interface->RegisterKeyText("<type text>", "Search", "Search in the tree (Escape clears the search)");
+    interface->RegisterKeyText("Ctrl+Enter / Ctrl+Shift+Enter", "SearchNextPrevious", "Go to the next / previous search match");
+    interface->RegisterKeyText("Ctrl+Insert", "CopyRow", "Copy the current row");
+}

@@ -12,6 +12,7 @@ PDFFile::PDFFile()
                                  .endBuffer          = 0,
                                  .type               = PDF::SectionPDFObjectType::Unknown,
                                  .number             = 0,
+                                 .generation         = 0,
                                  .hasStream          = false,
                                  .hasJS              = false,
                                  .filters            = {},

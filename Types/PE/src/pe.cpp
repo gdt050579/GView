@@ -13,7 +13,7 @@ using namespace GView::Components;
 
 constexpr auto OVERLAY_BOOKMARK_VALUE = 0;
 
-extern "C" {
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
     auto dos = buf.GetObject<PE::ImageDOSHeader>();
@@ -341,12 +341,7 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     LocalString<128> buffer;
     for (const auto& command : PE::PE_COMMANDS) {
         buffer.SetFormat("Command.%s", command.Caption);
-        sect[buffer.GetText()] = command.Key;
+        sect[buffer.GetText()] = command.DefaultKey;
     }
 }
-}
-
-int main()
-{
-    return 0;
 }

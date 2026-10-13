@@ -28,7 +28,7 @@ constexpr string_view FAT_ICON = "................"  // 1
                                  "................"  // 15
                                  "................"; // 16
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
     PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view&)
     {
@@ -53,9 +53,9 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<DataCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new MachOFile(file);
+        return new MachOFile(nullptr);
     }
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
@@ -138,9 +138,9 @@ extern "C"
                 settings.AddZone(offsetHeaders, structSize, machO->colors.arch, temp);
                 offsetHeaders += structSize;
 
-                const auto& ai = machO->archs[objectCount].info;
+                const auto& ai = vArch.info;
                 temp.Format("#%u %s", objectCount, ai.name.c_str());
-                settings.AddZone(machO->archs[objectCount].offset, machO->archs[objectCount].size, machO->colors.object, temp);
+                settings.AddZone(vArch.offset, vArch.size, machO->colors.object, temp);
 
                 objectCount++;
             }
@@ -259,7 +259,7 @@ extern "C"
         LocalString<128> buffer;
         for (const auto& command : MachO::Commands::MACHO_COMMANDS) {
             buffer.SetFormat("Command.%s", command.Caption);
-            sect[buffer.GetText()] = command.Key;
+            sect[buffer.GetText()] = command.DefaultKey;
         }
     }
 }

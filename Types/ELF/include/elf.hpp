@@ -4,6 +4,8 @@
 
 namespace GView::Type::ELF
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
 enum class AddressType : uint8
 {
     FileOffset = 0,
@@ -104,6 +106,7 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     }
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
         return true;
     }
 

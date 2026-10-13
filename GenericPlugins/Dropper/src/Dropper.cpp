@@ -14,12 +14,15 @@ using namespace GView::Utils;
 using namespace GView;
 using namespace GView::View;
 
-namespace GView::GenericPlugins::Droppper
-{
-extern "C" {
+using namespace GView::GenericPlugins::Droppper;
+
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "Dropper") {
+        // the Dropper writes extracted artifacts to disk: an export in Learning and Evaluation Mode
+        if (GView::App::IsExportBlockedFor(object, "dropping artifacts to disk"))
+            return true;
         auto ui = DropperUI(object);
 
         switch (ui.Show()) {
@@ -45,6 +48,8 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 }
 }
 
+namespace GView::GenericPlugins::Droppper
+{
 bool Instance::Init(Reference<GView::Object> object)
 {
     CHECK(object.IsValid(), false, "");
@@ -465,7 +470,7 @@ bool Instance::DropBinaryData(
     CHECK(context.initialized, false, "");
     CHECK(ProcessBinaryDataCharset(includedCharSet, excludedCharSet), false, "");
 
-    std::u16string_view fp = object->GetPath();
+    [[maybe_unused]] std::u16string_view fp = object->GetPath();
 
     LocalUnicodeStringBuilder<4096> lusb;
     CHECK(lusb.Add(object->GetPath()), false, "");
@@ -496,7 +501,7 @@ bool Instance::DropBinaryData(
             auto bf = cache.Get(area.first, static_cast<int32>(size), true);
             CHECK(bf.IsValid(), false, "");
 
-            for (int32 i = 0; i < bf.GetLength(); i++) {
+            for (size_t i = 0; i < bf.GetLength(); i++) {
                 const auto c = bf[i];
                 if (context.binaryCharSetMatrix[c]) {
                     droppedFile << c;
@@ -509,7 +514,7 @@ bool Instance::DropBinaryData(
             offset += cacheSize;
 
             while (bf.IsValid() && !bf.Empty()) {
-                for (int32 i = 0; i < bf.GetLength(); i++) {
+                for (uint32 i = 0; i < bf.GetLength(); i++) {
                     const auto c = bf[i];
                     if (context.binaryCharSetMatrix[c]) {
                         droppedFile << c;
@@ -559,8 +564,8 @@ bool Instance::FillCharSetMatrix(bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_
     const auto static ValidateHex = [](std::string_view s) -> bool {
         CHECK(s[0] == '\\', false, "");
         CHECK(s[1] == 'x', false, "");
-        CHECK(s[2] >= '0' && s[2] <= '9' || s[2] >= 'a' && s[2] <= 'z' || s[2] >= 'A' && s[2] <= 'Z', false, "");
-        CHECK(s[3] >= '0' && s[3] <= '9' || s[3] >= 'a' && s[3] <= 'z' || s[3] >= 'A' && s[3] <= 'Z', false, "");
+        CHECK((s[2] >= '0' && s[2] <= '9') || (s[2] >= 'a' && s[2] <= 'z') || (s[2] >= 'A' && s[2] <= 'Z'), false, "");
+        CHECK((s[3] >= '0' && s[3] <= '9') || (s[3] >= 'a' && s[3] <= 'z') || (s[3] >= 'A' && s[3] <= 'Z'), false, "");
         return true;
     };
 

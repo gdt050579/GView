@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include "StaticPlugins.hpp"
 
 using namespace GView::Type;
 using namespace GView::Utils;
@@ -142,9 +143,10 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
                 // we have a valid command and key
                 if (this->commands.size() == 0)
                     this->commands.reserve(4);
-                auto& cmd = this->commands.emplace_back();
-                cmd.key   = key.value();
-                cmd.name  = entryName.substr(8);
+                auto& cmd      = this->commands.emplace_back();
+                cmd.key        = key.value();
+                cmd.defaultKey = key.value();
+                cmd.name       = entryName.substr(8);
             }
         }
     }
@@ -156,6 +158,14 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 }
 bool Plugin::LoadPlugin()
 {
+#ifdef GVIEW_STATIC_PLUGINS
+    const auto* entry = GView::StaticPlugins::FindTypePlugin(this->GetName());
+    CHECK(entry, false, "Type plugin '%.*s' is not linked into this build", (int) this->GetName().size(), this->GetName().data());
+    this->fnValidate       = entry->fnValidate;
+    this->fnCreateInstance = entry->fnCreateInstance;
+    this->fnPopulateWindow = entry->fnPopulateWindow;
+    return true;
+#else
     AppCUI::OS::Library lib;
     auto path = AppCUI::OS::GetCurrentApplicationPath();
     path.remove_filename();
@@ -174,6 +184,7 @@ bool Plugin::LoadPlugin()
     CHECK(fnPopulateWindow, false, "Missing 'PopulateWindow' export !");
 
     return true;
+#endif
 }
 bool Plugin::MatchExtension(uint64 extensionHash)
 {
@@ -233,4 +244,16 @@ TypeInterface* Plugin::CreateInstance() const
     CHECK(!this->Invalid, nullptr, "Invalid plugin (not loaded properly or no valid exports)");
     CHECK(this->Loaded, nullptr, "Plugin was no loaded. Have you call `Validate` first ?");
     return this->fnCreateInstance();
+}
+std::string Plugin::GetKeysSection() const
+{
+    std::string section(GView::App::Keys::SECTION_TYPE_PREFIX);
+    section.append(this->name.GetText(), this->name.Len());
+    return section;
+}
+void Plugin::ApplyKeyBindings(const GView::App::Keys::Registry& registry)
+{
+    const auto section = GetKeysSection();
+    for (auto& cmd : this->commands)
+        cmd.key = registry.Resolve(section, cmd.name, cmd.defaultKey);
 }

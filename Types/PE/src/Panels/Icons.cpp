@@ -22,7 +22,7 @@ void Panels::Icons::Update()
 {
     LocalString<128> temp;
 
-    auto obj = this->win->GetObject();
+    [[maybe_unused]] auto obj = this->win->GetObject();
 
     this->iconsList->DeleteAllItems();
     for (auto& r : pe->res)

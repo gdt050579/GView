@@ -57,7 +57,7 @@ void Information::UpdateArchive()
 
     general->AddItem(
           { "PyLibName",
-            ls.Format("%.*s", sizeof(py->archive.info.pylibname) / sizeof(py->archive.info.pylibname[0]), py->archive.info.pylibname) });
+            ls.Format("%.*s", (int) sizeof(py->archive.info.pylibname), py->archive.info.pylibname) });
 }
 
 void Information::UpdateIssues()
@@ -66,10 +66,8 @@ void Information::UpdateIssues()
 
 void Information::RecomputePanelsPositions()
 {
-    int py   = 0;
-    int last = 0;
-    int w    = this->GetWidth();
-    int h    = this->GetHeight();
+    int w = this->GetWidth();
+    int h = this->GetHeight();
 
     if ((!general.IsValid()) || (!issues.IsValid()))
         return;

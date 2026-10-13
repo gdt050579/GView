@@ -46,10 +46,10 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64 value)
 
 void Panels::Objects::GoToSelectedSection()
 {
-    auto index = list->GetCurrentItem().GetData(-1);
-    CHECKRET(index != -1, "");
+    auto index = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(index != static_cast<uint64>(-1), "");
 
-    GView::Decoding::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{};
     CHECKRET(zip->info.GetEntry((uint32) index, entry), "");
 
     const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
@@ -59,10 +59,10 @@ void Panels::Objects::GoToSelectedSection()
 
 void Panels::Objects::SelectCurrentSection()
 {
-    auto index = list->GetCurrentItem().GetData(-1);
-    CHECKRET(index != -1, "");
+    auto index = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(index != static_cast<uint64>(-1), "");
 
-    GView::Decoding::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{};
     CHECKRET(zip->info.GetEntry((uint32) index, entry), "");
 
     const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
@@ -80,7 +80,7 @@ void Panels::Objects::Update()
 
     for (auto i = 0U; i < zip->info.GetCount(); i++)
     {
-        GView::Decoding::ZIP::Entry entry{ 0 };
+        GView::Decoding::ZIP::Entry entry{};
         CHECKBK(zip->info.GetEntry(i, entry), "");
 
         const auto filename = entry.GetFilename();
@@ -100,8 +100,8 @@ void Panels::Objects::Update()
 bool Panels::Objects::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(ObjectAction::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(ObjectAction::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(ObjectAction::ChangeBase));
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", static_cast<int32_t>(ObjectAction::Select));
+    commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(ObjectAction::ChangeBase));
 
     return true;
 }

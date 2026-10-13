@@ -9,7 +9,7 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
@@ -47,9 +47,4 @@ extern "C"
         sect["Pattern"]     = { "linestartswith:#include", "linestartswith:#pragma", "linestartswith:#define" };
         sect["Description"] = "C/C++ language file (*.h, *.hpp, *.c, *.cpp)";
     }
-}
-
-int main()
-{
-    return 0;
 }

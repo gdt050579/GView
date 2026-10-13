@@ -23,6 +23,13 @@ You may see a warning that macOS cannot verify the app. Until binaries are digit
 signed and notarized, you must manually allow each binary to run in System Preferences
 → Security & Privacy. Do not disable Gatekeeper system-wide.
 
+Web browser
+~~~~~~~~~~~
+`Open GView in your browser <app/GView.html>`_ - nothing to install, and the files you
+open never leave the browser tab. Each release also carries the same build as
+``GView-<version>-Web-wasm32.zip``. See :doc:`wasm` for what differs from the native
+GView.
+
 Building from source
 --------------------
 

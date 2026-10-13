@@ -122,7 +122,7 @@ void Panels::Sections::Update()
     }
 }
 
-std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
+std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint64 value)
 {
     if (Base == 10) {
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });
@@ -134,9 +134,9 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PDF_OBJECTS_GOTO);
-    commandBar.SetCommand(Key::F9, "Select", PDF_OBJECTS_SELECT);
-    commandBar.SetCommand(Key::F10, "Text Viewer", PDF_TEXTVIEWER);
-    commandBar.SetCommand(Key::F11, "Save as .txt file", PDF_SAVEASTXT);
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", PDF_OBJECTS_SELECT);
+    commandBar.SetCommand(PANEL_TEXT_VIEWER.Key, "Text Viewer", PDF_TEXTVIEWER);
+    commandBar.SetCommand(PANEL_SAVE_AS_TEXT.Key, "Save as .txt file", PDF_SAVEASTXT);
     return true;
 }
 

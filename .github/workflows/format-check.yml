@@ -1,0 +1,66 @@
+# .github/workflows/format-check.yml
+#
+# Checks that the lines a pull request touches follow .clang-format. Only the changed lines are checked
+# (git clang-format), so untouched legacy code never fails a PR and nobody is pushed to reformat whole files.
+# The clang-format major version matches the one bundled with Visual Studio 2022 (LLVM 19).
+name: code format
+
+permissions: {}
+
+on:
+  pull_request:
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '**.h'
+      - '**.c'
+      - '**.cc'
+      - '.clang-format'
+      - '.github/workflows/format-check.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-format:
+    name: clang-format (changed lines)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install clang-format
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install clang-format==19.1.7
+          clang-format --version
+
+      - name: Check changed lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          echo "Checking formatting of lines changed between $base and $HEAD_SHA"
+          # Project sources only: AppCUI is a submodule, 3rdPartyLibs is vendored LLVM code.
+          out=$(git clang-format --diff --extensions c,cc,cpp,h,hpp "$base" "$HEAD_SHA" \
+                  -- GView GViewCore GenericPlugins Types 2>&1 || true)
+          if printf '%s\n' "$out" | grep -q '^diff --git'; then
+            printf '%s\n' "$out"
+            echo "::error::Some changed lines are not formatted according to .clang-format." \
+                 "Run 'git clang-format <base-commit>' locally (clang-format 19) and commit the result."
+            exit 1
+          fi
+          echo "All changed lines are correctly formatted."
+          printf '%s\n' "$out"

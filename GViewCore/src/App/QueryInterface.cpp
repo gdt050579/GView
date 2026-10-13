@@ -33,18 +33,14 @@ Reference<GView::Components::AnalysisEngine::Subject> FileWindow::GetCurrentWind
 
 void TextHighlighAdvanced(Reference<Control>, Graphics::Character* chars, uint32 charsCount)
 {
-    Graphics::Character* end   = chars + charsCount;
-    Graphics::Character* start = nullptr;
-    //ColorPair col;
+    Graphics::Character* end = chars + charsCount;
     while (chars < end) {
         if (chars->Code == '*') // Check for '**'
         {
-            start = chars;
             chars++;
             if ((chars < end) && (chars->Code == '*')) // Confirm second '*'
             {
                 chars++;
-                start += 2; // Move past '**'
                 while ((chars < end) && !(chars->Code == '*' && (chars + 1 < end) && (chars + 1)->Code == '*')) {
                     chars->Color = ColorPair{ Color::Yellow, Color::Transparent }; // Color for '**...**'
                     chars++;
@@ -55,7 +51,6 @@ void TextHighlighAdvanced(Reference<Control>, Graphics::Character* chars, uint32
             }
         } else if (chars->Code == '`') // Check for backticks '`'
         {
-            start = chars;
             chars++;
             while ((chars < end) && (chars->Code != '`')) {
                 chars->Color = ColorPair{ Color::Green, Color::Transparent }; // Color for `...`
@@ -66,7 +61,6 @@ void TextHighlighAdvanced(Reference<Control>, Graphics::Character* chars, uint32
             }
         } else if (chars->Code == '"') // Check for double quotes '"'
         {
-            start = chars;
             chars++;
             while ((chars < end)) {
                 if (chars->Code == '\\' && (chars + 1 < end) && (chars + 1)->Code == '"') {
@@ -306,6 +300,15 @@ namespace GView::App::QueryInterfaceImpl
 
 std::string SmartAssistantPromptInterfaceProxy::AskSmartAssistant(std::string_view prompt, std::string_view displayPrompt, bool& isSuccess)
 {
+    // single choke point for every LLM prompt (chat tab, disassembly queries, plugins)
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::LLMHints, "asking the smart assistant (LLM hints)")) {
+        isSuccess = false;
+        return "Blocked by course policy: LLM hints are disabled.";
+    }
+    if (smartAssistants.empty()) {
+        isSuccess = false;
+        return "No smart assistant is available.";
+    }
     uint16 indexToUse = prefferedChatIndex;
     if (prefferedChatIndex == UINT16_MAX) {
         indexToUse = prefferedIndex;

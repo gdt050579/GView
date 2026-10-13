@@ -173,7 +173,7 @@ bool CopyDialog::Process()
                         s++;
                     }
 
-                    if (s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData())) >= instance->GetStringInfo().minCount)
+                    if (static_cast<size_t>(s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData()))) >= instance->GetStringInfo().minCount)
                     {
                         info.start  = offset;
                         info.middle = offset + (s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData())));
@@ -188,7 +188,7 @@ bool CopyDialog::Process()
             for (uint64 i = 0ull; i < bf.GetLength(); i++)
             {
                 Info info{ GView::Utils::INVALID_OFFSET, GView::Utils::INVALID_OFFSET, GView::Utils::INVALID_OFFSET };
-                if (UpdateStringInfo(i, BufferView{ bf.GetData() + i, bf.GetLength() - i }, info))
+                if (UpdateStringInfo(i, BufferView{ bf.GetData() + i, static_cast<size_t>(bf.GetLength() - i) }, info))
                 {
                     uint32 a;
                     for (a = 2ull, i += 1ull; i < info.middle; i++, a += 2)
@@ -244,7 +244,8 @@ bool CopyDialog::Process()
         CHECK(usb.Add(s), false, "");
     }
 
-    if (AppCUI::OS::Clipboard::SetText(usb) == false)
+    // policy-gated clipboard write (the dialog entry point is gated as well)
+    if (GView::App::SetClipboardText(usb) == false)
     {
         LocalString<128> message;
         CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", instance->GetObject()->GetData().GetSize(), cacheSize),

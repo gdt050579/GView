@@ -30,6 +30,49 @@ Your plugin class must inherit ``GView::TypeInterface`` and implement:
 * **UpdateKeys(KeyboardControlsInterface*)** — Register keyboard shortcuts.
 * **GetSmartAssistantContext(...)** — Provide context for the smart assistant (can return minimal JSON).
 
+Keyboard shortcuts
+------------------
+
+Every key handled by a plugin must be a named ``KeyboardControl`` (``AppCUI::Input::KeyBinding``) so that it is listed
+in the *Keyboard shortcuts* window (``F1``) and can be changed by the user (see :doc:`keyboard_shortcuts`):
+
+.. code-block:: cpp
+
+   namespace GView::Type::MyType
+   {
+   // `inline` -> a single object shared by every .cpp file of the plugin (the registry writes the user key into it)
+   inline KeyboardControl MY_COMMANDS[] = {
+       { Input::Key::Alt | Input::Key::F8, "Verify", "Verify the signature", MY_COMMAND_VERIFY },
+   };
+   inline GView::StandardPanelKeys PANEL_KEYS; // F9 Select / F2 Dec-Hex of the list panels
+   inline KeyboardControl PANEL_OPEN = { Input::Key::Ctrl | Input::Key::O, "PanelOpen", "Open the current entry", 0 };
+   }
+
+   bool MyTypeFile::UpdateKeys(KeyboardControlsInterface* interface)
+   {
+       for (auto& cmd : MY_COMMANDS)
+           interface->RegisterKey(&cmd);
+       PANEL_KEYS.Register(interface);          // starts the "Panels" category
+       interface->RegisterKey(&PANEL_OPEN);
+       return true;
+   }
+
+Rules:
+
+* The ``Caption`` is the identifier saved in the settings - keep it stable and unique for the plugin.
+* Commands executed through ``RunCommand`` are declared in ``UpdateSettings`` as ``Command.<Caption>`` using
+  ``DefaultKey`` (``sect["Command.Verify"] = cmd.DefaultKey;``) and registered in ``UpdateKeys`` with the same caption.
+* Read the key when it is used (``commandBar.SetCommand(PANEL_OPEN.Key, "Open", ID)``, ``PANEL_OPEN.Matches(keyCode)``),
+  never copy it at construction time. ``Matches`` never matches an unassigned (``Key::None``) shortcut.
+* ``interface->BeginCategory("Panels")`` groups keys in the window; panel categories must start with ``Panel``
+  (e.g. ``"Panel: Resources"``) - keys of different panel categories are never reported as conflicts.
+* ``interface->RegisterKeyText("0-9", "Bookmarks", "...")`` lists keys that can not be configured (character keys,
+  keys handled by AppCUI controls).
+* Keys of modal dialogs are shown in the dialog command bar and are not registered.
+
+The ``KeyboardControl`` layout and the ``KeyboardControlsInterface`` virtual table are part of the plugin ABI: changing
+them requires rebuilding GViewCore, AppCUI and every plugin.
+
 Smart viewers
 -------------
 
@@ -124,6 +167,19 @@ Use ``Object::GetData()`` to get a ``DataCache&``. Use ``Copy<T>`` for structs a
        return true;
    }
 
+When a library or OS API needs a real file and the object is not ``Object::Type::File`` (e.g. it was extracted from
+a container), use ``GView::App::DropToTemporaryFile``. Never write the content next to the container or under a
+path built from the object's path. The copy lives in GView's private temporary folder (see :doc:`configuration`) and
+is deleted when the ``TemporaryFile`` handle is destroyed. Close the file before that happens. The call fails
+(silently) for Learning and Evaluation Mode content that must stay in memory, so always keep a fallback::
+
+   GView::App::TemporaryFile copy;
+   if (auto status = GView::App::DropToTemporaryFile(obj, copy); status.ok) {
+       VerifyWithAnApiThatNeedsAFile(copy.GetPath());
+   } else {
+       // in-memory processing, or report status.message
+   }
+
 PositionToColorInterface (buffer highlighting)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -157,6 +213,6 @@ Quick reference
 * **Add hash algorithm** — ``GViewCore/src/Hashes/`` — Hash classes in GView.hpp
 * **Add decoding** — ``GViewCore/src/Decoding/`` — Decoding namespace
 * **Modify viewer behavior** — ``GViewCore/src/View/`` — ViewControl, Settings
-* **Add keyboard shortcut** — TypeInterface — UpdateKeys(), KeyboardControl
+* **Add keyboard shortcut** — TypeInterface — ``inline KeyboardControl`` + UpdateKeys() (see *Keyboard shortcuts*)
 * **Add panel to Type** — ``Types/*/src/Panel*.cpp`` — TabPage, ListView
 * **AI assistant context** — TypeInterface — GetSmartAssistantContext()

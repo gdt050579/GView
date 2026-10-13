@@ -47,7 +47,7 @@ constexpr std::string_view ANYTHING_PATTERN{ "???" };
 
 FindDialog::FindDialog()
     : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
-      position(GView::Utils::INVALID_OFFSET), match({ GView::Utils::INVALID_OFFSET, 0 })
+      match({ GView::Utils::INVALID_OFFSET, 0 })
 {
     description = Factory::CanvasViewer::Create(
           this, "d:t,h:3", this->GetWidth(), DESCRIPTION_HEIGHT_TEXT_FORMAT, Controls::ViewerFlags::Border | Controls::ViewerFlags::HideScrollBar);
@@ -546,7 +546,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             }
 
             const std::wregex pattern(
-                  reinterpret_cast<wchar_t const* const>(usb.ToStringView().data()),
+                  reinterpret_cast<wchar_t const*>(usb.ToStringView().data()),
                   (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
                                            : std::regex_constants::ECMAScript | std::regex_constants::optimize));
 
@@ -588,7 +588,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                 current = input.size();
             }
 
-            std::string_view number{ input.data() + last, current - last };
+            std::string_view number{ input.data() + last, static_cast<size_t>(current - last) };
 
             if (textDec->IsChecked())
             {

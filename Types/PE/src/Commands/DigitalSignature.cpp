@@ -199,6 +199,7 @@ bool DigitalSignature::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
         default:
             break;
         }
+        return false;
     default:
         return false;
     }

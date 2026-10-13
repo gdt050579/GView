@@ -43,6 +43,7 @@ void ColorManager::SetAllColorsInactive()
     this->Colors.AsmLocationInstruction        = this->Colors.Inactive;
     this->Colors.AsmJumpInstruction            = this->Colors.Inactive;
     this->Colors.AsmComment                    = this->Colors.Inactive;
+    this->Colors.AsmLocalVariableColor         = this->Colors.Inactive;
     this->Colors.AsmDefaultColor               = this->Colors.Inactive;
     this->Colors.AsmTitleColumnColor           = this->Colors.Inactive;
 
@@ -67,15 +68,10 @@ void ColorManager::OnGainedFocus()
 
 void Config::Update(AppCUI::Utils::IniSection sect)
 {
-    LocalString<128> buffer;
-    for (const auto& cmd : AllKeyboardCommands) {
-        buffer.SetFormat("Key.%s", cmd.get().Caption);
-        sect.UpdateValue(buffer.GetText(), cmd.get().Key, true);
-    }
-
+    // keys are handled by the key bindings registry ([Keys.View.Dissasm], "Keyboard shortcuts" window)
     sect.UpdateValue("Config.ShowFileContent", true, true);
     sect.UpdateValue("Config.ShowOnlyDissasm", false, true);
-    sect.UpdateValue("Config.DeepScanDissasmOnStart", false, true);
+    sect.UpdateValue("Config.DeepScanDissasmOnStart", true, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
 }
 
@@ -110,6 +106,7 @@ void Config::UpdateColors(const AppCUI::Application::Config& config)
     this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::Transparent };
     this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::Transparent };
     this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, Color::Transparent };
+    this->ConfigColors.AsmLocalVariableColor         = ColorPair{ Color::Yellow, Color::Transparent };
     this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, Color::Transparent };
     this->ConfigColors.AsmTitleColor                 = config.Header.Text.Focused;
     this->ConfigColors.AsmTitleColumnColor           = config.Border.Focused;
@@ -131,6 +128,7 @@ void Config::UpdateColors(const AppCUI::Application::Config& config)
         LOAD_COLOR_IF_EXISTS(AsmLocationInstruction);
         LOAD_COLOR_IF_EXISTS(AsmJumpInstruction);
         LOAD_COLOR_IF_EXISTS(AsmComment);
+        LOAD_COLOR_IF_EXISTS(AsmLocalVariableColor);
         LOAD_COLOR_IF_EXISTS(AsmDefaultColor);
     }
 }
@@ -143,13 +141,9 @@ void Config::Initialize(const AppCUI::Application::Config& config)
     if (ini) {
         auto sect = ini->GetSection("View.Dissasm");
         if (sect.Exists()) {
-            for (auto& cmd : AllKeyboardCommands) {
-                cmd.get().Key = sect.GetValue(cmd.get().Caption).ToKey(cmd.get().Key);
-            }
-
             this->ShowFileContent                 = sect.GetValue("Config.ShowFileContent").ToBool(true);
             this->ShowOnlyDissasm                 = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
-            this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(false);
+            this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(true);
             this->CacheSameLocationAsAnalyzedFile = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
             foundSettings                         = true;
         }
@@ -157,12 +151,13 @@ void Config::Initialize(const AppCUI::Application::Config& config)
     if (!foundSettings) {
         this->ShowFileContent                 = true;
         this->ShowOnlyDissasm                 = false;
-        this->EnableDeepScanDissasmOnStart    = false;
+        this->EnableDeepScanDissasmOnStart    = true;
         this->CacheSameLocationAsAnalyzedFile = true;
     }
 
     Application::Config::CustomColorNameStorage dissamColors = {
-        { "StructureColor", CustomColor(ConfigColors.StructureColor) }, { "AsmOffsetColor", CustomColor(ConfigColors.AsmOffsetColor) },
+        { "StructureColor", CustomColor(ConfigColors.StructureColor) },
+        { "AsmOffsetColor", CustomColor(ConfigColors.AsmOffsetColor) },
         { "AsmIrrelevantInstructionColor", CustomColor(ConfigColors.AsmIrrelevantInstructionColor) },
         { "AsmWorkRegisterColor", CustomColor(ConfigColors.AsmWorkRegisterColor) },
         { "AsmStackRegisterColor", CustomColor(ConfigColors.AsmStackRegisterColor) },
@@ -171,6 +166,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
         { "AsmLocationInstruction", CustomColor(ConfigColors.AsmLocationInstruction) },
         { "AsmJumpInstruction", CustomColor(ConfigColors.AsmJumpInstruction) },
         { "AsmComment", CustomColor(ConfigColors.AsmComment) },
+        { "AsmLocalVariableColor", CustomColor(ConfigColors.AsmLocalVariableColor) },
         { "AsmDefaultColor", CustomColor(ConfigColors.AsmDefaultColor) },
     };
     if (!Dialogs::ThemeEditor::RegisterCustomColors("DissamColors", dissamColors, this)) {
@@ -255,6 +251,15 @@ void Config::OnPreviewWindowDraw(
     ++startingY;
 
     r.WriteSingleLineText(startingX + 1, startingY, "ret", *AsmFunctionColorTheme);
+    ++startingY;
+
+    // older themes may not define it
+    const auto localVariableColor         = colors.find("AsmLocalVariableColor");
+    const auto AsmLocalVariableColorTheme = localVariableColor != colors.end() ? localVariableColor->second.TryGetColorPair() : nullptr;
+    if (AsmLocalVariableColorTheme) {
+        r.WriteSingleLineText(startingX + 1, startingY, "var_8", *AsmLocalVariableColorTheme);
+        r.WriteSingleLineText(startingX + 20, startingY, "; AsmLocalVariableColor", *AsmCommentTheme);
+    }
 
     // ret + call -> AsmFunctionColor
 
@@ -267,31 +272,16 @@ void Config::OnThemeChanged(const Application::Config& config)
     ConfigColors.hasChanges = true;
 }
 
-KeyConfigDisplayWindow::KeyConfigDisplayWindow() : Window("Available keys", "d:c", Controls::WindowFlags::Sizeable)
+void GView::View::DissasmViewer::RegisterKeys(KeyboardControlsInterface* interface)
 {
-    auto list =
-          Factory::ListView::Create(this, "x:1,y:0,w:99%,h:99%", { "n:Caption,w:30%", "n:Description,w:50%", "n:Key,w:20%" }, ListViewFlags::PopupSearchBar);
-
-    LocalString<32> buffer;
-
-    for (const auto& key : Config::AllKeyboardCommands) {
-        buffer.Clear();
-        if (!KeyUtils::ToString(key.get().Key, buffer))
-            buffer.SetFormat("Failed to convert key");
-        const std::initializer_list<ConstString> items = { key.get().Caption, key.get().Explanation, buffer.GetText() };
-        list->AddItem(items);
-    }
+    for (auto& key : Config::AllKeyboardCommands)
+        interface->RegisterKey(&key.get());
+    interface->BeginCategory("Navigation & editing");
+    for (auto key : Config::NavigationCommands)
+        interface->RegisterKey(key);
+    interface->RegisterKeyText("Escape", "SaveCacheOnEscape", "Escape also saves the disassembly cache");
 }
-
-bool KeyConfigDisplayWindow::OnEvent(AppCUI::Utils::Reference<Control> reference, Controls::Event eventType, int ID)
+void GView::View::DissasmViewer::OnKeysChanged()
 {
-    switch (eventType) {
-    case Event::ButtonClicked:
-    case Event::WindowAccept:
-    case Event::WindowClose:
-        Exit(Dialogs::Result::Cancel);
-        return true;
-    }
-
-    return false;
+    Config::Map.Build(Config::KeyEventCommands);
 }

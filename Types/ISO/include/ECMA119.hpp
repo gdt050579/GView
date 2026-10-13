@@ -239,7 +239,7 @@ enum ECMA_119_FileFlags
     MultiExtent    = 1 << 7
 };
 
-static const std::string GetECMA_119_FileFlags(uint32_t flags)
+inline const std::string GetECMA_119_FileFlags(uint32_t flags)
 {
     static const std::array<ECMA_119_FileFlags, 8> fileFlags{ ECMA_119_FileFlags::Existence,      ECMA_119_FileFlags::Directory,
                                                               ECMA_119_FileFlags::AssociatedFile, ECMA_119_FileFlags::Record,
@@ -369,7 +369,7 @@ inline static const std::string RecordingDateAndTimeToString(const unsigned char
     return ls.GetText();
 }
 
-inline static const auto DRCRC64(const ECMA_119_DirectoryRecord& dr)
+inline auto DRCRC64(const ECMA_119_DirectoryRecord& dr)
 {
     constexpr auto sizeDelta = sizeof(ECMA_119_DirectoryRecord) -
                                sizeof(ECMA_119_DirectoryRecord::fileIdentifier) / sizeof(ECMA_119_DirectoryRecord::fileIdentifier[0]);

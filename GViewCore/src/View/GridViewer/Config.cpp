@@ -4,27 +4,27 @@ using namespace GView::View::GridViewer;
 using namespace GView::View::GridViewer::Commands;
 using namespace AppCUI::Input;
 
-void Config::Update(IniSection sect)
+void Config::Update(IniSection)
 {
-    LocalString<128> buffer;
-    for (const auto& cmd : AllGridCommands) {
-        buffer.SetFormat("Key.%s", cmd->Caption);
-        sect.UpdateValue(buffer.GetText(), cmd->Key, true);
-    }
+    // keys are handled by the key bindings registry ([Keys.View.Grid], "Keyboard shortcuts" window)
 }
 
 void Config::Initialize()
 {
-    auto ini = AppCUI::Application::GetAppSettings();
-    if (ini)
-    {
-        auto sect                          = ini->GetSection("View.Grid");
-        LocalString<128> buffer;
-        for (auto& cmd : AllGridCommands) {
-            buffer.SetFormat("Key.%s", cmd->Caption);
-            cmd->Key = sect.GetValue(buffer.GetText()).ToKey(cmd->Key);
-        }
-    }
-
     loaded = true;
+}
+
+void GView::View::GridViewer::Commands::RegisterKeys(KeyboardControlsInterface* interface)
+{
+    for (auto cmd : AllGridCommands)
+        interface->RegisterKey(cmd);
+    // keys handled by the AppCUI grid control (not configurable)
+    interface->BeginCategory("Navigation & editing");
+    interface->RegisterKeyText("Arrows", "MoveCursor", "Move the current cell");
+    interface->RegisterKeyText("Shift+Arrows", "ExtendSelection", "Select a range of cells");
+    interface->RegisterKeyText("Ctrl+Arrows", "Scroll", "Scroll the grid");
+    interface->RegisterKeyText("Ctrl+Alt+Arrows", "ResizeCells", "Change the size of the cells");
+    interface->RegisterKeyText("Ctrl+Space", "ResetLayout", "Reset the cells layout");
+    interface->RegisterKeyText("Ctrl+C", "CopyCells", "Copy the selected cells");
+    interface->RegisterKeyText("Escape", "ClearSelection", "Clear the selection");
 }

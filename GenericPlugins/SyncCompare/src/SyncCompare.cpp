@@ -388,7 +388,6 @@ bool Plugin::FindNextDifference()
 
         for (uint32 i = 0; i < windowsNo; i++)
         {
-            auto& view             = views.at(i);
             auto& data             = viewsData.at(i);
             auto& cache            = caches.at(i);
             buffers.emplace_back() = cache->Get(data.viewStartOffset, static_cast<uint32>(bufferSize), false);
@@ -496,7 +495,7 @@ bool Plugin::FindNextDifferentCharacter()
 // but you should lazy initialize it - so make it a pointer
 static std::unique_ptr<GView::GenericPlugins::SyncCompare::Plugin> plugin{ nullptr };
 
-extern "C"
+GVIEW_PLUGIN_ENTRY_POINTS
 {
     PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> currentObject)
     {

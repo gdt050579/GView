@@ -8,6 +8,8 @@ namespace Type
 {
     namespace ICO
     {
+        // keys of the panels (configurable from the "Keyboard shortcuts" window)
+        inline GView::StandardPanelKeys PANEL_KEYS;
 #pragma pack(push, 2)
         constexpr uint32 MAGIC_FORMAT_ICO = 0x00010000;
         constexpr uint32 MAGIC_FORMAT_CUR = 0x00020000;
@@ -77,6 +79,7 @@ namespace Type
             }
             virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
             {
+                PANEL_KEYS.Register(interface, true, false);
                 return true;
             }
 

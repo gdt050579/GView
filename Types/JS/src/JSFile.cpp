@@ -487,7 +487,6 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
     auto tokColor = TokenColor::Word;
     auto tokType  = Keyword::TextToKeywordID(text, pos, next);
     auto align    = TokenAlignament::None;
-    auto opID     = 0U;
     auto flags    = TokenFlags::None;
 
     if (tokType == TokenType::None)
@@ -661,8 +660,6 @@ BlockType JSFile::GetBlockTypeWhichContainLastToken(const TokensList& tokenList)
 {
     TokenIndexStack blockToken;
 
-    auto indexArrayBlock      = 0u;
-    auto len                  = tokenList.Len();
     Token currentToken        = tokenList.GetLastToken();
     uint32_t currentTokenType = currentToken.GetTypeID(TokenType::None);
     while (currentTokenType != TokenType::None)
@@ -712,7 +709,7 @@ uint32 JSFile::TokenizeList(const TextParser& text, TokensList& tokenList, uint3
 {
     TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
 
-    Token token = tokenList.GetLastToken();
+    [[maybe_unused]] Token token = tokenList.GetLastToken();
     if (GetBlockTypeWhichContainLastToken(tokenList) == BlockType::Block)
         align |= TokenAlignament::NewLineAfter;
     else
@@ -739,7 +736,6 @@ uint32 JSFile::TokenizePreprocessDirective(const TextParser& text, TokensList& l
         return eol;
     }
     // we have a good preprocess directive ==> lets formalize it
-    auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
     list.Add(
           TokenType::Preprocess,
           start,
@@ -1248,7 +1244,7 @@ bool JSFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeS
 bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
 {
     UnicodeStringBuilder newContent;
-    int32 preview = 0u;
+    size_t preview = 0;
 
     for (auto index = 0u; index < content.length(); index++)
     {

@@ -124,12 +124,12 @@ void Panels::Sections::Update()
 bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PE_SECTIONS_GOTO);
-    commandBar.SetCommand(Key::F3, "Edit", PE_SECTIONS_EDIT);
-    commandBar.SetCommand(Key::F9, "Select", PE_SECTIONS_SELECT);
+    commandBar.SetCommand(PANEL_EDIT.Key, "Edit", PE_SECTIONS_EDIT);
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", PE_SECTIONS_SELECT);
     if (this->Base == 10)
-        commandBar.SetCommand(Key::F2, "Dec", PE_SECTIONS_CHANGEBASE);
+        commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, "Dec", PE_SECTIONS_CHANGEBASE);
     else
-        commandBar.SetCommand(Key::F2, "Hex", PE_SECTIONS_CHANGEBASE);
+        commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, "Hex", PE_SECTIONS_CHANGEBASE);
     return true;
 }
 

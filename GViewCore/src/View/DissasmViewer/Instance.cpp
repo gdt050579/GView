@@ -13,7 +13,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
+constexpr size_t DISSASM_MAX_STORED_JUMPS = 64; // visited locations (a jump stores both its source and its destination)
 
 const std::array<AsmFunctionDetails, 58> KNOWN_FUNCTIONS = { {
       { "WriteFile",
@@ -213,16 +213,22 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     // rightClickOffset = 0;
 
     // TODO: to be moved inside plugin for some sort of API for token<->color
+    // keys are the first 4 bytes of the mnemonic, read in host byte order (must match GetASMColorPairByKeyword)
+    const auto key = [](const char* text) {
+        uint32 value;
+        memcpy(&value, text, sizeof(value));
+        return value;
+    };
     asmData.instructionToColor = {
-        { *((uint32*) "int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
-        { *((uint32*) "ret"), ColorMan.Colors.AsmFunctionColor },
-        { *((uint32*) "call"), ColorMan.Colors.AsmFunctionColor },
-        { *((uint32*) "cmp"), ColorMan.Colors.AsmCompareInstructionColor },
-        { *((uint32*) "test"), ColorMan.Colors.AsmCompareInstructionColor },
-        { *((uint32*) "word"), ColorMan.Colors.AsmLocationInstruction },
-        { *((uint32*) "dwor"), ColorMan.Colors.AsmLocationInstruction },
-        { *((uint32*) "qwor"), ColorMan.Colors.AsmLocationInstruction },
-        { *((uint32*) "ptr"), ColorMan.Colors.AsmLocationInstruction },
+        { key("int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
+        { key("ret"), ColorMan.Colors.AsmFunctionColor },
+        { key("call"), ColorMan.Colors.AsmFunctionColor },
+        { key("cmp"), ColorMan.Colors.AsmCompareInstructionColor },
+        { key("test"), ColorMan.Colors.AsmCompareInstructionColor },
+        { key("word"), ColorMan.Colors.AsmLocationInstruction },
+        { key("dwor"), ColorMan.Colors.AsmLocationInstruction },
+        { key("qwor"), ColorMan.Colors.AsmLocationInstruction },
+        { key("ptr"), ColorMan.Colors.AsmLocationInstruction },
     };
 }
 
@@ -260,19 +266,35 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
     case 1:
         x = PrintCursorPosInfo(x, 0, 16, false, renderer);
         x = PrintCursorLineInfo(x, 0, 16, false, renderer);
+        PrintCursorValueInfo(x, 0, renderer);
         break;
     default:
-        PrintCursorPosInfo(x, 0, 16, false, renderer);
-        PrintCursorLineInfo(x, 1, 16, false, renderer);
+        x = std::max<int>(PrintCursorPosInfo(x, 0, 16, false, renderer), PrintCursorLineInfo(x, 1, 16, false, renderer));
+        PrintCursorValueInfo(x, 0, renderer);
         break;
     }
 }
 
+int Instance::PrintCursorValueInfo(int x, int y, Renderer& r)
+{
+    // the number H would convert, in both bases (and signed when the sign bit of a 32 / 64 bit value is set)
+    const auto number = GetCursorLineNumber();
+    if (!number)
+        return x;
+    LocalString<96> tmp;
+    tmp.Format("0x%llX = %llu", static_cast<unsigned long long>(number->value), static_cast<unsigned long long>(number->value));
+    if (number->value >= 0x80000000ULL && number->value <= 0xFFFFFFFFULL)
+        tmp.AddFormat(" (%d)", static_cast<int32>(static_cast<uint32>(number->value)));
+    else if (number->value >= 0x8000000000000000ULL)
+        tmp.AddFormat(" (%lld)", static_cast<long long>(number->value));
+    r.WriteSingleLineText(x, y, "Val:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 5, y, tmp.GetText(), this->ColorMan.Colors.CursorNormal);
+    return x + 5 + static_cast<int>(tmp.Len()) + 1;
+}
+
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (auto& key : Config::AllKeyboardCommands) {
-        interface->RegisterKey(&key.get());
-    }
+    RegisterKeys(interface);
     return true;
 }
 
@@ -316,6 +338,10 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
 
 void Instance::OpenCurrentSelection()
 {
+    if (!selection.HasAnySelection()) {
+        Dialogs::MessageBox::ShowNotification("Open selection", "Select a zone first !");
+        return;
+    }
     UnicodeStringBuilder usb{};
     if (!ProcessSelectedDataToPrintable(usb))
         return;
@@ -390,7 +416,7 @@ void Instance::AddComment()
     }
 
     uint32 startingLine = zonesFound[0].startingLine;
-    if (startingLine == 0 || startingLine == 1 || Cursor.startViewLine >= startingLine && Cursor.lineInView == 0) {
+    if (startingLine == 0 || startingLine == 1 || (Cursor.startViewLine >= startingLine && Cursor.lineInView == 0)) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
     }
@@ -400,12 +426,16 @@ void Instance::AddComment()
 
     std::string comment = {};
     convertedZone->GetComment(startingLine, comment);
+    const bool hadComment = !comment.empty();
 
     selection.Clear();
     SingleLineEditWindow dlg(comment, "Add Comment");
     if (dlg.Show() == Dialogs::Result::Ok) {
         comment = dlg.GetResult();
         convertedZone->AddOrUpdateComment(startingLine, dlg.GetResult());
+        // creation and edit are distinct telemetry events; the comment text itself is never recorded
+        GView::Security::Learning::Hooks::OnSimpleEvent(
+              obj, hadComment ? GView::Security::Learning::Hooks::SimpleEvent::CommentEdit : GView::Security::Learning::Hooks::SimpleEvent::CommentAdd);
     }
 }
 
@@ -435,7 +465,11 @@ void Instance::RemoveComment()
     startingLine -= 2;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    std::string existing     = {};
+    convertedZone->GetComment(startingLine, existing);
     convertedZone->RemoveComment(startingLine);
+    if (!existing.empty())
+        GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::CommentRemove);
 }
 
 void Instance::RenameLabel()
@@ -480,7 +514,56 @@ void Instance::RenameLabel()
         Dialogs::MessageBox::ShowNotification("Warning", renameResult.message);
         return;
     }
+    if (renameResult.message == "renamed") // the dialog was confirmed (TryRenameLine also returns Ok on cancel)
+        GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::LabelRename);
     selection.Clear();
+    convertedZone->asmPreCacheData.Clear();
+}
+
+void Instance::RemoveLocalVariable()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+    if (zonesFound[0].startingLine <= 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line inside the region, not the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    const auto language      = convertedZone->zoneDetails.language;
+    if (!convertedZone->isInit || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+        return;
+    if (convertedZone->localVariables.Empty()) {
+        Dialogs::MessageBox::ShowNotification(
+              "Warning", "There are no local variables in this zone (they are recognized only when Config.DeepScanDissasmOnStart is enabled)!");
+        return;
+    }
+
+    uint64 functionStart = 0;
+    int32 frameOffset    = 0;
+    if (!convertedZone->GetLocalVariableFromLine(zonesFound[0].startingLine - 2u, obj, functionStart, frameOffset)) { // 2 for title and menu
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a local variable or an instruction that uses one!");
+        return;
+    }
+
+    bool lineRemoved  = false;
+    const auto status = convertedZone->RemoveLocalVariable(functionStart, frameOffset, lineRemoved);
+    if (!status.ok) {
+        Dialogs::MessageBox::ShowNotification("Warning", status.message);
+        return;
+    }
+    selection.Clear();
+    if (lineRemoved)
+        AdjustZoneExtendedSize(convertedZone, convertedZone->extendedSize - 1u);
     convertedZone->asmPreCacheData.Clear();
 }
 
@@ -554,7 +637,7 @@ inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(
 
 bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone)
 {
-    if (structureZone->structureIndex == structureZone->extendedSize) {
+    if (structureZone->structureIndex >= 0 && (uint32) structureZone->structureIndex == structureZone->extendedSize) {
         while (structureZone->levels.size() > 1) {
             structureZone->types.pop_back();
             structureZone->levels.pop_back();
@@ -582,7 +665,7 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
         switch (currentType.primaryType) {
         case InternalDissasmType::UnidimnsionalArray:
         case InternalDissasmType::UserDefined:
-            if (currentLevel < currentType.internalTypes.size()) {
+            if (currentLevel >= 0 && (size_t) currentLevel < currentType.internalTypes.size()) {
                 UpdateCurrentZoneIndex(currentType.internalTypes[currentLevel], structureZone, true);
                 structureZone->types.push_back(currentType.internalTypes[currentLevel]);
                 structureZone->levels.push_back(0);
@@ -745,15 +828,18 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
         // TODO: check textFileOffset!!
         const BufferView buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
 
+        // the cache may return fewer bytes than requested (end of file): never index past what was returned
         char buffer[9] = {};
-        for (uint32 i = 0; i < typeSize; i++)
+        for (uint32 i = 0; i < typeSize && i < buf.GetLength(); i++)
             buffer[i] = static_cast<char>(buf[i]);
 
         if (isSignedValue) {
-            int64 value = *(int64*) buffer;
+            int64 value;
+            memcpy(&value, buffer, sizeof(value));
             AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), value);
         } else {
-            uint64 value = *(uint64*) buffer;
+            uint64 value;
+            memcpy(&value, buffer, sizeof(value));
             AddStringToChars(dli, normalColor, "%s: %llu", currentType.name.data(), value);
         }
     }
@@ -976,6 +1062,9 @@ struct MappingZonesData {
 
 void Instance::RecomputeDissasmZones()
 {
+    // the zones are recreated below, the pointers kept for clearing their cached lines would dangle
+    asmData.zonesToClear.clear();
+
     std::map<uint32, std::vector<MappingZonesData>> mappingData;
     for (auto& mapping : this->settings->dissasmTypeMapped) {
         mappingData[OffsetToLinePosition(mapping.first).line].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });
@@ -1375,8 +1464,9 @@ bool Instance::ShowGoToDialog()
     if (dlg.Show() == Dialogs::Result::Ok) {
         const auto lineToReach = dlg.GetResultedLine();
         if (lineToReach != currentLine) {
-            jumps_holder.insert(Cursor.saveState());
+            const auto from = SaveCursorState();
             MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), Key::None, false);
+            RecordJump(from);
         }
     }
     /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
@@ -1390,11 +1480,13 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Copy, "copying from the disassembly view"))
+        return true;
     UnicodeStringBuilder usb{};
     if (!ProcessSelectedDataToPrintable(usb))
         return false;
 
-    if (AppCUI::OS::Clipboard::SetText(usb) == false) {
+    if (GView::App::SetClipboardText(usb) == false) {
         LocalString<128> message;
         CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", obj->GetData().GetSize(), 100), false, "");
         Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
@@ -1560,6 +1652,56 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
     if (goToEntryPoint)
         offsetToReach = &convertedZone->zoneDetails.entryPoint;
     DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine, offsetToReach);
+}
+
+CursorState Instance::SaveCursorState() const
+{
+    CursorState state;
+    const uint32 line = Cursor.startViewLine + Cursor.lineInView;
+    state.lineInView  = Cursor.lineInView;
+    state.offset      = Cursor.offset;
+    state.lineInZone  = line;
+
+    const auto zonesFound = GetZonesIndexesFromLinePosition(line);
+    if (zonesFound.size() == 1) {
+        state.zoneIndex  = zonesFound[0].zoneIndex;
+        state.lineInZone = zonesFound[0].startingLine;
+    }
+    return state;
+}
+
+void Instance::RestoreCursorState(const CursorState& state)
+{
+    uint32 line       = state.lineInZone;
+    const auto& zones = settings->parseZones;
+    if (state.zoneIndex != CursorState::NO_ZONE && state.zoneIndex < zones.size()) {
+        const auto& zone = zones[state.zoneIndex];
+        // the zone may have been collapsed in the meantime (only its title line is left)
+        const uint32 zoneLines = zone->endingLineIndex > zone->startLineIndex ? zone->endingLineIndex - zone->startLineIndex : 1u;
+        line                   = zone->startLineIndex + std::min<uint32>(state.lineInZone, zoneLines - 1u);
+    }
+    line = std::min<uint32>(line, Layout.totalLinesSize);
+
+    const uint32 lastRow = Layout.visibleRows > 0 ? Layout.visibleRows - 1u : 0u;
+    Cursor.lineInView    = std::min<uint32>(std::min<uint32>(state.lineInView, line), lastRow);
+    Cursor.startViewLine = line - Cursor.lineInView;
+    Cursor.offset        = std::min<uint32>(state.offset, Layout.textSize);
+    // the view changed -> the cached lines of the dissasm zones must be recomputed
+    Cursor.hasMovedView = true;
+}
+
+void Instance::RecordJump(const CursorState& from)
+{
+    jumps_holder.Record(from, SaveCursorState());
+}
+
+bool Instance::JumpInHistory(bool back)
+{
+    const auto target = back ? jumps_holder.JumpBack() : jumps_holder.JumpForward();
+    if (!target.has_value())
+        return false;
+    RestoreCursorState(target.value());
+    return true;
 }
 
 void DrawLineInfo::WriteErrorToScreen(std::string_view error) const

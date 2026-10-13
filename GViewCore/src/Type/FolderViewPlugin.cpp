@@ -67,6 +67,7 @@ bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Contro
     }
     catch (std::filesystem::filesystem_error const& ex)
     {
+        (void) ex;
         RETURNERROR(false, ex.what());
     }
 }

@@ -210,7 +210,10 @@ bool MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Fin
     CHECK(dos, false, "");
     CHECK(dos->e_magic == IMAGE_DOS_SIGNATURE, false, "");
 
-    buffer     = file.Get(offset, buffer.GetLength() + dos->e_lfanew + sizeof(ImageNTHeaders64), true);
+    const uint64 ntRequiredSize = buffer.GetLength() + static_cast<uint64>(dos->e_lfanew) + sizeof(ImageNTHeaders64);
+    CHECK(ntRequiredSize <= 0xFFFFFFFFULL, false, "");
+
+    buffer     = file.Get(offset, static_cast<uint32>(ntRequiredSize), true);
     auto nth32 = buffer.GetObject<ImageNTHeaders32>(dos->e_lfanew);
     CHECK(nth32, false, "");
     CHECK(nth32->Signature == IMAGE_NT_SIGNATURE, false, "");

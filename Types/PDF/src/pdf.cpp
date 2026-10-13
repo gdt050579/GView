@@ -1,10 +1,10 @@
 #include "pdf.hpp"
 #include <deque>
-#include <codecvt>
 #include <sstream>
 #include <iomanip>
 #include <cctype>
 #include <charconv>
+#include <limits>
 #include <podofo/podofo.h>
 
 using namespace AppCUI;
@@ -34,7 +34,7 @@ constexpr string_view PDF_ICON = "................"  // 1
                                  "................"  // 15
                                  "................"; // 16
 
-extern "C" {
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
     CHECK(buf.GetLength() >= sizeof(PDF::Header), false, "");
@@ -53,6 +53,7 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
 PLUGIN_EXPORT TypeInterface* CreateInstance()
 {
     return new PDF::PDFFile;
+}
 }
 
 bool CheckType(GView::Utils::DataCache& data, uint64& offset, const uint64& size_type, const uint8_t PDF_ARRAY[])
@@ -199,6 +200,14 @@ static std::string DecodeName(GView::Utils::DataCache& data, uint64_t& offset, c
     return result;
 }
 
+// file-derived values are clamped (not wrapped) into the destination field
+template <typename T>
+static T SaturateTo(uint64_t value)
+{
+    constexpr auto maxValue = static_cast<uint64_t>(std::numeric_limits<T>::max());
+    return value > maxValue ? std::numeric_limits<T>::max() : static_cast<T>(value);
+}
+
 uint64_t GetTypeValue(GView::Utils::DataCache& data, uint64_t& offset, const uint64_t& dataSize)
 {
     if (offset >= dataSize) {
@@ -246,16 +255,13 @@ uint64_t GetTypeValue(GView::Utils::DataCache& data, uint64_t& offset, const uin
 
 uint8 GetWValue(GView::Utils::DataCache& data, uint64& offset)
 {
-    std::string lengthValStr;
     uint8_t buffer;
     uint8 value = 0;
     if (data.Copy(offset, buffer)) {
-        lengthValStr.push_back(buffer);
         offset++;
-    }
-
-    if (!lengthValStr.empty()) {
-        value = std::stoull(lengthValStr);
+        if (IsDigit(buffer)) {
+            value = static_cast<uint8>(buffer - '0');
+        }
     }
     return value;
 }
@@ -416,8 +422,11 @@ uint64 GetNumberOfEntries(uint64& offset, const uint64& dataSize, GView::Utils::
             offset++;
         }
 
-        if (!numEntriesStr.empty()) {
-            numEntries = static_cast<uint16_t>(std::stoi(numEntriesStr));
+        // only digits were collected, but there may be too many of them for std::stoi (it would throw)
+        uint64_t parsedEntries = 0;
+        const auto entriesResult = std::from_chars(numEntriesStr.data(), numEntriesStr.data() + numEntriesStr.size(), parsedEntries, 10);
+        if (entriesResult.ec == std::errc()) {
+            numEntries = SaturateTo<uint16_t>(parsedEntries);
         }
     }
     return numEntries;
@@ -660,7 +669,12 @@ bool ExtractObjectNumbers(GView::Utils::DataCache& data, uint64& offset, uint64&
         return false;
     }
 
-    generationNumber = std::stoull(genStr);
+    uint64 generation = 0;
+    const auto genResult = std::from_chars(genStr.data(), genStr.data() + genStr.size(), generation, 10);
+    if (genResult.ec != std::errc() || generation > 0xFFFF) {
+        return false;
+    }
+    generationNumber = static_cast<uint16>(generation);
 
     while (offset > 0) {
         if (!data.Copy(offset, buffer)) {
@@ -686,8 +700,8 @@ bool ExtractObjectNumbers(GView::Utils::DataCache& data, uint64& offset, uint64&
         return false;
     }
 
-    objectNumber = std::stoull(numberStr);
-    return true;
+    const auto numberResult = std::from_chars(numberStr.data(), numberStr.data() + numberStr.size(), objectNumber, 10);
+    return numberResult.ec == std::errc();
 }
 
 void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF::PDFFile> pdf)
@@ -773,8 +787,11 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                     }
                     offset--;
                 }
-                if (!xrefOffsetStr.empty()) {
-                    crossRefOffset = std::stoull(xrefOffsetStr);
+                // from_chars also rejects an empty string and a value that does not fit (std::stoull would throw)
+                uint64_t parsedXrefOffset = 0;
+                const auto xrefResult = std::from_chars(xrefOffsetStr.data(), xrefOffsetStr.data() + xrefOffsetStr.size(), parsedXrefOffset, 10);
+                if (xrefResult.ec == std::errc()) {
+                    crossRefOffset = parsedXrefOffset;
                 } else {
                     Dialogs::MessageBox::ShowError("Error!", "Anomaly found: Couldn't find the xref offset!");
                     pdf->errList.AddError("Couldn't find the xref offset (0x%llX)", (uint64_t) offset);
@@ -903,7 +920,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.startBuffer = crossRefOffset;
             pdfObject.type        = PDF::SectionPDFObjectType::CrossRefStream;
             pdfObject.number      = GetTypeValue(data, offset, dataSize);
-            pdfObject.generation  = GetTypeValue(data, offset, dataSize);
+            pdfObject.generation  = SaturateTo<uint16>(GetTypeValue(data, offset, dataSize));
 
             while (!end_tag && offset < dataSize) {
                 if (CheckType(data, offset, PDF::KEY::PDF_STREAM_SIZE, PDF::KEY::PDF_STREAM)) {
@@ -947,16 +964,16 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
                                 std::string decodedName2 = DecodeName(data, offset, dataSize);
                                 if (IsEqualType(decodedName2, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
                                     offset += 1;
-                                    decodeParms.column = GetTypeValue(data, offset, dataSize);
+                                    decodeParms.column = SaturateTo<uint16>(GetTypeValue(data, offset, dataSize));
                                 } else if (IsEqualType(decodedName2, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
                                     offset += 1;
-                                    decodeParms.predictor = GetTypeValue(data, offset, dataSize);
+                                    decodeParms.predictor = SaturateTo<uint8>(GetTypeValue(data, offset, dataSize));
                                 } else if (IsEqualType(decodedName2, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
                                     offset += 1;
-                                    decodeParms.bitsPerComponent = GetTypeValue(data, offset, dataSize);
+                                    decodeParms.bitsPerComponent = SaturateTo<uint8>(GetTypeValue(data, offset, dataSize));
                                 } else if (IsEqualType(decodedName2, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
                                     offset += 1;
-                                    decodeParms.earlyChange = GetTypeValue(data, offset, dataSize);
+                                    decodeParms.earlyChange = SaturateTo<uint8>(GetTypeValue(data, offset, dataSize));
                                 }
                             } else {
                                 offset++;
@@ -1271,7 +1288,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PDF
             pdfObject.startBuffer = objOffset;
             pdfObject.type        = PDF::SectionPDFObjectType::Object;
             pdfObject.number      = GetTypeValue(data, objOffset, dataSize);
-            pdfObject.generation  = GetTypeValue(data, objOffset, dataSize);
+            pdfObject.generation  = SaturateTo<uint16>(GetTypeValue(data, objOffset, dataSize));
 
             uint64_t endobjOffset = (i + 1 < objectOffsets.size()) ? objectOffsets[i + 1] : eofOffset;
 
@@ -1782,7 +1799,7 @@ static std::string MakeDateReadable(const std::string& pdfDate)
         sec_ = 0;
     }
 
-    // Format: YYYY-MM-DD HH:MM:SS ±HH:MM
+    // Format: YYYY-MM-DD HH:MM:SS Â±HH:MM
     std::ostringstream out;
     out << std::setw(4) << std::setfill('0') << year << "-" << std::setw(2) << std::setfill('0') << month << "-" << std::setw(2) << std::setfill('0') << day
         << " " << std::setw(2) << std::setfill('0') << hour << ":" << std::setw(2) << std::setfill('0') << min_ << ":" << std::setw(2) << std::setfill('0')
@@ -1834,7 +1851,7 @@ static std::string ParseLiteralString(GView::Utils::DataCache& data, uint64& off
 
             // \( -> '(' , \) -> ')' , \\ -> '\'
             //   Note: These do NOT change parenLevel, because
-            //   they’re considered "escaped" parentheses.
+            //   theyâ€™re considered "escaped" parentheses.
             case PDF::DC::LEFT_PARETHESIS:
             case PDF::DC::RIGHT_PARETHESIS:
             case '\\':
@@ -2055,19 +2072,19 @@ void ProcessPDFTree(
                 objectNode.decodeObj.decodeParams.hasDecodeParms = true;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS) && objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
-                objectNode.decodeObj.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
+                objectNode.decodeObj.decodeParams.column = SaturateTo<uint16>(GetTypeValue(data, objectOffset, dataSize));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR) && objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
-                objectNode.decodeObj.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
+                objectNode.decodeObj.decodeParams.predictor = SaturateTo<uint8>(GetTypeValue(data, objectOffset, dataSize));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC) && objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
-                objectNode.decodeObj.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
+                objectNode.decodeObj.decodeParams.bitsPerComponent = SaturateTo<uint8>(GetTypeValue(data, objectOffset, dataSize));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG) && objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
-                objectNode.decodeObj.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
+                objectNode.decodeObj.decodeParams.earlyChange = SaturateTo<uint8>(GetTypeValue(data, objectOffset, dataSize));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_K_SIZE, PDF::KEY::PDF_K) && objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
@@ -2079,14 +2096,14 @@ void ProcessPDFTree(
                     isNegative = true;
                 }
                 objectOffset++;
-                objectNode.decodeObj.decodeParams.K = GetTypeValue(data, objectOffset, dataSize);
+                objectNode.decodeObj.decodeParams.K = SaturateTo<int>(GetTypeValue(data, objectOffset, dataSize));
                 if (isNegative) {
                     objectNode.decodeObj.decodeParams.K *= -1;
                 }
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_ROWS_SIZE, PDF::KEY::PDF_ROWS) && objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
-                objectNode.decodeObj.decodeParams.rows = GetTypeValue(data, objectOffset, dataSize);
+                objectNode.decodeObj.decodeParams.rows = SaturateTo<uint16>(GetTypeValue(data, objectOffset, dataSize));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_ENDOFLINE_SIZE, PDF::KEY::PDF_ENDOFLINE) && objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
@@ -2130,7 +2147,7 @@ void ProcessPDFTree(
                   IsEqualType(decodedName, PDF::KEY::PDF_DMGROWSBEFERROR_SIZE, PDF::KEY::PDF_DMGROWSBEFERROR) &&
                   objectNode.decodeObj.decodeParams.hasDecodeParms) {
                 objectOffset += 1;
-                objectNode.decodeObj.decodeParams.dmgRowsBefError = GetTypeValue(data, objectOffset, dataSize);
+                objectNode.decodeObj.decodeParams.dmgRowsBefError = SaturateTo<uint8>(GetTypeValue(data, objectOffset, dataSize));
                 objectOffset--;
             } else if (IsEqualType(decodedName, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
                 const uint64 copyTypeOffset = objectOffset;
@@ -2465,16 +2482,16 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
                             foundLength  = true;
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_COLUMNS_SIZE, PDF::KEY::PDF_COLUMNS)) {
                             objectOffset += 1;
-                            pdf->objectNodeRoot.decodeObj.decodeParams.column = GetTypeValue(data, objectOffset, dataSize);
+                            pdf->objectNodeRoot.decodeObj.decodeParams.column = SaturateTo<uint16>(GetTypeValue(data, objectOffset, dataSize));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_PREDICTOR_SIZE, PDF::KEY::PDF_PREDICTOR)) {
                             objectOffset += 1;
-                            pdf->objectNodeRoot.decodeObj.decodeParams.predictor = GetTypeValue(data, objectOffset, dataSize);
+                            pdf->objectNodeRoot.decodeObj.decodeParams.predictor = SaturateTo<uint8>(GetTypeValue(data, objectOffset, dataSize));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_BPC_SIZE, PDF::KEY::PDF_BPC)) {
                             objectOffset += 1;
-                            pdf->objectNodeRoot.decodeObj.decodeParams.bitsPerComponent = GetTypeValue(data, objectOffset, dataSize);
+                            pdf->objectNodeRoot.decodeObj.decodeParams.bitsPerComponent = SaturateTo<uint8>(GetTypeValue(data, objectOffset, dataSize));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_EARLYCG_SIZE, PDF::KEY::PDF_EARLYCG)) {
                             objectOffset += 1;
-                            pdf->objectNodeRoot.decodeObj.decodeParams.earlyChange = GetTypeValue(data, objectOffset, dataSize);
+                            pdf->objectNodeRoot.decodeObj.decodeParams.earlyChange = SaturateTo<uint8>(GetTypeValue(data, objectOffset, dataSize));
                         } else if (IsEqualType(decodedName, PDF::KEY::PDF_TYPE_SIZE, PDF::KEY::PDF_TYPE)) {
                             const uint64 copyObjectOffset = objectOffset;
                             std::string typeNameObject    = GetDictionaryType(data, objectOffset, dataSize, pdf->objectNodeRoot.pdfObject.dictionaryTypes);
@@ -2643,7 +2660,7 @@ static void ProcessPDF(Reference<PDF::PDFFile> pdf)
         }
     }
 
-    pdf->pdfStats.objectCount = pdf->pdfObjects.size();
+    pdf->pdfStats.objectCount = SaturateTo<uint16>(pdf->pdfObjects.size());
     FindAndProcessMetadataObjects(pdf);
 }
 
@@ -2885,10 +2902,7 @@ void CreateTextView(const std::string& textToShow, const std::u16string_view& pd
 
 bool SaveExtractedTextToFile(const std::string& text, const std::u16string_view& filePath)
 {
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    std::string utf8FilePath = convert.to_bytes(filePath.data(), filePath.data() + filePath.size());
-
-    std::ofstream ofs(utf8FilePath, std::ios::out | std::ios::binary);
+    std::ofstream ofs(GView::Utils::UTF16ToPath(filePath), std::ios::out | std::ios::binary);
     if (!ofs) {
         return false;
     }
@@ -2901,6 +2915,8 @@ bool SaveExtractedTextToFile(const std::string& text, const std::u16string_view&
 
 bool PDF::PDFFile::ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFFile> pdf)
 {
+    if (GView::App::IsExportBlockedFor(pdf->obj, "saving extracted text to disk"))
+        return false;
     auto extractedText = ExtractTextFromPDF(pdf);
     if (extractedText.empty()) {
         Dialogs::MessageBox::ShowNotification("Notification", "Couldn't find text to extract from this PDF!");
@@ -2908,12 +2924,9 @@ bool PDF::PDFFile::ExtractAndSaveTextWithDialog(Reference<GView::Type::PDF::PDFF
     }
 
     // build default ".txt" name based on the PDF filename
-    std::u16string_view pdfU16Path = pdf->obj->GetPath();
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    std::string pdfUTF8Path = convert.to_bytes(pdfU16Path.data(), pdfU16Path.data() + pdfU16Path.size());
-
-    std::filesystem::path pdfFsPath(pdfUTF8Path);
-    std::string defaultTxtName       = pdfFsPath.stem().string() + ".txt";
+    const std::filesystem::path pdfFsPath = GView::Utils::UTF16ToPath(pdf->obj->GetPath());
+    // u16string() instead of string(): on Windows string() converts to the ANSI code page and throws for unrepresentable names
+    std::u16string defaultTxtName    = pdfFsPath.stem().u16string() + u".txt";
     std::filesystem::path defaultDir = pdfFsPath.parent_path();
 
     // show "Save As" dialog
@@ -2958,6 +2971,7 @@ bool PDF::PDFFile::ExtractAndOpenText(Reference<GView::Type::PDF::PDFFile> pdf)
     return true;
 }
 
+extern "C" {
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto pdf = win->GetObject()->GetContentType<PDF::PDFFile>();

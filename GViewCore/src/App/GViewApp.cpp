@@ -6,6 +6,12 @@
 #include "DissasmViewer.hpp"
 #include "LexicalViewer.hpp"
 #include "../Components/AnalysisEngine/AnalysisEngineInternal.hpp"
+#include "StaticPlugins.hpp"
+#ifdef GVIEW_ENABLE_REMOTE
+#    include "../Remote/RemoteConfig.hpp"
+#endif
+#include "../Update/Installer.hpp"
+#include "../Update/UpdateService.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -64,6 +70,25 @@ void GView::App::Run(std::string_view testing_script)
         else
             AppCUI::Application::RunTestScript(testing_script);
     }
+    // learning session: final session_end + bounded telemetry flush, remove restrictions, wipe secrets
+    GView::Security::Learning::Hooks::Shutdown();
+    // auto-updater: cancel a running background check (an accepted update is installed by FinishPendingUpdate)
+    GView::Update::Service::Shutdown();
+}
+int GView::App::FinishPendingUpdate()
+{
+    return GView::Update::Installer::Execute();
+}
+#ifdef BUILD_FOR_WINDOWS
+void GView::App::SetCommandLineArguments(int argc, const wchar_t** argv)
+#else
+void GView::App::SetCommandLineArguments(int argc, const char** argv)
+#endif
+{
+    std::vector<GView::Update::Installer::NativeString> args;
+    for (int i = 1; i < argc && argv != nullptr && argv[i] != nullptr; i++)
+        args.emplace_back(argv[i]);
+    GView::Update::Installer::SetRelaunchArguments(std::move(args));
 }
 bool GView::App::ResetConfiguration()
 {
@@ -81,6 +106,13 @@ bool GView::App::ResetConfiguration()
     GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
     GView::Components::AnalysisEngine::AnalysisEngineConfig::Update(ini["AnalysisEngine"]);
 
+#ifdef GVIEW_STATIC_PLUGINS
+    // the plugins are linked into the executable
+    for (const auto& plugin : GView::StaticPlugins::GetTypePlugins())
+        plugin.fnUpdateSettings(ini[std::string("Type.").append(plugin.name)]);
+    for (const auto& plugin : GView::StaticPlugins::GetGenericPlugins())
+        plugin.fnUpdateSettings(ini[std::string("Generic.").append(plugin.name)]);
+#else
     // parse types and add specs
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();
     typesPath.remove_filename();
@@ -100,20 +132,40 @@ bool GView::App::ResetConfiguration()
         if ((fileEntry.path().extension() == ".gpl") && (fileEntry.path().filename().string().starts_with("lib")))
             UpdateSettingsForGenericPlugin(ini, fileEntry.path());
     }
+#endif
 
     // generic GView settings
     ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
 
-    const std::array<std::reference_wrapper<KeyboardControl>, 6> localKeys = {
-        InstanceCommands::INSTANCE_CHANGE_VIEW,     InstanceCommands::INSTANCE_SWITCH_TO_VIEW, InstanceCommands::INSTANCE_COMMAND_GOTO,
-        InstanceCommands::FILE_WINDOW_COMMAND_FIND, InstanceCommands::INSTANCE_CHOOSE_TYPE,    InstanceCommands::INSTANCE_KEY_CONFIGURATOR
-    };
+    // Learning and Evaluation Mode (see docs/source/learning_mode_protocol.rst)
+    //   ServerConnectionString          - saved after the first verified connect
+    //   PolicyPublicKey                 - 64 hex chars, used when the connection string has no public key (v1)
+    //   LearningAllowPlainHttpLocalhost - allow http:// for localhost/127.0.0.1 only (teacher-laptop labs)
+    //   LearningDownloadFolder          - default folder for file-mode deliveries (empty = <Documents>/GView/<week>)
+    ini["GView"]["PolicyPublicKey"]                 = "";
+    ini["GView"]["LearningAllowPlainHttpLocalhost"] = false;
+    ini["GView"]["LearningDownloadFolder"]          = "";
 
-    LocalString<64> keyCommand;
-    for (auto& k : localKeys) {
-        keyCommand.SetFormat("Key.%s", k.get().Caption);
-        ini["GView"][keyCommand.GetText()] = k.get().Key;
-    }
+#ifdef GVIEW_ENABLE_REMOTE
+    // remote TUI (see docs/source/remote_protocol.rst)
+    GView::Remote::WriteDefaultRemoteConfig(ini);
+#endif
+
+    // Auto-updater (see docs/source/updates.rst)
+    //   UpdateCheck              - daily background check for a newer GView release
+    //   UpdateIncludePreReleases - also offer GitHub pre-releases (every GView release so far is a pre-release)
+    //   UpdateFeedUrl            - GitHub "list releases" API URL (https only)
+    //   UpdateCheckIntervalHours - minimum delay between two automatic checks
+    //   UpdateRemindAfterDays    - "Remind me later" delay (0 = never remind about the same version again)
+    //   UpdateProxy              - optional proxy for the update requests (https_proxy is honoured as well)
+    //   UpdateLastCheck, UpdateLastSeenVersion, UpdateRemindAt, UpdateSkippedVersion, UpdateETag,
+    //   UpdateCachedFeedVersion  - state written by GView
+    GView::Update::UpdateSettings::WriteDefaults(ini);
+
+    // key bindings: only the user changes are stored ([Keys.*] sections, written by the "Keyboard shortcuts" window).
+    // A reset restores the built-in keys -> saving an empty registry removes every [Keys.*] section and the legacy
+    // Key.* values of [GView] / [View.*] (the keyboard profile is reset with the [AppCUI] section above).
+    Keys::Registry{}.Save(ini);
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
@@ -141,7 +193,7 @@ void GView::App::OpenFile(
                 gviewAppInstance->AddFileWindow(absPath, method, typeName, parent, creationProcess);
             }
         }
-        catch (std::filesystem::filesystem_error /* e */)
+        catch (const std::filesystem::filesystem_error& /* e */)
         {
             gviewAppInstance->AddFileWindow(path, method, typeName, parent, creationProcess);
         }
@@ -159,6 +211,31 @@ void GView::App::OpenBuffer(
     if (gviewAppInstance)
         gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName, parent, creationProcess);
 }
+static std::string g_startupConnectionString;
+void GView::App::OpenLearningModeOnStart(std::string_view connectionString)
+{
+    g_startupConnectionString.assign(connectionString);
+}
+bool GView::App::TakeStartupLearningConnection(std::string& out)
+{
+    if (g_startupConnectionString.empty())
+        return false;
+    out = std::move(g_startupConnectionString);
+    g_startupConnectionString.clear();
+    return true;
+}
+bool GView::App::OpenDataObject(
+      std::unique_ptr<AppCUI::OS::DataObject> data,
+      const ConstString& name,
+      const ConstString& path,
+      OpenMethod method,
+      std::string_view typeName,
+      Reference<Window> parent,
+      const ConstString& creationProcess)
+{
+    CHECK(gviewAppInstance, false, "GView was not initialized !");
+    return gviewAppInstance->AddDataObjectWindow(std::move(data), name, path, method, typeName, parent, creationProcess);
+}
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)
 {
@@ -172,12 +249,12 @@ uint32 GView::App::GetObjectsCount()
 }
 std::string_view GView::App::GetTypePluginName(uint32 index)
 {
-    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    CHECK(gviewAppInstance, std::string_view{}, "GView was not initialized !");
     return gviewAppInstance->GetTypePluginName(index);
 }
 std::string_view GView::App::GetTypePluginDescription(uint32 index)
 {
-    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    CHECK(gviewAppInstance, std::string_view{}, "GView was not initialized !");
     return gviewAppInstance->GetTypePluginDescription(index);
 }
 uint32 CORE_EXPORT GView::App::GetTypePluginsCount()
@@ -250,6 +327,10 @@ bool CORE_EXPORT GView::App::ShowAddNoteDialog()
     std::u16string newNodeStr;
     if (!win.GetNote().ToString(newNodeStr))
         return false;
-    GetCurrentWindow()->AddNote(newNodeStr);
+    auto current = GetCurrentWindow();
+    current->AddNote(newNodeStr);
+    // telemetry records only that a note was added (never its content)
+    if (auto* fw = dynamic_cast<FileWindow*>(current.operator->()); fw != nullptr)
+        GView::Security::Learning::Hooks::OnSimpleEvent(fw->GetObject(), GView::Security::Learning::Hooks::SimpleEvent::NoteAdd);
     return true;
 }

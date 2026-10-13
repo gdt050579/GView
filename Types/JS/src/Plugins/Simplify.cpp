@@ -155,7 +155,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest Simplify::Execute(GView::Vi
             // The destination can overlap with the source
             std::u16string content = { ((std::u16string_view) data.editor).data() + fun->sourceStart, fun->sourceSize };
 
-            data.editor.Insert(dest, content);
+            data.editor.Insert(static_cast<uint32>(dest), content);
             data.editor.Delete(fun->sourceStart + fun->sourceSize, fun->sourceSize);
 
             if (info.anchor == nullptr) {

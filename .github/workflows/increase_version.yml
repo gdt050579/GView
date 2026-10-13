@@ -1,4 +1,10 @@
+# .github/workflows/increase_version.yml
+#
+# Bumps GVIEW_VERSION in GViewCore/include/GView.hpp after every push to main (minor by default) and pushes the
+# commit back. The push uses GITHUB_TOKEN, so by design it does not trigger other workflows (no loops).
 name: Version Increase
+
+permissions: {}
 
 on:
   push:
@@ -7,39 +13,45 @@ on:
   workflow_dispatch:
     inputs:
       versionToUpdate:
-        description: 'Version to update'     
+        description: 'Version to update'
         required: true
-        default: 'minor' 
+        default: 'minor'
         type: choice
         options:
         - major
         - minor
         - patch
 
+# Serialize bumps on the same branch so two merges cannot race on the push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  version-ubuntu:
-    runs-on: [ubuntu-latest]
+  bump:
+    name: Bump version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # push the version-bump commit
     steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: recursive
+      # persist-credentials stays at its default (true): this job pushes the bump commit with GITHUB_TOKEN.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked]
 
-    - name: Get Version to env and increase it
-      run: |
-        output=$(python .github/workflows/get_version_and_update.py GViewCore/include/GView.hpp ${{ github.event.inputs.versionToUpdate }})
-        echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
-    
-    - name: Show Version
-      run: echo "${{ env.GVIEW_VERSION }}"    
+      - name: Increase version
+        env:
+          VERSION_PART: ${{ inputs.versionToUpdate || 'minor' }}
+        run: |
+          set -euo pipefail
+          ver=$(python3 .github/workflows/get_version_and_update.py GViewCore/include/GView.hpp "$VERSION_PART")
+          echo "GVIEW_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "New version: $ver"
 
-    - name: Commit files
-      run: |
-        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git commit -m "Updated GVIEW version ${{ env.GVIEW_VERSION }}" -a
-    - name: Push changes
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: ${{ github.ref }}
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add GViewCore/include/GView.hpp
+          git commit -m "Updated GVIEW version $GVIEW_VERSION"
+          git push origin "HEAD:$GITHUB_REF_NAME"

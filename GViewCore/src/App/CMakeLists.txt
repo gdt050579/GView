@@ -8,7 +8,24 @@ target_sources(GViewCore PRIVATE
     TutorialWindow.cpp
     AboutWindow.cpp
     KeyConfiguratorWindow.cpp
+    KeyBindings.cpp
+    ViewerKeys.cpp
     QueryInterface.cpp
     OptionsWindow.cpp
-    RestrictedModeWindow.cpp
+    LearningModeWindow.cpp
+    LearningSubmitDialog.cpp
+    UpdateDialog.cpp
+    GViewDesktop.cpp
+    TemporaryFolder.cpp
 )
+
+# change detection of the persistent storage of the web build: pure logic, built everywhere for the unit tests
+target_sources(GViewCore PRIVATE BrowserStorageDiff.cpp)
+
+if (EMSCRIPTEN)
+    target_sources(GViewCore PRIVATE BrowserHost.cpp BrowserStorage.cpp StoredFilesWindow.cpp)
+endif()
+
+add_testing_sources(GViewCore tests_keybindings.cpp)
+add_testing_sources(GViewCore tests_browserstorage.cpp)
+add_testing_sources(GViewCore tests_temporaryfolder.cpp)

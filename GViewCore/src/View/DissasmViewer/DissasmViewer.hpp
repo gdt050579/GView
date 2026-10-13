@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <utility>
 #include <deque>
+#include <optional>
 #include <list>
 #include <cassert>
 #include <capstone/capstone.h>
@@ -38,6 +39,12 @@ namespace View
         static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 180;
+
+        // x86/x64: a cached offset (zone line <-> file offset) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes of code, so decoding
+        // any line never needs more than the bytes between two cached offsets
+        static constexpr uint64 DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
+        static constexpr uint64 DISSASM_MAX_INSTRUCTION_SIZE      = 15;
+        static constexpr uint64 DISSASM_MAX_CODE_WINDOW_SIZE      = 4096;
 
         static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
 
@@ -80,20 +87,29 @@ namespace View
         };
 
         struct DissasmStructureType {
-            InternalDissasmType primaryType;
-            std::string_view name;
+            InternalDissasmType primaryType{ InternalDissasmType::CustomTypesStartingId };
+            std::string_view name{};
 
-            uint32 secondaryType;
-            uint32 width;
-            uint32 height;
+            uint32 secondaryType{ 0 };
+            uint32 width{ 0 };
+            uint32 height{ 0 };
 
-            std::vector<DissasmStructureType> internalTypes;
+            std::vector<DissasmStructureType> internalTypes{};
             uint32 GetExpandedSize() const;
+
+            DissasmStructureType() = default;
+            DissasmStructureType(InternalDissasmType primary, std::string_view name, uint32 secondary = 0, uint32 width = 0, uint32 height = 0)
+                : primaryType(primary), name(name), secondaryType(secondary), width(width), height(height)
+            {
+            }
         };
 
         enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone };
 
         struct ParseZone {
+            // zones are owned through std::unique_ptr<ParseZone>, the derived members must be destroyed as well
+            virtual ~ParseZone() = default;
+
             uint32 startLineIndex;
             uint32 endingLineIndex;
             uint32 extendedSize;
@@ -146,33 +162,44 @@ namespace View
         struct DissasmAsmPreCacheLine {
             enum InstructionFlag : uint8 { NoneFlag = 0x00, CallFlag = 0x1, PushFlag = 0x2, JmpFlag = 0x4 };
 
-            enum LineArrowToDrawFlag : uint8 {
-                NoLines   = 0x00,
-                DrawLine1 = 0x1,
-                DrawLine2 = 0x2,
-                DrawLine3 = 0x4,
-                DrawLine4 = 0x8,
-                DrawLine5 = 0x10,
+            enum class LocalVariableKind : uint8 { None, Definition, Reference };
 
-                DrawStartingLine = 0x20,
-                DrawEndingLine   = 0x40
+            // the jump arrows are drawn left of the instructions: ARROW_LANES vertical lanes followed by a column for the arrow heads
+            static constexpr uint32 ARROW_LANES   = 3;
+            static constexpr uint32 ARROW_COLUMNS = ARROW_LANES + 1;
+            // the sides of an arrow cell that are connected to its neighbours
+            enum ArrowCellFlag : uint8 {
+                ArrowNone  = 0x00,
+                ArrowUp    = 0x01,
+                ArrowDown  = 0x02,
+                ArrowLeft  = 0x04,
+                ArrowRight = 0x08,
+                ArrowHead  = 0x10, // the arrow reaches its target on this line
             };
 
             uint64 address     = 0;
             uint8 bytes[24]    = {};
             uint16 size        = 0;
             uint32 currentLine = 0;
-            char mnemonic[CS_MNEMONIC_SIZE];
+            char mnemonic[CS_MNEMONIC_SIZE] = {};
             char* op_str       = nullptr;
             uint32 op_str_size = 0;
             std::optional<uint64> hexValue;
+            std::optional<uint64> branchTarget; // target of a direct jump / call, same base as `address`
             uint8 flags                           = 0;
-            uint8 lineArrowToDraw                 = 0;
+            uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
             const void* mapping                   = nullptr;
             const DissasmCodeInternalType* parent = nullptr;
 
             bool shouldAddButton = false;
             bool isZoneCollapsed = false;
+
+            // local variable defined by this line (variable line) or used by the operands of this instruction
+            LocalVariableKind localVariableKind = LocalVariableKind::None;
+            int32 localVariableOffset           = 0;
+            uint64 localVariableFunction        = 0;
+            uint32 localVariableNameStart       = 0; // position of the variable name inside op_str
+            uint32 localVariableNameSize        = 0;
 
             uint32 GetLineSize() const
             {
@@ -183,44 +210,51 @@ namespace View
 
             DissasmAsmPreCacheLine(DissasmAsmPreCacheLine&& other) noexcept(true)
             {
-                address         = other.address;
-                size            = other.size;
-                currentLine     = other.currentLine;
-                op_str_size     = other.op_str_size;
-                op_str          = other.op_str;
-                other.op_str    = nullptr;
-                flags           = other.flags;
-                lineArrowToDraw = other.lineArrowToDraw;
-                mapping         = other.mapping;
-                memcpy(bytes, other.bytes, sizeof(bytes));
-                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
-                parent          = other.parent;
-                shouldAddButton = other.shouldAddButton;
-                isZoneCollapsed = false;
+                CopyFieldsFrom(other);
+                op_str       = other.op_str;
+                other.op_str = nullptr;
             }
             DissasmAsmPreCacheLine(const DissasmAsmPreCacheLine& other)
             {
-                address         = other.address;
-                size            = other.size;
-                currentLine     = other.currentLine;
-                op_str_size     = other.op_str_size;
-                op_str          = portable_strdup(other.op_str);
-                flags           = other.flags;
-                lineArrowToDraw = other.lineArrowToDraw;
-                mapping         = other.mapping;
-                memcpy(bytes, other.bytes, sizeof(bytes));
-                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
-                parent          = other.parent;
-                shouldAddButton = other.shouldAddButton;
-                isZoneCollapsed = false;
+                CopyFieldsFrom(other);
+                op_str = other.op_str ? portable_strdup(other.op_str) : nullptr;
             }
+            // op_str is an owned raw buffer: assigning would either leak or double free it
+            DissasmAsmPreCacheLine& operator=(const DissasmAsmPreCacheLine&) = delete;
+            DissasmAsmPreCacheLine& operator=(DissasmAsmPreCacheLine&&)      = delete;
             bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, struct DrawLineInfo* dli = nullptr);
             bool TryGetDataFromInsn(DissasmInsnExtractLineParams& params);
+            void SetMnemonic(std::string_view text); // always NUL terminated, truncated to CS_MNEMONIC_SIZE - 1
+            void SetOperands(const char* operands, const struct DissasmCodeZone* zone);
 
             ~DissasmAsmPreCacheLine()
             {
                 if (op_str)
                     free(op_str);
+            }
+
+          private:
+            void CopyFieldsFrom(const DissasmAsmPreCacheLine& other)
+            {
+                address     = other.address;
+                size        = other.size;
+                currentLine = other.currentLine;
+                op_str_size = other.op_str_size;
+                memcpy(bytes, other.bytes, sizeof(bytes));
+                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                hexValue               = other.hexValue;
+                branchTarget           = other.branchTarget;
+                flags                  = other.flags;
+                memcpy(arrowCells, other.arrowCells, sizeof(arrowCells));
+                mapping                = other.mapping;
+                parent                 = other.parent;
+                shouldAddButton        = other.shouldAddButton;
+                isZoneCollapsed        = other.isZoneCollapsed;
+                localVariableKind      = other.localVariableKind;
+                localVariableOffset    = other.localVariableOffset;
+                localVariableFunction  = other.localVariableFunction;
+                localVariableNameStart = other.localVariableNameStart;
+                localVariableNameSize  = other.localVariableNameSize;
             }
         };
 
@@ -371,6 +405,7 @@ namespace View
             int32 adjustedZoneSize;
             bool hasAdjustedSize;
             bool enableDeepScanDissasmOnStart;
+            bool enableLocalVariablesDetection; // requires enableDeepScanDissasmOnStart
             Reference<GView::Object> obj;
             uint64 maxLocationMemoryMappingSize;
             uint32 visibleRows;
@@ -452,52 +487,70 @@ namespace View
             void WriteErrorToScreen(std::string_view error) const;
         };
 
+        // A cursor location stored by the jumps history. The line is kept relative to the zone that contains it, so the
+        // location survives other zones being collapsed / expanded (that shifts the absolute line numbers).
         struct CursorState {
-            uint32 startViewLine, lineInView;
+            static constexpr uint32 NO_ZONE = 0xFFFFFFFFu;
+
+            uint32 zoneIndex{ NO_ZONE }; // NO_ZONE -> lineInZone is an absolute line
+            uint32 lineInZone{ 0 };
+            uint32 lineInView{ 0 }; // the row of the cursor on the screen
+            uint32 offset{ 0 };     // the column of the cursor
 
             bool operator==(const CursorState& other) const
             {
-                return startViewLine == other.startViewLine && lineInView == other.lineInView;
+                return zoneIndex == other.zoneIndex && lineInZone == other.lineInZone && lineInView == other.lineInView && offset == other.offset;
             }
         };
 
+        // Back / forward history of the jumps (follow call / jump, go to entry point, go to line), like in a browser:
+        // the list holds the visited locations (oldest first) and `current` is the one the cursor arrived at last.
         class JumpsHolder
         {
             const size_t maxCapacity;
-            int32 current_index;
-            std::deque<CursorState> jumps;
+            size_t current;
+            std::deque<CursorState> history;
 
           public:
-            JumpsHolder(size_t maxCapacity) : maxCapacity(maxCapacity), current_index(-1)
+            JumpsHolder(size_t maxCapacity) : maxCapacity(maxCapacity), current(0)
             {
-                assert(maxCapacity > 0);
+                assert(maxCapacity >= 2);
             }
 
-            void insert(CursorState&& newState)
+            // records a jump: `from` replaces the current entry (the cursor may have moved since it arrived there) and the
+            // locations that could be reached with "forward" are dropped
+            void Record(const CursorState& from, const CursorState& to)
             {
-                for (uint32 i = 0u; i < jumps.size(); i++)
-                    if (jumps[i] == newState) {
-                        current_index = i;
-                        return;
-                    }
-                if (jumps.size() == maxCapacity)
-                    jumps.pop_back();
-                jumps.push_back(newState);
-                current_index = static_cast<int32>(jumps.size()) - 1;
+                if (history.empty())
+                    history.push_back(from);
+                else {
+                    history.erase(history.begin() + static_cast<std::ptrdiff_t>(current) + 1, history.end());
+                    history[current] = from;
+                }
+                if (!(to == from))
+                    history.push_back(to);
+                while (history.size() > maxCapacity)
+                    history.pop_front();
+                current = history.size() - 1;
             }
 
-            std::pair<bool, CursorState> JumpBack()
+            std::optional<CursorState> JumpBack()
             {
-                if (current_index >= 0)
-                    return { true, jumps[current_index--] };
-                return { false, {} };
+                if (history.empty() || current == 0)
+                    return std::nullopt;
+                return history[--current];
             }
 
-            std::pair<bool, CursorState> JumpFront()
+            std::optional<CursorState> JumpForward()
             {
-                if (current_index + 1 < static_cast<int32>(jumps.size()))
-                    return { true, jumps[++current_index] };
-                return { false, {} };
+                if (current + 1 >= history.size())
+                    return std::nullopt;
+                return history[++current];
+            }
+
+            size_t Size() const
+            {
+                return history.size();
             }
         };
 
@@ -516,15 +569,6 @@ namespace View
                 uint32 startViewLine, lineInView, offset;
                 [[nodiscard]] LinePosition ToLinePosition() const;
                 uint64 GetOffset(uint32 textSize) const;
-                void restorePosition(const CursorState& oldState)
-                {
-                    lineInView    = oldState.lineInView;
-                    startViewLine = oldState.startViewLine;
-                }
-                CursorState saveState() const
-                {
-                    return CursorState{ startViewLine, lineInView };
-                }
                 bool hasMovedView;
             } Cursor;
 
@@ -570,6 +614,26 @@ namespace View
 
             AsmData asmData;
             JumpsHolder jumps_holder;
+
+            // the operand numbers of the instruction on the cursor line, used by the hexadecimal <-> decimal switch (H key) and
+            // by the cursor information; computed when needed and kept until the cursor line or the drawn lines change
+            struct CursorLineNumber {
+                uint32 column; // same base as Cursor.offset
+                uint32 length;
+                uint32 index; // FindOperandNumbers index (bit of DissasmCodeZone::decimalOperands)
+                uint64 value;
+                bool isHex;
+            };
+            struct {
+                bool computed         = false;
+                uint32 line           = 0;
+                uint64 generation     = 0;
+                bool valid            = false; // the cursor line is an instruction
+                DissasmCodeZone* zone = nullptr;
+                uint64 address        = 0;
+                std::vector<CursorLineNumber> numbers;
+            } cursorLineNumbers;
+            uint64 drawnLinesGeneration = 0; // changes every time the lines of a dissasm zone are recomputed
             DissasmCache cacheData;
             Reference<CommonInterfaces::QueryInterface> queryInterface;
 
@@ -620,8 +684,23 @@ namespace View
             void AddComment();
             void RemoveComment();
             void RenameLabel();
+            void RemoveLocalVariable();
+            bool InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
+
+            // jumps history (back / forward)
+            CursorState SaveCursorState() const;
+            void RestoreCursorState(const CursorState& state);
+            void RecordJump(const CursorState& from);
+            bool JumpInHistory(bool back);
+
+            // hexadecimal <-> decimal operand numbers
+            void RefreshCursorLineNumbers();
+            // the number under the cursor, or the only number of the cursor line
+            const CursorLineNumber* GetCursorLineNumber();
+            void ToggleNumberBase();
+            int PrintCursorValueInfo(int x, int y, Renderer& r);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
@@ -649,6 +728,7 @@ namespace View
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
             virtual bool UpdateKeys(KeyboardControlsInterface* interface) override;
+            bool ExecuteNavigationCommand(uint32 commandId, bool select);
 
             // Mouse events
             virtual void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override;

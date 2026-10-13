@@ -7,7 +7,7 @@ namespace GView::Type::PCAP
 
 namespace Utils
 {
-static void IPv4ElementToString(uint32 ip, LocalString<64>& out)
+inline void IPv4ElementToString(uint32 ip, LocalString<64>& out)
 {
     union {
         uint8 values[4];
@@ -17,7 +17,7 @@ static void IPv4ElementToString(uint32 ip, LocalString<64>& out)
     out.Format("%02u.%02u.%02u.%02u (0x%X)", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0], ipv4.value);
 }
 
-static void IPv4ElementToStringNoHex(uint32 ip, LocalString<64>& out)
+inline void IPv4ElementToStringNoHex(uint32 ip, LocalString<64>& out)
 {
     union {
         uint8 values[4];

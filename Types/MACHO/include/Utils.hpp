@@ -4,6 +4,7 @@
 #include "NameMapping.hpp"
 #include <array>
 #include <cstring>
+#include <type_traits>
 
 namespace MAC
 {
@@ -16,7 +17,7 @@ const T SwapEndian(T u)
         unsigned char bytes[sizeof(T)];
     } source{ u }, dest{};
 
-    for (auto i = 0; i < sizeof(T); i++)
+    for (size_t i = 0; i < sizeof(T); i++)
     {
         dest.bytes[i] = source.bytes[sizeof(T) - i - 1];
     }
@@ -36,7 +37,7 @@ void SwapEndianInplace(T* u, uint64_t size)
 template <typename T>
 void SwapEndianInplace(T& var)
 {
-    static_assert(std::is_pod<T>::value, "Type must be POD type for safety");
+    static_assert(std::is_standard_layout_v<T> && std::is_trivial_v<T>, "Type must be POD type for safety");
 
     std::array<uint8, sizeof(T)> bytes;
     std::memcpy(bytes.data(), &var, sizeof(T));
@@ -48,7 +49,7 @@ void SwapEndianInplace(T& var)
 }
 
 template <typename T>
-static const std::string BinaryToHexString(const T number, const size_t length)
+inline const std::string BinaryToHexString(const T number, const size_t length)
 {
     std::string output;
     output.reserve(length * 3);
@@ -73,12 +74,12 @@ static const std::string BinaryToHexString(const T number, const size_t length)
     return output;
 }
 
-static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(cpu_type_t cputype, uint32_t cpusubtype)
+inline const ArchInfo GetArchInfoFromCPUTypeAndSubtype(cpu_type_t cputype, uint32_t cpusubtype)
 {
     for (const auto& arch : ArchInfoTable)
     {
         if (arch.cputype == cputype &&
-            (cpusubtype == CPU_SUBTYPE_MULTIPLE || ((arch.cpusubtype & ~CPU_SUBTYPE_MASK) == (cpusubtype & ~CPU_SUBTYPE_MASK))))
+            (cpusubtype == static_cast<uint32_t>(CPU_SUBTYPE_MULTIPLE) || ((static_cast<uint32_t>(arch.cpusubtype) & ~static_cast<uint32_t>(CPU_SUBTYPE_MASK)) == (cpusubtype & ~static_cast<uint32_t>(CPU_SUBTYPE_MASK)))))
         {
             return arch;
         }
@@ -111,7 +112,7 @@ static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(cpu_type_t cputype, uint3
     return ai;
 }
 
-static const std::vector<MachHeaderFlags> GetMachHeaderFlagsData(uint32_t flags)
+inline const std::vector<MachHeaderFlags> GetMachHeaderFlagsData(uint32_t flags)
 {
     std::vector<MachHeaderFlags> output;
 
@@ -127,7 +128,7 @@ static const std::vector<MachHeaderFlags> GetMachHeaderFlagsData(uint32_t flags)
     return output;
 }
 
-static const std::string GetVMProtectionNamesFromFlags(uint32_t flags)
+inline const std::string GetVMProtectionNamesFromFlags(uint32_t flags)
 {
     static const std::initializer_list<VMProtectionFlags> types{ VMProtectionFlags::NONE,      VMProtectionFlags::READ,
                                                                  VMProtectionFlags::WRITE,     VMProtectionFlags::EXECUTE,
@@ -178,7 +179,7 @@ static const std::string GetVMProtectionNamesFromFlags(uint32_t flags)
     return output;
 };
 
-static const std::string GetSegmentCommandNamesFromFlags(uint32_t flags)
+inline const std::string GetSegmentCommandNamesFromFlags(uint32_t flags)
 {
     static const std::initializer_list<SegmentCommandFlags> types{ SegmentCommandFlags::NONE,
                                                                    SegmentCommandFlags::HIGHVM,
@@ -207,7 +208,7 @@ static const std::string GetSegmentCommandNamesFromFlags(uint32_t flags)
     return output;
 };
 
-static const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
+inline const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
 {
     const std::string sectionType{ SectionTypeNames.at(static_cast<SectionType>(flags & SECTION_TYPE)) };
 
@@ -246,7 +247,7 @@ static const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
     return output;
 };
 
-static const std::vector<CodeSignFlags> GetCodeSignFlagsData(uint32_t flags)
+inline const std::vector<CodeSignFlags> GetCodeSignFlagsData(uint32_t flags)
 {
     std::vector<CodeSignFlags> output;
 
@@ -286,7 +287,7 @@ static const std::vector<CodeSignFlags> GetCodeSignFlagsData(uint32_t flags)
     return output;
 }
 
-static const std::vector<CodeSignExecSegFlags> GetCodeSignExecSegFlagsData(uint64_t flags)
+inline const std::vector<CodeSignExecSegFlags> GetCodeSignExecSegFlagsData(uint64_t flags)
 {
     std::vector<CodeSignExecSegFlags> output;
 

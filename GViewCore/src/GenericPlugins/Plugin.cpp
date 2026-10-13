@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include "StaticPlugins.hpp"
 
 using namespace GView::Generic;
 using namespace GView::Utils;
@@ -29,7 +30,8 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
             CHECK(key.has_value(), false, "Expecting a key value for: %s", valueName.data());
             CHECK(this->CommandsCount < MAX_PLUGINS_COMMANDS, false, "Too many commands - max allowed is #d", MAX_PLUGINS_COMMANDS);
             this->Commands[this->CommandsCount].Name     = valueName.substr(8); // 8 = sizeof(commands.)
-            this->Commands[this->CommandsCount].ShortKey = key.value();
+            this->Commands[this->CommandsCount].ShortKey   = key.value();
+            this->Commands[this->CommandsCount].DefaultKey = key.value();
             this->CommandsCount++;
         }
     }
@@ -40,6 +42,17 @@ void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
 {
     if (!this->fnRun)
     {
+#ifdef GVIEW_STATIC_PLUGINS
+        const auto* entry = GView::StaticPlugins::FindGenericPlugin((std::string_view) this->Name);
+        if (!entry)
+        {
+            LocalString<1024> info;
+            info.Format("Generic plugin `%s` is not available in this build", this->Name.GetText());
+            AppCUI::Dialogs::MessageBox::ShowError("Error", info);
+            return;
+        }
+        this->fnRun = entry->fnRun;
+#else
         // we need to load the library
         AppCUI::OS::Library lib;
         auto path = AppCUI::OS::GetCurrentApplicationPath();
@@ -64,6 +77,7 @@ void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
             AppCUI::Dialogs::MessageBox::ShowError("Error", info);
             return;
         }
+#endif
     }
     // all good -> is loaded ==> try to run
     if (!this->fnRun(this->Commands[commandIndex].Name, currentObject))
@@ -77,8 +91,21 @@ void Plugin::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint3
 {
     for (auto idx = 0U; idx < this->CommandsCount; idx++)
     {
-        commandBar.SetCommand(this->Commands[idx].ShortKey, this->Commands[idx].Name, commandID + idx);
+        if (this->Commands[idx].ShortKey != Input::Key::None) // unassigned in the key bindings
+            commandBar.SetCommand(this->Commands[idx].ShortKey, this->Commands[idx].Name, commandID + idx);
     }
+}
+std::string Plugin::GetKeysSection() const
+{
+    std::string section(App::Keys::SECTION_GENERIC_PREFIX);
+    section.append(this->Name.GetText(), this->Name.Len());
+    return section;
+}
+void Plugin::ApplyKeyBindings(const App::Keys::Registry& registry)
+{
+    const auto section = GetKeysSection();
+    for (auto idx = 0U; idx < this->CommandsCount; idx++)
+        this->Commands[idx].ShortKey = registry.Resolve(section, this->Commands[idx].Name, this->Commands[idx].DefaultKey);
 }
 } // namespace GView::Generic
 /*

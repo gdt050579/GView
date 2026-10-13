@@ -23,17 +23,81 @@ namespace View
             constexpr int32 CMD_ID_EXPAND_ALL       = 0xBF05;
             constexpr int32 CMD_ID_SHOW_PLUGINS     = 0xBF06;
 
-            static KeyboardControl ShowPluginsCmd         = { Key::F2, "Plugins", "Zoom in the picture", CMD_ID_SHOW_PLUGINS };
-            static KeyboardControl SaveAsCmd              = { Key::F3, "SaveAs", "Zoom out the picture", CMD_ID_SAVE_AS };
-            static KeyboardControl ShowMetaDataCmd        = { Key::F7, "ShowMetaData", "Show or hide metadata", CMD_ID_SHOW_METADATA };
-            static KeyboardControl ChangeSelectionTypeCmd = { Key::F9, "FoldAll", "Fold all lines", CMD_ID_FOLD_ALL };
-            static KeyboardControl FoldAllCmd   = { Key::F8, "ChangeSelectionType", "Change the selection type", CMD_ID_CHANGE_SELECTION};
-            static KeyboardControl ExpandAllCmd           = { Key::Ctrl | Key::F9, "ExpandAll", "Expand all lines", CMD_ID_EXPAND_ALL };
-            static KeyboardControl DeleteCmd              = { Key::Delete, "Delete", "Open the delete dialog", CMD_ID_DELETE };
+            // navigation & editing commands (resolved through Map in OnKeyEvent)
+            constexpr uint32 CMD_NAV_UP                 = 0xC000;
+            constexpr uint32 CMD_NAV_DOWN               = 0xC001;
+            constexpr uint32 CMD_NAV_LEFT               = 0xC002;
+            constexpr uint32 CMD_NAV_RIGHT              = 0xC003;
+            constexpr uint32 CMD_NAV_PAGE_UP            = 0xC004;
+            constexpr uint32 CMD_NAV_PAGE_DOWN          = 0xC005;
+            constexpr uint32 CMD_NAV_HOME               = 0xC006;
+            constexpr uint32 CMD_NAV_END                = 0xC007;
+            constexpr uint32 CMD_NAV_SCROLL_LEFT        = 0xC008;
+            constexpr uint32 CMD_NAV_SCROLL_RIGHT       = 0xC009;
+            constexpr uint32 CMD_NAV_SCROLL_UP          = 0xC00A;
+            constexpr uint32 CMD_NAV_SCROLL_DOWN        = 0xC00B;
+            constexpr uint32 CMD_NAV_TOGGLE_FOLD        = 0xC00C;
+            constexpr uint32 CMD_NAV_TOGGLE_FOLD_ALL    = 0xC00D;
+            constexpr uint32 CMD_NAV_EDIT_TOKEN         = 0xC00E;
+            constexpr uint32 CMD_NAV_EXPAND_ALL         = 0xC00F;
+            constexpr uint32 CMD_NAV_FOLD_ALL           = 0xC010;
+            constexpr uint32 CMD_NAV_FIND_ALL           = 0xC011;
+            constexpr uint32 CMD_NAV_NEXT_SIMILAR       = 0xC012;
+            constexpr uint32 CMD_NAV_PREVIOUS_SIMILAR   = 0xC013;
+            constexpr uint32 CMD_NAV_SELECT_ALL         = 0xC014;
 
-            static std::array LexicalViewerCommands = { &ShowPluginsCmd, &SaveAsCmd,    &ShowMetaDataCmd, &ChangeSelectionTypeCmd,
-                                                        &FoldAllCmd,     &ExpandAllCmd, &DeleteCmd
+            using KF = KeyboardControlFlags;
+
+            // command bar commands
+            inline KeyboardControl ShowPluginsCmd         = { Key::F2, "Plugins", "Show the plugins that can process the current selection", CMD_ID_SHOW_PLUGINS };
+            inline KeyboardControl SaveAsCmd              = { Key::F3, "SaveAs", "Save the (modified) content to a file", CMD_ID_SAVE_AS };
+            inline KeyboardControl ShowMetaDataCmd        = { Key::F7, "ShowMetaData", "Show or hide metadata", CMD_ID_SHOW_METADATA };
+            inline KeyboardControl ChangeSelectionTypeCmd = { Key::F8, "ChangeSelectionType", "Switch between single and multiple selection", CMD_ID_CHANGE_SELECTION };
+            inline KeyboardControl FoldAllCmd             = { Key::F9, "FoldAll", "Fold all blocks", CMD_ID_FOLD_ALL };
+            inline KeyboardControl ExpandAllCmd           = { Key::Ctrl | Key::F9, "ExpandAll", "Expand all blocks", CMD_ID_EXPAND_ALL };
+            inline KeyboardControl DeleteCmd              = { Key::Delete, "Delete", "Open the delete dialog", CMD_ID_DELETE };
+
+            // navigation & editing
+            inline KeyboardControl MoveUpKey       = { Key::Up, "MoveUp", "Move to the previous line", CMD_NAV_UP, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveDownKey     = { Key::Down, "MoveDown", "Move to the next line", CMD_NAV_DOWN, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveLeftKey     = { Key::Left, "MoveLeft", "Move to the previous token", CMD_NAV_LEFT, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveRightKey    = { Key::Right, "MoveRight", "Move to the next token", CMD_NAV_RIGHT, KF::ShiftExtendsSelection };
+            inline KeyboardControl MovePageUpKey   = { Key::PageUp, "MovePageUp", "Move one page up", CMD_NAV_PAGE_UP, KF::ShiftExtendsSelection };
+            inline KeyboardControl MovePageDownKey = { Key::PageDown, "MovePageDown", "Move one page down", CMD_NAV_PAGE_DOWN, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveHomeKey     = { Key::Home, "MoveToLineStart", "Move to the first token of the line", CMD_NAV_HOME, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveEndKey      = { Key::End, "MoveToLineEnd", "Move to the last token of the line", CMD_NAV_END, KF::ShiftExtendsSelection };
+            inline KeyboardControl ScrollLeftKey   = { Key::Ctrl | Key::Left, "ScrollLeft", "Scroll the view to the left", CMD_NAV_SCROLL_LEFT };
+            inline KeyboardControl ScrollRightKey  = { Key::Ctrl | Key::Right, "ScrollRight", "Scroll the view to the right", CMD_NAV_SCROLL_RIGHT };
+            inline KeyboardControl ScrollUpKey     = { Key::Ctrl | Key::Up, "ScrollUp", "Scroll the view up", CMD_NAV_SCROLL_UP };
+            inline KeyboardControl ScrollDownKey   = { Key::Ctrl | Key::Down, "ScrollDown", "Scroll the view down", CMD_NAV_SCROLL_DOWN };
+            inline KeyboardControl ToggleFoldKey   = { Key::Space, "ToggleFold", "Fold / unfold the current block", CMD_NAV_TOGGLE_FOLD };
+            inline KeyboardControl ToggleFoldRecursiveKey = {
+                Key::Ctrl | Key::Space, "ToggleFoldRecursive", "Fold / unfold the current block and all its sub-blocks", CMD_NAV_TOGGLE_FOLD_ALL
             };
+            inline KeyboardControl EditTokenKey       = { Key::Enter, "EditToken", "Edit / rename the current token", CMD_NAV_EDIT_TOKEN };
+            inline KeyboardControl ExpandAllKey       = { Key::E, "ExpandAllAlt", "Expand all blocks", CMD_NAV_EXPAND_ALL };
+            inline KeyboardControl FoldAllKey         = { Key::F, "FoldAllAlt", "Fold all blocks", CMD_NAV_FOLD_ALL };
+            inline KeyboardControl FindAllKey         = { Key::A, "FindAll", "Find all the occurrences of the current token", CMD_NAV_FIND_ALL };
+            inline KeyboardControl NextSimilarKey     = { Key::N, "NextSimilarToken", "Move to the next similar token", CMD_NAV_NEXT_SIMILAR };
+            inline KeyboardControl NextSimilarAltKey  = { Key::Ctrl | Key::PageDown, "NextSimilarTokenAlt", "Move to the next similar token", CMD_NAV_NEXT_SIMILAR };
+            inline KeyboardControl PrevSimilarKey     = { Key::P, "PreviousSimilarToken", "Move to the previous similar token", CMD_NAV_PREVIOUS_SIMILAR };
+            inline KeyboardControl PrevSimilarAltKey  = {
+                Key::Ctrl | Key::PageUp, "PreviousSimilarTokenAlt", "Move to the previous similar token", CMD_NAV_PREVIOUS_SIMILAR
+            };
+            inline KeyboardControl SelectAllKey = { Key::Ctrl | Key::A, "SelectAll", "Select all the tokens", CMD_NAV_SELECT_ALL };
+
+            inline const std::array<KeyboardControl*, 7> LexicalViewerCommands = { &ShowPluginsCmd, &SaveAsCmd,    &ShowMetaDataCmd, &ChangeSelectionTypeCmd,
+                                                                                   &FoldAllCmd,     &ExpandAllCmd, &DeleteCmd };
+            inline const std::array<KeyboardControl*, 23> NavigationKeys = {
+                &MoveUpKey,      &MoveDownKey,      &MoveLeftKey,       &MoveRightKey,  &MovePageUpKey,          &MovePageDownKey, &MoveHomeKey,
+                &MoveEndKey,     &ScrollLeftKey,    &ScrollRightKey,    &ScrollUpKey,   &ScrollDownKey,          &ToggleFoldKey,   &ToggleFoldRecursiveKey,
+                &EditTokenKey,   &ExpandAllKey,     &FoldAllKey,        &FindAllKey,    &NextSimilarKey,         &NextSimilarAltKey, &PrevSimilarKey,
+                &PrevSimilarAltKey, &SelectAllKey,
+            };
+            inline Input::KeyMap Map;
+
+            void RegisterKeys(KeyboardControlsInterface* interface);
+            void OnKeysChanged();
         }
 
         enum class FoldStatus : uint32
@@ -427,6 +491,7 @@ namespace View
                 return true;
             }
             bool UpdateKeys(KeyboardControlsInterface* interface) override;
+            bool ExecuteNavigationCommand(uint32 commandId, bool select);
         };
         enum class ApplyMethod
         {

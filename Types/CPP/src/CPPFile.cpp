@@ -667,7 +667,6 @@ uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& 
         return eol;
     }
     // we have a good preprocess directive ==> lets formalize it
-    auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
     list.Add(
           TokenType::Preprocess,
           start,

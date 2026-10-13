@@ -1,7 +1,5 @@
 #include "DigitalSignature.hpp"
 
-#include <fstream>
-
 #if defined(BUILD_FOR_WINDOWS)
 #    if defined(_M_ARM) || defined(_M_ARM64) || defined(_M_HYBRID_X86_ARM64) || defined(_M_ARM64EC) || __arm__ || __aarch64__
 #        include <Windows.h>
@@ -166,71 +164,9 @@ void ChainErrorStatusToMessage(uint32 status, String& message)
     message.Truncate(message.Len() - 1);
 }
 
-bool VerifySignatureForPE(ConstString source, Utils::DataCache& cache, AuthenticodeMS& data)
+bool VerifySignatureForPE(const std::filesystem::path& file, AuthenticodeMS& data)
 {
-    LocalUnicodeStringBuilder<1024> ub;
-    ub.Set(source);
-    std::u16string sv{ ub.GetString(), ub.Len() };
-
-    std::filesystem::path fullpath{ sv };
-    if (!std::filesystem::exists(fullpath)) // must be a memory file from a container => drop it on disk
-    {
-        auto parent = fullpath.parent_path();
-        std::vector<std::filesystem::path> filenames{};
-        bool regularFileFound{ (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false) };
-
-        while (parent != parent.parent_path())
-        {
-            filenames.emplace(filenames.begin(), parent.filename());
-            parent = parent.parent_path();
-            regularFileFound |= (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false);
-        };
-
-        parent = std::filesystem::path(LR"(\\?\)" + parent.lexically_normal().native());
-
-        if (regularFileFound)
-        {
-            for (const auto& filename : filenames)
-            {
-                parent /= filename;
-                if (std::filesystem::exists(parent) && (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false))
-                {
-                    parent.replace_filename(filename.u8string() + u8".drop");
-                }
-            }
-
-            const auto actualFilename = fullpath.filename();
-            fullpath                  = parent;
-            fullpath /= actualFilename;
-        }
-
-        if (!std::filesystem::exists(parent))
-        {
-            std::error_code ec{};
-            if (!std::filesystem::create_directories(parent, ec))
-            {
-                data.winTrust.errorCode = -1;
-                data.winTrust.errorMessage.Set(ec.message());
-                return false;
-            }
-        }
-
-        std::ofstream ofs(fullpath, std::ios::binary);
-        if (ofs.is_open())
-        {
-            const auto buffer = cache.GetEntireFile();
-            ofs.write((const char*) buffer.GetData(), buffer.GetLength());
-            ofs.close();
-        }
-        else
-        {
-            data.winTrust.errorCode = -1;
-            data.winTrust.errorMessage.Set("Unable to drop extracted file from container!");
-            return false;
-        }
-    }
-
-    const auto path = fullpath.wstring();
+    const auto path = file.wstring();
     WINTRUST_FILE_INFO fileData{
         .cbStruct = sizeof(WINTRUST_FILE_INFO), .pcwszFilePath = reinterpret_cast<LPCWSTR>(path.c_str()), .hFile = nullptr, .pgKnownSubject = nullptr
     };
@@ -259,7 +195,7 @@ bool VerifySignatureForPE(ConstString source, Utils::DataCache& cache, Authentic
     WrapperHMsg hMsg{};
     CHECK(CryptQueryObject(
                 CERT_QUERY_OBJECT_FILE,
-                sv.data(),
+                path.c_str(),
                 CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
                 CERT_QUERY_FORMAT_FLAG_BINARY,
                 0,
@@ -563,17 +499,15 @@ BOOL ParseSigner(const CMSG_SIGNER_INFO_ptr& signer, AuthenticodeMS& container, 
     return TRUE;
 }
 
-bool GetSignaturesInformation(ConstString source, AuthenticodeMS& container)
+bool GetSignaturesInformation(const std::filesystem::path& file, AuthenticodeMS& container)
 {
-    LocalUnicodeStringBuilder<1024> ub;
-    ub.Set(source);
-    std::u16string sv{ ub.GetString(), ub.Len() };
+    const auto path = file.wstring();
 
     WrapperHStore store{};
     WrapperHMsg hMsg{};
     CHECK(CryptQueryObject(
                 CERT_QUERY_OBJECT_FILE,
-                sv.data(),
+                path.c_str(),
                 CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
                 CERT_QUERY_FORMAT_FLAG_BINARY,
                 0,

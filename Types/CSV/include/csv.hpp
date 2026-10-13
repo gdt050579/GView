@@ -19,7 +19,7 @@ namespace Type
         class CSVFile : public TypeInterface
         {
           private:
-            bool hasHeader{ false };
+            [[maybe_unused]] bool hasHeader{ false };
             unsigned int columnsNo{ 0 };
             unsigned int rowsNo{ 0 };
             char separator[2]{""};

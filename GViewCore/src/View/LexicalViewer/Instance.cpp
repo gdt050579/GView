@@ -7,7 +7,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
+[[maybe_unused]] constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
 
 /*
 void TestTextEditor()
@@ -71,7 +71,7 @@ inline std::string_view TokenDataTypeToString(TokenDataType dataType)
 }
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+    : ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl), settings(nullptr)
 {
     this->obj = _obj;
 
@@ -825,7 +825,6 @@ void Instance::BakupTokensPositions()
 void Instance::RestoreTokensPositionsFromBackup()
 {
     ASSERT(this->tokens.size() == this->backupedTokenPositionList.size(), "Expecting backup list to be of the same size as tokens list");
-    auto sz    = this->tokens.size();
     auto index = static_cast<size_t>(0);
     for (auto& tok : this->tokens)
     {
@@ -1065,8 +1064,10 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     else
         commandBar.SetCommand(ShowMetaDataCmd.Key, "ShowMetaData:OFF", ShowMetaDataCmd.CommandId);
 
-    if (this->noItemsVisible == false)
+    if (this->noItemsVisible == false) {
         commandBar.SetCommand(DeleteCmd.Key, DeleteCmd.Caption, DeleteCmd.CommandId);
+        commandBar.SetCommand(EditTokenKey.Key, EditTokenKey.Caption, EditTokenKey.CommandId);
+    }
 
     if (this->selection.IsSingleSelectionEnabled())
         commandBar.SetCommand(ChangeSelectionTypeCmd.Key, "Select:Single", ChangeSelectionTypeCmd.CommandId);
@@ -1076,7 +1077,9 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(FoldAllCmd.Key, FoldAllCmd.Caption, FoldAllCmd.CommandId);
     commandBar.SetCommand(ExpandAllCmd.Key, ExpandAllCmd.Caption, ExpandAllCmd.CommandId);
     commandBar.SetCommand(ShowPluginsCmd.Key, ShowPluginsCmd.Caption, ShowPluginsCmd.CommandId);
-    commandBar.SetCommand(SaveAsCmd.Key, SaveAsCmd.Caption, SaveAsCmd.CommandId);
+    if (!GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::SaveAs) &&
+        !GView::Security::Learning::Hooks::IsMemoryOnlyObject(this->obj))
+        commandBar.SetCommand(SaveAsCmd.Key, SaveAsCmd.Caption, SaveAsCmd.CommandId);
 
     return false;
 }
@@ -1480,13 +1483,11 @@ void Instance::ShowRefactorDialog(TokenObject& tok)
 void Instance::EditCurrentToken()
 {
     // sanity checks
-    if (this->noItemsVisible)
+    if ((this->noItemsVisible) || ((size_t) this->currentTokenIndex >= this->tokens.size()) || (!this->tokens[this->currentTokenIndex].IsVisible())) {
+        AppCUI::Dialogs::MessageBox::ShowNotification("Edit token", "There is no token to edit at the cursor position !");
         return;
-    if ((size_t) this->currentTokenIndex >= this->tokens.size())
-        return;
+    }
     auto& tok = this->tokens[this->currentTokenIndex];
-    if (!tok.IsVisible())
-        return;
     if (tok.error.Len() > 0)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
@@ -1536,107 +1537,81 @@ void Instance::DeleteTokens()
         this->Reparse(false);
     }
 }
-bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
+bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 {
-    switch (keyCode)
+    switch (commandId)
     {
-    case Key::Up:
-        MoveUp(1, false);
+    case CMD_NAV_UP:
+        MoveUp(1, select);
         return true;
-    case Key::Up | Key::Shift:
-        MoveUp(1, true);
+    case CMD_NAV_PAGE_UP:
+        MoveUp(this->GetHeight(), select);
         return true;
-    case Key::PageUp:
-        MoveUp(this->GetHeight(), false);
+    case CMD_NAV_DOWN:
+        MoveDown(1, select);
         return true;
-    case Key::PageUp | Key::Shift:
-        MoveUp(this->GetHeight(), true);
+    case CMD_NAV_PAGE_DOWN:
+        MoveDown(this->GetHeight(), select);
         return true;
-    case Key::Down:
-        MoveDown(1, false);
+    case CMD_NAV_LEFT:
+        MoveLeft(select, true);
         return true;
-    case Key::Down | Key::Shift:
-        MoveDown(1, true);
+    case CMD_NAV_RIGHT:
+        MoveRight(select, true);
         return true;
-    case Key::PageDown:
-        MoveDown(this->GetHeight(), false);
+    case CMD_NAV_HOME:
+        MoveLeft(select, false);
         return true;
-    case Key::PageDown | Key::Shift:
-        MoveDown(this->GetHeight(), true);
-        return true;
-    case Key::Left:
-        MoveLeft(false, true);
-        return true;
-    case Key::Left | Key::Shift:
-        MoveLeft(true, true);
-        return true;
-    case Key::Right:
-        MoveRight(false, true);
-        return true;
-    case Key::Right | Key::Shift:
-        MoveRight(true, true);
-        return true;
-    case Key::Home:
-        MoveLeft(false, false);
-        return true;
-    case Key::Home | Key::Shift:
-        MoveLeft(true, false);
-        return true;
-    case Key::End:
-        MoveRight(false, false);
-        return true;
-    case Key::End | Key::Shift:
-        MoveRight(true, false);
+    case CMD_NAV_END:
+        MoveRight(select, false);
         return true;
 
     // view-port scroll
-    case Key::Left | Key::Ctrl:
+    case CMD_NAV_SCROLL_LEFT:
         if (Scroll.x > 0)
             Scroll.x--;
         return true;
-    case Key::Right | Key::Ctrl:
+    case CMD_NAV_SCROLL_RIGHT:
         Scroll.x++;
         return true;
-    case Key::Up | Key::Ctrl:
+    case CMD_NAV_SCROLL_UP:
         if (Scroll.y > 0)
             Scroll.y--;
         return true;
-    case Key::Down | Key::Ctrl:
+    case CMD_NAV_SCROLL_DOWN:
         Scroll.y++;
         return true;
 
     // fold -> unfold
-    case Key::Space:
+    case CMD_NAV_TOGGLE_FOLD:
         SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, false);
         return true;
-    case Key::Space | Key::Ctrl:
+    case CMD_NAV_TOGGLE_FOLD_ALL:
         SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, true);
         return true;
 
-    case Key::Enter:
+    case CMD_NAV_EDIT_TOKEN:
         EditCurrentToken();
         return true;
 
-    case Key::E:
+    case CMD_NAV_EXPAND_ALL:
         ExpandAll();
         return true;
-    case Key::F:
+    case CMD_NAV_FOLD_ALL:
         FoldAll();
         return true;
-    case Key::A:
+    case CMD_NAV_FIND_ALL:
         ShowFindAllDialog();
         return true;
-    case Key::N:
-    case Key::Ctrl | Key::PageDown:
+    case CMD_NAV_NEXT_SIMILAR:
         MoveToNextSimilarToken(1);
         return true;
-    case Key::P:
-    case Key::Ctrl | Key::PageUp:
+    case CMD_NAV_PREVIOUS_SIMILAR:
         MoveToNextSimilarToken(-1);
         return true;
 
     // copy & selection
-    case Key::A | Key::Ctrl:
+    case CMD_NAV_SELECT_ALL:
         if ((!this->tokens.empty()) && (this->noItemsVisible == false))
         {
             this->selection.Clear();
@@ -1644,6 +1619,13 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         }
         return true;
     }
+    return false;
+}
+bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
+{
+    const auto action = Map.Resolve(keyCode);
+    if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
+        return true;
 
     if (characterCode > 0)
     {
@@ -1707,6 +1689,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     case CMD_ID_SAVE_AS:
         this->ShowSaveAsDialog();
+        return true;
+    case CMD_NAV_EDIT_TOKEN:
+        this->EditCurrentToken();
         return true;
     }
     return false;
@@ -1834,6 +1819,10 @@ void Instance::ShowPlugins()
 }
 void Instance::ShowSaveAsDialog()
 {
+    if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::SaveAs, "saving the text to a file"))
+        return;
+    if (GView::App::IsExportBlockedFor(this->obj, "saving memory-only task content to disk"))
+        return;
     SaveAsDialog dlg(this->obj);
     if (dlg.Show() != Dialogs::Result::Ok)
         return;
@@ -2027,7 +2016,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, I
         }
         if ((button & MouseButton::DoubleClicked) != MouseButton::None)
         {
-            OnKeyEvent(Key::Enter, 0);
+            EditCurrentToken(); // works even when the edit command is bound to another key
         }
     }
 }
@@ -2052,9 +2041,9 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, I
     switch (direction)
     {
     case MouseWheel::Up:
-        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+        return ExecuteNavigationCommand(CMD_NAV_SCROLL_UP, false);
     case MouseWheel::Down:
-        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+        return ExecuteNavigationCommand(CMD_NAV_SCROLL_DOWN, false);
     }
 
     return false;
@@ -2198,6 +2187,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32
 {
     // display
@@ -2214,6 +2205,7 @@ enum class PropertyID : uint32
     ShowMetaData,
     HighlightSimilarTokens,
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
@@ -2251,12 +2243,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = this->settings->maxTokenSize.Height;
         return true;
     }
-    for (const auto& key : LexicalViewerCommands) {
-        if (key->CommandId == id) {
-            value = key->Key;
-            return true;
-        }
-    }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
@@ -2290,12 +2276,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->settings->maxTokenSize.Height = std::max<>(1U, std::get<uint32>(value));
         RecomputeTokenPositions();
         return true;
-    }
-    for (const auto& key : LexicalViewerCommands) {
-        if (key->CommandId == id) {
-            key->Key = std::get<Key>(value);
-            return true;
-        }
     }
     error.SetFormat("Unknown internal ID: %u", id);
     return false;
@@ -2332,20 +2312,12 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::HighlightSimilarTokens), "View", "Highlight similar tokens", PropertyType::Boolean },
     };
 
-    properties.reserve(properties.size() + LexicalViewerCommands.size());
-    for (const auto& key : LexicalViewerCommands) {
-        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
-    }
-
     return properties;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (const auto& cmd : LexicalViewerCommands) {
-        interface->RegisterKey(cmd);
-    }
-
+    Commands::RegisterKeys(interface);
     return true;
 }
 #undef BT

@@ -4,6 +4,14 @@ using namespace AppCUI::Controls;
 
 namespace GView::Type::ELF::Panels
 {
+// reads up to 4 bytes from e_ident without type punning or reading past the array
+static uint32 ReadIdentU32(const unsigned char* p, size_t count = sizeof(uint32))
+{
+    uint32 value = 0;
+    memcpy(&value, p, count);
+    return value;
+}
+
 Information::Information(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile> _elf)
     : TabPage("Informa&tion"), object(_object), elf(_elf)
 {
@@ -35,7 +43,7 @@ void Information::UpdateHeader()
     {
         const auto& header = elf->header64;
 
-        const auto magic = *(uint32*) header.e_ident;
+        const auto magic = ReadIdentU32(header.e_ident);
         AddDecAndHexElement("Magic", format, magic);
 
         const auto className = ELF::GetNameFromElfClass(header.e_ident[EI_CLASS]);
@@ -62,9 +70,9 @@ void Information::UpdateHeader()
         general->AddItem({ "ABI Version", ls.Format(format.data(), abiVersionName.data(), abiVersionHex.data()) })
               .SetType(ListViewItem::Type::Emphasized_1);
 
-        const auto pad1 = *(uint32*) (header.e_ident + EI_PAD);
+        const auto pad1 = ReadIdentU32(header.e_ident + EI_PAD);
         AddDecAndHexElement("PAD1", format, pad1);
-        const auto pad2 = (*(uint32*) (header.e_ident + EI_PAD + sizeof(pad1))) << 8;
+        const auto pad2 = ReadIdentU32(header.e_ident + EI_PAD + sizeof(pad1), EI_NIDENT - EI_PAD - sizeof(pad1)) << 8;
         AddDecAndHexElement("PAD2", format, pad2);
 
         const auto typeName = ELF::GetNameAndDecriptionFromElfType(header.e_type);
@@ -97,7 +105,7 @@ void Information::UpdateHeader()
     {
         const auto& header = elf->header32;
 
-        const auto magic = *(uint32*) header.e_ident;
+        const auto magic = ReadIdentU32(header.e_ident);
         AddDecAndHexElement("Magic", format, magic);
 
         const auto className = ELF::GetNameFromElfClass(header.e_ident[EI_CLASS]);
@@ -124,9 +132,9 @@ void Information::UpdateHeader()
         general->AddItem({ "ABI Version", ls.Format(format.data(), abiVersionName.data(), abiVersionHex.data()) })
               .SetType(ListViewItem::Type::Emphasized_1);
 
-        const auto pad1 = *(uint32*) (header.e_ident + EI_PAD);
+        const auto pad1 = ReadIdentU32(header.e_ident + EI_PAD);
         AddDecAndHexElement("PAD1", format, pad1);
-        const auto pad2 = (*(uint32*) (header.e_ident + EI_PAD + sizeof(pad1))) << 8;
+        const auto pad2 = ReadIdentU32(header.e_ident + EI_PAD + sizeof(pad1), EI_NIDENT - EI_PAD - sizeof(pad1)) << 8;
         AddDecAndHexElement("PAD2", format, pad2);
 
         const auto typeName = ELF::GetNameAndDecriptionFromElfType(header.e_type);
@@ -163,10 +171,8 @@ void Information::UpdateIssues()
 
 void Information::RecomputePanelsPositions()
 {
-    int py   = 0;
-    int last = 0;
-    int w    = this->GetWidth();
-    int h    = this->GetHeight();
+    int w = this->GetWidth();
+    int h = this->GetHeight();
 
     if ((!general.IsValid()) || (!issues.IsValid()))
         return;

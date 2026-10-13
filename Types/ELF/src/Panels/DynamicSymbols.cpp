@@ -61,8 +61,8 @@ void DynamicSymbols::GoToSelectedSection()
        TODO: handle above ^
     */
 
-    auto i = list->GetCurrentItem().GetData(-1);
-    CHECKRET(i != -1, "");
+    auto i = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(i != static_cast<uint64>(-1), "");
 
     auto offset = 0ULL;
     if (elf->is64)
@@ -84,8 +84,8 @@ void DynamicSymbols::SelectCurrentSection()
     auto offset = 0ULL;
     auto size   = 0ULL;
 
-    auto i = list->GetCurrentItem().GetData(-1);
-    CHECKRET(i != -1, "");
+    auto i = list->GetCurrentItem().GetData(static_cast<uint64>(-1));
+    CHECKRET(i != static_cast<uint64>(-1), "");
 
     if (elf->is64)
     {
@@ -192,8 +192,8 @@ void DynamicSymbols::Update()
 bool DynamicSymbols::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32>(ObjectAction::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32>(ObjectAction::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32>(ObjectAction::ChangeBase));
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", static_cast<int32>(ObjectAction::Select));
+    commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, Base == 10 ? "Dec" : "Hex", static_cast<int32>(ObjectAction::ChangeBase));
 
     return true;
 }

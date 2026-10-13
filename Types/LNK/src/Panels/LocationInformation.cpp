@@ -47,7 +47,7 @@ void Panels::LocationInformation::UpdateGeneralInformation()
     AddDecAndHexElement("Network Share Offset", "%-20s (%s)", lnk->locationInformation.networkShareOffset);
     AddDecAndHexElement("Common Path Offset", "%-20s (%s)", lnk->locationInformation.commonPathOffset);
 
-    auto offset = 0;
+    [[maybe_unused]] auto offset = 0;
     if (lnk->locationInformation.headerSize > 28)
     {
         AddDecAndHexElement("Unicode Local Path Offset", "%-20s (%s)", lnk->unicodeLocalPathOffset);
@@ -174,15 +174,6 @@ bool Panels::LocationInformation::OnUpdateCommandBar(Application::CommandBar& co
 
 bool Panels::LocationInformation::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    if (evnt == Event::Command)
-    {
-        switch (controlID)
-        {
-        default:
-            break;
-        }
-    }
-
     return false;
 }
 

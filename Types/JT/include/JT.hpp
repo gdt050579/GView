@@ -11,6 +11,8 @@ using namespace GView::View;
 
 namespace GView::Type::JT
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
 class JTFile : public TypeInterface
 {
   public:
@@ -34,6 +36,7 @@ class JTFile : public TypeInterface
     }
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
         return true;
     }
 
@@ -60,7 +63,7 @@ class JTFile : public TypeInterface
 
 namespace Panels
 {
-    static ListViewItem AddGUIDElement(Reference<ListView> list, std::string_view name, MyGUID& guid)
+    inline ListViewItem AddGUIDElement(Reference<ListView> list, std::string_view name, MyGUID& guid)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 

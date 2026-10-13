@@ -6,7 +6,7 @@ using namespace GView::Type::JClass;
 
 #define FCHECK(x) CHECK(x, false, #x)
 
-extern "C" {
+GVIEW_PLUGIN_ENTRY_POINTS {
 PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
 {
     AppCUI::Log::ToStdErr();
@@ -25,7 +25,7 @@ PLUGIN_EXPORT GView::TypeInterface* CreateInstance()
 
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
-    auto plugin = win->GetObject()->GetContentType()->To<ClassViewer>();
+    [[maybe_unused]] auto plugin = win->GetObject()->GetContentType()->To<ClassViewer>();
 
     BufferViewer::Settings bufferViewerSettings;
     bufferViewerSettings.SetName("BufferViewer");

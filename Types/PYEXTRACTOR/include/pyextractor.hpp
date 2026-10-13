@@ -4,6 +4,9 @@
 
 namespace GView::Type::PYEXTRACTOR
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
+inline KeyboardControl PANEL_OPEN_ENTRY = { Input::Key::Ctrl | Input::Key::O, "PanelOpenEntry", "Open the current entry (TOC entries panel)", 0 };
 enum class Magic : uint16 {
     NoCompression      = 0x0178, // - No Compression / low
     DefaultCompression = 0x9C78, // - Default Compression
@@ -30,15 +33,18 @@ constexpr std::string_view GetNameForPyInstallerVersion(PyInstallerVersion v)
     }
 }
 
-struct TOCEntry {
 #pragma pack(push, 1)
+struct TOCEntryHeader {
     uint32 entrySize{ 0 };
     uint32 entryPos{ 0 };
     uint32 cmprsdDataSize{ 0 };
     uint32 uncmprsdDataSize{ 0 };
     uint8 cmprsFlag{ 0 };
     uint8 typeCmprsData{ 0 };
+};
 #pragma pack(pop)
+
+struct TOCEntry : public TOCEntryHeader {
     Buffer name;
 };
 
@@ -94,6 +100,8 @@ class PYEXTRACTORFile : public TypeInterface, public View::ContainerViewer::Enum
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
+        interface->RegisterKey(&PANEL_OPEN_ENTRY);
         return true;
     }
 

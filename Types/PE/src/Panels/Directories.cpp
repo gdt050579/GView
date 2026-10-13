@@ -44,7 +44,7 @@ void Panels::Directories::SelectCurrentDirectory()
     if (idx == INVALID_DIRECTORY)
         return;
     auto* dir = &pe->dirs[idx];
-    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
+    [[maybe_unused]] auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     uint64_t result;
     if (idx == (uint8_t) DirectoryType::Security)
         result = dir->VirtualAddress > 0 ? dir->VirtualAddress : PE_INVALID_ADDRESS;
@@ -105,8 +105,8 @@ void Panels::Directories::Update()
 bool Panels::Directories::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PE_DIRS_GOTO);
-    commandBar.SetCommand(Key::F3, "Edit", PE_DIRS_EDIT);
-    commandBar.SetCommand(Key::F9, "Select", PE_DIRS_SELECT);
+    commandBar.SetCommand(PANEL_EDIT.Key, "Edit", PE_DIRS_EDIT);
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", PE_DIRS_SELECT);
     return true;
 }
 

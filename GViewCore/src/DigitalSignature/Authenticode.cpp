@@ -320,7 +320,7 @@ static void ExtractCertificatesFromMSCountersignature(const uint8_t* data, int l
     ParseCertificates(certs, result);
 }
 
-static void ParseMSCountersignature(PKCS7_ptr& p7, AuthenticodeSignature& auth)
+[[maybe_unused]] static void ParseMSCountersignature(PKCS7_ptr& p7, AuthenticodeSignature& auth)
 {
     PKCS7_SIGNER_INFO* si           = sk_PKCS7_SIGNER_INFO_value(PKCS7_get_signer_info(p7.get()), 0);
     STACK_OF(X509_ATTRIBUTE)* attrs = PKCS7_get_attributes(si);
@@ -947,20 +947,6 @@ bool Certificate::Parse(X509* x509)
     return true;
 }
 
-static void ToHex(const unsigned char* v, char* b, int len)
-{
-    int i, j = 0;
-    for (i = 0; i < len; i++)
-    {
-#ifdef WIN32
-        size_t size = EVP_MAX_MD_SIZE * 2 + 1;
-        j += sprintf_s(b + j, size - j, "%02X", v[i]);
-#else
-        j += sprintf(b + j, "%02X", v[i]);
-#endif /* WIN32 */
-    }
-}
-
 static bool GetTimeFromCMS(CMS_ContentInfo* cms, time_t& time)
 {
     ASN1_OCTET_STRING** pos = CMS_get0_content(cms);
@@ -1337,13 +1323,22 @@ bool CounterSignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
     TS_VERIFY_CTX_init(ctx);
 
     TS_VERIFY_CTX_set_flags(ctx, TS_VFY_VERSION | TS_VFY_IMPRINT);
-    TS_VERIFY_CTX_set_store(ctx, store);
-#if OPENSSL_VERSION_NUMBER >= 0x3000000fL
-    TS_VERIFY_CTX_set_certs(ctx, p7->d.sign->cert);
+    // ctx was just zeroed by TS_VERIFY_CTX_init, so the set0 variants (OpenSSL >= 3.4) free nothing here and behave exactly like the
+    // deprecated setters. Ownership stays with us: store is freed below and ctx is released with OPENSSL_free (shallow) on purpose,
+    // because certs belong to p7 and calc_digest lives on the stack.
+#if OPENSSL_VERSION_NUMBER >= 0x30400000L
+    TS_VERIFY_CTX_set0_store(ctx, store);
+    TS_VERIFY_CTX_set0_certs(ctx, p7->d.sign->cert);
+    TS_VERIFY_CTX_set0_imprint(ctx, calc_digest, mdLen);
 #else
+    TS_VERIFY_CTX_set_store(ctx, store);
+#    if OPENSSL_VERSION_NUMBER >= 0x3000000fL
+    TS_VERIFY_CTX_set_certs(ctx, p7->d.sign->cert);
+#    else
     TS_VERIFY_CTS_set_certs(ctx, p7->d.sign->cert);
-#endif
+#    endif
     TS_VERIFY_CTX_set_imprint(ctx, calc_digest, mdLen);
+#endif
 
     bool isValid = TS_RESP_verify_token(ctx, p7) == 1;
 
@@ -1413,7 +1408,7 @@ end:
 
 time_t ASN1_TIME_to_time_t(const ASN1_TIME* time)
 {
-    struct tm t = { 0 };
+    struct tm t = {};
     if (!time)
         return timegm(&t);
 

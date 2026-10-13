@@ -101,7 +101,7 @@ void Sections::Update()
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
             const auto& segmentIdx = elf->sectionsToSegments.at(i);
-            if (segmentIdx != -1)
+            if (segmentIdx != static_cast<uint32>(-1))
             {
                 const auto& segment = elf->segments64.at(segmentIdx);
                 item.SetText(
@@ -137,7 +137,7 @@ void Sections::Update()
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
             const auto& segmentIdx = elf->sectionsToSegments.at(i);
-            if (segmentIdx != -1)
+            if (segmentIdx != static_cast<uint32>(-1))
             {
                 const auto& segment = elf->segments32.at(segmentIdx);
                 item.SetText(
@@ -170,8 +170,8 @@ void Sections::Update()
 bool Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(ObjectAction::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(ObjectAction::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(ObjectAction::ChangeBase));
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", static_cast<int32_t>(ObjectAction::Select));
+    commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(ObjectAction::ChangeBase));
 
     return true;
 }

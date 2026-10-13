@@ -10,6 +10,17 @@ namespace View
     {
         using namespace AppCUI;
 
+        namespace Commands
+        {
+            constexpr int32 CMD_ID_OPEN_ITEM = 0xBF10;
+
+            // Enter is also handled by the tree view itself (expand / collapse, or open an item without children); the
+            // binding makes the command visible in the command bar and lets the user assign another key to it
+            inline KeyboardControl OpenItem = {
+                Input::Key::Enter, "OpenItem", "Open the current item (expand / collapse it if it has children)", CMD_ID_OPEN_ITEM
+            };
+        } // namespace Commands
+
         struct SettingsData {
             static constexpr uint32 MAX_COLUMNS    = 32;
             static constexpr uint32 MAX_PROPERTIES = 32;
@@ -56,12 +67,15 @@ namespace View
             void BuildPath(TreeViewItem item);
             void UpdatePathForItem(TreeViewItem item);
             bool PopulateItem(TreeViewItem item);
+            void OpenItem(TreeViewItem item);
+            void OpenCurrentItem();
 
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
+            bool UpdateKeys(KeyboardControlsInterface* interface) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
             virtual bool GoTo(uint64 offset) override;
@@ -93,6 +107,8 @@ namespace View
             }
         };
 
+        // most of the container keys are handled by the AppCUI tree view control (listed, not configurable)
+        void RegisterKeys(KeyboardControlsInterface* interface);
     } // namespace ContainerViewer
 } // namespace View
 

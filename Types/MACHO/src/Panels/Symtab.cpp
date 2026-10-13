@@ -62,8 +62,8 @@ void SymTab::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+    [[maybe_unused]] static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+    [[maybe_unused]] static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
     for (auto i = 0U; i < std::min<>(machO->dySymTab->sc.nsyms, static_cast<uint32>(machO->dySymTab->objects.size())); i++)
     {
@@ -77,13 +77,14 @@ void SymTab::Update()
         std::string _1s;
         std::string _2s;
 
-        if ((nl.n_type & (uint32) MAC::N_TYPE::TYPE) == 1)
+        const auto typeBits = static_cast<MAC::N_TYPE_BITS>(nl.n_type & static_cast<uint32>(MAC::N_TYPE::TYPE));
+        if (const auto it = MAC::NTypeBitsNames.find(typeBits); it != MAC::NTypeBitsNames.end())
         {
-            _1s = MAC::NTypeNames.at((MAC::N_TYPE)(nl.n_type & (uint32) MAC::N_TYPE::TYPE));
+            _1s = it->second;
         }
-        else
+        else if (const auto it2 = MAC::NTypeNames.find(static_cast<MAC::N_TYPE>(nl.n_type & static_cast<uint32>(MAC::N_TYPE::TYPE))); it2 != MAC::NTypeNames.end())
         {
-            _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS)(nl.n_type & (uint32) MAC::N_TYPE::TYPE));
+            _1s = it2->second;
         }
 
         if (nl.n_type & (uint32) MAC::N_TYPE::STAB)
@@ -202,8 +203,8 @@ void SymTab::Update()
 bool SymTab::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(Action::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(Action::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(Action::ChangeBase));
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", static_cast<int32_t>(Action::Select));
+    commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(Action::ChangeBase));
 
     return true;
 }

@@ -1,11 +1,14 @@
 #pragma once
 
 #include "GView.hpp"
+#include "../App/KeyBindings.hpp"
 
 #include <set>
 #include <span>
 #include <array>
 #include <filesystem>
+#include <map>
+#include <optional>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
@@ -291,7 +294,8 @@ namespace Generic
         struct
         {
             FixSizeString<25> Name;
-            Input::Key ShortKey;
+            Input::Key ShortKey;   // effective key (key bindings registry)
+            Input::Key DefaultKey; // key declared by the plugin (Command.<name>)
         } Commands[MAX_PLUGINS_COMMANDS];
         uint32 CommandsCount;
         bool (*fnRun)(const string_view command, Reference<GView::Object> currentObject);
@@ -301,6 +305,29 @@ namespace Generic
         bool Init(AppCUI::Utils::IniSection section);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
         void Run(uint32 commandIndex, Reference<GView::Object> currentObject);
+        void ApplyKeyBindings(const App::Keys::Registry& registry);
+        std::string GetKeysSection() const;
+
+        inline std::string_view GetName() const
+        {
+            return Name;
+        }
+        inline uint32 GetCommandsCount() const
+        {
+            return CommandsCount;
+        }
+        inline std::string_view GetCommandName(uint32 index) const
+        {
+            return index < CommandsCount ? std::string_view(Commands[index].Name) : std::string_view();
+        }
+        inline Input::Key GetCommandKey(uint32 index) const
+        {
+            return index < CommandsCount ? Commands[index].ShortKey : Input::Key::None;
+        }
+        inline Input::Key GetCommandDefaultKey(uint32 index) const
+        {
+            return index < CommandsCount ? Commands[index].DefaultKey : Input::Key::None;
+        }
     };
 }; // namespace Generic
 
@@ -361,6 +388,7 @@ namespace Type
         };
         struct Interface
         {
+            virtual ~Interface()                                                = default;
             virtual bool Init(std::string_view text)                            = 0;
             virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) = 0;
         };
@@ -405,7 +433,8 @@ namespace Type
     struct PluginCommand
     {
         FixSizeString<25> name;
-        Input::Key key;
+        Input::Key key;        // effective key (key bindings registry)
+        Input::Key defaultKey; // key declared by the plugin (Command.<name>)
     };
 
     class Plugin
@@ -451,6 +480,8 @@ namespace Type
         {
             return commands;
         }
+        void ApplyKeyBindings(const App::Keys::Registry& registry);
+        std::string GetKeysSection() const;
 
         static uint64 ExtensionToHash(std::string_view ext);
         static uint64 ExtensionToHash(std::u16string_view ext);
@@ -479,6 +510,9 @@ namespace App
         constexpr int OPEN_FOLDER       = 120001;
         constexpr int OPEN_PID          = 120002;
         constexpr int OPEN_PROCESS_TREE = 120003;
+        constexpr int REMOTE_CONNECT    = 120004;
+        constexpr int REMOTE_LISTEN     = 120005;
+        constexpr int STORED_FILES      = 120006; // web build only
 
         constexpr int CHANGE_THEME         = 130000;
         constexpr int OPEN_THEME_EDITOR    = 130001;
@@ -496,25 +530,116 @@ namespace App
         constexpr int CMD_COPY_DIALOG           = 30012350;
         constexpr int CMD_SWITCH_TO_VIEW        = 30012351;
         constexpr int CMD_OPEN_ADD_NOTE         = 30012352;
-        constexpr int CMD_ANALYSIS_ENGINE       = 30012353;
+        constexpr int CMD_LEARNING_SUBMIT_FLAG  = 30012353;
+        constexpr int CMD_ANALYSIS_ENGINE       = 30012354;
 
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
-        static GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_FIND   = { Input::Key::Ctrl | Input::Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
-        static GView::KeyboardControl INSTANCE_COMMAND_FIND      = { Input::Key::Alt | Input::Key::F7, "FindDialog", "Open the Find dialog", CMD_FIND };
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Input::Key::Ctrl | Input::Key::C, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
-        static GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Input::Key::Ctrl | Input::Key::Insert, "CopyDialog", "Open the CopyPaste dialog", CMD_COPY_DIALOG };
-        static GView::KeyboardControl INSTANCE_CHANGE_VIEW       = { Input::Key::F4, "ChangeView", "Change the current viewer", CMD_NEXT_VIEW };
-        static GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW    = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Set focus on viewer", CMD_SWITCH_TO_VIEW };
-        static GView::KeyboardControl INSTANCE_CHOOSE_TYPE       = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Choose a new plugin type", CMD_SWITCH_TO_VIEW };
-        static GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR  = { Input::Key::F1, "ShowKeys", "Show available keys", CMD_SHOW_KEY_CONFIGURATOR };
-        static GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE     = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add note to current window", CMD_OPEN_ADD_NOTE };
-        static GView::KeyboardControl INSTANCE_ANALYSIS_ENGINE   = { Input::Key::Alt | Input::Key::F12, "AnalysisEngine", "Show the AnalysisEngine", CMD_ANALYSIS_ENGINE };
-
-        static const std::array GViewCommands = {
-    &INSTANCE_CHANGE_VIEW, &INSTANCE_SWITCH_TO_VIEW, &INSTANCE_COMMAND_GOTO, &FILE_WINDOW_COMMAND_FIND, &INSTANCE_CHOOSE_TYPE, &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_ANALYSIS_ENGINE
+        using KF = GView::KeyboardControlFlags;
+        // GView (window level) keys. `inline` -> one object shared by every translation unit (the key bindings
+        // registry writes the configured key into them). The captions are the settings names (keep them stable).
+        inline GView::KeyboardControl INSTANCE_CHANGE_VIEW       = { Input::Key::F4, "ChangeView", "Switch to the next viewer", CMD_NEXT_VIEW };
+        inline GView::KeyboardControl INSTANCE_SWITCH_TO_VIEW    = { Input::Key::Alt | Input::Key::F, "SwitchToView", "Move the focus back to the viewer", CMD_SWITCH_TO_VIEW };
+        inline GView::KeyboardControl INSTANCE_COMMAND_GOTO      = { Input::Key::F5, "GoToDialog", "Open the GoTo dialog", CMD_GOTO };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_GOTO   = { Input::Key::Ctrl | Input::Key::G, "GoToDialogAlt", "Open the GoTo dialog (alternative key)", CMD_GOTO };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_FIND   = { Input::Key::Ctrl | Input::Key::F, "FindDialog", "Open the Find dialog", CMD_FIND };
+        inline GView::KeyboardControl INSTANCE_COMMAND_FIND      = { Input::Key::Alt | Input::Key::F7, "FindDialogAlt", "Open the Find dialog (alternative key)", CMD_FIND };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_COPY   = { Input::Key::Ctrl | Input::Key::C, "CopyDialog", "Open the Copy dialog", CMD_COPY_DIALOG };
+        inline GView::KeyboardControl FILE_WINDOW_COMMAND_INSERT = { Input::Key::Ctrl | Input::Key::Insert, "CopyDialogAlt", "Open the Copy dialog (alternative key)", CMD_COPY_DIALOG };
+        inline GView::KeyboardControl INSTANCE_CHOOSE_TYPE       = { Input::Key::Alt | Input::Key::F1, "ChooseType", "Reopen the file with another type plugin", CMD_CHOSE_NEW_TYPE };
+        inline GView::KeyboardControl INSTANCE_KEY_CONFIGURATOR  = { Input::Key::F1, "ShowKeys", "Show and edit the keyboard shortcuts", CMD_SHOW_KEY_CONFIGURATOR };
+        inline GView::KeyboardControl INSTANCE_OPEN_ADD_NOTE     = { Input::Key::Ctrl | Input::Key::F11, "AddNote", "Add a note to the current window", CMD_OPEN_ADD_NOTE };
+        inline GView::KeyboardControl INSTANCE_NEXT_WINDOW       = { Input::Key::Tab, "NextWindow", "Switch to the next window (when the viewer has the focus)", 0 };
+        inline GView::KeyboardControl INSTANCE_PREVIOUS_WINDOW   = { Input::Key::Shift | Input::Key::Tab, "PreviousWindow", "Switch to the previous window (when the viewer has the focus)", 0 };
+        inline GView::KeyboardControl INSTANCE_FOCUS_VIEWER      = { Input::Key::Escape, "FocusViewer", "Move the focus from a panel back to the viewer", 0 };
+        inline GView::KeyboardControl INSTANCE_WINDOWS_MANAGER   = { Input::Key::Alt | Input::Key::N0, "WindowsManager", "Show the windows manager", MenuCommands::SHOW_WINDOW_MANAGER, KF::RequiresRestart };
+        inline GView::KeyboardControl INSTANCE_ANALYSIS_ENGINE   = { Input::Key::Alt | Input::Key::F12, "AnalysisEngine", "Show the AnalysisEngine", CMD_ANALYSIS_ENGINE };
+        inline GView::KeyboardControl INSTANCE_LEARNING_SUBMIT_FLAG = {
+            Input::Key::Ctrl | Input::Key::Alt | Input::Key::F, "LearningSubmitFlag", "Submit the flag for the current learning task", CMD_LEARNING_SUBMIT_FLAG
         };
-    }
+        inline GView::KeyboardControl INSTANCE_EXIT              = { Input::Key::Shift | Input::Key::Escape, "Exit", "Close GView", MenuCommands::EXIT_GVIEW, KF::RequiresRestart };
+        // remote windows send every key to the remote GView; after this key the next one is handled locally
+        inline GView::KeyboardControl REMOTE_LOCAL_KEY = {
+            Input::Key::Ctrl | Input::Key::F12, "RemoteLocalKey", "Remote window: handle the next key in this GView (not in the remote one)", 0
+        };
+
+        inline const std::array<GView::KeyboardControl*, 18> GViewKeys = {
+            &INSTANCE_KEY_CONFIGURATOR, &INSTANCE_CHANGE_VIEW,     &INSTANCE_SWITCH_TO_VIEW,  &INSTANCE_COMMAND_GOTO,  &FILE_WINDOW_COMMAND_GOTO,
+            &FILE_WINDOW_COMMAND_FIND,  &INSTANCE_COMMAND_FIND,    &FILE_WINDOW_COMMAND_COPY, &FILE_WINDOW_COMMAND_INSERT, &INSTANCE_CHOOSE_TYPE,
+            &INSTANCE_OPEN_ADD_NOTE,    &INSTANCE_NEXT_WINDOW,     &INSTANCE_PREVIOUS_WINDOW, &INSTANCE_FOCUS_VIEWER,  &INSTANCE_WINDOWS_MANAGER,
+            &INSTANCE_EXIT,             &INSTANCE_LEARNING_SUBMIT_FLAG, &INSTANCE_ANALYSIS_ENGINE,
+        };
+        // registers the GView keys (section "GView")
+        void RegisterGViewKeys(KeyboardControlsInterface* interface);
+    } // namespace InstanceCommands
+
+    class FileWindow;
+    // GView desktop (App/GViewDesktop.cpp): drives the auto-updater from OnFrameUpdate
+    AppCUI::Controls::Desktop* CreateDesktop();
+
+    namespace Browser::Storage
+    {
+        // Persistent storage of the web build (App/BrowserStorage.cpp): what changed in GView's home folder since the
+        // last scan. Pure logic, compiled in every build (unit tests). Paths are relative to the home folder.
+        struct Stamp {
+            uint64 size{ 0 };
+            int64 mtimeMs{ 0 };
+            bool operator==(const Stamp&) const = default;
+        };
+        using Snapshot = std::map<std::string, Stamp>;
+        struct Changes {
+            std::vector<std::string> persist; // new or modified, unchanged for two scans in a row
+            std::vector<std::string> remove;  // stored, and missing from two scans in a row
+        };
+        constexpr size_t MAX_PATH_LENGTH = 1024;
+        // previousScan / currentScan: the last two scans; stored: what the store holds for the files of the folder
+        Changes Diff(const Snapshot& previousScan, const Snapshot& currentScan, const Snapshot& stored);
+        // relative, '/' separated, no empty / "." / ".." component, no control character or backslash
+        bool IsStorablePath(std::string_view relativePath) noexcept;
+    } // namespace Browser::Storage
+
+#ifdef BUILD_FOR_WASM
+    // GView inside a web page (App/BrowserHost.cpp, App/BrowserStorage.cpp): the files given to the page (file picker /
+    // drag & drop) are copied into the in-memory file system and opened from the desktop's OnFrameUpdate. Everything
+    // under the home folder is kept across visits in the storage of the browser (OPFS, see GView/web/gview-storage.js).
+    namespace Browser
+    {
+        void PrepareFilesFolder(); // creates $HOME/Files (where the files are copied) and makes it the current folder
+        void RestoreSettings();    // writes the settings kept in the localStorage of the page to the settings file
+        void RestoreStorage();     // copies the files kept by the previous visits back into the home folder (bounded)
+        bool OnFrame(bool desktopHasFocus);
+        // BrowserStorage.cpp: keeps the home folder in the persistent storage; pageHidden: the page was just hidden
+        bool StorageOnFrame(bool pageHidden);
+        // a file was copied into the home folder by the page, which keeps it itself (no copy through the module)
+        void NoteFileStoredByPage(const std::filesystem::path& file);
+        // the store holds this version of a file of the home folder (BrowserStorage.cpp)
+        void StorageMarkStored(const std::string& relativePath, const Storage::Stamp& stamp);
+        std::filesystem::path HomeFolder();
+        void ShowStoredFilesWindow();
+        struct StoredFile {
+            std::string path; // relative to the home folder
+            uint64 size{ 0 };
+            int64 storedAtMs{ 0 };
+            bool materialized{ false }; // also in the in-memory file system
+        };
+        bool StorageAvailable();
+        std::vector<StoredFile> StoredFiles();
+        bool IsStoredPath(const std::string& relativePath); // in the store, even if not loaded into memory
+        std::string StorageStatus();
+        // copies a stored file into the home folder (suspends GView until it is there)
+        bool MaterializeStoredFile(const std::string& relativePath, std::filesystem::path& outPath);
+        void ForgetStoredFile(const std::string& relativePath); // removes it from the store and from memory
+        void ForgetAllStoredFiles();
+        // Secrets kept by the page, encrypted in the persistent storage (never in GView.ini, which is mirrored in clear
+        // into the localStorage of the page): e.g. the Learning connection string
+        namespace Secrets
+        {
+            // Learning and Evaluation Mode keeps its connection string (it contains the access token) under this name
+            constexpr std::string_view LEARNING_CONNECTION = "learning.connectionString";
+            std::optional<std::string> Get(std::string_view name);
+            void Set(std::string_view name, std::string_view value);
+            void Remove(std::string_view name);
+        } // namespace Secrets
+    } // namespace Browser
+#endif
 
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
@@ -531,6 +656,7 @@ namespace App
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
         std::filesystem::path lastOpenedFolderLocation;
+        Keys::Registry keyBindings;
 
         bool BuildMainMenus();
         bool LoadSettings();
@@ -541,6 +667,7 @@ namespace App
         void ShowAboutWindow();
         void ShowChangeThemeWindow();
         void ShowRestrictedModeWindow();
+        void ShowKeyboardShortcuts();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
@@ -610,7 +737,33 @@ namespace App
               string_view typeName,
               Reference<Window> parent,
               const ConstString& creationProcess = "");
+        // opens a memory object that owns its storage (e.g. learning-mode content kept in locked memory)
+        bool AddDataObjectWindow(
+              std::unique_ptr<AppCUI::OS::DataObject> data,
+              const ConstString& name,
+              const ConstString& path,
+              OpenMethod method,
+              string_view typeName,
+              Reference<Window> parent,
+              const ConstString& creationProcess = "");
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
+
+        // key bindings
+        inline Keys::Registry& GetKeyBindings()
+        {
+            return keyBindings;
+        }
+        inline const std::vector<GView::Type::Plugin>& GetTypePlugins() const
+        {
+            return typePlugins;
+        }
+        inline const std::vector<GView::Generic::Plugin>& GetGenericPlugins() const
+        {
+            return genericPlugins;
+        }
+        // pushes the registry keys into GView, every viewer, every plugin command and every open file window
+        void ApplyKeyBindings();
+        Reference<FileWindow> GetCurrentFileWindow();
 
         // inline getters
         constexpr inline uint32 GetDefaultCacheSize() const
@@ -762,9 +915,6 @@ namespace App
         void ShowGoToDialog();
         void ShowFindDialog();
         void ShowCopyDialog();
-        void ShowKeyConfiguratorWindow();
-
-        bool UpdateKeys(KeyboardControlsInterface* interface);
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
@@ -794,6 +944,54 @@ namespace App
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
+        bool OnFrameUpdate() override;
+        void Paint(AppCUI::Graphics::Renderer& renderer) override;
+        ~FileWindow() override;
+
+        // title = object name [+ " - " + course watermark]
+        void RefreshTitle();
+        std::string_view GetCurrentViewerKind();
+
+        // key bindings
+        inline Reference<Type::Plugin> GetTypePlugin() const
+        {
+            return typePlugin;
+        }
+        // section of the type plugin keys ("Type.<Name>"), empty for objects without a type plugin
+        std::string GetTypePluginKeysSection() const;
+        // writes the registry keys into the keys registered by the type plugin instance
+        void ApplyKeyBindings(const Keys::Registry& registry);
+    };
+
+    // Learning and Evaluation Mode UI (LearningModeWindow.cpp / LearningSubmitDialog.cpp)
+    void ShowLearningModeWindow(std::string_view prefilledConnectionString, bool autoConnect);
+    void ShowLearningSubmitDialog(std::string_view problemName);
+    void RefreshAllFileWindowTitles();
+    bool TakeStartupLearningConnection(std::string& out);
+    // Next Init uses this frontend instead of a terminal (remote server); the desktop stays open without windows.
+    void SetHeadlessFrontend(AppCUI::Application::CustomFrontendInterface* frontend);
+    bool OpenDataObject(
+          std::unique_ptr<AppCUI::OS::DataObject> data,
+          const ConstString& name,
+          const ConstString& path,
+          OpenMethod method,
+          std::string_view typeName,
+          Reference<Window> parent,
+          const ConstString& creationProcess);
+
+    // Private temporary folder (TemporaryFolder.cpp). No policy checks here: plugins go through DropToTemporaryFile.
+    struct TemporaryFolderAccess {
+        // empty => the system temporary directory; only affects a folder that was not created yet
+        static void SetBaseFolder(const std::filesystem::path& base);
+        // creates the folder on first use (fails closed when the configured base folder is unusable)
+        static std::optional<std::filesystem::path> GetFolder(std::string& error);
+        static Utils::GStatus Write(Utils::DataCache& cache, std::u16string_view nameHint, TemporaryFile& output);
+        // last path component of an untrusted name, restricted to [A-Za-z0-9._-], at most MAX_NAME_LENGTH characters
+        static std::string SanitizeFileName(std::u16string_view name);
+        // removes the folder and everything in it (application exit); the next GetFolder creates a new one
+        static void RemoveFolder() noexcept;
+
+        static constexpr size_t MAX_NAME_LENGTH = 64;
     };
 
     class ErrorDialog : public AppCUI::Controls::Window
@@ -803,39 +1001,105 @@ namespace App
         bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
     };
 
-    struct KeyboardControlsImplementation : public KeyboardControlsInterface
+    namespace Keys
     {
-        struct OwnedKeyboardControl {
-            Input::Key Key;
-            std::string Caption;
-            std::string Explanation;
-            uint32 CommandId;
-
-            OwnedKeyboardControl(KeyboardControl* key) : Key(key->Key), Caption(key->Caption), Explanation(key->Explanation), CommandId(key->CommandId){}
+        // key bindings of a core viewer (all viewer keys are static -> they can be listed without a viewer instance)
+        struct ViewerKeys
+        {
+            std::string_view section; // "View.Buffer", ...
+            std::string_view title;   // "Buffer viewer", ...
+            void (*registerKeys)(KeyboardControlsInterface* interface);
+            void (*onKeysChanged)(); // rebuilds the viewer key map after the keys were changed
         };
+        std::span<const ViewerKeys> GetAllViewerKeys();
+        const ViewerKeys* GetViewerKeys(Reference<View::ViewControl> view);
+    } // namespace Keys
 
-        std::vector<OwnedKeyboardControl> keys;
-
-        virtual bool RegisterKey(KeyboardControl* key) override;
-    };
+    // "Keyboard shortcuts" window (fileWindow may be null -> only the "All keys" scope is available)
+    void ShowKeyboardShortcutsWindow(Reference<Instance> instance, Reference<FileWindow> fileWindow);
 } // namespace App
 
 namespace Security
 {
     namespace RestrictedMode::Internal
     {
-        // Internal API - called by GViewCore components
-        Utils::GStatus Activate(const RestrictedMode::Policy& policy) noexcept;
+        // Result of applying a validated policy (plans/PLAN_GVIEW_CLIENT.md Task 1)
+        struct ActivationReport {
+            bool screenProtectRequested{ false };
+            bool screenProtectApplied{ false }; // capture exclusion applied to at least one GView-owned window
+            bool keyboardHookInstalled{ false }; // PrintScreen / Win+Shift+S blocker (Windows only)
+            std::vector<RestrictedMode::Feature> applied;
+            std::string platformNote;
+        };
+
+        // Internal API - called by GViewCore components (UI thread)
+        // Re-entrant: an active policy is replaced atomically by a newer validated one.
+        Utils::GStatus Activate(const RestrictedMode::Policy& policy, ActivationReport& report) noexcept;
         void Deactivate() noexcept;
         bool IsFeatureDisabled(RestrictedMode::Feature feature) noexcept;
         bool IsPluginAllowed(std::string_view pluginName) noexcept;
-        std::string GetWatermark() noexcept;
+        std::string GetWatermark();
 
         // Window-level screen protection (call with HWND on Windows, or nullptr on other platforms)
         // Uses SetWindowDisplayAffinity on Windows 10 2004+ to prevent screen capture
         Utils::GStatus EnableWindowScreenProtection(void* nativeWindowHandle) noexcept;
         void DisableWindowScreenProtection(void* nativeWindowHandle) noexcept;
+
+        // Building blocks (exposed for unit tests)
+        Utils::GStatus VerifyEd25519(BufferView message, BufferView signature, BufferView publicKey) noexcept;
+        Utils::GStatus ParsePolicyDocument(BufferView json, bool requireSchema2, RestrictedMode::Policy& out) noexcept;
+        Utils::GStatus VerifyPolicyDigest(BufferView rawJson, std::string_view digestHex) noexcept;
+        bool ParseFeature(std::string_view name, RestrictedMode::Feature& out) noexcept;
     } // namespace RestrictedMode::Internal
+
+    namespace Learning::Hooks
+    {
+        // Thin, UI-thread facade used by viewers/windows to report learning-relevant actions.
+        // Every function is a cheap no-op when no learning session is active and never throws.
+        enum class SimpleEvent : uint8 {
+            JumpBack,
+            JumpForward,
+            GotoEntrypoint,
+            GotoDialog,
+            CommentAdd,
+            CommentEdit,
+            CommentRemove,
+            LabelRename,
+            NoteAdd,
+        };
+        bool IsSessionActive() noexcept;
+        void OnSimpleEvent(const GView::Object* obj, SimpleEvent ev) noexcept;
+        void OnJumpFollow(const GView::Object* obj, uint64 from, uint64 to, std::string_view mnemonic) noexcept;
+        void OnFileWindowCreated(const GView::Object* obj) noexcept;
+        void OnFileWindowClosed(const GView::Object* obj) noexcept;
+        // called from FileWindow::OnFrameUpdate (~30 Hz); viewerKind is one of the closed telemetry viewer names
+        void OnFileWindowFrame(const GView::Object* obj, std::string_view viewerKind, bool focused) noexcept;
+        void NoteUserActivity() noexcept;
+        // true for objects delivered in memory-only mode: nothing derived from them may be written to disk
+        bool IsMemoryOnlyObject(const GView::Object* obj) noexcept;
+        bool IsLearningProblem(const GView::Object* obj) noexcept;
+        void ReportClientError(std::string_view constantMessage, bool fatal) noexcept;
+        void ShowSubmitDialogForObject(const GView::Object* obj);
+        void Shutdown() noexcept;
+#ifdef BUILD_FOR_WASM
+        // every frame of the desktop (BrowserHost.cpp); pageHidden: the page has just been hidden
+        void OnBrowserFrame(bool pageHidden) noexcept;
+#endif
+
+        // convenience overloads for viewers that hold a Reference<GView::Object>
+        inline void OnSimpleEvent(Reference<GView::Object> obj, SimpleEvent ev) noexcept
+        {
+            OnSimpleEvent(static_cast<const GView::Object*>(obj.operator->()), ev);
+        }
+        inline void OnJumpFollow(Reference<GView::Object> obj, uint64 from, uint64 to, std::string_view mnemonic) noexcept
+        {
+            OnJumpFollow(static_cast<const GView::Object*>(obj.operator->()), from, to, mnemonic);
+        }
+        inline bool IsMemoryOnlyObject(Reference<GView::Object> obj) noexcept
+        {
+            return IsMemoryOnlyObject(static_cast<const GView::Object*>(obj.operator->()));
+        }
+    } // namespace Learning::Hooks
 
     namespace Crypto
     {
@@ -880,9 +1144,25 @@ namespace Security
 
             // Random generation
             Utils::GStatus GenerateRandomBytes(size_t length, std::vector<uint8_t>& outBytes) noexcept;
+            Utils::GStatus GenerateRandomBytes(uint8_t* out, size_t length) noexcept;
 
             // Memory security
             void SecureErase(void* ptr, size_t size) noexcept;
+
+            // Span-based variants: never allocate, so plaintext/key material can live in caller-locked memory.
+            // outCapacity must be >= ciphertext size; outLen receives the plaintext size.
+            Utils::GStatus DecryptAES256GCMInto(
+                  BufferView iv,
+                  BufferView ciphertext,
+                  BufferView tag,
+                  BufferView key,
+                  BufferView aad,
+                  uint8_t* out,
+                  size_t outCapacity,
+                  size_t& outLen) noexcept;
+            Utils::GStatus ComputeSHA256(BufferView data, uint8_t (&outHash)[32]) noexcept;
+            Utils::GStatus DeriveKeyHKDF(BufferView inputKey, BufferView salt, BufferView info, uint8_t* outKey, size_t outLen) noexcept;
+            bool ConstantTimeEquals(const void* a, const void* b, size_t size) noexcept;
         } // namespace Internal
     } // namespace Crypto
 

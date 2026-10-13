@@ -431,15 +431,6 @@ bool ExtraData::OnUpdateCommandBar(Application::CommandBar& commandBar)
 
 bool ExtraData::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    if (evnt == Event::Command)
-    {
-        switch (controlID)
-        {
-        default:
-            break;
-        }
-    }
-
     return false;
 }
 

@@ -368,7 +368,7 @@ void CodeSignMagic::UpdateCodeDirectory(
 
     const auto hashSize    = nf.ToString(code.hashSize, dec);
     const auto hexHashSize = nf2.ToString(code.hashSize, hex);
-    general->AddItem({ "Hash Size", ls.Format("%-26s (%s)", hexHashSize.data(), hexHashSize.data()) });
+    general->AddItem({ "Hash Size", ls.Format("%-26s (%s)", hashSize.data(), hexHashSize.data()) });
 
     const auto& hashType   = MAC::CodeSignHashTypeNames.at(static_cast<MAC::CodeSignMagic>(code.hashType));
     const auto hexHashType = nf2.ToString(code.hashType, hex);
@@ -524,6 +524,7 @@ bool CodeSignMagic::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
         default:
             break;
         }
+        return false;
     default:
         return false;
     }

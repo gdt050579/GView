@@ -6,14 +6,14 @@ using namespace GView::View::GridViewer;
 using namespace GView::View::GridViewer::Commands;
 using namespace AppCUI::Input;
 
-constexpr uint32 PROP_ID_REPLACE_HEADER_WITH_1ST_ROW = 0;
-constexpr uint32 PROP_ID_TOGGLE_HORIZONTAL_LINES     = 1;
-constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
+[[maybe_unused]] constexpr uint32 PROP_ID_REPLACE_HEADER_WITH_1ST_ROW = 0;
+[[maybe_unused]] constexpr uint32 PROP_ID_TOGGLE_HORIZONTAL_LINES     = 1;
+[[maybe_unused]] constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 
 Config Instance::config;
 
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Grid View")
+    : ViewControl("Grid View"), settings(nullptr)
 {
     this->obj = obj;
     // settings
@@ -49,12 +49,12 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     auto lastSlash              = path.rfind(u".");
     std::u16string exportedPath = std::u16string(path.substr(0, lastSlash));
     exportedPath.append(u"_exported");
-    this->exportedPathUTF8           = { exportedPath.begin(), exportedPath.end() };
+    this->exportedPathUTF8           = GView::Utils::UTF16ToUTF8(exportedPath);
     auto lastP                       = path.rfind(u"\\");
     std::u16string exportedPathSlash = std::u16string(path.substr(0, lastP));
     exportedPathSlash.append(u"\\");
 
-    this->exportedFolderPath = { exportedPathSlash.begin(), exportedPathSlash.end() };
+    this->exportedFolderPath = GView::Utils::UTF16ToUTF8(exportedPathSlash);
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -97,7 +97,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         const uint32 x3 = x2 + config.cursorInformationCellSpace + 1;
         const uint32 x4 = x3 + config.cursorInformationCellSpace + 1;
         const uint32 x5 = x4 + config.cursorInformationCellSpace + 1;
-        const uint32 x6 = x5 + config.cursorInformationCellSpace + 1;
         const uint32 y  = 0;
 
         PaintCursorInformationWidth(renderer, x1, y);
@@ -115,7 +114,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         const uint32 x3 = x1 + config.cursorInformationCellSpace + 1;
         const uint32 x4 = x2 + config.cursorInformationCellSpace + 1;
         const uint32 x5 = x3 + config.cursorInformationCellSpace + 1;
-        const uint32 x6 = x4 + config.cursorInformationCellSpace + 1;
         const uint32 y1 = 0;
         const uint32 y2 = 1;
 
@@ -131,7 +129,11 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    const bool exportRestricted = GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export);
     for (const auto& cmd : AllGridCommands) {
+        // export commands are hidden while the course policy restricts exports
+        if (exportRestricted && (cmd->CommandId == COMMAND_ID_EXPORT_CELL_CONTENT || cmd->CommandId == COMMAND_ID_EXPORT_COLUMN_CONTENT))
+            continue;
         commandBar.SetCommand(cmd->Key, cmd->Caption, (int32)cmd->CommandId);
     }
     return false;
@@ -156,14 +158,16 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                 BufferView buffer(*content);
                 GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
             } else {
-                AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to view cell content!");
+                AppCUI::Dialogs::MessageBox::ShowNotification("View cell content", "Select a cell first !");
             }
 
         } else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT) {
+            if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Export, "exporting cell content"))
+                return true;
             auto content = grid->GetSelectedCellContent();
 
             if (content.has_value()) {
-                std::time_t t      = std::time(0);
+                std::time_t t      = std::time(nullptr);
                 auto timestampPath = this->exportedPathUTF8 + "_" + std::to_string(t);
 
                 std::ofstream file(timestampPath.c_str(), std::ios::binary); // Open the file in binary mode
@@ -175,12 +179,14 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                 AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to export cell content!");
             }
         } else if (ID == COMMAND_ID_EXPORT_COLUMN_CONTENT) {
+            if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Export, "exporting column content"))
+                return true;
             auto data = grid->GetSelectedColumnContent();
             if (data.has_value()) {
                 auto index = 0;
 
                 auto folderPath = this->exportedFolderPath + data.value().first + "_";
-                std::time_t t   = std::time(0);
+                std::time_t t   = std::time(nullptr);
                 folderPath += std::to_string(t);
 
                 if (!std::filesystem::exists(folderPath)) {
@@ -445,27 +451,18 @@ void GView::View::GridViewer::Instance::PaintCursorInformationSeparator(AppCUI::
     renderer.DrawVerticalLine(x, y, y + 4, config.color.cursorInformation.value);
 }
 
-enum class PropertyID : uint32 { None };
-
-bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
+namespace
 {
-    for (const auto& key : Commands::AllGridCommands) {
-        if (key->CommandId == id) {
-            value = key->Key;
-            return true;
-        }
-    }
+enum class PropertyID : uint32 { None };
+}
+
+bool Instance::GetPropertyValue(uint32, PropertyValue&)
+{
     return false;
 }
 
-bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
+bool Instance::SetPropertyValue(uint32, const PropertyValue&, String&)
 {
-    for (const auto& key : Commands::AllGridCommands) {
-        if (key->CommandId == id) {
-            key->Key = std::get<Key>(value);
-            return true;
-        }
-    }
     return false;
 }
 
@@ -480,20 +477,12 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 
 const vector<Property> Instance::GetPropertiesList()
 {
-    vector<Property> properties;
-    properties.reserve(AllGridCommands.size());
-
-    for (const auto& key : AllGridCommands) {
-        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
-    }
-    return properties;
+    // keys are configured from the "Keyboard shortcuts" window
+    return {};
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (const auto& cmd : AllGridCommands) {
-        interface->RegisterKey(cmd);
-    }
-
+    Commands::RegisterKeys(interface);
     return true;
 }

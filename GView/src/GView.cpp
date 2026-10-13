@@ -1,8 +1,7 @@
 #include "../GViewCore/include/GView.hpp"
 #include <iostream>
 
-enum class CommandID
-{
+enum class CommandID {
     Unknown,
     Help,
     Open,
@@ -10,6 +9,11 @@ enum class CommandID
     ListTypes,
     UpdateConfig,
     Test,
+    Learn,
+    Serve,
+    Connect,
+    Listen,
+    RemoteCerts,
 };
 
 struct CommandInfo
@@ -39,6 +43,11 @@ CommandInfo commands[] = {
     { CommandID::ListTypes, _U("list-types") },
     { CommandID::UpdateConfig, _U("updateconfig") },
     { CommandID::Test, _U("test") },
+    { CommandID::Learn, _U("learn") },
+    { CommandID::Serve, _U("serve") },
+    { CommandID::Connect, _U("connect") },
+    { CommandID::Listen, _U("listen") },
+    { CommandID::RemoteCerts, _U("remote-certs") },
 };
 
 std::string_view help = R"HELP(
@@ -63,14 +72,66 @@ Where <command> is on of:
    
    test [fileName|path]     Opens a script for testing                     
 
+   learn <connectionString> Opens the Learning and Evaluation Mode window and
+                            connects with the connection string provided by
+                            the teacher.
+                            Ex: 'GView learn ZXhhbXBsZQ=='
+
    list-types               List all available types (as loaded from gview.ini).
                             Ex: 'GView list-types' 
+
+Remote mode (requires a build with -DGVIEW_ENABLE_REMOTE=ON):
+   serve [files] [options]  Runs GView as a server: the analysis runs here and
+                            only the screen is sent to the connected analysts
+                            (TLS 1.3, mutual authentication).
+                            Ex: 'GView serve --bind 0.0.0.0 sample.exe'
+                            --bind <address>        (default: 127.0.0.1)
+                            --port <port>           (default: 18262)
+                            --max-clients <n>       (default: 4)
+                            --size <width>x<height> (screen before a client connects)
+                            --reverse <host[:port]> connect to an analyst that waits
+                                                    with 'GView listen'
+                            --server-name <name>    name in the analyst certificate
+                                                    (reverse mode)
+
+   connect <host[:port]>    Opens the screen of a remote GView server.
+                            Ex: 'GView connect 10.0.0.5:18262'
+                            --server-name <name>    name in the server certificate
+
+   listen [address[:port]]  Waits for a GView server started with --reverse.
+                            Ex: 'GView listen 0.0.0.0:18262'
+
+   remote-certs <folder> --name <name> [--days N] [--ca-days N]
+                            Creates a private CA (once) and a short-lived
+                            certificate for a server host or an analyst.
+                            Ex: 'GView remote-certs ./pki --name server.lab'
+
+   TLS options of serve/connect/listen (default: [Remote] section of gview.ini):
+                            --cert <file> --key <file> --ca <file>
+                            --alpn <protocol> --max-cert-days <n>
 And <options> are:
    --type:<type>            Specify the type of the file (if knwon)
                             Ex: 'GView open a.temp --type:PE'    
    --selectType             Specify the type of the file should be manually selected
                             Ex: 'GView open a.temp --selectType'   
 )HELP";
+
+template <typename T>
+std::string ArgumentToUtf8(const T* argument)
+{
+    // wide (Windows) or native narrow arguments -> UTF-8
+    const auto u8 = std::filesystem::path(argument).u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+template <typename T>
+int ProcessRemoteCommand(std::string_view command, int argc, T** argv)
+{
+    std::vector<std::string> arguments;
+    for (int index = 2; index < argc; index++)
+        arguments.push_back(ArgumentToUtf8(argv[index]));
+    return GView::App::RunRemoteCommand(command, arguments);
+}
 
 void ShowHelp()
 {
@@ -190,7 +251,7 @@ int ProcessOpenCommand(int argc, T** argv, int startIndex, bool isTesting = fals
     AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
     GView::App::Run(testingContent);
 
-    return 0;
+    return isTesting ? 0 : GView::App::FinishPendingUpdate();
 }
 
 #ifdef BUILD_FOR_WINDOWS
@@ -199,6 +260,7 @@ int wmain(int argc, const wchar_t** argv)
 int main(int argc, const char** argv)
 #endif
 {
+    GView::App::SetCommandLineArguments(argc, argv);
     if (argc < 2)
     {
         const char* openCurrentFolderCommand[] = { "."};
@@ -219,6 +281,25 @@ int main(int argc, const char** argv)
         return 0;
     case CommandID::Open:
         return ProcessOpenCommand(argc, argv, 2);
+    case CommandID::Learn: {
+        if (argc != 3) {
+            std::cout << "Use: GView learn <connectionString>" << std::endl;
+            return 1;
+        }
+        // connection strings are base64 (ASCII): reject anything else before it reaches the application
+        std::string cs;
+        for (const auto* p = argv[2]; *p; p++) {
+            if (*p < 0x21 || *p > 0x7E) {
+                std::cout << "Invalid connection string" << std::endl;
+                return 1;
+            }
+            cs.push_back(static_cast<char>(*p));
+        }
+        CHECK(GView::App::Init(false), 1, "");
+        GView::App::OpenLearningModeOnStart(cs);
+        GView::App::Run("");
+        return GView::App::FinishPendingUpdate();
+    }
     case CommandID::Test: {
         if (argc < 4) {
             std::cout << "The program should have 3 arguments: test <fileToAnalyze> <scriptToRun>\n";
@@ -226,6 +307,14 @@ int main(int argc, const char** argv)
         }
         return ProcessOpenCommand(argc, argv, 2, true);
     }
+    case CommandID::Serve:
+        return ProcessRemoteCommand("serve", argc, argv);
+    case CommandID::Connect:
+        return ProcessRemoteCommand("connect", argc, argv);
+    case CommandID::Listen:
+        return ProcessRemoteCommand("listen", argc, argv);
+    case CommandID::RemoteCerts:
+        return ProcessRemoteCommand("remote-certs", argc, argv);
     case CommandID::Unknown:
         return ProcessOpenCommand(argc, argv, 1);
     default:

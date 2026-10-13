@@ -55,7 +55,7 @@ PayloadDataParserInterface* HTTP::HTTPParser::ParsePayload(const PayloadInformat
             if (spaces >= 4) {
                 if (identified) {
                     if (layer.payload.size) {
-                        layer.payload.location = (uint8*) startPtr;
+                        layer.payload.location = (const uint8*) startPtr;
                         // push
 
                         startPtr += layer.payload.size;

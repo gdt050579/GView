@@ -162,6 +162,11 @@ enum class CounterSignatureType
 uint16_t BSwap16(uint16_t d);
 uint32_t BSwap32(uint32_t d);
 
+/* Some platform headers (e.g. macOS <sys/endian.h>) already define these; always use ours. */
+#undef letoh16
+#undef letoh32
+#undef betoh16
+#undef betoh32
 #if defined(WORDS_BIGENDIAN)
 #    define letoh16(x) BSwap16(x)
 #    define letoh32(x) BSwap32(x)
@@ -177,7 +182,7 @@ uint32_t BSwap32(uint32_t d);
 /* OpenSSL defines OPENSSL_free as a macro, which we can't use with decltype.
  * So we wrap it here for use with unique_ptr.
  */
-static void My_OpenSSL_free(void* ptr)
+inline void My_OpenSSL_free(void* ptr)
 {
     OPENSSL_free(ptr);
 }

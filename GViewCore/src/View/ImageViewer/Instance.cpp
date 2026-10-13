@@ -7,7 +7,7 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Image View")
+    : ViewControl("Image View"), settings(nullptr)
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
     imgView->SetVScrollBarTopMargin(4);
@@ -68,35 +68,69 @@ void Instance::LoadImage()
         RedrawImage();
     }
 }
+void Instance::OpenCurrentImage()
+{
+    if (this->currentImageIndex >= this->settings->imgList.size()) {
+        Dialogs::MessageBox::ShowNotification("Open image", "There is no image to open !");
+        return;
+    }
+    const auto& info = this->settings->imgList[this->currentImageIndex];
+    if ((info.end <= info.start) || (info.end - info.start > 0xFFFFFFFFULL)) {
+        Dialogs::MessageBox::ShowNotification("Open image", "The current image does not have a valid file range !");
+        return;
+    }
+
+    LocalString<128> temp;
+    temp.Format("Image_%u_%llx_%llx", this->currentImageIndex, info.start, info.end);
+    auto buf = this->obj->GetData().CopyToBuffer(info.start, (uint32) (info.end - info.start));
+    if (buf.IsValid() == false) {
+        Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
+        return;
+    }
+
+    LocalUnicodeStringBuilder<2048> fullPath;
+    fullPath.Add(this->obj->GetPath());
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add(temp);
+
+    GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select, "", Application::GetCurrentWindow(), "image extraction");
+}
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(ZoomIn.Key, ZoomIn.Caption, ZoomIn.CommandId);
     commandBar.SetCommand(ZoomOut.Key, ZoomOut.Caption, ZoomOut.CommandId);
+    if (this->settings->imgList.empty() == false)
+        commandBar.SetCommand(OpenImage.Key, OpenImage.Caption, OpenImage.CommandId);
     if (this->settings->imgList.size() > 1)
     {
         //prev/next image
-        commandBar.SetCommand(NextImage.Key, NextImage.Caption, NextImage.CommandId);
         commandBar.SetCommand(PrevImage.Key, PrevImage.Caption, PrevImage.CommandId);
+        commandBar.SetCommand(NextImage.Key, NextImage.Caption, NextImage.CommandId);
     }
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
-    switch (keyCode)
+    if (PrevImage.Matches(keyCode))
     {
-    case Key::PageUp:
         if (this->currentImageIndex > 0)
         {
             this->currentImageIndex--;
             LoadImage();
         }
         return true;
-    case Key::PageDown:
+    }
+    if (NextImage.Matches(keyCode))
+    {
         if ((size_t) this->currentImageIndex + 1 < this->settings->imgList.size())
         {
             this->currentImageIndex++;
             LoadImage();
         }
+        return true;
+    }
+    if (OpenImage.Matches(keyCode)) {
+        OpenCurrentImage();
         return true;
     }
 
@@ -143,6 +177,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             this->currentImageIndex++;
             LoadImage();
         }
+        return true;
+    case CMD_ID_OPEN_IMAGE:
+        OpenCurrentImage();
         return true;
     }
     return false;
@@ -204,6 +241,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 }
 
 //======================================================================[PROPERTY]============================
+namespace
+{
 enum class PropertyID : uint32
 {
     // display
@@ -212,6 +251,7 @@ enum class PropertyID : uint32
     CurrentImageIndex,
     CurrentImageSize
 };
+}
 #define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
@@ -230,12 +270,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::CurrentImageSize:
         value = Size{ img.GetWidth(), img.GetHeight() };
         return true;
-    }
-    for (const auto& key : ImageViewCommands) {
-        if (key->CommandId == id) {
-            value = key->Key;
-            return true;
-        }
     }
     return false;
 }
@@ -256,12 +290,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->currentImageIndex = std::get<uint32>(value);
         LoadImage();
         return true;
-    }
-    for (const auto& key : ImageViewCommands) {
-        if (key->CommandId == id) {
-            key->Key = std::get<Key>(value);
-            return true;
-        }
     }
     error.SetFormat("Unknown internal ID: %u", id);
     return false;
@@ -286,19 +314,12 @@ const vector<Property> Instance::GetPropertiesList()
                                     { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, false, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
                                     { BT(PropertyID::CurrentImageIndex), "Current Image", "Index", PropertyType::UInt32 },
                                     { BT(PropertyID::CurrentImageSize), "Current Image", "Size", PropertyType::Size } };
-    properties.reserve(properties.size() + ImageViewCommands.size());
-    for (const auto& key : ImageViewCommands) {
-        properties.emplace_back(key->CommandId, "Key", key->Caption, PropertyType::Key, true);
-    }
-
     return properties;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)
 {
-    for (const auto& cmd : ImageViewCommands) {
-        interface->RegisterKey(cmd);
-    }
+    Commands::RegisterKeys(interface);
     return true;
 }
 #undef BT

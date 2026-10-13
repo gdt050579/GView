@@ -2,7 +2,7 @@
 
 using namespace GView::View::GridViewer;
 
-SettingsData::SettingsData() : tokens({}), lines({})
+SettingsData::SettingsData() : lines({}), tokens({})
 {
 }
 

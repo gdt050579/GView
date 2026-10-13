@@ -61,15 +61,8 @@ SummaryResult SummaryController::RequestSummary(
     if (assistant == nullptr)
         return empty;
 
-    if (GView::Security::RestrictedMode::IsActive()) {
-        const auto* policy = GView::Security::RestrictedMode::GetCurrentPolicy();
-        if (policy != nullptr) {
-            for (const auto feature : policy->disabledFeatures) {
-                if (feature == GView::Security::RestrictedMode::Feature::LLMHints)
-                    return empty;
-            }
-        }
-    }
+    if (GView::Security::RestrictedMode::IsFeatureDisabled(GView::Security::RestrictedMode::Feature::LLMHints))
+        return empty;
 
     const auto prompt = SerializeKnowledgeState(
           engine.GetFactsSpan(), engine.GetPredicateStorage(), engine.GetAllAvailableSuggestions(), engine);

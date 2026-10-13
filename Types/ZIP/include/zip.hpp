@@ -4,13 +4,17 @@
 
 namespace GView::Type::ZIP
 {
+// keys of the panels (configurable from the "Keyboard shortcuts" window)
+inline GView::StandardPanelKeys PANEL_KEYS;
 class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
     uint32 currentItemIndex{ 0 };
+    // declared before 'info': the minizip-ng reader (in 'info') closes the copy before the copy is deleted
+    GView::App::TemporaryFile tempCopy{};
     GView::Decoding::ZIP::Info info{};
     std::vector<uint32> curentChildIndexes{};
-    bool isTopContainer{ true };
+    bool isTopContainer{ true }; // true: the reader owns a file (the archive itself or tempCopy); false: in-memory archive
     std::string password;
 
   public:
@@ -54,6 +58,7 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 
     virtual bool UpdateKeys(KeyboardControlsInterface* interface) override
     {
+        PANEL_KEYS.Register(interface);
         return true;
     }
 

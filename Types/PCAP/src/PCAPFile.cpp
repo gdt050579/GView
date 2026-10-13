@@ -11,22 +11,46 @@ PCAPFile::PCAPFile()
 
 bool PCAPFile::Update()
 {
-    auto offset = 0;
+    auto offset = 0ULL;
     CHECK(obj->GetData().Copy<Header>(offset, header), false, "");
     offset += sizeof(Header);
-    if (header.magicNumber == Magic::Swapped) {
+    const bool swapped = header.magicNumber == Magic::Swapped;
+    if (swapped)
+    {
         Swap(header);
     }
 
-    // TODO: check for future, is this really ok? test with big pcap files
-    data = obj->GetData().CopyToBuffer(offset, (uint32) obj->GetData().GetSize() - offset);
+    // the whole capture is kept in memory and packet offsets are stored as uint32
+    const auto fileSize = obj->GetData().GetSize();
+    CHECK(fileSize >= offset && fileSize <= 0xFFFFFFFFULL, false, "");
+    if (fileSize == offset)
+    {
+        return true; // a valid capture without packets
+    }
+    data = obj->GetData().CopyToBuffer(offset, static_cast<uint32>(fileSize - offset));
     CHECK(data.IsValid(), false, "");
 
-    const auto delta = offset;
-    do {
-        const auto& [header, _] = packetHeaders.emplace_back((PacketHeader*) (data.GetData() + offset - delta), offset);
-        offset += (sizeof(PacketHeader) + header->origLen);
-    } while (offset < obj->GetData().GetSize());
+    // Every consumer reads inclLen bytes after a packet header, so a packet is kept only if its header and its saved data
+    // fit in the buffer. A truncated last packet ends the list.
+    const uint64 dataSize = data.GetLength();
+    uint64 position       = 0;
+    while (dataSize - position >= sizeof(PacketHeader))
+    {
+        auto packet = reinterpret_cast<PacketHeader*>(data.GetData() + position);
+        if (swapped)
+        {
+            packet->tsSec   = AppCUI::Endian::BigToNative(packet->tsSec);
+            packet->tsUsec  = AppCUI::Endian::BigToNative(packet->tsUsec);
+            packet->inclLen = AppCUI::Endian::BigToNative(packet->inclLen);
+            packet->origLen = AppCUI::Endian::BigToNative(packet->origLen);
+        }
+        if (packet->inclLen > dataSize - position - sizeof(PacketHeader))
+        {
+            break;
+        }
+        packetHeaders.emplace_back(packet, static_cast<uint32>(offset + position));
+        position += sizeof(PacketHeader) + packet->inclLen;
+    }
 
     return true;
 }

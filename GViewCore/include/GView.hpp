@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.390.0"
+#define GVIEW_VERSION "0.404.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 #include <filesystem>
@@ -23,10 +23,23 @@ using namespace AppCUI;
 #    define CORE_EXPORT
 #endif
 
-#ifdef BUILD_FOR_WINDOWS
+#if defined(BUILD_FOR_WINDOWS) && !defined(GVIEW_STATIC_PLUGINS)
 #    define PLUGIN_EXPORT __declspec(dllexport)
 #else
 #    define PLUGIN_EXPORT
+#endif
+
+// Opens the block that holds the entry points of a plugin (Validate / CreateInstance / PopulateWindow / Run /
+// UpdateSettings). Plugins are normally shared libraries and the entry points are C symbols resolved at runtime.
+// With GVIEW_STATIC_PLUGINS (WebAssembly builds) every plugin is linked into the executable: the block becomes a
+// namespace unique to the plugin (GVIEW_PLUGIN_ID is set by the build) and the entry points are found through
+// GView::StaticPlugins (see GViewCore/include/GView/StaticPlugins.hpp).
+#ifdef GVIEW_STATIC_PLUGINS
+#    define GVIEW_PLUGIN_NAMESPACE_CONCAT(id)    GViewStaticPlugin_##id
+#    define GVIEW_PLUGIN_NAMESPACE_OF(id)        GVIEW_PLUGIN_NAMESPACE_CONCAT(id)
+#    define GVIEW_PLUGIN_ENTRY_POINTS            namespace GVIEW_PLUGIN_NAMESPACE_OF(GVIEW_PLUGIN_ID)
+#else
+#    define GVIEW_PLUGIN_ENTRY_POINTS extern "C"
 #endif
 
 namespace GView
@@ -37,15 +50,39 @@ namespace Utils
     class JsonBuilderInterface;
 }
 
-struct CORE_EXPORT KeyboardControl {
-    Input::Key Key;
-    const char* Caption;
-    const char* Explanation;
-    uint32 CommandId;
-};
+// A named, rebindable shortcut: { key, "Caption" (stable id, used in the settings), "Explanation", commandId [, flags] }.
+// Declare them as `inline` (or `inline static` members) so every translation unit shares the same object: the key
+// bindings registry writes the user's configured key into `Key` (`DefaultKey` keeps the built-in one).
+// Always compare with `binding.Matches(keyCode)` (an unassigned binding has Key::None and never matches).
+using KeyboardControl      = AppCUI::Input::KeyBinding;
+using KeyboardControlFlags = AppCUI::Input::KeyBindingFlags;
+
 struct CORE_EXPORT KeyboardControlsInterface {
+    // registers a rebindable key (the object must outlive the call; the registry may update `key->Key`)
     virtual bool RegisterKey(KeyboardControl* key) = 0;
-    virtual ~KeyboardControlsInterface()           = default;
+    // starts a group of keys in the "Keyboard shortcuts" window (e.g. "Panels", "Navigation & editing")
+    virtual bool BeginCategory(std::string_view name) = 0;
+    // registers a display-only entry for keys that can not be expressed as a single key (e.g. "0-9", "[ / ]")
+    virtual bool RegisterKeyText(std::string_view keys, std::string_view caption, std::string_view explanation) = 0;
+    virtual ~KeyboardControlsInterface() = default;
+};
+
+// Standard keys of the list panels (Sections, Symbols, Objects, ...) of a type plugin.
+// Every plugin declares its own instance in its own namespace (`inline GView::StandardPanelKeys PANEL_KEYS;`), uses
+// `PANEL_KEYS.Select.Key` / `PANEL_KEYS.ChangeBase.Key` in the panels command bar and registers it from UpdateKeys.
+struct StandardPanelKeys {
+    KeyboardControl Select{ Input::Key::F9, "PanelSelect", "Select the current item in the viewer (panels)", 0 };
+    KeyboardControl ChangeBase{ Input::Key::F2, "PanelChangeBase", "Switch between decimal and hexadecimal values (panels)", 0 };
+
+    void Register(KeyboardControlsInterface* interface, bool hasSelect = true, bool hasChangeBase = true)
+    {
+        interface->BeginCategory("Panels");
+        interface->RegisterKeyText("Enter", "PanelGoTo", "Go to the current item in the viewer (panels)");
+        if (hasSelect)
+            interface->RegisterKey(&Select);
+        if (hasChangeBase)
+            interface->RegisterKey(&ChangeBase);
+    }
 };
 class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface {
@@ -297,6 +334,49 @@ namespace Utils
             return { .ok = false, .message = std::move(msg) };
         }
     };
+
+    // UTF-16 -> UTF-8 that never throws
+    // Unpaired surrogates are replaced with U+FFFD so the output is always valid UTF-8.
+    inline std::string UTF16ToUTF8(std::u16string_view text)
+    {
+        std::string result;
+        result.reserve(text.size());
+
+        const size_t count = text.size();
+        for (size_t i = 0; i < count; i++) {
+            uint32 cp = text[i];
+            if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < count && text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF) {
+                cp = 0x10000 + ((cp - 0xD800) << 10) + (static_cast<uint32>(text[i + 1]) - 0xDC00);
+                i++;
+            } else if (cp >= 0xD800 && cp <= 0xDFFF) {
+                cp = 0xFFFD;
+            }
+
+            if (cp < 0x80) {
+                result.push_back(static_cast<char>(cp));
+            } else if (cp < 0x800) {
+                result.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                result.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else if (cp < 0x10000) {
+                result.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                result.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                result.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else {
+                result.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+                result.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+                result.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                result.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+        }
+        return result;
+    }
+
+    // Builds a filesystem path from UTF-16 without going through the narrow (ANSI on Windows) code page.
+    inline std::filesystem::path UTF16ToPath(std::u16string_view text)
+    {
+        const auto utf8 = UTF16ToUTF8(text);
+        return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+    }
 } // namespace Utils
 
 namespace CommonInterfaces
@@ -964,22 +1044,54 @@ namespace Security
             Screenshots = 1u << 6
         };
 
+        // Where task content may live on the student's machine (see plans/LEARNING_MODE_PROTOCOL_SPEC.md §0)
+        enum class StorageMode : uint8 { File, Memory };
+
+        struct TelemetrySettings {
+            bool enabled{ false }; // privacy-preserving default: nothing is collected unless the signed policy asks for it
+            uint32 flushIntervalSeconds{ 60 };
+            uint32 maxBatchEvents{ 500 };
+            uint32 idleThresholdSeconds{ 120 };
+            bool eventLevel{ true };
+        };
+
+        struct SubmissionSettings {
+            bool allowInTool{ true };
+            bool requireExplanation{ false };
+            uint32 explanationMaxChars{ 2000 };
+        };
+
         struct Policy {
+            uint32 schema{ 1 };
             std::string id;
+            std::string digest; // hex sha256 of the document with "digest":"" (schema 2)
             std::string purpose;
 
             // seconds since epoch
+            uint64_t issuedAt{ 0 };
             uint64_t startsAt{ 0 };
             uint64_t endsAt{ 0 };
+
+            std::string subject;   // hex(sha256(token))[0:16] (schema 2)
+            std::string serverUrl; // schema 2
 
             std::vector<Feature> disabledFeatures;
             std::vector<std::string> allowedPlugins;
 
+            StorageMode storageMode{ StorageMode::File };
             std::string watermark;
             bool bestEffortScreenProtect{ true };
+            bool requireScreenProtect{ false };
 
-            std::vector<uint8_t> contentKeyId;
+            TelemetrySettings telemetry;
+            SubmissionSettings submission;
+
+            std::vector<uint8_t> contentKeyId; // 8 bytes when present
+            std::string contentEncryption;     // "" or "aes-256-gcm-hkdf-v1"
         };
+
+        // Maximum clock skew (seconds) tolerated when validating startsAt/endsAt
+        constexpr uint64_t POLICY_CLOCK_SKEW_SECONDS = 120;
 
         CORE_EXPORT Utils::GStatus LoadPolicyFromFiles(
               const std::filesystem::path& jsonPath,
@@ -987,8 +1099,27 @@ namespace Security
               const std::vector<uint8_t>& publicKey,
               Policy& outPolicy) noexcept;
 
+        /**
+         * Verifies and parses a schema-2 policy delivered by a course server.
+         * Validation order (spec §2.2): Ed25519 signature over the raw bytes -> schema -> digest -> subject -> server URL ->
+         * time window (POLICY_CLOCK_SKEW_SECONDS). Nothing is parsed before the signature verifies. Any failure leaves
+         * outPolicy untouched and returns an error whose message starts with a stable code (e.g. "POLICY_EXPIRED: ...").
+         */
+        CORE_EXPORT Utils::GStatus VerifyAndParsePolicy(
+              BufferView rawJson,
+              BufferView signature,
+              BufferView publicKey,
+              std::string_view expectedSubjectHex,
+              std::string_view expectedServerUrl,
+              uint64_t nowSeconds,
+              Policy& outPolicy) noexcept;
+
         CORE_EXPORT bool IsActive() noexcept;
-        CORE_EXPORT const Policy* GetCurrentPolicy() noexcept;
+        // Returns a snapshot of the active policy (empty when restricted mode is inactive)
+        CORE_EXPORT std::optional<Policy> GetCurrentPolicy();
+        // Lock-free query usable from any thread and from plugins
+        CORE_EXPORT bool IsFeatureDisabled(Feature feature) noexcept;
+        CORE_EXPORT std::string_view FeatureToString(Feature feature) noexcept;
     } // namespace RestrictedMode
 
     namespace Crypto
@@ -1261,7 +1392,7 @@ namespace View
         virtual GView::Utils::ZonesList& GetObjectsHighlightingZonesList();
 
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
-            : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
+            : UserControl("d:c", flags), Cfg(*AppCUI::Application::GetAppConfig()), name(name)
         {
         }
     };
@@ -1854,6 +1985,14 @@ namespace App
     bool CORE_EXPORT Init(bool isTestingEnabled);
     void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
+    // Auto-updater: the command line is reused to restart GView after an update; call FinishPendingUpdate after Run
+    // (it installs an update accepted by the user, restarts GView and returns the exit code to use, 0 when idle).
+#ifdef BUILD_FOR_WINDOWS
+    void CORE_EXPORT SetCommandLineArguments(int argc, const wchar_t** argv);
+#else
+    void CORE_EXPORT SetCommandLineArguments(int argc, const char** argv);
+#endif
+    int CORE_EXPORT FinishPendingUpdate();
     void CORE_EXPORT OpenFile(
           const std::filesystem::path& path,
           OpenMethod method,
@@ -1876,6 +2015,91 @@ namespace App
     std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
     uint32 CORE_EXPORT GetTypePluginsCount();
     bool CORE_EXPORT ShowAddNoteDialog();
+    // CLI "GView learn <connectionString>": opens the Learning and Evaluation Mode window at startup and connects
+    void CORE_EXPORT OpenLearningModeOnStart(std::string_view connectionString);
+
+    /**
+     * Policy gate for features restricted by Learning and Evaluation Mode.
+     * Returns true when the feature is blocked by the active course policy; in that case the user receives a
+     * rate-limited "Blocked by course policy" notification and a feature_blocked telemetry event is recorded.
+     * Returns false (allowed) when no policy is active. Must be called from the UI thread.
+     */
+    bool CORE_EXPORT IsBlockedByPolicy(Security::RestrictedMode::Feature feature, std::string_view what);
+
+    /**
+     * Side-effect free variant of IsBlockedByPolicy (no notification, no telemetry), e.g. to hide commands.
+     * Export and SaveAs are also restricted while a memory-only storage policy is active.
+     */
+    bool CORE_EXPORT IsFeatureRestricted(Security::RestrictedMode::Feature feature) noexcept;
+
+    /**
+     * True when the object holds Learning and Evaluation Mode content delivered in memory-only mode (or any object while
+     * a memory-only storage policy is active): nothing derived from it may be written to disk.
+     */
+    bool CORE_EXPORT IsLearningMemoryOnly(Reference<GView::Object> object) noexcept;
+
+    /**
+     * Gate for every operation that writes content derived from an object to disk (save as, export, drop, dump):
+     * blocked when the object is memory-only learning content or when the policy restricts Export.
+     * Notifies the user and records feature_blocked exactly once per attempt.
+     */
+    bool CORE_EXPORT IsExportBlockedFor(Reference<GView::Object> object, std::string_view what);
+
+    /**
+     * Writes text to the system clipboard unless the active policy disables Clipboard (or Copy, when
+     * isSelectionCopy is true). Use this instead of AppCUI::OS::Clipboard::SetText everywhere in GView.
+     */
+    bool CORE_EXPORT SetClipboardText(const ConstString& text, bool isSelectionCopy = true);
+
+    struct TemporaryFolderAccess; // GViewCore internal
+
+    /**
+     * A file in GView's private temporary folder, for APIs that only work on a real file (WinVerifyTrust, minizip-ng for
+     * archives that do not fit in the cache, ...). The folder is created on first use under [GView] Config.TemporaryFolder
+     * (default: the system temporary directory), is accessible only to the current user and is removed when GView exits.
+     * Move-only: the file is deleted when the handle is destroyed (callers must close it first).
+     */
+    class TemporaryFile // members exported one by one: an exported class would export its std::filesystem::path (C4251)
+    {
+        std::filesystem::path path;
+        friend struct TemporaryFolderAccess;
+
+      public:
+        TemporaryFile()                                = default;
+        TemporaryFile(const TemporaryFile&)            = delete;
+        TemporaryFile& operator=(const TemporaryFile&) = delete;
+        CORE_EXPORT TemporaryFile(TemporaryFile&& other) noexcept;
+        CORE_EXPORT TemporaryFile& operator=(TemporaryFile&& other) noexcept;
+        CORE_EXPORT ~TemporaryFile();
+
+        CORE_EXPORT void Remove() noexcept;
+        inline bool IsValid() const
+        {
+            return !path.empty();
+        }
+        inline const std::filesystem::path& GetPath() const
+        {
+            return path;
+        }
+    };
+
+    /**
+     * Writes the content of the object to a new TemporaryFile (named after the sanitized object name; never after its
+     * path). Fails closed when nothing derived from the object may be written to disk (memory-only Learning and Evaluation
+     * Mode content, Export restricted by policy). The check is silent (no notification, no telemetry): callers are expected
+     * to fall back to in-memory processing. UI thread only. Moves the object's DataCache window, so BufferViews obtained
+     * from it before the call must not be used afterwards.
+     */
+    Utils::GStatus CORE_EXPORT DropToTemporaryFile(Reference<GView::Object> object, TemporaryFile& output);
+
+    /**
+     * Remote TUI (docs/source/remote_protocol.rst): runs one of the "serve", "connect", "listen" or "remote-certs"
+     * command line commands (arguments in UTF-8) and returns the process exit code. The remote mode is compiled only
+     * when GView is configured with -DGVIEW_ENABLE_REMOTE=ON; otherwise IsRemoteSupported() returns false and
+     * RunRemoteCommand reports the missing feature.
+     */
+    bool CORE_EXPORT IsRemoteSupported();
+    int CORE_EXPORT RunRemoteCommand(std::string_view command, const std::vector<std::string>& arguments);
 
 }; // namespace App
 }; // namespace GView

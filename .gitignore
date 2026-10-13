@@ -5,9 +5,11 @@
 *.vcxproj.user
 .vscode
 build
+build-test
 bin
 *.log
 .idea/
+logs
 CMakeFiles/
 cmake-build-*/
 vcpkg_installed/
@@ -18,3 +20,5 @@ GView/GView.rc
 GView/GView.aps
 GViewCore/GViewCore.rc
 GViewCore/GViewCore.aps
+GViewUpdater/GViewUpdater.rc
+GViewUpdater/GViewUpdater.aps

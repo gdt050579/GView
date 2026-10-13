@@ -77,10 +77,8 @@ void Panels::Information::UpdateIssues()
 }
 void Panels::Information::RecomputePanelsPositions()
 {
-    int py   = 0;
-    int last = 0;
-    int w    = this->GetWidth();
-    int h    = this->GetHeight();
+    int w = this->GetWidth();
+    int h = this->GetHeight();
 
     if ((!general.IsValid()) || (!issues.IsValid()))
         return;

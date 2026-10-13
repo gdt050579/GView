@@ -24,8 +24,8 @@ struct CV_INFO_PDB70 {
     uint8 PdbFileName[1]; // zero terminated string with the name of the PDB file
 };
 
-#define CV_SIGNATURE_NB10 '01BN'
-#define CV_SIGNATURE_RSDS 'SDSR'
+constexpr uint32 CV_SIGNATURE_NB10 = 0x3031424EU; // '01BN' ("NB10")
+constexpr uint32 CV_SIGNATURE_RSDS = 0x53445352U; // 'SDSR' ("RSDS")
 
 #define ADD_PANEL(id) this->panelsMask |= (1ULL << (uint8) id);
 
@@ -555,11 +555,13 @@ bool PEFile::BuildExport()
             return false;
         }
         this->dllName = dllName;
-        for (auto ch : dllName)
-            if ((ch < 32) || (ch > 127)) {
+        for (const auto ch : dllName) {
+            const auto uch = static_cast<uint8>(ch);
+            if ((uch < 32) || (uch > 127)) {
                 errList.AddWarning("Export name contains invalid characters !");
                 break;
             }
+        }
     }
     if (exportDir.NumberOfFunctions == 0 && exportDir.NumberOfNames == 0) // no exports
     {
@@ -763,6 +765,10 @@ bool PEFile::UpdateKeys(KeyboardControlsInterface* interface)
 {
     for (auto& entry : PE_COMMANDS)
         interface->RegisterKey(&entry);
+    PANEL_KEYS.Register(interface);
+    interface->RegisterKey(&PANEL_EDIT);
+    interface->BeginCategory("Panel: Resources");
+    interface->RegisterKey(&PANEL_SAVE_RESOURCE);
     return true;
 }
 
@@ -810,7 +816,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
     r.Image.type = ImageType::Unknown;
     auto buf     = this->obj->GetData().Get(r.Start, sizeof(dibHeader), true);
     if (buf.Empty()) {
-        errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) (sizeof(dibHeader), r.Start));
+        errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) sizeof(dibHeader), r.Start);
         return false;
     }
     auto iconHeader = buf.GetObject<DIBInfoHeader>();
@@ -890,7 +896,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
     return true;
 }
 
-bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName)
+bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, const char* resName)
 {
     ImageResourceDataEntry resDE;
     uint64_t fileAddress;
@@ -925,7 +931,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
     return true;
 }
 
-bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* parentName)
+bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, const char* parentName)
 {
     ImageResourceDirectory resDir;
     ImageResourceDirectoryEntry dirEnt;
@@ -999,7 +1005,7 @@ bool PEFile::BuildResources()
         return false;
     }
 
-    return ProcessResourceDirTable(0, addr, level, 0, (char*) "");
+    return ProcessResourceDirTable(0, addr, level, 0, "");
 }
 
 bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD)
@@ -1147,7 +1153,7 @@ bool PEFile::BuildDebugData()
         errList.AddWarning("Invalid alignament for Debug directory (0x%X)", (uint32) dirDebug.Size);
     }
 
-    for (auto tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory)) {
+    for (auto tr = 0U; tr < size; tr++, faddr += sizeof(ImageDebugDirectory)) {
         ImageDebugDirectory imgd;
         if (obj->GetData().Copy<ImageDebugDirectory>(faddr, imgd) == false) {
             errList.AddError("Unable to read Debug structure from (0x%X)", (uint32) faddr);
@@ -1165,21 +1171,25 @@ bool PEFile::BuildDebugData()
             auto buf = obj->GetData().Get(imgd.PointerToRawData, bufSize, false);
             if (buf.IsValid() && buf.GetLength() >= 5) // at least the first 32 bytes
             {
-                std::string_view name = "";
-                switch (*(uint32*) buf.GetData()) {
+                uint32 cvSignature;
+                memcpy(&cvSignature, buf.GetData(), sizeof(cvSignature));
+                size_t nameOffset = 0;
+                switch (cvSignature) {
                 case CV_SIGNATURE_NB10:
-                    name = std::string_view{ (const char*) ((CV_INFO_PDB20*) buf.GetData())->PdbFileName, MAX_PDB_NAME };
+                    nameOffset = offsetof(CV_INFO_PDB20, PdbFileName);
                     break;
                 case CV_SIGNATURE_RSDS:
-                    name = std::string_view{ (const char*) ((CV_INFO_PDB70*) buf.GetData())->PdbFileName, MAX_PDB_NAME };
+                    nameOffset = offsetof(CV_INFO_PDB70, PdbFileName);
                     break;
                 default:
-                    errList.AddWarning("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", (*(uint32*) buf.GetData()));
+                    errList.AddWarning("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", cvSignature);
                     break;
                 }
 
-                if (name.size() > 0) {
-                    pdbName.Set(std::string_view{ name.data(), name.find_first_of('\0') });
+                if (nameOffset > 0 && nameOffset < buf.GetLength()) {
+                    const std::string_view name{ reinterpret_cast<const char*>(buf.GetData()) + nameOffset,
+                                                 std::min<size_t>(buf.GetLength() - nameOffset, MAX_PDB_NAME) };
+                    pdbName.Set(name.substr(0, name.find('\0')));
                 }
             } else {
                 errList.AddError("Unable to read IMAGE_DEBUG_TYPE_CODEVIEW (%d bytes) from (0x%X)", bufSize, imgd.PointerToRawData);
@@ -1351,7 +1361,7 @@ bool PEFile::Update()
     fileAlign     = nth32.OptionalHeader.FileAlignment;       // same,  BaseOfData missing on PE32+
     nrSections    = nth32.FileHeader.NumberOfSections;        // same
 
-    poz = static_cast<uint64>(dos.e_lfanew) + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) 0)->Signature) + sizeof(ImageFileHeader);
+    poz = static_cast<uint64>(dos.e_lfanew) + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) nullptr)->Signature) + sizeof(ImageFileHeader);
     sectStart    = static_cast<uint32>(poz);
     peStart      = dos.e_lfanew;
     computedSize = virtualComputedSize = 0;
@@ -1680,7 +1690,7 @@ bool PEFile::ParseGoData()
     // we assume we parsed the symbols first!
     if (symbols.empty() == false) {
         std::map<std::string_view, ImageSymbol> pclntabSymbols{
-            { "runtime.pclntab", { 0 } }, { "runtime.epclntab", { 0 } }, { "pclntab", { 0 } }, { "epclntab", { 0 } }
+            { "runtime.pclntab", {} }, { "runtime.epclntab", {} }, { "pclntab", {} }, { "epclntab", {} }
         };
 
         for (const auto& symbol : symbols) {
@@ -1712,7 +1722,6 @@ bool PEFile::ParseGoData()
     const auto pcLnTabSigsCandidates = FindPcLnTabSigsCandidates();
     CHECK(pcLnTabSigsCandidates.empty() == false, false, "");
 
-    bool found = false;
     for (const auto& candidatesVA : pcLnTabSigsCandidates) {
         const auto cacheSize = obj->GetData().GetCacheSize();
         const auto fa        = VAtoFA(candidatesVA);
@@ -1731,7 +1740,6 @@ bool PEFile::ParseGoBuild()
     constexpr std::string_view goBuildEnd{ "\"\n \xff" };
 
     const auto cacheSize = obj->GetData().GetCacheSize();
-    const auto fileSize  = obj->GetData().GetSize();
 
     const auto fileViewBuildId = obj->GetData().CopyToBuffer(0, cacheSize, false);
 
@@ -1763,11 +1771,9 @@ bool PEFile::ParseGoBuildInfo()
     CHECK(dataOffset != 0, false, "");
 
     constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
-    constexpr uint16 buildInfoAlign{ 16 };
     constexpr uint16 buildInfoSize{ 32 };
 
     const auto cacheSize = obj->GetData().GetCacheSize();
-    const auto fileSize  = obj->GetData().GetSize();
 
     const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(dataOffset, cacheSize, false);
     CHECK(fileViewBuildInfo.IsValid(), false, "");
@@ -1781,7 +1787,6 @@ bool PEFile::ParseGoBuildInfo()
 
     constexpr auto ptrOffset = 13;
     const uint8 ptrSize      = buildInfo[ptrOffset];
-    const uint8 endianess    = buildInfo[ptrOffset + 1];
 
     uint64 runtimeBuildVersionVA = 0;
     uint64 runtimeModInfoVA      = 0;
@@ -1822,14 +1827,14 @@ bool PEFile::ParseGoBuildInfo()
 
     const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, static_cast<uint32>(strRuntimeBuildVersionLength), false);
     CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
-    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()), strRuntimeBuildVersionLength };
+    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()), static_cast<size_t>(strRuntimeBuildVersionLength) };
     pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
 
     const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, static_cast<uint32>(strViewRuntimeModInfoLength), false);
     CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
-    std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
+    std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), static_cast<size_t>(strViewRuntimeModInfoLength) };
     if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n') {
-        runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
+        runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, static_cast<size_t>(strViewRuntimeModInfoLength - 16 - 16) };
     }
     pcLnTab.SetRuntimeBuildModInfo(runtimeModInfo);
 
@@ -1942,6 +1947,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
                 } // do not break
             }
         }
+        [[fallthrough]];
     case 0x50:
         if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header)) {
             if (buf.GetLength() >= 4) {
@@ -1954,6 +1960,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
                 } // do not break
             }
         }
+        [[fallthrough]];
     default:
         switch ((PE::MachineType) nth32.FileHeader.Machine) {
         case PE::MachineType::I386:
@@ -2284,10 +2291,27 @@ void PEFile::RunCommand(std::string_view commandName)
 
             CHECKBK(GView::DigitalSignature::VerifyEmbeddedSignature(data, obj->GetData()), "");
 #ifdef BUILD_FOR_WINDOWS
-            data.winTrust.callSuccessful = GView::DigitalSignature::VerifySignatureForPE(obj->GetPath(), obj->GetData(), data);
-            CHECKBK(data.winTrust.errorCode != GView::DigitalSignature::SIGNATURE_NOT_FOUND, "");
+            // WinVerifyTrust needs a file: in-memory objects (e.g. extracted from a container) are verified on a copy in GView's
+            // private temporary folder, deleted when 'copy' goes out of scope. DropToTemporaryFile refuses Learning and
+            // Evaluation Mode memory-only content and policies that restrict Export; the OpenSSL verification above still runs.
+            std::filesystem::path fileToVerify{ obj->GetPath() };
+            GView::App::TemporaryFile copy;
+            GView::Utils::GStatus dropped;
+            if (obj->GetObjectType() != GView::Object::Type::File) {
+                dropped      = GView::App::DropToTemporaryFile(obj, copy);
+                fileToVerify = copy.GetPath();
+            }
+            if (dropped.ok) {
+                data.winTrust.callSuccessful = GView::DigitalSignature::VerifySignatureForPE(fileToVerify, data);
+                CHECKBK(data.winTrust.errorCode != GView::DigitalSignature::SIGNATURE_NOT_FOUND, "");
 
-            GView::DigitalSignature::GetSignaturesInformation(obj->GetPath(), data);
+                GView::DigitalSignature::GetSignaturesInformation(fileToVerify, data);
+            } else {
+                data.winTrust.callSuccessful = false;
+                data.winTrust.errorCode      = static_cast<uint32>(-1); // not verified => never shown as a success
+                data.winTrust.errorMessage.Set("WinTrust verification skipped: ");
+                data.winTrust.errorMessage.Add(std::string_view(dropped.message));
+            }
 #endif
 
             while (!signatureChecked) {

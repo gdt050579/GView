@@ -99,7 +99,7 @@ AST::Expr* EvalStringCharCodeAt(AST::String* str, std::vector<AST::Expr*>& args)
 
     auto num = ((AST::Number*) args[0])->value;
 
-    if (num < 0 || num >= str->value.size()) {
+    if (num < 0 || static_cast<size_t>(num) >= str->value.size()) {
         return nullptr;
     }
 
@@ -116,7 +116,7 @@ AST::Expr* EvalStringCharAt(AST::String* str, std::vector<AST::Expr*>& args)
 
     auto num = ((AST::Number*) args[0])->value;
 
-    if (num < 0 || num >= str->value.size()) {
+    if (num < 0 || static_cast<size_t>(num) >= str->value.size()) {
         return nullptr;
     }
 

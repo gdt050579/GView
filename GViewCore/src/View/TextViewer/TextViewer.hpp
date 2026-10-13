@@ -25,12 +25,59 @@ namespace View
             SettingsData();
         };
 
+        namespace Commands
+        {
+            using Input::Key;
+            using KF = KeyboardControlFlags;
+
+            constexpr int32 CMD_ID_WORD_WRAP = 0xBF00;
+            // navigation commands (resolved through Map in OnKeyEvent)
+            constexpr uint32 CMD_NAV_LEFT          = 0xC000;
+            constexpr uint32 CMD_NAV_RIGHT         = 0xC001;
+            constexpr uint32 CMD_NAV_PREVIOUS_WORD = 0xC002;
+            constexpr uint32 CMD_NAV_NEXT_WORD     = 0xC003;
+            constexpr uint32 CMD_NAV_UP            = 0xC004;
+            constexpr uint32 CMD_NAV_DOWN          = 0xC005;
+            constexpr uint32 CMD_NAV_SCROLL_UP     = 0xC006;
+            constexpr uint32 CMD_NAV_SCROLL_DOWN   = 0xC007;
+            constexpr uint32 CMD_NAV_PAGE_UP       = 0xC008;
+            constexpr uint32 CMD_NAV_PAGE_DOWN     = 0xC009;
+            constexpr uint32 CMD_NAV_LINE_START    = 0xC00A;
+            constexpr uint32 CMD_NAV_LINE_END      = 0xC00B;
+            constexpr uint32 CMD_NAV_FILE_START    = 0xC00C;
+            constexpr uint32 CMD_NAV_FILE_END      = 0xC00D;
+            constexpr uint32 CMD_NAV_OPEN_SELECTION = 0xC00E;
+
+            inline KeyboardControl WordWrap = { Key::F2, "WrapMethod", "Change the word wrap method", CMD_ID_WORD_WRAP };
+
+            inline KeyboardControl MoveLeft      = { Key::Left, "MoveLeft", "Move one character to the left", CMD_NAV_LEFT, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveRight     = { Key::Right, "MoveRight", "Move one character to the right", CMD_NAV_RIGHT, KF::ShiftExtendsSelection };
+            inline KeyboardControl PreviousWord  = { Key::Ctrl | Key::Left, "PreviousWord", "Move to the previous word", CMD_NAV_PREVIOUS_WORD, KF::ShiftExtendsSelection };
+            inline KeyboardControl NextWord      = { Key::Ctrl | Key::Right, "NextWord", "Move to the next word", CMD_NAV_NEXT_WORD, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveUp        = { Key::Up, "MoveUp", "Move one line up", CMD_NAV_UP, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveDown      = { Key::Down, "MoveDown", "Move one line down", CMD_NAV_DOWN, KF::ShiftExtendsSelection };
+            inline KeyboardControl ScrollUp      = { Key::Ctrl | Key::Up, "ScrollUp", "Scroll the view one line up", CMD_NAV_SCROLL_UP };
+            inline KeyboardControl ScrollDown    = { Key::Ctrl | Key::Down, "ScrollDown", "Scroll the view one line down", CMD_NAV_SCROLL_DOWN };
+            inline KeyboardControl MovePageUp    = { Key::PageUp, "MovePageUp", "Move one page up", CMD_NAV_PAGE_UP, KF::ShiftExtendsSelection };
+            inline KeyboardControl MovePageDown  = { Key::PageDown, "MovePageDown", "Move one page down", CMD_NAV_PAGE_DOWN, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveLineStart = { Key::Home, "MoveToLineStart", "Move to the start of the line", CMD_NAV_LINE_START, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveLineEnd   = { Key::End, "MoveToLineEnd", "Move to the end of the line", CMD_NAV_LINE_END, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveFileStart = { Key::Ctrl | Key::Home, "MoveToFileStart", "Move to the start of the file", CMD_NAV_FILE_START, KF::ShiftExtendsSelection };
+            inline KeyboardControl MoveFileEnd   = { Key::Ctrl | Key::End, "MoveToFileEnd", "Move to the end of the file", CMD_NAV_FILE_END, KF::ShiftExtendsSelection };
+            inline KeyboardControl OpenSelection = { Key::Enter, "OpenSelection", "Open the current selection as a new object", CMD_NAV_OPEN_SELECTION };
+
+            inline const std::array<KeyboardControl*, 15> NavigationKeys = {
+                &MoveLeft,     &MoveRight,     &PreviousWord, &NextWord,      &MoveUp,        &MoveDown,    &ScrollUp,      &ScrollDown,
+                &MovePageUp,   &MovePageDown,  &MoveLineStart, &MoveLineEnd,  &MoveFileStart, &MoveFileEnd, &OpenSelection,
+            };
+            inline Input::KeyMap Map;
+
+            void RegisterKeys(KeyboardControlsInterface* interface);
+            void OnKeysChanged();
+        } // namespace Commands
+
         struct Config
         {
-            struct
-            {
-                AppCUI::Input::Key WordWrap;
-            } Keys;
             bool Loaded;
 
             static void Update(IniSection sect);
@@ -169,6 +216,8 @@ namespace View
 
             virtual void Paint(Graphics::Renderer& renderer) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+            bool UpdateKeys(KeyboardControlsInterface* interface) override;
+            bool ExecuteNavigationCommand(uint32 commandId, bool select);
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             virtual void OnStart() override;

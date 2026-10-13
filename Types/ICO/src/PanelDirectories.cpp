@@ -78,7 +78,7 @@ void Panels::Directories::Update()
 bool Panels::Directories::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", ICO_DIRS_GOTO);
-    commandBar.SetCommand(Key::F9, "Select", ICO_DIRS_SELECT);
+    commandBar.SetCommand(PANEL_KEYS.Select.Key, "Select", ICO_DIRS_SELECT);
     return true;
 }
 

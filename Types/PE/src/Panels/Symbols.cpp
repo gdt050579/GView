@@ -185,11 +185,11 @@ bool Panels::Symbols::OnUpdateCommandBar(AppCUI::Application::CommandBar& comman
 {
     if (this->Base == 10)
     {
-        commandBar.SetCommand(Key::F2, "Dec", PE_SYMBOLS_CHANGEBASE);
+        commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, "Dec", PE_SYMBOLS_CHANGEBASE);
     }
     else
     {
-        commandBar.SetCommand(Key::F2, "Hex", PE_SYMBOLS_CHANGEBASE);
+        commandBar.SetCommand(PANEL_KEYS.ChangeBase.Key, "Hex", PE_SYMBOLS_CHANGEBASE);
     }
 
     return true;

@@ -396,7 +396,7 @@ class Emulator : public AST::ConstVisitor
 
     void EvalStringCharCodeAt(std::u16string_view callee, int32 arg)
     {
-        if (arg >= callee.size()) {
+        if (arg < 0 || static_cast<size_t>(arg) >= callee.size()) {
             return;
         }
 
@@ -779,7 +779,7 @@ class EmulateWindow : public AppCUI::Controls::Window
 
     uint32 GetLimit()
     {
-        return limit->GetValue();
+        return static_cast<uint32>(limit->GetValue());
     }
 
     std::u16string GetTarget()

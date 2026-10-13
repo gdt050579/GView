@@ -12,19 +12,31 @@ ZIPFile::ZIPFile()
 
 bool ZIPFile::Update()
 {
-    LocalUnicodeStringBuilder<1024> ub;
-    ub.Set(obj->GetPath());
-    std::u16string sv{ ub.GetString(), ub.Len() };
-
-    isTopContainer = std::filesystem::exists(sv);
-    if (isTopContainer) // top container (exists on disk)
-    {
+    // top container: minizip-ng reads the file itself
+    // (decided by the object type: the logical path of a child may also exist on disk and be a different file)
+    if (obj->GetObjectType() == GView::Object::Type::File) {
+        isTopContainer = true;
         CHECK(GView::Decoding::ZIP::GetInfo(obj->GetPath(), this->info), false, "");
-    } else // child container (does not exist on disk)
-    {
-        CHECK(GView::Decoding::ZIP::GetInfo(obj->GetData(), this->info), false, "");
+        return true;
     }
 
+    // child container that fits in the cache: read in memory (nothing written to disk)
+    if (obj->GetData().GetSize() <= obj->GetData().GetCacheSize()) {
+        isTopContainer = false;
+        CHECK(GView::Decoding::ZIP::GetInfo(obj->GetData(), this->info), false, "");
+        return true;
+    }
+
+    // larger child container: read from a copy in GView's private temporary folder (refused for Learning and Evaluation
+    // Mode memory-only content and when the policy restricts Export)
+    GView::App::TemporaryFile copy;
+    const auto dropped = GView::App::DropToTemporaryFile(obj, copy);
+    CHECK(dropped.ok, false, "Archive larger than the cache that can not be copied to the temporary folder: %s", dropped.message.c_str());
+    const bool opened = GView::Decoding::ZIP::GetInfo(copy.GetPath().u16string(), this->info);
+    // kept even on failure (the reader may still have it open); GetInfo closed the previous copy, which is removed here
+    tempCopy = std::move(copy);
+    CHECK(opened, false, "");
+    isTopContainer = true; // the reader owns a file
     return true;
 }
 
@@ -38,7 +50,7 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
     if (path.empty()) {
         for (uint32 i = 0; i < count; i++) {
-            GView::Decoding::ZIP::Entry entry{ 0 };
+            GView::Decoding::ZIP::Entry entry{};
             CHECK(this->info.GetEntry(i, entry), false, "");
 
             auto filename        = entry.GetFilename();
@@ -59,7 +71,7 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
     UnicodeStringBuilder usb;
     for (uint32 i = 0; i < count; i++) {
-        GView::Decoding::ZIP::Entry entry{ 0 };
+        GView::Decoding::ZIP::Entry entry{};
         CHECK(this->info.GetEntry(i, entry), false, "");
 
         auto filename        = entry.GetFilename();
@@ -92,7 +104,7 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     const static NumericFormat NUMERIC_FORMAT{ NumericFormatFlags::HexPrefix, 16 };
 
     const auto realIndex = curentChildIndexes.at(currentItemIndex);
-    GView::Decoding::ZIP::Entry entry{ 0 };
+    GView::Decoding::ZIP::Entry entry{};
     CHECK(this->info.GetEntry(realIndex, entry), false, "");
 
     auto filename = entry.GetFilename();
@@ -210,9 +222,9 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
 
-    const auto index = item.GetData(-1);
-    CHECKRET(index != -1, "");
-    GView::Decoding::ZIP::Entry entry{ 0 };
+    const auto index = item.GetData(static_cast<uint64>(-1));
+    CHECKRET(index != static_cast<uint64>(-1), "");
+    GView::Decoding::ZIP::Entry entry{};
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
     Buffer buffer{};

@@ -12,12 +12,30 @@ constexpr uint32 COMMAND_JUMP_FORWARD           = 104;
 constexpr uint32 COMMAND_DISSAM_GOTO_ENTRYPOINT = 105;
 constexpr uint32 COMMAND_ADD_OR_EDIT_COMMENT    = 106;
 constexpr uint32 COMMAND_REMOVE_COMMENT         = 107;
-constexpr uint32 COMMAND_AVAILABLE_KEYS         = 108;
 constexpr uint32 COMMAND_SHOW_ONLY_DISSASM      = 109;
 constexpr uint32 COMMAND_SAVE_DISSASM_CACHE     = 110;
 constexpr uint32 COMMAND_QUERY_FUNCTION_NAME    = 111;
 constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
 constexpr uint32 COMMAND_RENAME_LABEL           = 113;
+constexpr uint32 COMMAND_REMOVE_LOCAL_VARIABLE  = 114;
+constexpr uint32 COMMAND_TOGGLE_NUMBER_BASE     = 115;
+
+// navigation commands (resolved through Config::Map in OnKeyEvent)
+constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
+constexpr uint32 COMMAND_NAV_UP           = 0xC001;
+constexpr uint32 COMMAND_NAV_LEFT         = 0xC002;
+constexpr uint32 COMMAND_NAV_RIGHT        = 0xC003;
+constexpr uint32 COMMAND_NAV_PAGE_DOWN    = 0xC004;
+constexpr uint32 COMMAND_NAV_PAGE_UP      = 0xC005;
+constexpr uint32 COMMAND_NAV_HOME         = 0xC006;
+constexpr uint32 COMMAND_NAV_END          = 0xC007;
+constexpr uint32 COMMAND_NAV_SCROLL_UP    = 0xC008;
+constexpr uint32 COMMAND_NAV_SCROLL_DOWN  = 0xC009;
+constexpr uint32 COMMAND_NAV_SCROLL_LEFT  = 0xC00A;
+constexpr uint32 COMMAND_NAV_SCROLL_RIGHT = 0xC00B;
+constexpr uint32 COMMAND_NAV_SPACE        = 0xC00C;
+constexpr uint32 COMMAND_NAV_OPEN         = 0xC00D;
+constexpr uint32 COMMAND_NAV_ADD_ZONE     = 0xC00E;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -38,6 +56,8 @@ constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_EXPLAIN_CODE            = 12
 constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_CONVERT_HIGH_LEVEL      = 13;
 constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_FN_NAME_AND_EXPLANATION = 14;
 constexpr int32 RIGHT_CLICK_DISSASM_ASSISTANT_QUERY_MITRE_TECHNIQUES        = 15;
+constexpr int32 RIGHT_CLICK_DISSASM_RENAME_LOCAL_VARIABLE                   = 16;
+constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_LOCAL_VARIABLE                   = 17;
 
 struct RightClickCommand {
     int commandID;
@@ -66,6 +86,8 @@ const RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = {
         { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
         { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" } } },
     { "Comment", { { RIGHT_CLICK_ADD_COMMENT, "Add comment" }, { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" } } },
+    { "LocalVariable",
+      { { RIGHT_CLICK_DISSASM_RENAME_LOCAL_VARIABLE, "Rename local variable" }, { RIGHT_CLICK_DISSASM_REMOVE_LOCAL_VARIABLE, "Remove local variable" } } },
     { "CodeZone", { { RIGHT_CLICK_CODE_ZONE_EDIT, "Edit zone" } } },
     { "Assistant",
       {
@@ -105,6 +127,7 @@ namespace View
             Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
             Graphics::ColorPair AsmJumpInstruction;            // jmp
             Graphics::ColorPair AsmComment;                    // comments added by user
+            Graphics::ColorPair AsmLocalVariableColor;         // var_8, arg_0
             Graphics::ColorPair AsmDefaultColor;               // rest of things
             Graphics::ColorPair AsmTitleColor;
             Graphics::ColorPair AsmTitleColumnColor;
@@ -145,7 +168,6 @@ namespace View
             inline static KeyboardControl GotoEntrypointCommand = {
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
-            //inline static KeyboardControl ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
 
             inline static KeyboardControl CommandQueryFunctionName = {
                 Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
@@ -161,7 +183,6 @@ namespace View
                 JumpBackCommand,
                 JumpForwardCommand,
                 GotoEntrypointCommand,
-                //ShowKeysWindowCommand,
                 CommandQueryFunctionName,
                 CommandQueryMITRETechnique
             };
@@ -169,16 +190,78 @@ namespace View
             // Other keys
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
-            inline static KeyboardControl RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_RENAME_LABEL };
+            inline static KeyboardControl RenameLabelCommand      = {
+                Input::Key::N, "RenameLabel", "Rename label, function or local variable", COMMAND_RENAME_LABEL
+            };
+            inline static KeyboardControl RemoveLocalVariableCommand = { Input::Key::Shift | Input::Key::Delete,
+                                                                         "RemoveLocalVariable",
+                                                                         "Remove the local variable defined or used on the current line",
+                                                                         COMMAND_REMOVE_LOCAL_VARIABLE };
             inline static KeyboardControl SaveCacheCommand        = {
                 Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE
             };
+            inline static KeyboardControl ToggleNumberBaseCommand = {
+                Input::Key::H, "ToggleNumberBase", "Show the number under the cursor in decimal / hexadecimal", COMMAND_TOGGLE_NUMBER_BASE
+            };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 3> KeyDownCommands = { AddOrEditCommentCommand,
-                                                                                                     RemoveCommentCommand,
-                                                                                                     RenameLabelCommand };
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
+                AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand, RemoveLocalVariableCommand
+            };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 11> AllKeyboardCommands = {
+            // navigation & editing
+            using KF = KeyboardControlFlags;
+            inline static KeyboardControl MoveDownCommand  = { Input::Key::Down, "MoveDown", "Move one line down", COMMAND_NAV_DOWN, KF::ShiftExtendsSelection };
+            inline static KeyboardControl MoveUpCommand    = { Input::Key::Up, "MoveUp", "Move one line up", COMMAND_NAV_UP, KF::ShiftExtendsSelection };
+            inline static KeyboardControl MoveLeftCommand  = { Input::Key::Left, "MoveLeft", "Move one character to the left", COMMAND_NAV_LEFT, KF::ShiftExtendsSelection };
+            inline static KeyboardControl MoveRightCommand = {
+                Input::Key::Right, "MoveRight", "Move one character to the right", COMMAND_NAV_RIGHT, KF::ShiftExtendsSelection
+            };
+            inline static KeyboardControl MovePageDownCommand = { Input::Key::PageDown, "MovePageDown", "Move one page down", COMMAND_NAV_PAGE_DOWN, KF::ShiftExtendsSelection };
+            inline static KeyboardControl MovePageUpCommand   = { Input::Key::PageUp, "MovePageUp", "Move one page up", COMMAND_NAV_PAGE_UP, KF::ShiftExtendsSelection };
+            inline static KeyboardControl MoveHomeCommand     = { Input::Key::Home, "MoveToLineStart", "Move to the start of the line", COMMAND_NAV_HOME, KF::ShiftExtendsSelection };
+            inline static KeyboardControl MoveEndCommand      = { Input::Key::End, "MoveToLineEnd", "Move to the end of the line", COMMAND_NAV_END, KF::ShiftExtendsSelection };
+            inline static KeyboardControl ScrollUpCommand     = { Input::Key::Ctrl | Input::Key::Up, "ScrollUp", "Scroll the view one line up", COMMAND_NAV_SCROLL_UP };
+            inline static KeyboardControl ScrollDownCommand   = { Input::Key::Ctrl | Input::Key::Down, "ScrollDown", "Scroll the view one line down", COMMAND_NAV_SCROLL_DOWN };
+            inline static KeyboardControl ScrollLeftCommand   = { Input::Key::Ctrl | Input::Key::Left, "ScrollLeft", "Scroll the view to the left", COMMAND_NAV_SCROLL_LEFT };
+            inline static KeyboardControl ScrollRightCommand  = { Input::Key::Ctrl | Input::Key::Right, "ScrollRight", "Scroll the view to the right", COMMAND_NAV_SCROLL_RIGHT };
+            inline static KeyboardControl SpaceCommand        = {
+                Input::Key::Space, "ExpandOrFollow", "Expand / collapse the current zone or follow the current call / jump", COMMAND_NAV_SPACE
+            };
+            inline static KeyboardControl OpenSelectionCommand = { Input::Key::Enter, "OpenSelection", "Open the current selection as a new object", COMMAND_NAV_OPEN };
+            inline static KeyboardControl AddZoneCommand       = { Input::Key::X, "AddCollapsibleZone", "Add a collapsible zone over the selection", COMMAND_NAV_ADD_ZONE };
+
+            inline static std::array<KeyboardControl*, 15> NavigationCommands = {
+                &MoveDownCommand,   &MoveUpCommand,     &MoveLeftCommand,    &MoveRightCommand,     &MovePageDownCommand,
+                &MovePageUpCommand, &MoveHomeCommand,   &MoveEndCommand,     &ScrollUpCommand,      &ScrollDownCommand,
+                &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
+            };
+            // keys handled in OnKeyEvent (navigation + the editing keys)
+            inline static std::array<KeyboardControl*, 21> KeyEventCommands = {
+                &MoveDownCommand,
+                &MoveUpCommand,
+                &MoveLeftCommand,
+                &MoveRightCommand,
+                &MovePageDownCommand,
+                &MovePageUpCommand,
+                &MoveHomeCommand,
+                &MoveEndCommand,
+                &ScrollUpCommand,
+                &ScrollDownCommand,
+                &ScrollLeftCommand,
+                &ScrollRightCommand,
+                &SpaceCommand,
+                &OpenSelectionCommand,
+                &AddZoneCommand,
+                &AddOrEditCommentCommand,
+                &RemoveCommentCommand,
+                &RenameLabelCommand,
+                &RemoveLocalVariableCommand,
+                &SaveCacheCommand,
+                &ToggleNumberBaseCommand,
+            };
+            inline static Input::KeyMap Map;
+
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 13> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -186,9 +269,10 @@ namespace View
                 GotoEntrypointCommand,
                 AddOrEditCommentCommand,
                 RemoveCommentCommand,
-                //ShowKeysWindowCommand,
                 RenameLabelCommand,
+                RemoveLocalVariableCommand,
                 SaveCacheCommand,
+                ToggleNumberBaseCommand,
                 CommandQueryFunctionName,
                 CommandQueryMITRETechnique
             };
@@ -213,12 +297,8 @@ namespace View
             void OnThemeChanged(const Application::Config& config) override;
         };
 
-        class KeyConfigDisplayWindow : public Controls::Window
-        {
-          public:
-            KeyConfigDisplayWindow();
-            virtual bool OnEvent(AppCUI::Utils::Reference<Control>, AppCUI::Controls::Event eventType, int ID) override;
-        };
+        void RegisterKeys(KeyboardControlsInterface* interface);
+        void OnKeysChanged();
     } // namespace DissasmViewer
 } // namespace View
 } // namespace GView

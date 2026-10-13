@@ -83,19 +83,19 @@ ArtefactsUI::ArtefactsUI(DataCache& cache, const std::vector<Finding>& findings)
         }
     };
 
-    auto emails = lv->AddItem({ "Emails" }).SetType(ListViewItem::Type::Category);
+    lv->AddItem({ "Emails" }).SetType(ListViewItem::Type::Category);
     AddItems(Subcategory::Email);
-    auto urls = lv->AddItem({ "URLs" }).SetType(ListViewItem::Type::Category);
+    lv->AddItem({ "URLs" }).SetType(ListViewItem::Type::Category);
     AddItems(Subcategory::URL);
-    auto ips = lv->AddItem({ "IPs" }).SetType(ListViewItem::Type::Category);
+    lv->AddItem({ "IPs" }).SetType(ListViewItem::Type::Category);
     AddItems(Subcategory::IP);
-    auto wallets = lv->AddItem({ "Wallets" }).SetType(ListViewItem::Type::Category);
+    lv->AddItem({ "Wallets" }).SetType(ListViewItem::Type::Category);
     AddItems(Subcategory::Wallet);
-    auto paths = lv->AddItem({ "Paths" }).SetType(ListViewItem::Type::Category);
+    lv->AddItem({ "Paths" }).SetType(ListViewItem::Type::Category);
     AddItems(Subcategory::Filepath);
-    auto registries = lv->AddItem({ "Registries" }).SetType(ListViewItem::Type::Category);
+    lv->AddItem({ "Registries" }).SetType(ListViewItem::Type::Category);
     AddItems(Subcategory::Registry);
-    auto strings = lv->AddItem({ "Strings" }).SetType(ListViewItem::Type::Category);
+    lv->AddItem({ "Strings" }).SetType(ListViewItem::Type::Category);
     AddItems(Subcategory::Text);
 }
 } // namespace GView::GenericPlugins::Droppper

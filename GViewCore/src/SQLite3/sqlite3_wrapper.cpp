@@ -68,7 +68,7 @@ Column::Column(const Column& other) // copy constructor
 
     auto tmp         = new std::vector<Buffer>();
     auto otherValues = reinterpret_cast<std::vector<Buffer>*>(other.values);
-    for (auto i = 0; i < otherValues->size(); i++) {
+    for (size_t i = 0; i < otherValues->size(); i++) {
         tmp->push_back(otherValues->at(i));
     }
     values = tmp;
@@ -152,7 +152,6 @@ std::vector<std::vector<String>> Database::GetTableMetadata(std::string_view tab
 
     AppCUI::Utils::String query;
     query.SetFormat("SELECT * FROM PRAGMA_TABLE_INFO('%.*s') as TABLE_INFO;", tableName.size(), tableName.data());
-    auto value   = query.GetText();
     auto columns = ExecuteQuery(query.GetText());
     if (columns.empty()) {
         return {};
@@ -160,9 +159,9 @@ std::vector<std::vector<String>> Database::GetTableMetadata(std::string_view tab
 
     auto values = reinterpret_cast<std::vector<Buffer>*>(columns[0].values);
     std::vector<std::vector<String>> results(values->size());
-    for (auto i = 0; i < values->size(); i++) {
-        for (auto j = 1; j < columns.size(); j++) {
-            results[i].push_back((String) columns[j].ValueToString(i));
+    for (size_t i = 0; i < values->size(); i++) {
+        for (size_t j = 1; j < columns.size(); j++) {
+            results[i].push_back((String) columns[j].ValueToString(static_cast<uint32>(i)));
         }
     }
 
@@ -202,7 +201,7 @@ std::vector<std::pair<String, String>> Database::GetTableInfo()
 
     auto values0 = reinterpret_cast<std::vector<Buffer>*>(columns[0].values);
     auto values1 = reinterpret_cast<std::vector<Buffer>*>(columns[1].values);
-    for (int i = 0; i < values0->size(); ++i) {
+    for (size_t i = 0; i < values0->size(); ++i) {
         String name;
         name.Set((const char*) values0->at(i).GetData(), (uint32) values0->at(i).GetLength());
 
@@ -235,16 +234,16 @@ std::pair<std::vector<String>, std::vector<std::vector<String>>> Database::GetSt
         return result;
     }
 
-    for (int i = 0; i < columns.size(); ++i) {
+    for (size_t i = 0; i < columns.size(); ++i) {
         result.first.push_back(std::move(columns[i].name));
     }
 
     auto values = reinterpret_cast<std::vector<Buffer>*>(columns[0].values);
-    for (int i = 0; i < values->size(); ++i) {
+    for (size_t i = 0; i < values->size(); ++i) {
         result.second.emplace_back();
 
-        for (int j = 0; j < columns.size(); ++j) {
-            result.second[i].emplace_back(columns[j].ValueToString(i));
+        for (size_t j = 0; j < columns.size(); ++j) {
+            result.second[i].emplace_back(columns[j].ValueToString(static_cast<uint32>(i)));
         }
     }
 
@@ -255,8 +254,7 @@ std::vector<Column> Database::ExecuteQuery(const char* query)
 {
     const char* tail = nullptr;
     sqlite3_stmt* sHandle{ nullptr };
-    const int errorCode      = sqlite3_prepare_v2((sqlite3*) handle, query, -1, &sHandle, &tail);
-    const char* errorMessage = sqlite3_errstr(errorCode);
+    sqlite3_prepare_v2((sqlite3*) handle, query, -1, &sHandle, &tail);
 
     auto columnCount = sqlite3_column_count(sHandle);
     std::vector<Column> result;
@@ -307,14 +305,14 @@ std::vector<Column> Database::ExecuteQuery(const char* query)
                 result[i].type = Column::Type::Integer;
 
                 const auto value = sqlite3_column_int64(sHandle, i);
-                auto bv          = BufferView{ (uint8*) &value, sizeof(value) };
+                auto bv          = BufferView{ &value, sizeof(value) };
                 b.Add(bv);
             } break;
             case SQLITE_FLOAT: {
                 result[i].type = Column::Type::Float;
 
                 const auto value = sqlite3_column_double(sHandle, i);
-                auto bv          = BufferView{ (uint8*) &value, sizeof(value) };
+                auto bv          = BufferView{ &value, sizeof(value) };
                 b.Add(bv);
             } break;
             case SQLITE_TEXT: {
@@ -323,7 +321,7 @@ std::vector<Column> Database::ExecuteQuery(const char* query)
             } break;
             case SQLITE_BLOB:
                 result[i].type = Column::Type::Blob;
-                b.Add(BufferView{ (char*) sqlite3_column_blob(sHandle, i), (uint32) sqlite3_column_bytes(sHandle, i) });
+                b.Add(BufferView{ sqlite3_column_blob(sHandle, i), (uint32) sqlite3_column_bytes(sHandle, i) });
                 break;
             }
 
