@@ -278,6 +278,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     for (const auto& cmd : config.CommandBarCommands)
         commandBar.SetCommand(cmd.get().Key, cmd.get().Caption, cmd.get().CommandId);
+    commandBar.SetCommand(config.OpenSelectionCommand.Key, config.OpenSelectionCommand.Caption, COMMAND_NAV_OPEN);
 
     return false;
 }
@@ -367,6 +368,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             ProcessSpaceKey(true);
             return true;
         }
+        case COMMAND_NAV_OPEN:
+            OpenCurrentSelection();
+            return true;
         default:
             return false;
         }

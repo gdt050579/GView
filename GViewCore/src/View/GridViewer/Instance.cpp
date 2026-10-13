@@ -158,7 +158,7 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                 BufferView buffer(*content);
                 GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
             } else {
-                AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to view cell content!");
+                AppCUI::Dialogs::MessageBox::ShowNotification("View cell content", "Select a cell first !");
             }
 
         } else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT) {

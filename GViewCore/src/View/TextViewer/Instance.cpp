@@ -321,6 +321,10 @@ void Instance::OpenCurrentSelection()
 
         GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select);
     }
+    else
+    {
+        Dialogs::MessageBox::ShowNotification("Open selection", "There is no selection at the cursor position !");
+    }
 }
 void Instance::RecomputeLineIndexes()
 {
@@ -1286,6 +1290,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(WordWrap.Key, "Wrap:Bullets", CMD_ID_WORD_WRAP);
         break;
     }
+    commandBar.SetCommand(OpenSelection.Key, OpenSelection.Caption, CMD_NAV_OPEN_SELECTION);
     return false;
 }
 bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
@@ -1384,6 +1389,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             SetWrapMethod(WrapMethod::None);
             break;
         }
+        return true;
+    case CMD_NAV_OPEN_SELECTION:
+        OpenCurrentSelection();
         return true;
     }
     return false;

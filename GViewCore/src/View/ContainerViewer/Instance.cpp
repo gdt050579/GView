@@ -125,6 +125,31 @@ bool Instance::OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item, boo
 }
 void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
 {
+    OpenItem(item);
+}
+void Instance::OpenCurrentItem()
+{
+    auto item = this->items->GetCurrentItem();
+    if (item.IsValid() == false)
+    {
+        Dialogs::MessageBox::ShowNotification("Open item", "Select an item first !");
+        return;
+    }
+    if (item.IsExpandable())
+    {
+        // same behavior as Enter in the tree (expand / collapse + refresh of the visible items)
+        this->items->OnKeyEvent(Key::Enter, 0);
+        return;
+    }
+    if (this->settings->openItemInterface.IsValid() == false)
+    {
+        Dialogs::MessageBox::ShowNotification("Open item", "This container does not support opening its items !");
+        return;
+    }
+    OpenItem(item);
+}
+void Instance::OpenItem(TreeViewItem item)
+{
     if ((item.GetChildrenCount() == 0) && (this->settings->openItemInterface))
     {
         UpdatePathForItem(item);
@@ -146,14 +171,26 @@ void Instance::OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& i
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    commandBar.SetCommand(Commands::OpenItem.Key, Commands::OpenItem.Caption, Commands::OpenItem.CommandId);
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
+    // only reached when the key is not handled by the tree (e.g. the command was assigned to another key)
+    if (Commands::OpenItem.Matches(keyCode))
+    {
+        OpenCurrentItem();
+        return true;
+    }
     return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
+    if ((eventType == Event::Command) && (ID == Commands::CMD_ID_OPEN_ITEM))
+    {
+        OpenCurrentItem();
+        return true;
+    }
     return false;
 }
 bool Instance::GoTo(uint64 offset)
@@ -224,7 +261,8 @@ void GView::View::ContainerViewer::RegisterKeys(KeyboardControlsInterface* inter
 {
     interface->BeginCategory("Navigation & editing");
     interface->RegisterKeyText("Up / Down / PageUp / PageDown / Home / End", "Move", "Move in the tree");
-    interface->RegisterKeyText("Space / Enter", "ToggleOrOpen", "Expand / collapse the current item (or open it if it has no children)");
+    interface->RegisterKey(&Commands::OpenItem);
+    interface->RegisterKeyText("Space", "ToggleOrOpen", "Expand / collapse the current item (or open it if it has no children)");
     interface->RegisterKeyText("Shift+Space / Shift+Enter", "Open", "Open the current item");
     interface->RegisterKeyText("Ctrl+Space", "ToggleRecursive", "Expand / collapse the current item and all its children");
     interface->RegisterKeyText("<type text>", "Search", "Search in the tree (Escape clears the search)");
