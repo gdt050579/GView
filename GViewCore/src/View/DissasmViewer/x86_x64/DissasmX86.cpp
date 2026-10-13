@@ -573,15 +573,18 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     }
 
     // TODO: improve efficiency by filtering instructions
-    uint64 hexVal = 0;
-    if (CheckExtractInsnHexValue(insn->op_str, hexVal, params.settings->maxLocationMemoryMappingSize)) {
+    uint64 hexVal = 0; // memory mappings (imports) and pushed strings
+    if (CheckExtractInsnHexValue(insn->op_str, hexVal, params.settings->maxLocationMemoryMappingSize))
         hexValue = hexVal;
-        if (flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag))
-            branchTarget = hexVal; // same base as the decoded addresses, used by the jump arrows
-        if (hexVal == 0 && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
-            hexValue = params.zone->cachedCodeOffsets[0].offset;
-        else if (hexVal < params.zone->cachedCodeOffsets[0].offset)
-            hexValue = hexVal + params.zone->cachedCodeOffsets[0].offset;
+    // direct jump / call: the target has the same base as `address`; only a target inside the decoded code has a file offset
+    std::optional<uint64> targetFileOffset;
+    if (flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag)) {
+        const auto target = GetDirectBranchTarget(insn->op_str);
+        if (target.has_value()) {
+            targetFileOffset = params.zone->GetFileOffsetOfAddress(target.value());
+            if (targetFileOffset.has_value())
+                branchTarget = target; // used by the jump arrows
+        }
     }
     bool alreadyInitComment = false;
     if (params.zone->asmPreCacheData.HasAnyFlag(params.asmLine))
@@ -648,7 +651,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     }
 
     if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
-        if (!hexValue.has_value()) {
+        if (!targetFileOffset.has_value()) { // indirect, or outside of the decoded code: the operands are shown as they are
             flags = 0;
             SetOperands(insn->op_str, params.zone);
             return true;
@@ -656,7 +659,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
         const char* prefix = !shouldConsiderCall ? "offset_0x" : "sub_0x";
 
-        auto fnName = FormatFunctionName(hexValue.value(), prefix);
+        auto fnName = FormatFunctionName(targetFileOffset.value(), prefix);
         // fnName.AddFormat(" (%s)", res.data());
 
         if (parent) {
@@ -1086,45 +1089,28 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] == 'j' || (insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)) {
-            jumpFromAddress = insn->address;
-            for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
-                jumpMnemonic[i] = insn->mnemonic[i];
-            if (insn->op_str[0] == '0' && insn->op_str[1] == 'x') {
-                char* val = &insn->op_str[2];
-
-                while (*val && *val != ',' && *val != ' ') {
-                    if (*val >= '0' && *val <= '9')
-                        computedValue = computedValue * 16 + (*val - '0');
-                    else if (*val >= 'a' && *val <= 'f')
-                        computedValue = computedValue * 16 + (*val - 'a' + 10);
-                    else {
-                        Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
-                        computedValue = 0;
-                        break;
-                    }
-                    val++;
-                }
-            } else if (insn->op_str[0] >= '0' && insn->op_str[0] <= '9' && insn->op_str[1] == '\0') {
-                computedValue = zone->cachedCodeOffsets[0].offset + (insn->op_str[0] - '0');
-            } else {
-                cs_free(insn, 1);
-                return;
-            }
-            cs_free(insn, 1);
-        } else {
+        if (insn->mnemonic[0] != 'j' && *(uint32*) insn->mnemonic != callOP) {
             cs_free(insn, 1);
             return;
         }
-    } else
+        // file offsets, like the displayed operand (TryGetDataFromInsn): the decoded addresses start at the first decoded instruction
+        jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
+        for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
+            jumpMnemonic[i] = insn->mnemonic[i];
+        const auto target       = GetDirectBranchTarget(insn->op_str);
+        const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
+        cs_free(insn, 1);
+        if (!targetOffset.has_value()) {
+            if (target.has_value())
+                Dialogs::MessageBox::ShowNotification("Warning", "The target is outside of this dissasm zone!");
+            return; // indirect jump / call: nothing to follow
+        }
+        computedValue = targetOffset.value();
+    } else {
         computedValue = *offsetToReach;
-
-    if (computedValue == 0 || computedValue > zone->zoneDetails.startingZonePoint + zone->zoneDetails.size)
-        return;
-
-    // the decoded addresses start at the first decoded instruction: the same conversion as the displayed operand (TryGetDataFromInsn)
-    if (computedValue < zone->cachedCodeOffsets[0].offset)
-        computedValue += zone->cachedCodeOffsets[0].offset;
+        if (computedValue < zone->cachedCodeOffsets[0].offset || !zone->GetFileOffsetOfAddress(computedValue - zone->cachedCodeOffsets[0].offset))
+            return;
+    }
 
     // computedValue = 1064;
 

@@ -300,13 +300,21 @@ class DissasmTestInstance
     }
 
   public:
+    struct ZoneLayout {
+        uint64 start      = 0;
+        uint64 size       = 5120;
+        uint64 entryPoint = 10;
+    };
+
     Instance* instance;
     std::vector<GView::Object> objects;
     std::unique_ptr<DissasmCodeZone> zone;
 
     bool enableLocalVariables;
+    ZoneLayout layout;
 
-    DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false) : enableLocalVariables(enableLocalVariables)
+    DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false, ZoneLayout layout = {})
+        : enableLocalVariables(enableLocalVariables), layout(layout)
     {
         instance = nullptr;
         // assert() is compiled out in RelWithDebInfo/Release (NDEBUG): a failed init would otherwise continue with a
@@ -347,9 +355,9 @@ class DissasmTestInstance
         zone->zoneType                      = DissasmParseZoneType::DissasmCodeParseZone;
         zone->startLineIndex                = 0;
         zone->zoneDetails.language          = DisassemblyLanguage::x86;
-        zone->zoneDetails.startingZonePoint = 0;
-        zone->zoneDetails.size              = 5120;
-        zone->zoneDetails.entryPoint        = 10;
+        zone->zoneDetails.startingZonePoint = layout.start;
+        zone->zoneDetails.size              = layout.size;
+        zone->zoneDetails.entryPoint        = layout.entryPoint;
 
         DissasmCodeZoneInitData initData      = {};
         initData.enableDeepScanDissasmOnStart  = true;
@@ -546,6 +554,45 @@ class DissasmTestInstance
             result.append(val.op_str, val.op_str_size);
         }
         return result;
+    }
+
+    // the line as it is drawn: jump / call targets replaced by their labels (needs the viewer settings)
+    DissasmAsmPreCacheLine GetDrawnAsmLine(uint32 line)
+    {
+        struct IdentityTranslation : public GView::View::BufferViewer::OffsetTranslateInterface {
+            uint64_t TranslateToFileOffset(uint64 value, uint32) override
+            {
+                return value;
+            }
+            uint64_t TranslateFromFileOffset(uint64 value, uint32) override
+            {
+                return value;
+            }
+        };
+        IdentityTranslation translation;
+        SettingsData settings;
+        settings.offsetTranslateCallback = &translation;
+        AsmData asmData;
+
+        DissasmInsnExtractLineParams params{};
+        params.obj      = &objects[0];
+        params.settings = &settings;
+        params.asmData  = &asmData;
+        params.zone     = zone.get();
+        return zone->GetCurrentAsmLine(line, &objects[0], &params);
+    }
+
+    bool CheckDrawnLineText(uint32 line, std::string_view expected)
+    {
+        const auto val     = GetDrawnAsmLine(line);
+        std::string result = val.mnemonic;
+        if (val.op_str)
+            result.append(" ").append(val.op_str, val.op_str_size);
+        if (result != expected) {
+            printf("[%u] expected: \"%.*s\", found: \"%s\"\n", line, (int) expected.size(), expected.data(), result.c_str());
+            return false;
+        }
+        return true;
     }
 
     bool CheckLineText(uint32 line, std::string_view expected)
@@ -1627,6 +1674,77 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     DissasmTestInstance restoredTruncated(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
     REQUIRE(!restoredTruncated.zone->TryLoadDataFromCache(*cacheTruncated, zoneLinesChanged));
     REQUIRE(restoredTruncated.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+}
+
+TEST_CASE("DirectBranchTargets", "[Dissasm]Jumps")
+{
+    REQUIRE(GetDirectBranchTarget("0x1f4") == 0x1f4u);
+    REQUIRE(GetDirectBranchTarget("7") == 7u);
+    REQUIRE(GetDirectBranchTarget("0xffffffffffffffff") == UINT64_MAX);
+    REQUIRE(!GetDirectBranchTarget("0x10000000000000000").has_value()); // does not fit in 64 bits
+    REQUIRE(!GetDirectBranchTarget("18446744073709551616").has_value());
+    REQUIRE(!GetDirectBranchTarget("").has_value());
+    REQUIRE(!GetDirectBranchTarget("0x").has_value());
+    REQUIRE(!GetDirectBranchTarget("eax").has_value());
+    REQUIRE(!GetDirectBranchTarget("dword ptr [0x404000]").has_value());
+    REQUIRE(!GetDirectBranchTarget("0x10:0x20").has_value()); // far pointer
+    REQUIRE(!GetDirectBranchTarget("0x1F4").has_value());     // capstone prints lower case hex digits
+}
+
+TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
+{
+    // a zone placed at file offset 0x100 with more code than its offset: the decoded addresses (and the branch targets) start at 0 on
+    // the first instruction, a target >= 0x100 was taken for a file offset and named / followed to the wrong place
+    constexpr uint64 zoneStart = 0x100;
+    constexpr uint64 codeSize  = 0x220;
+    std::vector<unsigned char> file(zoneStart, 0xCC);
+    const unsigned char head[] = {
+        0xE9, 0xFB, 0x01, 0x00, 0x00,      // 0x000: jmp 0x200
+        0xE8, 0x76, 0x01, 0x00, 0x00,      // 0x005: call 0x180
+        0xE9, 0xE1, 0xFF, 0xFF, 0xFF,      // 0x00a: jmp -0x10 (before the zone, wraps around)
+        0xFF, 0x15, 0x00, 0x40, 0x40, 0x00, // 0x00f: call dword ptr [0x404000]
+        0xE9, 0xE6, 0x02, 0x00, 0x00,      // 0x015: jmp 0x300 (after the zone)
+    };
+    file.insert(file.end(), std::begin(head), std::end(head));
+    file.resize(zoneStart + 0x180, 0x90);
+    const unsigned char function[] = { 0x55, 0x8B, 0xEC, 0x5D, 0xC3 }; // 0x180: push ebp; mov ebp, esp; pop ebp; ret
+    file.insert(file.end(), std::begin(function), std::end(function));
+    file.resize(zoneStart + 0x200, 0x90);
+    file.push_back(0xC3); // 0x200: ret
+    file.resize(zoneStart + codeSize, 0x90);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, { zoneStart, codeSize, zoneStart });
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.cachedCodeOffsets[0].offset == zoneStart);
+
+    REQUIRE(zone.GetFileOffsetOfAddress(0) == zoneStart);
+    REQUIRE(zone.GetFileOffsetOfAddress(codeSize - 1) == zoneStart + codeSize - 1);
+    REQUIRE(!zone.GetFileOffsetOfAddress(codeSize).has_value());
+    REQUIRE(!zone.GetFileOffsetOfAddress(UINT64_MAX).has_value());
+
+    // the labels are placed on the targets and keep their address relative to the code
+    const auto& annotations = zone.dissasmType.annotations;
+    const auto subLine      = annotations.get_line_by_annotation_name("sub_0x000000280");
+    const auto offsetLine   = annotations.get_line_by_annotation_name("offset_0x000000300");
+    REQUIRE(subLine.has_value());
+    REQUIRE(offsetLine.has_value());
+    REQUIRE(annotations.find(subLine.value())->second.second == 0x180);
+    REQUIRE(annotations.find(offsetLine.value())->second.second == 0x200);
+    REQUIRE(annotations.size() == 3); // and the entry point, nothing for the targets outside of the code
+    REQUIRE(dissasmInstance.CheckLineText(subLine.value() + 1, "push ebp"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(offsetLine.value() + 1, "ret"));
+
+    // the drawn operands use the same labels, the targets outside of the code keep their operands
+    REQUIRE(dissasmInstance.CheckDrawnLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "jmp offset_0x000000300"));
+    REQUIRE(dissasmInstance.GetDrawnAsmLine(1).branchTarget == 0x200u);
+    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "call sub_0x000000280"));
+    REQUIRE(dissasmInstance.GetDrawnAsmLine(2).branchTarget == 0x180u);
+    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0xfffffff0"));
+    REQUIRE(!dissasmInstance.GetDrawnAsmLine(3).branchTarget.has_value());
+    REQUIRE(dissasmInstance.CheckDrawnLineText(4, "call dword ptr [0x404000]"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(5, "jmp 0x300"));
+    REQUIRE(!dissasmInstance.GetDrawnAsmLine(5).branchTarget.has_value());
 }
 
 std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine); // DissasmX86.cpp

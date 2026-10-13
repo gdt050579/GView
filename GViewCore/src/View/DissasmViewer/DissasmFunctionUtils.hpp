@@ -11,6 +11,9 @@ constexpr uint32 retOP  = 7628146u;    //*((uint32*) "ret");
 // TODO: maybe add also minimum number?
 bool CheckExtractInsnHexValue(const char* op_str, AppCUI::uint64& value, AppCUI::uint64 maxSize);
 AppCUI::Utils::LocalString<64> FormatFunctionName(AppCUI::uint64 functionAddress, const char* prefix);
+// target of a direct jump / call: the operands are only the target address, as capstone prints it ("0x1f4", or "7" below 10);
+// none for registers, memory operands, far pointers ("0x10:0x20") or numbers that do not fit in 64 bits
+std::optional<AppCUI::uint64> GetDirectBranchTarget(std::string_view operands);
 
 // a number written in the operands of an instruction (0x... or decimal), positions are inside the operands text
 struct OperandNumber {

@@ -138,6 +138,29 @@ LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
     return callName;
 }
 
+std::optional<uint64> GetDirectBranchTarget(std::string_view operands)
+{
+    const bool isHex          = operands.size() > 2 && operands[0] == '0' && operands[1] == 'x';
+    const std::string_view sv = isHex ? operands.substr(2) : operands;
+    const uint64 base         = isHex ? 16u : 10u;
+    if (sv.empty())
+        return {};
+    uint64 value = 0;
+    for (const char c : sv) {
+        uint64 digit;
+        if (c >= '0' && c <= '9')
+            digit = static_cast<uint64>(c - '0');
+        else if (isHex && c >= 'a' && c <= 'f')
+            digit = static_cast<uint64>(c - 'a' + 10);
+        else
+            return {};
+        if (value > (UINT64_MAX - digit) / base)
+            return {};
+        value = value * base + digit;
+    }
+    return value;
+}
+
 namespace
 {
 int32 HexDigitValue(char c)

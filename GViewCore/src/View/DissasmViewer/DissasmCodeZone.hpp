@@ -64,6 +64,9 @@ struct DissasmCodeZone : public ParseZone {
 
     // x86/x64 code window: bytes from cachedCodeOffsets[0].offset until the end of the zone
     uint64 GetCodeSize() const;
+    // file offset of an address decoded by this zone (the decoded addresses start at 0 on cachedCodeOffsets[0].offset), none when the
+    // address is not inside the decoded code (another section, a backward branch that wrapped around, ...)
+    std::optional<uint64> GetFileOffsetOfAddress(uint64 address) const;
     // points asmData/asmSize/asmAddress to [relativeStart, relativeEnd), clamped to the zone and to what the data cache returns
     bool FetchCodeWindow(Reference<GView::Object> obj, uint64 relativeStart, uint64 relativeEnd);
 
