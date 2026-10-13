@@ -86,8 +86,17 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, DissasmColor
 }
 
 // TODO: to be moved inside plugin for some sort of API for token<->color
+// `opStrColumns` (optional) receives the column (inside `cb`) where every character of insn.op_str is drawn
+// (UINT32_MAX for the separators that are not drawn at a fixed place)
 inline void DissasmAddColorsToInstruction(
-      DissasmAsmPreCacheLine& insn, CharacterBuffer& cb, Config& cfg, DissasmColors& colors, AsmData& data, const CodePage& codePage, uint64 addressPadding = 0)
+      DissasmAsmPreCacheLine& insn,
+      CharacterBuffer& cb,
+      Config& cfg,
+      DissasmColors& colors,
+      AsmData& data,
+      const CodePage& codePage,
+      uint64 addressPadding              = 0,
+      std::vector<uint32>* opStrColumns = nullptr)
 {
     // TODO: replace CharacterBuffer with Canvas;
 
@@ -189,11 +198,20 @@ inline void DissasmAddColorsToInstruction(
 
     if (insn.op_str) {
         const std::string_view op_str = insn.op_str;
+        if (opStrColumns)
+            opStrColumns->assign(op_str.size(), UINT32_MAX);
+        auto recordColumns = [opStrColumns, &cb](size_t opStrStart, size_t count) {
+            if (!opStrColumns)
+                return;
+            for (size_t i = 0; i < count && opStrStart + i < opStrColumns->size(); i++)
+                (*opStrColumns)[opStrStart + i] = cb.Len() + static_cast<uint32>(i);
+        };
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
         auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer, &data](std::string_view token) {
             lambdaBuffer.Clear();
-            if (token.length() > 2 && token[0] == '0' && token[1] == 'x') {
+            // numbers: hexadecimal (0x...) or decimal (small values, or switched to decimal with the H key)
+            if (!token.empty() && token[0] >= '0' && token[0] <= '9') {
                 cb.Add(token.data(), colors.AsmOffsetColor);
                 return;
             }
@@ -204,6 +222,7 @@ inline void DissasmAddColorsToInstruction(
 
         if (op_str.length() > 2 && op_str[0] == '0' && op_str[1] == 'x') {
             cb.Add(" ");
+            recordColumns(0, op_str.size());
             checkValidAndAdd(op_str);
             return;
         }
@@ -213,6 +232,7 @@ inline void DissasmAddColorsToInstruction(
         size_t tokenStart           = 0;
         LocalString<32> buffer;
         auto addToken = [&]() {
+            recordColumns(tokenStart, buffer.Len());
             if (hasVariableToken && tokenStart == insn.localVariableNameStart)
                 cb.Add(buffer.GetText(), colors.AsmLocalVariableColor);
             else
@@ -491,7 +511,16 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         function = zone->localVariables.FindFunctionByAddress(address);
         variable = function ? function->FindVariable(frameOperand.frameOffset) : nullptr;
     }
+    // numbers the user switched to decimal (H key)
+    const uint32 decimalMask = zone ? zone->GetDecimalOperandsMask(address) : 0u;
+
     if (!variable) {
+        if (decimalMask != 0) {
+            const auto formatted = FormatOperandNumbers(text, decimalMask);
+            op_str               = portable_strdup(formatted.c_str());
+            op_str_size          = static_cast<uint32>(formatted.size());
+            return;
+        }
         op_str      = portable_strdup(operands ? operands : "");
         op_str_size = static_cast<uint32>(text.size());
         return;
@@ -504,6 +533,8 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     localVariableNameStart = static_cast<uint32>(rewritten.size());
     rewritten.append(variable->name);
     rewritten.append(text.substr(frameOperand.replaceEnd));
+    if (decimalMask != 0)
+        rewritten = FormatOperandNumbers(rewritten, decimalMask, &localVariableNameStart);
 
     op_str                = portable_strdup(rewritten.c_str());
     op_str_size           = static_cast<uint32>(rewritten.size());
@@ -826,6 +857,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         asmPreCacheData.ComputeMaxLine();
         if (config.EnableDeepScanDissasmOnStart)
             asmPreCacheData.PrepareLabelArrows();
+        drawnLinesGeneration++; // the lines may have changed (renames, collapsed zones, numbers base)
     }
 
     const auto asmCacheLine = zone->asmPreCacheData.GetLine();
@@ -1102,6 +1134,104 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
     else
         GView::Security::Learning::Hooks::OnJumpFollow(obj, jumpFromAddress, computedValue, jumpMnemonic);
+}
+
+void Instance::RefreshCursorLineNumbers()
+{
+    const uint32 line = Cursor.startViewLine + Cursor.lineInView;
+    if (cursorLineNumbers.computed && cursorLineNumbers.line == line && cursorLineNumbers.generation == drawnLinesGeneration)
+        return;
+    cursorLineNumbers.computed   = true;
+    cursorLineNumbers.line       = line;
+    cursorLineNumbers.generation = drawnLinesGeneration;
+    cursorLineNumbers.valid      = false;
+    cursorLineNumbers.zone       = nullptr;
+    cursorLineNumbers.numbers.clear();
+
+    const auto zonesFound = GetZonesIndexesFromLinePosition(line);
+    if (zonesFound.size() != 1)
+        return;
+    const auto& parseZone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed)
+        return;
+    const auto zone     = static_cast<DissasmCodeZone*>(parseZone.get());
+    const auto language = zone->zoneDetails.language;
+    if (!zone->isInit || zone->cachedCodeOffsets.empty() || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+        return;
+    // zone line 0 is the title and line 1 the columns header; when the zone title is scrolled out, the first row shows the header
+    const uint32 zoneLine = zonesFound[0].startingLine;
+    if (zoneLine < 2 || Cursor.lineInView == 0)
+        return;
+
+    // the same line (and layout) as the one that is drawn
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    params.dli      = nullptr;
+    params.zone     = zone;
+    auto asmLine = zone->GetCurrentAsmLine(zoneLine - 2u, obj, &params);
+
+    // only instructions: not labels, local variable lines or collapsed zones
+    const bool isCollapsedZoneLine = asmLine.shouldAddButton && asmLine.isZoneCollapsed;
+    if (!asmLine.op_str || asmLine.size == 0 || isCollapsedZoneLine ||
+        asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
+        return;
+
+    CharacterBuffer lineText; // drawn without the left margin: its columns have the same base as Cursor.offset
+    std::vector<uint32> opStrColumns;
+    DissasmAddColorsToInstruction(
+          asmLine, lineText, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, &opStrColumns);
+    if (opStrColumns.size() != asmLine.op_str_size)
+        return;
+
+    cursorLineNumbers.valid   = true;
+    cursorLineNumbers.zone    = zone;
+    cursorLineNumbers.address = asmLine.address;
+
+    const auto numbers = FindOperandNumbers({ asmLine.op_str, asmLine.op_str_size });
+    for (uint32 index = 0; index < static_cast<uint32>(numbers.size()) && index < 32u; index++) {
+        const auto& number  = numbers[index];
+        const uint32 column = opStrColumns[number.start];
+        if (column != UINT32_MAX)
+            cursorLineNumbers.numbers.push_back({ column, number.length, index, number.value, number.isHex });
+    }
+}
+
+const Instance::CursorLineNumber* Instance::GetCursorLineNumber()
+{
+    RefreshCursorLineNumbers();
+    if (!cursorLineNumbers.valid)
+        return nullptr;
+    for (const auto& number : cursorLineNumbers.numbers)
+        if (Cursor.offset >= number.column && Cursor.offset < number.column + number.length)
+            return &number;
+    // most instructions have a single number (mov eax, 0x10 / push 0x40): no need to place the cursor on it
+    if (cursorLineNumbers.numbers.size() == 1)
+        return &cursorLineNumbers.numbers[0];
+    return nullptr;
+}
+
+void Instance::ToggleNumberBase()
+{
+    const auto number = GetCursorLineNumber();
+    if (!number) {
+        if (cursorLineNumbers.numbers.size() > 1)
+            Dialogs::MessageBox::ShowNotification("Warning", "Please move the cursor on the number to convert!");
+        else
+            Dialogs::MessageBox::ShowNotification("Warning", "There is no number on this line!");
+        return;
+    }
+    const auto zone        = cursorLineNumbers.zone;
+    const bool isConverted = (zone->GetDecimalOperandsMask(cursorLineNumbers.address) & (1u << number->index)) != 0;
+    if (!number->isHex && !isConverted) {
+        Dialogs::MessageBox::ShowNotification("Info", "Values below 10 look the same in both bases!");
+        return;
+    }
+
+    zone->ToggleDecimalOperand(cursorLineNumbers.address, number->index);
+    zone->asmPreCacheData.Clear(); // the lines are rebuilt with the new operands
+    drawnLinesGeneration++;
 }
 
 void Instance::EditDissasmCodeZoneCommand()

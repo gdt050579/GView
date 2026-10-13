@@ -18,6 +18,7 @@ constexpr uint32 COMMAND_QUERY_FUNCTION_NAME    = 111;
 constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
 constexpr uint32 COMMAND_RENAME_LABEL           = 113;
 constexpr uint32 COMMAND_REMOVE_LOCAL_VARIABLE  = 114;
+constexpr uint32 COMMAND_TOGGLE_NUMBER_BASE     = 115;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -199,6 +200,9 @@ namespace View
             inline static KeyboardControl SaveCacheCommand        = {
                 Input::Key::Ctrl | Input::Key::S, "SaveCache", "Save dissasm cache (will automatically save on ESCAPE)", COMMAND_SAVE_DISSASM_CACHE
             };
+            inline static KeyboardControl ToggleNumberBaseCommand = {
+                Input::Key::H, "ToggleNumberBase", "Show the number under the cursor in decimal / hexadecimal", COMMAND_TOGGLE_NUMBER_BASE
+            };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
                 AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand, RemoveLocalVariableCommand
@@ -232,7 +236,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 20> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 21> KeyEventCommands = {
                 &MoveDownCommand,
                 &MoveUpCommand,
                 &MoveLeftCommand,
@@ -253,10 +257,11 @@ namespace View
                 &RenameLabelCommand,
                 &RemoveLocalVariableCommand,
                 &SaveCacheCommand,
+                &ToggleNumberBaseCommand,
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 12> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 13> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -267,6 +272,7 @@ namespace View
                 RenameLabelCommand,
                 RemoveLocalVariableCommand,
                 SaveCacheCommand,
+                ToggleNumberBaseCommand,
                 CommandQueryFunctionName,
                 CommandQueryMITRETechnique
             };

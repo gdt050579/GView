@@ -35,6 +35,9 @@ struct DissasmCodeZone : public ParseZone {
     uint32 asmLinesCount = 0;
     // x86/x64: local variables of the frame based functions, filled only by the deep scan
     DissasmLocalVariables localVariables;
+    // x86/x64: instruction address (relative, as DissasmAsmPreCacheLine::address) -> bit mask of the operand numbers
+    // (FindOperandNumbers order) that are shown as decimal numbers instead of hexadecimal
+    std::map<uint64, uint32> decimalOperands;
 
     void ResetZoneCaching();
     bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
@@ -79,6 +82,14 @@ struct DissasmCodeZone : public ParseZone {
     uint32 GetRootZoneLinesCount() const
     {
         return asmLinesCount + static_cast<uint32>(dissasmType.annotations.size());
+    }
+
+    // switches the operand number `numberIndex` of the instruction at `address` between hexadecimal and decimal
+    void ToggleDecimalOperand(uint64 address, uint32 numberIndex);
+    uint32 GetDecimalOperandsMask(uint64 address) const
+    {
+        const auto it = decimalOperands.find(address);
+        return it != decimalOperands.end() ? it->second : 0u;
     }
 
     bool ToBuffer(std::vector<std::byte>& buffer) const;

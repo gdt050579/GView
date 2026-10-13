@@ -258,6 +258,9 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_SAVE_DISSASM_CACHE:
         SaveCacheData();
         return true;
+    case COMMAND_TOGGLE_NUMBER_BASE:
+        ToggleNumberBase();
+        return true;
     }
     return false;
 }

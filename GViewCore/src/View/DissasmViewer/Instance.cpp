@@ -266,12 +266,30 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
     case 1:
         x = PrintCursorPosInfo(x, 0, 16, false, renderer);
         x = PrintCursorLineInfo(x, 0, 16, false, renderer);
+        PrintCursorValueInfo(x, 0, renderer);
         break;
     default:
-        PrintCursorPosInfo(x, 0, 16, false, renderer);
-        PrintCursorLineInfo(x, 1, 16, false, renderer);
+        x = std::max<int>(PrintCursorPosInfo(x, 0, 16, false, renderer), PrintCursorLineInfo(x, 1, 16, false, renderer));
+        PrintCursorValueInfo(x, 0, renderer);
         break;
     }
+}
+
+int Instance::PrintCursorValueInfo(int x, int y, Renderer& r)
+{
+    // the number H would convert, in both bases (and signed when the sign bit of a 32 / 64 bit value is set)
+    const auto number = GetCursorLineNumber();
+    if (!number)
+        return x;
+    LocalString<96> tmp;
+    tmp.Format("0x%llX = %llu", static_cast<unsigned long long>(number->value), static_cast<unsigned long long>(number->value));
+    if (number->value >= 0x80000000ULL && number->value <= 0xFFFFFFFFULL)
+        tmp.AddFormat(" (%d)", static_cast<int32>(static_cast<uint32>(number->value)));
+    else if (number->value >= 0x8000000000000000ULL)
+        tmp.AddFormat(" (%lld)", static_cast<long long>(number->value));
+    r.WriteSingleLineText(x, y, "Val:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 5, y, tmp.GetText(), this->ColorMan.Colors.CursorNormal);
+    return x + 5 + static_cast<int>(tmp.Len()) + 1;
 }
 
 bool Instance::UpdateKeys(KeyboardControlsInterface* interface)

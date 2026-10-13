@@ -1460,3 +1460,124 @@ TEST_CASE("JumpsHistory", "[Dissasm]Jumps")
     REQUIRE(!small.JumpBack().has_value());
     REQUIRE(small.JumpForward() == at(80));
 }
+
+TEST_CASE("OperandNumbers", "[Dissasm]DecimalOperands")
+{
+    auto numbersOf = [](std::string_view text) {
+        std::vector<std::string> result;
+        for (const auto& number : FindOperandNumbers(text))
+            result.emplace_back(text.substr(number.start, number.length));
+        return result;
+    };
+    REQUIRE(numbersOf("byte ptr [edx + 0x4011b8]") == std::vector<std::string>{ "0x4011b8" });
+    REQUIRE(numbersOf("eax, 0x10") == std::vector<std::string>{ "0x10" });
+    REQUIRE(numbersOf("0x40") == std::vector<std::string>{ "0x40" });
+    REQUIRE(numbersOf("dword ptr [ebp - 0x44], 0x20") == std::vector<std::string>{ "0x44", "0x20" });
+    REQUIRE(numbersOf("dword ptr [eax + ebx*4 + 0x10], 1") == std::vector<std::string>{ "4", "0x10", "1" });
+    REQUIRE(numbersOf("dword ptr fs:[0x30]") == std::vector<std::string>{ "0x30" });
+    // names are not numbers
+    REQUIRE(numbersOf("dword ptr [ebp + var_8], r8d").empty());
+    REQUIRE(numbersOf("xmm0, xmm1").empty());
+    REQUIRE(numbersOf("st(0)").empty());
+    REQUIRE(numbersOf("sub_0x000000030").empty());
+    REQUIRE(numbersOf("eax, 1st").empty());
+
+    const auto numbers = FindOperandNumbers("eax, 0xffffffff");
+    REQUIRE(numbers.size() == 1);
+    REQUIRE(numbers[0].isHex);
+    REQUIRE(numbers[0].value == 0xffffffffULL);
+    const auto decimals = FindOperandNumbers("rax, 18446744073709551615");
+    REQUIRE(decimals.size() == 1);
+    REQUIRE(!decimals[0].isHex);
+    REQUIRE(decimals[0].value == UINT64_MAX);
+    REQUIRE(FindOperandNumbers("rax, 18446744073709551616").empty()); // does not fit in 64 bits
+    REQUIRE(FindOperandNumbers("rax, 0x10000000000000000").empty());
+
+    REQUIRE(FormatOperandNumbers("byte ptr [edx + 0x4011b8]", 1) == "byte ptr [edx + 4198840]");
+    REQUIRE(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 2) == "dword ptr [ebp - 0x44], 32");
+    REQUIRE(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 3) == "dword ptr [ebp - 68], 32");
+    REQUIRE(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 0) == "dword ptr [ebp - 0x44], 0x20");
+    REQUIRE(FormatOperandNumbers("eax, 1", 1) == "eax, 1"); // already decimal
+    // the indexes stay the same once the numbers are decimal (the cursor uses the displayed text)
+    REQUIRE(FindOperandNumbers(FormatOperandNumbers("dword ptr [ebp - 0x44], 0x20", 1)).size() == 2);
+
+    // a position after a converted number follows it
+    uint32 tracked = 22; // "var_8"
+    REQUIRE(FormatOperandNumbers("dword ptr [0x4011b8 + var_8]", 1, &tracked) == "dword ptr [4198840 + var_8]");
+    REQUIRE(tracked == 21);
+    tracked = 10; // before the number
+    REQUIRE(FormatOperandNumbers("dword ptr [var_8 + 0x4011b8]", 1, &tracked) == "dword ptr [var_8 + 4198840]");
+    REQUIRE(tracked == 10);
+}
+
+TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
+{
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+    const uint64 address = dissasmInstance.GetCurrentAsmLine(62).address;
+    zone.ToggleDecimalOperand(address, 0);
+    REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 4198840]"));
+    REQUIRE(dissasmInstance.CheckLineText(46, "cmp dword ptr [ebp + arg_0], 1")); // other instructions are not changed
+    zone.ToggleDecimalOperand(address, 0);
+    REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+    REQUIRE(zone.decimalOperands.empty());
+
+    // an instruction that uses a local variable and has a hexadecimal number: the variable name position follows the conversion
+    bool foundVariableLine = false;
+    for (uint32 line = 0; line < zone.GetRootZoneLinesCount() && !foundVariableLine; line++) {
+        const auto asmLine = dissasmInstance.GetCurrentAsmLine(line);
+        if (asmLine.localVariableKind != DissasmAsmPreCacheLine::LocalVariableKind::Reference || !asmLine.op_str)
+            continue;
+        const std::string original(asmLine.op_str, asmLine.op_str_size);
+        const auto numbers = FindOperandNumbers(original);
+        for (uint32 index = 0; index < numbers.size(); index++) {
+            if (!numbers[index].isHex || numbers[index].value < 10)
+                continue;
+            const std::string variableName = original.substr(asmLine.localVariableNameStart, asmLine.localVariableNameSize);
+            zone.ToggleDecimalOperand(asmLine.address, index);
+            const auto converted = dissasmInstance.GetCurrentAsmLine(line);
+            const std::string text(converted.op_str, converted.op_str_size);
+            REQUIRE(text == FormatOperandNumbers(original, 1u << index));
+            REQUIRE(text.substr(converted.localVariableNameStart, converted.localVariableNameSize) == variableName);
+            zone.ToggleDecimalOperand(asmLine.address, index);
+            foundVariableLine = true;
+            break;
+        }
+    }
+    REQUIRE(foundVariableLine);
+
+    // saved in the cache (version 2) and restored
+    std::vector<std::byte> buffer;
+    zone.ToggleDecimalOperand(address, 0);
+    REQUIRE(zone.ToBuffer(buffer));
+    auto cache      = std::make_unique<DissasmCache>();
+    cache->hasCache = true;
+    cache->AddRegion("DissasmParseZoneType.0", buffer.data(), static_cast<uint32>(buffer.size()));
+
+    DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    bool zoneLinesChanged = false;
+    REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+    REQUIRE(restored.CheckLineText(62, "movzx eax, byte ptr [edx + 4198840]"));
+
+    // a version 1 record (no decimal operands) is still loaded
+    std::vector<std::byte> versionOne(buffer.begin(), buffer.end() - static_cast<std::ptrdiff_t>(sizeof(uint32) + sizeof(uint64) + sizeof(uint32)));
+    const uint32 version = 1;
+    memcpy(versionOne.data() + sizeof(uint32), &version, sizeof(version));
+    auto cacheV1      = std::make_unique<DissasmCache>();
+    cacheV1->hasCache = true;
+    cacheV1->AddRegion("DissasmParseZoneType.0", versionOne.data(), static_cast<uint32>(versionOne.size()));
+    DissasmTestInstance restoredV1(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    REQUIRE(restoredV1.zone->TryLoadDataFromCache(*cacheV1, zoneLinesChanged));
+    REQUIRE(restoredV1.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+
+    // a truncated decimal operands section is rejected
+    std::vector<std::byte> truncated(buffer.begin(), buffer.end() - 2);
+    auto cacheTruncated      = std::make_unique<DissasmCache>();
+    cacheTruncated->hasCache = true;
+    cacheTruncated->AddRegion("DissasmParseZoneType.0", truncated.data(), static_cast<uint32>(truncated.size()));
+    DissasmTestInstance restoredTruncated(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    REQUIRE(!restoredTruncated.zone->TryLoadDataFromCache(*cacheTruncated, zoneLinesChanged));
+    REQUIRE(restoredTruncated.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
+}

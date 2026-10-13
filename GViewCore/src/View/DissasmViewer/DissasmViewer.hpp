@@ -613,6 +613,26 @@ namespace View
 
             AsmData asmData;
             JumpsHolder jumps_holder;
+
+            // the operand numbers of the instruction on the cursor line, used by the hexadecimal <-> decimal switch (H key) and
+            // by the cursor information; computed when needed and kept until the cursor line or the drawn lines change
+            struct CursorLineNumber {
+                uint32 column; // same base as Cursor.offset
+                uint32 length;
+                uint32 index; // FindOperandNumbers index (bit of DissasmCodeZone::decimalOperands)
+                uint64 value;
+                bool isHex;
+            };
+            struct {
+                bool computed         = false;
+                uint32 line           = 0;
+                uint64 generation     = 0;
+                bool valid            = false; // the cursor line is an instruction
+                DissasmCodeZone* zone = nullptr;
+                uint64 address        = 0;
+                std::vector<CursorLineNumber> numbers;
+            } cursorLineNumbers;
+            uint64 drawnLinesGeneration = 0; // changes every time the lines of a dissasm zone are recomputed
             DissasmCache cacheData;
             CommonInterfaces::QueryInterface* queryInterface;
 
@@ -673,6 +693,13 @@ namespace View
             void RestoreCursorState(const CursorState& state);
             void RecordJump(const CursorState& from);
             bool JumpInHistory(bool back);
+
+            // hexadecimal <-> decimal operand numbers
+            void RefreshCursorLineNumbers();
+            // the number under the cursor, or the only number of the cursor line
+            const CursorLineNumber* GetCursorLineNumber();
+            void ToggleNumberBase();
+            int PrintCursorValueInfo(int x, int y, Renderer& r);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 

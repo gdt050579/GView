@@ -658,3 +658,14 @@ bool DissasmCodeZone::ResetTypesReferenceList()
     ResetZoneCaching();
     return true;
 }
+
+void DissasmCodeZone::ToggleDecimalOperand(uint64 address, uint32 numberIndex)
+{
+    if (numberIndex >= 32u)
+        return;
+    const uint32 mask = GetDecimalOperandsMask(address) ^ (1u << numberIndex);
+    if (mask == 0)
+        decimalOperands.erase(address);
+    else
+        decimalOperands[address] = mask;
+}

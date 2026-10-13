@@ -12,6 +12,20 @@ constexpr uint32 retOP  = 7628146u;    //*((uint32*) "ret");
 bool CheckExtractInsnHexValue(const char* op_str, AppCUI::uint64& value, AppCUI::uint64 maxSize);
 AppCUI::Utils::LocalString<64> FormatFunctionName(AppCUI::uint64 functionAddress, const char* prefix);
 
+// a number written in the operands of an instruction (0x... or decimal), positions are inside the operands text
+struct OperandNumber {
+    AppCUI::uint32 start;
+    AppCUI::uint32 length;
+    AppCUI::uint64 value;
+    bool isHex;
+};
+// the numbers of the operands text, in order (their index is the bit used by FormatOperandNumbers);
+// a number starts the text or follows one of " [,+-*:" so names like var_8, r8d, xmm0 or st(0) are skipped
+std::vector<OperandNumber> FindOperandNumbers(std::string_view operands);
+// writes the hexadecimal numbers whose index has the bit set in `decimalMask` as (unsigned) decimal numbers;
+// `trackedPosition` (a position inside `operands`) is moved to the same character of the result
+std::string FormatOperandNumbers(std::string_view operands, AppCUI::uint32 decimalMask, AppCUI::uint32* trackedPosition = nullptr);
+
 cs_insn* GetCurrentInstructionByOffset(
       uint64 offsetToReach,
       GView::View::DissasmViewer::DissasmCodeZone* zone,
