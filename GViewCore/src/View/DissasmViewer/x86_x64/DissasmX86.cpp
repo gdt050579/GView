@@ -1093,10 +1093,11 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
     diffLines = landingLine + 2u; //+1 for menu, +1 for title
 
-    jumps_holder.insert(Cursor.saveState());
+    const auto from      = SaveCursorState();
     Cursor.lineInView    = std::min<uint32>(5, diffLines);
     Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
     Cursor.hasMovedView  = true;
+    RecordJump(from);
     if (offsetToReach != nullptr)
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
     else
