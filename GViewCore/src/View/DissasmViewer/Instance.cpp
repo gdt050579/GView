@@ -13,7 +13,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
+constexpr size_t DISSASM_MAX_STORED_JUMPS = 64; // visited locations (a jump stores both its source and its destination)
 
 const std::array<AsmFunctionDetails, 58> KNOWN_FUNCTIONS = { {
       { "WriteFile",
@@ -1443,8 +1443,9 @@ bool Instance::ShowGoToDialog()
     if (dlg.Show() == Dialogs::Result::Ok) {
         const auto lineToReach = dlg.GetResultedLine();
         if (lineToReach != currentLine) {
-            jumps_holder.insert(Cursor.saveState());
+            const auto from = SaveCursorState();
             MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), Key::None, false);
+            RecordJump(from);
         }
     }
     /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
@@ -1630,6 +1631,56 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
     if (goToEntryPoint)
         offsetToReach = &convertedZone->zoneDetails.entryPoint;
     DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine, offsetToReach);
+}
+
+CursorState Instance::SaveCursorState() const
+{
+    CursorState state;
+    const uint32 line = Cursor.startViewLine + Cursor.lineInView;
+    state.lineInView  = Cursor.lineInView;
+    state.offset      = Cursor.offset;
+    state.lineInZone  = line;
+
+    const auto zonesFound = GetZonesIndexesFromLinePosition(line);
+    if (zonesFound.size() == 1) {
+        state.zoneIndex  = zonesFound[0].zoneIndex;
+        state.lineInZone = zonesFound[0].startingLine;
+    }
+    return state;
+}
+
+void Instance::RestoreCursorState(const CursorState& state)
+{
+    uint32 line       = state.lineInZone;
+    const auto& zones = settings->parseZones;
+    if (state.zoneIndex != CursorState::NO_ZONE && state.zoneIndex < zones.size()) {
+        const auto& zone = zones[state.zoneIndex];
+        // the zone may have been collapsed in the meantime (only its title line is left)
+        const uint32 zoneLines = zone->endingLineIndex > zone->startLineIndex ? zone->endingLineIndex - zone->startLineIndex : 1u;
+        line                   = zone->startLineIndex + std::min<uint32>(state.lineInZone, zoneLines - 1u);
+    }
+    line = std::min<uint32>(line, Layout.totalLinesSize);
+
+    const uint32 lastRow = Layout.visibleRows > 0 ? Layout.visibleRows - 1u : 0u;
+    Cursor.lineInView    = std::min<uint32>(std::min<uint32>(state.lineInView, line), lastRow);
+    Cursor.startViewLine = line - Cursor.lineInView;
+    Cursor.offset        = std::min<uint32>(state.offset, Layout.textSize);
+    // the view changed -> the cached lines of the dissasm zones must be recomputed
+    Cursor.hasMovedView = true;
+}
+
+void Instance::RecordJump(const CursorState& from)
+{
+    jumps_holder.Record(from, SaveCursorState());
+}
+
+bool Instance::JumpInHistory(bool back)
+{
+    const auto target = back ? jumps_holder.JumpBack() : jumps_holder.JumpForward();
+    if (!target.has_value())
+        return false;
+    RestoreCursorState(target.value());
+    return true;
 }
 
 void DrawLineInfo::WriteErrorToScreen(std::string_view error) const

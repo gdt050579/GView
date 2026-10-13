@@ -1410,3 +1410,53 @@ TEST_CASE("DissasmLabelArrows", "[Dissasm]Functions")
     DissasmAsmPreCacheLine copy(data.cachedAsmLines[0]);
     REQUIRE(copy.branchTarget == 0x16);
 }
+
+TEST_CASE("JumpsHistory", "[Dissasm]Jumps")
+{
+    const auto at = [](uint32 line) { return CursorState{ 0, line, 5, 0 }; };
+
+    JumpsHolder jumps(64);
+    REQUIRE(!jumps.JumpBack().has_value());
+    REQUIRE(!jumps.JumpForward().has_value());
+
+    // A -> B -> C
+    jumps.Record(at(10), at(100));
+    jumps.Record(at(100), at(200));
+    REQUIRE(jumps.Size() == 3);
+    REQUIRE(!jumps.JumpForward().has_value());
+
+    // back to B, back to A, nothing before A
+    REQUIRE(jumps.JumpBack() == at(100));
+    REQUIRE(jumps.JumpBack() == at(10));
+    REQUIRE(!jumps.JumpBack().has_value());
+
+    // forward reaches the destinations of the jumps (B, then C)
+    REQUIRE(jumps.JumpForward() == at(100));
+    REQUIRE(jumps.JumpForward() == at(200));
+    REQUIRE(!jumps.JumpForward().has_value());
+
+    // back to B, the cursor moves (B') and a new jump is made -> the forward history (C) is dropped
+    REQUIRE(jumps.JumpBack() == at(100));
+    jumps.Record(at(110), at(300));
+    REQUIRE(!jumps.JumpForward().has_value());
+    REQUIRE(jumps.JumpBack() == at(110));
+    REQUIRE(jumps.JumpBack() == at(10));
+    REQUIRE(!jumps.JumpBack().has_value());
+
+    // a jump to the same location adds a single entry
+    JumpsHolder same(64);
+    same.Record(at(10), at(10));
+    REQUIRE(same.Size() == 1);
+    REQUIRE(!same.JumpBack().has_value());
+
+    // when the history is full the oldest locations are dropped (the newest ones are kept)
+    JumpsHolder small(4);
+    for (uint32 i = 0; i < 10; i++)
+        small.Record(at(i * 10), at(i * 10 + 10));
+    REQUIRE(small.Size() == 4);
+    REQUIRE(small.JumpBack() == at(90));
+    REQUIRE(small.JumpBack() == at(80));
+    REQUIRE(small.JumpBack() == at(70));
+    REQUIRE(!small.JumpBack().has_value());
+    REQUIRE(small.JumpForward() == at(80));
+}
