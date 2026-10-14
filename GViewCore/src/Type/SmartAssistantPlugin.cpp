@@ -20,6 +20,13 @@ using namespace GView::CommonInterfaces::SmartAssistants;
 
 using json = nlohmann::json;
 
+#ifdef GVIEW_ENABLE_NETWORK
+// the requests are blocking (UI thread): bound them so an unreachable / hung API does not freeze GView forever
+// (the total timeout is generous because LLM answers can take a while to be generated)
+constexpr long SMART_ASSISTANT_CONNECT_TIMEOUT_SECONDS = 15L;
+constexpr long SMART_ASSISTANT_TOTAL_TIMEOUT_SECONDS   = 120L;
+#endif
+
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s)
 {
     const size_t totalSize = size * nmemb;
@@ -35,10 +42,12 @@ std::string callGeminiAPI(const std::string& apiKey, std::string_view prompt, bo
 #ifdef GVIEW_ENABLE_NETWORK
     CURL* curl = curl_easy_init();
     if (curl) {
-        const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" + apiKey;
+        const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent";
 
         struct curl_slist* headers = nullptr;
         headers                    = curl_slist_append(headers, "Content-Type: application/json");
+        // the API key goes in a header (not in the URL query) so it does not end up in URL/proxy logs
+        headers = curl_slist_append(headers, ("x-goog-api-key: " + apiKey).c_str());
 
         const json payload = { { "contents",
                                  { { "parts",
@@ -53,6 +62,8 @@ std::string callGeminiAPI(const std::string& apiKey, std::string_view prompt, bo
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, SMART_ASSISTANT_CONNECT_TIMEOUT_SECONDS);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, SMART_ASSISTANT_TOTAL_TIMEOUT_SECONDS);
 
         const CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
@@ -123,6 +134,8 @@ std::string callGPT4oAPI(const std::string& apiKey, std::string_view prompt, boo
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, SMART_ASSISTANT_CONNECT_TIMEOUT_SECONDS);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, SMART_ASSISTANT_TOTAL_TIMEOUT_SECONDS);
 
         CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
@@ -206,7 +219,7 @@ struct ChatGPT4oAssistant : SmartAssistantRegisterInterface {
     {
         const std::string gptQuery = callGPT4oAPI(configData, prompt, isSuccess);
         if (!isSuccess) {
-            return "Error calling Gemini API!";
+            return "Error calling GPT4o API!";
         }
 
         std::string gptResponse;

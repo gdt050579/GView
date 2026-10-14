@@ -1,5 +1,6 @@
 #include "BufferViewer.hpp"
 
+#include <algorithm>
 #include <array>
 #include <regex>
 #include <charconv>
@@ -296,31 +297,66 @@ void FindDialog::UpdateData(uint64 currentPos, Reference<GView::Object> object)
 
 std::pair<uint64, uint64> FindDialog::GetNextMatch(uint64 currentPos)
 {
-    this->currentPos = currentPos;
-    ProcessInput();
-    return match;
+    this->currentPos         = currentPos;
+    const auto previousMatch = match;
+    if (ProcessInput() && HasResults())
+    {
+        return match;
+    }
+    // keep the last successful match (it enables FindNext / FindPrevious), but do not report it as a new one
+    match = previousMatch;
+    return { GView::Utils::INVALID_OFFSET, 0 };
 }
 
 std::pair<uint64, uint64> FindDialog::GetPreviousMatch(uint64 currentPos)
 {
     const auto initialCurrentPos = this->currentPos;
-    while (true)
+    const auto previousMatch     = match;
+    const auto cacheSize         = std::max<uint64>(this->object->GetData().GetCacheSize(), 1);
+
+    // walk backwards one cache-sized window [this->currentPos, end) at a time, looking for the last match before end
+    auto end = currentPos + 1;
+    while (end > 0)
     {
-        const auto end   = currentPos - 1;
-        this->currentPos = this->object->GetData().GetCacheSize() > currentPos ? 0 : currentPos - this->object->GetData().GetCacheSize();
-        ProcessInput(end, true);
-        if (HasResults())
+        this->currentPos = end > cacheSize ? end - cacheSize : 0;
+        if (ProcessInput(end, true) && HasResults())
         {
             this->currentPos = match.first;
+            return match;
+        }
+        // stop on input errors / cancel; a selection search already covered every selected zone
+        if (searchCompleted == false || searchSelection->IsChecked())
+        {
             break;
         }
-        CHECKBK(this->currentPos, "");
-    };
-    if (HasResults() == false)
-    {
-        this->currentPos = initialCurrentPos;
+        end = this->currentPos;
     }
-    return match;
+
+    this->currentPos = initialCurrentPos;
+    match            = previousMatch;
+    return { GView::Utils::INVALID_OFFSET, 0 };
+}
+
+static void ShowRegexError(const std::regex_error& e)
+{
+    LocalString<256> message;
+    message.Format("Regular expression error: %s", e.what());
+    Dialogs::MessageBox::ShowError("Error!", message.GetText());
+}
+
+template <typename RegexType, typename StringType>
+static bool BuildRegexPattern(RegexType& pattern, const StringType& text, std::regex_constants::syntax_option_type flags)
+{
+    try
+    {
+        pattern.assign(text, flags);
+        return true;
+    }
+    catch (const std::regex_error& e)
+    {
+        ShowRegexError(e);
+        return false;
+    }
 }
 
 bool ValidateDecimal(std::string_view number)
@@ -369,7 +405,7 @@ bool ValidateHex(std::string_view number)
         CHECK((number[0] >= '0' && number[0] <= '9') || (number[0] >= 'a' && number[0] <= 'f') || (number[0] >= 'A' && number[0] <= 'F'), false, "");
         if (number.size() == 2)
         {
-            CHECK((number[0] >= '1' && number[1] <= '9') || (number[1] >= 'a' && number[1] <= 'f') || (number[1] >= 'A' && number[1] <= 'F'), false, "");
+            CHECK((number[1] >= '0' && number[1] <= '9') || (number[1] >= 'a' && number[1] <= 'f') || (number[1] >= 'A' && number[1] <= 'F'), false, "");
         }
     }
     else
@@ -382,6 +418,8 @@ bool ValidateHex(std::string_view number)
 
 bool FindDialog::ProcessInput(uint64 end, bool last)
 {
+    searchCompleted = false;
+
     CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
     CHECK(object.IsValid(), false, "");
     CHECK(input.IsValid(), false, "");
@@ -395,11 +433,9 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
     CHECK(usb.Set(input->GetText()), false, "");
     CHECK(usb.Len() > 0, false, "");
 
-    if (newRequest)
-    {
-        match      = { GView::Utils::INVALID_OFFSET, 0 };
-        newRequest = false;
-    }
+    // every search starts without a match (GetNextMatch / GetPreviousMatch restore the previous one when nothing is found)
+    match      = { GView::Utils::INVALID_OFFSET, 0 };
+    newRequest = false;
 
     std::vector<TypeInterface::SelectionZone> selectedZones;
     for (auto i = 0U; i < this->object->GetContentType()->GetSelectionZonesCount(); i++)
@@ -455,11 +491,34 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             auto start              = reinterpret_cast<char const*>(buffer.GetData());
             const auto end          = reinterpret_cast<char const*>(start + buffer.GetLength());
             std::cmatch matches{};
-            while (std::regex_search(start, end, matches, pattern))
+            try
             {
-                match = std::pair<uint64, uint64>{ offset + (start - initialStart) + matches.position(), matches.length() };
-                start += matches.position() + matches.length();
-                CHECKBK(last, "");
+                while (start < end && std::regex_search(start, end, matches, pattern))
+                {
+                    if (matches.length() == 0)
+                    {
+                        // an empty match is not a result - step over it so the search keeps advancing
+                        if (matches.position() >= end - start)
+                        {
+                            break;
+                        }
+                        start += matches.position() + 1;
+                        continue;
+                    }
+                    match = std::pair<uint64, uint64>{ offset + (start - initialStart) + matches.position(), matches.length() };
+                    start += matches.position() + matches.length();
+                    CHECKBK(last, "");
+                }
+            }
+            catch (const std::regex_error& e)
+            {
+                ShowRegexError(e);
+                return false;
+            }
+
+            if (last == false && HasResults())
+            {
+                break; // forward search: stop at the first match instead of overwriting it with matches from later chunks
             }
 
             offset += sizeToRead;
@@ -470,6 +529,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
 
     const auto SearchInUnicodeChunk = [&](uint64 offset, uint64 left, const std::wregex& pattern)
     {
+        std::wstring text;
         do
         {
             CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
@@ -480,15 +540,62 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
             CHECK(buffer.IsValid(), false, "");
 
-            auto initialStart = reinterpret_cast<wchar_t const*>(buffer.GetData());
-            auto start        = reinterpret_cast<wchar_t const*>(buffer.GetData());
-            const auto end    = reinterpret_cast<wchar_t const*>(start + buffer.GetLength());
-            std::wcmatch matches{};
-            while (std::regex_search(start, end, matches, pattern))
+            // The data is UTF-16LE, matched in 16-bit units. wchar_t is 2 bytes on Windows but 4 on Linux/WASM, so each unit is
+            // widened explicitly instead of reinterpreting the buffer. Positions are in units (x2 = bytes).
+            // UTF-16 text can start at any byte, so both alignments of the chunk are searched: a forward search keeps the
+            // earliest match, a backward (last) search the latest one.
+            std::pair<uint64, uint64> chunkMatch{ GView::Utils::INVALID_OFFSET, 0 };
+            for (size_t skip = 0; skip < 2; skip++)
             {
-                match = std::pair<uint64, uint64>{ offset + (start - initialStart) * sizeof(wchar_t) + matches.position(), matches.length() };
-                start += matches.position() + matches.length();
-                CHECKBK(last, "");
+                const size_t units = buffer.GetLength() > skip ? (buffer.GetLength() - skip) / 2 : 0;
+                text.resize(units);
+                for (size_t i = 0; i < units; i++)
+                {
+                    text[i] = static_cast<wchar_t>(buffer[skip + i * 2] | (buffer[skip + i * 2 + 1] << 8));
+                }
+
+                const wchar_t* initialStart = text.data();
+                const wchar_t* start        = text.data();
+                const wchar_t* end          = text.data() + units;
+                std::wcmatch matches{};
+                try
+                {
+                    while (start < end && std::regex_search(start, end, matches, pattern))
+                    {
+                        if (matches.length() == 0)
+                        {
+                            // an empty match is not a result - step over it so the search keeps advancing
+                            if (matches.position() >= end - start)
+                            {
+                                break;
+                            }
+                            start += matches.position() + 1;
+                            continue;
+                        }
+                        const auto unitPos   = static_cast<uint64>((start - initialStart) + matches.position());
+                        const auto matchOffs = offset + skip + unitPos * 2;
+                        if (chunkMatch.first == GView::Utils::INVALID_OFFSET || (last ? matchOffs > chunkMatch.first : matchOffs < chunkMatch.first))
+                        {
+                            chunkMatch = std::pair<uint64, uint64>{ matchOffs, static_cast<uint64>(matches.length()) * 2 };
+                        }
+                        start += matches.position() + matches.length();
+                        CHECKBK(last, "");
+                    }
+                }
+                catch (const std::regex_error& e)
+                {
+                    ShowRegexError(e);
+                    return false;
+                }
+            }
+            if (chunkMatch.first != GView::Utils::INVALID_OFFSET)
+            {
+                match = chunkMatch;
+            }
+
+            if (last == false && HasResults())
+            {
+                break; // forward search: stop at the first match instead of overwriting it with matches from later chunks
             }
 
             offset += sizeToRead;
@@ -510,10 +617,15 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                 ascii = std::regex_replace(ascii, specialChars, R"(\$&)");
             }
 
-            const std::regex pattern(
-                  ascii,
-                  (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
-                                           : std::regex_constants::ECMAScript | std::regex_constants::optimize));
+            std::regex pattern;
+            if (BuildRegexPattern(
+                      pattern,
+                      ascii,
+                      (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
+                                               : std::regex_constants::ECMAScript | std::regex_constants::optimize)) == false)
+            {
+                return false;
+            }
 
             if (computeForFile)
             {
@@ -537,7 +649,12 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
         }
         else
         {
-            std::wstring unicode{ reinterpret_cast<const wchar_t*>(usb.ToStringView().data()), usb.ToStringView().size() };
+            // widen the UTF-16 input one unit at a time (wchar_t is 4 bytes on Linux/WASM)
+            std::wstring unicode;
+            for (const auto ch : usb.ToStringView())
+            {
+                unicode.push_back(static_cast<wchar_t>(ch));
+            }
 
             if (textRegex->IsChecked() == false)
             {
@@ -545,10 +662,15 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                 unicode = std::regex_replace(unicode, specialChars, LR"(\$&)");
             }
 
-            const std::wregex pattern(
-                  reinterpret_cast<wchar_t const*>(usb.ToStringView().data()),
-                  (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
-                                           : std::regex_constants::ECMAScript | std::regex_constants::optimize));
+            std::wregex pattern;
+            if (BuildRegexPattern(
+                      pattern,
+                      unicode,
+                      (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
+                                               : std::regex_constants::ECMAScript | std::regex_constants::optimize)) == false)
+            {
+                return false;
+            }
 
             if (computeForFile)
             {
@@ -579,16 +701,21 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
         std::string regexPayload;
         regexPayload.reserve(input.size() * 2);
 
-        uint64 last    = 0;
-        uint64 current = input.find_first_of(' ', last);
-        do
+        size_t tokenStart = 0;
+        while (tokenStart < input.size())
         {
+            auto current = input.find_first_of(' ', tokenStart);
             if (current == std::string::npos)
             {
                 current = input.size();
             }
 
-            std::string_view number{ input.data() + last, static_cast<size_t>(current - last) };
+            std::string_view number{ input.data() + tokenStart, current - tokenStart };
+            tokenStart = current + 1;
+            if (number.empty())
+            {
+                continue; // repeated / leading / trailing spaces
+            }
 
             if (textDec->IsChecked())
             {
@@ -600,7 +727,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
 
                 if (number[0] == '?')
                 {
-                    regexPayload.append("[\\x00-\\xFF]");
+                    regexPayload.append("[\\s\\S]"); // any byte; [\x00-\xFF] is an invalid range where char is signed (libstdc++)
                 }
                 else
                 {
@@ -643,7 +770,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
 
                 if (number[0] == '?')
                 {
-                    regexPayload.append("[\\x00-\\xFF]");
+                    regexPayload.append("[\\s\\S]"); // any byte; [\x00-\xFF] is an invalid range where char is signed (libstdc++)
                 }
                 else
                 {
@@ -655,13 +782,20 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                     regexPayload.append(number);
                 }
             }
-            last = current + 1;
-        } while ((current = input.find_first_of(' ', last)) && last < input.size());
+        }
 
-        const std::regex pattern(
-              regexPayload,
-              (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
-                                       : std::regex_constants::ECMAScript | std::regex_constants::optimize));
+        if (regexPayload.empty())
+        {
+            Dialogs::MessageBox::ShowError("Error!", "Invalid input!");
+            return false;
+        }
+
+        // "Ignore case" only applies to text searches - a byte pattern must match exactly (\x41 must not match 0x61)
+        std::regex pattern;
+        if (BuildRegexPattern(pattern, regexPayload, std::regex_constants::ECMAScript | std::regex_constants::optimize) == false)
+        {
+            return false;
+        }
 
         if (computeForFile)
         {
@@ -684,6 +818,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
         }
     }
 
+    searchCompleted = true; // nothing found
     return false;
 }
 } // namespace GView::View::BufferViewer

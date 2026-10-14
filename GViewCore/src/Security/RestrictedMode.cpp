@@ -112,6 +112,18 @@ namespace
         bool running{ false };
 
       public:
+        // g_keyboardHook is a global: if the process exits without Deactivate()/Stop(), a joinable std::thread member
+        // would call std::terminate from its destructor. Joining is not an option here either (this may run under the
+        // loader lock), so ask the hook thread to quit and let it go.
+        ~KeyboardHookThread()
+        {
+            if (worker.joinable())
+            {
+                PostThreadMessageW(threadId, WM_QUIT, 0, 0);
+                worker.detach();
+            }
+        }
+
         bool Start() noexcept
         {
             if (running)
@@ -133,12 +145,14 @@ namespace
                           &self);
                     HHOOK hook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, self, 0);
                     {
+                        // notify while holding the lock: m and cv live on Start()'s stack, and Start() can only return
+                        // (destroying them) after this thread released m, so cv is never touched after it is gone
                         std::lock_guard<std::mutex> lk(m);
                         threadId  = GetCurrentThreadId();
                         installed = hook != nullptr;
                         ready     = true;
+                        cv.notify_one();
                     }
-                    cv.notify_one();
                     if (hook == nullptr)
                         return;
                     while (GetMessageW(&msg, nullptr, 0, 0) > 0)
@@ -958,6 +972,13 @@ std::string GetWatermark()
     return g_policy.watermark;
 }
 
+#if !defined(BUILD_FOR_WINDOWS) && defined(BUILD_FOR_UNIX) && !defined(BUILD_FOR_WASM)
+// PR_GET_DUMPABLE value from before core dumps were disabled, -1 while they were not disabled by us (guarded by
+// g_policyMutex). Lifting the protection restores it instead of forcing dumps on: a process that was not dumpable to
+// begin with (setuid, fs.suid_dumpable, a launcher's choice) must stay that way.
+static int g_dumpableBeforeProtection = -1;
+#endif
+
 Utils::GStatus EnableWindowScreenProtection(void* nativeWindowHandle) noexcept
 {
 #ifdef BUILD_FOR_WINDOWS
@@ -984,8 +1005,11 @@ Utils::GStatus EnableWindowScreenProtection(void* nativeWindowHandle) noexcept
     // Prevent core dumps (reduces leakage in crash scenarios)
     (void) nativeWindowHandle;
 #    ifndef BUILD_FOR_WASM // a web page has no core dumps
+    const int previous = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
     if (prctl(PR_SET_DUMPABLE, 0) != 0)
         return Utils::GStatus::Error("ScreenProtect: prctl(PR_SET_DUMPABLE,0) failed");
+    if (g_dumpableBeforeProtection < 0)
+        g_dumpableBeforeProtection = previous; // keep the original state when protection is applied again
 #    endif
     return Utils::GStatus::Ok();
 #else
@@ -1003,7 +1027,10 @@ void DisableWindowScreenProtection(void* nativeWindowHandle) noexcept
 #elif defined(BUILD_FOR_UNIX)
     (void) nativeWindowHandle;
 #    ifndef BUILD_FOR_WASM
-    prctl(PR_SET_DUMPABLE, 1);
+    // only undo what EnableWindowScreenProtection did (PR_SET_DUMPABLE accepts 0 or 1 only)
+    if (g_dumpableBeforeProtection == 1)
+        prctl(PR_SET_DUMPABLE, 1);
+    g_dumpableBeforeProtection = -1;
 #    endif
 #else
     (void) nativeWindowHandle;

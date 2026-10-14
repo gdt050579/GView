@@ -83,6 +83,7 @@ class FindDialog : public Window, public Handlers::OnCheckInterface
     UnicodeStringBuilder usb;
     std::pair<uint64, uint64> match;
     bool newRequest{ true };
+    bool searchCompleted{ false }; // last ProcessInput ran to the end (no input/regex error, not canceled)
     bool ProcessInput(uint64 end = GView::Utils::INVALID_OFFSET, bool last = false);
 
   public:
@@ -243,6 +244,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         uint32 textSize{ 0 };
         const uint8* start{ nullptr };
         const uint8* end{ nullptr };
+        std::vector<uint8> lineBytes; // private copy of the line (start/end point here, not into the data cache)
         Character* chNameAndSize{ nullptr };
         Character* chNumbers{ nullptr };
         Character* chText{ nullptr };

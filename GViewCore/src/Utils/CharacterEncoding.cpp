@@ -38,10 +38,10 @@ bool ExpandedCharacter::FromUTF8Buffer(const uint8* p, const uint8* end)
 }
 BufferView EncodedCharacter::ToUTF8(char16 ch)
 {
-    if (ch <= 0x80)
+    if (ch < 0x80)
     {
         this->internalBuffer[0] = static_cast<uint8>(ch);
-        return BufferView(this->internalBuffer, 2);
+        return BufferView(this->internalBuffer, 1);
     }
     if (ch<=0x7FF)
     {

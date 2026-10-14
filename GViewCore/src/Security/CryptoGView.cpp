@@ -117,6 +117,12 @@ Utils::GStatus EncryptAES256GCM(
         return Utils::GStatus::Error("Empty plaintext");
     }
 
+    // EVP_EncryptUpdate takes int lengths (and the ciphertext length is reported as an int)
+    if (plaintext.size() > static_cast<size_t>(INT_MAX - EVP_MAX_BLOCK_LENGTH) || aad.size() > static_cast<size_t>(INT_MAX))
+    {
+        return Utils::GStatus::Error("Plaintext too large");
+    }
+
     // Generate random IV
     outBlob.iv.resize(AES_GCM_IV_SIZE);
     if (RAND_bytes(outBlob.iv.data(), static_cast<int>(AES_GCM_IV_SIZE)) != 1)
@@ -225,6 +231,12 @@ Utils::GStatus DecryptAES256GCM(
     if (blob.ciphertext.empty())
     {
         return Utils::GStatus::Error("Empty ciphertext");
+    }
+
+    // EVP_DecryptUpdate takes int lengths
+    if (blob.ciphertext.size() > static_cast<size_t>(INT_MAX) || blob.aad.size() > static_cast<size_t>(INT_MAX))
+    {
+        return Utils::GStatus::Error("Ciphertext too large");
     }
 
     // Create cipher context
@@ -401,6 +413,12 @@ Utils::GStatus DeriveKeyHKDF(
         return Utils::GStatus::Error("Invalid output length");
     }
 
+    if (inputKey.size() > static_cast<size_t>(INT_MAX) || salt.size() > static_cast<size_t>(INT_MAX) ||
+        info.size() > static_cast<size_t>(INT_MAX))
+    {
+        return Utils::GStatus::Error("HKDF input too large");
+    }
+
     EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
     if (pctx == nullptr)
     {
@@ -469,7 +487,7 @@ Utils::GStatus DeriveKeyHKDF(
  */
 Utils::GStatus GenerateRandomBytes(size_t length, std::vector<uint8_t>& outBytes) noexcept
 {
-    if (length == 0)
+    if (length == 0 || length > static_cast<size_t>(INT_MAX))
     {
         return Utils::GStatus::Error("Invalid length");
     }

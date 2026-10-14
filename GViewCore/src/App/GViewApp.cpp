@@ -56,6 +56,7 @@ bool GView::App::Init(bool isTestingEnabled)
     if (!gviewAppInstance->Init(isTestingEnabled))
     {
         delete gviewAppInstance;
+        gviewAppInstance = nullptr; // every GView::App entry point checks it
         RETURNERROR(false, "Fail to initialize GView app");
     }
     return true;
@@ -115,8 +116,11 @@ bool GView::App::ResetConfiguration()
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();
     typesPath.remove_filename();
     typesPath += "Types";
-    for (const auto& fileEntry : std::filesystem::directory_iterator(typesPath))
+    // a missing folder only means "no plugins of that kind" (the throwing overloads would abort the configuration)
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(typesPath, ec), end; !ec && it != end; it.increment(ec))
     {
+        const auto& fileEntry = *it;
         if ((fileEntry.path().extension() == ".tpl") && (fileEntry.path().filename().string().starts_with("lib")))
             UpdateSettingsForTypePlugin(ini, fileEntry.path());
     }
@@ -125,8 +129,10 @@ bool GView::App::ResetConfiguration()
     auto genericPluginsPath = AppCUI::OS::GetCurrentApplicationPath();
     genericPluginsPath.remove_filename();
     genericPluginsPath += "GenericPlugins";
-    for (const auto& fileEntry : std::filesystem::directory_iterator(genericPluginsPath))
+    ec.clear();
+    for (std::filesystem::directory_iterator it(genericPluginsPath, ec), end; !ec && it != end; it.increment(ec))
     {
+        const auto& fileEntry = *it;
         if ((fileEntry.path().extension() == ".gpl") && (fileEntry.path().filename().string().starts_with("lib")))
             UpdateSettingsForGenericPlugin(ini, fileEntry.path());
     }

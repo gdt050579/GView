@@ -62,7 +62,7 @@ bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMe
     uint32 sequence      = 0;
     uint32 sequenceIndex = 0;
     uint8 lastEncoded    = 0;
-    uint8 paddingCount   = 0;
+    uint8 paddingCount   = 0; // '=' characters in the current quantum
     hasWarning           = false;
     output.Reserve((view.GetLength() / 4) * 3);
 
@@ -82,10 +82,12 @@ bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMe
         uint32 decoded;
 
         if (encoded == '=') {
-            // padding
+            // padding: only valid as the last one or two characters of a quantum ("xx==" or "xxx=")
+            CHECK(sequenceIndex >= 2, false, "");
             decoded = 0;
             paddingCount++;
         } else {
+            CHECK(paddingCount == 0, false, ""); // data after padding inside the same quantum
             CHECK(encoded < BASE64_DECODE_TABLE_SIZE, false, "");
             const int8 value = BASE64_DECODE_TABLE[encoded];
             CHECK(value >= 0, false, "");
@@ -97,18 +99,16 @@ bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMe
 
         if (sequenceIndex % 4 == 0) {
             const uint8 bytes[] = { static_cast<uint8>(sequence >> 24), static_cast<uint8>(sequence >> 16), static_cast<uint8>(sequence >> 8) };
-            output.Add(BufferView(bytes, sizeof(bytes)));
+            // a padded quantum carries only 3 - paddingCount bytes (paddingCount <= 2, see above)
+            output.Add(BufferView(bytes, sizeof(bytes) - paddingCount));
 
             sequence      = 0;
             sequenceIndex = 0;
+            paddingCount  = 0;
         }
 
         lastEncoded = encoded;
     }
-
-    // trim the trailing bytes
-    CHECK(paddingCount < 3, false, "");
-    output.Resize(output.GetLength() - paddingCount);
 
     return true;
 }

@@ -142,7 +142,8 @@ void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Ke
     } else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty()) {
         for (const auto& btn : MyLine.buttons)
             if (btn.x == x && btn.y == y) {
-                ChangeZoneCollapseState(btn.zone, btn.y - 1); // 1 for the initial empty line
+                // the buttons are placed on screen rows (1 for the initial empty line), the zones use absolute lines
+                ChangeZoneCollapseState(btn.zone, Cursor.startViewLine + static_cast<uint32>(btn.y - 1));
                 break;
             }
     }

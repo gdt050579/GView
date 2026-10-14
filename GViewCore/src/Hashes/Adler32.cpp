@@ -78,14 +78,25 @@ bool Adler32::Update(const unsigned char* input, uint32 length)
 
 bool Adler32::Update(const Buffer& buffer)
 {
-    CHECK(buffer.IsValid(), false, "");
-    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+    return Update(static_cast<BufferView>(buffer));
 }
 
 bool Adler32::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
-    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+
+    // feed the data in uint32-sized chunks so that buffers larger than 4 GB are not truncated
+    auto input  = buffer.GetData();
+    uint64 left = buffer.GetLength();
+    while (left > 0)
+    {
+        const uint32 chunk = left > 0xFFFFFFFFULL ? 0xFFFFFFFFU : static_cast<uint32>(left);
+        CHECK(Update(input, chunk), false, "");
+        input += chunk;
+        left -= chunk;
+    }
+
+    return true;
 }
 
 bool Adler32::Final(uint32& hash)

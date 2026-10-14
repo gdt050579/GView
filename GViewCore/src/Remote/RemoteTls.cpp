@@ -360,10 +360,17 @@ std::shared_ptr<Context> ContextProvider::Get(std::string& reloadError)
     auto next = Context::Create(settings, role, error);
     if (!next) {
         // e.g. the new certificate was written but the new key not yet -> keep the previous context, retry later
-        reloadError = "cannot reload the TLS identity (the previous one stays in use): " + error;
+        // (reported once per version of the files, not on every new connection)
+        if (!hasReportedStamps || fresh[0] != reportedStamps[0] || fresh[1] != reportedStamps[1] || fresh[2] != reportedStamps[2]) {
+            reloadError = "cannot reload the TLS identity (the previous one stays in use): " + error;
+            for (size_t i = 0; i < 3; i++)
+                reportedStamps[i] = fresh[i];
+            hasReportedStamps = true;
+        }
         return current;
     }
-    current = std::move(next);
+    hasReportedStamps = false;
+    current           = std::move(next);
     for (size_t i = 0; i < 3; i++)
         stamps[i] = fresh[i];
     return current;
@@ -733,6 +740,17 @@ bool GenerateCertificates(const std::filesystem::path& directory, const std::str
     if (!IsValidCertificateName(name)) {
         error = "invalid name '" + Printable(name) + "' (expected a host name, an IP address or an analyst name: letters, digits, '.', '-', '_')";
         return false;
+    }
+    {
+        // <name>.key / <name>.crt must never replace the CA files (compared case-insensitively: Windows / macOS file names)
+        std::string lower = name;
+        for (auto& ch : lower)
+            if (ch >= 'A' && ch <= 'Z')
+                ch = static_cast<char>(ch - 'A' + 'a');
+        if (lower == "gview-ca") {
+            error = "the name '" + name + "' is reserved for the CA files (gview-ca.crt / gview-ca.key)";
+            return false;
+        }
     }
     if (days == 0 || days > MAX_CERTIFICATE_DAYS) {
         error = "the certificate validity must be between 1 and " + std::to_string(MAX_CERTIFICATE_DAYS) + " days";

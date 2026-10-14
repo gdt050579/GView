@@ -78,6 +78,8 @@ uint16 LocalPort(const Socket& s);
 class Waker
 {
     Socket socket;
+    // the handle Signal() uses: other threads may signal while the owner thread is still creating the socket
+    std::atomic<SocketHandle> signalHandle{ INVALID_SOCKET_HANDLE };
 
   public:
     bool Create(std::string& error);

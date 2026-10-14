@@ -21,8 +21,8 @@ void Settings::SetWrapMethod(WrapMethod method)
 }
 void Settings::SetTabSize(uint32 tabSize)
 {
-    tabSize                                              = std::min<>(1U, tabSize);
-    tabSize                                              = std::max<>(32U, tabSize);
+    tabSize                                              = std::max<>(1U, tabSize); // clamp to [1, 32]
+    tabSize                                              = std::min<>(32U, tabSize);
     reinterpret_cast<SettingsData*>(this->data)->tabSize = tabSize;
 }
 void Settings::ShowTabCharacter(bool show)

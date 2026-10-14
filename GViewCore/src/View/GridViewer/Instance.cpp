@@ -1,4 +1,5 @@
 #include "GridViewer.hpp"
+#include <algorithm>
 #include <fstream>
 #include <filesystem>
 
@@ -185,12 +186,26 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             if (data.has_value()) {
                 auto index = 0;
 
-                auto folderPath = this->exportedFolderPath + data.value().first + "_";
+                // the folder name comes from the CSV header (file content): keep only characters that are safe in a
+                // file name, so it can not escape the export folder (../, absolute paths) or be invalid (':', '?', ...)
+                std::string columnName = data.value().first;
+                for (auto& ch : columnName) {
+                    const auto c = static_cast<unsigned char>(ch);
+                    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == ' '))
+                        ch = '_';
+                }
+
+                auto folderPath = this->exportedFolderPath + columnName + "_";
                 std::time_t t   = std::time(nullptr);
                 folderPath += std::to_string(t);
 
-                if (!std::filesystem::exists(folderPath)) {
-                    std::filesystem::create_directory(folderPath);
+                std::error_code ec;
+                if (!std::filesystem::exists(folderPath, ec)) {
+                    std::filesystem::create_directory(folderPath, ec);
+                }
+                if (ec) {
+                    AppCUI::Dialogs::MessageBox::ShowError("Error", std::string("Failed to create export folder: ") + folderPath);
+                    return true;
                 }
 
                 for (auto& content : data.value().second) {
@@ -282,6 +297,8 @@ void GView::View::GridViewer::Instance::ProcessContent()
 
         auto nPos       = data.find_first_of('\n', 0);
         const auto rPos = data.find_first_of('\r', 0);
+        // the line ends at the first CR or LF (CR-only, LF-only and CRLF endings), or at the end of the data
+        const auto lineEnd = std::min<size_t>({ nPos, rPos, data.size() });
 
         const auto oldOSizeProcessed = oSizeProcessed;
 
@@ -302,8 +319,8 @@ void GView::View::GridViewer::Instance::ProcessContent()
             oSizeProcessed += nPos + 1;
         }
 
-        lines.insert({ currentLine, { lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed } });
-        const std::string_view line{ reinterpret_cast<const char*>(buf.GetData() + lineStart), nPos };
+        lines.insert({ currentLine, { lineStart + oldOSizeProcessed, lineEnd + oldOSizeProcessed } });
+        const std::string_view line{ reinterpret_cast<const char*>(buf.GetData() + lineStart), lineEnd };
 
         std::vector<uint64> separators;
         {
@@ -315,19 +332,14 @@ void GView::View::GridViewer::Instance::ProcessContent()
         }
 
         std::vector<std::pair<uint64, uint64>> lTokens;
-        if (separators.empty()) {
-            lTokens.push_back({ lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed });
-        }
-
         {
-            auto tStart = oldOSizeProcessed;
-            auto tEnd   = oldOSizeProcessed;
+            // N separators -> N + 1 cells; the last cell ends where the line ends (line terminator excluded)
+            auto tStart = lineStart + oldOSizeProcessed;
             for (const auto& i : separators) {
-                tEnd = i;
-                lTokens.push_back({ tStart, tEnd });
-                tStart = tEnd + 1;
+                lTokens.push_back({ tStart, i });
+                tStart = i + 1;
             }
-            lTokens.push_back({ tEnd + 1, oSizeProcessed });
+            lTokens.push_back({ tStart, lineEnd + oldOSizeProcessed });
         }
 
         tokens.insert({ currentLine, std::move(lTokens) });

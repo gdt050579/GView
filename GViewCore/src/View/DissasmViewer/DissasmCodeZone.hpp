@@ -51,6 +51,11 @@ struct DissasmCodeZone : public ParseZone {
     bool RemoveCollapsibleZone(uint32 zoneLine);
 
     bool InitZone(DissasmCodeZoneInitData& initData);
+    // x86/x64 zone initialized successfully: only then the lines can be reached / decoded (the root type is in `types`)
+    bool CanReachAsmLines() const
+    {
+        return isInit && !types.empty() && (zoneDetails.language == DisassemblyLanguage::x86 || zoneDetails.language == DisassemblyLanguage::x64);
+    }
     void ReachZoneLine(uint32 line);
 
     bool ResetTypesReferenceList();

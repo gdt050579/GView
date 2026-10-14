@@ -46,8 +46,10 @@ bool Matcher::Match(BufferView buffer, uint64& start, uint64& end)
     CHECK(ctx->expression.ok(), false, "");
 
     absl::string_view sv{ reinterpret_cast<const char*>(buffer.GetData()), buffer.GetLength() };
+    // submatch 0 is the whole match, so this works for patterns with or without capture groups
+    // (RE2::PartialMatch with one output argument returns capture group 1 and fails when the pattern has no group)
     re2::StringPiece result;
-    if (RE2::PartialMatch(sv, ctx->expression, &result)) {
+    if (ctx->expression.Match(sv, 0, sv.size(), RE2::UNANCHORED, &result, 1)) {
         start = result.data() - sv.data();
         end   = start + result.size();
         return true;

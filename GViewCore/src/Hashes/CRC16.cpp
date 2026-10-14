@@ -44,14 +44,25 @@ bool CRC16::Update(const unsigned char* input, uint32 length)
 
 bool CRC16::Update(const Buffer& buffer)
 {
-    CHECK(buffer.IsValid(), false, "");
-    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+    return Update(static_cast<BufferView>(buffer));
 }
 
 bool CRC16::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
-    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+
+    // feed the data in uint32-sized chunks so that buffers larger than 4 GB are not truncated
+    auto input  = buffer.GetData();
+    uint64 left = buffer.GetLength();
+    while (left > 0)
+    {
+        const uint32 chunk = left > 0xFFFFFFFFULL ? 0xFFFFFFFFU : static_cast<uint32>(left);
+        CHECK(Update(input, chunk), false, "");
+        input += chunk;
+        left -= chunk;
+    }
+
+    return true;
 }
 
 bool CRC16::Final(uint16& hash)
@@ -70,9 +81,11 @@ std::string_view CRC16::GetName()
 
 const std::string_view CRC16::GetHexValue()
 {
+    // 'value' is stored as uint32 (so ResultBytesLength is 4), but a CRC16 has only 4 hex digits
+    constexpr uint32 CRC16_HEX_LENGTH = sizeof(uint16) * 2;
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("%.8X", value);
-    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
-    return { hexDigest, ResultBytesLength * 2 };
+    ls.Format("%.4X", value & 0xFFFFU);
+    memcpy(hexDigest, ls.GetText(), CRC16_HEX_LENGTH);
+    return { hexDigest, CRC16_HEX_LENGTH };
 }
 } // namespace GView::Hashes

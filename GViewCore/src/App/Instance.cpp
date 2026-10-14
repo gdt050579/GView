@@ -267,7 +267,8 @@ bool Instance::Init(bool isTestingEnabled)
     if (!LoadSettings()) {
         auto preservedSettingsNewPath = settingsPath;
         preservedSettingsNewPath.replace_extension(".ini.bak");
-        std::filesystem::rename(settingsPath, preservedSettingsNewPath);
+        std::error_code renameError; // a failed backup must not abort the startup
+        std::filesystem::rename(settingsPath, preservedSettingsNewPath, renameError);
         AppCUI::Log::Report(
               AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
         CHECK(GView::App::ResetConfiguration(), false, "");
@@ -422,6 +423,8 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
     for (auto& pType : this->typePlugins) {
         if (!Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()))
             continue;
+        if (&pType == plg)
+            continue; // already matched by its extension: the same plugin is not a second option
         if (pType.MatchContent(buf, textParser)) {
             if (pType.IsOfType(buf, textParser)) {
                 count++;
@@ -449,6 +452,14 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
     auto enc    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLen);
     auto text =
           enc != GView::Utils::CharacterEncoding::Encoding::Binary ? GView::Utils::CharacterEncoding::ConvertToUnicode16(buf) : GView::Utils::UnicodeString();
+    // tp only borrows text.text: freed on every return, after the IdentifyTypePlugin_* call is done with it
+    struct TextGuard {
+        GView::Utils::UnicodeString& text;
+        ~TextGuard()
+        {
+            text.Destroy();
+        }
+    } textGuard{ text };
     auto tp = GView::Type::Matcher::TextParser(text.text, text.size);
     auto sz = cache.GetSize();
 

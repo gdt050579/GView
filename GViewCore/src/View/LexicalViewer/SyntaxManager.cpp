@@ -76,17 +76,9 @@ bool Token::SetBlock(uint32 blockIndex)
     if (blockIndex >= INSTANCE->blocks.size())
         return false; // invalid block index
     const auto& block = INSTANCE->blocks[blockIndex];
-    // token index can not be inside pointed block
-    if (block.HasEndMarker())
-    {
-        if ((this->index >= block.tokenStart) && (this->index <= block.tokenEnd))
-            return false;
-    }
-    else
-    {
-        if ((this->index >= block.tokenStart) && (this->index < block.tokenEnd))
-            return false;
-    }
+    // token index can not be inside pointed block (tokenEnd is part of the block with or without an end marker)
+    if ((this->index >= block.tokenStart) && (this->index <= block.tokenEnd))
+        return false;
     // all good --> link it
     tok.blockID = blockIndex;
     return true;
@@ -144,7 +136,7 @@ Token& Token::operator--()
 }
 Token Token::operator+(uint32 offset) const
 {
-    if ((this->data == nullptr) || (this->index == 0))
+    if (this->data == nullptr)
         return Token();
     if ((size_t) this->index + (size_t)offset >= INSTANCE->tokens.size())
         return Token();
@@ -283,7 +275,7 @@ Token TokensList::Add(
 {
     uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     uint32 len        = INSTANCE->GetUnicodeTextLen();
-    if ((start >= end) || (start >= len) || (end > (len + 1)))
+    if ((start >= end) || (start >= len) || (end > len))
     {
         LOG_ERROR("Invalid token offset: start=%du, end=%u, length=%u", start, end, len);
         return Token();

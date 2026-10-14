@@ -71,43 +71,44 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
         return false;
     if (fileSize == 0)
         return true;
+    if (fileSize < sizeof(uint32) || fileSize > 0xFFFFFFFFull)
+        return false;
     std::vector<uint8> buffer;
     buffer.resize((uint32) fileSize);
-    cacheFile.Read(reinterpret_cast<char*>(buffer.data()), (uint32)fileSize);
+    const bool readOk = cacheFile.Read(reinterpret_cast<char*>(buffer.data()), (uint32) fileSize);
     cacheFile.Close();
-
-    if (fileSize < sizeof(uint32))
+    if (!readOk)
         return false;
 
-    uint32 offset     = 0;
-    uint32 zonesCount = 0;
+    // the cache file is untrusted: every size is checked against the remaining bytes (in size_t, no wrap around)
+    const size_t bufferSize = buffer.size();
+    size_t offset           = 0;
+    uint32 zonesCount       = 0;
     memcpy(&zonesCount, buffer.data() + offset, sizeof(zonesCount));
     offset += sizeof(zonesCount);
 
-    while (offset < buffer.size()) {
+    while (offset < bufferSize) {
         if (zonesCount-- == 0)
             return false;
         uint32 entrySize;
+        if (bufferSize - offset < sizeof(entrySize))
+            return false;
         memcpy(&entrySize, buffer.data() + offset, sizeof(entrySize));
         offset += sizeof(entrySize);
-        if (offset + entrySize > buffer.size())
+        if (entrySize > bufferSize - offset)
             return false;
         const auto entryDataName = buffer.data() + offset;
         offset += entrySize;
-        if (offset > buffer.size())
-            return false;
         std::string_view entryName = { (const char*) entryDataName, entrySize };
 
-        if (offset + sizeof(uint32) > buffer.size())
+        if (bufferSize - offset < sizeof(entrySize))
             return false;
         memcpy(&entrySize, buffer.data() + offset, sizeof(entrySize));
         offset += sizeof(entrySize);
-        if (offset + entrySize > buffer.size())
+        if (entrySize > bufferSize - offset)
             return false;
         const auto entryData = buffer.data() + offset;
         offset += entrySize;
-        if (offset > buffer.size())
-            return false;
 
         auto newCacheEntry = DissasmCacheEntry{ std::make_unique<std::byte[]>(entrySize), entrySize };
         memcpy(newCacheEntry.data.get(), entryData, entrySize);
@@ -151,6 +152,24 @@ static bool IsSameLegacyDisassemblyZone(const DissasmCacheEntry& entry, const st
            cached.language == zone.language;
 }
 
+// Code zone records are keyed by the file offset of the zone. The records saved before were keyed by the first line of the zone, which
+// depends on the view width and on the zones above it (collapsed, initialized or not): they are still read with the current first line.
+static void FormatCodeZoneRecordName(LocalString<64>& zoneName, const DissasmCodeZone& zone)
+{
+    zoneName.SetFormat("DissasmCodeZone.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+static auto FindCodeZoneRecord(DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    LocalString<64> zoneName;
+    FormatCodeZoneRecordName(zoneName, zone);
+    auto it = cache.zonesData.find(zoneName.GetText());
+    if (it != cache.zonesData.end())
+        return it;
+    zoneName.SetFormat("DissasmParseZoneType.%u", zone.startLineIndex); // legacy key
+    return cache.zonesData.find(zoneName.GetText());
+}
+
 void Instance::LoadCacheData()
 {
     if (!config.EnableDeepScanDissasmOnStart)
@@ -179,19 +198,42 @@ void Instance::SaveCacheData()
     if (GView::Security::Learning::Hooks::IsMemoryOnlyObject(obj) ||
         GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export))
         return;
-    cacheData.ClearCache(); // TODO: optimise this better? maybe clear cache after loading
-    if (!settings->SaveToCache(cacheData, obj))
-        return;
-
-    std::vector<std::byte> buffer;
+    // the code zones that were not initialized in this session (never drawn) have no data of their own: their loaded records are
+    // kept as they are instead of being overwritten with empty records
     LocalString<64> zoneName;
+    std::unordered_map<std::string, DissasmCacheEntry> keptRecords;
     for (auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
         const auto* dissasmZone = (DissasmCodeZone*) zone.get();
+        if (dissasmZone->CanReachAsmLines())
+            continue;
+        auto record = FindCodeZoneRecord(cacheData, *dissasmZone);
+        if (record == cacheData.zonesData.end())
+            continue;
+        FormatCodeZoneRecordName(zoneName, *dissasmZone);
+        keptRecords.insert_or_assign(zoneName.GetText(), std::move(record->second));
+    }
+
+    // everything is rebuilt below (a previous save of this session left its records, adding them again would fail)
+    cacheData.ClearCache(true);
+    if (!settings->SaveToCache(cacheData, obj))
+        return;
+
+    std::vector<std::byte> buffer;
+    for (auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto* dissasmZone = (DissasmCodeZone*) zone.get();
+        FormatCodeZoneRecordName(zoneName, *dissasmZone);
+        if (!dissasmZone->CanReachAsmLines()) {
+            auto kept = keptRecords.find(zoneName.GetText());
+            if (kept != keptRecords.end())
+                cacheData.zonesData.insert_or_assign(kept->first, std::move(kept->second));
+            continue;
+        }
         if (!dissasmZone->ToBuffer(buffer))
             return;
-        zoneName.SetFormat("DissasmParseZoneType.%u", zone->startLineIndex);
         if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
             return;
     }
@@ -425,10 +467,8 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         return true;
     if (zoneType != DissasmParseZoneType::DissasmCodeParseZone)
         return false;
-    LocalString<64> zoneName;
-    zoneName.SetFormat("DissasmParseZoneType.%u", startLineIndex);
 
-    auto it = cache.zonesData.find(zoneName.GetText());
+    auto it = FindCodeZoneRecord(cache, *this);
     if (it == cache.zonesData.end())
         return false;
     const std::byte* dataPtr    = it->second.data.get();

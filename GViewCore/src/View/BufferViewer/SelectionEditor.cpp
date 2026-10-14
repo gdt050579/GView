@@ -112,7 +112,7 @@ bool SelectionEditor::GetValues(uint64& start, uint64& size)
         txOffset->SetFocus();
         return false;
     }
-    if (size >= maxSize)
+    if (size > maxSize)
     {
         Dialogs::MessageBox::ShowError("Error", error.Format("Size `%llu` is bigger than the offset size: `%llu`", size, maxSize));
         txSize->SetFocus();
@@ -151,7 +151,7 @@ void SelectionEditor::RefreshSizeAndOffset()
         tmp.Add(n.ToHex(start));
         txOffset->SetText(tmp);
         tmp.Set("0x");
-        tmp.Add(n.ToHex(end - start));
+        tmp.Add(n.ToHex(end - start + 1)); // 'end' is inclusive
         txSize->SetText(tmp);
     }
     else

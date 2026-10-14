@@ -119,3 +119,18 @@ TEST_CASE("Base64: decode skips line breaks, warns on trailing data and rejects 
 
     REQUIRE_FALSE(DecodeToBytes("Zm9v====", bytes));
 }
+
+TEST_CASE("Base64: padding only counts at the end of its own quantum", "[Decoding][Base64]")
+{
+    std::vector<uint8> bytes;
+    // padding that can not end a quantum (used to underflow the output length)
+    REQUIRE_FALSE(DecodeToBytes("=", bytes));
+    REQUIRE_FALSE(DecodeToBytes("==", bytes));
+    REQUIRE_FALSE(DecodeToBytes("A=", bytes));
+    REQUIRE_FALSE(DecodeToBytes("AAAA=", bytes));
+    REQUIRE_FALSE(DecodeToBytes("Zg=g", bytes));
+
+    // a truncated padded quantum is dropped, it does not trim the bytes of the previous (complete) quantum
+    REQUIRE(DecodeToString("Zm9vZg=") == "foo");
+    REQUIRE(DecodeToString("Zm9v\nZm8=") == "foofo");
+}

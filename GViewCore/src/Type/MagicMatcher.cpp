@@ -4,9 +4,18 @@ namespace GView::Type::Matcher
 {
 constexpr uint8 SEP = 0xFE;
 
-#define GET_WORD(p)  (*(reinterpret_cast<const uint16*>(p)))
-#define GET_DWORD(p) (*(reinterpret_cast<const uint32*>(p)))
-#define GET_QWORD(p) (*(reinterpret_cast<const uint64*>(p)))
+// the file buffer has no alignment guarantee, so the values are read with memcpy (no unaligned dereference)
+template <typename T>
+static inline T LoadUnaligned(const uint8* p)
+{
+    T value;
+    memcpy(&value, p, sizeof(T));
+    return value;
+}
+
+#define GET_WORD(p)  (LoadUnaligned<uint16>(p))
+#define GET_DWORD(p) (LoadUnaligned<uint32>(p))
+#define GET_QWORD(p) (LoadUnaligned<uint64>(p))
 
 uint8 hexCharTypes[256] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, SEP,  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,

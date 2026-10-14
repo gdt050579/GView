@@ -24,7 +24,7 @@ namespace Utils
         struct
         {
             uint64 start, end, originalPoint;
-            FixSizeString<32> stringRepresentation;
+            FixSizeString<64> stringRepresentation;
         } zones[MAX_SELECTION_ZONES];
         bool singleSelectionZone;
 
@@ -228,7 +228,7 @@ namespace Utils
                 switch (encoding)
                 {
                 case Encoding::UTF8:
-                    if (ch < 256)
+                    if (ch < 0x80)
                     {
                         internalBuffer[0] = static_cast<uint8>(ch);
                         return BufferView(internalBuffer, 1);

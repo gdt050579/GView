@@ -129,11 +129,15 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
     GetError(error, current);
     CHECK(certs != nullptr, false, "");
 
-    count = static_cast<uint32>(sk_X509_num(certs.get()));
-    if (count >= MAX_SIZE_IN_CONTAINER)
+    const int32 certsCount = sk_X509_num(certs.get());
+    if (certsCount < 0 || static_cast<uint32>(certsCount) >= MAX_SIZE_IN_CONTAINER)
     {
-        throw std::runtime_error("Unable to parse this number of certificates!");
+        // callers iterate output[0..count): report the error in the first slot only
+        count = 1;
+        current.Set("Unable to parse this number of certificates!");
+        RETURNERROR(false, "Unable to parse this number of certificates!");
     }
+    count = static_cast<uint32>(certsCount);
     for (uint32 i = 0; i < count; i++)
     {
         auto& current = output[i];
@@ -201,11 +205,15 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
     GetError(error, output.errorMessage);
     CHECK(certs != nullptr, false, "");
 
-    output.certificatesCount = sk_X509_num(certs.get());
-    if (output.certificatesCount >= MAX_SIZE_IN_CONTAINER)
+    // attacker-controlled counts: report an error instead of throwing (the Mach-O caller does not catch)
+    const int32 certsCount = sk_X509_num(certs.get());
+    if (certsCount < 0 || static_cast<uint32>(certsCount) >= MAX_SIZE_IN_CONTAINER)
     {
-        throw std::runtime_error("Unable to parse this number of certificates!");
+        output.certificatesCount = 0;
+        output.errorMessage.Set("Unable to parse this number of certificates!");
+        RETURNERROR(false, "Unable to parse this number of certificates!");
     }
+    output.certificatesCount = static_cast<uint32>(certsCount);
     for (auto i = 0U; i < output.certificatesCount; i++)
     {
         ERR_clear_error();
@@ -234,7 +242,10 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
         sigCert.signatureAlgorithm = OBJ_nid2ln(X509_get_signature_nid(cert));
 
         EVP_PKEY_ptr pubkey{ X509_get_pubkey(cert), EVP_PKEY_free };
-        sigCert.publicKeyAlgorithm = OBJ_nid2ln(EVP_PKEY_id(pubkey.get()));
+        if (pubkey != nullptr)
+        {
+            sigCert.publicKeyAlgorithm = OBJ_nid2ln(EVP_PKEY_id(pubkey.get()));
+        }
 
         ASN1TIMEtoString(X509_get0_notBefore(cert), sigCert.validityNotBefore);
         ASN1TIMEtoString(X509_get0_notAfter(cert), sigCert.validityNotAfter);
@@ -285,12 +296,15 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
     }
 
     STACK_OF(CMS_SignerInfo)* sis = CMS_get0_SignerInfos(cms.get());
-    output.signersCount           = sk_CMS_SignerInfo_num(sis);
-    if (output.signersCount >= MAX_SIZE_IN_CONTAINER)
+    const int32 signersCount      = sk_CMS_SignerInfo_num(sis);
+    if (signersCount < 0 || static_cast<uint32>(signersCount) >= MAX_SIZE_IN_CONTAINER)
     {
-        throw std::runtime_error("Unable to parse this number of signers!");
+        output.signersCount = 0;
+        output.errorMessage.Set("Unable to parse this number of signers!");
+        RETURNERROR(false, "Unable to parse this number of signers!");
     }
-    for (int32 i = 0; i < sk_CMS_SignerInfo_num(sis); i++)
+    output.signersCount = static_cast<uint32>(signersCount);
+    for (int32 i = 0; i < signersCount; i++)
     {
         CMS_SignerInfo* si = sk_CMS_SignerInfo_value(sis, i);
         auto& signer       = output.signers[i];
@@ -298,7 +312,9 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
         signer.count = CMS_signed_get_attr_count(si);
         if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER && signer.count != ERR_SIGNER)
         {
-            throw std::runtime_error("Unable to parse this number of signers!");
+            signer.count = 0;
+            output.errorMessage.Set("Unable to parse this number of signers!");
+            RETURNERROR(false, "Unable to parse this number of signers!");
         }
         if (signer.count == ERR_SIGNER)
         {
@@ -323,7 +339,9 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
 
             if ((uint32) attribute.count >= MAX_SIZE_IN_CONTAINER)
             {
-                throw std::runtime_error("Unable to parse this number of attributes!");
+                attribute.count = 0;
+                output.errorMessage.Set("Unable to parse this number of attributes!");
+                RETURNERROR(false, "Unable to parse this number of attributes!");
             }
 
             ASN1_OBJECT* obj = X509_ATTRIBUTE_get0_object(attr); // no need to free (pointer from CMS structure)
@@ -345,7 +363,8 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
                 continue;
             }
 
-            auto& asnType = attribute.types[j] = (ASN1TYPE) av->type;
+            // types[] / CDHashes[] are indexed by the value of the attribute (av is value 0), not by the attribute
+            auto& asnType = attribute.types[0] = (ASN1TYPE) av->type;
 
             if (asnType == ASN1TYPE::OBJECT)
             {
@@ -360,7 +379,7 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
                 }
 
                 attribute.contentTypeData.Set(ls.GetText());
-                attribute.CDHashes[j].Set(ls.GetText());
+                attribute.CDHashes[0].Set(ls.GetText());
             }
             else if (asnType == ASN1TYPE::UTCTIME)
             {
@@ -370,9 +389,9 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
                 CHECK(bio != nullptr, false, "");
 
                 ASN1_UTCTIME_print(bio.get(), av->value.utctime);
-                BUF_MEM* bptr = nullptr; // no need to free (pointer from BIO structure)
+                BUF_MEM* bptr = nullptr; // no need to free (owned by the BIO, released with it)
                 BIO_get_mem_ptr(bio.get(), &bptr);
-                BIO_set_close(bio.get(), BIO_NOCLOSE);
+                CHECK(bptr != nullptr, false, "");
 
                 attribute.contentTypeData.Set(bptr->data, (uint32) bptr->length);
             }
@@ -383,17 +402,24 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
                     av = X509_ATTRIBUTE_get0_type(attr, m);
                     if (av != nullptr)
                     {
+                        attribute.types[m] = (ASN1TYPE) av->type;
+                        // only value 0 was checked above: every other value must be a SEQUENCE too before
+                        // value.sequence is read (NULL / BOOLEAN values store an int in the union)
+                        if (av->type != V_ASN1_SEQUENCE || av->value.sequence == nullptr)
+                        {
+                            continue;
+                        }
+
                         ERR_clear_error();
                         BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
                         GetError(error, output.errorMessage);
                         CHECK(in != nullptr, false, "");
 
                         ASN1_STRING* sequence = av->value.sequence;
-                        attribute.types[m]    = (ASN1TYPE) av->type;
                         ASN1_parse_dump(in.get(), sequence->data, sequence->length, 2, 0);
-                        BUF_MEM* buf = nullptr;
+                        BUF_MEM* buf = nullptr; // owned by the BIO, released with it
                         BIO_get_mem_ptr(in.get(), &buf);
-                        BIO_set_close(in.get(), BIO_NOCLOSE);
+                        CHECK(buf != nullptr, false, "");
                         attribute.contentTypeData.Set(buf->data, (uint32) buf->length);
 
                         auto& hash                             = attribute.CDHashes[m];
@@ -406,8 +432,12 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
 
                                 const auto indexStartMarker = subString.find(startMarker);
                                 const auto indexNewLine     = subString.find('\n', indexStartMarker);
-                                const auto newLength        = indexNewLine - indexStartMarker - startMarker.length();
-                                subString                   = { subString.data() + indexStartMarker + startMarker.length(), newLength };
+                                if (indexNewLine == std::string_view::npos)
+                                {
+                                    continue; // the only newline is before the marker
+                                }
+                                const auto newLength = indexNewLine - indexStartMarker - startMarker.length();
+                                subString            = { subString.data() + indexStartMarker + startMarker.length(), newLength };
 
                                 hash.Set(subString.data(), (uint32) subString.length());
                             }
@@ -417,7 +447,8 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
             }
             else
             {
-                throw std::runtime_error("Unknown hash!");
+                output.errorMessage.Set("Unknown hash!");
+                RETURNERROR(false, "Unknown hash!");
             }
         }
     }
@@ -462,6 +493,12 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
     Buffer b = cache.CopyEntireFile(true);
     Authenticode::AuthenticodeParser parser;
     bool result = parser.AuthenticodeParse(b.GetData(), b.GetLength());
+    if (parser.GetSignatures().empty())
+    {
+        // a security directory that yields no signature at all is a failure, never "Validation: OK"
+        output.openssl.errorMessage.Add("Unable to parse the Authenticode signature");
+        result = false;
+    }
 
     for (const auto& signature : parser.GetSignatures())
     {
@@ -475,7 +512,7 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
         {
             if (counter.verifyFlags != 0)
             {
-                output.openssl.errorMessage.Add(parser.GetSignatureFlags(signature.verifyFlags).c_str());
+                output.openssl.errorMessage.Add(parser.GetCounterSignatureFlags(counter.verifyFlags).c_str());
                 result = false;
             }
         }
@@ -487,50 +524,48 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
     }
 
 #ifndef BUILD_FOR_WINDOWS // this gets filled in PE Type plugin
+    const auto addCertificate = [](AuthenticodeMS::Data::Signature& signature, const Authenticode::Certificate& oCertificate) {
+        auto& certificate = signature.certificates.emplace_back();
+
+        certificate.version = (uint32_t) oCertificate.version;
+        certificate.issuer.Set(oCertificate.issuer);
+        certificate.subject.Set(oCertificate.subject);
+        certificate.email.Set(oCertificate.issuerAttributes.emailAddress);
+        certificate.serialNumber.Set(oCertificate.serial);
+        certificate.digestAlgorithm.Set(oCertificate.keyAlg);
+        certificate.notAfter.Set(TimeToHumanReadable(oCertificate.notAfter));
+        certificate.notBefore.Set(TimeToHumanReadable(oCertificate.notBefore));
+        certificate.crlPoint = "";
+    };
+
     for (const auto& oSignature : parser.GetSignatures())
     {
-        auto& signature = output.data.signatures.emplace_back();
-
-        signature.signer.programName.Set(oSignature.signer.programName);
-        signature.signer.publishLink.Set(oSignature.signer.publishLink);
-        signature.signer.moreInfoLink.Set(oSignature.signer.moreInfoLink);
-
-        for (const auto& oCertificate : oSignature.certs)
         {
-            auto& certificate = signature.certificates.emplace_back();
+            auto& signature         = output.data.signatures.emplace_back();
+            signature.signatureType = SignatureType::Signature;
 
-            certificate.version = (uint32_t) oCertificate.version;
-            certificate.issuer.Set(oCertificate.issuer);
-            certificate.subject.Set(oCertificate.subject);
-            certificate.email.Set(oCertificate.issuerAttributes.emailAddress);
-            certificate.serialNumber.Set(oCertificate.serial);
-            certificate.digestAlgorithm.Set(oCertificate.keyAlg);
-            certificate.notAfter.Set(TimeToHumanReadable(oCertificate.notAfter));
-            certificate.notBefore.Set(TimeToHumanReadable(oCertificate.notBefore));
-            certificate.crlPoint = "";
+            signature.signer.programName.Set(oSignature.signer.programName);
+            signature.signer.publishLink.Set(oSignature.signer.publishLink);
+            signature.signer.moreInfoLink.Set(oSignature.signer.moreInfoLink);
 
-            if (oSignature.counterSignatures.empty())
+            for (const auto& oCertificate : oSignature.certs)
             {
-                signature.signatureType = SignatureType::Signature;
+                addCertificate(signature, oCertificate);
             }
-            else
-            {
-                signature.signatureType = SignatureType::CounterSignature;
+        }
 
-                const auto& cs                 = oSignature.counterSignatures.at(0);
-                signature.counterSignatureType = (CounterSignatureType) cs.type;
-                signature.signingTime.Set(TimeToHumanReadable(cs.signTime));
-                for (const auto& oCsCertificate : cs.chain)
-                {
-                    certificate.issuer.Set(oCsCertificate.issuer);
-                    certificate.subject.Set(oCsCertificate.subject);
-                    certificate.email.Set(oCsCertificate.issuerAttributes.emailAddress);
-                    certificate.serialNumber.Set(oCsCertificate.serial);
-                    certificate.digestAlgorithm.Set(oCsCertificate.keyAlg);
-                    certificate.notAfter.Set(TimeToHumanReadable(oCsCertificate.notAfter));
-                    certificate.notBefore.Set(TimeToHumanReadable(oCsCertificate.notBefore));
-                    certificate.crlPoint = "";
-                }
+        // like the Windows path, every countersignature (timestamp) is its own entry with its own certificate chain
+        // instead of overwriting the signer's certificates
+        for (const auto& cs : oSignature.counterSignatures)
+        {
+            auto& counterSignature                = output.data.signatures.emplace_back();
+            counterSignature.signatureType        = SignatureType::CounterSignature;
+            counterSignature.counterSignatureType = (CounterSignatureType) cs.type;
+            counterSignature.signingTime.Set(TimeToHumanReadable(cs.signTime));
+
+            for (const auto& oCsCertificate : cs.chain)
+            {
+                addCertificate(counterSignature, oCsCertificate);
             }
         }
     }

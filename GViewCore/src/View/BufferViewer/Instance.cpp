@@ -326,9 +326,10 @@ void Instance::MoveTillEndBlock(bool selected)
     uint32 lastValue = 0xFFFFFFFF;
     uint32 count     = 0;
 
-    fileSize = this->obj->GetData().GetSize();
+    fileSize            = this->obj->GetData().GetSize();
+    const auto startPos = this->cursor.GetCurrentPosition();
 
-    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;) {
+    for (tr = startPos; tr < fileSize;) {
         auto buf = this->obj->GetData().Get(tr, 4096, false);
         if (!buf.IsValid())
             break;
@@ -347,7 +348,9 @@ void Instance::MoveTillEndBlock(bool selected)
         }
         tr += (s - buf.begin());
         if (count == 16) {
-            tr -= 16;
+            // tr is the 16th identical byte: stop on the last byte before that run, but never before the
+            // starting position (a run that starts at the cursor would otherwise move back / underflow at offset 0)
+            tr = (tr >= startPos + 16) ? tr - 16 : startPos;
             break;
         }
     }
@@ -688,9 +691,12 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         this->chars.Resize(dli.offsetAndNameSize + dli.textSize + dli.numbersSize);
         dli.recomputeOffsets = false;
     }
-    auto buf          = this->obj->GetData().Get(dli.offset, dli.textSize, false);
-    dli.start         = buf.GetData();
-    dli.end           = buf.GetData() + buf.GetLength();
+    auto buf = this->obj->GetData().Get(dli.offset, dli.textSize, false);
+    // OffsetToColor (called while the line is drawn) may re-fill the data cache and invalidate 'buf',
+    // so the line is drawn from a private copy of its bytes
+    dli.lineBytes.assign(buf.begin(), buf.end());
+    dli.start         = dli.lineBytes.data();
+    dli.end           = dli.lineBytes.data() + dli.lineBytes.size();
     dli.chNameAndSize = this->chars.GetBuffer();
     dli.chText        = dli.chNameAndSize + (dli.offsetAndNameSize + dli.numbersSize);
     dli.chNumbers     = dli.chNameAndSize + dli.offsetAndNameSize;
@@ -1502,7 +1508,7 @@ bool Instance::Select(uint64 offset, uint64 size)
     auto end = offset + size - 1;
     if ((end < offset) || (end + 1 < size))
         return false;
-    if (end > this->obj->GetData().GetSize())
+    if (end >= this->obj->GetData().GetSize()) // end is inclusive (last selected byte)
         return false;
     this->selection.SetSelection(0, offset, end);
     return true;

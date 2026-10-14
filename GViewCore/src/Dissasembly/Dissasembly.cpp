@@ -46,10 +46,10 @@ bool DissasemblerIntel::Init(Design design, Architecture architecture, Endianess
         }
         switch (endianess) {
         case GView::Dissasembly::Endianess::Little:
-            mode = (cs_mode) (mode | (uint8) CS_MODE_LITTLE_ENDIAN);
+            mode = (cs_mode) (mode | CS_MODE_LITTLE_ENDIAN);
             break;
         case GView::Dissasembly::Endianess::Big:
-            mode = (cs_mode) (mode | (uint8) CS_MODE_BIG_ENDIAN);
+            mode = (cs_mode) (mode | CS_MODE_BIG_ENDIAN); // 1 << 31: a uint8 cast dropped it
             break;
         case GView::Dissasembly::Endianess::Invalid:
         default:
@@ -71,10 +71,10 @@ bool DissasemblerIntel::Init(Design design, Architecture architecture, Endianess
         }
         switch (endianess) {
         case GView::Dissasembly::Endianess::Little:
-            mode = (cs_mode) (mode | (uint8) CS_MODE_LITTLE_ENDIAN);
+            mode = (cs_mode) (mode | CS_MODE_LITTLE_ENDIAN);
             break;
         case GView::Dissasembly::Endianess::Big:
-            mode = (cs_mode) (mode | (uint8) CS_MODE_BIG_ENDIAN);
+            mode = (cs_mode) (mode | CS_MODE_BIG_ENDIAN); // 1 << 31: a uint8 cast dropped it
             break;
         case GView::Dissasembly::Endianess::Invalid:
         default:
@@ -188,11 +188,12 @@ bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruct
     case X86_INS_PUSHF:
     case X86_INS_PUSHFD:
     case X86_INS_PUSHFQ: {
+        // push rbp / push ebp: the frame pointer is saved
         const std::string_view opStr{ instruction1.opStr, GView::Dissasembly::OP_STR_SIZE };
         if (architecture == Architecture::x64) {
-            CHECK(opStr.starts_with("rsp"), false, "");
+            CHECK(opStr.starts_with("rbp"), false, "");
         } else {
-            CHECK(opStr.starts_with("esp"), false, "");
+            CHECK(opStr.starts_with("ebp"), false, "");
         }
 
         switch (instruction2.id) {
@@ -292,6 +293,8 @@ bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instruction)
 
 DissasemblerIntel::~DissasemblerIntel()
 {
+    if (handle == 0) // never initialized (or the initialization failed): there is nothing to close
+        return;
     CHECKRET(cs_close(&handle) == CS_ERR_OK, "");
     handle = 0;
 }

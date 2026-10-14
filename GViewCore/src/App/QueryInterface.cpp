@@ -488,12 +488,13 @@ void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
                 auto dataValue = currentData.AsString();
                 if (dataValue.has_value()) {
                     const auto actualValue = dataValue.value();
-                    if (strlen(actualValue) == 0)
-                        continue;
-                    hasConfig = true;
-                    smartAssistant->ReceiveConfigToken(actualValue);
-                    ++validAssistants;
-                    validSmartAssistants[index] = true;
+                    // an empty token is "no configuration" (the index must still advance)
+                    if (strlen(actualValue) != 0) {
+                        hasConfig = true;
+                        smartAssistant->ReceiveConfigToken(actualValue);
+                        ++validAssistants;
+                        validSmartAssistants[index] = true;
+                    }
                 }
             }
         }

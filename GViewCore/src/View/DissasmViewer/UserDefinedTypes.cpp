@@ -101,16 +101,20 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 
             if (newType.primaryType == InternalDissasmType::UnidimnsionalArray)
             {
-                assert(newType.width < 100); // TODO: fix for more numbers
-                char* arrayCellNames = new char[5ull * newType.width];
+                // every cell name is "[index]" plus its terminator: the indexes have a variable number of digits
+                size_t cellNamesSize = 1; // a 0 width array still has its terminator
+                for (uint32 i = 0; i < newType.width; i++)
+                    cellNamesSize += static_cast<size_t>(snprintf(nullptr, 0, "[%u]", i)) + 1u;
+                char* arrayCellNames = new char[cellNamesSize];
                 localBuffersToDelete.push_back(arrayCellNames);
                 char* cellOffset = arrayCellNames;
                 *cellOffset      = '\0';
 
                 for (uint32 i = 0; i < newType.width; i++)
                 {
-                    int res = snprintf(cellOffset, 5, "[%u]", i);
-                    if (res < 0)
+                    const size_t remainingSize = cellNamesSize - static_cast<size_t>(cellOffset - arrayCellNames);
+                    int res                    = snprintf(cellOffset, remainingSize, "[%u]", i);
+                    if (res < 0 || static_cast<size_t>(res) >= remainingSize)
                     {
                         for (auto entry_buffer : localBuffersToDelete)
                             delete[] entry_buffer;

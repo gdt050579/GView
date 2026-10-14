@@ -91,11 +91,7 @@ inline bool ExtractCallsToInsertFunctionNames(
         }
     }
 
-    if (callsFound.empty()) {
-        cs_free(insn, 1);
-        cs_close(&handle);
-        return false;
-    }
+    // no calls / jumps / frames found is a valid result: the entry point label is still added below
 
     enum labelType { SUB, OFFSET, OTHER };
     auto getLabelType = [](const std::string& s) -> labelType {
@@ -215,7 +211,9 @@ inline bool populateOffsetsVector(
         return false;
     // the data cache may return less than requested (end of file, zone bigger than the cache): never decode past what was returned
     const uint64 availableSize = std::min<uint64>(zoneDetails.size, instructionData.GetLength());
-    if (zoneDetails.entryPoint < zoneDetails.startingZonePoint || zoneDetails.entryPoint - zoneDetails.startingZonePoint >= availableSize)
+    // the entry point must be inside the zone; it may be after the bytes returned by the data cache (a zone bigger than the cache
+    // window): the lines are counted until there, the entry point simply has no line (the init must not fail on every paint)
+    if (zoneDetails.entryPoint < zoneDetails.startingZonePoint || zoneDetails.entryPoint - zoneDetails.startingZonePoint >= zoneDetails.size)
         return false;
 
     csh handle;
@@ -334,6 +332,9 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
 void DissasmCodeZone::ReachZoneLine(uint32 line)
 {
     changedLevel = false;
+    // the types are filled only by a successful x86/x64 InitZone (the callers check CanReachAsmLines)
+    if (types.empty())
+        return;
     if (lastReachedLine == line)
         return;
 
@@ -347,6 +348,10 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
                 reAdapt = true;
             break;
         }
+        if (types.size() == 1) { // the root is never removed, the line is outside of the zone
+            reAdapt = !currentType.internalTypes.empty();
+            break;
+        }
         types.pop_back();
         levels.pop_back();
         reAdapt = true;
@@ -354,6 +359,7 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
 
     while (reAdapt && !types.back().get().internalTypes.empty()) {
         DissasmCodeInternalType& currentType = types.back();
+        bool foundChild                      = false;
         for (uint32 i = 0; i < currentType.internalTypes.size(); i++) {
             auto& internalType = currentType.internalTypes[i];
             if (internalType.indexZoneStart <= levelToReach && levelToReach < internalType.indexZoneEnd) {
@@ -362,9 +368,12 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
                 changedLevel                   = true;
                 newLevelChangeData.hasName     = !internalType.name.empty();
                 newLevelChangeData.isCollapsed = internalType.isCollapsed;
+                foundChild                     = true;
                 break;
             }
         }
+        if (!foundChild) // the line is after the shown lines (collapsed zones): looping again would never end
+            break;
     }
 
     DissasmCodeInternalType& currentType = types.back();

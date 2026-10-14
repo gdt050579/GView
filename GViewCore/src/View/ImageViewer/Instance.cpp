@@ -63,7 +63,8 @@ void Instance::RedrawImage()
 }
 void Instance::LoadImage()
 {
-    if (this->settings->loadImageCallback->LoadImageToObject(this->img, this->currentImageIndex))
+    // the callback is optional (a plugin may not set one, and the default settings have none)
+    if (this->settings->loadImageCallback.IsValid() && this->settings->loadImageCallback->LoadImageToObject(this->img, this->currentImageIndex))
     {
         RedrawImage();
     }

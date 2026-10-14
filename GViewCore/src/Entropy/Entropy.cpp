@@ -7,10 +7,10 @@ constexpr uint32 MAX_NUMBER_OF_BYTES = 256;
 
 namespace GView::Entropy
 {
-void SetFrequencies(const BufferView& buffer, std::array<char, MAX_NUMBER_OF_BYTES>& frequency)
+void SetFrequencies(const BufferView& buffer, std::array<uint64, MAX_NUMBER_OF_BYTES>& frequency)
 {
     // Count frequency of each byte in the buffer
-    for (uint32 i = 0; i < buffer.GetLength(); i++) {
+    for (size_t i = 0; i < buffer.GetLength(); i++) {
         const auto c = buffer[i];
         frequency[c]++;
     }
@@ -27,14 +27,14 @@ void SetFrequencies(const BufferView& buffer, std::array<char, MAX_NUMBER_OF_BYT
     The joint entropy of variables X_1, ..., X_n is then defined by
     H(X_1, ..., X_n) congruent - sum_(x_1) ... sum_(x_n) P(x_1, ..., x_n) log_2[P(x_1, ..., x_n)].
 */
-double ShannonEntropy_private(const BufferView& buffer, std::array<char, MAX_NUMBER_OF_BYTES>& frequency)
+double ShannonEntropy_private(const BufferView& buffer, std::array<uint64, MAX_NUMBER_OF_BYTES>& frequency)
 {
     double entropy = 0.0;
     for (auto f : frequency) {
         if (f == 0) {
             continue;
         }
-        double probability = static_cast<double>(f) / buffer.GetLength();
+        double probability = static_cast<double>(f) / static_cast<double>(buffer.GetLength());
         entropy -= probability * log2(probability);
     }
 
@@ -43,7 +43,7 @@ double ShannonEntropy_private(const BufferView& buffer, std::array<char, MAX_NUM
 
 double ShannonEntropy(const BufferView& buffer)
 {
-    std::array<char, MAX_NUMBER_OF_BYTES> frequency{};
+    std::array<uint64, MAX_NUMBER_OF_BYTES> frequency{};
     SetFrequencies(buffer, frequency);
     return ShannonEntropy_private(buffer, frequency);
 }
@@ -58,7 +58,7 @@ double ShannonEntropy(const BufferView& buffer)
 */
 double RenyiEntropy(const BufferView& buffer, double alpha)
 {
-    std::array<char, MAX_NUMBER_OF_BYTES> frequency{};
+    std::array<uint64, MAX_NUMBER_OF_BYTES> frequency{};
     SetFrequencies(buffer, frequency);
 
     if (alpha == 1.0) {
@@ -68,7 +68,7 @@ double RenyiEntropy(const BufferView& buffer, double alpha)
     double sum = 0.0;
     for (auto f : frequency) {
         if (f > 0) {
-            const double probability = static_cast<double>(f) / buffer.GetLength();
+            const double probability = static_cast<double>(f) / static_cast<double>(buffer.GetLength());
             sum += pow(probability, alpha);
         }
     }

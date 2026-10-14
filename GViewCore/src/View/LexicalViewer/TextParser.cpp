@@ -334,15 +334,20 @@ uint32 TextParser::ParseString(uint32 index, StringFormat format) const
         if (currentChar == '\\')
         {
             index++; // move to next char
+            if (index >= size)
+                break; // backslash is the last character in the buffer
             if (lineContinutityWithBackslash)
             {
                 auto ch = text[index];
                 if ((ch == '\n') || (ch == '\r'))
                 {
                     index++; // new line found
-                    auto chNext = text[index];
-                    if (((chNext == '\n') || (chNext == '\r')) && (chNext != ch))
-                        index++; // CRLF or LFCR cases
+                    if (index < size)
+                    {
+                        auto chNext = text[index];
+                        if (((chNext == '\n') || (chNext == '\r')) && (chNext != ch))
+                            index++; // CRLF or LFCR cases
+                    }
                     continue;
                 }
             }
@@ -362,7 +367,7 @@ uint32 TextParser::ParseString(uint32 index, StringFormat format) const
         index++;
     }
 
-    return index;
+    return std::min<uint32>(index, size);
 }
 uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
 {

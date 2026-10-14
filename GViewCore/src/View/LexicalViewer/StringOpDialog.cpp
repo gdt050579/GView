@@ -50,6 +50,12 @@ StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference
     this->txValue->SetFocus();
     UpdateValue(false);
 }
+StringOpDialog::~StringOpDialog()
+{
+    // the editor allocates its own buffer when a string operation is run --> release it
+    auto buffer = editor.Release();
+    buffer.Destroy();
+}
 void StringOpDialog::UpdateValue(bool original)
 {
     LocalUnicodeStringBuilder<512> tmp;

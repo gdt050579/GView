@@ -303,8 +303,12 @@ cs_insn* GetCurrentInstructionByOffset(
 
     cs_insn* insn = cs_malloc(handle);
     offsetToReach -= codeStart;
+    // cs_disasm_iter takes a size_t (32 bits on 32 bit targets), asmSize is 64 bits: never alias it through a size_t pointer
+    size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (zone->asmAddress <= offsetToReach) {
-        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, &zone->asmAddress, insn)) {
+        const bool decoded = cs_disasm_iter(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
+        zone->asmSize      = remainingSize;
+        if (!decoded) {
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
             cs_free(insn, 1);

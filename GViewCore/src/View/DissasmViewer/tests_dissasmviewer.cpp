@@ -808,6 +808,50 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
     // dissasmInstance.PrintInstructions(50);
 }
 
+TEST_CASE("CollapsibleZonesSizesAndNestedZones", "[Dissasm]CollapsibleZones")
+{
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    const uint32 zoneEndingIndex = 4572;
+    const uint32 extendedSize    = zoneEndingIndex - 1; // the zone lines and the title
+
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
+
+    // every collapse / expand gives the new size of the zone, not only the first one
+    int32 newSize = 0;
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
+    REQUIRE(newSize == static_cast<int32>(extendedSize - 4));
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(4, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
+    REQUIRE(newSize == static_cast<int32>(extendedSize - 5));
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand, newSize));
+    REQUIRE(newSize == static_cast<int32>(extendedSize - 1));
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Expand, newSize));
+    REQUIRE(newSize == static_cast<int32>(extendedSize));
+
+    // a line after the shown lines (but inside the expanded zone) must not loop forever, the next lines are reached again
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
+    dissasmInstance.ReachZoneLine(zoneEndingIndex - 2);
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand, newSize));
+
+    // zones added inside a zone that already has children are split inside it
+    REQUIRE(dissasmInstance.RemoveCollapsibleZone(8));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(1, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(5, 6));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(1, { { 5, 6, true }, { 6, 7 }, { 7, 9, true }, { 9, 11 } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(1, { { 0, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
+}
+
 TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
@@ -1202,6 +1246,30 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         REQUIRE(restored.CheckComment(405, "c400")); // and 3 more of main
         REQUIRE(restored.CheckLineText(405, legacy.GetLineText(400)));
     }
+}
+
+TEST_CASE("CodeZoneCacheRecordKey", "[Dissasm]Cache")
+{
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    std::string_view labelName = "isPrime";
+    REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+    REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+    std::vector<std::byte> buffer;
+    REQUIRE(edited.zone->ToBuffer(buffer));
+
+    // the record is keyed by the file offset of the zone: the first line of the zone (view width, zones above) does not matter
+    DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    restored.zone->startLineIndex = 1234;
+    auto cache                    = std::make_unique<DissasmCache>();
+    cache->hasCache               = true;
+    const std::string recordName  = "DissasmCodeZone." + std::to_string(restored.zone->zoneDetails.startingZonePoint);
+    REQUIRE(cache->AddRegion(recordName, buffer.data(), static_cast<uint32>(buffer.size())));
+    bool zoneLinesChanged = false;
+    REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+    REQUIRE(restored.CheckLineText(35, "isPrime"));
+    REQUIRE(restored.CheckComment(100, "c100"));
+    // the jumps / calls to a label renamed by the assistant (TryRenameLine with a name) use the new name as well
+    REQUIRE(edited.zone->dissasmType.annotations.get_name_change("sub_0x000000030") == "isPrime");
 }
 
 TEST_CASE("LocalVariablesOperandsAndNames", "[Dissasm]LocalVariables")

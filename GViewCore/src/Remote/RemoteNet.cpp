@@ -98,7 +98,14 @@ namespace
     }
     SocketHandle CreateSocket(int family, int type, int protocol)
     {
+#    ifdef SOCK_CLOEXEC
+        // atomic close-on-exec: no window in which a concurrent fork + exec can inherit the socket
+        int s = socket(family, type | SOCK_CLOEXEC, protocol);
+        if (s < 0 && errno == EINVAL)
+            s = socket(family, type, protocol); // kernel without SOCK_CLOEXEC support
+#    else
         const int s = socket(family, type, protocol);
+#    endif
         if (s < 0)
             return INVALID_SOCKET_HANDLE;
         SetNoInherit(s);
@@ -352,6 +359,10 @@ bool Accept(const Socket& listener, Socket& client, std::string& peerAddress, st
 #ifdef BUILD_FOR_WINDOWS
     const SOCKET s = accept(Native(listener.Get()), reinterpret_cast<sockaddr*>(&addr), &len);
     if (s == INVALID_SOCKET) {
+#elif defined(__linux__) && defined(SOCK_CLOEXEC)
+    // atomic close-on-exec (accept4); SetNoInherit below stays as a no-op safety net
+    const int s = accept4(listener.Get(), reinterpret_cast<sockaddr*>(&addr), &len, SOCK_CLOEXEC);
+    if (s < 0) {
 #else
     const int s = accept(listener.Get(), reinterpret_cast<sockaddr*>(&addr), &len);
     if (s < 0) {
@@ -470,6 +481,7 @@ bool Waker::Create(std::string& error)
         if (!SetNonBlocking(s.Get()))
             continue;
         socket = std::move(s);
+        signalHandle.store(socket.Get(), std::memory_order_release);
         return true;
     }
     error = "cannot create the loopback wake-up socket: " + LastErrorText();
@@ -477,11 +489,12 @@ bool Waker::Create(std::string& error)
 }
 void Waker::Signal()
 {
-    if (!socket.IsValid())
+    const auto h = signalHandle.load(std::memory_order_acquire);
+    if (h == INVALID_SOCKET_HANDLE)
         return;
     const char b = 1;
     // a full socket buffer means a wake-up is already pending -> the error is irrelevant
-    (void) send(Native(socket.Get()), &b, 1, 0);
+    (void) send(Native(h), &b, 1, 0);
 }
 void Waker::Drain()
 {

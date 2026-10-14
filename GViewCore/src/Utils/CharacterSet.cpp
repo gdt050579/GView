@@ -83,7 +83,7 @@ bool CharacterSet::Set(std::string_view stringRepresentation, bool value)
                 auto n = Number::ToUInt8(std::string_view{ p + 2, (size_t) 2 }, NumberParseFlags::Base16);
                 CHECK(n.has_value(), false, "");
                 ch = n.value();
-                p += 4;
+                p += 3; // skip 'xHH' (the loop's p++ moves past the last hex digit)
             }
             break;
             default:

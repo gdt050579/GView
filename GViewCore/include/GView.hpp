@@ -134,6 +134,8 @@ namespace Utils
       public:
         ErrorList();
         ~ErrorList();
+        ErrorList(const ErrorList&)            = delete; // owns 'data' (a copy would double free it)
+        ErrorList& operator=(const ErrorList&) = delete;
 
         void Clear();
         bool AddError(const char* format, ...);
@@ -245,6 +247,8 @@ namespace Utils
       public:
         ZonesList();
         ~ZonesList();
+        ZonesList(const ZonesList&)            = delete; // owns 'context' (a copy would double free it)
+        ZonesList& operator=(const ZonesList&) = delete;
 
         bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
         bool Add(const Zone& zone);
@@ -786,6 +790,8 @@ namespace Golang
       public:
         PcLnTab();
         ~PcLnTab();
+        PcLnTab(const PcLnTab&)            = delete; // owns 'context' (a copy would double free it)
+        PcLnTab& operator=(const PcLnTab&) = delete;
         bool Process(const Buffer& buffer, Architecture arch);
         GoFunctionHeader* GetHeader() const;
         uint64 GetFilesCount() const;
@@ -885,6 +891,8 @@ namespace Decoding
 
             Info();
             ~Info();
+            Info(const Info&)            = delete; // owns 'context' (a copy would double free it)
+            Info& operator=(const Info&) = delete;
         };
         CORE_EXPORT bool GetInfo(std::u16string_view path, Info& info);
         CORE_EXPORT bool GetInfo(Utils::DataCache& cache, Info& info);
@@ -950,6 +958,11 @@ namespace Dissasembly
         Endianess endianess{ Endianess::Invalid };
 
       public:
+        DissasemblerIntel() = default;
+        // owns a capstone handle
+        DissasemblerIntel(const DissasemblerIntel&)            = delete;
+        DissasemblerIntel& operator=(const DissasemblerIntel&) = delete;
+
         bool Init(Design design, Architecture architecture, Endianess endianess);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
         bool DissasembleInstructions(BufferView buf, uint64 va, std::vector<Instruction>& instruction);
@@ -1019,6 +1032,8 @@ namespace Regex
         bool Init(std::string_view expression, bool isUnicode, bool isCaseSensitive);
         Matcher() = default;
         ~Matcher();
+        Matcher(const Matcher&)            = delete; // owns 'context' (a copy would double free it)
+        Matcher& operator=(const Matcher&) = delete;
 
         bool Match(BufferView buffer, uint64& start, uint64& end);
     };

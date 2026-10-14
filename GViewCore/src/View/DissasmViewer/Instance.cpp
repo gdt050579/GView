@@ -184,6 +184,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     this->Cursor.lineInView    = 0;
     this->Cursor.startViewLine = 0;
     this->Cursor.offset        = 0;
+    this->Cursor.hasMovedView  = false;
 
     this->Layout.visibleRows                     = 1;
     this->Layout.textSize                        = 1;
@@ -625,8 +626,8 @@ inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(
       const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
 {
     if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64) {
-        // Uint8 - index 0 -> 1 byte, Int8 -> index 4 -> 1 byte
-        uint32 val = ((uint8) cType.primaryType + 1u) % 4;
+        // UInt8, UInt16, UInt32, UInt64 then Int8, Int16, Int32, Int64: index % 4 -> 1, 2, 4, 8 bytes
+        const uint32 val = 1u << ((uint8) cType.primaryType % 4u);
         if (increaseOffset)
             zone->textFileOffset += val;
         else
@@ -1064,6 +1065,11 @@ void Instance::RecomputeDissasmZones()
 {
     // the zones are recreated below, the pointers kept for clearing their cached lines would dangle
     asmData.zonesToClear.clear();
+    // the same for the zone of the cursor line numbers: they are computed again for the new zones
+    cursorLineNumbers.computed = false;
+    cursorLineNumbers.valid    = false;
+    cursorLineNumbers.zone     = nullptr;
+    cursorLineNumbers.numbers.clear();
 
     std::map<uint32, std::vector<MappingZonesData>> mappingData;
     for (auto& mapping : this->settings->dissasmTypeMapped) {
@@ -1365,6 +1371,9 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
     zone->extendedSize = newExtendedSize;
     UpdateLayoutTotalLines();
     assert(foundZone);
+    // the zones below moved without the view moving: their cached lines no longer match the lines shown on the screen
+    for (const auto& codeZone : asmData.zonesToClear)
+        codeZone->asmPreCacheData.Clear();
 }
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
@@ -1399,7 +1408,9 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength() - Layout.startingTextLineOffset, (uint32) buf.GetLength());
+    // same arguments as the text lines of the text zones: the text length and the line length (with the left margin); a final line
+    // shorter than the margin made `length - margin` wrap around
+    HighlightSelectionAndDrawCursorText(dli, (uint32) buf.GetLength(), (uint32) (buf.GetLength() + Layout.startingTextLineOffset));
 
     // const uint32 cursorLine = Cursor.lineInView;
     // if (cursorLine == dli.screenLineToDraw)
@@ -1536,8 +1547,9 @@ void Instance::OnStart()
 
 void Instance::RecomputeDissasmLayout()
 {
-    Layout.visibleRows            = this->GetHeight() - 1;
-    Layout.totalCharactersPerLine = this->GetWidth() - 1;
+    // a 0 sized control (minimized / not laid out yet) must not wrap around
+    Layout.visibleRows            = static_cast<uint32>(std::max<int>(this->GetHeight() - 1, 0));
+    Layout.totalCharactersPerLine = static_cast<uint32>(std::max<int>(this->GetWidth() - 1, 0));
 
     Layout.textSize = std::max(this->Layout.totalCharactersPerLine, this->Layout.startingTextLineOffset) - this->Layout.startingTextLineOffset;
 }
@@ -1565,7 +1577,10 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line)
                         Dialogs::MessageBox::ShowError("Error", "Could not process ChangeZoneCollapseState!");
                         return;
                     }
-                    codeZone->asmPreCacheData.Clear();
+                    codeZone->ResetZoneCaching();
+                    // `difference` is the new size of the zone (as for CommandExecuteCollapsibleZoneOperation)
+                    if (difference)
+                        AdjustZoneExtendedSize(codeZone, static_cast<uint32>(difference));
                     break;
                 }
                 foundZone = true;
@@ -1577,6 +1592,9 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line)
         zoneToChange->isCollapsed = !zoneToChange->isCollapsed;
         zoneToChange->endingLineIndex += sizeToAdjust;
         UpdateLayoutTotalLines();
+        // the zones below moved without the view moving: their cached lines no longer match the lines shown on the screen
+        for (const auto& codeZone : asmData.zonesToClear)
+            codeZone->asmPreCacheData.Clear();
     }
 }
 
@@ -1585,7 +1603,7 @@ Instance::~Instance()
     while (!settings->buffersToDelete.empty()) {
         char* bufferToDelete = settings->buffersToDelete.back();
         settings->buffersToDelete.pop_back();
-        delete bufferToDelete;
+        delete[] bufferToDelete; // allocated with new char[] (Settings::AddType)
     }
 }
 
@@ -1805,6 +1823,7 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
               "Write only the text, do not write anything else. Do not write any symbols, just the pairs. ",
               DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST);
 
+        params.prompt                         = prompt.GetText();
         params.mnemonicStarsWith              = "sub_";
         params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "
                                                 "If they are not available please enable DeepScanning.";
