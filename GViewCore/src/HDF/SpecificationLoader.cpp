@@ -1,5 +1,6 @@
 #include "SpecificationLoader.hpp"
 
+#include <algorithm>
 #include <fstream>
 
 namespace GView::HDF
@@ -371,138 +372,268 @@ namespace
         }
     }
 
+    bool EqualsIgnoreCase(std::string_view a, std::string_view b)
+    {
+        if (a.size() != b.size())
+            return false;
+        for (size_t i = 0; i < a.size(); i++) {
+            const char ca = (a[i] >= 'A' && a[i] <= 'Z') ? static_cast<char>(a[i] - 'A' + 'a') : a[i];
+            const char cb = (b[i] >= 'A' && b[i] <= 'Z') ? static_cast<char>(b[i] - 'A' + 'a') : b[i];
+            if (ca != cb)
+                return false;
+        }
+        return true;
+    }
+
+    constexpr std::string_view INCONCLUSIVE = "Inconclusive";
+
+    // a verdict predicate named at path (nullopt + error otherwise)
+    std::optional<PredicateId> ReadVerdictPredicate(const std::string& name, const std::string& path, const LoadedSpecification& spec, Diagnostics& d)
+    {
+        const auto p = spec.signature.predicates.Find(name);
+        if (p == INVALID_PREDICATE_ID || !spec.specification.IsVerdict(p)) {
+            d.Error(path, "'" + name + "' is not a verdict predicate (list it in \"verdicts\")");
+            return std::nullopt;
+        }
+        return p;
+    }
+
+    // { "present" | "absent": "<V>", "op": ">=", "value": 0.7 }
+    std::optional<Clause> ReadClause(const ordered_json& entry, const std::string& path, const LoadedSpecification& spec, Diagnostics& d)
+    {
+        if (!entry.is_object()) {
+            d.Error(path, "must be an object { \"present\" | \"absent\": .., \"op\": .., \"value\": .. }");
+            return std::nullopt;
+        }
+        WarnUnknownKeys(entry, { "present", "absent", "op", "value", "description" }, path, d);
+        const bool hasPresent = entry.contains("present");
+        const bool hasAbsent  = entry.contains("absent");
+        if (hasPresent == hasAbsent) {
+            d.Error(path, "a clause names its verdict predicate with exactly one of \"present\" or \"absent\"");
+            return std::nullopt;
+        }
+        Clause clause;
+        clause.kind           = hasPresent ? ClauseKind::Present : ClauseKind::Absent;
+        const std::string key = hasPresent ? "present" : "absent";
+        auto predicate        = GetString(entry, key, path, d, true);
+        auto op               = GetString(entry, "op", path, d, true);
+        auto value            = entry.find("value");
+        if (!predicate || !op)
+            return std::nullopt;
+        const auto p = ReadVerdictPredicate(*predicate, Path(path, key), spec, d);
+        if (!p)
+            return std::nullopt;
+        clause.predicate = *p;
+        const auto co    = ComparisonOperatorFromName(*op);
+        if (!co) {
+            d.Error(Path(path, "op"), "unknown operator '" + *op + "' (>=, >, <=, <)");
+            return std::nullopt;
+        }
+        clause.op = *co;
+        if (value == entry.end() || !value->is_number()) {
+            d.Error(path, "\"value\" must be a number");
+            return std::nullopt;
+        }
+        clause.threshold = value->get<double>();
+        return clause;
+    }
+
+    void LoadLabels(const ordered_json& section, LoadedSpecification& spec, Diagnostics& d)
+    {
+        auto& interpretation = spec.interpretation;
+        auto it              = section.find("labels");
+        if (it == section.end())
+            return;
+        if (!it->is_array()) {
+            d.Error("interpretation.labels", "must be an array");
+            return;
+        }
+        for (size_t i = 0; i < it->size(); i++) {
+            const auto& entry = (*it)[i];
+            const auto path   = Path("interpretation.labels", i);
+            if (!entry.is_object()) {
+                d.Error(path, "must be an object");
+                continue;
+            }
+            WarnUnknownKeys(entry, { "outcome", "propagate", "settle", "clauses", "description" }, path, d);
+            auto outcome = GetString(entry, "outcome", path, d, true);
+            if (!outcome)
+                continue;
+            if (EqualsIgnoreCase(*outcome, INCONCLUSIVE)) {
+                d.Error(Path(path, "outcome"), "Inconclusive has no condition (it is the outcome when no label or more than one label holds)");
+                continue;
+            }
+            const auto o = interpretation.outcomes.Find(*outcome);
+            if (!o || !interpretation.outcomes.IsConclusive({ *o })) {
+                d.Error(Path(path, "outcome"), "unknown outcome '" + *outcome + "' (declare it in \"outcomes\")");
+                continue;
+            }
+            if (interpretation.ConditionOf(*o)) {
+                d.Error(Path(path, "outcome"), "two conditions for the outcome '" + *outcome + "' (a condition is one conjunction of clauses)");
+                continue;
+            }
+            LabelCondition condition;
+            condition.outcome = *o;
+            if (auto propagate = entry.find("propagate"); propagate != entry.end()) {
+                if (!propagate->is_boolean()) {
+                    d.Error(Path(path, "propagate"), "must be a boolean");
+                    continue;
+                }
+                condition.propagate = propagate->get<bool>();
+            }
+            if (auto settle = GetString(entry, "settle", path, d, false); settle.has_value()) {
+                const auto mode = SettleModeFromName(*settle);
+                if (!mode) {
+                    d.Error(Path(path, "settle"), "unknown settle mode '" + *settle + "' (immediate, exhaustion)");
+                    continue;
+                }
+                condition.settle = *mode;
+            }
+            auto clauses = entry.find("clauses");
+            if (clauses == entry.end() || !clauses->is_array() || clauses->empty()) {
+                d.Error(Path(path, "clauses"), "must be a non-empty array of clauses");
+                continue;
+            }
+            bool ok = true;
+            for (size_t c = 0; c < clauses->size(); c++) {
+                auto clause = ReadClause((*clauses)[c], Path(Path(path, "clauses"), c), spec, d);
+                if (!clause) {
+                    ok = false;
+                    continue;
+                }
+                condition.clauses.push_back(*clause);
+            }
+            if (!ok)
+                continue;
+            bool hasPresence = false;
+            for (const auto& clause : condition.clauses)
+                hasPresence |= clause.kind == ClauseKind::Present;
+            if (!hasPresence)
+                d.Warning(Path(path, "clauses"), "the condition of '" + *outcome + "' has no presence clause: it holds for every subject without evidence");
+            interpretation.labels.push_back(std::move(condition));
+        }
+    }
+
+    void LoadCombination(const ordered_json& section, LoadedSpecification& spec, Diagnostics& d)
+    {
+        auto& interpretation = spec.interpretation;
+        auto it              = section.find("combination");
+        if (it == section.end())
+            return;
+        if (!it->is_array()) {
+            d.Error("interpretation.combination", "must be an array");
+            return;
+        }
+        for (size_t i = 0; i < it->size(); i++) {
+            const auto& entry = (*it)[i];
+            const auto path   = Path("interpretation.combination", i);
+            if (!entry.is_object()) {
+                d.Error(path, "must be an object");
+                continue;
+            }
+            WarnUnknownKeys(entry, { "predicate", "aggregate", "description" }, path, d);
+            auto predicate = GetString(entry, "predicate", path, d, true);
+            auto aggregate = GetString(entry, "aggregate", path, d, true);
+            if (!predicate || !aggregate)
+                continue;
+            const auto p = ReadVerdictPredicate(*predicate, Path(path, "predicate"), spec, d);
+            if (!p)
+                continue;
+            bool duplicate = false;
+            for (const auto& c : interpretation.combinations)
+                duplicate |= c.predicate == *p;
+            if (duplicate) {
+                d.Error(Path(path, "predicate"), "the combination of '" + *predicate + "' is configured twice");
+                continue;
+            }
+            const auto f = AggregateFunctionFromName(*aggregate);
+            if (!f) {
+                d.Error(Path(path, "aggregate"), "unknown aggregate '" + *aggregate + "' (max, min, mean, noisy_or)");
+                continue;
+            }
+            interpretation.combinations.push_back({ *p, *f });
+        }
+    }
+
     void LoadInterpretation(const ordered_json& doc, LoadedSpecification& spec, Diagnostics& d)
     {
-        auto& interpretation             = spec.interpretation;
+        auto& interpretation = spec.interpretation;
+        interpretation.SetDefault();
         interpretation.verdictPredicates = spec.specification.verdictPredicates;
         auto it                          = doc.find("interpretation");
         if (it == doc.end()) {
-            interpretation.SetDefault();
             if (!spec.specification.verdictPredicates.empty())
                 d.Warning("interpretation", "missing: every subject is interpreted as Inconclusive");
             return;
         }
         if (!it->is_object()) {
             d.Error("interpretation", "must be an object");
-            interpretation.SetDefault();
             return;
         }
-        WarnUnknownKeys(*it, { "outcomes", "fallback", "verdicts", "description" }, "interpretation", d);
+        WarnUnknownKeys(
+              *it, { "outcomes", "inconclusive_alias", "combination", "labels", "aggregation", "fallback", "verdicts", "description" }, "interpretation", d);
+        if (it->contains("fallback"))
+            d.Error("interpretation.fallback", "removed: Inconclusive is the fallback (added by the framework)");
+        if (it->contains("verdicts"))
+            d.Error("interpretation.verdicts", "removed: use \"combination\" (score combination) and \"labels\" (label conditions)");
+
+        // Omega_c: the conclusive labels; Inconclusive is appended by the framework
         auto outcomes = it->find("outcomes");
         if (outcomes == it->end() || !outcomes->is_array() || outcomes->empty()) {
-            d.Error("interpretation.outcomes", "must be a non-empty array of outcome labels");
-            interpretation.SetDefault();
+            d.Error("interpretation.outcomes", "must be a non-empty array of conclusive outcome labels");
             return;
         }
-        if (outcomes->size() > 255) {
-            d.Error("interpretation.outcomes", "too many outcomes (max 255)");
-            interpretation.SetDefault();
+        if (outcomes->size() > 254) {
+            d.Error("interpretation.outcomes", "too many outcomes (max 254 conclusive labels)");
             return;
         }
-        interpretation.outcomes.labels.clear();
+        std::vector<std::string> conclusive;
         for (size_t i = 0; i < outcomes->size(); i++) {
-            if (!(*outcomes)[i].is_string()) {
-                d.Error(Path("interpretation.outcomes", i), "must be a string");
+            const auto path = Path("interpretation.outcomes", i);
+            if (!(*outcomes)[i].is_string() || (*outcomes)[i].get_ref<const std::string&>().empty()) {
+                d.Error(path, "must be a non-empty string");
                 continue;
             }
             const auto& label = (*outcomes)[i].get_ref<const std::string&>();
-            if (interpretation.outcomes.Find(label)) {
-                d.Error(Path("interpretation.outcomes", i), "duplicate outcome '" + label + "'");
+            if (EqualsIgnoreCase(label, INCONCLUSIVE)) {
+                d.Error(path, "Inconclusive is added by the framework and cannot be declared");
                 continue;
             }
-            interpretation.outcomes.labels.push_back(label);
+            if (std::find(conclusive.begin(), conclusive.end(), label) != conclusive.end()) {
+                d.Error(path, "duplicate outcome '" + label + "'");
+                continue;
+            }
+            conclusive.push_back(label);
         }
-        if (!interpretation.outcomes.Find("Inconclusive")) {
-            d.Error("interpretation.outcomes", "the outcome set must contain \"Inconclusive\"");
-            interpretation.outcomes.labels.push_back("Inconclusive");
-        }
-        auto fallback = GetString(*it, "fallback", "interpretation", d, false).value_or("Inconclusive");
-        auto index    = interpretation.outcomes.Find(fallback);
-        if (!index) {
-            d.Error("interpretation.fallback", "unknown outcome '" + fallback + "'");
-            index = interpretation.outcomes.Find("Inconclusive");
-        }
-        interpretation.outcomes.fallbackIndex = *index;
-        if (*index + 1u != interpretation.outcomes.labels.size())
-            d.Warning("interpretation.fallback", "the fallback outcome should be the last one (outcome order is the priority order)");
+        interpretation.outcomes.labels            = conclusive;
+        interpretation.outcomes.inconclusiveIndex = static_cast<uint8>(conclusive.size());
+        interpretation.outcomes.labels.emplace_back(INCONCLUSIVE);
 
-        interpretation.verdicts.clear();
-        auto verdicts = it->find("verdicts");
-        if (verdicts == it->end())
-            return;
-        if (!verdicts->is_array()) {
-            d.Error("interpretation.verdicts", "must be an array");
-            return;
+        if (auto alias = GetString(*it, "inconclusive_alias", "interpretation", d, false); alias.has_value()) {
+            bool clash = false;
+            for (const auto& label : conclusive)
+                clash |= EqualsIgnoreCase(label, *alias);
+            if (alias->empty())
+                d.Error("interpretation.inconclusive_alias", "must be a non-empty string");
+            else if (clash)
+                d.Error("interpretation.inconclusive_alias", "'" + *alias + "' is a conclusive outcome (the alias only renames Inconclusive)");
+            else
+                interpretation.outcomes.inconclusiveAlias = *alias;
         }
-        for (size_t i = 0; i < verdicts->size(); i++) {
-            const auto& entry = (*verdicts)[i];
-            const auto path   = Path("interpretation.verdicts", i);
-            if (!entry.is_object()) {
-                d.Error(path, "must be an object");
-                continue;
-            }
-            WarnUnknownKeys(entry, { "predicate", "aggregate", "conditions", "description" }, path, d);
-            auto predicate = GetString(entry, "predicate", path, d, true);
-            if (!predicate)
-                continue;
-            VerdictInterpretation vi;
-            vi.predicate = spec.signature.predicates.Find(*predicate);
-            if (vi.predicate == INVALID_PREDICATE_ID || !spec.specification.IsVerdict(vi.predicate)) {
-                d.Error(Path(path, "predicate"), "'" + *predicate + "' is not a verdict predicate (list it in \"verdicts\")");
-                continue;
-            }
-            if (interpretation.Find(vi.predicate)) {
-                d.Error(Path(path, "predicate"), "verdict predicate '" + *predicate + "' is configured twice");
-                continue;
-            }
-            const auto aggregate = GetString(entry, "aggregate", path, d, false).value_or("max");
-            const auto f         = AggregateFunctionFromName(aggregate);
-            if (!f) {
-                d.Error(Path(path, "aggregate"), "unknown aggregate '" + aggregate + "' (max, min, mean, noisy_or)");
-                continue;
-            }
-            vi.aggregate = *f;
-            if (auto conditions = entry.find("conditions"); conditions != entry.end()) {
-                if (!conditions->is_array()) {
-                    d.Error(Path(path, "conditions"), "must be an array");
-                    continue;
-                }
-                for (size_t c = 0; c < conditions->size(); c++) {
-                    const auto& cond    = (*conditions)[c];
-                    const auto condPath = Path(Path(path, "conditions"), c);
-                    if (!cond.is_object()) {
-                        d.Error(condPath, "must be an object");
-                        continue;
-                    }
-                    auto outcome = GetString(cond, "outcome", condPath, d, true);
-                    auto op      = GetString(cond, "op", condPath, d, true);
-                    auto value   = cond.find("value");
-                    if (!outcome || !op)
-                        continue;
-                    if (value == cond.end() || !value->is_number()) {
-                        d.Error(condPath, "\"value\" must be a number");
-                        continue;
-                    }
-                    const auto o  = interpretation.outcomes.Find(*outcome);
-                    const auto co = ComparisonOperatorFromName(*op);
-                    if (!o) {
-                        d.Error(Path(condPath, "outcome"), "unknown outcome '" + *outcome + "'");
-                        continue;
-                    }
-                    if (!co) {
-                        d.Error(Path(condPath, "op"), "unknown operator '" + *op + "' (>=, >, <=, <, ==)");
-                        continue;
-                    }
-                    vi.conditions.push_back({ *o, *co, value->get<double>() });
-                }
-            }
-            interpretation.verdicts.push_back(std::move(vi));
+
+        LoadCombination(*it, spec, d);
+        LoadLabels(*it, spec, d);
+        for (uint8 o = 0; o < interpretation.outcomes.inconclusiveIndex; o++)
+            if (!interpretation.ConditionOf(o))
+                d.Warning("interpretation.labels", "outcome '" + interpretation.outcomes.labels[o] + "' has no condition: it is never produced");
+
+        if (auto aggregation = GetString(*it, "aggregation", "interpretation", d, false); aggregation.has_value()) {
+            const auto kind = SubjectAggregationKindFromName(*aggregation);
+            if (kind)
+                interpretation.aggregation = *kind;
+            else
+                d.Error("interpretation.aggregation", "unknown aggregation '" + *aggregation + "' (default, strict)");
         }
-        for (const auto p : spec.specification.verdictPredicates)
-            if (!interpretation.Find(p))
-                d.Warning(
-                      "interpretation.verdicts",
-                      "verdict predicate '" + spec.signature.predicates.Get(p).name + "' has no interpretation (max aggregate, always the fallback outcome)");
     }
 
     void LoadStopping(const ordered_json& doc, LoadedSpecification& spec, Diagnostics& d)
@@ -514,12 +645,15 @@ namespace
             d.Error("stopping", "must be an object");
             return;
         }
-        WarnUnknownKeys(*it, { "on_verdict", "max_steps", "description" }, "stopping", d);
-        if (auto v = it->find("on_verdict"); v != it->end()) {
-            if (v->is_boolean())
-                spec.stopping.stopOnVerdict = v->get<bool>();
+        WarnUnknownKeys(*it, { "policy", "max_steps", "on_verdict", "description" }, "stopping", d);
+        if (it->contains("on_verdict"))
+            d.Error("stopping.on_verdict", "removed: use stopping.policy (conclusive, manual, exhaustive)");
+        if (auto policy = GetString(*it, "policy", "stopping", d, false); policy.has_value()) {
+            const auto kind = StoppingPolicyKindFromName(*policy);
+            if (kind)
+                spec.stopping.kind = *kind;
             else
-                d.Error("stopping.on_verdict", "must be a boolean");
+                d.Error("stopping.policy", "unknown stopping policy '" + *policy + "' (conclusive, manual, exhaustive)");
         }
         if (auto v = it->find("max_steps"); v != it->end()) {
             if (v->is_number_unsigned() && v->get<uint64>() <= 0xFFFFFFFFu)

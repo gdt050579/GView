@@ -36,27 +36,34 @@ constexpr std::string_view CORE_SPEC = R"JSON({
     { "name": "HasSection", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "name", "sort": "String" }, { "name": "size", "sort": "Int" } ], "denotation": "{x} has section {name} ({size} bytes)" },
     { "name": "ContactsDomain", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "d", "sort": "Domain" } ] },
     { "name": "Injection", "arity": [ { "name": "x", "sort": "Subject" } ], "denotation": "{x} can inject code" },
-    { "name": "HasMaliciousness", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ], "denotation": "{x} has maliciousness {score}" }
+    { "name": "IsSigned", "arity": [ { "name": "x", "sort": "Subject" } ], "denotation": "{x} is signed" },
+    { "name": "HasValidSignature", "arity": [ { "name": "x", "sort": "Subject" } ], "denotation": "{x} has a valid signature" },
+    { "name": "HasMaliciousness", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ], "denotation": "{x} has maliciousness {score}" },
+    { "name": "HasBenignity", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ], "denotation": "{x} has benignity {score}" }
   ],
-  "verdicts": [ "HasMaliciousness" ],
+  "verdicts": [ "HasMaliciousness", "HasBenignity" ],
   "assertion_rules": [
     { "name": "Contains", "body": [ "ExtractedFrom(y, x)", "IsPE(y)" ], "head": "ContainsExecutable(x)" },
     { "name": "Inject", "body": [ "IsPE(x)", "HasImport(x, \"VirtualAlloc\")", "HasImport(x, \"WriteProcessMemory\")" ], "head": "Injection(x)", "explanation": "allocates and writes memory in another process" },
-    { "name": "Verdict", "body": [ "Injection(x)" ], "head": "HasMaliciousness(x, 0.8)" }
+    { "name": "Verdict", "body": [ "Injection(x)" ], "head": "HasMaliciousness(x, 0.8)" },
+    { "name": "DownloaderImport", "body": [ "HasImport(x, \"URLDownloadToFileA\")" ], "head": "HasMaliciousness(x, 0.6)" },
+    { "name": "Signed", "body": [ "IsSigned(x)", "HasValidSignature(x)" ], "head": "HasBenignity(x, 0.85)" }
   ],
   "action_rules": [
     { "name": "UnpackArchive", "body": [ "IsArchive(x)" ], "head": "Unpack(x)" },
     { "name": "RescanPE", "body": [ "IsPE(x)" ], "head": "Rescan(x)" }
   ],
   "interpretation": {
-    "outcomes": [ "Malicious", "Suspicious", "Benign", "Inconclusive" ],
-    "fallback": "Inconclusive",
-    "verdicts": [ { "predicate": "HasMaliciousness", "aggregate": "max",
-                    "conditions": [ { "outcome": "Malicious", "op": ">=", "value": 0.7 },
-                                    { "outcome": "Suspicious", "op": ">=", "value": 0.4 },
-                                    { "outcome": "Benign", "op": "<=", "value": 0.3 } ] } ]
+    "outcomes": [ "Malicious", "Benign" ],
+    "labels": [
+      { "outcome": "Malicious", "propagate": true, "settle": "immediate",
+        "clauses": [ { "present": "HasMaliciousness", "op": ">=", "value": 0.70 }, { "absent": "HasBenignity", "op": ">=", "value": 0.70 } ] },
+      { "outcome": "Benign", "propagate": false, "settle": "exhaustion",
+        "clauses": [ { "present": "HasBenignity", "op": ">=", "value": 0.70 }, { "absent": "HasMaliciousness", "op": ">", "value": 0.30 } ] }
+    ],
+    "aggregation": "default"
   },
-  "stopping": { "on_verdict": false, "max_steps": 0 }
+  "stopping": { "policy": "conclusive", "max_steps": 0 }
 })JSON";
 
 struct LambdaExecutor : ActionExecutorInterface {
@@ -89,7 +96,15 @@ struct Fixture : SessionHost {
     DisclosureSession& NewSession(StoppingPolicy policy = {}, uint32 maxDerived = DEFAULT_MAX_DERIVED)
     {
         sessions.push_back(std::make_unique<DisclosureSession>(
-              static_cast<uint32>(sessions.size()), spec->signature, spec->specification, spec->pool, registry, this, policy, maxDerived));
+              static_cast<uint32>(sessions.size()),
+              spec->signature,
+              spec->specification,
+              spec->interpretation,
+              spec->pool,
+              registry,
+              this,
+              policy,
+              maxDerived));
         return *sessions.back();
     }
     PredicateId P(std::string_view name) const
@@ -133,6 +148,13 @@ std::set<std::vector<uint32>> AsSet(const AssertionBase& gamma)
         result.insert(row);
     }
     return result;
+}
+
+StoppingPolicy ManualPolicy()
+{
+    StoppingPolicy policy;
+    policy.kind = StoppingPolicyKind::Manual;
+    return policy;
 }
 
 GroundActionId FindBeta(const DisclosureSession& s, ActionId a, SubjectId subject)
@@ -295,6 +317,16 @@ std::string WithRule(std::string_view rule, std::string_view section = "assertio
       ")J") +
            std::string(section) + R"J(": [ )J" + std::string(rule) + " ] }";
 }
+// the verdict predicates V and W, the non-verdict predicate N (all Subject x Real) and the given interpretation body
+std::string Interp(std::string_view body)
+{
+    return std::string(R"J({ "predicates": [
+        { "name": "V", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "s", "sort": "Real" } ] },
+        { "name": "W", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "s", "sort": "Real" } ] },
+        { "name": "N", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "s", "sort": "Real" } ] } ],
+      "verdicts": [ "V", "W" ], "interpretation": { )J") +
+           std::string(body) + " } }";
+}
 } // namespace
 
 TEST_CASE("hdf: loader validation", "[hdf]")
@@ -305,7 +337,6 @@ TEST_CASE("hdf: loader validation", "[hdf]")
         std::string json;
         std::string_view fragment; // expected in an error (empty: the document must load without errors)
     };
-    const std::string V           = R"J({ "name": "V", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "s", "sort": "Real" } ] })J";
     const std::vector<Case> cases = {
         { "{ not json", "not a valid JSON" },
         { "[]", "must be a JSON object" },
@@ -355,25 +386,61 @@ TEST_CASE("hdf: loader validation", "[hdf]")
         // verdict predicates have the arity Subject x Real
         { R"J({ "predicates": [ { "name": "W", "arity": [ { "name": "x", "sort": "Subject" } ] } ], "verdicts": [ "W" ] })J", "Subject x Real" },
         { R"J({ "verdicts": [ "Missing" ] })J", "unknown verdict predicate" },
-        // the outcome set must contain Inconclusive
-        { R"J({ "interpretation": { "outcomes": [ "Malicious", "Benign" ], "fallback": "Benign" } })J", "Inconclusive" },
-        // the interpretation may only reference verdict predicates
-        { R"J({ "predicates": [ )J" + V + R"J( ], "interpretation": { "outcomes": [ "Inconclusive" ], "verdicts": [ { "predicate": "V" } ] } })J",
+        // Omega = Omega_c u { Inconclusive }: the specification declares only the conclusive labels
+        { R"J({ "interpretation": { "outcomes": [ "Malicious", "Benign" ] } })J", "" },
+        { Interp(R"J("outcomes": [ "M", "Inconclusive" ])J"), "cannot be declared" },
+        { Interp(R"J("outcomes": [ "M", "inconclusive" ])J"), "cannot be declared" },
+        { Interp(R"J("outcomes": [ "M", "M" ])J"), "duplicate outcome" },
+        { Interp(R"J("outcomes": [ ])J"), "non-empty array" },
+        { Interp(R"J("outcomes": [ "M" ], "fallback": "Inconclusive")J"), "removed: Inconclusive is the fallback" },
+        { Interp(R"J("outcomes": [ "M" ], "verdicts": [ ])J"), "removed: use" },
+        { Interp(R"J("outcomes": [ "M" ], "inconclusive_alias": "Unknown")J"), "" },
+        { Interp(R"J("outcomes": [ "M" ], "inconclusive_alias": "m")J"), "is a conclusive outcome" },
+        { Interp(R"J("outcomes": [ "M" ], "inconclusive_alias": "")J"), "non-empty string" },
+        // label conditions
+        { Interp(R"J("outcomes": [ "M", "B" ], "labels": [ { "outcome": "M", "propagate": true, "clauses": [ { "present": "V", "op": ">=", "value": 0.7 },
+                     { "absent": "W", "op": ">=", "value": 0.7 } ] }, { "outcome": "B", "clauses": [ { "present": "W", "op": ">", "value": 0.5 } ] } ],
+                     "combination": [ { "predicate": "V", "aggregate": "noisy_or" } ], "aggregation": "strict")J"),
+          "" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ { "present": "V", "absent": "W", "op": ">=", "value": 0.7 } ] } ])J"),
+          "exactly one of" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ { "op": ">=", "value": 0.7 } ] } ])J"), "exactly one of" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ { "present": "N", "op": ">=", "value": 0.7 } ] } ])J"),
           "not a verdict predicate" },
-        // bad aggregate / outcome / operator
-        { R"J({ "predicates": [ )J" + V + R"J( ], "verdicts": [ "V" ],
-               "interpretation": { "outcomes": [ "Inconclusive" ], "verdicts": [ { "predicate": "V", "aggregate": "median" } ] } })J",
-          "unknown aggregate" },
-        { R"J({ "predicates": [ )J" + V + R"J( ], "verdicts": [ "V" ],
-               "interpretation": { "outcomes": [ "Inconclusive" ], "verdicts": [ { "predicate": "V", "conditions": [ { "outcome": "X", "op": ">=", "value": 1 } ] } ] } })J",
-          "unknown outcome" },
-        { R"J({ "predicates": [ )J" + V + R"J( ], "verdicts": [ "V" ],
-               "interpretation": { "outcomes": [ "Inconclusive" ], "verdicts": [ { "predicate": "V", "conditions": [ { "outcome": "Inconclusive", "op": "~", "value": 1 } ] } ] } })J",
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ { "present": "V", "op": "==", "value": 0.7 } ] } ])J"),
           "unknown operator" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ { "present": "V", "op": ">=", "value": "high" } ] } ])J"),
+          "must be a number" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ ] } ])J"), "non-empty array of clauses" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "propagate": "yes", "clauses": [ { "present": "V", "op": ">=", "value": 1 } ] } ])J"),
+          "must be a boolean" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ { "present": "V", "op": ">=", "value": 0.7 } ] },
+                                                       { "outcome": "M", "clauses": [ { "present": "W", "op": ">=", "value": 0.7 } ] } ])J"),
+          "two conditions" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "Inconclusive", "clauses": [ { "present": "V", "op": ">=", "value": 0.7 } ] } ])J"),
+          "Inconclusive has no condition" },
+        { Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "X", "clauses": [ { "present": "V", "op": ">=", "value": 0.7 } ] } ])J"),
+          "unknown outcome" },
+        { Interp(R"J("outcomes": [ "M" ], "aggregation": "lenient")J"), "unknown aggregation" },
+        { Interp(
+                R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "settle": "eventually", "clauses": [ { "present": "V", "op": ">=", "value": 0.7 } ] } ])J"),
+          "unknown settle mode" },
+        { Interp(
+                R"J("outcomes": [ "M", "B" ], "labels": [ { "outcome": "M", "settle": "immediate", "clauses": [ { "present": "V", "op": ">=", "value": 0.7 } ] },
+                     { "outcome": "B", "settle": "exhaustion", "clauses": [ { "present": "W", "op": ">=", "value": 0.7 } ] } ])J"),
+          "" },
+        // score combination
+        { Interp(R"J("outcomes": [ "M" ], "combination": [ { "predicate": "V", "aggregate": "median" } ])J"), "unknown aggregate" },
+        { Interp(R"J("outcomes": [ "M" ], "combination": [ { "predicate": "N", "aggregate": "max" } ])J"), "not a verdict predicate" },
+        { Interp(R"J("outcomes": [ "M" ], "combination": [ { "predicate": "V", "aggregate": "max" }, { "predicate": "V", "aggregate": "min" } ])J"),
+          "configured twice" },
         // wrong types are errors
         { R"J({ "predicates": { } })J", "must be an array" },
         { R"J({ "stopping": { "max_steps": -3 } })J", "non-negative" },
-        { R"J({ "stopping": { "on_verdict": "yes" } })J", "must be a boolean" },
+        // stopping policy
+        { R"J({ "stopping": { "on_verdict": true } })J", "removed: use stopping.policy" },
+        { R"J({ "stopping": { "policy": "eager" } })J", "unknown stopping policy" },
+        { R"J({ "stopping": { "policy": "exhaustive", "max_steps": 5 } })J", "" },
     };
     for (const auto& c : cases) {
         Diagnostics d;
@@ -384,6 +451,15 @@ TEST_CASE("hdf: loader validation", "[hdf]")
         else
             CHECK(d.Contains(c.fragment, S::Error));
     }
+
+    // a conclusive outcome without a condition is never produced; a condition without a presence clause holds vacuously
+    const auto unconditioned =
+          LoadWith(Interp(R"J("outcomes": [ "M", "B" ], "labels": [ { "outcome": "M", "clauses": [ { "present": "V", "op": ">=", "value": 0.7 } ] } ])J"));
+    REQUIRE(unconditioned.Contains("never produced", S::Warning));
+    const auto vacuous =
+          LoadWith(Interp(R"J("outcomes": [ "M" ], "labels": [ { "outcome": "M", "clauses": [ { "absent": "V", "op": ">=", "value": 0.7 } ] } ])J"));
+    REQUIRE_FALSE(vacuous.HasErrors());
+    REQUIRE(vacuous.Contains("no presence clause", S::Warning));
 
     // unknown keys are warnings
     const std::string unknownKeys = R"J({ "colour": 1, "predicates": [ { "name": "P", "comment": "x" } ] })J";
@@ -825,7 +901,46 @@ TEST_CASE("hdf: nested scopes join the open transition", "[hdf]")
 // interpretation, explanation, stopping policy
 // ---------------------------------------------------------------------------------------------------------------------
 
-TEST_CASE("hdf: interpretation aggregate and classify", "[hdf]")
+namespace
+{
+// Malicious and Benign overlap: a subject with both scores satisfies both conditions (I_subj = Inconclusive / Conflict)
+constexpr std::string_view CONFLICT_SPEC = R"JSON({
+  "predicates": [
+    { "name": "HasMaliciousness", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ] },
+    { "name": "HasBenignity", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ] }
+  ],
+  "verdicts": [ "HasMaliciousness", "HasBenignity" ],
+  "interpretation": {
+    "outcomes": [ "Malicious", "Benign" ],
+    "labels": [
+      { "outcome": "Malicious", "propagate": true, "clauses": [ { "present": "HasMaliciousness", "op": ">=", "value": 0.70 } ] },
+      { "outcome": "Benign", "clauses": [ { "present": "HasBenignity", "op": ">=", "value": 0.70 } ] }
+    ],
+    "aggregation": "default"
+  },
+  "stopping": { "policy": "manual" }
+})JSON";
+
+constexpr uint8 MALICIOUS = 0;
+constexpr uint8 BENIGN    = 1;
+
+double RealArg(const DisclosureSession& s, AssertionId a)
+{
+    return s.Pool().AsReal(s.Gamma().Args(a)[1]);
+}
+
+bool Contains(const std::string& text, std::string_view fragment)
+{
+    return text.find(fragment) != std::string::npos;
+}
+
+uint32 Selectable(const DisclosureSession& s)
+{
+    return static_cast<uint32>(s.Selectable().size());
+}
+} // namespace
+
+TEST_CASE("hdf: score combination functions", "[hdf]")
 {
     const double scores[] = { 0.2, 0.5, 0.9 };
     REQUIRE(Interpretation::Aggregate(AggregateFunction::Max, scores) == 0.9);
@@ -835,137 +950,594 @@ TEST_CASE("hdf: interpretation aggregate and classify", "[hdf]")
     const double clampTest[] = { 1.5, -2.0 };
     REQUIRE(Interpretation::Aggregate(AggregateFunction::NoisyOr, clampTest) == Catch::Approx(1.0));
     REQUIRE(Interpretation::Aggregate(AggregateFunction::Max, std::span<const double>()) == 0.0);
-
-    Fixture f;
-    const auto& interpretation = f.spec->interpretation;
-    REQUIRE(interpretation.outcomes.Label({ interpretation.outcomes.fallbackIndex }) == "Inconclusive");
-    const auto* vi = interpretation.Find(f.P("HasMaliciousness"));
-    REQUIRE(vi);
-    REQUIRE(Interpretation::Classify(*vi, 0.75) == 0);  // >= 0.7 Malicious
-    REQUIRE(Interpretation::Classify(*vi, 0.5) == 1);   // >= 0.4 Suspicious
-    REQUIRE(Interpretation::Classify(*vi, 0.1) == 2);   // <= 0.3 Benign
-    REQUIRE(Interpretation::Classify(*vi, 0.35) == -1); // fallback
-
-    auto& s           = f.NewSession();
-    const auto x      = s.BeginRoot("root", true);
-    const auto a      = s.CreateSubject("a", x, true, false);
-    const auto b      = s.CreateSubject("b", a, true, false);
-    const auto c      = s.CreateSubject("c", x, true, false);
-    const auto lonely = s.CreateSubject("lonely", x, true, false);
-    s.EndInitialExtraction();
-    auto interpret = [&](SubjectId root) { return interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), root); };
-    // no verdict assertion => fallback
-    auto d0 = interpret(x);
-    REQUIRE_FALSE(d0.fromVerdict);
-    REQUIRE(interpretation.outcomes.Label(d0.outcome) == "Inconclusive");
-
-    const auto mal = f.P("HasMaliciousness");
-    s.Disclose(mal, { Subject{ x }, 0.1 });
-    REQUIRE(interpretation.outcomes.Label(interpret(x).outcome) == "Benign");
-    // multiple verdict assertions of one subject: max aggregate
-    s.Disclose(mal, { Subject{ c }, 0.2 });
-    s.Disclose(mal, { Subject{ c }, 0.45 });
-    auto d1 = interpret(x);
-    REQUIRE(interpretation.outcomes.Label(d1.outcome) == "Suspicious");
-    REQUIRE(d1.subject == c);
-    REQUIRE(d1.assertionCount == 2);
-    REQUIRE(d1.score == 0.45);
-    REQUIRE(d1.provenancePath == std::vector<SubjectId>{ c, x });
-    // the deepest subject has the highest priority outcome => it decides; path b -> a -> root
-    s.Disclose(mal, { Subject{ b }, 0.95 });
-    auto d2 = interpret(x);
-    REQUIRE(interpretation.outcomes.Label(d2.outcome) == "Malicious");
-    REQUIRE(d2.subject == b);
-    REQUIRE(d2.provenancePath == std::vector<SubjectId>{ b, a, x });
-    REQUIRE(d2.conditionIndex == 0);
-    // same outcome closer to the root wins
-    s.Disclose(mal, { Subject{ a }, 0.8 });
-    REQUIRE(interpret(x).subject == a);
-    // a sub-tree is interpreted on its own
-    REQUIRE(interpretation.outcomes.Label(interpret(lonely).outcome) == "Inconclusive");
-    REQUIRE(interpret(b).subject == b);
-    // two subjects at the same distance with the same outcome => lowest SubjectId
-    s.Disclose(mal, { Subject{ lonely }, 0.99 });
-    REQUIRE(interpret(x).subject == a); // a was created before lonely
+    REQUIRE(Interpretation::Compare(ComparisonOperator::GreaterEqual, 0.7, 0.7));
+    REQUIRE_FALSE(Interpretation::Compare(ComparisonOperator::Greater, 0.7, 0.7));
+    REQUIRE(Interpretation::Compare(ComparisonOperator::LessEqual, 0.3, 0.3));
+    REQUIRE_FALSE(Interpretation::Compare(ComparisonOperator::Less, 0.3, 0.3));
+    REQUIRE_FALSE(ComparisonOperatorFromName("==").has_value()); // the operator set is { >=, >, <=, < }
 }
 
-TEST_CASE("hdf: interpretation with mean and noisy_or aggregation", "[hdf]")
+TEST_CASE("hdf: Omega = Omega_c u {Inconclusive} is built by the loader", "[hdf]")
 {
+    Fixture f;
+    const auto& interpretation = f.spec->interpretation;
+    const auto& omega          = interpretation.outcomes;
+    REQUIRE(omega.labels == std::vector<std::string>{ "Malicious", "Benign", "Inconclusive" });
+    REQUIRE(omega.labels.back() == "Inconclusive"); // appended by the framework
+    REQUIRE(omega.inconclusiveIndex == 2);          // == |Omega_c|
+    REQUIRE(omega.ConclusiveCount() == 2);
+    REQUIRE(omega.IsConclusive({ MALICIOUS }));
+    REQUIRE(omega.IsConclusive({ BENIGN }));
+    REQUIRE_FALSE(omega.IsConclusive(omega.Inconclusive()));
+    REQUIRE(omega.Label(omega.Inconclusive()) == "Inconclusive");
+    REQUIRE(interpretation.labels.size() == 2);
+    REQUIRE(interpretation.labels[0].outcome == MALICIOUS);
+    REQUIRE(interpretation.labels[0].propagate);
+    REQUIRE(interpretation.labels[0].clauses.size() == 2);
+    REQUIRE(interpretation.labels[0].clauses[1].kind == ClauseKind::Absent);
+    REQUIRE(interpretation.labels[0].clauses[1].predicate == f.P("HasBenignity"));
+    REQUIRE(interpretation.labels[0].settle == SettleMode::Immediate);
+    REQUIRE_FALSE(interpretation.labels[1].propagate);
+    REQUIRE(interpretation.labels[1].settle == SettleMode::Exhaustion);
+    REQUIRE(interpretation.labels[1].clauses[1].op == ComparisonOperator::Greater);
+    REQUIRE(interpretation.aggregation == SubjectAggregationKind::Default);
+    REQUIRE(interpretation.Combination(f.P("HasMaliciousness")) == AggregateFunction::Max); // the default combination
+    REQUIRE(f.spec->stopping.kind == StoppingPolicyKind::Conclusive);
+
+    // the alias only renames Inconclusive in the output
     std::string json(CORE_SPEC);
-    const auto at = json.find("\"aggregate\": \"max\"");
+    const std::string anchor = R"J("outcomes": [ "Malicious", "Benign" ],)J";
+    const auto at            = json.find(anchor);
     REQUIRE(at != std::string::npos);
-    for (const auto* aggregate : { "mean", "noisy_or" }) {
-        std::string changed = json;
-        changed.replace(at, std::string("\"aggregate\": \"max\"").size(), std::string("\"aggregate\": \"") + aggregate + "\"");
-        Fixture f(changed);
-        auto& s      = f.NewSession();
-        const auto x = s.BeginRoot("x", true);
-        s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.5 });
-        s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.5 });
-        s.EndInitialExtraction();
-        const auto d = f.spec->interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), x);
-        // the same score is one constant: set semantics keeps a single HasMaliciousness(x, 0.5)
-        REQUIRE(d.assertionCount == 1);
-        s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.6 });
-        const auto d2 = f.spec->interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), x);
-        if (std::string_view(aggregate) == "mean") {
-            REQUIRE(d2.score == Catch::Approx(0.55));
-            REQUIRE(f.spec->interpretation.outcomes.Label(d2.outcome) == "Suspicious");
-        } else {
-            REQUIRE(d2.score == Catch::Approx(0.8));
-            REQUIRE(f.spec->interpretation.outcomes.Label(d2.outcome) == "Malicious");
+    json.insert(at + anchor.size(), R"J( "inconclusive_alias": "Unknown",)J");
+    Fixture aliased(json);
+    const auto& omega2 = aliased.spec->interpretation.outcomes;
+    REQUIRE(omega2.Label(omega2.Inconclusive()) == "Unknown");
+    REQUIRE_FALSE(omega2.IsConclusive(omega2.Inconclusive()));
+    REQUIRE(omega2.Find("Inconclusive") == std::optional<uint8>(2));
+    REQUIRE_FALSE(omega2.Find("Unknown").has_value());
+    auto& s = aliased.NewSession(ManualPolicy());
+    s.BeginRoot("x", true);
+    s.EndInitialExtraction();
+    REQUIRE(ExplanationFormatter::DecisionSummary(s.LastDecision(), aliased.spec->interpretation, s.Registry()) == "Unknown (no label satisfied)");
+
+    // no interpretation section: Omega = { Inconclusive }
+    Diagnostics d;
+    auto bare = LoadSpecificationText(
+          R"J({ "predicates": [ { "name": "V", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "s", "sort": "Real" } ] } ],
+                                            "verdicts": [ "V" ] })J",
+          d);
+    REQUIRE(bare);
+    REQUIRE(d.Contains("missing", Diagnostic::Severity::Warning));
+    REQUIRE(bare->interpretation.outcomes.labels == std::vector<std::string>{ "Inconclusive" });
+    REQUIRE(bare->interpretation.outcomes.inconclusiveIndex == 0);
+    REQUIRE(bare->interpretation.labels.empty());
+}
+
+TEST_CASE("hdf: per-subject interpretation (clauses, exactly-one rule, reasons)", "[hdf]")
+{
+    Fixture f;
+    const auto& interpretation = f.spec->interpretation;
+    const auto mal             = f.P("HasMaliciousness");
+    const auto ben             = f.P("HasBenignity");
+    auto& s                    = f.NewSession(ManualPolicy());
+    const auto root            = s.BeginRoot("root", true);
+    const auto m               = s.CreateSubject("m", root, true, false);
+    const auto blocked         = s.CreateSubject("blocked", root, true, false);
+    const auto b               = s.CreateSubject("b", root, true, false);
+    const auto benignBlocked   = s.CreateSubject("benignBlocked", root, true, false);
+    const auto none            = s.CreateSubject("none", root, true, false);
+    const auto two             = s.CreateSubject("two", root, true, false);
+    REQUIRE(s.Disclose(mal, { Subject{ m }, 0.80 }));
+    REQUIRE(s.Disclose(mal, { Subject{ blocked }, 0.80 }));
+    REQUIRE(s.Disclose(ben, { Subject{ blocked }, 0.85 }));
+    REQUIRE(s.Disclose(ben, { Subject{ b }, 0.85 }));
+    REQUIRE(s.Disclose(ben, { Subject{ benignBlocked }, 0.85 }));
+    REQUIRE(s.Disclose(mal, { Subject{ benignBlocked }, 0.35 }));
+    REQUIRE(s.Disclose(mal, { Subject{ two }, 0.75 }));
+    REQUIRE(s.Disclose(mal, { Subject{ two }, 0.60 }));
+    s.EndInitialExtraction();
+    auto subject = [&](SubjectId y) { return interpretation.InterpretSubject(s.Gamma(), f.spec->signature, f.spec->pool, y, s.SubjectConstant(y)); };
+
+    SECTION("Malicious: the presence clause and the absence clause hold")
+    {
+        const auto d = subject(m);
+        REQUIRE(d.outcome.index == MALICIOUS);
+        REQUIRE(d.reason == InconclusiveReason::None);
+        const auto* label = d.FindLabel(MALICIOUS);
+        REQUIRE(label);
+        REQUIRE(label->holds);
+        REQUIRE(label->firstFailedClause == -1);
+        REQUIRE(label->clauses[0].present);
+        REQUIRE(label->clauses[0].score == 0.80);
+        REQUIRE(label->clauses[0].witness != INVALID_ASSERTION_ID);
+        REQUIRE_FALSE(label->clauses[1].present); // no HasBenignity(m, c): the absence clause holds
+        REQUIRE(label->clauses[1].holds);
+        REQUIRE_FALSE(d.FindLabel(BENIGN)->holds);
+    }
+    SECTION("Malicious blocked by HasBenignity 0.85: no label satisfied")
+    {
+        const auto d = subject(blocked);
+        REQUIRE(d.outcome.index == interpretation.outcomes.inconclusiveIndex);
+        REQUIRE(d.reason == InconclusiveReason::NoLabelSatisfied);
+        const auto* malicious = d.FindLabel(MALICIOUS);
+        REQUIRE(malicious->firstFailedClause == 1); // no HasBenignity >= 0.70
+        REQUIRE(malicious->clauses[1].present);
+        REQUIRE(malicious->clauses[1].score == 0.85);
+        const auto* benign = d.FindLabel(BENIGN);
+        REQUIRE(benign->firstFailedClause == 1); // no HasMaliciousness > 0.30
+        REQUIRE(benign->clauses[1].score == 0.80);
+    }
+    SECTION("Benign")
+    {
+        const auto d = subject(b);
+        REQUIRE(d.outcome.index == BENIGN);
+        REQUIRE(d.FindLabel(BENIGN)->clauses[1].holds); // no HasMaliciousness at all
+        REQUIRE(d.FindLabel(MALICIOUS)->firstFailedClause == 0);
+    }
+    SECTION("Benign blocked by HasMaliciousness 0.35")
+    {
+        const auto d = subject(benignBlocked);
+        REQUIRE(d.reason == InconclusiveReason::NoLabelSatisfied);
+        const auto* benign = d.FindLabel(BENIGN);
+        REQUIRE(benign->firstFailedClause == 1);
+        REQUIRE(benign->clauses[1].present);
+        REQUIRE(benign->clauses[1].score == 0.35);
+        REQUIRE(d.FindLabel(MALICIOUS)->firstFailedClause == 0); // 0.35 < 0.70
+    }
+    SECTION("no verdict assertion: the presence clauses are missing")
+    {
+        const auto d = subject(none);
+        REQUIRE(d.reason == InconclusiveReason::NoLabelSatisfied);
+        REQUIRE(d.scores.empty());
+        for (const auto o : { MALICIOUS, BENIGN }) {
+            const auto* label = d.FindLabel(o);
+            REQUIRE(label->firstFailedClause == 0);
+            REQUIRE_FALSE(label->clauses[0].present);
+            REQUIRE(label->clauses[0].witness == INVALID_ASSERTION_ID);
         }
+    }
+    SECTION("two HasMaliciousness scores combined by max")
+    {
+        const auto d = subject(two);
+        REQUIRE(d.outcome.index == MALICIOUS);
+        const auto* score = d.FindScore(mal);
+        REQUIRE(score);
+        REQUIRE(score->score == 0.75);
+        REQUIRE(score->count == 2);
+        REQUIRE(score->aggregate == AggregateFunction::Max);
+        REQUIRE(RealArg(s, score->strongest) == 0.75);
+        REQUIRE(d.FindLabel(MALICIOUS)->clauses[0].witness == score->strongest);
+    }
+    SECTION("an invalid subject constant reads no score")
+    {
+        const auto d = interpretation.InterpretSubject(s.Gamma(), f.spec->signature, f.spec->pool, m, INVALID_CONSTANT_ID);
+        REQUIRE(d.scores.empty());
+        REQUIRE(d.reason == InconclusiveReason::NoLabelSatisfied);
     }
 }
 
-TEST_CASE("hdf: explanation contains the interpretation step and the stop reason", "[hdf]")
+TEST_CASE("hdf: score combination is replaceable per verdict predicate", "[hdf]")
 {
-    Fixture f;
-    auto& s      = f.NewSession();
-    const auto x = s.BeginRoot("sample.exe", true);
-    s.Disclose(f.P("IsPE"), { Subject{ x } });
-    s.Disclose(f.P("HasImport"), { Subject{ x }, "VirtualAlloc" });
-    s.Disclose(f.P("HasImport"), { Subject{ x }, "WriteProcessMemory" });
+    std::string json(CORE_SPEC);
+    const std::string anchor = R"J("outcomes": [ "Malicious", "Benign" ],)J";
+    const auto at            = json.find(anchor);
+    REQUIRE(at != std::string::npos);
+    json.insert(at + anchor.size(), R"J( "combination": [ { "predicate": "HasMaliciousness", "aggregate": "mean" } ],)J");
+    Fixture f(json);
+    REQUIRE(f.spec->interpretation.Combination(f.P("HasMaliciousness")) == AggregateFunction::Mean);
+    REQUIRE(f.spec->interpretation.Combination(f.P("HasBenignity")) == AggregateFunction::Max);
+    auto& s      = f.NewSession(ManualPolicy());
+    const auto x = s.BeginRoot("x", true);
+    REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.75 }));
+    REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.60 }));
+    REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.60 })); // set semantics: one assertion per score
     s.EndInitialExtraction();
-    REQUIRE(s.VerdictReached());
-    REQUIRE_FALSE(s.IsFinished()); // a verdict is reported, it does not stop the process
-    s.Finish(StopReason::ManualStop);
-    const auto e  = Explanation::Build(s, f.spec->interpretation, x);
-    const auto md = ExplanationFormatter::ToMarkdown(e, f.spec->interpretation);
-    REQUIRE(e.outcome == "Malicious");
-    REQUIRE(md.find("max over 1 assertion(s) = 0.80; 0.80 >= 0.70 => Malicious") != std::string::npos);
-    REQUIRE(md.find("manual stop") != std::string::npos);
-    REQUIRE(md.find("Rule Verdict: Injection(x) |- HasMaliciousness(x, 0.80)") != std::string::npos);
-    REQUIRE(md.find("sample.exe can inject code") != std::string::npos);
-    REQUIRE(md.find("Why: ") == std::string::npos); // the Verdict rule has no explanation
-    REQUIRE(md.find("allocates and writes memory") == std::string::npos);
-    const auto treeText = ExplanationFormatter::DerivationTreeText(s, e.tree);
-    REQUIRE(treeText.find("rule Inject") != std::string::npos);
-    REQUIRE(treeText.find("initial extraction") != std::string::npos);
+    const auto d = f.spec->interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), x, Selectable(s));
+    REQUIRE(d.subjects.size() == 1);
+    const auto* score = d.subjects[0].FindScore(f.P("HasMaliciousness"));
+    REQUIRE(score->count == 2);
+    REQUIRE(score->score == Catch::Approx(0.675));
+    REQUIRE(RealArg(s, score->strongest) == 0.75); // the DT still shows the strongest assertion
+    // 0.675 fails ">= 0.70": Inconclusive, the first failed clause of Malicious is its presence clause
+    REQUIRE_FALSE(d.conclusive);
+    REQUIRE(d.reason == InconclusiveReason::NoLabelSatisfied);
+    REQUIRE(d.subjects[0].FindLabel(MALICIOUS)->firstFailedClause == 0);
+    REQUIRE(d.subjects[0].FindLabel(MALICIOUS)->clauses[0].present);
 }
 
-TEST_CASE("hdf: stopping policy", "[hdf]")
+TEST_CASE("hdf: conflict between two labels of one subject", "[hdf]")
 {
-    SECTION("on_verdict stops the process")
+    Fixture f(CONFLICT_SPEC);
+    auto& s      = f.NewSession(f.spec->stopping);
+    const auto x = s.BeginRoot("dual.exe", true);
+    REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.80 }));
+    REQUIRE(s.Disclose(f.P("HasBenignity"), { Subject{ x }, 0.90 }));
+    s.EndInitialExtraction();
+    const auto& d = s.LastDecision();
+    REQUIRE(s.HasDecision());
+    REQUIRE_FALSE(d.conclusive);
+    REQUIRE(d.reason == InconclusiveReason::Conflict);
+    REQUIRE(d.conflictingLabels == std::vector<uint8>{ MALICIOUS, BENIGN });
+    REQUIRE(d.subjects[0].reason == InconclusiveReason::Conflict);
+    REQUIRE_FALSE(s.IsFinished()); // a conflict is not a stop reason
+    REQUIRE(ExplanationFormatter::DecisionSummary(d, f.spec->interpretation, s.Registry()) == "Inconclusive (conflict: Malicious, Benign)");
+    const auto md = ExplanationFormatter::ToMarkdown(Explanation::Build(s, f.spec->interpretation, x), f.spec->interpretation);
+    REQUIRE(Contains(md, "reason: conflict (Malicious, Benign)"));
+    REQUIRE(Contains(md, "Malicious holds for dual.exe:"));
+    REQUIRE(Contains(md, "Benign holds for dual.exe:"));
+    REQUIRE(Contains(md, "HasBenignity(dual.exe, .) = max{0.90} = 0.90 >= 0.70 [holds]"));
+    REQUIRE(Contains(md, "core stop reason: none (in progress)"));
+}
+
+TEST_CASE("hdf: aggregation over subjects (maliciousness propagates upward, benignity never)", "[hdf]")
+{
+    SECTION("installer.exe (benign) extracted payload.exe (malicious) => Malicious")
     {
         Fixture f;
-        StoppingPolicy policy;
-        policy.stopOnVerdict = true;
-        auto& s              = f.NewSession(policy);
-        const auto x         = s.BeginRoot("x", true);
+        auto& s            = f.NewSession(); // conclusive
+        const auto install = s.BeginRoot("installer.exe", true);
+        const auto payload = s.CreateSubject("payload.exe", install, true, false);
+        REQUIRE(s.Disclose(f.P("HasBenignity"), { Subject{ install }, 0.85 }));
+        REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ payload }, 0.80 }));
+        s.EndInitialExtraction();
+        const auto& d = s.LastDecision();
+        REQUIRE(d.conclusive);
+        REQUIRE(d.outcome.index == MALICIOUS);
+        REQUIRE(d.input == install);
+        REQUIRE(d.deciding == payload);
+        REQUIRE(d.provenancePath == std::vector<SubjectId>{ payload, install });
+        REQUIRE(d.subjects.size() == 2);
+        REQUIRE(d.subjects[0].subject == install);
+        REQUIRE(d.subjects[0].outcome.index == BENIGN); // I_subj(installer.exe) = Benign
+        REQUIRE(d.subjects[1].outcome.index == MALICIOUS);
+        REQUIRE(s.IsFinished());
+        REQUIRE(s.GetStopReason() == StopReason::Conclusive);
+        REQUIRE(ExplanationFormatter::DecisionSummary(d, f.spec->interpretation, s.Registry()) == "Malicious (conclusive, via payload.exe)");
+        const auto e = Explanation::Build(s, f.spec->interpretation, install);
+        REQUIRE(e.witnesses.size() == 1);
+        REQUIRE(RealArg(s, e.witnesses[0].first) == 0.80);
+        const auto md = ExplanationFormatter::ToMarkdown(e, f.spec->interpretation);
+        REQUIRE(Contains(md, "I_subj(installer.exe) = Benign"));
+        REQUIRE(Contains(md, "I_subj(payload.exe) = Malicious, propagated to installer.exe along installer.exe -> payload.exe"));
+        REQUIRE(Contains(md, "HasMaliciousness(payload.exe, .) = max{0.80} = 0.80 >= 0.70 [holds]"));
+        REQUIRE(Contains(md, "no HasBenignity(payload.exe, c) with c >= 0.70 [holds: no assertion]"));
+        REQUIRE(Contains(md, "## Provenance\ninstaller.exe -> payload.exe"));
+    }
+    SECTION("a benign child does not make an inconclusive parent benign")
+    {
+        Fixture f;
+        auto& s           = f.NewSession(ManualPolicy());
+        const auto parent = s.BeginRoot("parent.zip", true);
+        const auto child  = s.CreateSubject("signed.exe", parent, true, false);
+        REQUIRE(s.Disclose(f.P("HasBenignity"), { Subject{ child }, 0.85 }));
+        s.EndInitialExtraction();
+        const auto& interpretation = f.spec->interpretation;
+        const auto d               = interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), parent, Selectable(s));
+        REQUIRE_FALSE(d.conclusive);
+        REQUIRE(d.reason == InconclusiveReason::NoLabelSatisfied); // the reason of I_subj(parent.zip)
+        REQUIRE(d.deciding == parent);
+        REQUIRE(d.subjects[1].outcome.index == BENIGN);
+        // the child on its own is Benign
+        REQUIRE(interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), child, Selectable(s)).outcome.index == BENIGN);
+    }
+    SECTION("the first malicious subject in pre-order decides")
+    {
+        Fixture f;
+        auto& s      = f.NewSession(ManualPolicy());
+        const auto x = s.BeginRoot("root", true);
+        const auto a = s.CreateSubject("a", x, true, false);
+        const auto b = s.CreateSubject("b", a, true, false);
+        const auto c = s.CreateSubject("c", x, true, false);
+        REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ c }, 0.95 }));
+        REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ b }, 0.75 }));
+        s.EndInitialExtraction();
+        const auto d = f.spec->interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), x, Selectable(s));
+        REQUIRE(d.outcome.index == MALICIOUS);
+        REQUIRE(d.deciding == b); // pre-order: root, a, b, c (no priority by score or by distance)
+        REQUIRE(d.provenancePath == std::vector<SubjectId>{ b, a, x });
+    }
+    SECTION("strict aggregation blocks Benign when a descendant is in conflict, default does not")
+    {
+        for (const bool strict : { false, true }) {
+            std::string json(CONFLICT_SPEC);
+            if (strict) {
+                const auto at = json.find("\"default\"");
+                REQUIRE(at != std::string::npos);
+                json.replace(at, std::string("\"default\"").size(), "\"strict\"");
+            }
+            Fixture f(json);
+            REQUIRE(f.spec->interpretation.aggregation == (strict ? SubjectAggregationKind::Strict : SubjectAggregationKind::Default));
+            auto& s          = f.NewSession(ManualPolicy());
+            const auto x     = s.BeginRoot("package", true);
+            const auto inner = s.CreateSubject("dual.exe", x, true, false);
+            REQUIRE(s.Disclose(f.P("HasBenignity"), { Subject{ x }, 0.90 }));
+            REQUIRE(s.Disclose(f.P("HasMaliciousness"), { Subject{ inner }, 0.80 }));
+            REQUIRE(s.Disclose(f.P("HasBenignity"), { Subject{ inner }, 0.80 }));
+            s.EndInitialExtraction();
+            const auto& d = s.LastDecision();
+            REQUIRE(d.subjects[1].reason == InconclusiveReason::Conflict);
+            if (!strict) {
+                REQUIRE(d.outcome.index == BENIGN);
+                REQUIRE(d.deciding == x);
+                // the strict hook passed explicitly gives the strict result on the same Gamma
+                const StrictSubjectAggregation strictHook;
+                const auto blocked = f.spec->interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), x, Selectable(s), &strictHook);
+                REQUIRE(blocked.reason == InconclusiveReason::Conflict);
+            } else {
+                REQUIRE_FALSE(d.conclusive);
+                REQUIRE(d.reason == InconclusiveReason::Conflict);
+                REQUIRE(d.conflictingLabels == std::vector<uint8>{ MALICIOUS, BENIGN });
+                REQUIRE(d.deciding == inner);
+                const auto md = ExplanationFormatter::ToMarkdown(Explanation::Build(s, f.spec->interpretation, x), f.spec->interpretation);
+                REQUIRE(Contains(md, "reason: conflict (Malicious, Benign) on dual.exe (strict aggregation over subjects)"));
+            }
+        }
+    }
+    SECTION("a custom aggregation hook")
+    {
+        // a hook that reports Benign for X whatever the evidence (the framework keeps the invariants)
+        struct AlwaysBenign : SubjectAggregationInterface {
+            void Aggregate(
+                  const Interpretation&, const SubjectRegistry&, SubjectId input, std::span<const SubjectDecision>, InterpretationDecision& out) const override
+            {
+                out.outcome  = { BENIGN };
+                out.deciding = input;
+            }
+        } hook;
+        Fixture f;
+        auto& s      = f.NewSession(ManualPolicy());
+        const auto x = s.BeginRoot("x", true);
+        s.EndInitialExtraction();
+        const auto d = f.spec->interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), x, Selectable(s), &hook);
+        REQUIRE(d.outcome.index == BENIGN);
+        REQUIRE(d.conclusive);
+        REQUIRE(d.reason == InconclusiveReason::None);
+        REQUIRE(d.provenancePath == std::vector<SubjectId>{ x });
+    }
+}
+
+TEST_CASE("hdf: explanation of each outcome reason", "[hdf]")
+{
+    SECTION("conclusive: one line per clause and the DT of the witness")
+    {
+        Fixture f;
+        auto& s      = f.NewSession();
+        const auto x = s.BeginRoot("sample.exe", true);
         s.Disclose(f.P("IsPE"), { Subject{ x } });
         s.Disclose(f.P("HasImport"), { Subject{ x }, "VirtualAlloc" });
         s.Disclose(f.P("HasImport"), { Subject{ x }, "WriteProcessMemory" });
         s.EndInitialExtraction();
         REQUIRE(s.IsFinished());
-        REQUIRE(s.GetStopReason() == StopReason::VerdictReached);
-        REQUIRE(s.Result().stopReason == StopReason::VerdictReached);
+        const auto e  = Explanation::Build(s, f.spec->interpretation, x);
+        const auto md = ExplanationFormatter::ToMarkdown(e, f.spec->interpretation);
+        REQUIRE(e.outcome == "Malicious");
+        REQUIRE(e.stopReason == StopReason::Conclusive);
+        REQUIRE(Contains(md, "I_subj(sample.exe) = Malicious\n"));
+        REQUIRE(Contains(md, "Malicious holds for sample.exe:"));
+        REQUIRE(Contains(md, "HasMaliciousness(sample.exe, .) = max{0.80} = 0.80 >= 0.70 [holds]"));
+        REQUIRE(Contains(md, "no HasBenignity(sample.exe, c) with c >= 0.70 [holds: no assertion]"));
+        REQUIRE_FALSE(Contains(md, "propagated"));
+        REQUIRE(Contains(md, "## Verdict assertions"));
+        REQUIRE(Contains(md, "Rule Verdict: Injection(x) |- HasMaliciousness(x, 0.80)"));
+        REQUIRE(Contains(md, "sample.exe can inject code"));
+        REQUIRE_FALSE(Contains(md, "Why: ")); // the Verdict rule has no explanation
+        REQUIRE(Contains(md, "## Stop reason\nconclusive"));
+        REQUIRE(e.witnesses.size() == 1);
+        const auto treeText = ExplanationFormatter::DerivationTreeText(s, e.witnesses[0].second);
+        REQUIRE(Contains(treeText, "rule Inject"));
+        REQUIRE(Contains(treeText, "initial extraction"));
+        REQUIRE(Contains(md, "## Derivation trees"));
+    }
+    SECTION("no label satisfied: the first failed clause of each label")
+    {
+        Fixture f;
+        auto& s      = f.NewSession();
+        const auto x = s.BeginRoot("dropper.exe", true);
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "URLDownloadToFileA" }); // HasMaliciousness 0.60
+        s.EndInitialExtraction();
+        REQUIRE_FALSE(s.IsFinished());
+        const auto e  = Explanation::Build(s, f.spec->interpretation, x);
+        const auto md = ExplanationFormatter::ToMarkdown(e, f.spec->interpretation);
+        REQUIRE(e.outcome == "Inconclusive");
+        REQUIRE(e.witnesses.empty());
+        REQUIRE(Contains(md, "I_subj(dropper.exe) = Inconclusive (no label satisfied)"));
+        REQUIRE(Contains(md, "reason: no label satisfied"));
+        REQUIRE(Contains(md, "  Malicious: HasMaliciousness(dropper.exe, .) = max{0.60} = 0.60, not >= 0.70 [fails]"));
+        REQUIRE(Contains(md, "  Benign: HasBenignity(dropper.exe, .) missing [fails]"));
+        REQUIRE(Contains(md, "core stop reason: none (in progress)"));
+        REQUIRE_FALSE(Contains(md, "## Verdict assertions"));
+        REQUIRE(ExplanationFormatter::DecisionSummary(s.LastDecision(), f.spec->interpretation, s.Registry()) == "Inconclusive (no label satisfied)");
+        s.Finish(StopReason::ManualStop);
+        const auto stopped = ExplanationFormatter::ToMarkdown(Explanation::Build(s, f.spec->interpretation, x), f.spec->interpretation);
+        REQUIRE(Contains(stopped, "core stop reason: manual stop"));
+    }
+    SECTION("Benign blocked by an absence clause")
+    {
+        Fixture f;
+        auto& s      = f.NewSession(ManualPolicy());
+        const auto x = s.BeginRoot("tool.exe", true);
+        s.Disclose(f.P("HasBenignity"), { Subject{ x }, 0.85 });
+        s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.35 });
+        s.EndInitialExtraction();
+        const auto md = ExplanationFormatter::ToMarkdown(Explanation::Build(s, f.spec->interpretation, x), f.spec->interpretation);
+        REQUIRE(Contains(
+              md, "  Benign: no HasMaliciousness(tool.exe, c) with c > 0.30 [fails: HasMaliciousness(tool.exe, .) = max{0.35} = 0.35 > 0.30 present]"));
+        REQUIRE(Contains(md, "  Malicious: HasMaliciousness(tool.exe, .) = max{0.35} = 0.35, not >= 0.70 [fails]"));
+    }
+}
+
+TEST_CASE("hdf: stopping policy", "[hdf]")
+{
+    LambdaExecutor rescan;
+    std::function<void(DisclosureSink&)> onRescan = [](DisclosureSink&) {};
+    rescan.fn                                     = [&](const GroundActionView&, const ActionInput*, DisclosureSink& out) {
+        onRescan(out);
+        return ActionStatus::Success;
+    };
+
+    SECTION("conclusive (default) stops as soon as I is conclusive: initial extraction")
+    {
+        Fixture f;
+        auto& s      = f.NewSession();
+        const auto x = s.BeginRoot("x", true);
+        s.Disclose(f.P("IsPE"), { Subject{ x } });
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "VirtualAlloc" });
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "WriteProcessMemory" });
+        s.EndInitialExtraction();
+        REQUIRE(s.IsFinished());
+        REQUIRE(s.GetStopReason() == StopReason::Conclusive);
+        REQUIRE(s.Result().stopReason == StopReason::Conclusive);
+        REQUIRE(s.LastDecision().conclusive);
+        REQUIRE(s.Step(0).status == StepStatus::Finished);
+    }
+    SECTION("conclusive stops after the step that makes I conclusive")
+    {
+        Fixture f;
+        f.executors[f.A("Rescan")] = &rescan;
+        auto& s                    = f.NewSession();
+        const auto x               = s.BeginRoot("x", true);
+        s.Disclose(f.P("IsPE"), { Subject{ x } });
+        s.EndInitialExtraction();
+        REQUIRE_FALSE(s.IsFinished());
+        REQUIRE(s.LastDecision().reason == InconclusiveReason::NoLabelSatisfied);
+        onRescan = [&](DisclosureSink& out) {
+            out.Assert(f.P("HasImport"), { out.Self(), "VirtualAlloc" });
+            out.Assert(f.P("HasImport"), { out.Self(), "WriteProcessMemory" });
+        };
+        REQUIRE(s.Step(FindBeta(s, f.A("Rescan"), x)).status == StepStatus::Executed);
+        REQUIRE(s.IsFinished());
+        REQUIRE(s.GetStopReason() == StopReason::Conclusive);
+        REQUIRE(f.spec->interpretation.outcomes.Label(s.LastDecision().outcome) == "Malicious");
+    }
+    SECTION("does not stop on a lone HasMaliciousness 0.60, nor on a HasBenignity blocked by it")
+    {
+        // HasMaliciousness 0.60 (< 0.70) keeps Malicious unsatisfied and blocks Benign (> 0.30): the HasBenignity derived by the
+        // step is a verdict assertion, but I stays Inconclusive, so the process continues and Rescan(x) stays selectable
+        Fixture f;
+        f.executors[f.A("Rescan")] = &rescan;
+        auto& s                    = f.NewSession();
+        const auto x               = s.BeginRoot("setup.exe", true);
+        s.Disclose(f.P("IsPE"), { Subject{ x } });
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "URLDownloadToFileA" });
+        s.EndInitialExtraction();
+        REQUIRE(s.Gamma().WithPredicate(f.P("HasMaliciousness")).size() == 1);
+        REQUIRE_FALSE(s.IsFinished());
+        const auto beta = FindBeta(s, f.A("Rescan"), x);
+        onRescan        = [&](DisclosureSink& out) {
+            out.Assert(f.P("IsSigned"), { out.Self() });
+            out.Assert(f.P("HasValidSignature"), { out.Self() });
+        };
+        REQUIRE(s.Step(beta).status == StepStatus::Executed);
+        REQUIRE(s.Gamma().WithPredicate(f.P("HasBenignity")).size() == 1); // HasBenignity(setup.exe, 0.85)
+        REQUIRE_FALSE(s.IsFinished());
+        REQUIRE_FALSE(s.LastDecision().conclusive);
+        REQUIRE(std::find(s.Selectable().begin(), s.Selectable().end(), beta) != s.Selectable().end());
+    }
+    SECTION("does not stop after HasBenignity alone while an action is selectable (Benign settles at exhaustion)")
+    {
+        // (subjects without content: <ReanalyzeSelection>(x) is repeatable and would stay selectable forever)
+        Fixture f;
+        LambdaExecutor unpack;
+        unpack.fn                  = [&](const GroundActionView&, const ActionInput*, DisclosureSink&) { return ActionStatus::Success; };
+        f.executors[f.A("Unpack")] = &unpack;
+        auto& s                    = f.NewSession();
+        const auto x               = s.BeginRoot("signed.zip", false);
+        s.Disclose(f.P("IsArchive"), { Subject{ x } });
+        s.Disclose(f.P("IsSigned"), { Subject{ x } });
+        s.Disclose(f.P("HasValidSignature"), { Subject{ x } });
+        s.EndInitialExtraction();
+        const auto& before = s.LastDecision();
+        REQUIRE(before.outcome.index == BENIGN); // Benign holds on the current knowledge ...
+        REQUIRE(before.conclusive);
+        REQUIRE(before.settle == SettleMode::Exhaustion);
+        REQUIRE_FALSE(before.settled); // ... but Unpack(signed.zip) may still disclose maliciousness
+        REQUIRE(before.selectableCount == 1);
+        REQUIRE_FALSE(s.IsFinished());
+        REQUIRE(
+              ExplanationFormatter::DecisionSummary(before, f.spec->interpretation, s.Registry()) ==
+              "Benign (provisional, settles at exhaustion: 1 selectable action(s) remain)");
+        const auto provisional = ExplanationFormatter::ToMarkdown(Explanation::Build(s, f.spec->interpretation, x), f.spec->interpretation);
+        REQUIRE(Contains(provisional, "Benign holds but is not settled: it settles at exhaustion and 1 selectable action(s) remain"));
+        // the action discloses nothing new; afterwards nothing is selectable: Benign is settled and the process stops
+        REQUIRE(s.Step(FindBeta(s, f.A("Unpack"), x)).status == StepStatus::Executed);
+        REQUIRE(s.Selectable().empty());
+        REQUIRE(s.IsFinished());
+        REQUIRE(s.GetStopReason() == StopReason::Conclusive);
+        REQUIRE(s.LastDecision().outcome.index == BENIGN);
+        REQUIRE(s.LastDecision().settled);
+        REQUIRE(
+              ExplanationFormatter::DecisionSummary(s.LastDecision(), f.spec->interpretation, s.Registry()) ==
+              "Benign (conclusive, settled: no selectable action remains)");
+        const auto settled = ExplanationFormatter::ToMarkdown(Explanation::Build(s, f.spec->interpretation, x), f.spec->interpretation);
+        REQUIRE(Contains(settled, "settled: no selectable action remains (Benign settles at exhaustion)"));
+    }
+    SECTION("HasBenignity alone with no selectable action stops at once with Benign; Malicious settles immediately")
+    {
+        Fixture f;
+        auto& s      = f.NewSession();
+        const auto y = s.BeginRoot("signed.dat", false);
+        s.Disclose(f.P("IsSigned"), { Subject{ y } });
+        s.Disclose(f.P("HasValidSignature"), { Subject{ y } });
+        s.EndInitialExtraction();
+        REQUIRE(s.Selectable().empty());
+        REQUIRE(s.IsFinished());
+        REQUIRE(s.GetStopReason() == StopReason::Conclusive);
+        REQUIRE(f.spec->interpretation.outcomes.Label(s.LastDecision().outcome) == "Benign");
+        REQUIRE(s.LastDecision().settled);
+        // Malicious (settle = immediate) stops although actions are selectable
+        auto& m      = f.NewSession();
+        const auto z = m.BeginRoot("dropper.zip", true);
+        m.Disclose(f.P("IsArchive"), { Subject{ z } });
+        m.Disclose(f.P("HasMaliciousness"), { Subject{ z }, 0.90 });
+        m.EndInitialExtraction();
+        REQUIRE_FALSE(m.Selectable().empty());
+        REQUIRE(m.IsFinished());
+        REQUIRE(m.LastDecision().settle == SettleMode::Immediate);
+        REQUIRE(m.LastDecision().settled);
+        // the same Gamma interpreted with and without selectable actions (the interpretation itself has no session)
+        const auto& interpretation = f.spec->interpretation;
+        REQUIRE_FALSE(interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), y, 3).settled);
+        REQUIRE(interpretation.Interpret(s.Gamma(), f.spec->signature, f.spec->pool, s.Registry(), y, 0).settled);
+        REQUIRE(interpretation.Interpret(m.Gamma(), f.spec->signature, f.spec->pool, m.Registry(), z, 3).settled);
+    }
+    SECTION("manual never stops by itself")
+    {
+        Fixture f;
+        auto& s      = f.NewSession(ManualPolicy());
+        const auto x = s.BeginRoot("x", true);
+        s.Disclose(f.P("IsPE"), { Subject{ x } });
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "VirtualAlloc" });
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "WriteProcessMemory" });
+        s.EndInitialExtraction();
+        REQUIRE(s.LastDecision().conclusive);
+        REQUIRE_FALSE(s.IsFinished());
+    }
+    SECTION("exhaustive stops when nothing is selectable, not before")
+    {
+        Fixture f;
+        // (a subject without content: <ReanalyzeSelection>(x) is repeatable and would stay selectable forever)
+        LambdaExecutor unpack;
+        unpack.fn                  = [&](const GroundActionView&, const ActionInput*, DisclosureSink&) { return ActionStatus::Success; };
+        f.executors[f.A("Unpack")] = &unpack;
+        StoppingPolicy policy;
+        policy.kind  = StoppingPolicyKind::Exhaustive;
+        auto& s      = f.NewSession(policy);
+        const auto x = s.BeginRoot("a.zip", false);
+        s.Disclose(f.P("IsArchive"), { Subject{ x } });
+        s.Disclose(f.P("HasMaliciousness"), { Subject{ x }, 0.90 }); // conclusive, but the policy is exhaustive
+        s.EndInitialExtraction();
+        REQUIRE(s.LastDecision().conclusive);
+        REQUIRE_FALSE(s.IsFinished());
+        REQUIRE(s.Selectable().size() == 1);
+        REQUIRE(s.Step(FindBeta(s, f.A("Unpack"), x)).status == StepStatus::Executed);
+        REQUIRE(s.Selectable().empty());
+        REQUIRE(s.IsFinished());
+        REQUIRE(s.GetStopReason() == StopReason::NoSelectableActions);
     }
     SECTION("max_steps")
     {
         Fixture f;
-        LambdaExecutor rescan;
-        rescan.fn                  = [](const GroundActionView&, const ActionInput*, DisclosureSink&) { return ActionStatus::Success; };
         f.executors[f.A("Rescan")] = &rescan;
         StoppingPolicy policy;
         policy.maxSteps = 2;
@@ -981,16 +1553,49 @@ TEST_CASE("hdf: stopping policy", "[hdf]")
         REQUIRE(s.GetStopReason() == StopReason::PolicyLimit);
         REQUIRE(s.Step(beta).status == StepStatus::Finished);
     }
-    SECTION("manual finish freezes the session")
+    SECTION("a custom policy replaces the kind")
+    {
+        struct StopAfterOneAction : StoppingPolicyInterface {
+            mutable uint32 calls{ 0 };
+            std::optional<StopReason> ShouldStop(const DisclosureSession& session, const InterpretationDecision& decision) const override
+            {
+                calls++;
+                REQUIRE(&decision == &session.LastDecision());
+                return session.Trace().ActionCount() >= 1 ? std::optional<StopReason>(StopReason::PolicyLimit) : std::nullopt;
+            }
+        } custom;
+        Fixture f;
+        f.executors[f.A("Rescan")] = &rescan;
+        StoppingPolicy policy;
+        policy.custom = &custom;
+        auto& s       = f.NewSession(policy);
+        const auto x  = s.BeginRoot("x", true);
+        s.Disclose(f.P("IsPE"), { Subject{ x } });
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "VirtualAlloc" });
+        s.Disclose(f.P("HasImport"), { Subject{ x }, "WriteProcessMemory" });
+        s.EndInitialExtraction();
+        REQUIRE(s.LastDecision().conclusive);
+        REQUIRE_FALSE(s.IsFinished()); // the custom policy decides, not the conclusive default
+        REQUIRE(s.Step(FindBeta(s, f.A("Rescan"), x)).status == StepStatus::Executed);
+        REQUIRE(s.IsFinished());
+        REQUIRE(s.GetStopReason() == StopReason::PolicyLimit);
+        REQUIRE(custom.calls == 2);
+    }
+    SECTION("manual finish freezes the session and refreshes the decision")
     {
         Fixture f;
-        auto& s      = f.NewSession();
+        auto& s = f.NewSession();
+        REQUIRE_FALSE(s.HasDecision());
+        REQUIRE(s.LastDecision().reason == InconclusiveReason::NotEvaluated);
         const auto x = s.BeginRoot("x", true);
         s.EndInitialExtraction();
+        REQUIRE(s.HasDecision());
         const auto before = s.Gamma().Size();
         s.Finish(StopReason::ManualStop);
         s.Finish(StopReason::PolicyLimit); // the first stop reason is kept
         REQUIRE(s.GetStopReason() == StopReason::ManualStop);
+        REQUIRE(s.LastDecision().input == x);
+        REQUIRE(s.LastDecision().reason == InconclusiveReason::NoLabelSatisfied);
         REQUIRE_FALSE(s.Disclose(f.P("IsPE"), { Subject{ x } }));
         s.BeginObservation(x, "late");
         REQUIRE_FALSE(s.IsScopeOpen());

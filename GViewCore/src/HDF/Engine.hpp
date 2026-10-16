@@ -15,8 +15,8 @@ class HDFWindow;
 // [HDF] section of gview.ini
 struct EngineConfig {
     std::string specificationFile{ "HDF.json" };
-    bool stopOnVerdict{ false }; // overrides "stopping.on_verdict" when true
-    uint32 maxSteps{ 0 };        // overrides "stopping.max_steps" when > 0
+    std::optional<StoppingPolicyKind> stoppingPolicy; // overrides "stopping.policy" when set (INI: conclusive | manual | exhaustive)
+    uint32 maxSteps{ 0 };                             // overrides "stopping.max_steps" when > 0
     uint32 maxDerivedPerStep{ DEFAULT_MAX_DERIVED };
 
     static void Update(AppCUI::Utils::IniSection sect);

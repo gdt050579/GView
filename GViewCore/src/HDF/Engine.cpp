@@ -1,6 +1,7 @@
 #include "Engine.hpp"
 #include "HDFWindow.hpp"
 
+#include <algorithm>
 #include <limits>
 
 namespace GView::HDF
@@ -9,10 +10,12 @@ namespace
 {
     constexpr std::string_view SECTION_HDF           = "HDF";
     constexpr std::string_view KEY_SPECIFICATION     = "SpecificationFile";
-    constexpr std::string_view KEY_STOP_ON_VERDICT   = "StopOnVerdict";
+    constexpr std::string_view KEY_STOPPING_POLICY   = "StoppingPolicy";
     constexpr std::string_view KEY_MAX_STEPS         = "MaxSteps";
     constexpr std::string_view KEY_MAX_DERIVED       = "MaxDerivedPerStep";
     constexpr std::string_view DEFAULT_SPECIFICATION = "HDF.json";
+    // StoppingPolicy = specification: the "stopping.policy" of the specification applies
+    constexpr std::string_view STOPPING_FROM_SPECIFICATION = "specification";
 } // namespace
 
 // ---- EngineConfig ----------------------------------------------------------------------------------------------------
@@ -20,7 +23,7 @@ namespace
 void EngineConfig::Update(AppCUI::Utils::IniSection sect)
 {
     sect.UpdateValue(KEY_SPECIFICATION, DEFAULT_SPECIFICATION, true);
-    sect.UpdateValue(KEY_STOP_ON_VERDICT, false, true);
+    sect.UpdateValue(KEY_STOPPING_POLICY, STOPPING_FROM_SPECIFICATION, true);
     sect.UpdateValue(KEY_MAX_STEPS, static_cast<uint32>(0), true);
     sect.UpdateValue(KEY_MAX_DERIVED, static_cast<uint32>(DEFAULT_MAX_DERIVED), true);
 }
@@ -37,7 +40,16 @@ EngineConfig EngineConfig::Read()
     const auto file = sect.GetValue(KEY_SPECIFICATION).ToStringView(DEFAULT_SPECIFICATION);
     if (!file.empty())
         cfg.specificationFile = std::string(file);
-    cfg.stopOnVerdict     = sect.GetValue(KEY_STOP_ON_VERDICT).ToBool(false);
+    const auto policy = sect.GetValue(KEY_STOPPING_POLICY).ToStringView(STOPPING_FROM_SPECIFICATION);
+    if (!policy.empty() && policy != STOPPING_FROM_SPECIFICATION) {
+        cfg.stoppingPolicy = StoppingPolicyKindFromName(policy);
+        if (!cfg.stoppingPolicy.has_value()) {
+            LOG_WARNING(
+                  "HDF: unknown StoppingPolicy '%.*s' in gview.ini (conclusive, manual, exhaustive or specification), the specification decides",
+                  static_cast<int>(std::min<size_t>(policy.size(), 64)),
+                  policy.data());
+        }
+    }
     cfg.maxSteps          = sect.GetValue(KEY_MAX_STEPS).ToUInt32(0);
     cfg.maxDerivedPerStep = sect.GetValue(KEY_MAX_DERIVED).ToUInt32(DEFAULT_MAX_DERIVED);
     if (cfg.maxDerivedPerStep == 0)
@@ -112,8 +124,8 @@ bool Engine::Init()
         loadDiagnostics.Warning("", "specification file '" + config.specificationFile + "' not found: only the HDF built-ins are available");
         LOG_WARNING("HDF: %s not found, only the built-ins are available", config.specificationFile.c_str());
     }
-    if (config.stopOnVerdict)
-        spec->stopping.stopOnVerdict = true;
+    if (config.stoppingPolicy.has_value())
+        spec->stopping.kind = *config.stoppingPolicy;
     if (config.maxSteps > 0)
         spec->stopping.maxSteps = config.maxSteps;
     // the engine executes <ReanalyzeSelection>(x) itself
@@ -264,7 +276,15 @@ bool Engine::IsPredicateRejected(PredicateId p) const
 DisclosureSession& Engine::NewSession()
 {
     sessions.push_back(std::make_unique<DisclosureSession>(
-          static_cast<uint32>(sessions.size()), spec->signature, spec->specification, spec->pool, registry, this, spec->stopping, config.maxDerivedPerStep));
+          static_cast<uint32>(sessions.size()),
+          spec->signature,
+          spec->specification,
+          spec->interpretation,
+          spec->pool,
+          registry,
+          this,
+          spec->stopping,
+          config.maxDerivedPerStep));
     return *sessions.back();
 }
 

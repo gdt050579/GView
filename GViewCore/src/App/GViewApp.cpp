@@ -105,7 +105,7 @@ bool GView::App::ResetConfiguration()
     GView::View::GridViewer::Config::Update(ini["View.Grid"]);
     GView::View::DissasmViewer::Config::Update(ini["View.Dissasm"]);
     GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
-    // Hybrid Disclosure Framework: SpecificationFile, StopOnVerdict, MaxSteps, MaxDerivedPerStep
+    // Hybrid Disclosure Framework: SpecificationFile, StoppingPolicy, MaxSteps, MaxDerivedPerStep
     GView::HDF::EngineConfig::Update(ini["HDF"]);
 
 #ifdef GVIEW_STATIC_PLUGINS

@@ -6,21 +6,36 @@
 
 #include "DisclosureTrace.hpp"
 #include "Entailment.hpp"
+#include "Interpretation.hpp"
 #include "SubjectRegistry.hpp"
 
 namespace GView::HDF
 {
-enum class StopReason : uint8 { None = 0, VerdictReached, ManualStop, NoSelectableActions, PolicyLimit };
+enum class StopReason : uint8 { None = 0, Conclusive, ManualStop, NoSelectableActions, PolicyLimit };
 std::string_view StopReasonName(StopReason reason);
 
-// pi: when the process stops by itself. A verdict assertion is always reported; it stops the process only when
-// stopOnVerdict is set (the default in GView is to let the analyst decide).
-struct StoppingPolicy {
-    bool stopOnVerdict{ false };
-    uint32 maxSteps{ 0 }; // 0 = unlimited
+class DisclosureSession;
+
+// pi: when the process stops by itself. After every transition the session evaluates I on Gamma_i+1 and asks the policy.
+//   Conclusive (default): stop as soon as I is conclusive and settled (a label with settle = exhaustion settles only when
+//                         nothing is selectable; a conflict is not a stop: the outcome is Inconclusive)
+//   Manual:               never stop by itself (the analyst stops)
+//   Exhaustive:           stop when nothing is selectable
+enum class StoppingPolicyKind : uint8 { Conclusive = 0, Manual, Exhaustive };
+std::string_view StoppingPolicyKindName(StoppingPolicyKind kind);
+std::optional<StoppingPolicyKind> StoppingPolicyKindFromName(std::string_view name);
+
+// a custom policy: a stop reason stops the process, nullopt lets it continue
+struct StoppingPolicyInterface {
+    virtual std::optional<StopReason> ShouldStop(const DisclosureSession& session, const InterpretationDecision& decision) const = 0;
+    virtual ~StoppingPolicyInterface()                                                                                           = default;
 };
 
-class DisclosureSession;
+struct StoppingPolicy {
+    StoppingPolicyKind kind{ StoppingPolicyKind::Conclusive };
+    uint32 maxSteps{ 0 };                             // 0 = unlimited (checked before the policy)
+    const StoppingPolicyInterface* custom{ nullptr }; // replaces kind when set (not owned)
+};
 
 // (Gamma_n, tau_X, sigma)
 struct DisclosureResult {
@@ -60,6 +75,7 @@ class DisclosureSession
     const uint32 index;
     const Signature& signature;
     const Specification& specification;
+    const Interpretation& interpretation;
     ConstantPool& pool;
     SubjectRegistry& registry;
     SessionHost* host;
@@ -87,15 +103,17 @@ class DisclosureSession
     SubjectId pendingSubject{ INVALID_SUBJECT_ID }; // created by the running step, waiting for its window
     KnowledgeState initialState;                    // Gamma_0
     StopReason stopReason{ StopReason::None };
+    InterpretationDecision lastDecision; // I(Gamma_i, tau_X) after the last transition (or the stop)
+    bool decisionValid{ false };
     bool stepInProgress{ false };
     bool finished{ false };
-    bool verdictReached{ false };
     bool groundRulesFired{ false };
     bool hasInitialState{ false };
 
     bool OpenScope(TransitionKind kind, SubjectId subject, StringId label);
     void CloseScope();
     void AfterTransition(uint32 transitionIndex);
+    void RefreshDecision();
     bool InsertDisclosed(PredicateId p, std::span<const ConstantId> args, StringId expl);
     bool ConvertArgs(PredicateId p, std::span<const ArgValue> values, ConstantId* out, std::string& error);
 
@@ -104,6 +122,7 @@ class DisclosureSession
           uint32 index,
           const Signature& signature,
           const Specification& specification,
+          const Interpretation& interpretation,
           ConstantPool& pool,
           SubjectRegistry& registry,
           SessionHost* host,
@@ -216,14 +235,14 @@ class DisclosureSession
     {
         return stepInProgress;
     }
-    inline bool VerdictReached() const
+    // I(Gamma_i, tau_X) evaluated after the last transition and on Finish (Inconclusive / NotEvaluated before the first one)
+    inline const InterpretationDecision& LastDecision() const
     {
-        return verdictReached;
+        return lastDecision;
     }
-    // a verdict assertion was reached (reported; the process continues unless the policy says otherwise)
-    inline bool ShouldStop() const
+    inline bool HasDecision() const
     {
-        return finished || verdictReached;
+        return decisionValid;
     }
     inline StopReason GetStopReason() const
     {
@@ -248,6 +267,10 @@ class DisclosureSession
     inline const Specification& GetSpecification() const
     {
         return specification;
+    }
+    inline const Interpretation& GetInterpretation() const
+    {
+        return interpretation;
     }
     inline const ConstantPool& Pool() const
     {

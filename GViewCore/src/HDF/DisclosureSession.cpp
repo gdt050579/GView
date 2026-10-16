@@ -30,8 +30,8 @@ std::string_view StopReasonName(StopReason reason)
     switch (reason) {
     case StopReason::None:
         return "none (in progress)";
-    case StopReason::VerdictReached:
-        return "verdict reached";
+    case StopReason::Conclusive:
+        return "conclusive";
     case StopReason::ManualStop:
         return "manual stop";
     case StopReason::NoSelectableActions:
@@ -40,6 +40,30 @@ std::string_view StopReasonName(StopReason reason)
         return "policy limit";
     }
     return "?";
+}
+
+std::string_view StoppingPolicyKindName(StoppingPolicyKind kind)
+{
+    switch (kind) {
+    case StoppingPolicyKind::Conclusive:
+        return "conclusive";
+    case StoppingPolicyKind::Manual:
+        return "manual";
+    case StoppingPolicyKind::Exhaustive:
+        return "exhaustive";
+    }
+    return "?";
+}
+
+std::optional<StoppingPolicyKind> StoppingPolicyKindFromName(std::string_view name)
+{
+    if (name == "conclusive")
+        return StoppingPolicyKind::Conclusive;
+    if (name == "manual")
+        return StoppingPolicyKind::Manual;
+    if (name == "exhaustive")
+        return StoppingPolicyKind::Exhaustive;
+    return std::nullopt;
 }
 
 std::string_view StepStatusName(StepStatus status)
@@ -83,13 +107,15 @@ DisclosureSession::DisclosureSession(
       uint32 sessionIndex,
       const Signature& sig,
       const Specification& spec,
+      const Interpretation& interp,
       ConstantPool& constantPool,
       SubjectRegistry& subjects,
       SessionHost* sessionHost,
       StoppingPolicy stoppingPolicy,
       uint32 maxDerivedPerStep)
-    : index(sessionIndex), signature(sig), specification(spec), pool(constantPool), registry(subjects), host(sessionHost), policy(stoppingPolicy),
-      maxDerived(maxDerivedPerStep == 0 ? DEFAULT_MAX_DERIVED : maxDerivedPerStep)
+    : index(sessionIndex), signature(sig), specification(spec), interpretation(interp), pool(constantPool), registry(subjects), host(sessionHost),
+      policy(stoppingPolicy), maxDerived(maxDerivedPerStep == 0 ? DEFAULT_MAX_DERIVED : maxDerivedPerStep),
+      lastDecision(interp.NotEvaluated(INVALID_SUBJECT_ID))
 {
     gamma.Reserve(signature.predicates.Count());
 }
@@ -158,15 +184,20 @@ void DisclosureSession::AfterTransition(uint32 transitionIndex)
         if (!completed[b])
             selectable.push_back(b);
     }
-    const auto& tr = trace.transitions[transitionIndex];
-    for (AssertionId a = tr.fromCount; a < tr.toCount && !verdictReached; a++)
-        if (specification.IsVerdict(gamma.Predicate(a)))
-            verdictReached = true;
+    // pi is evaluated on I(Gamma_i+1, tau_X): a derived verdict assertion is evidence, not a stopping condition
+    RefreshDecision();
     if (!finished) {
-        if (verdictReached && policy.stopOnVerdict)
-            Finish(StopReason::VerdictReached);
-        else if (policy.maxSteps > 0 && trace.ActionCount() >= policy.maxSteps)
-            Finish(StopReason::PolicyLimit);
+        std::optional<StopReason> stop;
+        if (policy.maxSteps > 0 && trace.ActionCount() >= policy.maxSteps)
+            stop = StopReason::PolicyLimit;
+        else if (policy.custom)
+            stop = policy.custom->ShouldStop(*this, lastDecision);
+        else if (policy.kind == StoppingPolicyKind::Conclusive && lastDecision.settled)
+            stop = StopReason::Conclusive;
+        else if (policy.kind == StoppingPolicyKind::Exhaustive && selectable.empty())
+            stop = StopReason::NoSelectableActions;
+        if (stop.has_value() && *stop != StopReason::None)
+            Finish(*stop);
     }
     if (host)
         host->OnTransition(*this, transitionIndex);
@@ -456,12 +487,22 @@ StepResult DisclosureSession::Step(GroundActionId beta, const ActionInput* input
     return result;
 }
 
+void DisclosureSession::RefreshDecision()
+{
+    if (!registry.IsValid(root))
+        return;
+    lastDecision  = interpretation.Interpret(gamma, signature, pool, registry, root, static_cast<uint32>(selectable.size()));
+    decisionValid = true;
+}
+
 void DisclosureSession::Finish(StopReason reason)
 {
     if (finished)
         return;
     finished   = true;
     stopReason = reason;
+    // the final state is reported (a manual stop between transitions sees the same Gamma, the refresh is cheap)
+    RefreshDecision();
     generation++;
 }
 

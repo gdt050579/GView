@@ -40,9 +40,10 @@ constexpr std::string_view RUNNING_EXAMPLE_SPEC = R"JSON({
     { "name": "ContainsDomain", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "d", "sort": "Domain" } ], "denotation": "{x} contains the domain {d}" },
     { "name": "UsesCryptoWallets", "arity": [ { "name": "x", "sort": "Subject" } ], "denotation": "{x} accesses crypto wallets" },
     { "name": "UsesNetworkAPIs", "arity": [ { "name": "x", "sort": "Subject" } ], "denotation": "{x} uses network APIs" },
-    { "name": "HasMaliciousness", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ], "denotation": "{x} has maliciousness {score}" }
+    { "name": "HasMaliciousness", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ], "denotation": "{x} has maliciousness {score}" },
+    { "name": "HasBenignity", "arity": [ { "name": "x", "sort": "Subject" }, { "name": "score", "sort": "Real" } ], "denotation": "{x} has benignity {score}" }
   ],
-  "verdicts": [ "HasMaliciousness" ],
+  "verdicts": [ "HasMaliciousness", "HasBenignity" ],
   "assertion_rules": [
     { "name": "CryptoStealer", "body": [ "ContainsDomain(x, \"http://SomeMaliciousExample.net\")", "UsesCryptoWallets(x)", "UsesNetworkAPIs(x)" ],
       "head": "HasMaliciousness(x, 0.75)", "explanation": "contacts a known malicious domain, accesses crypto wallets and uses network APIs" }
@@ -57,11 +58,16 @@ constexpr std::string_view RUNNING_EXAMPLE_SPEC = R"JSON({
     { "name": "InspectExecutable", "body": [ "IsPE(x)" ], "head": "CheckSuspicDetails(x)" }
   ],
   "interpretation": {
-    "outcomes": [ "Malicious", "Benign", "Inconclusive" ], "fallback": "Inconclusive",
-    "verdicts": [ { "predicate": "HasMaliciousness", "aggregate": "max",
-                    "conditions": [ { "outcome": "Malicious", "op": ">=", "value": 0.70 }, { "outcome": "Benign", "op": "<=", "value": 0.30 } ] } ]
+    "outcomes": [ "Malicious", "Benign" ],
+    "labels": [
+      { "outcome": "Malicious", "propagate": true, "settle": "immediate",
+        "clauses": [ { "present": "HasMaliciousness", "op": ">=", "value": 0.70 }, { "absent": "HasBenignity", "op": ">=", "value": 0.70 } ] },
+      { "outcome": "Benign", "propagate": false, "settle": "exhaustion",
+        "clauses": [ { "present": "HasBenignity", "op": ">=", "value": 0.70 }, { "absent": "HasMaliciousness", "op": ">", "value": 0.30 } ] }
+    ],
+    "aggregation": "default"
   },
-  "stopping": { "on_verdict": false, "max_steps": 0 }
+  "stopping": { "policy": "conclusive", "max_steps": 0 }
 })JSON";
 
 constexpr std::string_view MALICIOUS_DOMAIN = "http://SomeMaliciousExample.net";
@@ -331,7 +337,7 @@ TEST_CASE("hdf: running example (chapter table steps 0-10)", "[hdf][running-exam
     REQUIRE_FALSE(d.HasErrors());
     FakeTool tool(*spec);
     SubjectRegistry registry;
-    DisclosureSession s(0, spec->signature, spec->specification, spec->pool, registry, &tool, spec->stopping, DEFAULT_MAX_DERIVED);
+    DisclosureSession s(0, spec->signature, spec->specification, spec->interpretation, spec->pool, registry, &tool, spec->stopping, DEFAULT_MAX_DERIVED);
     const auto root = Replay(tool, s, PLAN.size());
 
     REQUIRE(s.Trace().transitions[0].kind == TransitionKind::InitialExtraction);
@@ -342,30 +348,44 @@ TEST_CASE("hdf: running example (chapter table steps 0-10)", "[hdf][running-exam
     const auto s5              = FindSubject(s, "s5");
     const ConstantId verdict[] = { s.SubjectConstant(s5), *spec->pool.InternReal(spec->signature.realSort, 0.75) };
     REQUIRE(s.Gamma().Contains(spec->signature.predicates.Find("HasMaliciousness"), verdict));
-    REQUIRE(s.VerdictReached());
-    REQUIRE_FALSE(s.IsFinished()); // a verdict is reported, the process stops when the analyst says so
+    REQUIRE(s.Gamma().Size() == 44); // |Gamma_10|
 
-    // the process stops with (Gamma_10, tau_s0); I = Malicious via s0 -> c2 -> s2 -> s3 -> s4 -> s5
-    s.Finish(StopReason::ManualStop);
+    // I(Gamma_10, tau_s0) is conclusive: the process stops by itself after beta_9 with (Gamma_10, tau_s0);
+    // I = Malicious via s0 -> c2 -> s2 -> s3 -> s4 -> s5
+    REQUIRE(s.IsFinished());
+    REQUIRE(s.GetStopReason() == StopReason::Conclusive);
+    REQUIRE(s.Result().stopReason == StopReason::Conclusive);
     REQUIRE(s.Result().finalState.assertionCount == s.Gamma().Size());
     const auto e = Explanation::Build(s, spec->interpretation, root);
     REQUIRE(e.outcome == "Malicious");
-    REQUIRE(e.decision.subject == s5);
+    REQUIRE(e.decision.conclusive);
+    REQUIRE(e.decision.deciding == s5);
+    REQUIRE(e.decision.input == root);
     std::vector<std::string> path;
     for (auto it = e.decision.provenancePath.rbegin(); it != e.decision.provenancePath.rend(); ++it)
         path.push_back(ShortIdOf(s.Registry().Get(*it).name));
     REQUIRE(path == std::vector<std::string>{ "s0", "c2", "s2", "s3", "s4", "s5" });
     const auto md = ExplanationFormatter::ToMarkdown(e, spec->interpretation);
-    REQUIRE(md.find("max over 1 assertion(s) = 0.75; 0.75 >= 0.70 => Malicious") != std::string::npos);
+    REQUIRE(md.find("I_subj(networkTraffic.pcap) = Inconclusive (no label satisfied)") != std::string::npos);
+    REQUIRE(
+          md.find("I_subj(DecodedBase64Data) = Malicious, propagated to networkTraffic.pcap along networkTraffic.pcap -> Connection2 -> "
+                  "Connection2Data -> SuspiciousXMLFragment -> Base64Candidate -> DecodedBase64Data") != std::string::npos);
+    REQUIRE(md.find("HasMaliciousness(DecodedBase64Data, .) = max{0.75} = 0.75 >= 0.70 [holds]") != std::string::npos);
+    REQUIRE(md.find("no HasBenignity(DecodedBase64Data, c) with c >= 0.70 [holds: no assertion]") != std::string::npos);
     REQUIRE(
           md.find("networkTraffic.pcap -> Connection2 -> Connection2Data -> SuspiciousXMLFragment -> Base64Candidate -> DecodedBase64Data") !=
           std::string::npos);
-    REQUIRE(md.find("manual stop") != std::string::npos);
-    // the DT of the verdict reaches back to the initial extraction of s0 through the enabling premises
+    REQUIRE(md.find("## Stop reason\nconclusive") != std::string::npos);
+    // one witness: the DT of HasMaliciousness(s5, 0.75) reaches back to the initial extraction of s0 through the enabling premises
+    REQUIRE(e.witnesses.size() == 1);
+    REQUIRE(ShortAtom(s, e.witnesses[0].first) == "HasMaliciousness(s5, 0.75)");
     bool reachesRoot = false;
-    for (const auto& node : e.tree.nodes)
+    for (const auto& node : e.witnesses[0].second.nodes)
         reachesRoot |= s.Derivations().Get(node.assertion).kind == DerivationKind::InitialExtraction;
     REQUIRE(reachesRoot);
+    REQUIRE(md.find("Rule CryptoStealer: ") != std::string::npos);
+    // the frozen session refuses further steps
+    REQUIRE(s.Step(0).status == StepStatus::Finished);
 
     std::cout << "\n==== HDF running example: Table tab:hdf-running-example-execution ====\n"
               << ChapterTable(s) << "\n==== HDF running example: explanation ====\n"
@@ -379,14 +399,22 @@ TEST_CASE("hdf: running example stopped before step 10 is Inconclusive", "[hdf][
     REQUIRE(spec);
     FakeTool tool(*spec);
     SubjectRegistry registry;
-    DisclosureSession s(0, spec->signature, spec->specification, spec->pool, registry, &tool, spec->stopping, DEFAULT_MAX_DERIVED);
+    DisclosureSession s(0, spec->signature, spec->specification, spec->interpretation, spec->pool, registry, &tool, spec->stopping, DEFAULT_MAX_DERIVED);
     const auto root = Replay(tool, s, PLAN.size() - 1); // beta_0 .. beta_8 => Gamma_9
-    REQUIRE_FALSE(s.VerdictReached());
+    REQUIRE_FALSE(s.IsFinished());                      // I(Gamma_9) is Inconclusive: the process continues
+    REQUIRE_FALSE(s.LastDecision().conclusive);
     s.Finish(StopReason::ManualStop);
     const auto e = Explanation::Build(s, spec->interpretation, root);
     REQUIRE(e.outcome == "Inconclusive");
-    REQUIRE_FALSE(e.decision.fromVerdict);
+    REQUIRE(e.decision.reason == InconclusiveReason::NoLabelSatisfied);
+    REQUIRE(e.witnesses.empty());
     REQUIRE(e.stopReason == StopReason::ManualStop);
+    const auto md = ExplanationFormatter::ToMarkdown(e, spec->interpretation);
+    REQUIRE(md.find("reason: no label satisfied") != std::string::npos);
+    REQUIRE(md.find("Malicious (propagating) fails for all 8 subjects of the provenance tree:") != std::string::npos);
+    REQUIRE(md.find("    HasMaliciousness(DecodedBase64Data, .) missing [fails]") != std::string::npos);
+    REQUIRE(md.find("  Benign: HasBenignity(networkTraffic.pcap, .) missing [fails]") != std::string::npos);
+    REQUIRE(md.find("core stop reason: manual stop") != std::string::npos);
     REQUIRE(s.Result().stopReason == StopReason::ManualStop);
     // CheckSuspicDetails(s5) was selectable when the analyst stopped
     const auto s5       = FindSubject(s, "s5");

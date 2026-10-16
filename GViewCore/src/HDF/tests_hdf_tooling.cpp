@@ -71,9 +71,9 @@ const std::string HAND_WRITTEN = R"J({
     { "name": "Typed", "body": [ "HasSection(x, n, s)" ], "head": "SectionInfo(x, n, s, 3, \"tag\", true, 2.5)" }
   ],
   "action_rules": [ { "name": "Connections", "body": [ "IsPCAP(x)" ], "head": "CheckConnections(x)" } ],
-  "interpretation": { "outcomes": [ "Malicious", "Inconclusive" ], "fallback": "Inconclusive",
-                      "verdicts": [ { "predicate": "HasMaliciousness", "aggregate": "max", "conditions": [ { "outcome": "Malicious", "op": ">=", "value": 0.7 } ] } ] },
-  "stopping": { "on_verdict": false, "max_steps": 0 }
+  "interpretation": { "outcomes": [ "Malicious" ],
+                      "labels": [ { "outcome": "Malicious", "propagate": true, "clauses": [ { "present": "HasMaliciousness", "op": ">=", "value": 0.7 } ] } ] },
+  "stopping": { "policy": "conclusive", "max_steps": 0 }
 })J";
 
 ordered_json Parse(const std::string& text)

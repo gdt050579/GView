@@ -80,13 +80,8 @@ void HDFWindow::RefreshStatus()
         statusLabel->SetText(NO_SESSION_MSG);
         return;
     }
-    const auto& interpretation = engine.Spec().interpretation;
-    const auto decision        = interpretation.Interpret(session->Gamma(), session->GetSignature(), session->Pool(), session->Registry(), session->Root());
-    std::string text           = "Interpretation: " + std::string(interpretation.outcomes.Label(decision.outcome));
-    if (decision.fromVerdict)
-        text += " (" + session->Registry().Get(decision.subject).name + ")";
-    if (session->VerdictReached())
-        text += " | verdict assertion reached";
+    // the decision the session computed after its last transition (the one the stopping policy saw)
+    std::string text = "Interpretation: " + ExplanationFormatter::DecisionSummary(session->LastDecision(), engine.Spec().interpretation, session->Registry());
     text += " | |Gamma| = " + std::to_string(session->Gamma().Size()) + " | Selectable = " + std::to_string(session->Selectable().size()) +
             " | steps = " + std::to_string(session->Trace().ActionCount());
     if (session->IsFinished())

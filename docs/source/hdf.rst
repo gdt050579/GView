@@ -3,10 +3,11 @@ Hybrid Disclosure Framework (HDF)
 
 The Hybrid Disclosure Framework drives an analysis as a *disclosure process*: GView (the tool *T*) discloses ground
 assertions about the analysed artifact, a rule set derives new assertions and offers the actions that make sense next,
-the analyst selects one, its execution discloses more, and so on until the analyst (or a stopping policy) stops. An
-interpretation then maps what was learned to an outcome (``Malicious``, ``Benign``, ``Inconclusive``, ...) and an
-explanation shows *why*: the rule that produced the verdict, the derivation tree down to what the plugins observed, the
-provenance of the subject and the trace of the executed actions.
+the analyst selects one, its execution discloses more, and so on until the interpretation is conclusive and settled,
+the analyst stops, or another stopping policy applies. The interpretation maps what was learned to an outcome (``Malicious``,
+``Benign`` or ``Inconclusive``) and an explanation shows *why*: the clauses of the label that holds and the verdict
+assertions that satisfy them, their derivation trees down to what the plugins observed, the provenance of the deciding
+subject and the trace of the executed actions (or, for ``Inconclusive``, which clause failed or which labels conflict).
 
 ::
 
@@ -46,11 +47,31 @@ Actions
    the execution succeeds: a failed or cancelled execution is recorded in the trace and the action stays selectable.
 
 Verdicts and interpretation
-   Verdict predicates have the arity ``Subject x Real`` (``HasMaliciousness(x, 0.75)``). A verdict assertion never stops
-   the process by itself (unless ``stopping.on_verdict`` is set); the interpretation aggregates the scores per subject
-   (``max``, ``min``, ``mean`` or ``noisy_or``), classifies them with ordered threshold conditions and, across the provenance
-   tree of ``X``, keeps the outcome that comes first in the declared outcome list (the closest subject wins ties).
-   ``Inconclusive`` must be one of the outcomes (it is used when no condition matches or no verdict was reached).
+   Verdict predicates ``V`` have the arity ``Subject x Real`` (``HasMaliciousness(x, 0.75)``, ``HasBenignity(x, 0.85)``);
+   they are the only predicates the interpretation reads. Rules never compare scores: a rule derives a verdict assertion
+   with a constant score, and the interpretation reads the scores of ``Gamma_n``. The outcome set is
+   ``Omega = Omega_c u {Inconclusive}``: ``HDF.json`` declares only the conclusive labels ``Omega_c``, each with a
+   *condition* that is a conjunction of clauses over the scores of one subject ``Y``:
+
+   * presence ``exists V(Y, c): c OP t`` and absence ``not exists V(Y, c): c OP t``, ``OP`` in ``>=``, ``>``, ``<=``, ``<``.
+     Absence is evaluated by the interpretation on ``Gamma_n`` (it is not negation in the rules).
+   * Several ``V(Y, c_i)`` are first combined into one score (``max`` by default; ``min``, ``mean`` or ``noisy_or`` per
+     predicate) and every clause reads the combined score. For ``max`` and ``>=``/``>`` this is exactly the existential reading.
+   * ``I_subj(Y)``: exactly one label holds: that label; no label holds: ``Inconclusive`` (no label satisfied); more than
+     one: ``Inconclusive`` (conflict). Labels are evaluated in declaration order; there is no priority order.
+   * Across the provenance tree of ``X`` (``X`` and every subject extracted from it): a label with ``"propagate": true``
+     (``Malicious``) holds for ``X`` when it holds for any subject; a non-propagating label (``Benign``) holds for ``X`` when
+     ``I_subj(X)`` is that label and no propagating label holds anywhere. Maliciousness propagates upward, benignity never.
+     ``"aggregation": "strict"`` also blocks a non-propagating label when an extracted subject is in conflict.
+   * Every label declares when a decision for it is final: ``"settle": "immediate"`` (default) or ``"exhaustion"``. The
+     label *holds* in the same way in both cases; an ``exhaustion`` label is *settled* only when nothing is selectable any
+     more. Absence clauses read the current knowledge, so a selectable action may still disclose the evidence they exclude:
+     ``Benign`` (``no HasMaliciousness > 0.30``) settles at exhaustion, ``Malicious`` immediately.
+
+   ``Inconclusive`` is added by the framework: it cannot be declared and has no condition; ``inconclusive_alias`` only
+   changes its display name. By default the process stops as soon as the interpretation is conclusive *and settled*
+   (``stopping.policy = conclusive``); a derived verdict assertion alone never stops it, a provisional (not yet settled)
+   label does not stop it, and a conflict is not a stop.
 
 ``HDF.json``
 ------------
@@ -67,16 +88,31 @@ JSON does not allow comments; use ``"description"`` keys (they are ignored).
                        "denotation": "{x} is a PE file", "generator": [ "Plugin:PE" ] } ],
      "actions":    [ { "name": "CheckConnections", "arity": [ { "name": "x", "sort": "Subject" } ],
                        "denotation": "Identify the connections in {x}", "repeatable": false, "generator": [ "Plugin:PCAP" ] } ],
-     "verdicts":   [ "HasMaliciousness" ],
+     "verdicts":   [ "HasMaliciousness", "HasBenignity" ],
      "assertion_rules": [ { "name": "InjectionFromImports", "body": [ "ImportsProcessInjectionAPIs(x, count, sample)" ],
                             "head": "IndicatesInjection(x)", "explanation": "..." } ],
      "action_rules":    [ { "name": "ConnectionsOfCapture", "body": [ "IsPCAP(x)", "HasNetworkConnections(x, count)" ],
                             "head": "CheckConnections(x)" } ],
-     "interpretation": { "outcomes": [ "Malicious", "Suspicious", "Benign", "Inconclusive" ], "fallback": "Inconclusive",
-                         "verdicts": [ { "predicate": "HasMaliciousness", "aggregate": "max",
-                                         "conditions": [ { "outcome": "Malicious", "op": ">=", "value": 0.70 } ] } ] },
-     "stopping": { "on_verdict": false, "max_steps": 0 }
+     "interpretation": {
+       "outcomes": [ "Malicious", "Benign" ],
+       "inconclusive_alias": "Unknown",
+       "combination": [ { "predicate": "HasMaliciousness", "aggregate": "max" } ],
+       "labels": [
+         { "outcome": "Malicious", "propagate": true, "settle": "immediate",
+           "clauses": [ { "present": "HasMaliciousness", "op": ">=", "value": 0.70 },
+                        { "absent":  "HasBenignity",     "op": ">=", "value": 0.70 } ] },
+         { "outcome": "Benign", "propagate": false, "settle": "exhaustion",
+           "clauses": [ { "present": "HasBenignity",     "op": ">=", "value": 0.70 },
+                        { "absent":  "HasMaliciousness", "op": ">",  "value": 0.30 } ] } ],
+       "aggregation": "default" },
+     "stopping": { "policy": "conclusive", "max_steps": 0 }
    }
+
+``interpretation.outcomes`` must not contain ``Inconclusive`` (in any case) and a label condition cannot name it;
+the keys of the earlier interpretation and stopping schema are rejected with a pointer to the new keys. Every
+clause names a verdict predicate with exactly one of ``present``/``absent``; ``settle`` is ``immediate`` or
+``exhaustion``. ``stopping.policy`` is ``conclusive`` (default: stop when the interpretation is conclusive and settled), ``manual`` (only the analyst stops) or ``exhaustive`` (stop when
+nothing is selectable); ``max_steps > 0`` stops after that many executed actions whatever the policy.
 
 ``denotation`` is the human reading of an assertion or action: ``{name}`` placeholders refer to argument names (``{{`` and
 ``}}`` escape braces). Subjects are shown by name, reals with two decimals.
@@ -139,8 +175,13 @@ The HDF window
 * **Summary**: ``Ctrl+R`` asks the configured smart assistant to summarise ``Gamma_i`` and recommend actions *by number*
   from ``Selectable(Gamma_i)``; ``Ctrl+E`` executes the first recommended action that is still selectable. The assistant
   never executes anything by itself and cannot add actions or rules. Disabled when the course policy disables LLM hints.
-* **Report**: the explanation of the current interpretation (outcome, interpretation step, verdict rule and premises,
-  derivation tree, provenance path, trace, stop reason) and the derivation tree of the assertion selected in the Subject tab.
+* **Report**: the explanation of the current interpretation (outcome; ``I_subj`` of the input and of the deciding subject;
+  one line per clause of the label that holds, or the reason of ``Inconclusive``; the verdict assertions with their rules,
+  premises and derivation trees; provenance path; trace; stop reason) and the derivation tree of the assertion selected in
+  the Subject tab. The status line shows the interpretation the session computed after its last transition, e.g.
+  ``Malicious (conclusive, via payload.exe)``, ``Benign (provisional, settles at exhaustion: 2 selectable action(s) remain)``,
+  ``Benign (conclusive, settled: no selectable action remains)``, ``Unknown (no label satisfied)`` or
+  ``Unknown (conflict: Malicious, Benign)``.
 
 ``Ctrl+F`` finishes the process (manual stop): the session is frozen and the report shows the stop reason. ``F5`` rebuilds
 the views.
@@ -152,7 +193,7 @@ the views.
 
    [HDF]
    SpecificationFile = HDF.json   ; relative: current folder, then the folder of the executable
-   StopOnVerdict = false          ; true: stop when a verdict assertion is derived (overrides HDF.json)
+   StoppingPolicy = specification ; conclusive | manual | exhaustive (overrides HDF.json); specification: use HDF.json
    MaxSteps = 0                   ; > 0: stop after that many executed actions (overrides HDF.json)
    MaxDerivedPerStep = 1000000    ; safety cap of one closure (the closure is sound but incomplete when it is reached)
 
