@@ -118,7 +118,9 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
         case BTN_ID_OK:
             Exit(Dialogs::Result::Ok);
             newRequest = true;
-            CHECK(ProcessInput(), false, "");
+            // the only search for this request: the caller reads its outcome (GetAcceptedMatch / LastSearchCompleted)
+            // instead of searching again, so an input / regex error is reported exactly once
+            ProcessInput();
             return true;
         }
     }
@@ -128,7 +130,7 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
     case Event::WindowAccept:
         Exit(Dialogs::Result::Ok);
         newRequest = true;
-        CHECK(ProcessInput(), false, "");
+        ProcessInput(); // see BTN_ID_OK
         return true;
     case Event::WindowClose:
         Exit(Dialogs::Result::Cancel);
@@ -633,7 +635,11 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                 auto left   = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
                 CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-                CHECK(HasResults() == false, true, "");
+                if (HasResults())
+                {
+                    searchCompleted = true; // found
+                    return true;
+                }
             }
             else
             {
@@ -643,7 +649,11 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                     auto left   = zone.end - zone.start + 1;
 
                     CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-                    CHECK(HasResults() == false, true, "");
+                    if (HasResults())
+                    {
+                        searchCompleted = true; // found
+                        return true;
+                    }
                 }
             }
         }
@@ -678,7 +688,11 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                 auto left   = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
                 CHECK(SearchInUnicodeChunk(offset, left, pattern), false, "");
-                CHECK(HasResults() == false, true, "");
+                if (HasResults())
+                {
+                    searchCompleted = true; // found
+                    return true;
+                }
             }
             else
             {
@@ -688,7 +702,11 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                     auto left   = zone.end - zone.start + 1;
 
                     CHECK(SearchInUnicodeChunk(offset, left, pattern), false, "");
-                    CHECK(HasResults() == false, true, "");
+                    if (HasResults())
+                    {
+                        searchCompleted = true; // found
+                        return true;
+                    }
                 }
             }
         }
@@ -803,7 +821,11 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             auto left   = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
             CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-            CHECK(HasResults() == false, true, "");
+            if (HasResults())
+            {
+                searchCompleted = true; // found
+                return true;
+            }
         }
         else
         {
@@ -813,12 +835,16 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                 auto left   = zone.end - zone.start + 1;
 
                 CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-                CHECK(HasResults() == false, true, "");
+                if (HasResults())
+                {
+                    searchCompleted = true; // found
+                    return true;
+                }
             }
         }
     }
 
-    searchCompleted = true; // nothing found
+    searchCompleted = true; // ran to the end: nothing found
     return false;
 }
 } // namespace GView::View::BufferViewer

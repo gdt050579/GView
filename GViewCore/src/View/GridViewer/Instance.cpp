@@ -45,17 +45,18 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
         return;
     }
 
-    // TODO: make this cross-platform!!!
-    auto path                   = GView::App::GetObject(0)->GetPath();
-    auto lastSlash              = path.rfind(u".");
-    std::u16string exportedPath = std::u16string(path.substr(0, lastSlash));
-    exportedPath.append(u"_exported");
-    this->exportedPathUTF8           = GView::Utils::UTF16ToUTF8(exportedPath);
-    auto lastP                       = path.rfind(u"\\");
-    std::u16string exportedPathSlash = std::u16string(path.substr(0, lastP));
-    exportedPathSlash.append(u"\\");
+    // std::filesystem::path handles the platform separator ('\\' on Windows, '/' elsewhere) and non-ASCII names
+    const std::filesystem::path path{ std::u16string(GView::App::GetObject(0)->GetPath()) };
+    this->exportedPath = path;
+    this->exportedPath.replace_extension(); // <folder>/<name>_exported (the extension is dropped)
+    this->exportedPath += u"_exported";
+    this->exportedFolderPath = path.parent_path();
+}
 
-    this->exportedFolderPath = GView::Utils::UTF16ToUTF8(exportedPathSlash);
+static std::string ExportPathToUTF8(const std::filesystem::path& p)
+{
+    const auto u8 = p.u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -169,13 +170,15 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 
             if (content.has_value()) {
                 std::time_t t      = std::time(nullptr);
-                auto timestampPath = this->exportedPathUTF8 + "_" + std::to_string(t);
+                auto timestampPath = this->exportedPath;
+                timestampPath += "_" + std::to_string(t);
 
-                std::ofstream file(timestampPath.c_str(), std::ios::binary); // Open the file in binary mode
+                std::ofstream file(timestampPath, std::ios::binary); // Open the file in binary mode
                 file.write(reinterpret_cast<const char*>((*content).data()), (*content).size());
                 file.close();
 
-                AppCUI::Dialogs::MessageBox::ShowNotification("File Export Result", std::string("File exported successfully at: ") + timestampPath);
+                AppCUI::Dialogs::MessageBox::ShowNotification(
+                      "File Export Result", std::string("File exported successfully at: ") + ExportPathToUTF8(timestampPath));
             } else {
                 AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to export cell content!");
             }
@@ -195,22 +198,21 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                         ch = '_';
                 }
 
-                auto folderPath = this->exportedFolderPath + columnName + "_";
-                std::time_t t   = std::time(nullptr);
-                folderPath += std::to_string(t);
+                std::time_t t         = std::time(nullptr);
+                const auto folderPath = this->exportedFolderPath / (columnName + "_" + std::to_string(t));
 
                 std::error_code ec;
                 if (!std::filesystem::exists(folderPath, ec)) {
                     std::filesystem::create_directory(folderPath, ec);
                 }
                 if (ec) {
-                    AppCUI::Dialogs::MessageBox::ShowError("Error", std::string("Failed to create export folder: ") + folderPath);
+                    AppCUI::Dialogs::MessageBox::ShowError("Error", std::string("Failed to create export folder: ") + ExportPathToUTF8(folderPath));
                     return true;
                 }
 
                 for (auto& content : data.value().second) {
-                    std::string newName = folderPath + "\\row_" + std::to_string(index);
-                    std::ofstream file(newName.c_str(), std::ios::binary); // Open the file in binary mode
+                    const auto newName = folderPath / ("row_" + std::to_string(index));
+                    std::ofstream file(newName, std::ios::binary); // Open the file in binary mode
 
                     file.write(reinterpret_cast<const char*>(content.data()), content.size());
                     file.close();
@@ -218,9 +220,8 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                     index++;
                 }
 
-                folderPath.pop_back();
-                folderPath.pop_back();
-                AppCUI::Dialogs::MessageBox::ShowNotification("Files Export Result", std::string("Files exported successfully at folder: ") + folderPath);
+                AppCUI::Dialogs::MessageBox::ShowNotification(
+                      "Files Export Result", std::string("Files exported successfully at folder: ") + ExportPathToUTF8(folderPath));
             } else {
                 AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to export column content!");
             }

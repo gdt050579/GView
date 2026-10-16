@@ -273,9 +273,11 @@ constexpr size_t exampleTest1BinaryCodeSize = sizeof(exampleTest1BinaryCode);
 // namespace scope (not nested in DissasmTestInstance): GCC rejects "= {}" as a default argument of the enclosing class
 // when the nested struct has default member initializers, because they are only parsed once the enclosing class is complete
 struct ZoneLayout {
-    uint64 start      = 0;
-    uint64 size       = 5120;
-    uint64 entryPoint = 10;
+    uint64 start                 = 0;
+    uint64 size                  = 5120;
+    uint64 entryPoint            = 10;
+    DisassemblyLanguage language = DisassemblyLanguage::x86;
+    uint32 cacheSize             = 0; // data cache size, 0 for the whole file (the data cache has at least 64 KB)
 };
 
 class DissasmTestInstance
@@ -334,7 +336,7 @@ class DissasmTestInstance
         // Read the size before the pointer is moved into the cache: function arguments are evaluated in an
         // unspecified order, and Clang moves `memoryFile` first (null dereference).
         const auto fileSize = static_cast<uint32>(memoryFile->GetSize());
-        if (!cache.Init(std::move(memoryFile), fileSize)) {
+        if (!cache.Init(std::move(memoryFile), layout.cacheSize != 0 ? layout.cacheSize : fileSize)) {
             printf("ERROR: creating cache!\n");
             return false;
         }
@@ -352,7 +354,7 @@ class DissasmTestInstance
         zone                                = std::make_unique<DissasmCodeZone>();
         zone->zoneType                      = DissasmParseZoneType::DissasmCodeParseZone;
         zone->startLineIndex                = 0;
-        zone->zoneDetails.language          = DisassemblyLanguage::x86;
+        zone->zoneDetails.language          = layout.language;
         zone->zoneDetails.startingZonePoint = layout.start;
         zone->zoneDetails.size              = layout.size;
         zone->zoneDetails.entryPoint        = layout.entryPoint;
@@ -1859,4 +1861,431 @@ TEST_CASE("DecodeLinesBackwards", "[Dissasm]Functions")
     REQUIRE(dissasmInstance.CheckLineText(49, downwards[49 - firstLine]));
     REQUIRE(dissasmInstance.CheckLineText(50, downwards[50 - firstLine]));
     REQUIRE(dissasmInstance.CheckLineText(49, downwards[49 - firstLine]));
+}
+
+TEST_CASE("DecodeX86LineDataBytes", "[Dissasm]DataLines")
+{
+    csh handle = 0;
+    REQUIRE(cs_open(CS_ARCH_X86, CS_MODE_64, &handle) == CS_ERR_OK);
+    cs_insn* insn = cs_malloc(handle);
+    REQUIRE(insn);
+
+    // push es is not valid in 64 bit code: a 1 byte data line, the decoding continues right after it
+    const uint8_t bytes[] = { 0x06, 0x90, 0x48, 0x89 }; // push es (invalid); nop; mov with its operands cut by the end of the code
+    const uint8_t* data   = bytes;
+    size_t size           = sizeof(bytes);
+    uint64_t address      = 0x10;
+    REQUIRE(DecodeX86Line(handle, &data, &size, &address, insn));
+    REQUIRE(insn->address == 0x10);
+    REQUIRE(insn->size == 1);
+    REQUIRE(insn->bytes[0] == 0x06);
+    REQUIRE(std::string_view(insn->mnemonic) == "db");
+    REQUIRE(std::string_view(insn->op_str) == "0x06");
+    REQUIRE(address == 0x11);
+    REQUIRE(size == 3);
+    REQUIRE(data == bytes + 1);
+
+    REQUIRE(DecodeX86Line(handle, &data, &size, &address, insn));
+    REQUIRE(std::string_view(insn->mnemonic) == "nop");
+    REQUIRE(insn->address == 0x11);
+
+    // an instruction cut by the end of the code: its bytes are data lines, as disassemblers show them
+    REQUIRE(DecodeX86Line(handle, &data, &size, &address, insn));
+    REQUIRE(std::string_view(insn->mnemonic) == "db");
+    REQUIRE(std::string_view(insn->op_str) == "0x48");
+    REQUIRE(DecodeX86Line(handle, &data, &size, &address, insn));
+    REQUIRE(std::string_view(insn->op_str) == "0x89");
+    REQUIRE(address == 0x14);
+    REQUIRE(size == 0);
+    REQUIRE(!DecodeX86Line(handle, &data, &size, &address, insn)); // no bytes left
+
+    cs_free(insn, 1);
+    cs_close(&handle);
+}
+
+// mnemonic and operands (the instructions without operands have an empty op_str, GetLineText adds a space after them)
+static std::string GetAsmLineText(DissasmTestInstance& instance, uint32 line)
+{
+    const auto val   = instance.GetCurrentAsmLine(line);
+    std::string text = val.mnemonic;
+    if (val.op_str && val.op_str_size > 0)
+        text.append(" ").append(val.op_str, val.op_str_size);
+    return text;
+}
+
+TEST_CASE("UndecodableBytesInsideTheCode", "[Dissasm]DataLines")
+{
+    // x64 code with inline data: the decoding used to stop at the first byte capstone could not decode (everything after it was lost)
+    std::vector<unsigned char> file = {
+        0x55,             // 0x0: push rbp
+        0x48, 0x89, 0xE5, // 0x1: mov rbp, rsp
+        0x06,             // 0x4: push es -> not valid in 64 bit code (data)
+        0x1E,             // 0x5: push ds -> not valid in 64 bit code (data)
+        0x90,             // 0x6: nop
+        0x5D,             // 0x7: pop rbp
+        0xC3,             // 0x8: ret
+    };
+    file.resize(64, 0xCC); // int3
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // 7 lines for the first 9 bytes, then one int3 per byte
+    REQUIRE(zone.asmLinesCount == 7 + (64 - 9));
+
+    // line 0 is the entry point label
+    const std::vector<std::string_view> expected = { "EntryPoint", "push rbp", "mov rbp, rsp", "db 0x06", "db 0x1e",
+                                                     "nop",        "pop rbp",  "ret",          "int3",    "int3" };
+    const auto expectedCount                     = static_cast<uint32>(expected.size());
+    for (uint32 line = 0; line < expectedCount; line++)
+        REQUIRE(GetAsmLineText(dissasmInstance, line) == std::string(expected[line]));
+    // the same lines decoded upwards (each line restarts from its cached offset)
+    for (uint32 line = expectedCount; line-- > 0;)
+        REQUIRE(GetAsmLineText(dissasmInstance, line) == std::string(expected[line]));
+    // and as they are drawn
+    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "mov rbp, rsp"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "db 0x06"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(4, "db 0x1e"));
+
+    const auto dataLine = dissasmInstance.GetCurrentAsmLine(4);
+    REQUIRE(dataLine.address == 5);
+    REQUIRE(dataLine.size == 1);
+    REQUIRE(dataLine.bytes[0] == 0x1E);
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(5).address == 6);
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(62).address == 63); // the last byte of the zone (line 0 is the entry point label)
+
+    // offset -> line: the data lines are counted as the drawn lines are
+    struct OffsetLine {
+        uint64 offset;
+        uint32 instruction;
+        std::string_view mnemonic;
+    };
+    for (const auto& [offset, instruction, mnemonic] : std::initializer_list<OffsetLine>{
+               { 0, 0, "push" }, { 2, 1, "mov" }, { 4, 2, "db" }, { 5, 3, "db" }, { 6, 4, "nop" }, { 8, 6, "ret" }, { 63, 61, "int3" } }) {
+        uint32 diffLines = 0;
+        cs_insn* insn    = GetCurrentInstructionByOffset(offset, &zone, &dissasmInstance.objects[0], diffLines);
+        REQUIRE(insn);
+        REQUIRE(diffLines == instruction);
+        REQUIRE(std::string_view(insn->mnemonic) == mnemonic);
+        cs_free(insn, 1);
+    }
+}
+
+TEST_CASE("CodeZoneBiggerThanTheDataCache", "[Dissasm]DataLines")
+{
+    // the data cache returns at most its size (64 KB here): the lines after the first window used to be dropped
+    constexpr uint32 fileSize   = 0x30000;
+    constexpr uint32 dataOffset = 0x20000;
+    std::vector<unsigned char> file(fileSize, 0x90); // nop
+    file[dataOffset] = 0x06;                         // data (not valid in 64 bit code), after the first cache window
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    layout.cacheSize  = 1;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.asmLinesCount == fileSize);
+    // +1 for the entry point label: line N + 1 is the byte N
+    REQUIRE(GetAsmLineText(dissasmInstance, dataOffset) == "nop");
+    REQUIRE(GetAsmLineText(dissasmInstance, dataOffset + 1) == "db 0x06");
+    REQUIRE(GetAsmLineText(dissasmInstance, dataOffset + 2) == "nop");
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(dataOffset + 1).address == dataOffset);
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(fileSize).address == fileSize - 1); // the last byte of the file
+
+    uint32 diffLines = 0;
+    cs_insn* insn    = GetCurrentInstructionByOffset(fileSize - 1, &zone, &dissasmInstance.objects[0], diffLines);
+    REQUIRE(insn);
+    REQUIRE(diffLines == fileSize - 1);
+    cs_free(insn, 1);
+}
+
+static void CheckParseZone(const SettingsData& settings, size_t index, DissasmParseZoneType type, uint32 startLine, uint32 endLine)
+{
+    REQUIRE(index < settings.parseZones.size());
+    const auto& zone = settings.parseZones[index];
+    REQUIRE(zone->zoneType == type);
+    REQUIRE(zone->startLineIndex == startLine);
+    REQUIRE(zone->endingLineIndex == endLine);
+}
+
+static void CheckTextZone(const SettingsData& settings, size_t index, uint64 offset, uint64 size, bool canBeCollapsed = false)
+{
+    REQUIRE(index < settings.parseZones.size());
+    REQUIRE(settings.parseZones[index]->zoneType == DissasmParseZoneType::CollapsibleAndTextZone);
+    const auto zone = static_cast<const CollapsibleAndTextZone*>(settings.parseZones[index].get());
+    REQUIRE(zone->data.startingOffset == offset);
+    REQUIRE(zone->data.size == size);
+    REQUIRE(zone->data.canBeCollapsed == canBeCollapsed);
+}
+
+TEST_CASE("StructureByteSize", "[Dissasm]ZonesLayout")
+{
+    // the PE plugin DOS header: 4 x UInt16 then UInt16 e_res[4] (Settings::AddType)
+    DissasmStructureType dosHeader{ InternalDissasmType::UserDefined, "ImageDOSHeader" };
+    for (const char* name : { "e_magic", "e_cblp", "e_cp", "e_crlc" })
+        dosHeader.internalTypes.emplace_back(InternalDissasmType::UInt16, name);
+    DissasmStructureType reserved{ InternalDissasmType::UnidimnsionalArray, "e_res", static_cast<uint32>(InternalDissasmType::UInt16), 4 };
+    for (const char* name : { "[0]", "[1]", "[2]", "[3]" })
+        reserved.internalTypes.emplace_back(InternalDissasmType::UInt16, name);
+    dosHeader.internalTypes.push_back(reserved);
+    REQUIRE(dosHeader.GetByteSize() == 16);
+
+    const DissasmStructureType uint8Type(InternalDissasmType::UInt8, "a");
+    const DissasmStructureType int32Type(InternalDissasmType::Int32, "a");
+    const DissasmStructureType uint64Type(InternalDissasmType::UInt64, "a");
+    const DissasmStructureType stringType(InternalDissasmType::AsciiZ, "a");
+    REQUIRE(uint8Type.GetByteSize() == 1);
+    REQUIRE(int32Type.GetByteSize() == 4);
+    REQUIRE(uint64Type.GetByteSize() == 8);
+    REQUIRE(stringType.GetByteSize() == 0); // depends on the data
+    // Settings::AddArray / AddBidimensionalArray: no cells, only the cell type and the count
+    const DissasmStructureType arrayType(InternalDissasmType::UnidimnsionalArray, "a", static_cast<uint32>(InternalDissasmType::UInt32), 3);
+    const DissasmStructureType matrixType(InternalDissasmType::BidimensionalArray, "a", static_cast<uint32>(InternalDissasmType::Int16), 3, 2);
+    REQUIRE(arrayType.GetByteSize() == 12);
+    REQUIRE(matrixType.GetByteSize() == 12);
+}
+
+TEST_CASE("TextZonesFileOffsets", "[Dissasm]ZonesLayout")
+{
+    // a PE like file: the DOS header structure at 0, a code section at 0x400, a collapsible zone at 0x800
+    SettingsData settings;
+    DissasmStructureType dosHeader{ InternalDissasmType::UserDefined, "ImageDOSHeader" };
+    for (const char* name : { "e_magic", "e_cblp", "e_cp", "e_crlc", "e_cparhdr", "e_minalloc", "e_maxalloc", "e_ss" })
+        dosHeader.internalTypes.emplace_back(InternalDissasmType::UInt16, name);
+    settings.dissasmTypeMapped[0]         = dosHeader; // 16 bytes
+    settings.disassemblyZones[0x400]      = { 0x400, 0x200, 0x410, DisassemblyLanguage::x86 };
+    settings.collapsibleAndTextZones[0x800] = { 0x800, 0x100, true };
+
+    DissasmZonesLayoutParams params{};
+    params.textSize                        = 16;
+    params.fileSize                        = 0x1000;
+    params.showFileContent                 = true;
+    params.structuresInitialCollapsedState = true;
+    BuildDissasmParseZones(settings, params);
+
+    // the gap zones show the bytes between the zones and the trailing zone the bytes after the last one: never the bytes of the DOS
+    // header or of the code section again
+    REQUIRE(settings.parseZones.size() == 6);
+    CheckParseZone(settings, 0, DissasmParseZoneType::StructureParseZone, 0, 1); // collapsed
+    CheckParseZone(settings, 1, DissasmParseZoneType::CollapsibleAndTextZone, 1, 64);
+    CheckTextZone(settings, 1, 0x10, 0x3F0); // 1008 bytes: 63 lines
+    CheckParseZone(settings, 2, DissasmParseZoneType::DissasmCodeParseZone, 64, 66);
+    CheckParseZone(settings, 3, DissasmParseZoneType::CollapsibleAndTextZone, 66, 98);
+    CheckTextZone(settings, 3, 0x600, 0x200);
+    CheckParseZone(settings, 4, DissasmParseZoneType::CollapsibleAndTextZone, 98, 99); // collapsed: its title
+    CheckTextZone(settings, 4, 0x800, 0x100, true);
+    REQUIRE(settings.parseZones[4]->extendedSize == 0x100 / 16 + 1);
+    CheckParseZone(settings, 5, DissasmParseZoneType::CollapsibleAndTextZone, 99, 211);
+    CheckTextZone(settings, 5, 0x900, 0x700);
+    const auto structureZone = static_cast<const DissasmParseStructureZone*>(settings.parseZones[0].get());
+    REQUIRE(structureZone->textFileOffset == 0);
+
+    // the code zone grows (initialized): the zones after it move
+    settings.parseZones[2]->extendedSize    = 50;
+    settings.parseZones[2]->endingLineIndex = settings.parseZones[2]->startLineIndex + 51;
+    REQUIRE(RelayoutDissasmParseZones(settings.parseZones, 16));
+    CheckParseZone(settings, 2, DissasmParseZoneType::DissasmCodeParseZone, 64, 115);
+    CheckParseZone(settings, 3, DissasmParseZoneType::CollapsibleAndTextZone, 115, 147);
+    CheckParseZone(settings, 5, DissasmParseZoneType::CollapsibleAndTextZone, 148, 260);
+    REQUIRE(!RelayoutDissasmParseZones(settings.parseZones, 16)); // nothing changed
+
+    // the view width changed: the text zones get the lines of the new text size, the same bytes
+    REQUIRE(RelayoutDissasmParseZones(settings.parseZones, 10));
+    CheckParseZone(settings, 0, DissasmParseZoneType::StructureParseZone, 0, 1);
+    CheckParseZone(settings, 1, DissasmParseZoneType::CollapsibleAndTextZone, 1, 102); // 1008 bytes: 101 lines
+    CheckTextZone(settings, 1, 0x10, 0x3F0);
+    CheckParseZone(settings, 2, DissasmParseZoneType::DissasmCodeParseZone, 102, 153); // the code keeps its lines
+    CheckParseZone(settings, 3, DissasmParseZoneType::CollapsibleAndTextZone, 153, 205); // 512 bytes: 52 lines
+    CheckTextZone(settings, 3, 0x600, 0x200);
+    CheckParseZone(settings, 4, DissasmParseZoneType::CollapsibleAndTextZone, 205, 206);
+    REQUIRE(settings.parseZones[4]->extendedSize == 0x100 / 10 + 1);
+    CheckParseZone(settings, 5, DissasmParseZoneType::CollapsibleAndTextZone, 206, 386); // 1792 bytes: 180 lines
+    CheckTextZone(settings, 5, 0x900, 0x700);
+
+    // the file content hidden: only the zones, one after another
+    params.showFileContent = false;
+    BuildDissasmParseZones(settings, params);
+    REQUIRE(settings.parseZones.size() == 3);
+    CheckParseZone(settings, 0, DissasmParseZoneType::StructureParseZone, 0, 1);
+    CheckParseZone(settings, 1, DissasmParseZoneType::DissasmCodeParseZone, 1, 3);
+    CheckParseZone(settings, 2, DissasmParseZoneType::CollapsibleAndTextZone, 3, 4);
+
+    // zones that cover the whole file: no text zones; the zones that overlap do not add text either
+    SettingsData full;
+    full.disassemblyZones[0]     = { 0, 0x800, 0, DisassemblyLanguage::x86 };
+    full.disassemblyZones[0x700] = { 0x700, 0x900, 0x700, DisassemblyLanguage::x86 };
+    params.showFileContent       = true;
+    BuildDissasmParseZones(full, params);
+    REQUIRE(full.parseZones.size() == 2);
+    CheckParseZone(full, 0, DissasmParseZoneType::DissasmCodeParseZone, 0, 2);
+    CheckParseZone(full, 1, DissasmParseZoneType::DissasmCodeParseZone, 2, 4);
+}
+
+static void AddTestRecord(DissasmCache& cache, const std::string& name, uint8 value)
+{
+    const std::byte data[1] = { static_cast<std::byte>(value) };
+    REQUIRE(cache.AddRegion(name, data, 1));
+}
+
+// the value of a record added by AddTestRecord, -1 when there is no such record
+static int GetTestRecord(const DissasmCache& cache, const std::string& name)
+{
+    const auto it = cache.zonesData.find(name);
+    if (it == cache.zonesData.end() || it->second.size != 1)
+        return -1;
+    return static_cast<int>(it->second.data[0]);
+}
+
+static size_t CountLegacyRecords(const DissasmCache& cache)
+{
+    size_t count = 0;
+    for (const auto& [name, entry] : cache.zonesData)
+        if (name.starts_with("DissasmParseZoneType."))
+            count++;
+    return count;
+}
+
+TEST_CASE("LegacyCodeZoneRecordsMigration", "[Dissasm]Cache")
+{
+    // the records were keyed by the first line of their zone: offset / textSize with the view width of the session that saved them
+    SettingsData settings;
+    settings.dissasmTypeMapped[0]     = DissasmStructureType(InternalDissasmType::UInt16, "e_magic");
+    settings.disassemblyZones[0x400]  = { 0x400, 0x1000, 0x400, DisassemblyLanguage::x86 };
+    settings.disassemblyZones[0x2000] = { 0x2000, 0x1000, 0x2000, DisassemblyLanguage::x86 };
+    DissasmZonesLayoutParams params{};
+    params.textSize                        = 100;
+    params.fileSize                        = 0x4000;
+    params.showFileContent                 = true;
+    params.structuresInitialCollapsedState = true;
+    BuildDissasmParseZones(settings, params);
+
+    DissasmCache cache{};
+    cache.hasCache = true;
+    AddTestRecord(cache, "DisassemblyZone.1024", 9); // not a code zone record
+
+    SECTION("one record per code zone: the records belong to the zones in the same order")
+    {
+        AddTestRecord(cache, "DissasmParseZoneType.512", 2); // 0x2000 / 16
+        AddTestRecord(cache, "DissasmParseZoneType.64", 1);  // 0x400 / 16
+        MigrateLegacyCodeZoneRecords(cache, settings.parseZones);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.1024") == 1);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.8192") == 2);
+        REQUIRE(CountLegacyRecords(cache) == 0);
+        REQUIRE(GetTestRecord(cache, "DisassemblyZone.1024") == 9);
+
+        // once: the records are found with their new key from now on
+        MigrateLegacyCodeZoneRecords(cache, settings.parseZones);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.1024") == 1);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.8192") == 2);
+        REQUIRE(cache.zonesData.size() == 3);
+
+        // and they are loaded under the new key, whatever the first line of the zone is now
+        const auto zone = static_cast<const DissasmCodeZone*>(settings.parseZones[2].get());
+        REQUIRE(zone->zoneDetails.startingZonePoint == 0x400);
+    }
+
+    SECTION("the only legacy record goes to the only zone without a record")
+    {
+        AddTestRecord(cache, "DissasmCodeZone.1024", 1);
+        AddTestRecord(cache, "DissasmParseZoneType.300", 2);
+        MigrateLegacyCodeZoneRecords(cache, settings.parseZones);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.1024") == 1);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.8192") == 2);
+        REQUIRE(CountLegacyRecords(cache) == 0);
+    }
+
+    SECTION("records that can not be matched safely are left as they are")
+    {
+        AddTestRecord(cache, "DissasmParseZoneType.10", 1);
+        AddTestRecord(cache, "DissasmParseZoneType.20", 2);
+        AddTestRecord(cache, "DissasmParseZoneType.30", 3);
+        AddTestRecord(cache, "DissasmParseZoneType.x", 4); // not a legacy record name
+        MigrateLegacyCodeZoneRecords(cache, settings.parseZones);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.1024") == -1);
+        REQUIRE(GetTestRecord(cache, "DissasmCodeZone.8192") == -1);
+        REQUIRE(CountLegacyRecords(cache) == 4);
+    }
+}
+
+TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
+{
+    // a record saved when the analysis found less labels (the code after an undecodable byte was not decoded): the comments, the
+    // renamed labels and variables and the removed variables are placed on the lines of the same labels / instructions
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    std::string_view labelName = "isPrime";
+    REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+    REQUIRE(edited.RenameLocalVariable(36, "count").ok);
+    REQUIRE(edited.RemoveLocalVariable(362)); // var_8 of main
+    REQUIRE(edited.AddOrUpdateComment(10, "c10"));
+    REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+    const uint32 linesCount = edited.zone->GetRootZoneLinesCount();
+    std::vector<std::string> expected;
+    for (uint32 line = 0; line < linesCount; line++)
+        expected.push_back(edited.GetLineText(line));
+
+    // the label the older analysis did not find: placed before the comments, the record has one line less above them
+    uint32 missingLabel = UINT32_MAX;
+    for (const auto& [line, details] : edited.zone->dissasmType.annotations.mappings) {
+        if (line < 10 && !details.first.empty()) {
+            missingLabel = line;
+            break;
+        }
+    }
+    REQUIRE(missingLabel != UINT32_MAX);
+    edited.zone->RemoveRootAnnotationLines({ missingLabel });
+    std::vector<std::byte> buffer;
+    REQUIRE(edited.zone->ToBuffer(buffer));
+
+    auto makeCache = [](const std::vector<std::byte>& data) {
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZone.0", data.data(), static_cast<uint32>(data.size()));
+        return cache;
+    };
+
+    SECTION("the record is placed on the lines of the analysis")
+    {
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cache            = makeCache(buffer);
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(zoneLinesChanged); // the removed variable
+        REQUIRE(!restored.zone->cacheRecordRejected);
+        REQUIRE(restored.zone->GetRootZoneLinesCount() == linesCount);
+        for (uint32 line = 0; line < linesCount; line++)
+            REQUIRE(restored.CheckLineText(line, expected[line]));
+        REQUIRE(restored.CheckLineText(35, "isPrime"));
+        REQUIRE(restored.CheckLineText(36, "count = dword ptr -0x44"));
+        REQUIRE(restored.CheckComment(10, "c10"));
+        REQUIRE(restored.CheckComment(100, "c100"));
+        REQUIRE(restored.zone->dissasmType.annotations.get_name_change("sub_0x000000030") == "isPrime");
+    }
+
+    SECTION("a record that can not be placed is rejected and the zone is left unchanged")
+    {
+        // a variable the analysis never found
+        auto& function = edited.zone->localVariables.functions[0];
+        function.variables.insert(function.variables.begin(), DissasmLocalVariable{ -0x100, 4, "injected" });
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cache            = makeCache(buffer);
+        bool zoneLinesChanged = false;
+        REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(!zoneLinesChanged);
+        REQUIRE(restored.zone->cacheRecordRejected); // SaveCacheData keeps it aside instead of overwriting it
+        REQUIRE(restored.CheckLineText(35, "sub_0x000000030"));
+        REQUIRE(!restored.HasComment(100));
+
+        // no record: nothing to keep aside
+        auto emptyCache      = std::make_unique<DissasmCache>();
+        emptyCache->hasCache = true;
+        REQUIRE(!restored.zone->TryLoadDataFromCache(*emptyCache, zoneLinesChanged));
+        REQUIRE(!restored.zone->cacheRecordRejected);
+    }
 }

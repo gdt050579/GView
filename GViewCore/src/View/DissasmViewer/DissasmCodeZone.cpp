@@ -17,13 +17,9 @@ inline bool ExtractCallsToInsertFunctionNames(
       uint32& totalLines,
       bool detectLocalVariables)
 {
-    DisassemblyZone& zoneDetails = zone->zoneDetails;
-    const auto instructionData   = obj->GetData().Get(zoneDetails.startingZonePoint, static_cast<uint32>(zoneDetails.size), false);
-    if (offsets[0].offset < zoneDetails.startingZonePoint)
-        return false;
-    const uint64 codeOffset = offsets[0].offset - zoneDetails.startingZonePoint;
-    // the data cache may return less than requested (end of file, zone bigger than the cache): never decode past what was returned
-    if (!instructionData.IsValid() || codeOffset >= instructionData.GetLength())
+    // the code is [offsets[0], end of the zone): the same lines as the ones counted by populateOffsetsVector
+    const uint64 codeSize = zone->GetCodeSize();
+    if (codeSize == 0)
         return false;
 
     csh handle;
@@ -37,17 +33,15 @@ inline bool ExtractCallsToInsertFunctionNames(
 
     const uint32 asmLines = totalLines;
     uint32 linesToDecode  = totalLines;
-    // the same addresses as the drawn lines: 0 is the first decoded instruction (offsets[0])
-    uint64 address = 0;
-    size_t size    = static_cast<size_t>(instructionData.GetLength() - codeOffset);
-    auto data      = instructionData.GetData() + codeOffset;
+    // the same addresses as the drawn lines: 0 is the first decoded instruction (offsets[0]); the undecodable bytes are data lines
+    DissasmCodeLinesWalker walker(obj, offsets[0].offset, codeSize, handle);
 
     std::vector<std::pair<uint64, std::string>> callsFound;
     std::unordered_map<uint64, bool> callsMap; // true for offset, false for sub
     callsFound.reserve(16);
     bool foundCall     = false;
     uint64 callAddress = 0;
-    while (cs_disasm_iter(handle, &data, &size, &address, insn) && linesToDecode > 0) {
+    while (linesToDecode > 0 && walker.Next(insn)) {
         linesToDecode--;
         const bool isJump = insn->mnemonic[0] == 'j';
         if (TextPrefixAsUInt32(insn->mnemonic) == callOP || isJump) {
@@ -138,7 +132,6 @@ inline bool ExtractCallsToInsertFunctionNames(
     cs_close(&handle);
 
     const auto isFunctionLabel = [&getLabelType](const std::string& name) { return getLabelType(name) == SUB || name == "EntryPoint"; };
-    const uint64 codeSize      = zone->GetCodeSize();
 
     // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
     csh detailHandle     = 0;
@@ -204,15 +197,15 @@ inline bool ExtractCallsToInsertFunctionNames(
 }
 
 inline bool populateOffsetsVector(
-      vector<AsmOffsetLine>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj, int internalArchitecture, uint32& totalLines)
+      vector<AsmOffsetLine>& offsets, DisassemblyZone& zoneDetails, Reference<GView::Object> obj, int internalArchitecture, uint32& totalLines)
 {
-    const auto instructionData = obj.GetData().Get(zoneDetails.startingZonePoint, static_cast<uint32>(zoneDetails.size), false);
-    if (!instructionData.IsValid())
+    if (zoneDetails.size == 0 || zoneDetails.size > UINT64_MAX - zoneDetails.startingZonePoint)
         return false;
-    // the data cache may return less than requested (end of file, zone bigger than the cache): never decode past what was returned
-    const uint64 availableSize = std::min<uint64>(zoneDetails.size, instructionData.GetLength());
-    // the entry point must be inside the zone; it may be after the bytes returned by the data cache (a zone bigger than the cache
-    // window): the lines are counted until there, the entry point simply has no line (the init must not fail on every paint)
+    // the zone must have bytes in the file; the lines end with the file when the zone goes past it
+    if (zoneDetails.startingZonePoint >= obj->GetData().GetSize())
+        return false;
+    // the entry point must be inside the zone; it may be after the end of the file (a truncated file): the lines are counted until
+    // there, the entry point simply has no line (the init must not fail on every paint)
     if (zoneDetails.entryPoint < zoneDetails.startingZonePoint || zoneDetails.entryPoint - zoneDetails.startingZonePoint >= zoneDetails.size)
         return false;
 
@@ -227,9 +220,9 @@ inline bool populateOffsetsVector(
     // The previous backward search for the lowest branch target below the entry point read any operand that is not a hex number
     // (registers, memory) as the zone start, so the zone start was already the first decoded instruction for nearly every binary;
     // the cached zones (labels, comments) are keyed on these lines.
-    uint64 address = 0;
-    size_t size    = static_cast<size_t>(availableSize);
-    auto data      = instructionData.GetData();
+    // An undecodable byte is a data line (db) and the decoding continues after it (inline data, jump tables); a zone bigger than the
+    // data cache window is decoded window after window.
+    DissasmCodeLinesWalker walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, handle);
 
     constexpr uint32 addInstructionsStop = 30;       // TODO: update this -> for now it stops, later will fold
     constexpr uint32 alOpStr             = 7102752u; //* (uint32*) " al";
@@ -240,8 +233,9 @@ inline bool populateOffsetsVector(
     offsets.push_back({ zoneDetails.startingZonePoint, 0 });
 
     cs_insn* insn = cs_malloc(handle);
-    while (cs_disasm_iter(handle, &data, &size, &address, insn)) {
+    while (walker.Next(insn)) {
         lineIndex++;
+        const uint64 address = walker.GetAddress(); // the next line
         if (address - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN) {
             lastOffset = address;
             offsets.push_back({ address + zoneDetails.startingZonePoint, lineIndex });

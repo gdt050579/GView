@@ -63,6 +63,8 @@ class CharacterStream
         if (this->ec.FromEncoding(this->settings->encoding, this->pos, this->end))
         {
             this->decodingError = false;
+            // one decoded character = one cell; a cell holds a single char16, so code points above U+FFFF (e.g. emoji)
+            // are shown as U+FFFD, while pos still advances over all of their bytes (4 in UTF-8 / a surrogate pair in UTF-16)
             this->ch            = this->ec.GetChar();
             this->rawCharCode   = this->ch;
             this->charIsTab     = ch == '\t';

@@ -1904,12 +1904,14 @@ void Instance::ShowSaveAsDialog()
             continue;
         if (y < tok.pos.y)
         {
+            b.Add(encChar.Flush()); // an unpaired high surrogate must be written before the separator
             b.AddMultipleTimes(newLine, tok.pos.y - y);
             x = 0;
             y = tok.pos.y;
         }
         if (x < tok.pos.x)
         {
+            b.Add(encChar.Flush());
             b.AddMultipleTimes(" ", tok.pos.x - x);
             x = tok.pos.x;
         }
@@ -1926,6 +1928,7 @@ void Instance::ShowSaveAsDialog()
                 }
                 else
                 {
+                    b.Add(encChar.Flush());
                     b.Add(newLine);
                     b.AddMultipleTimes(" ", tok.pos.x);
                     x = tok.pos.x;
@@ -1952,6 +1955,7 @@ void Instance::ShowSaveAsDialog()
             b.Resize(0);
         }
     }
+    b.Add(encChar.Flush());
     // Stept 3 --> restore the original tokens positions
     restoreViewState();
 

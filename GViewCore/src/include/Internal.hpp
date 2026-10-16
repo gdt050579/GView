@@ -139,22 +139,93 @@ namespace Utils
             Unicode16LE = 3,
             Unicode16BE = 4
         };
+        // shown (or written) instead of a character that can not be represented
+        constexpr char16 UNICODE_REPLACEMENT_CHARACTER = 0xFFFD;
+        constexpr uint32 UNICODE_MAX_CODE_POINT        = 0x10FFFF;
+        inline constexpr bool IsHighSurrogate(uint32 value)
+        {
+            return (value >= 0xD800) && (value <= 0xDBFF);
+        }
+        inline constexpr bool IsLowSurrogate(uint32 value)
+        {
+            return (value >= 0xDC00) && (value <= 0xDFFF);
+        }
+
+        // One decoded character: a Unicode code point (U+0000..U+10FFFF) and the number of source bytes it was decoded from.
+        // Code points above U+FFFF (e.g. emoji) do not fit in one char16:
+        //   - GetChar() / operator char16 return U+FFFD for them; this is for consumers that keep one char16 per character
+        //     (an AppCUI Character cell holds a single char16, so the TextViewer shows U+FFFD for such a character)
+        //   - ToUTF16() writes the surrogate pair; this is for consumers that produce UTF-16 text (e.g. ConvertToUnicode16)
         class ExpandedCharacter
         {
-            char16 unicodeValue;
+            uint32 codePoint;
             uint16 length;
 
+            static inline uint32 ReadUTF16Unit(const uint8* p, bool bigEndian)
+            {
+                return bigEndian ? ((static_cast<uint32>(p[0]) << 8) | p[1]) : (p[0] | (static_cast<uint32>(p[1]) << 8));
+            }
+            inline bool FromUTF16Buffer(const uint8* start, const uint8* end, bool bigEndian)
+            {
+                if (start + 1 >= end)
+                {
+                    codePoint = 0;
+                    length    = 0;
+                    return false;
+                }
+                const auto first = ReadUTF16Unit(start, bigEndian);
+                if (IsHighSurrogate(first) && (start + 3 < end))
+                {
+                    const auto second = ReadUTF16Unit(start + 2, bigEndian);
+                    if (IsLowSurrogate(second))
+                    {
+                        codePoint = 0x10000 + ((first - 0xD800) << 10) + (second - 0xDC00);
+                        length    = 4;
+                        return true;
+                    }
+                }
+                // BMP character (an unpaired surrogate is kept as it is)
+                codePoint = first;
+                length    = 2;
+                return true;
+            }
+
           public:
-            ExpandedCharacter() : unicodeValue(0), length(0)
+            ExpandedCharacter() : codePoint(0), length(0)
             {
             }
+            // the character as a single char16 (U+FFFD for code points above U+FFFF)
             inline operator char16() const
             {
-                return unicodeValue;
+                return GetChar();
             }
+            // the character as a single char16 (U+FFFD for code points above U+FFFF)
             inline char16 GetChar() const
             {
-                return unicodeValue;
+                return codePoint <= 0xFFFF ? static_cast<char16>(codePoint) : UNICODE_REPLACEMENT_CHARACTER;
+            }
+            inline uint32 GetCodePoint() const
+            {
+                return codePoint;
+            }
+            // true if the character needs two UTF-16 units (a surrogate pair)
+            inline bool IsSurrogatePair() const
+            {
+                return codePoint > 0xFFFF;
+            }
+            // writes the UTF-16 form of the character (1 unit, or 2 for a surrogate pair) to 'output' (room for 2 units is required)
+            // and returns the number of units written
+            inline uint32 ToUTF16(char16* output) const
+            {
+                if (codePoint <= 0xFFFF)
+                {
+                    output[0] = static_cast<char16>(codePoint);
+                    return 1;
+                }
+                const auto value = codePoint - 0x10000;
+                output[0]        = static_cast<char16>(0xD800 + (value >> 10));
+                output[1]        = static_cast<char16>(0xDC00 + (value & 0x3FF));
+                return 2;
             }
             inline uint32 Length() const
             {
@@ -169,66 +240,64 @@ namespace Utils
             {
                 if (start >= end)
                 {
-                    unicodeValue = 0;
-                    length       = 0;
+                    codePoint = 0;
+                    length    = 0;
                     return false;
                 }
                 switch (e)
                 {
                 case Encoding::Ascii:
                 case Encoding::Binary:
-                    unicodeValue = *start;
-                    length       = 1;
+                    codePoint = *start;
+                    length    = 1;
                     return true;
                 case Encoding::Unicode16LE:
-                    if (start + 1 < end)
-                    {
-                        length       = 2;
-                        unicodeValue = *(const char16*) start;
-                        return true;
-                    }
-                    length       = 0;
-                    unicodeValue = 0;
-                    return false;
+                    return FromUTF16Buffer(start, end, false);
                 case Encoding::Unicode16BE:
-                    if (start + 1 < end)
-                    {
-                        length       = 2;
-                        unicodeValue = ((uint16) (*start) << 8) | (start[1]);
-                        return true;
-                    }
-                    length       = 0;
-                    unicodeValue = 0;
-                    return false;
+                    return FromUTF16Buffer(start, end, true);
                 case Encoding::UTF8:
                     if ((*start) < 0x80)
                     {
-                        unicodeValue = *start;
-                        length       = 1;
+                        codePoint = *start;
+                        length    = 1;
                         return true;
                     }
                     return FromUTF8Buffer(start, end);
                 default:
-                    unicodeValue = 0;
-                    length       = 0;
+                    codePoint = 0;
+                    length    = 0;
                     return false;
                 }
             }
         };
 
+        // Encodes text one char16 at a time.
+        // For UTF-8 a surrogate pair becomes one 4-byte sequence: a high surrogate is held back (Encode returns an empty view)
+        // until the next call; if that is not a low surrogate the held one is written as U+FFFD. An unpaired low surrogate is
+        // also written as U+FFFD. Call Flush() after the last character so a trailing unpaired high surrogate is not lost.
+        // The other encodings write every char16 as it is (a pair stays a pair in UTF-16).
         class EncodedCharacter
         {
             uint8 internalBuffer[16];
+            char16 pendingHighSurrogate;
 
             BufferView ToUTF8(char16 ch);
 
           public:
+            EncodedCharacter() : pendingHighSurrogate(0)
+            {
+            }
+            inline bool HasPendingData() const
+            {
+                return pendingHighSurrogate != 0;
+            }
+            BufferView Flush();
             inline BufferView Encode(char16 ch, Encoding encoding)
             {
                 switch (encoding)
                 {
                 case Encoding::UTF8:
-                    if (ch < 0x80)
+                    if ((ch < 0x80) && (pendingHighSurrogate == 0))
                     {
                         internalBuffer[0] = static_cast<uint8>(ch);
                         return BufferView(internalBuffer, 1);

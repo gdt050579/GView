@@ -27,6 +27,13 @@ constexpr long SMART_ASSISTANT_CONNECT_TIMEOUT_SECONDS = 15L;
 constexpr long SMART_ASSISTANT_TOTAL_TIMEOUT_SECONDS   = 120L;
 #endif
 
+// Default size (in characters of serialized JSON) of the file context sent with a prompt. 64K characters is roughly 16K
+// tokens (~4 characters / token): far below the context window of the built-in models (GPT-4o: 128K tokens,
+// Gemini 1.5 Pro: 1M+ tokens), so the prompt, the chat history and the answer still fit, while the request stays small
+// enough for a quick, cheap call (the context is sent again with every prompt) and for low API rate-limit tiers.
+// Users can change it with "ContextCharacterLimit" in the [SmartAssistants] section of GView.ini (see QueryInterface.cpp).
+constexpr uint32 SMART_ASSISTANT_DEFAULT_CONTEXT_CHARACTER_LIMIT = 64u * 1024u;
+
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s)
 {
     const size_t totalSize = size * nmemb;
@@ -232,9 +239,10 @@ struct ChatGPT4oAssistant : SmartAssistantRegisterInterface {
         this->configData = configDataParam;
     }
 
+    // default context size; the [SmartAssistants] ContextCharacterLimit setting overrides it
     uint32 GetCharacterLimit() override
     {
-        return 1024u;
+        return SMART_ASSISTANT_DEFAULT_CONTEXT_CHARACTER_LIMIT;
     }
 };
 
@@ -272,9 +280,10 @@ struct GeminiPro1_5SmartAssistant : SmartAssistantRegisterInterface
         this->configData = configDataParam;
     }
 
+    // default context size; the [SmartAssistants] ContextCharacterLimit setting overrides it
     uint32 GetCharacterLimit() override
     {
-        return 1024u;
+        return SMART_ASSISTANT_DEFAULT_CONTEXT_CHARACTER_LIMIT;
     }
 };
 

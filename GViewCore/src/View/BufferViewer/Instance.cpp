@@ -376,7 +376,8 @@ bool Instance::ShowFindDialog()
     findDialog.UpdateData(this->cursor.GetCurrentPosition(), this->obj);
     CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
 
-    const auto [start, length] = findDialog.GetNextMatch(this->cursor.GetCurrentPosition());
+    // accepting the dialog already ran the search (from the cursor position): use its outcome instead of searching again
+    const auto [start, length] = findDialog.GetAcceptedMatch();
     if (start != GView::Utils::INVALID_OFFSET && length != GView::Utils::INVALID_OFFSET) {
         if (findDialog.AlignToUpperRightCorner()) {
             MoveScrollTo(start);
@@ -390,9 +391,10 @@ bool Instance::ShowFindDialog()
             this->selection.UpdateSelection(0, start + length - 1);
             UpdateCurrentSelection();
         }
-    } else {
+    } else if (findDialog.LastSearchCompleted()) {
         Dialogs::MessageBox::ShowError("Error!", "Pattern not found!");
     }
+    // otherwise the search stopped on an input / regex error (the dialog already reported it) or was canceled
 
     return true;
 }
@@ -1402,7 +1404,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             if (samePosition) {
                 Dialogs::MessageBox::ShowError("Error!", "No next match found!");
             }
-        } else {
+        } else if (findDialog.LastSearchCompleted()) { // an input / regex error was already reported by the search
             Dialogs::MessageBox::ShowError("Error!", "No next match found!");
         }
 
@@ -1436,7 +1438,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             if (samePosition) {
                 Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
             }
-        } else {
+        } else if (findDialog.LastSearchCompleted()) { // an input / regex error was already reported by the search
             Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
         }
 

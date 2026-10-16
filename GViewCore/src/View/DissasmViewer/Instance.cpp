@@ -888,13 +888,15 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             if (!zone->data.canBeCollapsed)
                 dli.textLineToDraw++;
 
-            uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
-            if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw) {
-                dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
-            }
-            const uint64 startingOffset = zone->data.startingOffset + (static_cast<uint64>(dli.textLineToDraw) - 1ull) * Layout.textSize;
+            // the bytes of the zone shown on this line (textLineToDraw >= 1 here): a full line, the remaining bytes on the last line,
+            // nothing on the last line of a collapsible zone whose size is a multiple of the line size
+            const uint64 lineStart      = (static_cast<uint64>(dli.textLineToDraw) - 1ull) * Layout.textSize;
+            const uint64 dataNeeded     = lineStart < zone->data.size ? std::min<uint64>(zone->data.size - lineStart, Layout.textSize) : 0;
+            const uint64 startingOffset = zone->data.startingOffset + lineStart;
 
-            if (startingOffset + dataNeeded <= this->obj->GetData().GetSize()) {
+            if (dataNeeded == 0) {
+                HighlightSelectionAndDrawCursorText(dli, 0, Layout.startingTextLineOffset);
+            } else if (startingOffset + dataNeeded <= this->obj->GetData().GetSize()) {
                 const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid()) {
                     AddStringToChars(dli, ColorMan.Colors.StructureColor, "\tInvalid buff at position: %llu", zone->data.startingOffset + zone->data.size);
@@ -1061,93 +1063,106 @@ struct MappingZonesData {
     DissasmParseZoneType zoneType;
 };
 
-void Instance::RecomputeDissasmZones()
+uint32 GView::View::DissasmViewer::GetTextZoneExtendedSize(const CollapsibleAndTextData& data, uint32 textSize)
 {
-    // the zones are recreated below, the pointers kept for clearing their cached lines would dangle
-    asmData.zonesToClear.clear();
-    // the same for the zone of the cursor line numbers: they are computed again for the new zones
-    cursorLineNumbers.computed = false;
-    cursorLineNumbers.valid    = false;
-    cursorLineNumbers.zone     = nullptr;
-    cursorLineNumbers.numbers.clear();
+    textSize = std::max<uint32>(textSize, 1u);
+    // a collapsible zone (its title is the first line) keeps a line for the remaining bytes; a text zone ends with its last byte
+    const uint64 lines = data.canBeCollapsed ? data.size / textSize + 1u : data.size / textSize + (data.size % textSize != 0 ? 1u : 0u);
+    return static_cast<uint32>(std::min<uint64>(lines, UINT32_MAX / 2u));
+}
 
-    std::map<uint32, std::vector<MappingZonesData>> mappingData;
-    for (auto& mapping : this->settings->dissasmTypeMapped) {
-        mappingData[OffsetToLinePosition(mapping.first).line].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });
-    }
-    for (auto& dissasmZone : settings->disassemblyZones) {
-        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back({ &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
-    }
-    for (auto& zone : settings->collapsibleAndTextZones) {
-        mappingData[OffsetToLinePosition(zone.first).line].push_back({ &zone.second, DissasmParseZoneType::CollapsibleAndTextZone });
-    }
+// end (exclusive) of [start, start + size), saturated
+static uint64 GetZoneBytesEnd(uint64 start, uint64 size)
+{
+    return size > UINT64_MAX - start ? UINT64_MAX : start + size;
+}
 
-    uint32 lastZoneEndingIndex = 0;
-    uint16 currentIndex        = 0;
-    uint32 textLinesOffset     = 0;
-    settings->parseZones.clear();
+void GView::View::DissasmViewer::BuildDissasmParseZones(SettingsData& settings, const DissasmZonesLayoutParams& params)
+{
+    const uint32 textSize = std::max<uint32>(params.textSize, 1u);
 
-    // TODO: maybe refractor this
-    for (const auto& mapping : mappingData) {
-        for (const auto& entry : mapping.second) {
-            uint32 zoneStartingLine = mapping.first;
-            if (zoneStartingLine < lastZoneEndingIndex || !config.ShowFileContent)
-                zoneStartingLine = lastZoneEndingIndex;
-            if (zoneStartingLine > lastZoneEndingIndex) {
-                const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
-                textLinesOffset += zoneStartingLine - lastZoneEndingIndex;
-                const uint64 endTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
+    // ordered by their file offset; the zones placed at the same offset keep the order: structures, code, collapsible zones
+    std::map<uint64, std::vector<MappingZonesData>> mappingData;
+    for (auto& mapping : settings.dissasmTypeMapped)
+        mappingData[mapping.first].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });
+    for (auto& dissasmZone : settings.disassemblyZones)
+        mappingData[dissasmZone.first].push_back({ &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
+    for (auto& zone : settings.collapsibleAndTextZones)
+        mappingData[zone.first].push_back({ &zone.second, DissasmParseZoneType::CollapsibleAndTextZone });
 
-                auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
+    auto& zones = settings.parseZones;
+    zones.clear();
+    uint32 currentLine   = 0; // the zones are placed one after another
+    uint16 currentIndex  = 0;
+    uint64 shownBytesEnd = 0; // end (exclusive) of the file bytes covered by the zones placed so far
 
-                collapsibleZone->data            = { startingTextOffset, endTextOffset - startingTextOffset, false };
-                collapsibleZone->startLineIndex  = lastZoneEndingIndex;
-                collapsibleZone->isCollapsed     = false;
-                collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex;
-                // collapsibleZone->textLinesOffset = textLinesOffset;
-                collapsibleZone->zoneID       = currentIndex++;
-                collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
-                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize);
+    // the raw bytes [start, end) as text lines (they are not covered by any other zone)
+    auto addTextZone = [&](uint64 start, uint64 end) {
+        auto textZone             = std::make_unique<CollapsibleAndTextZone>();
+        textZone->data            = { start, end - start, false };
+        textZone->startLineIndex  = currentLine;
+        textZone->isCollapsed     = false;
+        textZone->zoneID          = currentIndex++;
+        textZone->zoneType        = DissasmParseZoneType::CollapsibleAndTextZone;
+        textZone->extendedSize    = GetTextZoneExtendedSize(textZone->data, textSize);
+        textZone->endingLineIndex = textZone->startLineIndex + textZone->extendedSize;
+        currentLine               = textZone->endingLineIndex;
+        zones.push_back(std::move(textZone));
+    };
 
-                if (!collapsibleZone->isCollapsed)
-                    collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
-
-                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
-                lastZoneEndingIndex = collapsibleZone->endingLineIndex;
-                settings->parseZones.push_back(std::move(collapsibleZone));
+    for (const auto& [zoneOffset, entries] : mappingData) {
+        for (const auto& entry : entries) {
+            // the bytes of the file covered by the zone: the structure fields (the structures have no size of their own), the code,
+            // the collapsible zone
+            uint64 zoneBytesEnd = zoneOffset;
+            switch (entry.zoneType) {
+            case DissasmParseZoneType::StructureParseZone:
+                zoneBytesEnd = GetZoneBytesEnd(zoneOffset, static_cast<const DissasmStructureType*>(entry.data)->GetByteSize());
+                break;
+            case DissasmParseZoneType::DissasmCodeParseZone:
+                zoneBytesEnd = GetZoneBytesEnd(zoneOffset, static_cast<const DisassemblyZone*>(entry.data)->size);
+                break;
+            case DissasmParseZoneType::CollapsibleAndTextZone:
+                zoneBytesEnd = GetZoneBytesEnd(zoneOffset, static_cast<const CollapsibleAndTextData*>(entry.data)->size);
+                break;
             }
+
+            // the bytes between the end of the previous zones and the start of this one
+            const uint64 gapEnd = std::min<uint64>(zoneOffset, params.fileSize);
+            if (params.showFileContent && gapEnd > shownBytesEnd)
+                addTextZone(shownBytesEnd, gapEnd);
+            shownBytesEnd = std::max<uint64>(shownBytesEnd, zoneBytesEnd);
 
             switch (entry.zoneType) {
             case DissasmParseZoneType::StructureParseZone: {
                 const auto convertedData   = static_cast<DissasmStructureType*>(entry.data);
                 auto parseZone             = std::make_unique<DissasmParseStructureZone>();
-                parseZone->startLineIndex  = zoneStartingLine;
+                parseZone->startLineIndex  = currentLine;
                 parseZone->endingLineIndex = parseZone->startLineIndex + 1;
-                parseZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+                parseZone->isCollapsed     = params.structuresInitialCollapsedState;
                 parseZone->extendedSize    = convertedData->GetExpandedSize() - 1;
-                // parseZone->textLinesOffset = textLinesOffset;
-                parseZone->dissasmType = *convertedData;
+                parseZone->dissasmType     = *convertedData;
                 parseZone->levels.push_back(0);
                 parseZone->types.emplace_back(parseZone->dissasmType);
-                parseZone->structureIndex        = 0;
-                parseZone->textFileOffset        = mapping.first;
-                parseZone->initialTextFileOffset = mapping.first;
+                parseZone->structureIndex = 0;
+                // the fields are read from the file offset of the structure
+                parseZone->textFileOffset        = zoneOffset;
+                parseZone->initialTextFileOffset = zoneOffset;
                 parseZone->zoneID                = currentIndex++;
                 parseZone->zoneType              = DissasmParseZoneType::StructureParseZone;
 
                 if (!parseZone->isCollapsed)
                     parseZone->endingLineIndex += parseZone->extendedSize;
 
-                // lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
-                lastZoneEndingIndex = parseZone->endingLineIndex;
-                settings->parseZones.push_back(std::move(parseZone));
+                currentLine = parseZone->endingLineIndex;
+                zones.push_back(std::move(parseZone));
             } break;
             case DissasmParseZoneType::DissasmCodeParseZone: {
                 // TODO: resize vectors! -> there could be done some approximations for the best speed
                 const auto convertedData  = static_cast<DisassemblyZone*>(entry.data);
                 auto codeZone             = std::make_unique<DissasmCodeZone>();
                 codeZone->zoneDetails     = *convertedData;
-                codeZone->startLineIndex  = zoneStartingLine;
+                codeZone->startLineIndex  = currentLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
                 codeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
                 codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
@@ -1164,90 +1179,81 @@ void Instance::RecomputeDissasmZones()
                 if (!codeZone->isCollapsed)
                     codeZone->endingLineIndex += codeZone->extendedSize;
 
-                // lastEndMinusLastOffset = codeZone->endingLineIndex + codeZone->textLinesOffset;
-                lastZoneEndingIndex = codeZone->endingLineIndex;
-                settings->parseZones.push_back(std::move(codeZone));
+                currentLine = codeZone->endingLineIndex;
+                zones.push_back(std::move(codeZone));
             } break;
             case DissasmParseZoneType::CollapsibleAndTextZone: {
                 const auto convertedData         = static_cast<CollapsibleAndTextData*>(entry.data);
                 auto collapsibleZone             = std::make_unique<CollapsibleAndTextZone>();
                 collapsibleZone->data            = *convertedData;
-                collapsibleZone->startLineIndex  = zoneStartingLine;
-                collapsibleZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+                collapsibleZone->startLineIndex  = currentLine;
+                collapsibleZone->isCollapsed     = params.structuresInitialCollapsedState;
                 collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
-                // collapsibleZone->textLinesOffset = textLinesOffset;
-                collapsibleZone->zoneID       = currentIndex++;
-                collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
-                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+                collapsibleZone->zoneID          = currentIndex++;
+                collapsibleZone->zoneType        = DissasmParseZoneType::CollapsibleAndTextZone;
+                collapsibleZone->extendedSize    = GetTextZoneExtendedSize(collapsibleZone->data, textSize);
 
                 if (!collapsibleZone->isCollapsed)
                     collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
 
-                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
-                lastZoneEndingIndex = collapsibleZone->endingLineIndex;
-                settings->parseZones.push_back(std::move(collapsibleZone));
+                currentLine = collapsibleZone->endingLineIndex;
+                zones.push_back(std::move(collapsibleZone));
             } break;
             }
         }
     }
 
-    if (settings->parseZones.empty())
-        return; // TODO: only text -> add zone text
+    if (zones.empty())
+        return; // only text: the file is drawn as text lines, without zones
 
-    const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
-    const uint64 totalFileSize      = this->obj->GetData().GetSize();
-    if (startingTextOffset >= totalFileSize)
-        return;
+    // the bytes after the last zone, until the end of the file
+    if (params.showFileContent && shownBytesEnd < params.fileSize)
+        addTextZone(shownBytesEnd, params.fileSize);
+}
 
-    const uint64 zoneSize = totalFileSize - startingTextOffset;
+bool GView::View::DissasmViewer::RelayoutDissasmParseZones(std::vector<std::unique_ptr<ParseZone>>& zones, uint32 textSize)
+{
+    bool changed       = false;
+    uint32 currentLine = 0;
+    for (auto& zone : zones) {
+        // the structure and code zones keep their lines (they do not depend on the text line size)
+        uint32 linesCount = zone->endingLineIndex - zone->startLineIndex;
+        if (zone->zoneType == DissasmParseZoneType::CollapsibleAndTextZone) {
+            const auto textZone          = static_cast<CollapsibleAndTextZone*>(zone.get());
+            const uint32 newExtendedSize = GetTextZoneExtendedSize(textZone->data, textSize);
+            const uint32 titleLines      = textZone->data.canBeCollapsed ? 1u : 0u;
+            // as ChangeZoneCollapseState: a collapsed zone keeps only its title
+            linesCount = titleLines + (zone->isCollapsed ? 0u : newExtendedSize);
+            changed    = changed || newExtendedSize != zone->extendedSize;
+            zone->extendedSize = newExtendedSize;
+        }
+        changed               = changed || zone->startLineIndex != currentLine || zone->endingLineIndex != currentLine + linesCount;
+        zone->startLineIndex  = currentLine;
+        zone->endingLineIndex = currentLine + linesCount;
+        currentLine           = zone->endingLineIndex;
+    }
+    return changed;
+}
 
-    auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
+void Instance::RecomputeDissasmZones()
+{
+    // the zones are recreated below, the pointers kept for clearing their cached lines would dangle
+    asmData.zonesToClear.clear();
+    // the same for the zone of the cursor line numbers: they are computed again for the new zones
+    cursorLineNumbers.computed = false;
+    cursorLineNumbers.valid    = false;
+    cursorLineNumbers.zone     = nullptr;
+    cursorLineNumbers.numbers.clear();
 
-    collapsibleZone->data            = { startingTextOffset, zoneSize, false };
-    collapsibleZone->startLineIndex  = lastZoneEndingIndex;
-    collapsibleZone->isCollapsed     = false;
-    collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex;
-    // collapsibleZone->textLinesOffset = textLinesOffset;
-    collapsibleZone->zoneID       = currentIndex++;
-    collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
-    collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+    DissasmZonesLayoutParams params{};
+    params.textSize                        = Layout.textSize;
+    params.fileSize                        = this->obj->GetData().GetSize();
+    params.showFileContent                 = config.ShowFileContent;
+    params.structuresInitialCollapsedState = Layout.structuresInitialCollapsedState;
+    BuildDissasmParseZones(*settings.get(), params);
 
-    if (!collapsibleZone->isCollapsed)
-        collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
-
-    // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
-    lastZoneEndingIndex = collapsibleZone->endingLineIndex;
-    settings->parseZones.push_back(std::move(collapsibleZone));
-
-    UpdateLayoutTotalLines();
-
-    // vector<CollapsibleAndTextData> textData;
-    // const uint32 textLinesCount = obj->GetData().GetSize() / Layout.textSize;
-    // auto& zones                 = settings->parseZones;
-    // if (zones[0]->startLineIndex > 0)
-    //{
-    //     textData.emplace_back(0, zones[0]->startLineIndex * Layout.textSize);
-    // }
-    // const uint32 zonesCount = settings->parseZones.size();
-    // if (zonesCount == 1)
-    //{
-    //     uint64 size = (textLinesCount - zones[0]->endingLineIndex + zones[0]->textLinesOffset) * Layout.textSize +
-    //                   obj->GetData().GetSize() % Layout.textSize;
-    //     textData.emplace_back(zones[0]->endingLineIndex, size, false);
-    // }
-    // for (uint32 i = 0; i < zonesCount - 1; i++)
-    //{
-    //     if (zones[i]->endingLineIndex < zones[i + 1]->startLineIndex)
-    //     {
-    //         uint64 size = (zones[i + 1]->startLineIndex - zones[i]->endingLineIndex) * Layout.textSize;
-    //         textData.emplace_back(zones[i]->endingLineIndex, size, false);
-    //     }
-    // }
-    // if (zones[zonesCount - 1]->endingLineIndex <= textLinesCount)
-    //{
-    //     uint64 size = (textLinesCount - zones[zonesCount - 1]->endingLineIndex - zones[zonesCount - 1]->textLinesOffset) *
-    //     Layout.textSize; textData.emplace_back(zones[zonesCount - 1]->endingLineIndex, size, false);
-    // }
+    if (!settings->parseZones.empty())
+        UpdateLayoutTotalLines();
 }
 
 uint64 Instance::GetZonesMaxSize() const
@@ -1509,7 +1515,46 @@ bool Instance::ShowCopyDialog()
 
 void Instance::OnAfterResize(int newWidth, int newHeight)
 {
+    const uint32 oldTextSize    = Layout.textSize;
+    const uint32 oldVisibleRows = Layout.visibleRows;
+    // the cursor relative to its zone, taken with the lines of the previous layout
+    CursorState cursorState = SaveCursorState();
+
     this->RecomputeDissasmLayout();
+    // before OnStart there are no zones; a 0 sized view draws nothing (the zones are laid out once it has a size again)
+    if (settings->parseZones.empty() || Layout.textSize == 0)
+        return;
+    if (oldTextSize == Layout.textSize && oldVisibleRows == Layout.visibleRows)
+        return;
+
+    if (oldTextSize != Layout.textSize) {
+        // a text zone line shows textSize bytes: the cursor stays on the same byte of the zone
+        if (cursorState.zoneIndex != CursorState::NO_ZONE && cursorState.zoneIndex < settings->parseZones.size() && oldTextSize > 0) {
+            const auto& zone = settings->parseZones[cursorState.zoneIndex];
+            if (zone->zoneType == DissasmParseZoneType::CollapsibleAndTextZone && !zone->isCollapsed) {
+                const auto textZone     = static_cast<const CollapsibleAndTextZone*>(zone.get());
+                const uint32 titleLines = textZone->data.canBeCollapsed ? 1u : 0u;
+                if (cursorState.lineInZone >= titleLines) {
+                    const uint64 byteInZone = static_cast<uint64>(cursorState.lineInZone - titleLines) * oldTextSize +
+                                              std::min<uint32>(cursorState.offset, oldTextSize - 1u);
+                    cursorState.lineInZone = titleLines + static_cast<uint32>(std::min<uint64>(byteInZone / Layout.textSize, UINT32_MAX - titleLines));
+                    cursorState.offset     = static_cast<uint32>(byteInZone % Layout.textSize);
+                }
+            }
+        }
+
+        // the text zones have a different number of lines: every zone after them moves
+        if (RelayoutDissasmParseZones(settings->parseZones, Layout.textSize)) {
+            UpdateLayoutTotalLines();
+            selection.Clear(); // the selections are kept as lines
+            for (const auto& codeZone : asmData.zonesToClear)
+                codeZone->asmPreCacheData.Clear();
+            cursorLineNumbers.computed = false;
+        }
+    }
+
+    // the same zone line, inside the new view (RestoreCursorState clamps it to the zone, to the lines and to the visible rows)
+    RestoreCursorState(cursorState);
 }
 
 void Instance::OnStart()

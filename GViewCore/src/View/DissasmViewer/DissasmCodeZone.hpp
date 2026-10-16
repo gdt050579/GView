@@ -38,6 +38,8 @@ struct DissasmCodeZone : public ParseZone {
     // x86/x64: instruction address (relative, as DissasmAsmPreCacheLine::address) -> bit mask of the operand numbers
     // (FindOperandNumbers order) that are shown as decimal numbers instead of hexadecimal
     std::map<uint64, uint32> decimalOperands;
+    // the cache had a record for this zone that could not be applied to the analysis: it is kept aside on save (not overwritten)
+    bool cacheRecordRejected = false;
 
     void ResetZoneCaching();
     bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);

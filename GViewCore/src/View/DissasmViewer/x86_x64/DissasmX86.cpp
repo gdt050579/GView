@@ -352,9 +352,10 @@ inline cs_insn* GetCurrentInstructionByLine(
     // cs_disasm_iter takes a size_t (32 bits on 32 bit targets), asmSize is 64 bits: never alias it through a size_t pointer
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (lineDifferences > 0) {
-        const bool decoded = cs_disasm_iter(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
+        // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
+        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
         zone->asmSize      = remainingSize;
-        if (!decoded) {
+        if (!decoded) { // no bytes left: the line is after the decoded code
             zone->offsetCacheMaxLine = 0;
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
@@ -1086,19 +1087,7 @@ void Instance::CommandExportAsmFile()
                 f.Close();
                 continue;
             }
-            size_t size = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
-
-            const auto dataBuffer = obj->GetData().Get(staringOffset, static_cast<uint32>(size), false);
-            if (!dataBuffer.IsValid()) {
-                f.Write("Failed to get data from file!");
-                f.Close();
-                continue;
-            }
-            // the data cache may return less than requested
-            size                    = dataBuffer.GetLength();
-            uint64 address          = 0;
-            const uint64 endAddress = size;
-            auto data               = dataBuffer.GetData();
+            const uint64 size = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
 
             csh handle;
             const auto resCode = cs_open(CS_ARCH_X86, language == DisassemblyLanguage::x64 ? CS_MODE_64 : CS_MODE_32, &handle);
@@ -1110,13 +1099,16 @@ void Instance::CommandExportAsmFile()
 
             cs_insn* insn = cs_malloc(handle);
 
-            while (address < endAddress) {
-                if (!cs_disasm_iter(handle, &data, &size, &address, insn))
-                    break;
-
+            // the same lines as the view: the undecodable bytes are data lines (db), the whole zone is read (window after window)
+            DissasmCodeLinesWalker walker(obj, staringOffset, size, handle);
+            bool hasLines = false;
+            while (walker.Next(insn)) {
+                hasLines = true;
                 string.SetFormat("0x%" PRIx64 ":     %-10s %s\n", insn->address + staringOffset, insn->mnemonic, insn->op_str);
                 f.Write(string.GetText(), string.Len());
             }
+            if (!hasLines)
+                f.Write("Failed to get data from file!");
 
             cs_free(insn, 1);
             cs_close(&handle);

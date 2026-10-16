@@ -83,7 +83,7 @@ class FindDialog : public Window, public Handlers::OnCheckInterface
     UnicodeStringBuilder usb;
     std::pair<uint64, uint64> match;
     bool newRequest{ true };
-    bool searchCompleted{ false }; // last ProcessInput ran to the end (no input/regex error, not canceled)
+    bool searchCompleted{ false }; // last ProcessInput ran to the end - found or not (no input/regex error, not canceled)
     bool ProcessInput(uint64 end = GView::Utils::INVALID_OFFSET, bool last = false);
 
   public:
@@ -115,6 +115,20 @@ class FindDialog : public Window, public Handlers::OnCheckInterface
         const auto& [start, length] = match;
         CHECK(start != GView::Utils::INVALID_OFFSET && length > 0, false, "");
         return true;
+    }
+    // false when the last search stopped on an input / regex error (already reported to the user) or was canceled
+    bool LastSearchCompleted() const
+    {
+        return searchCompleted;
+    }
+    // match of the search run when the dialog was accepted (OK / Enter); INVALID_OFFSET if it found nothing or failed
+    std::pair<uint64, uint64> GetAcceptedMatch() const
+    {
+        if (searchCompleted && HasResults())
+        {
+            return match;
+        }
+        return { GView::Utils::INVALID_OFFSET, 0 };
     }
 };
 

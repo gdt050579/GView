@@ -2,6 +2,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include <algorithm>
+#include <cstdio>
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
@@ -268,6 +269,47 @@ uint64 GetCachedOffsetWindowEnd(const DissasmCodeZone* zone, uint32 cachedOffset
     return offsets[cachedOffsetIndex].offset - offsets[0].offset + DISSASM_INSTRUCTION_OFFSET_MARGIN + 2 * DISSASM_MAX_INSTRUCTION_SIZE;
 }
 
+bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn)
+{
+    if (*size == 0)
+        return false;
+    if (cs_disasm_iter(handle, code, size, address, insn))
+        return true;
+
+    // cs_disasm_iter leaves the position as it is on failure: the byte becomes a data line of its own
+    const uint8_t value = **code;
+    insn->id            = 0; // X86_INS_INVALID: a data line, not an instruction
+    insn->address       = *address;
+    insn->size          = 1;
+    memset(insn->bytes, 0, sizeof(insn->bytes));
+    insn->bytes[0] = value;
+    snprintf(insn->mnemonic, sizeof(insn->mnemonic), "db");
+    snprintf(insn->op_str, sizeof(insn->op_str), "0x%02x", static_cast<unsigned int>(value));
+    (*code)++;
+    (*size)--;
+    (*address)++;
+    return true;
+}
+
+bool DissasmCodeLinesWalker::Next(cs_insn* insn)
+{
+    if (address >= codeSize)
+        return false;
+    // a whole instruction (or the end of the code): the same bytes as the code windows of the drawn lines, so the same lines are decoded.
+    // The view is taken again for every line, nothing else can refill the data cache under it.
+    const uint32 requested = static_cast<uint32>(std::min<uint64>(codeSize - address, DISSASM_MAX_INSTRUCTION_SIZE));
+    const auto view        = obj->GetData().Get(codeStart + address, requested, false);
+    if (!view.IsValid() || view.GetLength() == 0)
+        return false;
+    const uint8_t* data = view.GetData();
+    size_t size         = static_cast<size_t>(std::min<uint64>(view.GetLength(), requested));
+    uint64_t current    = address;
+    if (!DecodeX86Line(handle, &data, &size, &current, insn))
+        return false;
+    address = current;
+    return true;
+}
+
 cs_insn* GetCurrentInstructionByOffset(
       uint64 offsetToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli)
 {
@@ -306,9 +348,10 @@ cs_insn* GetCurrentInstructionByOffset(
     // cs_disasm_iter takes a size_t (32 bits on 32 bit targets), asmSize is 64 bits: never alias it through a size_t pointer
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (zone->asmAddress <= offsetToReach) {
-        const bool decoded = cs_disasm_iter(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
+        // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
+        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
         zone->asmSize      = remainingSize;
-        if (!decoded) {
+        if (!decoded) { // no bytes left: the offset is after the decoded code
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
             cs_free(insn, 1);

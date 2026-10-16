@@ -159,3 +159,42 @@ uint32 DissasmStructureType::GetExpandedSize() const
         result += child.GetExpandedSize();
     return result;
 }
+
+// UInt8, UInt16, UInt32, UInt64 then Int8, Int16, Int32, Int64 (VariableType has the same values): 1, 2, 4, 8 bytes
+static uint64 GetPrimitiveTypeByteSize(uint32 type)
+{
+    if (type <= static_cast<uint32>(InternalDissasmType::Int64))
+        return 1ull << (type % 4u);
+    return 0; // AsciiZ, Utf16Z, Utf32Z: the size depends on the data
+}
+
+uint64 DissasmStructureType::GetByteSize() const
+{
+    switch (primaryType)
+    {
+    case InternalDissasmType::UInt8:
+    case InternalDissasmType::UInt16:
+    case InternalDissasmType::UInt32:
+    case InternalDissasmType::UInt64:
+    case InternalDissasmType::Int8:
+    case InternalDissasmType::Int16:
+    case InternalDissasmType::Int32:
+    case InternalDissasmType::Int64:
+        return GetPrimitiveTypeByteSize(static_cast<uint32>(primaryType));
+    case InternalDissasmType::UnidimnsionalArray:
+        if (internalTypes.empty()) // Settings::AddArray: only the cell type and the count
+            return static_cast<uint64>(width) * GetPrimitiveTypeByteSize(secondaryType);
+        break; // the cells (Settings::AddType)
+    case InternalDissasmType::BidimensionalArray:
+        return static_cast<uint64>(width) * height * GetPrimitiveTypeByteSize(secondaryType);
+    case InternalDissasmType::UserDefined:
+        break; // the fields
+    default:
+        return 0;
+    }
+
+    uint64 result = 0;
+    for (const auto& child : this->internalTypes)
+        result += child.GetByteSize();
+    return result;
+}

@@ -5,6 +5,11 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmIOHelpers.hpp"
 
+#include <algorithm>
+#include <map>
+#include <optional>
+#include <unordered_set>
+
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
@@ -166,8 +171,78 @@ static auto FindCodeZoneRecord(DissasmCache& cache, const DissasmCodeZone& zone)
     auto it = cache.zonesData.find(zoneName.GetText());
     if (it != cache.zonesData.end())
         return it;
-    zoneName.SetFormat("DissasmParseZoneType.%u", zone.startLineIndex); // legacy key
+    zoneName.SetFormat("DissasmParseZoneType.%u", zone.startLineIndex); // legacy key, with the current layout
     return cache.zonesData.find(zoneName.GetText());
+}
+
+constexpr std::string_view LEGACY_CODE_ZONE_RECORD_PREFIX     = "DissasmParseZoneType.";
+constexpr std::string_view UNAPPLIED_CODE_ZONE_RECORD_PREFIX = "DissasmCodeZoneUnapplied.";
+
+// the line of a legacy record name ("DissasmParseZoneType.<line>")
+static std::optional<uint32> GetLegacyCodeZoneRecordLine(std::string_view name)
+{
+    if (!name.starts_with(LEGACY_CODE_ZONE_RECORD_PREFIX) || name.size() == LEGACY_CODE_ZONE_RECORD_PREFIX.size())
+        return {};
+    uint64 line = 0;
+    for (const char c : name.substr(LEGACY_CODE_ZONE_RECORD_PREFIX.size())) {
+        if (c < '0' || c > '9')
+            return {};
+        line = line * 10u + static_cast<uint64>(c - '0');
+        if (line > UINT32_MAX)
+            return {};
+    }
+    return static_cast<uint32>(line);
+}
+
+void GView::View::DissasmViewer::MigrateLegacyCodeZoneRecords(DissasmCache& cache, const std::vector<std::unique_ptr<ParseZone>>& zones)
+{
+    // the legacy records ordered by their line: the old layout placed the zones in the order of their file offsets as well
+    std::map<uint32, std::string> legacyRecords;
+    for (const auto& [name, entry] : cache.zonesData) {
+        const auto line = GetLegacyCodeZoneRecordLine(name);
+        if (line.has_value())
+            legacyRecords.emplace(line.value(), name);
+    }
+    if (legacyRecords.empty())
+        return;
+
+    // the code zones (in the order of their file offsets) that have no record under their file offset key
+    LocalString<64> zoneName;
+    size_t codeZonesCount = 0;
+    std::vector<const DissasmCodeZone*> zonesWithoutRecord;
+    for (const auto& zone : zones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        codeZonesCount++;
+        const auto codeZone = static_cast<const DissasmCodeZone*>(zone.get());
+        FormatCodeZoneRecordName(zoneName, *codeZone);
+        if (!cache.zonesData.contains(zoneName.GetText()))
+            zonesWithoutRecord.push_back(codeZone);
+    }
+    if (zonesWithoutRecord.empty())
+        return;
+
+    auto moveRecord = [&cache, &zoneName](const std::string& legacyName, const DissasmCodeZone& zone) {
+        auto node = cache.zonesData.extract(legacyName);
+        if (node.empty())
+            return;
+        FormatCodeZoneRecordName(zoneName, zone);
+        node.key() = zoneName.GetText();
+        cache.zonesData.insert(std::move(node));
+    };
+
+    // The old saves wrote a record for every code zone: when no zone has a new record and there is one legacy record per zone, the
+    // records belong to the zones in the same order (the textSize used for the old lines is unknown, but it does not change the order).
+    if (zonesWithoutRecord.size() == codeZonesCount && legacyRecords.size() == codeZonesCount) {
+        size_t index = 0;
+        for (const auto& [line, name] : legacyRecords)
+            moveRecord(name, *zonesWithoutRecord[index++]);
+        return;
+    }
+    // otherwise only a record that can not belong to another zone: the only legacy record for the only zone without a record
+    if (zonesWithoutRecord.size() == 1 && legacyRecords.size() == 1)
+        moveRecord(legacyRecords.begin()->second, *zonesWithoutRecord[0]);
+    // the other legacy records are still found with the line of the current layout (FindCodeZoneRecord) and they are kept on save
 }
 
 void Instance::LoadCacheData()
@@ -187,6 +262,8 @@ void Instance::LoadCacheData()
         return;
     }
     cacheData.hasCache = true;
+    // the records keyed by the first line of the zone (old layout) are moved to the file offset key of their zone
+    MigrateLegacyCodeZoneRecords(cacheData, settings->parseZones);
 }
 
 void Instance::SaveCacheData()
@@ -199,20 +276,36 @@ void Instance::SaveCacheData()
         GView::App::IsFeatureRestricted(GView::Security::RestrictedMode::Feature::Export))
         return;
     // the code zones that were not initialized in this session (never drawn) have no data of their own: their loaded records are
-    // kept as they are instead of being overwritten with empty records
+    // kept as they are (under the file offset key) instead of being overwritten with empty records
     LocalString<64> zoneName;
     std::unordered_map<std::string, DissasmCacheEntry> keptRecords;
+    std::unordered_set<std::string> claimedRecords;
     for (auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
         const auto* dissasmZone = (DissasmCodeZone*) zone.get();
-        if (dissasmZone->CanReachAsmLines())
-            continue;
-        auto record = FindCodeZoneRecord(cacheData, *dissasmZone);
+        auto record             = FindCodeZoneRecord(cacheData, *dissasmZone);
         if (record == cacheData.zonesData.end())
             continue;
+        claimedRecords.insert(record->first);
+        if (dissasmZone->CanReachAsmLines()) {
+            if (!dissasmZone->cacheRecordRejected)
+                continue; // applied: the zone writes its data below
+            // the record could not be applied to this analysis: kept aside instead of being lost under the record written below
+            zoneName.SetFormat("DissasmCodeZoneUnapplied.%llu", static_cast<unsigned long long>(dissasmZone->zoneDetails.startingZonePoint));
+            if (!cacheData.zonesData.contains(zoneName.GetText())) // an older record kept aside stays as it is
+                keptRecords.insert_or_assign(zoneName.GetText(), std::move(record->second));
+            continue;
+        }
         FormatCodeZoneRecordName(zoneName, *dissasmZone);
         keptRecords.insert_or_assign(zoneName.GetText(), std::move(record->second));
+    }
+    // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
+    for (auto& [name, entry] : cacheData.zonesData) {
+        if (claimedRecords.contains(name) || !entry.data)
+            continue;
+        if (name.starts_with(LEGACY_CODE_ZONE_RECORD_PREFIX) || name.starts_with(UNAPPLIED_CODE_ZONE_RECORD_PREFIX))
+            keptRecords.try_emplace(name, std::move(entry));
     }
 
     // everything is rebuilt below (a previous save of this session left its records, adding them again would fail)
@@ -228,8 +321,10 @@ void Instance::SaveCacheData()
         FormatCodeZoneRecordName(zoneName, *dissasmZone);
         if (!dissasmZone->CanReachAsmLines()) {
             auto kept = keptRecords.find(zoneName.GetText());
-            if (kept != keptRecords.end())
+            if (kept != keptRecords.end()) {
                 cacheData.zonesData.insert_or_assign(kept->first, std::move(kept->second));
+                keptRecords.erase(kept);
+            }
             continue;
         }
         if (!dissasmZone->ToBuffer(buffer))
@@ -237,6 +332,10 @@ void Instance::SaveCacheData()
         if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
             return;
     }
+    // the records kept aside and the legacy records of no zone
+    for (auto& [name, entry] : keptRecords)
+        if (entry.data)
+            cacheData.zonesData.try_emplace(name, std::move(entry));
 
     const std::filesystem::path path = DissasmCache::GetCacheFilePath(obj->GetPath(), config.CacheSameLocationAsAnalyzedFile);
     cacheData.SaveCacheFile(path.u16string());
@@ -460,9 +559,141 @@ static bool ApplyLegacyCachedZoneData(DissasmCodeZone& zone, DissasmComments& co
     return true;
 }
 
+// Records saved when the analysis found fewer labels (e.g. the code after an undecodable byte was not decoded before): every cached
+// line is placed on the line of the same label (address), local variable or instruction (index) of the analysis. All or nothing: when
+// something can not be placed the zone is left unchanged and the record is kept aside on save.
+static bool ApplyRemappedCachedZoneData(
+      DissasmCodeZone& zone, DissasmComments& comments, AnnotationContainer& annotations, DissasmLocalVariables& variables, bool& zoneLinesChanged)
+{
+    auto& root = zone.dissasmType;
+    if (!root.internalTypes.empty())
+        return false; // loaded right after the zone initialization
+
+    // the lines of the analysis: one label per address, one line per local variable
+    std::unordered_map<uint64, uint32> freshLabelLines;
+    std::unordered_map<uint64, uint32> freshVariableLines;
+    std::vector<uint32> freshAnnotationLines;
+    for (const auto& [line, details] : root.annotations.mappings) {
+        (IsLocalVariableAnnotation(details) ? freshVariableLines : freshLabelLines).emplace(details.second, line);
+        freshAnnotationLines.push_back(line);
+    }
+
+    // every cached label and variable exists in the analysis
+    std::vector<uint32> cachedAnnotationLines;
+    for (const auto& [line, details] : annotations.mappings) {
+        cachedAnnotationLines.push_back(line);
+        if (IsLocalVariableAnnotation(details)) {
+            const auto function = variables.FindFunctionByStart(GetLocalVariableAnnotationFunction(details.second));
+            if (!freshVariableLines.contains(details.second) || !function || !function->FindVariable(GetLocalVariableAnnotationOffset(details.second)))
+                return false;
+        } else if (!freshLabelLines.contains(details.second)) {
+            return false;
+        }
+    }
+    for (const auto& cachedFunction : variables.functions) {
+        const auto freshFunction = zone.localVariables.FindFunctionByStart(cachedFunction.startAddress);
+        if (!freshFunction)
+            return false;
+        for (const auto& cachedVariable : cachedFunction.variables)
+            if (!freshFunction->FindVariable(cachedVariable.frameOffset))
+                return false;
+    }
+
+    // the variables removed by the user: the analyzed variables of a cached function that the record does not have (the functions
+    // the record does not know are new, their variables stay)
+    std::vector<uint32> removedLines;
+    for (const auto& [line, details] : root.annotations.mappings) {
+        if (!IsLocalVariableAnnotation(details))
+            continue;
+        const auto cachedFunction = variables.FindFunctionByStart(GetLocalVariableAnnotationFunction(details.second));
+        if (cachedFunction && !cachedFunction->FindVariable(GetLocalVariableAnnotationOffset(details.second)))
+            removedLines.push_back(line); // sorted: the annotations are ordered by line
+    }
+
+    // cached line -> line of the analysis (without the removed variable lines)
+    auto mapLine = [&](uint32 line) -> std::optional<uint32> {
+        uint32 freshLine   = 0;
+        const auto cached  = annotations.mappings.find(line);
+        if (cached != annotations.mappings.end()) {
+            const auto& lines = IsLocalVariableAnnotation(cached->second) ? freshVariableLines : freshLabelLines;
+            freshLine         = lines.at(cached->second.second); // checked above
+        } else {
+            // the instruction index: the line without the text lines placed before it
+            const auto textLinesBefore = static_cast<uint32>(
+                  std::lower_bound(cachedAnnotationLines.begin(), cachedAnnotationLines.end(), line) - cachedAnnotationLines.begin());
+            const uint32 instruction = line - textLinesBefore;
+            if (instruction >= zone.asmLinesCount)
+                return {};
+            // the same instruction moved down by every text line of the analysis placed before it
+            freshLine = instruction;
+            for (const uint32 annotationLine : freshAnnotationLines) {
+                if (annotationLine > freshLine)
+                    break;
+                freshLine++;
+            }
+        }
+        return freshLine - static_cast<uint32>(std::lower_bound(removedLines.begin(), removedLines.end(), freshLine) - removedLines.begin());
+    };
+
+    // comments are keyed by line - 1 (line 0 lives at UINT32_MAX); the comments after the last instruction are ignored (as for the
+    // records that match the analysis)
+    std::vector<std::pair<uint32, std::string>> mappedComments;
+    mappedComments.reserve(comments.comments.size());
+    for (auto& [key, text] : comments.comments) {
+        const auto mapped = mapLine(key + 1u);
+        if (mapped.has_value())
+            mappedComments.emplace_back(mapped.value() - 1u, std::move(text));
+    }
+
+    // the labels renamed by the user (the cached name is not its initial name), on the line of the same label of the analysis
+    std::vector<std::pair<uint32, std::string>> renamedLabels;
+    for (const auto& [line, details] : annotations.mappings) {
+        if (IsLocalVariableAnnotation(details))
+            continue;
+        const auto initialName = annotations.current_name_to_initial_name.find(details.first);
+        if (initialName == annotations.current_name_to_initial_name.end() || initialName->second == details.first)
+            continue;
+        const uint32 freshLine = freshLabelLines.at(details.second);
+        if (root.annotations.mappings.at(freshLine).first == details.first)
+            continue;
+        if (root.annotations.contains_annotation_name(details.first))
+            return false; // the analysis has another label with this name
+        renamedLabels.emplace_back(freshLine, details.first);
+    }
+
+    // nothing can fail from here on
+    for (const auto& [line, name] : renamedLabels) {
+        const std::string freshName = root.annotations.mappings.at(line).first;
+        root.annotations.add_name_change(freshName, name, line);
+    }
+    for (const auto& cachedFunction : variables.functions) {
+        auto freshFunction = zone.localVariables.FindFunctionByStart(cachedFunction.startAddress);
+        for (const auto& cachedVariable : cachedFunction.variables)
+            freshFunction->FindVariable(cachedVariable.frameOffset)->name = cachedVariable.name;
+    }
+    if (!removedLines.empty()) {
+        for (const uint32 line : removedLines) {
+            const auto value    = root.annotations.mappings.at(line).second;
+            const auto function = zone.localVariables.FindFunctionByStart(GetLocalVariableAnnotationFunction(value));
+            if (!function)
+                continue;
+            if (const auto variable = function->FindVariable(GetLocalVariableAnnotationOffset(value)))
+                function->variables.erase(function->variables.begin() + (variable - function->variables.data()));
+            if (function->variables.empty())
+                zone.localVariables.functions.erase(zone.localVariables.functions.begin() + (function - zone.localVariables.functions.data()));
+        }
+        zone.RemoveRootAnnotationLines(removedLines);
+        zoneLinesChanged = true;
+    }
+    for (auto& [key, text] : mappedComments)
+        root.commentsData.comments.insert_or_assign(key, std::move(text));
+    return true;
+}
+
 bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesChanged)
 {
-    zoneLinesChanged = false;
+    zoneLinesChanged    = false;
+    cacheRecordRejected = false;
     if (!cache.hasCache)
         return true;
     if (zoneType != DissasmParseZoneType::DissasmCodeParseZone)
@@ -471,6 +702,8 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
     auto it = FindCodeZoneRecord(cache, *this);
     if (it == cache.zonesData.end())
         return false;
+    // until it is applied: a record that can not be applied is kept aside by the next save (SaveCacheData)
+    cacheRecordRejected         = true;
     const std::byte* dataPtr    = it->second.data.get();
     const std::byte* dataPtrEnd = dataPtr + it->second.size;
 
@@ -490,13 +723,17 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         std::map<uint64, uint32> cachedDecimalOperands; // version 1 records do not have them
         if (version >= 2 && !DecimalOperandsFromBuffer(dataPtr, dataPtrEnd, cachedDecimalOperands))
             return false;
-        if (!ApplyCachedZoneData(*this, comments, annotations, variables, zoneLinesChanged))
+        // the same layout as the analysis, or (the analysis found more labels since the record was saved) the same labels and
+        // instructions placed on their new lines
+        if (!ApplyCachedZoneData(*this, comments, annotations, variables, zoneLinesChanged) &&
+            !ApplyRemappedCachedZoneData(*this, comments, annotations, variables, zoneLinesChanged))
             return false;
         // the addresses are only display preferences: the ones outside of the code are ignored
         const uint64 codeSize = GetCodeSize();
         for (const auto& [address, mask] : cachedDecimalOperands)
             if (codeSize == 0 || address < codeSize)
                 decimalOperands[address] = mask;
+        cacheRecordRejected = false;
         return true;
     }
 
@@ -506,5 +743,8 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         return false;
     if (!annotations.LoadFromBuffer(dataPtr, dataPtrEnd))
         return false;
-    return ApplyLegacyCachedZoneData(*this, comments, annotations);
+    if (!ApplyLegacyCachedZoneData(*this, comments, annotations))
+        return false;
+    cacheRecordRejected = false;
+    return true;
 }
