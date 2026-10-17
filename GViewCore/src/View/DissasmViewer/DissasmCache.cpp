@@ -370,11 +370,16 @@ void Instance::SaveCacheData()
     LocalString<64> zoneName;
     std::unordered_map<std::string, DissasmCacheEntry> keptRecords;
     std::unordered_set<std::string> claimedRecords;
+    std::unordered_set<std::string> mergedRecords; // the records kept aside that a zone merged: its data has them now
     for (auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
         const auto* dissasmZone = (DissasmCodeZone*) zone.get();
-        auto record             = FindCodeZoneRecord(cacheData, *dissasmZone);
+        if (dissasmZone->mergedUnappliedRecord) {
+            zoneName.SetFormat("DissasmCodeZoneUnapplied.%llu", static_cast<unsigned long long>(dissasmZone->zoneDetails.startingZonePoint));
+            mergedRecords.insert(zoneName.GetText());
+        }
+        auto record = FindCodeZoneRecord(cacheData, *dissasmZone);
         if (record == cacheData.zonesData.end())
             continue;
         claimedRecords.insert(record->first);
@@ -383,7 +388,8 @@ void Instance::SaveCacheData()
                 continue; // applied: the zone writes its data below
             // the record could not be applied to this analysis: kept aside instead of being lost under the record written below
             zoneName.SetFormat("DissasmCodeZoneUnapplied.%llu", static_cast<unsigned long long>(dissasmZone->zoneDetails.startingZonePoint));
-            if (!cacheData.zonesData.contains(zoneName.GetText())) // an older record kept aside stays as it is
+            // an older record kept aside stays as it is, unless the zone merged it
+            if (!cacheData.zonesData.contains(zoneName.GetText()) || mergedRecords.contains(zoneName.GetText()))
                 keptRecords.insert_or_assign(zoneName.GetText(), std::move(record->second));
             continue;
         }
@@ -392,7 +398,7 @@ void Instance::SaveCacheData()
     }
     // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
     for (auto& [name, entry] : cacheData.zonesData) {
-        if (claimedRecords.contains(name) || !entry.data)
+        if (claimedRecords.contains(name) || mergedRecords.contains(name) || !entry.data)
             continue;
         if (name.starts_with(LEGACY_CODE_ZONE_RECORD_PREFIX) || name.starts_with(UNAPPLIED_CODE_ZONE_RECORD_PREFIX))
             keptRecords.try_emplace(name, std::move(entry));
@@ -480,11 +486,15 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
     return true;
 }
 
-// Code zone records: [magic][version][comments][annotations][local variables] and, from version 2, [decimal operands]. The records saved
-// before the local variables existed start directly with the comments count (a count equal to the magic is not a realistic value) and
-// their lines do not contain the variable lines.
+// Code zone records: [magic][version] then
+//  - version 3: [comments by anchor][label names by address][local variables][decimal operands]. Nothing depends on the lines: a record
+//    applies to any analysis of the zone, what this analysis does not find (a label, a variable) is kept for later.
+//  - versions 1 and 2 (read only): [comments by line][annotations by line][local variables] and, from version 2, [decimal operands].
+// The records saved before the local variables existed start directly with the comments count (a count equal to the magic is not a
+// realistic value) and their lines do not contain the variable lines.
 constexpr uint32 DISSASM_CODE_ZONE_CACHE_MAGIC   = 0x5A434447; // "GDCZ"
-constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 2;
+constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 3;
+constexpr uint32 DISSASM_MAX_LABEL_NAME_SIZE     = 1024;
 
 // decimal operands: [count] then count x [instruction address (uint64)][numbers mask (uint32)]
 static void DecimalOperandsToBuffer(const std::map<uint64, uint32>& decimalOperands, std::vector<std::byte>& buffer)
@@ -513,24 +523,112 @@ static bool DecimalOperandsFromBuffer(const std::byte*& start, const std::byte* 
     return true;
 }
 
+// label names of the user: [count] then count x [relative address of the label (uint64)][name size (uint32)][name]
+static void LabelNamesToBuffer(const std::vector<std::pair<uint64, std::string>>& names, std::vector<std::byte>& buffer)
+{
+    append_bytes(buffer, static_cast<uint32>(names.size()));
+    for (const auto& [address, name] : names) {
+        append_bytes(buffer, address);
+        append_string(buffer, name);
+    }
+}
+
+static bool LabelNamesFromBuffer(const std::byte*& start, const std::byte* end, std::vector<std::pair<uint64, std::string>>& names)
+{
+    constexpr size_t MINIMUM_RECORD_SIZE = sizeof(uint64) + sizeof(uint32);
+    uint32 count                         = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / MINIMUM_RECORD_SIZE)
+        return false;
+    names.reserve(count);
+    for (uint32 i = 0; i < count; i++) {
+        uint64 address        = 0;
+        uint32 nameSize       = 0;
+        const std::byte* name = nullptr;
+        if (!read_primitive(start, end, address) || !read_primitive(start, end, nameSize) || nameSize == 0 || nameSize > DISSASM_MAX_LABEL_NAME_SIZE ||
+            !read_bytes(start, end, nameSize, name))
+            return false;
+        names.emplace_back(address, std::string(reinterpret_cast<const char*>(name), nameSize));
+    }
+    return true;
+}
+
 bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
 {
     buffer.clear(); // the same buffer is used for every zone
-    uint32 reserveSize = 2 * sizeof(uint32) + dissasmType.commentsData.GetRequiredSizeForSerialization();
-    reserveSize += dissasmType.annotations.GetRequiredSizeForSerialization();
-    buffer.reserve(reserveSize);
-
     append_bytes(buffer, DISSASM_CODE_ZONE_CACHE_MAGIC);
     append_bytes(buffer, DISSASM_CODE_ZONE_CACHE_VERSION);
-    // comments
-    dissasmType.commentsData.ToBuffer(buffer);
-    // annotations
-    dissasmType.annotations.ToBuffer(buffer);
-    // local variables
+    userComments.ToBuffer(buffer);
+    LabelNamesToBuffer(GetUserLabelNames(), buffer);
     localVariables.ToBuffer(buffer);
-    // numbers shown as decimal (version 2)
     DecimalOperandsToBuffer(decimalOperands, buffer);
     return true;
+}
+
+// Version 3: the variables of the record are matched by function start and frame offset. The names are given to the variables of the
+// analysis, the variables of a function of the record that the record does not have were removed by the user. The functions the
+// analysis does not find are ignored.
+static void ApplyAddressKeyedVariables(DissasmCodeZone& zone, const DissasmLocalVariables& variables, bool& zoneLinesChanged)
+{
+    std::vector<uint32> removedLines;
+    for (const auto& [line, details] : zone.dissasmType.annotations.mappings) {
+        if (!IsLocalVariableAnnotation(details))
+            continue;
+        const auto cachedFunction = variables.FindFunctionByStart(GetLocalVariableAnnotationFunction(details.second));
+        if (cachedFunction && !cachedFunction->FindVariable(GetLocalVariableAnnotationOffset(details.second)))
+            removedLines.push_back(line); // sorted: the annotations are ordered by line
+    }
+    for (const auto& cachedFunction : variables.functions) {
+        auto freshFunction = zone.localVariables.FindFunctionByStart(cachedFunction.startAddress);
+        if (!freshFunction)
+            continue;
+        for (const auto& cachedVariable : cachedFunction.variables) {
+            auto freshVariable = freshFunction->FindVariable(cachedVariable.frameOffset);
+            if (freshVariable && freshVariable->name != cachedVariable.name && !freshFunction->HasVariableNamed(cachedVariable.name))
+                freshVariable->name = cachedVariable.name;
+        }
+    }
+    if (removedLines.empty())
+        return;
+    for (const uint32 line : removedLines) {
+        const auto value    = zone.dissasmType.annotations.mappings.at(line).second;
+        const auto function = zone.localVariables.FindFunctionByStart(GetLocalVariableAnnotationFunction(value));
+        if (!function)
+            continue;
+        if (const auto variable = function->FindVariable(GetLocalVariableAnnotationOffset(value)))
+            function->variables.erase(function->variables.begin() + (variable - function->variables.data()));
+        if (function->variables.empty())
+            zone.localVariables.functions.erase(zone.localVariables.functions.begin() + (function - zone.localVariables.functions.data()));
+    }
+    zone.RemoveRootAnnotationLines(removedLines);
+    zoneLinesChanged = true;
+}
+
+// a version 3 record: [comments][label names][local variables][decimal operands]
+struct AddressKeyedZoneRecord {
+    DissasmUserComments comments;
+    std::vector<std::pair<uint64, std::string>> labelNames;
+    DissasmLocalVariables variables;
+    std::map<uint64, uint32> decimalOperands;
+
+    bool LoadFromBuffer(const std::byte*& start, const std::byte* end)
+    {
+        return comments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, labelNames) && variables.LoadFromBuffer(start, end) &&
+               DecimalOperandsFromBuffer(start, end, decimalOperands);
+    }
+};
+
+// the version 3 record in `data`; none for another version or a corrupted record
+static std::optional<AddressKeyedZoneRecord> ReadAddressKeyedZoneRecord(const DissasmCacheEntry& entry)
+{
+    const std::byte* start = entry.data.get();
+    const std::byte* end   = start + entry.size;
+    uint32 magic = 0, version = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_CODE_ZONE_CACHE_MAGIC || !read_primitive(start, end, version) || version != 3)
+        return {};
+    AddressKeyedZoneRecord record;
+    if (!record.LoadFromBuffer(start, end))
+        return {};
+    return record;
 }
 
 // The cache file is untrusted: it can only rename the labels / variables found by the analysis, remove variables and add comments.
@@ -796,18 +894,43 @@ static bool ApplyRemappedCachedZoneData(
 
 bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesChanged)
 {
-    zoneLinesChanged    = false;
-    cacheRecordRejected = false;
+    zoneLinesChanged      = false;
+    cacheRecordRejected   = false;
+    mergedUnappliedRecord = false;
     if (!cache.hasCache)
         return true;
     if (zoneType != DissasmParseZoneType::DissasmCodeParseZone)
         return false;
+    const bool loaded = TryLoadCodeZoneRecord(cache, zoneLinesChanged);
+    // a record that an older version could not apply (it was kept aside): its comments and names come back
+    MergeUnappliedRecord(cache);
+    return loaded;
+}
 
+bool DissasmCodeZone::TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLinesChanged)
+{
     auto it = FindCodeZoneRecord(cache, *this);
     if (it == cache.zonesData.end())
         return false;
     // until it is applied: a record that can not be applied is kept aside by the next save (SaveCacheData)
-    cacheRecordRejected         = true;
+    cacheRecordRejected = true;
+    if (!dissasmType.internalTypes.empty())
+        return false; // loaded right after the zone initialization
+
+    // version 3: everything is keyed by address / anchor, it applies to this analysis whatever its lines are
+    if (auto record = ReadAddressKeyedZoneRecord(it->second); record.has_value()) {
+        ApplyAddressKeyedVariables(*this, record->variables, zoneLinesChanged);
+        for (const auto& [address, name] : record->labelNames)
+            ApplyUserLabelName(address, name);
+        userComments = std::move(record->comments);
+        const uint64 codeSize = GetCodeSize();
+        for (const auto& [address, mask] : record->decimalOperands)
+            if (codeSize == 0 || address < codeSize)
+                decimalOperands[address] = mask;
+        cacheRecordRejected = false;
+        return true;
+    }
+
     const std::byte* dataPtr    = it->second.data.get();
     const std::byte* dataPtrEnd = dataPtr + it->second.size;
 
@@ -819,7 +942,7 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         return false;
     if (magic == DISSASM_CODE_ZONE_CACHE_MAGIC) {
         uint32 version = 0;
-        if (!read_primitive(dataPtr, dataPtrEnd, version) || version < 1 || version > DISSASM_CODE_ZONE_CACHE_VERSION)
+        if (!read_primitive(dataPtr, dataPtrEnd, version) || version < 1 || version > 2) // a corrupted version 3 record, or a newer one
             return false;
         DissasmLocalVariables variables;
         if (!comments.LoadFromBuffer(dataPtr, dataPtrEnd) || !annotations.LoadFromBuffer(dataPtr, dataPtrEnd) || !variables.LoadFromBuffer(dataPtr, dataPtrEnd))
@@ -838,6 +961,7 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
             if (codeSize == 0 || address < codeSize)
                 decimalOperands[address] = mask;
         MigrateLegacyLabelNames(); // the records saved before the VA names
+        MoveLineCommentsToAnchors();
         cacheRecordRejected = false;
         return true;
     }
@@ -851,6 +975,35 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
     if (!ApplyLegacyCachedZoneData(*this, comments, annotations))
         return false;
     MigrateLegacyLabelNames();
+    MoveLineCommentsToAnchors();
     cacheRecordRejected = false;
     return true;
+}
+
+void DissasmCodeZone::MergeUnappliedRecord(DissasmCache& cache)
+{
+    LocalString<64> recordName;
+    recordName.SetFormat("%.*s%llu",
+                         static_cast<int>(UNAPPLIED_CODE_ZONE_RECORD_PREFIX.size()),
+                         UNAPPLIED_CODE_ZONE_RECORD_PREFIX.data(),
+                         static_cast<unsigned long long>(zoneDetails.startingZonePoint));
+    const auto it = cache.zonesData.find(recordName.GetText());
+    if (it == cache.zonesData.end() || !it->second.data || !CanReachAsmLines())
+        return;
+    // only the address keyed records can be merged into an analysis that already has its data (the line keyed ones need their layout)
+    auto record = ReadAddressKeyedZoneRecord(it->second);
+    if (!record.has_value())
+        return;
+    // the data of the zone wins: only what it does not have is added
+    for (auto& [anchor, text] : record->comments.comments)
+        userComments.comments.try_emplace(anchor, std::move(text));
+    const auto currentNames = GetUserLabelNames();
+    for (const auto& [address, name] : record->labelNames) {
+        const bool named = std::any_of(currentNames.begin(), currentNames.end(), [address](const auto& entry) { return entry.first == address; });
+        if (!named)
+            ApplyUserLabelName(address, name);
+    }
+    for (const auto& [address, mask] : record->decimalOperands)
+        decimalOperands.try_emplace(address, mask);
+    mergedUnappliedRecord = true;
 }

@@ -310,9 +310,119 @@ void DissasmCodeZone::MigrateLegacyLabelNames()
     }
 }
 
+DissasmCommentAnchor DissasmCodeZone::GetLineAnchor(const DissasmAsmPreCacheLine& line)
+{
+    DissasmCommentAnchor anchor;
+    if (line.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition) {
+        anchor.kind        = DissasmCommentAnchor::Kind::Variable;
+        anchor.address     = line.localVariableFunction;
+        anchor.frameOffset = line.localVariableOffset;
+    } else if (line.size == 0) {
+        anchor.kind    = DissasmCommentAnchor::Kind::Label; // a label line (or a collapsed zone that starts with a label)
+        anchor.address = line.address;
+    } else {
+        anchor.kind    = DissasmCommentAnchor::Kind::Instruction;
+        anchor.address = line.address;
+    }
+    return anchor;
+}
+
+std::optional<DissasmCommentAnchor> DissasmCodeZone::GetAnchorOfLine(uint32 line)
+{
+    if (!CanReachAsmLines() || !zoneObject.IsValid() || line >= GetCodeZoneLinesCount(*this))
+        return {};
+    return GetLineAnchor(GetCurrentAsmLine(line, zoneObject, nullptr));
+}
+
+bool DissasmCodeZone::GetComment(const DissasmAsmPreCacheLine& line, std::string& comment) const
+{
+    return userComments.Get(GetLineAnchor(line), comment);
+}
+
+bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
+{
+    const auto anchor = GetAnchorOfLine(line);
+    return anchor.has_value() && userComments.Get(anchor.value(), comment);
+}
+
+bool DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr)
+{
+    const auto anchor = GetAnchorOfLine(line);
+    if (!anchor.has_value()) {
+        if (showErr)
+            Dialogs::MessageBox::ShowError("Error at processing comments", "Failed to find the required line!");
+        return false;
+    }
+    userComments.Set(anchor.value(), comment);
+    return true;
+}
+
+bool DissasmCodeZone::RemoveComment(uint32 line, bool showErr)
+{
+    const auto anchor = GetAnchorOfLine(line);
+    if (!anchor.has_value() || !userComments.Remove(anchor.value())) {
+        if (showErr)
+            Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
+        return false;
+    }
+    return true;
+}
+
+void DissasmCodeZone::MoveLineCommentsToAnchors()
+{
+    // loaded right after the initialization: the lines are the lines of the root type (no collapsible zones). The cache replaced the
+    // annotations: the line walk starts again from the zone start.
+    auto& lineComments = dissasmType.commentsData.comments;
+    if (lineComments.empty())
+        return;
+    ResetTypesReferenceList();
+    offsetCacheMaxLine = 0;
+    for (auto& [key, text] : lineComments) {
+        const auto anchor = GetAnchorOfLine(key + 1u); // keyed by line - 1 (line 0 wraps around)
+        if (anchor.has_value())
+            userComments.Set(anchor.value(), std::move(text));
+    }
+    lineComments.clear();
+}
+
+std::vector<std::pair<uint64, std::string>> DissasmCodeZone::GetUserLabelNames() const
+{
+    std::vector<std::pair<uint64, std::string>> names;
+    const auto& annotations = dissasmType.annotations;
+    for (const auto& [line, details] : annotations.mappings) {
+        if (IsLocalVariableAnnotation(details))
+            continue;
+        const auto initial = annotations.current_name_to_initial_name.find(details.first);
+        if (initial != annotations.current_name_to_initial_name.end() && initial->second != details.first)
+            names.emplace_back(details.second, details.first);
+    }
+    for (const auto& [address, name] : orphanLabelNames)
+        names.emplace_back(address, name);
+    return names;
+}
+
+bool DissasmCodeZone::ApplyUserLabelName(uint64 address, const std::string& name)
+{
+    auto& annotations = dissasmType.annotations;
+    for (const auto& [line, details] : annotations.mappings) {
+        if (IsLocalVariableAnnotation(details) || details.second != address)
+            continue;
+        if (details.first == name)
+            return true;
+        const std::string currentName = details.first; // add_name_change replaces it
+        if (!annotations.add_name_change(currentName, name, line))
+            break; // another label has this name: kept as an orphan
+        orphanLabelNames.erase(address);
+        return true;
+    }
+    orphanLabelNames[address] = name;
+    return false;
+}
+
 bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 {
     labelAddressBase = initData.labelAddressBase.value_or(zoneDetails.startingZonePoint); // the first decoded instruction is the zone start
+    zoneObject       = initData.obj;
 
     // TODO: move this on init
     if (!cs_support(CS_ARCH_X86)) {

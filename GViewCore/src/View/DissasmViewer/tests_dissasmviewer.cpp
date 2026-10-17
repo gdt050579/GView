@@ -640,6 +640,33 @@ class DissasmTestInstance
     }
 };
 
+// A line keyed code zone record (cache versions 1 and 2) of the zone, as the previous versions saved it: [magic][version][comments by
+// line][annotations][local variables] and, from version 2, [decimal operands]. `lineComments`: line -> comment of the user.
+static void WriteLineKeyedRecord(DissasmCodeZone& zone, uint32 version, const std::map<uint32, std::string>& lineComments, std::vector<std::byte>& buffer)
+{
+    auto appendU32 = [&buffer](uint32 value) {
+        const auto bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    buffer.clear();
+    appendU32(0x5A434447); // "GDCZ"
+    appendU32(version);
+    DissasmComments comments;
+    for (const auto& [line, text] : lineComments)
+        comments.AddOrUpdateComment(line, text);
+    comments.ToBuffer(buffer);
+    zone.dissasmType.annotations.ToBuffer(buffer);
+    zone.localVariables.ToBuffer(buffer);
+    if (version >= 2) {
+        appendU32(static_cast<uint32>(zone.decimalOperands.size()));
+        for (const auto& [address, mask] : zone.decimalOperands) {
+            const auto bytes = reinterpret_cast<const std::byte*>(&address);
+            buffer.insert(buffer.end(), bytes, bytes + sizeof(address));
+            appendU32(mask);
+        }
+    }
+}
+
 TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
@@ -995,16 +1022,15 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
 
     // SECTION("collapsible zones")
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 12)); // comments on lines 5 and 10 should be inside
-    auto internalZone = dissasmInstance.GetDissasmCodeInternalTypeByLine(10);
-    REQUIRE(internalZone);
-    REQUIRE(internalZone->commentsData.HasComment(5));
-    REQUIRE(internalZone->commentsData.HasComment(10));
+    REQUIRE(dissasmInstance.HasComment(5));
+    REQUIRE(dissasmInstance.HasComment(10));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(10, DissasmCodeZone::CollapseExpandType::Collapse));
 
-    REQUIRE(internalZone->commentsData.HasComment(5));  // available, but not visible
+    // the comments follow their instructions / labels: the collapsed line starts with the label of line 5 (its comment), the comment of
+    // line 10 is kept but hidden by the collapsed zone
     REQUIRE(dissasmInstance.HasComment(5));
-    REQUIRE(internalZone->commentsData.HasComment(10)); // available, but not visible
-    REQUIRE(!dissasmInstance.HasComment(20));           // it has been moved due to collapse of the zone
+    REQUIRE(dissasmInstance.zone->userComments.comments.size() == 4);
+    REQUIRE(!dissasmInstance.HasComment(20)); // it has been moved due to collapse of the zone
     REQUIRE(dissasmInstance.HasComment(14));
     REQUIRE(dissasmInstance.CheckComment(14, "c0"));
 
@@ -1172,22 +1198,34 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         // a variable the analysis never found
         auto& function = edited.zone->localVariables.functions[0];
         function.variables.insert(function.variables.begin(), DissasmLocalVariable{ -0x100, 4, "injected" });
+        // version 3 (keyed by address): the variable is ignored, everything else is applied
         REQUIRE(edited.zone->ToBuffer(buffer));
-
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
         auto cache            = makeCache(buffer);
         bool zoneLinesChanged = false;
-        REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckLineText(35, "isPrime"));
+        REQUIRE(restored.CheckLineText(36, "count = dword ptr -0x44"));
+        REQUIRE(restored.CheckComment(100, "c100"));
+        REQUIRE(!restored.zone->localVariables.functions[0].HasVariableNamed("injected"));
+
+        // version 2 (keyed by line): the layout does not match, the record is not applied
+        std::vector<std::byte> lineKeyed;
+        WriteLineKeyedRecord(*edited.zone, 2, { { 100, "c100" } }, lineKeyed);
+        DissasmTestInstance restoredV2(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cacheV2 = makeCache(lineKeyed);
+        zoneLinesChanged = false;
+        REQUIRE(!restoredV2.zone->TryLoadDataFromCache(*cacheV2, zoneLinesChanged));
         REQUIRE(!zoneLinesChanged);
-        REQUIRE(restored.CheckLineText(35, "sub_30"));
-        REQUIRE(restored.CheckLineText(36, "var_44 = dword ptr -0x44"));
-        REQUIRE(!restored.HasComment(100));
+        REQUIRE(restoredV2.CheckLineText(35, "sub_30"));
+        REQUIRE(restoredV2.CheckLineText(36, "var_44 = dword ptr -0x44"));
+        REQUIRE(!restoredV2.HasComment(100));
 
         // truncated record
         buffer.resize(buffer.size() / 2);
         auto truncatedCache = makeCache(buffer);
-        REQUIRE(!restored.zone->TryLoadDataFromCache(*truncatedCache, zoneLinesChanged));
-        REQUIRE(restored.CheckLineText(36, "var_44 = dword ptr -0x44"));
+        REQUIRE(!restoredV2.zone->TryLoadDataFromCache(*truncatedCache, zoneLinesChanged));
+        REQUIRE(restoredV2.CheckLineText(36, "var_44 = dword ptr -0x44"));
     }
 
     SECTION("caches saved before the local variables are moved below the variable lines")
@@ -1197,8 +1235,12 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         REQUIRE(legacy.AddOrUpdateComment(10, "c10"));
         REQUIRE(legacy.AddOrUpdateComment(60, "c60"));
         REQUIRE(legacy.AddOrUpdateComment(400, "c400"));
-        std::vector<std::byte> legacyBuffer;
-        legacy.zone->dissasmType.commentsData.ToBuffer(legacyBuffer);
+        std::vector<std::byte> legacyBuffer; // [comments by line][annotations], no magic
+        DissasmComments legacyComments;
+        legacyComments.AddOrUpdateComment(10, "c10");
+        legacyComments.AddOrUpdateComment(60, "c60");
+        legacyComments.AddOrUpdateComment(400, "c400");
+        legacyComments.ToBuffer(legacyBuffer);
         legacy.zone->dissasmType.annotations.ToBuffer(legacyBuffer);
 
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
@@ -1675,7 +1717,7 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     }
     REQUIRE(foundVariableLine);
 
-    // saved in the cache (version 2) and restored
+    // saved in the cache (version 3) and restored
     std::vector<std::byte> buffer;
     zone.ToggleDecimalOperand(address, 0);
     REQUIRE(zone.ToBuffer(buffer));
@@ -1689,9 +1731,8 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     REQUIRE(restored.CheckLineText(62, "movzx eax, byte ptr [edx + 4198840]"));
 
     // a version 1 record (no decimal operands) is still loaded
-    std::vector<std::byte> versionOne(buffer.begin(), buffer.end() - static_cast<std::ptrdiff_t>(sizeof(uint32) + sizeof(uint64) + sizeof(uint32)));
-    const uint32 version = 1;
-    memcpy(versionOne.data() + sizeof(uint32), &version, sizeof(version));
+    std::vector<std::byte> versionOne;
+    WriteLineKeyedRecord(zone, 1, {}, versionOne);
     auto cacheV1      = std::make_unique<DissasmCache>();
     cacheV1->hasCache = true;
     cacheV1->AddRegion("DissasmParseZoneType.0", versionOne.data(), static_cast<uint32>(versionOne.size()));
@@ -2263,8 +2304,10 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
     }
     REQUIRE(missingLabel != UINT32_MAX);
     edited.zone->RemoveRootAnnotationLines({ missingLabel });
+    // a version 2 record (keyed by line): in its layout the comments are one line above (the missing label is before them)
+    const std::map<uint32, std::string> recordComments = { { 9, "c10" }, { 99, "c100" } };
     std::vector<std::byte> buffer;
-    REQUIRE(edited.zone->ToBuffer(buffer));
+    WriteLineKeyedRecord(*edited.zone, 2, recordComments, buffer);
 
     auto makeCache = [](const std::vector<std::byte>& data) {
         auto cache      = std::make_unique<DissasmCache>();
@@ -2296,7 +2339,7 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         // a variable the analysis never found
         auto& function = edited.zone->localVariables.functions[0];
         function.variables.insert(function.variables.begin(), DissasmLocalVariable{ -0x100, 4, "injected" });
-        REQUIRE(edited.zone->ToBuffer(buffer));
+        WriteLineKeyedRecord(*edited.zone, 2, recordComments, buffer);
 
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
         auto cache            = makeCache(buffer);
@@ -2738,4 +2781,148 @@ TEST_CASE("LabelNamesFromTheLabelAddresses", "[Dissasm]Functions")
     REQUIRE(dissasmInstance.CheckDrawnLineText(2, "jmp sub_40100C"));
     // a target outside of the zone: its VA (32 bit)
     REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0x40200c"));
+}
+
+static std::unique_ptr<DissasmCache> MakeCodeZoneCache(const std::vector<std::pair<std::string, std::vector<std::byte>>>& records)
+{
+    auto cache      = std::make_unique<DissasmCache>();
+    cache->hasCache = true;
+    for (const auto& [name, data] : records)
+        cache->AddRegion(name, data.data(), static_cast<uint32>(data.size()));
+    return cache;
+}
+
+TEST_CASE("AddressKeyedComments", "[Dissasm]Comments")
+{
+    SECTION("a comment added inside a collapsible zone is saved")
+    {
+        DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        REQUIRE(edited.AddCollpasibleZone(5, 12));
+        REQUIRE(edited.AddOrUpdateComment(8, "inside the zone")); // the previous versions kept it in the child zone and never saved it
+        REQUIRE(edited.AddOrUpdateComment(30, "after the zone"));
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckComment(8, "inside the zone"));
+        REQUIRE(restored.CheckComment(30, "after the zone"));
+    }
+
+    SECTION("the comments and the label names follow their instructions and labels in another layout")
+    {
+        DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        std::string_view labelName = "isPrime";
+        REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+        REQUIRE(edited.AddOrUpdateComment(35, "on the label"));
+        REQUIRE(edited.AddOrUpdateComment(36, "on the first instruction"));
+        REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+        const std::string line100 = edited.GetLineText(100);
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        // an analysis that does not find the label sub_5 (line 5): every line after it is one line above
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        REQUIRE(restored.CheckLineText(5, "sub_5"));
+        restored.zone->RemoveRootAnnotationLines({ 5 });
+        restored.zone->ResetTypesReferenceList();
+        auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(!restored.zone->cacheRecordRejected);
+        REQUIRE(restored.CheckLineText(34, "isPrime"));
+        REQUIRE(restored.CheckComment(34, "on the label"));
+        REQUIRE(restored.CheckComment(35, "on the first instruction"));
+        REQUIRE(restored.CheckLineText(99, line100));
+        REQUIRE(restored.CheckComment(99, "c100"));
+    }
+
+    SECTION("the name of a label the analysis does not find is kept and saved again")
+    {
+        DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        std::string_view labelName = "isPrime";
+        REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        // an analysis without the label of isPrime (line 35)
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        restored.zone->RemoveRootAnnotationLines({ 35 });
+        restored.zone->ResetTypesReferenceList();
+        auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.zone->orphanLabelNames.size() == 1);
+        REQUIRE(restored.zone->orphanLabelNames.begin()->second == "isPrime");
+
+        // saved again: an analysis that finds the label gets the name back
+        REQUIRE(restored.zone->ToBuffer(buffer));
+        DissasmTestInstance again(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cacheAgain = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        REQUIRE(again.zone->TryLoadDataFromCache(*cacheAgain, zoneLinesChanged));
+        REQUIRE(again.CheckLineText(35, "isPrime"));
+        REQUIRE(again.zone->orphanLabelNames.empty());
+    }
+
+    SECTION("a record kept aside by an older version is merged")
+    {
+        DissasmTestInstance current(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        REQUIRE(current.AddOrUpdateComment(100, "current"));
+        REQUIRE(current.AddOrUpdateComment(40, "current 40"));
+        std::vector<std::byte> currentRecord;
+        REQUIRE(current.zone->ToBuffer(currentRecord));
+
+        DissasmTestInstance keptAside(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        std::string_view labelName = "isPrime";
+        REQUIRE(keptAside.zone->TryRenameLine(35, &keptAside.objects[0], &labelName).ok);
+        REQUIRE(keptAside.AddOrUpdateComment(40, "kept aside 40"));
+        REQUIRE(keptAside.AddOrUpdateComment(200, "kept aside 200"));
+        std::vector<std::byte> keptAsideRecord;
+        REQUIRE(keptAside.zone->ToBuffer(keptAsideRecord));
+
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache = MakeCodeZoneCache({ { "DissasmCodeZone.0", currentRecord }, { "DissasmCodeZoneUnapplied.0", keptAsideRecord } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.zone->mergedUnappliedRecord);
+        REQUIRE(restored.CheckComment(100, "current"));
+        REQUIRE(restored.CheckComment(40, "current 40")); // the data of the zone wins
+        REQUIRE(restored.CheckComment(200, "kept aside 200"));
+        REQUIRE(restored.CheckLineText(35, "isPrime"));
+
+        // without a record of the zone the record kept aside is applied as well
+        DissasmTestInstance onlyKeptAside(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cacheKeptAside = MakeCodeZoneCache({ { "DissasmCodeZoneUnapplied.0", keptAsideRecord } });
+        REQUIRE(!onlyKeptAside.zone->TryLoadDataFromCache(*cacheKeptAside, zoneLinesChanged)); // no record of its own
+        REQUIRE(onlyKeptAside.zone->mergedUnappliedRecord);
+        REQUIRE(onlyKeptAside.CheckComment(200, "kept aside 200"));
+    }
+}
+
+TEST_CASE("UserCommentsSerialization", "[Dissasm]Comments")
+{
+    DissasmUserComments comments;
+    comments.Set({ DissasmCommentAnchor::Kind::Instruction, 0x10, 0 }, "instruction");
+    comments.Set({ DissasmCommentAnchor::Kind::Label, 0x10, 0 }, "label"); // the same address, another line
+    comments.Set({ DissasmCommentAnchor::Kind::Variable, 0x30, -8 }, "variable");
+    std::vector<std::byte> buffer;
+    comments.ToBuffer(buffer);
+
+    DissasmUserComments loaded;
+    const std::byte* start = buffer.data();
+    REQUIRE(loaded.LoadFromBuffer(start, buffer.data() + buffer.size()));
+    REQUIRE(start == buffer.data() + buffer.size());
+    REQUIRE(loaded.comments == comments.comments);
+
+    // truncated / corrupted data is rejected
+    DissasmUserComments truncated;
+    start = buffer.data();
+    REQUIRE(!truncated.LoadFromBuffer(start, buffer.data() + buffer.size() - 1));
+    auto corrupted                      = buffer;
+    corrupted[sizeof(uint32)]           = std::byte{ 7 }; // an unknown anchor kind
+    DissasmUserComments corruptedLoaded;
+    start = corrupted.data();
+    REQUIRE(!corruptedLoaded.LoadFromBuffer(start, corrupted.data() + corrupted.size()));
 }

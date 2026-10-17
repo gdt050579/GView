@@ -58,6 +58,32 @@ namespace View
             bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
 
+        // What a comment of the user is attached to: an instruction, a label or a local variable line. Unlike a line, an anchor does not
+        // change when lines are added / removed (labels, variables) or hidden (collapsed zones), and it is saved as it is.
+        // The addresses are relative to the first decoded instruction of the zone (as DissasmAsmPreCacheLine::address).
+        struct DissasmCommentAnchor {
+            enum class Kind : uint8 { Instruction = 0, Label = 1, Variable = 2 };
+            Kind kind          = Kind::Instruction;
+            uint64 address     = 0; // the instruction, the label or the start of the function of the variable
+            int32 frameOffset  = 0; // Variable: the frame offset of the variable ([ebp - 8] -> -8)
+
+            auto operator<=>(const DissasmCommentAnchor&) const = default;
+        };
+
+        // The comments of the user of a code zone, keyed by their anchors. The anchors that no line has (an analysis that does not find a
+        // label / variable any more) keep their comments: they are shown again when the line comes back and they are always saved.
+        struct DissasmUserComments {
+            std::map<DissasmCommentAnchor, std::string> comments;
+
+            bool Get(const DissasmCommentAnchor& anchor, std::string& comment) const;
+            void Set(const DissasmCommentAnchor& anchor, std::string comment);
+            bool Remove(const DissasmCommentAnchor& anchor);
+
+            // [count] then count x [kind (uint8)][address (uint64)][frame offset (int32)][text size (uint32)][text]
+            void ToBuffer(std::vector<std::byte>& buffer) const;
+            bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
+        };
+
         struct AnnotationContainer {
             using AnnoationCallNameType   = std::string;
             using AnnoationCallValueType  = uint64;

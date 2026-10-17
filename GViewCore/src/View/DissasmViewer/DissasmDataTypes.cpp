@@ -108,6 +108,59 @@ bool DissasmComments::LoadFromBuffer(const std::byte*& start, const std::byte* e
     return true;
 }
 
+bool DissasmUserComments::Get(const DissasmCommentAnchor& anchor, std::string& comment) const
+{
+    const auto it = comments.find(anchor);
+    if (it == comments.end())
+        return false;
+    comment = it->second;
+    return true;
+}
+
+void DissasmUserComments::Set(const DissasmCommentAnchor& anchor, std::string comment)
+{
+    comments[anchor] = std::move(comment);
+}
+
+bool DissasmUserComments::Remove(const DissasmCommentAnchor& anchor)
+{
+    return comments.erase(anchor) > 0;
+}
+
+void DissasmUserComments::ToBuffer(std::vector<std::byte>& buffer) const
+{
+    append_bytes(buffer, static_cast<uint32>(comments.size()));
+    for (const auto& [anchor, text] : comments) {
+        append_bytes(buffer, static_cast<uint8>(anchor.kind));
+        append_bytes(buffer, anchor.address);
+        append_bytes(buffer, anchor.frameOffset);
+        append_string(buffer, text);
+    }
+}
+
+bool DissasmUserComments::LoadFromBuffer(const std::byte*& start, const std::byte* end)
+{
+    // the cache file is untrusted: the count is bounded by the bytes left (every comment has at least its fixed fields)
+    constexpr size_t MINIMUM_RECORD_SIZE = sizeof(uint8) + sizeof(uint64) + sizeof(int32) + sizeof(uint32);
+    uint32 count                         = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / MINIMUM_RECORD_SIZE)
+        return false;
+    for (uint32 i = 0; i < count; i++) {
+        uint8 kind = 0;
+        DissasmCommentAnchor anchor;
+        uint32 textSize = 0;
+        const std::byte* text = nullptr;
+        if (!read_primitive(start, end, kind) || !read_primitive(start, end, anchor.address) || !read_primitive(start, end, anchor.frameOffset) ||
+            !read_primitive(start, end, textSize) || !read_bytes(start, end, textSize, text))
+            return false;
+        if (kind > static_cast<uint8>(DissasmCommentAnchor::Kind::Variable))
+            return false;
+        anchor.kind       = static_cast<DissasmCommentAnchor::Kind>(kind);
+        comments[anchor] = std::string(reinterpret_cast<const char*>(text), textSize);
+    }
+    return true;
+}
+
 uint32 AnnotationContainer::GetRequiredSizeForSerialization() const
 {
     uint32 result = 3 * sizeof(uint32);

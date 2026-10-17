@@ -976,7 +976,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (!asmCacheLine->parent)
         return false;
     const bool showComments   = !asmCacheLine->parent->isCollapsed;
-    const bool hasUserComment = showComments && asmCacheLine->parent->commentsData.GetComment(currentLine, comment);
+    const bool hasUserComment = showComments && zone->GetComment(*asmCacheLine, comment);
     const bool hasAutoComment = showComments && !asmCacheLine->autoComment.empty();
     if (hasUserComment || hasAutoComment) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
@@ -1127,7 +1127,7 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
             listing.append(text.GetText(), text.Len()).append(operands);
         }
 
-        const bool hasComment = zone.GetComment(line, comment);
+        const bool hasComment = !(asmLine.parent && asmLine.parent->isCollapsed) && zone.GetComment(asmLine, comment);
         if (hasComment || !asmLine.autoComment.empty()) {
             const size_t written = listing.size() - lineStart;
             listing.append(written < commentsColumn ? commentsColumn - written : 1, ' ').append(";");
@@ -1415,7 +1415,7 @@ bool Instance::TryGetCodeZoneSelectionText(uint32 index, std::string& text)
             const auto code = lineText.GetBuffer()[i].Code;
             lineString.push_back(code < 128 ? static_cast<char>(code) : '?');
         }
-        const bool hasComment = !asmLine.parent || asmLine.parent->isCollapsed ? false : zone->GetComment(zoneLine - 2, comment);
+        const bool hasComment = !(asmLine.parent && asmLine.parent->isCollapsed) && zone->GetComment(asmLine, comment);
         if (hasComment || !asmLine.autoComment.empty()) {
             lineString += "  ;";
             if (hasComment)
@@ -1692,49 +1692,6 @@ GStatus DissasmCodeZone::TryRenameLine(
     }
 
     return GStatus::Error("Failed to rename line");
-}
-
-bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
-{
-    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
-    if (collapsedZone) {
-        if (!collapsedZone->commentsData.GetComment(line, comment)) {
-            Dialogs::MessageBox::ShowError("Error processing comments", "Invalid behaviour");
-            return false;
-        }
-        return true;
-    }
-
-    return false;
-}
-
-bool DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr)
-{
-    const auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
-
-    if (!collapsedZone) {
-        if (showErr)
-            Dialogs::MessageBox::ShowError("Error at processing comments", "Failed to find the required line!");
-        return false;
-    }
-
-    collapsedZone->commentsData.AddOrUpdateComment(line, comment);
-    return true;
-}
-
-bool DissasmCodeZone::RemoveComment(uint32 line, bool showErr)
-{
-    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
-    if (!collapsedZone) {
-        if (showErr)
-            Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
-        return false;
-    }
-
-    collapsedZone->commentsData.RemoveComment(line);
-    return true;
 }
 
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
@@ -2556,7 +2513,7 @@ void Instance::QuerySmartAssistantX86X64(
                 currentBuffer.AddFormat(" ; %s", currentLine.autoComment.c_str());
             if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
                 if (queryParams.includeComments) {
-                    if (codeZone->GetComment(currentDissasmLine, comment)) {
+                    if (codeZone->GetComment(currentLine, comment)) {
                         currentBuffer.AddFormat(" ; %s", comment.data());
                     }
                 }

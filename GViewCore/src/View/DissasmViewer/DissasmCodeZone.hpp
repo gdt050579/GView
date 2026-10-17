@@ -43,6 +43,15 @@ struct DissasmCodeZone : public ParseZone {
     // x86/x64: the address of the first decoded instruction in the address space of the labels, the VA (offset translation of the plugin)
     // or the file offset when the plugin has no translation. The label of the relative address r is named after labelAddressBase + r.
     uint64 labelAddressBase = 0;
+    // x86/x64: the comments of the user, by anchor (they follow their instruction / label / variable whatever the lines become)
+    DissasmUserComments userComments;
+    // the names the user gave to labels that the analysis does not find (a cache of another version): saved again, applied when the
+    // label comes back. Keyed by the relative address of the label.
+    std::map<uint64, std::string> orphanLabelNames;
+    // the record that an older version could not apply (kept aside in the cache) was merged into this zone: it is not kept any more
+    bool mergedUnappliedRecord = false;
+    // the object of the zone (set by InitZone): the line based calls decode their line from it
+    Reference<GView::Object> zoneObject;
 
     // the name of the label placed at the relative address `address` (as IDA: sub_140001000, loc_140001020)
     std::string GetLabelName(std::string_view prefix, uint64 address) const;
@@ -83,9 +92,14 @@ struct DissasmCodeZone : public ParseZone {
     Utils::GStatus TryRenameLine(
           uint32 line, Reference<GView::Object> obj, std::string_view* newName = nullptr, DissasmInsnExtractLineParams* params = nullptr);
 
+    // the comments of the user are attached to the anchor of a line (DissasmCommentAnchor), the line versions find the anchor of the line
     bool GetComment(uint32 line, std::string& comment);
+    bool GetComment(const DissasmAsmPreCacheLine& line, std::string& comment) const;
     bool AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr = true);
     bool RemoveComment(uint32 line, bool showErr = true);
+    // the instruction, the label or the variable of a line (a collapsed zone: the anchor of its first line)
+    static DissasmCommentAnchor GetLineAnchor(const DissasmAsmPreCacheLine& line);
+    std::optional<DissasmCommentAnchor> GetAnchorOfLine(uint32 line);
     DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
 
     // x86/x64 code window: bytes from cachedCodeOffsets[0].offset until the end of the zone
@@ -124,6 +138,19 @@ struct DissasmCodeZone : public ParseZone {
     bool ToBuffer(std::vector<std::byte>& buffer) const;
     // `zoneLinesChanged` is set when the cache removed lines (deleted local variables), the zone size must be adjusted
     bool TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesChanged);
+    // the comments of the line keyed records (cache versions 1 and 2, kept in the root type by line) are moved to their anchors
+    void MoveLineCommentsToAnchors();
+    // the label names of the user, by the relative address of the label (the renamed labels and orphanLabelNames)
+    std::vector<std::pair<uint64, std::string>> GetUserLabelNames() const;
+    // gives the name to the label placed at `address`; false when there is no such label (the name is kept in orphanLabelNames) or the
+    // name is used by another label
+    bool ApplyUserLabelName(uint64 address, const std::string& name);
+
+  private:
+    bool TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLinesChanged);
+    void MergeUnappliedRecord(DissasmCache& cache);
+
+  public:
 
   private:
     csh decodeHandle = 0;
