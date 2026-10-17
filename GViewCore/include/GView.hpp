@@ -1778,6 +1778,7 @@ namespace View
         enum class VariableType : uint32 { UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, AsciiZ, Utf16Z, Utf32Z };
 
         enum class MemoryMappingType { FunctionMapping, TextMapping };
+        enum class FunctionEntryType : uint8 { Export, ExceptionData, TlsCallback };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
@@ -1794,6 +1795,14 @@ namespace View
             void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
             void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
+            /**
+             * \brief Adds a known start of a function (an export, an exception data entry, a TLS callback): the deep scan labels it.
+             * \param fileOffset The file offset of the first instruction of the function.
+             * \param name The name of the label; empty: an automatic name (sub_..., TlsCallback_N).
+             * \param type Where the function was found. An export keeps its name over the other names found at the same offset.
+             * \param size The size of the function in bytes when it is known (exception data); 0: unknown.
+             */
+            void AddFunctionEntry(uint64 fileOffset, std::string_view name, FunctionEntryType type, uint64 size = 0);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**

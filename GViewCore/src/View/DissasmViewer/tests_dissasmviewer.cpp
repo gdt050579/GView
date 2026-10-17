@@ -269,6 +269,7 @@ struct ZoneLayout {
     uint32 cacheSize             = 0; // data cache size, 0 for the whole file (the data cache has at least 64 KB)
     std::optional<uint64> labelAddressBase; // the VA of the zone start (the plugins with an offset translation)
     std::function<bool(uint64)> isFileAddress; // the addresses of the file (cross references of the immediates)
+    std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
 };
 
 class DissasmTestInstance
@@ -333,6 +334,7 @@ class DissasmTestInstance
         initData.visibleRows                  = 53;
         initData.labelAddressBase             = layout.labelAddressBase;
         initData.isFileAddress                = layout.isFileAddress;
+        initData.functionEntries              = &layout.functionEntries;
         initData.obj                          = obj;
 
         if (!zone->InitZone(initData)) {
@@ -2847,4 +2849,87 @@ TEST_CASE("CrossReferencesOfImmediates", "[Dissasm]Xrefs")
     const auto [readFirst, readLast] = zone.xrefs.To(0x401030);
     REQUIRE(readLast - readFirst == 1);
     REQUIRE(readFirst->kind == DissasmXrefKind::Read);
+}
+
+TEST_CASE("FunctionEntriesOfThePlugin", "[Dissasm]FunctionEntries")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28, // 0x00: sub rsp, 0x28 (entry point)
+        0x85, 0xC9,             // 0x04: test ecx, ecx
+        0x74, 0x08,             // 0x06: je 0x10
+        0x48, 0x83, 0xC4, 0x28, // 0x08: add rsp, 0x28
+        0xC3,                   // 0x0c: ret
+        0xCC, 0xCC, 0xCC,       // 0x0d: padding
+        0x31, 0xC0,             // 0x10: xor eax, eax (export "Worker", also a jump target)
+        0xC3,                   // 0x12: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }); // 0x20: mov eax, 1; ret (exception data, nothing calls it)
+    file.resize(0x30, 0xCC);
+    file.push_back(0xC3); // 0x30: ret (TLS callback)
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3); // 0x40: ret (an export with a name already used)
+    file.resize(0x50, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    layout.functionEntries  = {
+        { 0x0, { "start", 0, true } }, // the entry point keeps its name
+        { 0x10, { "Worker", 0, true } },
+        { 0x20, { "", 6, false } },
+        { 0x30, { "TlsCallback_0", 0, false } },
+        { 0x40, { "Worker", 0, true } },
+        { 0x1000, { "OutsideTheZone", 0, true } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x10, 0x20, 0x30, 0x40 });
+    REQUIRE(zone.GetLabelNameAt(0x0) == "EntryPoint");
+    REQUIRE(zone.GetLabelNameAt(0x10) == "Worker");
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_140001020");
+    REQUIRE(zone.GetLabelNameAt(0x30) == "TlsCallback_0");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "sub_140001040");
+
+    // the jump uses the name of the export; the names of the plugin are not names of the user (not saved in the cache)
+    REQUIRE(dissasmInstance.CheckLineText(3, "je 0x10"));
+    SettingsData settings;
+    AsmData asmData;
+    std::string listing;
+    REQUIRE(BuildX86AsmListing(zone, &dissasmInstance.objects[0], &settings, &asmData, listing));
+    INFO(listing);
+    REQUIRE(listing.find("je     Worker") != std::string::npos);
+    REQUIRE(listing.find("\nTlsCallback_0:") != std::string::npos);
+    REQUIRE(zone.GetUserLabelNames().empty());
+    REQUIRE(zone.FormatCodeAddress(0x12) == "Worker+0x2");
+
+    // renamed by the user: saved by its address
+    std::string_view name = "Helper";
+    const uint32 workerLine = 9; // EntryPoint, 5 instructions, 3 int3, Worker
+    REQUIRE(dissasmInstance.CheckLineText(workerLine, "Worker"));
+    REQUIRE(zone.TryRenameLine(workerLine, &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.FormatCodeAddress(0x12) == "Helper+0x2");
+    const auto userNames = zone.GetUserLabelNames();
+    REQUIRE(userNames.size() == 1);
+    REQUIRE(userNames[0] == std::pair<uint64, std::string>{ 0x10, "Helper" });
+}
+
+TEST_CASE("FunctionEntriesFromSeveralSources", "[Dissasm]FunctionEntries")
+{
+    Settings settings;
+    auto* data = static_cast<SettingsData*>(settings.data);
+    // the exception data gives the size, the export its name, a later name does not replace the name of the export
+    settings.AddFunctionEntry(0x400, {}, FunctionEntryType::ExceptionData, 0x30);
+    settings.AddFunctionEntry(0x400, "TlsCallback_0", FunctionEntryType::TlsCallback);
+    settings.AddFunctionEntry(0x400, "Exported", FunctionEntryType::Export);
+    settings.AddFunctionEntry(0x400, "Other", FunctionEntryType::Export);
+    REQUIRE(data->functionEntries.size() == 1);
+    const auto& entry = data->functionEntries.at(0x400);
+    REQUIRE(entry.name == "Exported");
+    REQUIRE(entry.isExport);
+    REQUIRE(entry.size == 0x30);
+    delete data;
 }

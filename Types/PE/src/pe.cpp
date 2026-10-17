@@ -127,6 +127,85 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PE:
     pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
 }
 
+// The known starts of functions: the deep scan of the disassembly labels them even when nothing calls them directly
+void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+{
+    if (pe->dirs == nullptr)
+        return;
+
+    // exports (a forwarded export points to a "dll.function" text inside the export directory, not to code)
+    const auto& exportDir = pe->GetDirectory(PE::DirectoryType::Export);
+    for (const auto& item : pe->exp) {
+        if (item.RVA >= exportDir.VirtualAddress && item.RVA < static_cast<uint64>(exportDir.VirtualAddress) + exportDir.Size)
+            continue;
+        const auto fa = pe->RVAToFA(item.RVA);
+        if (fa != PE_INVALID_ADDRESS)
+            settings.AddFunctionEntry(fa, item.Name, DissasmViewer::FunctionEntryType::Export);
+    }
+
+    // x64 exception data (.pdata): a RUNTIME_FUNCTION for nearly every function that is not a leaf, with its size
+    if (pe->hdr64) {
+        struct RuntimeFunction {
+            uint32 BeginAddress;
+            uint32 EndAddress;
+            uint32 UnwindInfoAddress;
+        };
+        constexpr uint32 MAX_RUNTIME_FUNCTIONS = 0x100000;
+        constexpr uint8 UNW_FLAG_CHAININFO     = 0x4;
+        const auto& exceptionDir               = pe->GetDirectory(PE::DirectoryType::Exception);
+        const auto start                       = exceptionDir.VirtualAddress != 0 ? pe->RVAToFA(exceptionDir.VirtualAddress) : PE_INVALID_ADDRESS;
+        const uint32 count = start != PE_INVALID_ADDRESS ? std::min<uint32>(exceptionDir.Size / sizeof(RuntimeFunction), MAX_RUNTIME_FUNCTIONS) : 0;
+        for (uint32 index = 0; index < count; index++) {
+            RuntimeFunction function;
+            if (!data.Copy<RuntimeFunction>(start + static_cast<uint64>(index) * sizeof(RuntimeFunction), function))
+                break;
+            if (function.BeginAddress == 0 || function.EndAddress <= function.BeginAddress)
+                continue;
+            // a chained entry (or an indirect one, odd unwind address) is a part of the function of another entry, not a function start
+            if (function.UnwindInfoAddress & 1)
+                continue;
+            uint8 versionAndFlags = 0;
+            const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
+            if (unwindInfo != PE_INVALID_ADDRESS && data.Copy<uint8>(unwindInfo, versionAndFlags) && ((versionAndFlags >> 3) & UNW_FLAG_CHAININFO))
+                continue;
+            const auto fa = pe->RVAToFA(function.BeginAddress);
+            if (fa != PE_INVALID_ADDRESS)
+                settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, function.EndAddress - function.BeginAddress);
+        }
+    }
+
+    // TLS callbacks: run before the entry point (IDA names them TlsCallback_N); the directory fields are 64 bit for PE32+
+    const auto& tlsDir = pe->GetDirectory(PE::DirectoryType::TLS);
+    const auto tlsFa   = (tlsDir.VirtualAddress != 0 && tlsDir.Size != 0) ? pe->RVAToFA(tlsDir.VirtualAddress) : PE_INVALID_ADDRESS;
+    if (tlsFa == PE_INVALID_ADDRESS)
+        return;
+    const uint32 pointerSize = pe->hdr64 ? 8 : 4;
+    auto readPointer         = [&data, pointerSize](uint64 offset, uint64& value) {
+        if (pointerSize == 8)
+            return data.Copy<uint64>(offset, value);
+        uint32 value32 = 0;
+        const bool ok  = data.Copy<uint32>(offset, value32);
+        value          = value32;
+        return ok;
+    };
+    uint64 callbacksVA = 0;
+    if (!readPointer(tlsFa + 3ull * pointerSize, callbacksVA) || callbacksVA == 0) // StartAddressOfRawData, EndAddressOfRawData, AddressOfIndex
+        return;
+    const auto callbacks = pe->VAtoFA(callbacksVA);
+    if (callbacks == PE_INVALID_ADDRESS)
+        return;
+    constexpr uint32 MAX_TLS_CALLBACKS = 64;
+    LocalString<32> name;
+    for (uint32 index = 0; index < MAX_TLS_CALLBACKS; index++) {
+        uint64 callbackVA = 0;
+        if (!readPointer(callbacks + static_cast<uint64>(index) * pointerSize, callbackVA) || callbackVA == 0)
+            break;
+        const auto fa = pe->VAtoFA(callbackVA);
+        if (fa != PE_INVALID_ADDRESS && name.SetFormat("TlsCallback_%u", index))
+            settings.AddFunctionEntry(fa, name.ToStringView(), DissasmViewer::FunctionEntryType::TlsCallback);
+    }
+}
+
 void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
 {
     DissasmViewer::Settings settings;
@@ -189,6 +268,7 @@ UInt16 e_res[4];)");
         // processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
         settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
     }
+    AddDissasmFunctionEntries(settings, pe, win->GetObject()->GetData());
 
     win->CreateViewer(settings);
 }

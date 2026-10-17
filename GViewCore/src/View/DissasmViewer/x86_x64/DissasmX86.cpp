@@ -224,9 +224,17 @@ inline void DissasmAddColorsToInstruction(
         cb.Add(string, colors.AsmDefaultColor);
     }
 
-    string.SetFormat("%-6s", insn.mnemonic);
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, colors, data);
-    cb.Add(string, color);
+    if (insn.label.empty()) {
+        string.SetFormat("%-6s", insn.mnemonic);
+        cb.Add(string, color);
+    } else {
+        cb.Add(insn.label, color); // a label: its whole name
+        if (insn.label.size() < 6) {
+            string.SetChars(' ', static_cast<uint32>(6 - insn.label.size()));
+            cb.Add(string, color);
+        }
+    }
 
     if (insn.op_str) {
         const std::string_view op_str = insn.op_str;
@@ -672,16 +680,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             return true;
         }
 
-        // the label of the target, renamed or not (the renames are kept by the root type, the collapsible zones are its children): a
-        // function reached by a jmp (tail call, thunk) keeps its sub_ label, a jump target reached by a call its loc_ label
-        const auto& rootAnnotations = params.zone->dissasmType.annotations;
-        const std::string subName   = params.zone->GetLabelName("sub_", operands.directTarget.value());
-        const std::string locName   = params.zone->GetLabelName("loc_", operands.directTarget.value());
-        std::string labelName       = rootAnnotations.get_name_change(subName);
+        // the label of the target with its current name (renamed, an export, a function reached by a jmp keeps its sub_ label); a target
+        // without a label (the deep scan is disabled): the name it would have
+        std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (labelName.empty())
-            labelName = rootAnnotations.get_name_change(locName);
-        if (labelName.empty())
-            labelName = shouldConsiderCall ? subName : locName;
+            labelName = params.zone->GetLabelName(shouldConsiderCall ? "sub_" : "loc_", operands.directTarget.value());
         op_str      = portable_strdup(labelName.c_str());
         op_str_size = static_cast<uint32>(labelName.size());
     }
@@ -1010,6 +1013,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         const uint64 fileSize  = obj->GetData().GetSize();
         initData.isFileAddress = [fileSize](uint64 offset) { return offset < fileSize; };
     }
+    initData.functionEntries = &settings->functionEntries;
 
     if (!zone->InitZone(initData))
         return false;
@@ -1076,7 +1080,7 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
         } else if (asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition) {
             listing.append("                    ").append(operands); // var_8 = dword ptr -8
         } else if (asmLine.size == 0) {
-            listing.append("\n").append(asmLine.mnemonic).append(":"); // label
+            listing.append("\n").append(asmLine.GetMnemonicText()).append(":"); // label
         } else {
             if (operands.empty()) // ret, int3: no padding after the mnemonic
                 text.SetFormat("0x%08" PRIx64 "  %s", asmLine.address + codeStart, asmLine.mnemonic);
@@ -2144,7 +2148,10 @@ void Instance::QuerySmartAssistantX86X64(
             if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
                 // labels are sent by name, the local variables with their definition
                 const bool isVariable = currentLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition && currentLine.op_str;
-                assemblyLines.emplace_back(isVariable ? currentLine.op_str : currentLine.mnemonic);
+                if (isVariable)
+                    assemblyLines.emplace_back(currentLine.op_str);
+                else
+                    assemblyLines.emplace_back(currentLine.GetMnemonicText());
             }
         }
         if (queryParams.stopAtTheEndOfTheFunction && strcmp(currentLine.mnemonic, "ret") == 0)

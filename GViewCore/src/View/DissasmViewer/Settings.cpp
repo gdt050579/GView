@@ -33,6 +33,19 @@ void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMap
 #endif
 }
 
+void Settings::AddFunctionEntry(uint64 fileOffset, std::string_view name, FunctionEntryType type, uint64 size)
+{
+    auto& entry = INTERNAL_SETTINGS->functionEntries[fileOffset];
+    // the same function from several sources: an export keeps its name, the size is kept from the exception data
+    const bool isExport = type == FunctionEntryType::Export;
+    if (!name.empty() && (entry.name.empty() || (isExport && !entry.isExport))) {
+        entry.name     = std::string(name); // a string_view is not NUL terminated
+        entry.isExport = isExport;
+    }
+    if (size > 0)
+        entry.size = size;
+}
+
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
 {
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { static_cast<InternalDissasmType>(type), name };

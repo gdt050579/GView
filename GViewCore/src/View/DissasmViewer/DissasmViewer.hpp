@@ -210,6 +210,14 @@ namespace View
             // generated text shown after the user comment (referenced string, import, API argument name): recomputed every time the line
             // is built, never saved and never mixed with the comments of the user
             std::string autoComment;
+            // a label line: its name (the mnemonic keeps only its first CS_MNEMONIC_SIZE - 1 characters)
+            std::string label;
+
+            // the text of the mnemonic column: the whole name of a label
+            std::string_view GetMnemonicText() const
+            {
+                return label.empty() ? std::string_view(mnemonic) : std::string_view(label);
+            }
 
             uint32 GetLineSize() const
             {
@@ -264,6 +272,7 @@ namespace View
                 localVariableNameStart = other.localVariableNameStart;
                 localVariableNameSize  = other.localVariableNameSize;
                 autoComment            = other.autoComment;
+                label                  = other.label;
             }
         };
 
@@ -373,6 +382,12 @@ namespace View
             }
         };
 
+        struct DissasmFunctionEntry {
+            std::string name;      // empty: an automatic name (sub_...)
+            uint64 size   = 0;     // 0: unknown
+            bool isExport = false; // the name is the name of an export
+        };
+
         struct DissasmCodeZoneInitData {
             Reference<DrawLineInfo> dli;
             int32 adjustedZoneSize;
@@ -386,6 +401,8 @@ namespace View
             // an address (address space of the labels) that is a location of the file: the immediates and the absolute memory operands of
             // 32 bit code are cross references only then (a constant is not); empty: they are not cross references
             std::function<bool(uint64)> isFileAddress;
+            // the known starts of functions given by the plugin, by file offset (exports, exception data, TLS callbacks); can be null
+            const std::map<uint64, DissasmFunctionEntry>* functionEntries = nullptr;
         };
 
         struct MemoryMappingEntry {
@@ -405,6 +422,7 @@ namespace View
             uint32 availableID;
 
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
+            std::map<uint64, DissasmFunctionEntry> functionEntries;         // the known function starts, by file offset
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmStructureType> dissasmTypeMapped; // mapped types against the offset of the file

@@ -4,6 +4,7 @@
 #include "x86_x64/X86InstructionInfo.hpp"
 
 #include <algorithm>
+#include <unordered_set>
 
 using namespace GView::View::DissasmViewer;
 using GView::Utils::GStatus;
@@ -17,7 +18,8 @@ inline bool ExtractCallsToInsertFunctionNames(
       int internalArchitecture,
       uint32& totalLines,
       bool detectLocalVariables,
-      const std::function<bool(uint64)>& isFileAddress)
+      const std::function<bool(uint64)>& isFileAddress,
+      const std::map<uint64, DissasmFunctionEntry>* functionEntries)
 {
     // the code is [offsets[0], end of the zone): the same lines as the ones counted by populateOffsetsVector
     const uint64 codeSize = zone->GetCodeSize();
@@ -50,6 +52,13 @@ inline bool ExtractCallsToInsertFunctionNames(
         callsFound.emplace_back(functionOffset, zone->GetLabelName("sub_", functionOffset - offsets[0].offset));
         callsMap.insert({ functionOffset, false });
     };
+
+    // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
+    const uint64 codeStart = offsets[0].offset;
+    if (functionEntries) {
+        for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+            addFunctionStart(it->first);
+    }
 
     const bool is64          = zone->Is64BitCode();
     const uint64 addressMask = is64 ? UINT64_MAX : 0xFFFFFFFFull; // the addresses of 32 bit code wrap around at 4 GB
@@ -145,27 +154,39 @@ inline bool ExtractCallsToInsertFunctionNames(
     cs_close(&handle);
     zone->xrefs.Finish();
 
-    const auto isFunctionLabel = [&getLabelType](const std::string& name) { return getLabelType(name) == SUB || name == "EntryPoint"; };
+    // relative addresses, every function is bounded by the next one (or by its size, when the plugin knows it)
     zone->functionStarts.clear();
     for (const auto& call : callsFound)
-        if (call.first >= offsets[0].offset && isFunctionLabel(call.second))
-            zone->functionStarts.push_back(call.first - offsets[0].offset); // sorted: callsFound is sorted by address
+        if (call.first >= codeStart && (getLabelType(call.second) == SUB || call.second == "EntryPoint"))
+            zone->functionStarts.push_back(call.first - codeStart); // sorted: callsFound is sorted by address
+    const auto& functionStarts = zone->functionStarts;
+    const auto isFunctionStart = [&functionStarts](uint64 relativeAddress) {
+        return std::binary_search(functionStarts.begin(), functionStarts.end(), relativeAddress);
+    };
+
+    // the names given by the plugin (exports, TLS callbacks); the entry point keeps its name, a name used twice is not applied again
+    if (functionEntries && !functionEntries->empty()) {
+        std::unordered_set<std::string> usedNames;
+        usedNames.reserve(callsFound.size());
+        for (const auto& call : callsFound)
+            usedNames.insert(call.second);
+        for (auto& call : callsFound) {
+            const auto entry = functionEntries->find(call.first);
+            if (entry == functionEntries->end() || entry->second.name.empty() || call.first == zone->zoneDetails.entryPoint)
+                continue;
+            if (usedNames.insert(entry->second.name).second)
+                call.second = entry->second.name;
+        }
+    }
 
     // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
     csh detailHandle     = 0;
     bool hasDetailHandle = false;
-    std::vector<uint64> functionStarts; // relative addresses, every function is bounded by the next one
     if (detectLocalVariables && codeSize > 0) {
         hasDetailHandle = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &detailHandle) == CS_ERR_OK;
         if (hasDetailHandle && cs_option(detailHandle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK) {
             cs_close(&detailHandle);
             hasDetailHandle = false;
-        }
-        if (hasDetailHandle) {
-            functionStarts.reserve(callsFound.size());
-            for (const auto& call : callsFound)
-                if (call.first >= offsets[0].offset && isFunctionLabel(call.second))
-                    functionStarts.push_back(call.first - offsets[0].offset);
         }
     }
 
@@ -181,18 +202,23 @@ inline bool ExtractCallsToInsertFunctionNames(
         if (diffLines >= asmLines)
             continue; // the target is after the last decoded instruction (trailing data), it has no line
 
-        const uint64 relativeAddress = callValue - offsets[0].offset;
+        const uint64 relativeAddress = callValue - codeStart;
         annotations.insert({ diffLines + extraLines, { call.second, relativeAddress } });
         annotations.add_initial_name(call.second);
         extraLines++;
 
         // the variable annotations pack the function start on 32 bits (the zone sizes are 32 bits)
-        if (!hasDetailHandle || !isFunctionLabel(call.second) || relativeAddress >= codeSize || relativeAddress > 0xFFFFFFFFull)
+        if (!hasDetailHandle || relativeAddress >= codeSize || relativeAddress > 0xFFFFFFFFull || !isFunctionStart(relativeAddress))
             continue;
-        const auto nextFunction  = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
-        const uint64 limit       = nextFunction != functionStarts.end() ? *nextFunction : codeSize;
+        const auto nextFunction = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
+        uint64 limit            = nextFunction != functionStarts.end() ? *nextFunction : codeSize;
+        if (functionEntries) {
+            const auto entry = functionEntries->find(callValue);
+            if (entry != functionEntries->end() && entry->second.size > 0 && entry->second.size < limit - relativeAddress)
+                limit = relativeAddress + entry->second.size;
+        }
         const uint64 bytesToRead = std::min<uint64>(limit - relativeAddress, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
-        const auto functionData  = obj->GetData().Get(offsets[0].offset + relativeAddress, static_cast<uint32>(bytesToRead), false);
+        const auto functionData  = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
         if (!functionData.IsValid())
             continue;
 
@@ -481,7 +507,14 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     localVariables.functions.clear();
     if (initData.enableDeepScanDissasmOnStart) {
         const bool scanned = ExtractCallsToInsertFunctionNames(
-              cachedCodeOffsets, this, initData.obj, internalArchitecture, totalLines, initData.enableLocalVariablesDetection, initData.isFileAddress);
+              cachedCodeOffsets,
+              this,
+              initData.obj,
+              internalArchitecture,
+              totalLines,
+              initData.enableLocalVariablesDetection,
+              initData.isFileAddress,
+              initData.functionEntries);
         if (!scanned) {
             initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;
@@ -803,7 +836,8 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
             return line;
         }
         line.address = annotation->second.second; // a label: its name, the address of its instruction
-        line.SetMnemonic(annotation->second.first);
+        line.label   = annotation->second.first;
+        line.SetMnemonic(line.label);
         line.autoComment = FormatXrefsSummary(line.address); // who uses it
         return line;
     }
