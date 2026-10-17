@@ -108,6 +108,50 @@ bool DissasmComments::LoadFromBuffer(const std::byte*& start, const std::byte* e
     return true;
 }
 
+void DissasmXrefs::Finish()
+{
+    std::sort(byTarget.begin(), byTarget.end(), [](const DissasmXref& left, const DissasmXref& right) {
+        if (left.to != right.to)
+            return left.to < right.to;
+        if (left.from != right.from)
+            return left.from < right.from;
+        return left.kind < right.kind;
+    });
+    byTarget.erase(std::unique(byTarget.begin(),
+                               byTarget.end(),
+                               [](const DissasmXref& left, const DissasmXref& right) {
+                                   return left.to == right.to && left.from == right.from && left.kind == right.kind;
+                               }),
+                   byTarget.end());
+    byTarget.shrink_to_fit();
+}
+
+std::pair<std::vector<DissasmXref>::const_iterator, std::vector<DissasmXref>::const_iterator> DissasmXrefs::To(uint64 target) const
+{
+    const auto first = std::lower_bound(byTarget.begin(), byTarget.end(), target, [](const DissasmXref& xref, uint64 value) { return xref.to < value; });
+    const auto last  = std::upper_bound(first, byTarget.end(), target, [](uint64 value, const DissasmXref& xref) { return value < xref.to; });
+    return { first, last };
+}
+
+std::string_view GView::View::DissasmViewer::GetXrefKindName(DissasmXrefKind kind)
+{
+    switch (kind) {
+    case DissasmXrefKind::Call:
+        return "call";
+    case DissasmXrefKind::Jump:
+        return "jmp";
+    case DissasmXrefKind::ConditionalJump:
+        return "jcc";
+    case DissasmXrefKind::Read:
+        return "read";
+    case DissasmXrefKind::Write:
+        return "write";
+    case DissasmXrefKind::Offset:
+        return "offset";
+    }
+    return "";
+}
+
 bool DissasmUserComments::Get(const DissasmCommentAnchor& anchor, std::string& comment) const
 {
     const auto it = comments.find(anchor);

@@ -49,6 +49,16 @@ struct DissasmCodeZone : public ParseZone {
     bool mergedUnappliedRecord = false;
     // the object of the zone (set by InitZone): the line based calls decode their line from it
     Reference<GView::Object> zoneObject;
+    // x86/x64 (deep scan): the cross references of the code (address space of the labels) and the function starts (relative, sorted)
+    DissasmXrefs xrefs;
+    std::vector<uint64> functionStarts;
+
+    // the name shown for the label at the relative address (renamed or not); empty when there is no label there
+    std::string GetLabelNameAt(uint64 relativeAddress) const;
+    // "sub_140001010+0x1A": the function that contains the relative address (its name as shown)
+    std::string FormatCodeAddress(uint64 relativeAddress) const;
+    // the references to the label at the relative address, shown after the label: "xrefs: sub_140001010+0x84 (call), ... +3"
+    std::string FormatXrefsSummary(uint64 relativeAddress) const;
 
     // the name of the label placed at the relative address `address` (as IDA: sub_140001000, loc_140001020)
     std::string GetLabelName(std::string_view prefix, uint64 address) const;
@@ -191,7 +201,8 @@ struct DissasmCodeZone : public ParseZone {
 
     csh decodeHandle = 0;
     bool linesReady  = false;
-    std::vector<uint32> annotationLines; // the sorted lines of dissasmType.annotations
+    std::vector<uint32> annotationLines;                // the sorted lines of dissasmType.annotations
+    std::unordered_map<uint64, uint32> labelLineOfAddress; // relative address of a label -> its line (expanded layout)
 };
 
 // the lines of the zone as they are shown (without the title), the collapsed zones count as one line

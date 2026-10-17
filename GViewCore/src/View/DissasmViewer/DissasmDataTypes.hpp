@@ -84,6 +84,40 @@ namespace View
             bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
 
+        // A cross reference: the instruction at `from` uses the address `to` (both in the address space of the labels: the VA, or the file
+        // offset when the plugin has no translation). Computed by the analysis, never saved.
+        enum class DissasmXrefKind : uint8 {
+            Call,            // call to
+            Jump,            // jmp to
+            ConditionalJump, // jcc / loop to
+            Read,            // reads the data at to (mov eax, [rip + ...])
+            Write,           // writes the data at to
+            Offset,          // takes the address (lea rcx, [rip + ...] / push offset / mov ecx, offset)
+        };
+        struct DissasmXref {
+            uint64 from;
+            uint64 to;
+            DissasmXrefKind kind;
+        };
+        struct DissasmXrefs {
+            std::vector<DissasmXref> byTarget; // sorted by target, then by source (Finish)
+
+            void Clear()
+            {
+                byTarget.clear();
+            }
+            void Add(uint64 from, uint64 to, DissasmXrefKind kind)
+            {
+                byTarget.push_back({ from, to, kind });
+            }
+            // sorts the references (and removes the duplicates) once they are all added
+            void Finish();
+            // the references to `target`, sorted by their source
+            std::pair<std::vector<DissasmXref>::const_iterator, std::vector<DissasmXref>::const_iterator> To(uint64 target) const;
+        };
+        // "call", "jmp", "read", ... (the short text of the xrefs list)
+        std::string_view GetXrefKindName(DissasmXrefKind kind);
+
         struct AnnotationContainer {
             using AnnoationCallNameType   = std::string;
             using AnnoationCallValueType  = uint64;

@@ -19,6 +19,7 @@ struct X86OperandsInfo {
     std::optional<AppCUI::uint64> ripTarget;      // [rip + 0x...]: the address that is read / written / taken (x64)
     std::optional<AppCUI::uint64> absoluteMemory; // [0x402010]: a memory operand without base and index registers (x86 globals, imports)
     std::vector<AppCUI::uint64> immediates;       // the immediate operands that are not branch targets (push 0x403000, mov ecx, 0x10)
+    AppCUI::uint8 memoryAccess = 0;               // CS_AC_READ / CS_AC_WRITE of the memory operand of ripTarget / absoluteMemory
 };
 
 X86Flow GetX86Flow(const cs_insn& insn);

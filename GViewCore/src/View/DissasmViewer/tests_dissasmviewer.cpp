@@ -268,6 +268,7 @@ struct ZoneLayout {
     DisassemblyLanguage language = DisassemblyLanguage::x86;
     uint32 cacheSize             = 0; // data cache size, 0 for the whole file (the data cache has at least 64 KB)
     std::optional<uint64> labelAddressBase; // the VA of the zone start (the plugins with an offset translation)
+    std::function<bool(uint64)> isFileAddress; // the addresses of the file (cross references of the immediates)
 };
 
 class DissasmTestInstance
@@ -331,6 +332,7 @@ class DissasmTestInstance
         initData.enableLocalVariablesDetection = enableLocalVariables;
         initData.visibleRows                  = 53;
         initData.labelAddressBase             = layout.labelAddressBase;
+        initData.isFileAddress                = layout.isFileAddress;
         initData.obj                          = obj;
 
         if (!zone->InitZone(initData)) {
@@ -2350,7 +2352,12 @@ TEST_CASE("AsmListingExport", "[Dissasm]Export")
     REQUIRE(callLine != std::string::npos);
     const auto callLineEnd = listing.find('\n', callLine);
     REQUIRE(listing.substr(callLine, callLineEnd - callLine).ends_with("; calls the helper"));
-    REQUIRE(listing.find("\nsub_10:\n0x00000010  xor    eax, eax\n") != std::string::npos);
+    // the label of the called function lists its callers
+    const auto labelLine = listing.find("\nsub_10:");
+    REQUIRE(labelLine != std::string::npos);
+    const auto labelLineEnd = listing.find('\n', labelLine + 1);
+    REQUIRE(listing.substr(labelLine, labelLineEnd - labelLine).ends_with("; xref: EntryPoint+0x4 (call)"));
+    REQUIRE(listing.find("\n0x00000010  xor    eax, eax\n", labelLineEnd) == labelLineEnd);
     // every line of the zone is written: 2 labels + all the instructions
     REQUIRE(GetCodeZoneLinesCount(zone) == zone.asmLinesCount + 2);
 }
@@ -2753,4 +2760,91 @@ TEST_CASE("UserCommentsSerialization", "[Dissasm]Comments")
     DissasmUserComments corruptedLoaded;
     start = corrupted.data();
     REQUIRE(!corruptedLoaded.LoadFromBuffer(start, corrupted.data() + corrupted.size()));
+}
+
+TEST_CASE("CrossReferences", "[Dissasm]Xrefs")
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00,             // 0x00: call 0x10
+        0xEB, 0x09,                               // 0x05: jmp 0x10
+        0x48, 0x8D, 0x0D, 0x20, 0x00, 0x00, 0x00, // 0x07: lea rcx, [rip + 0x20] -> 0x2e
+        0x75, 0x00,                               // 0x0e: jne 0x10
+        0x31, 0xC0,                               // 0x10: xor eax, eax
+        0x89, 0x05, 0x10, 0x00, 0x00, 0x00,       // 0x12: mov dword ptr [rip + 0x10], eax -> 0x28 (write)
+        0xC3,                                     // 0x18: ret
+    };
+    file.resize(64, 0xCC);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& zone = *dissasmInstance.zone;
+
+    // the function starts: the entry point and the called function
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x10 });
+
+    // the references to the function: the call, the jmp and the jne, sorted by their source
+    const auto [first, last] = zone.xrefs.To(0x140001010);
+    REQUIRE(last - first == 3);
+    REQUIRE(first[0].from == 0x140001000);
+    REQUIRE(first[0].kind == DissasmXrefKind::Call);
+    REQUIRE(first[1].from == 0x140001005);
+    REQUIRE(first[1].kind == DissasmXrefKind::Jump);
+    REQUIRE(first[2].from == 0x14000100E);
+    REQUIRE(first[2].kind == DissasmXrefKind::ConditionalJump);
+
+    // the data: the address taken by lea, the variable written by mov
+    const auto [leaFirst, leaLast] = zone.xrefs.To(0x14000102E);
+    REQUIRE(leaLast - leaFirst == 1);
+    REQUIRE(leaFirst->kind == DissasmXrefKind::Offset);
+    const auto [writeFirst, writeLast] = zone.xrefs.To(0x140001028);
+    REQUIRE(writeLast - writeFirst == 1);
+    REQUIRE(writeFirst->kind == DissasmXrefKind::Write);
+    REQUIRE(writeFirst->from == 0x140001012);
+
+    // the sources are named after their functions
+    REQUIRE(zone.FormatCodeAddress(0x0) == "EntryPoint");
+    REQUIRE(zone.FormatCodeAddress(0xE) == "EntryPoint+0xE");
+    REQUIRE(zone.FormatCodeAddress(0x12) == "sub_140001010+0x2");
+
+    // the label line shows who uses it
+    REQUIRE(dissasmInstance.CheckLineText(5, "sub_140001010"));
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(5).autoComment == "xrefs: EntryPoint (call), EntryPoint+0x5 (jmp) +1 more");
+
+    // a renamed function: its new name
+    std::string_view name = "worker";
+    REQUIRE(dissasmInstance.zone->TryRenameLine(5, &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.FormatCodeAddress(0x12) == "worker+0x2");
+}
+
+TEST_CASE("CrossReferencesOfImmediates", "[Dissasm]Xrefs")
+{
+    // 32 bit code: an immediate is a reference only when it is an address of the file (a constant is not)
+    std::vector<unsigned char> file = {
+        0x68, 0x20, 0x10, 0x40, 0x00,       // 0x00: push 0x401020
+        0x68, 0x05, 0x00, 0x00, 0x00,       // 0x05: push 5
+        0x68, 0x00, 0x00, 0x50, 0x00,       // 0x0a: push 0x500000 (not in the file)
+        0xA1, 0x30, 0x10, 0x40, 0x00,       // 0x0f: mov eax, dword ptr [0x401030]
+        0xC3,                               // 0x14: ret
+    };
+    file.resize(64, 0xCC);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x401000;
+    layout.isFileAddress    = [](uint64 va) { return va >= 0x401000 && va < 0x401040; };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& zone = *dissasmInstance.zone;
+
+    const auto [first, last] = zone.xrefs.To(0x401020);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Offset);
+    REQUIRE(first->from == 0x401000);
+    REQUIRE(zone.xrefs.To(5).first == zone.xrefs.To(5).second);
+    REQUIRE(zone.xrefs.To(0x500000).first == zone.xrefs.To(0x500000).second);
+    const auto [readFirst, readLast] = zone.xrefs.To(0x401030);
+    REQUIRE(readLast - readFirst == 1);
+    REQUIRE(readFirst->kind == DissasmXrefKind::Read);
 }

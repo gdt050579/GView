@@ -1000,6 +1000,16 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         if (va != static_cast<uint64>(-1))
             initData.labelAddressBase = va;
     }
+    // the cross references of the immediates / absolute operands: only the addresses that are locations of the file
+    if (initData.labelAddressBase.has_value()) {
+        auto* settingsData     = settings.get();
+        initData.isFileAddress = [settingsData](uint64 va) {
+            return settingsData->offsetTranslateCallback->TranslateToFileOffset(va, static_cast<uint32>(DissasmPEConversionType::VA)) != static_cast<uint64>(-1);
+        };
+    } else {
+        const uint64 fileSize  = obj->GetData().GetSize();
+        initData.isFileAddress = [fileSize](uint64 offset) { return offset < fileSize; };
+    }
 
     if (!zone->InitZone(initData))
         return false;
@@ -1189,35 +1199,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             return;
     }
 
-    // computedValue = 1064;
-
-    diffLines = 0;
-    insn      = GetCurrentInstructionByOffset(computedValue, zone, obj, diffLines);
-    if (!insn) {
-        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+    if (!MoveCursorToZoneFileOffset(zone, computedValue, true))
         return;
-    }
-    cs_free(insn, 1);
-
-    // diffLines++; // increased because of the menu bar
-
-    // diffLines is the instruction index: land on the label (and the local variables) placed right above the instruction, or on the
-    // collapsed zone that hides it
-    uint32 landingExpandedLine = zone->InstructionIndexToExpanded(diffLines);
-    while (landingExpandedLine > 0 && zone->IsAnnotationLine(landingExpandedLine - 1u))
-        landingExpandedLine--;
-    const uint32 landingLine = zone->ExpandedToDisplay(landingExpandedLine);
-
-    // if (adjustedLine.has_value())
-    //     actualLine += adjustedLine.value() + 1;
-
-    diffLines = landingLine + 2u; //+1 for menu, +1 for title
-
-    const auto from      = SaveCursorState();
-    Cursor.lineInView    = std::min<uint32>(5, diffLines);
-    Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
-    Cursor.hasMovedView  = true;
-    RecordJump(from);
     if (offsetToReach != nullptr)
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
     else
@@ -1252,6 +1235,31 @@ void Instance::ChangeAddressMode()
         break;
     }
     RefreshDrawnLines(); // the address column changes its width: the columns of the numbers move
+}
+
+bool Instance::MoveCursorToZoneFileOffset(DissasmCodeZone* zone, uint64 fileOffset, bool landOnLabels)
+{
+    uint32 instructionIndex = 0;
+    cs_insn* insn           = GetCurrentInstructionByOffset(fileOffset, zone, obj, instructionIndex);
+    if (!insn) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+        return false;
+    }
+    cs_free(insn, 1);
+
+    // the line of the instruction, or (landOnLabels) the label / local variables placed right above it; a hidden line: the line of the
+    // collapsed zone that hides it
+    uint32 landingExpandedLine = zone->InstructionIndexToExpanded(instructionIndex);
+    while (landOnLabels && landingExpandedLine > 0 && zone->IsAnnotationLine(landingExpandedLine - 1u))
+        landingExpandedLine--;
+    const uint32 zoneLine = zone->ExpandedToDisplay(landingExpandedLine) + 2u; // +1 for the title, +1 for the columns header
+
+    const auto from      = SaveCursorState();
+    Cursor.lineInView    = std::min<uint32>(5, zoneLine);
+    Cursor.startViewLine = zoneLine + zone->startLineIndex - Cursor.lineInView;
+    Cursor.hasMovedView  = true;
+    RecordJump(from);
+    return true;
 }
 
 void Instance::RefreshCursorLineNumbers()
@@ -1588,6 +1596,142 @@ GStatus DissasmCodeZone::TryRenameLine(
     }
 
     return GStatus::Error("Failed to rename line");
+}
+
+// the cross references to an address: one row per reference, Enter (or Go) closes the window on the selected reference
+class XrefsWindow : public AppCUI::Controls::Window
+{
+  public:
+    struct Row {
+        uint64 from; // relative address of the instruction
+        std::string address, kind, function, instruction;
+    };
+
+  private:
+    static constexpr int BTN_GO    = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    XrefsWindow(const std::string& title, const std::vector<Row>& rows) : Window(title, "d:c,w:90%,h:60%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:Address,w:20", "n:Type,w:8", "n:From,w:40", "n:Instruction,w:80" }, ListViewFlags::PopupSearchBar);
+        for (size_t i = 0; i < rows.size(); i++) {
+            const auto& row = rows[i];
+            auto item       = list->AddItem({ std::string_view(row.address), std::string_view(row.kind), std::string_view(row.function), std::string_view(row.instruction) });
+            item.SetData(static_cast<uint64>(i));
+        }
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowXrefs()
+{
+    const auto linePos    = Cursor.ToLinePosition();
+    const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto& parseZone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of an expanded dissasm code zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
+    if (!zone->CanReachAsmLines())
+        return;
+    if (zone->xrefs.byTarget.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The cross references are found by the deep scan (Config.DeepScanDissasmOnStart)!");
+        return;
+    }
+
+    // a label (or a collapsed zone): its address; a jump / call: its target; another instruction: its address
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    uint64 target      = asmLine.address;
+    if (asmLine.size > 0 && asmLine.branchTarget.has_value())
+        target = asmLine.branchTarget.value();
+    std::string targetName = zone->GetLabelNameAt(target);
+    if (targetName.empty())
+        targetName = zone->FormatCodeAddress(target);
+
+    const auto [first, last] = zone->xrefs.To(zone->labelAddressBase + target);
+    if (first == last) {
+        Dialogs::MessageBox::ShowNotification("Info", "There are no cross references to " + targetName);
+        return;
+    }
+
+    constexpr size_t MAX_ROWS = 5000;
+    std::vector<XrefsWindow::Row> rows;
+    rows.reserve(std::min<size_t>(static_cast<size_t>(last - first), MAX_ROWS));
+    LocalString<64> text;
+    for (auto it = first; it != last && rows.size() < MAX_ROWS; ++it) {
+        XrefsWindow::Row row;
+        row.from = it->from - zone->labelAddressBase;
+        text.SetFormat("0x%llx", static_cast<unsigned long long>(it->from));
+        row.address  = text.GetText();
+        row.kind     = std::string(GetXrefKindName(it->kind));
+        row.function = zone->FormatCodeAddress(row.from);
+        // the instruction as capstone writes it, a branch with the name of its target (capstone writes the zone relative address)
+        uint32 instructionIndex = 0;
+        if (const auto fileOffset = zone->GetFileOffsetOfAddress(row.from); fileOffset.has_value()) {
+            if (cs_insn* insn = GetCurrentInstructionByOffset(fileOffset.value(), zone, obj, instructionIndex)) {
+                row.instruction = std::string(insn->mnemonic) + " ";
+                const auto operands =
+                      IsX86Branch(GetX86Flow(*insn)) ? GetX86OperandsInfo(*insn, zone->zoneDetails.language == DisassemblyLanguage::x64) : X86OperandsInfo{};
+                if (operands.directTarget.has_value()) {
+                    std::string branchName = zone->GetLabelNameAt(operands.directTarget.value());
+                    row.instruction += branchName.empty() ? zone->FormatCodeAddress(operands.directTarget.value()) : branchName;
+                } else {
+                    row.instruction += insn->op_str;
+                }
+                cs_free(insn, 1);
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+
+    LocalString<256> title;
+    title.SetFormat("Cross references to %s (%zu)", targetName.c_str(), static_cast<size_t>(last - first));
+    XrefsWindow dlg(title.GetText(), rows);
+    if (dlg.Show() != Dialogs::Result::Ok)
+        return;
+    const auto selected = dlg.GetSelectedRow();
+    if (selected.has_value() && selected.value() < rows.size())
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + rows[selected.value()].from, false);
 }
 
 constexpr uint32 BTN_CLOSE_ID   = 0;

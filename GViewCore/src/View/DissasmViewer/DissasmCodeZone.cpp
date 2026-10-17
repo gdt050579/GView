@@ -16,7 +16,8 @@ inline bool ExtractCallsToInsertFunctionNames(
       Reference<GView::Object> obj,
       int internalArchitecture,
       uint32& totalLines,
-      bool detectLocalVariables)
+      bool detectLocalVariables,
+      const std::function<bool(uint64)>& isFileAddress)
 {
     // the code is [offsets[0], end of the zone): the same lines as the ones counted by populateOffsetsVector
     const uint64 codeSize = zone->GetCodeSize();
@@ -50,7 +51,10 @@ inline bool ExtractCallsToInsertFunctionNames(
         callsMap.insert({ functionOffset, false });
     };
 
-    const bool is64 = zone->Is64BitCode();
+    const bool is64          = zone->Is64BitCode();
+    const uint64 addressMask = is64 ? UINT64_MAX : 0xFFFFFFFFull; // the addresses of 32 bit code wrap around at 4 GB
+    const uint64 labelBase   = zone->labelAddressBase;
+    zone->xrefs.Clear();
     X86PrologueDetector prologueDetector(is64);
     while (linesToDecode > 0 && walker.Next(insn)) {
         linesToDecode--;
@@ -60,10 +64,29 @@ inline bool ExtractCallsToInsertFunctionNames(
         if (prologueStart.has_value())
             addFunctionStart(prologueStart.value());
 
-        const auto flow = GetX86Flow(*insn);
+        // the cross references, in the address space of the labels (VA)
+        const auto flow     = GetX86Flow(*insn);
+        const auto operands = GetX86OperandsInfo(*insn, is64);
+        const uint64 from   = labelBase + insn->address;
+        if (IsX86Branch(flow) && operands.directTarget.has_value()) {
+            const auto kind = flow == X86Flow::Call ? DissasmXrefKind::Call : (flow == X86Flow::Jump ? DissasmXrefKind::Jump : DissasmXrefKind::ConditionalJump);
+            zone->xrefs.Add(from, (labelBase + operands.directTarget.value()) & addressMask, kind);
+        }
+        const auto dataKind = insn->id == X86_INS_LEA ? DissasmXrefKind::Offset
+                                                      : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
+        if (operands.ripTarget.has_value())
+            zone->xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind);
+        if (operands.absoluteMemory.has_value() && isFileAddress && isFileAddress(operands.absoluteMemory.value()))
+            zone->xrefs.Add(from, operands.absoluteMemory.value(), dataKind);
+        if (!is64 && isFileAddress) { // push offset aText / mov ecx, offset aText (x64 uses lea [rip + ...])
+            for (const uint64 value : operands.immediates)
+                if (value >= 0x10000 && isFileAddress(value))
+                    zone->xrefs.Add(from, value, DissasmXrefKind::Offset);
+        }
+
         if (IsX86Branch(flow)) {
             const bool isJump    = flow != X86Flow::Call;
-            const auto target    = GetX86OperandsInfo(*insn, is64).directTarget;
+            const auto target    = operands.directTarget;
             const auto offsetOpt = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
             if (offsetOpt.has_value()) {
                 const uint64 value = offsetOpt.value();
@@ -120,8 +143,13 @@ inline bool ExtractCallsToInsertFunctionNames(
 
     cs_free(insn, 1);
     cs_close(&handle);
+    zone->xrefs.Finish();
 
     const auto isFunctionLabel = [&getLabelType](const std::string& name) { return getLabelType(name) == SUB || name == "EntryPoint"; };
+    zone->functionStarts.clear();
+    for (const auto& call : callsFound)
+        if (call.first >= offsets[0].offset && isFunctionLabel(call.second))
+            zone->functionStarts.push_back(call.first - offsets[0].offset); // sorted: callsFound is sorted by address
 
     // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
     csh detailHandle     = 0;
@@ -453,7 +481,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     localVariables.functions.clear();
     if (initData.enableDeepScanDissasmOnStart) {
         const bool scanned = ExtractCallsToInsertFunctionNames(
-              cachedCodeOffsets, this, initData.obj, internalArchitecture, totalLines, initData.enableLocalVariablesDetection);
+              cachedCodeOffsets, this, initData.obj, internalArchitecture, totalLines, initData.enableLocalVariablesDetection, initData.isFileAddress);
         if (!scanned) {
             initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;
@@ -487,10 +515,70 @@ void DissasmCodeZone::RebuildLineIndex()
 {
     annotationLines.clear();
     annotationLines.reserve(dissasmType.annotations.size());
-    for (const auto& [line, details] : dissasmType.annotations.mappings)
+    labelLineOfAddress.clear();
+    for (const auto& [line, details] : dissasmType.annotations.mappings) {
         annotationLines.push_back(line); // the map is ordered: the vector is sorted
+        if (!IsLocalVariableAnnotation(details))
+            labelLineOfAddress.try_emplace(details.second, line);
+    }
     offsetCacheMaxLine = 0; // the next decoded line searches its closest cached offset
     ResetZoneCaching();
+}
+
+std::string DissasmCodeZone::GetLabelNameAt(uint64 relativeAddress) const
+{
+    const auto line = labelLineOfAddress.find(relativeAddress);
+    if (line == labelLineOfAddress.end())
+        return {};
+    const auto annotation = dissasmType.annotations.find(line->second);
+    return annotation != dissasmType.annotations.end() ? annotation->second.first : std::string{};
+}
+
+std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
+{
+    // the function that contains the address: the last function start placed before it
+    const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
+    LocalString<64> text;
+    if (next == functionStarts.begin()) {
+        const std::string label = GetLabelNameAt(relativeAddress);
+        if (!label.empty())
+            return label;
+        text.SetFormat("0x%llx", static_cast<unsigned long long>(labelAddressBase + relativeAddress));
+        return text.GetText();
+    }
+    const uint64 functionStart = *(next - 1);
+    std::string name           = GetLabelNameAt(functionStart);
+    if (name.empty())
+        name = GetLabelName("sub_", functionStart);
+    if (relativeAddress == functionStart)
+        return name;
+    text.SetFormat("+0x%llX", static_cast<unsigned long long>(relativeAddress - functionStart));
+    return name + text.GetText();
+}
+
+std::string DissasmCodeZone::FormatXrefsSummary(uint64 relativeAddress) const
+{
+    constexpr size_t SHOWN_XREFS = 2;
+    const auto [first, last]     = xrefs.To(labelAddressBase + relativeAddress);
+    const auto count             = static_cast<size_t>(last - first);
+    if (count == 0)
+        return {};
+    std::string text = count == 1 ? "xref: " : "xrefs: ";
+    size_t index     = 0;
+    for (auto it = first; it != last && index < SHOWN_XREFS; ++it, ++index) {
+        if (index > 0)
+            text += ", ";
+        text += FormatCodeAddress(it->from - labelAddressBase);
+        text += " (";
+        text += GetXrefKindName(it->kind);
+        text += ')';
+    }
+    if (count > SHOWN_XREFS) {
+        LocalString<32> more;
+        more.SetFormat(" +%zu more", count - SHOWN_XREFS);
+        text += more.GetText();
+    }
+    return text;
 }
 
 bool DissasmCodeZone::IsAnnotationLine(uint32 expandedLine) const
@@ -716,6 +804,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
         }
         line.address = annotation->second.second; // a label: its name, the address of its instruction
         line.SetMnemonic(annotation->second.first);
+        line.autoComment = FormatXrefsSummary(line.address); // who uses it
         return line;
     }
 

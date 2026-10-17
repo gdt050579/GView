@@ -383,6 +383,9 @@ namespace View
             uint32 visibleRows;
             // the VA of the start of the zone (DissasmCodeZone::labelAddressBase); none: the labels are named after the file offsets
             std::optional<uint64> labelAddressBase;
+            // an address (address space of the labels) that is a location of the file: the immediates and the absolute memory operands of
+            // 32 bit code are cross references only then (a constant is not); empty: they are not cross references
+            std::function<bool(uint64)> isFileAddress;
         };
 
         struct MemoryMappingEntry {
@@ -696,6 +699,10 @@ namespace View
             uint64 GetDisplayAddressBase(DissasmCodeZone* zone);
             // VA -> RVA -> file offset -> VA (only file offsets without the offset translation of a plugin)
             void ChangeAddressMode();
+            // the cross references to the label / target of the cursor line, Enter jumps to one
+            void ShowXrefs();
+            // moves the cursor to the instruction at the file offset (and to the labels above it); recorded in the jumps history
+            bool MoveCursorToZoneFileOffset(DissasmCodeZone* zone, uint64 fileOffset, bool landOnLabels);
             // the number under the cursor, or the only number of the cursor line
             const CursorLineNumber* GetCursorLineNumber();
             void ToggleNumberBase();

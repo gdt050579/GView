@@ -20,6 +20,7 @@ constexpr uint32 COMMAND_RENAME_LABEL           = 113;
 constexpr uint32 COMMAND_REMOVE_LOCAL_VARIABLE  = 114;
 constexpr uint32 COMMAND_TOGGLE_NUMBER_BASE     = 115;
 constexpr uint32 COMMAND_CHANGE_ADDRESS_MODE    = 116;
+constexpr uint32 COMMAND_SHOW_XREFS            = 117;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -175,6 +176,10 @@ namespace View
                 Input::Key::F3, "ChangeAddressMode", "Show the addresses as VA, RVA or file offsets", COMMAND_CHANGE_ADDRESS_MODE
             };
 
+            inline static KeyboardControl ShowXrefsCommand = {
+                Input::Key::Ctrl | Input::Key::X, "ShowXrefs", "Show the cross references to the label / target of the line", COMMAND_SHOW_XREFS
+            };
+
             inline static KeyboardControl CommandQueryFunctionName = {
                 Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
             };
@@ -183,8 +188,9 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 9> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowXrefsCommand,
                 ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
@@ -268,8 +274,9 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 14> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 15> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowXrefsCommand,
                 ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,

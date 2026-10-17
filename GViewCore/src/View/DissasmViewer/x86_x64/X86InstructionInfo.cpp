@@ -64,11 +64,13 @@ X86OperandsInfo GView::View::DissasmViewer::GetX86OperandsInfo(const cs_insn& in
         } else if (op.type == X86_OP_MEM) {
             const x86_op_mem& mem = op.mem;
             if (mem.base == X86_REG_RIP && mem.index == X86_REG_INVALID) {
-                info.ripTarget = (insn.address + insn.size + static_cast<uint64>(mem.disp)) & addressMask;
+                info.ripTarget    = (insn.address + insn.size + static_cast<uint64>(mem.disp)) & addressMask;
+                info.memoryAccess = op.access;
             } else if (mem.base == X86_REG_INVALID && mem.index == X86_REG_INVALID &&
                        (mem.segment == X86_REG_INVALID || mem.segment == X86_REG_DS)) {
                 // fs: / gs: point to thread data (TEB / TLS), not to a location of the file
                 info.absoluteMemory = static_cast<uint64>(mem.disp) & addressMask;
+                info.memoryAccess   = op.access;
             }
         }
     }
