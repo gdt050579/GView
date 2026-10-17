@@ -3,6 +3,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmX86LocalVariables.hpp"
+#include "X86InstructionInfo.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>
@@ -551,49 +552,9 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     localVariableNameSize = static_cast<uint32>(variable->name.size());
 }
 
-// "qword ptr [rip + 0x1234]" -> 0x1234 ("[rip - 0x10]" -> -0x10 as two's complement): the displacement of a RIP relative operand
-static std::optional<uint64> GetRipRelativeDisplacement(std::string_view operands)
-{
-    const auto ripPosition = operands.find("[rip ");
-    if (ripPosition == std::string_view::npos)
-        return {};
-    size_t pos = ripPosition + 5;
-    if (pos + 4 > operands.size() || (operands[pos] != '+' && operands[pos] != '-') || operands[pos + 1] != ' ' || operands[pos + 2] != '0' ||
-        operands[pos + 3] != 'x')
-        return {};
-    const bool isNegative = operands[pos] == '-';
-    pos += 4;
-    uint64 value  = 0;
-    uint32 digits = 0;
-    for (; pos < operands.size() && digits < 16; pos++, digits++) {
-        const char c = operands[pos];
-        if (c >= '0' && c <= '9')
-            value = (value << 4) | static_cast<uint64>(c - '0');
-        else if (c >= 'a' && c <= 'f')
-            value = (value << 4) | static_cast<uint64>(c - 'a' + 10);
-        else
-            break;
-    }
-    if (digits == 0 || pos >= operands.size() || operands[pos] != ']')
-        return {};
-    return isNegative ? static_cast<uint64>(0) - value : value;
-}
-
-// "dword ptr [0x402010]" -> 0x402010: an absolute memory operand (32 bit code: import slots, global variables)
-static std::optional<uint64> GetAbsoluteMemoryAddress(std::string_view operands)
-{
-    const auto start = operands.find("[0x");
-    if (start == std::string_view::npos)
-        return {};
-    const auto end = operands.find(']', start);
-    if (end == std::string_view::npos)
-        return {};
-    return GetDirectBranchTarget(operands.substr(start + 1, end - start - 1));
-}
-
-// the import (memory mapping, keyed by the RVA of its slot) used by the operands of a call / jmp: [rip + 0x...] on x64 (relative to the
-// next instruction), the VA of the slot ([0x402010]) on x86
-static const MemoryMappingEntry* FindOperandsMemoryMapping(const cs_insn& insn, DissasmInsnExtractLineParams& params, std::optional<uint64> hexValue)
+// the import (memory mapping, keyed by the RVA of its slot) used by the operands of a call / jmp: [rip + 0x...] on x64, the VA of the
+// slot ([0x402010]) on x86
+static const MemoryMappingEntry* FindOperandsMemoryMapping(DissasmInsnExtractLineParams& params, const X86OperandsInfo& operands)
 {
     const auto& mappings = params.settings->memoryMappings;
     if (mappings.empty())
@@ -603,46 +564,34 @@ static const MemoryMappingEntry* FindOperandsMemoryMapping(const cs_insn& insn, 
         return it != mappings.end() ? &it->second : nullptr;
     };
 
-    // the plugins without an offset translation (RVA) do not set the callback
-    const bool hasOffsetTranslation = params.settings->offsetTranslateCallback.IsValid();
-    const uint64 nextInstructionRVA = hasOffsetTranslation ? insn.address + insn.size + GetCodeStartRVA(params.settings, params.zone) : 0;
-    if (hasOffsetTranslation) {
-        if (params.zone->Is64BitCode()) {
-            const auto ripDisplacement = GetRipRelativeDisplacement(insn.op_str);
-            if (ripDisplacement.has_value())
-                return find(nextInstructionRVA + ripDisplacement.value());
-        } else if (const auto va = GetAbsoluteMemoryAddress(insn.op_str); va.has_value()) {
-            const auto offset = TranslateOperandAddressToFileOffset(params.settings, va.value(), true);
-            if (offset.has_value()) {
-                const uint64 rva = params.settings->offsetTranslateCallback->TranslateFromFileOffset(offset.value(), static_cast<uint32>(DissasmPEConversionType::RVA));
-                if (const auto mapping = find(rva))
-                    return mapping;
-            }
-        }
+    // the plugins without an offset translation (RVA) do not set the callback: only an absolute address can be looked up as it is
+    if (!params.settings->offsetTranslateCallback.IsValid())
+        return operands.absoluteMemory.has_value() ? find(operands.absoluteMemory.value()) : nullptr;
+
+    if (operands.ripTarget.has_value()) // the decoded addresses are relative to the first decoded instruction
+        return find(GetCodeStartRVA(params.settings, params.zone) + operands.ripTarget.value());
+    if (operands.absoluteMemory.has_value()) {
+        const auto offset = TranslateOperandAddressToFileOffset(params.settings, operands.absoluteMemory.value(), true);
+        if (!offset.has_value())
+            return nullptr;
+        return find(params.settings->offsetTranslateCallback->TranslateFromFileOffset(offset.value(), static_cast<uint32>(DissasmPEConversionType::RVA)));
     }
-    // the value written in the operands (limited to the digits of the biggest mapping address), absolute or relative to the next instruction
-    if (!hexValue.has_value())
-        return nullptr;
-    if (const auto mapping = find(hexValue.value()))
-        return mapping;
-    return hasOffsetTranslation ? find(hexValue.value() + nextInstructionRVA) : nullptr;
+    return nullptr;
 }
 
 // the data referenced by the operands, shown as an automatic comment (never saved): the import loaded by mov rax, [rip + 0x...] or the
 // string of lea rcx, [rip + 0x...] on x64, the string of push / mov offset aText (an immediate VA) on x86
-static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, DissasmInsnExtractLineParams& params)
+static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
 {
     const auto settings = params.settings;
     if (!settings->offsetTranslateCallback.IsValid() || params.zone->cachedCodeOffsets.empty())
         return;
 
     std::optional<uint64> fileOffset;
-    const std::string_view operands = insn.op_str;
     if (params.zone->Is64BitCode()) {
-        const auto ripDisplacement = GetRipRelativeDisplacement(operands);
-        if (!ripDisplacement.has_value())
+        if (!operands.ripTarget.has_value())
             return;
-        const uint64 rva = insn.address + insn.size + GetCodeStartRVA(settings, params.zone) + ripDisplacement.value();
+        const uint64 rva   = GetCodeStartRVA(settings, params.zone) + operands.ripTarget.value();
         const auto mapping = settings->memoryMappings.find(rva);
         if (mapping != settings->memoryMappings.end()) {
             line.autoComment = mapping->second.name;
@@ -652,15 +601,11 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
             return; // the other instructions read / write the data (a variable, a pointer), only lea takes the address of a string
         fileOffset = TranslateOperandAddressToFileOffset(settings, rva, false);
     } else {
-        for (const auto& number : FindOperandNumbers(operands)) {
-            // small values are counters, sizes or flags; a memory operand ([0x403000]) reads a variable, it is not the string itself
-            const auto before        = operands.substr(0, number.start);
-            const auto lastOpen      = before.rfind('[');
-            const auto lastClose     = before.rfind(']');
-            const bool insideBracket = lastOpen != std::string_view::npos && (lastClose == std::string_view::npos || lastClose < lastOpen);
-            if (!number.isHex || number.value < 0x10000 || insideBracket)
-                continue;
-            fileOffset = TranslateOperandAddressToFileOffset(settings, number.value, true);
+        // the immediates only: a memory operand ([0x403000]) reads a variable, it is not the string itself
+        for (const uint64 value : operands.immediates) {
+            if (value < 0x10000)
+                continue; // small values are counters, sizes or flags
+            fileOffset = TranslateOperandAddressToFileOffset(settings, value, true);
             if (fileOffset.has_value())
                 break;
         }
@@ -699,43 +644,35 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         return true;
     }
 
-    switch (TextPrefixAsUInt32(insn->mnemonic)) {
-    case pushOP:
-        flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
-        break;
-    case callOP:
+    // the meaning of the instruction from the capstone details (groups, operands), not from its text
+    const auto flow     = GetX86Flow(*insn);
+    const auto operands = GetX86OperandsInfo(*insn, params.zone->Is64BitCode());
+    if (flow == X86Flow::Call)
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
-        break;
-    default:
-        if (insn->mnemonic[0] == 'j') {
-            flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
-        } else {
-            SetOperands(insn->op_str, params.zone);
+    else if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump)
+        flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
+    else if (insn->id == X86_INS_PUSH)
+        flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
+    else {
+        SetOperands(insn->op_str, params.zone);
 #ifndef DISSASM_DISABLE_STRING_PREVIEW
-            AddReferencedDataComment(*this, *insn, params); // lea rcx, [rip + 0x...] / mov ecx, 0x403000
+        AddReferencedDataComment(*this, *insn, operands, params); // lea rcx, [rip + 0x...] / mov ecx, 0x403000
 #endif
-            return true;
-        }
+        return true;
     }
 
-    uint64 hexVal = 0;
-    if (CheckExtractInsnHexValue(insn->op_str, hexVal, params.settings->maxLocationMemoryMappingSize))
-        hexValue = hexVal;
     // direct jump / call: the target has the same base as `address`; only a target inside the decoded code has a file offset
     std::optional<uint64> targetFileOffset;
-    if (flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag)) {
-        const auto target = GetDirectBranchTarget(insn->op_str);
-        if (target.has_value()) {
-            targetFileOffset = params.zone->GetFileOffsetOfAddress(target.value());
-            if (targetFileOffset.has_value())
-                branchTarget = target; // used by the jump arrows
-        }
+    if (operands.directTarget.has_value() && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+        targetFileOffset = params.zone->GetFileOffsetOfAddress(operands.directTarget.value());
+        if (targetFileOffset.has_value())
+            branchTarget = operands.directTarget; // used by the jump arrows
     }
 
     bool shouldConsiderCall = false;
     if (flags & (DissasmAsmPreCacheLine::InstructionFlag::CallFlag | DissasmAsmPreCacheLine::InstructionFlag::JmpFlag) && !targetFileOffset.has_value()) {
         // call / jmp through an import slot: call qword ptr [rip + 0x...], jmp dword ptr [0x402010] (import thunks)
-        const auto mappingPtr = FindOperandsMemoryMapping(*insn, params, hexValue);
+        const auto mappingPtr = FindOperandsMemoryMapping(params, operands);
         if (mappingPtr) {
             mapping     = mappingPtr;
             op_str_size = (uint32) mappingPtr->name.size();
@@ -761,7 +698,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         shouldConsiderCall = true;
     } else if (flags & DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
 #ifndef DISSASM_DISABLE_STRING_PREVIEW
-        AddReferencedDataComment(*this, *insn, params); // push offset aText
+        AddReferencedDataComment(*this, *insn, operands, params); // push offset aText
 #endif
     }
 
@@ -791,24 +728,6 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         SetOperands(insn->op_str, params.zone);
     return true;
 }
-
-// bool DissasmAsmPreCacheLine::TryGetDataFromInsn(cs_insn* insn, uint32 currentLine)
-//{
-//     if (!insn)
-//         return false;
-//     this->address     = insn->address;
-//     memcpy(bytes, insn->bytes, std::min<uint32>(sizeof(bytes), sizeof(insn->bytes)));
-//     this->size        = insn->size;
-//     memcpy(mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
-//     this->currentLine = currentLine;
-//
-//     this->op_str      = strdup(insn->op_str);
-//     this->op_str_size = (uint32) strlen(this->op_str);
-//     strcpy(this->mnemonic, insn->mnemonic);
-//
-//     this->hexValue = currentLine; //??
-//     return true;
-// }
 
 void DissasmAsmPreCacheData::PrepareLabelArrows()
 {
@@ -1112,7 +1031,6 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     initData.enableLocalVariablesDetection = config.EnableDeepScanDissasmOnStart;
     initData.obj                           = obj;
     initData.dli                           = &dli;
-    initData.maxLocationMemoryMappingSize  = settings->maxLocationMemoryMappingSize;
     initData.visibleRows                   = Layout.visibleRows;
 
     if (!zone->InitZone(initData))
@@ -1282,7 +1200,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] != 'j' && TextPrefixAsUInt32(insn->mnemonic) != callOP) {
+        if (!IsX86Branch(GetX86Flow(*insn))) {
             cs_free(insn, 1);
             return;
         }
@@ -1290,7 +1208,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
         for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
             jumpMnemonic[i] = insn->mnemonic[i];
-        const auto target       = GetDirectBranchTarget(insn->op_str);
+        const auto target       = GetX86OperandsInfo(*insn, zone->Is64BitCode()).directTarget;
         const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
         cs_free(insn, 1);
         if (!targetOffset.has_value()) {
@@ -2606,7 +2524,7 @@ void Instance::QuerySmartAssistantX86X64(
                 assemblyLines.emplace_back(isVariable ? currentLine.op_str : currentLine.mnemonic);
             }
         }
-        if (queryParams.stopAtTheEndOfTheFunction && TextPrefixAsUInt32(currentLine.mnemonic) == retOP)
+        if (queryParams.stopAtTheEndOfTheFunction && strcmp(currentLine.mnemonic, "ret") == 0)
             break;
         actualLineInDocument++;
         lineIndex++;

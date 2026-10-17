@@ -1584,14 +1584,6 @@ void Instance::OnStart()
     this->RecomputeDissasmLayout();
     this->RecomputeDissasmZones();
 
-    uint32 maxSize = 0;
-    while (settings->maxLocationMemoryMappingSize > 0) {
-        maxSize++;
-        settings->maxLocationMemoryMappingSize /= 10;
-    }
-    // TODO: do a research! this is an imperative setting
-    settings->maxLocationMemoryMappingSize = maxSize;
-
     GView::Hashes::CRC32 crc32{};
     uint32 hashVal = 0;
     for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++) {

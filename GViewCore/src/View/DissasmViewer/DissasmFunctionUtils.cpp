@@ -6,124 +6,6 @@
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
-// TODO: maybe add also minimum number?
-bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
-{
-    const char* ptr     = op_str;
-    const char* start   = nullptr;
-    uint32 size         = 0;
-    bool insideBrackets = false;
-
-    auto checkValidSequence = [&ptr, &insideBrackets]() -> bool {
-        while (ptr && *ptr != '\0') {
-            if (*ptr == ' ' || *ptr == '[' || (*ptr >= 'a' && *ptr <= 'z') || (*ptr >= 'A' && *ptr <= 'Z')) {
-                if (*ptr == '[') {
-                    if (insideBrackets)
-                        return false;
-                    insideBrackets = true;
-                }
-                ptr++;
-                continue;
-            }
-            if (*ptr >= '0' && *ptr <= '9') {
-                break;
-            }
-            return false;
-        }
-        return true;
-    };
-
-    if (!checkValidSequence())
-        return false;
-
-    // while (ptr && *ptr != '\0') {
-    //     if (*ptr == ' ' || *ptr == '[' || *ptr >= 'a' && *ptr <= 'z' || *ptr >= 'A' && *ptr <= 'Z') {
-    //         if (*ptr == '[') {
-    //             if (insideBrackets)
-    //                 return false;
-    //             insideBrackets = true;
-    //         }
-    //         ptr++;
-    //         continue;
-    //     }
-    //     if (*ptr >= '0' && *ptr <= '9') {
-    //         break;
-    //     }
-    //     return false;
-    // }
-
-    bool is_hex = false;
-    while (ptr && *ptr != '\0') {
-        if (!start) {
-            if (*ptr == '0') // not hex
-            {
-                ptr++;
-                if (!ptr || *ptr != 'x') {
-                    start = ptr - 1;
-                    size  = 1;
-                    continue;
-                }
-                ptr++;
-                start  = ptr;
-                is_hex = true;
-                continue;
-            } else {
-                is_hex = false;
-                start  = ptr;
-                continue;
-            }
-        } else {
-            if ((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f')) {
-                size++;
-            } else {
-                if (size < maxSize - 2)
-                    return false;
-                break;
-            }
-        }
-        ptr++;
-    }
-
-    if (insideBrackets) {
-        if (!ptr)
-            return false;
-        if (*ptr != ']')
-            return false;
-        ptr++;
-    }
-
-    if (maxSize < size) {
-        const uint32 diff = size - static_cast<uint32>(maxSize);
-        size -= diff;
-        start += diff;
-    }
-
-    if (!size || !start)
-        return false;
-
-    if (size < 2) {
-        ptr = !is_hex ? op_str : op_str + 2;
-        while (ptr && *ptr != '\0') {
-            if (!((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f')))
-                return false;
-            ptr++;
-        }
-    }
-
-    if (!checkValidSequence())
-        return false;
-
-    const NumberParseFlags numberFlags = is_hex ? NumberParseFlags::Base16 : NumberParseFlags::Base10;
-    const auto sv                      = std::string_view(start, size);
-    const auto converted               = Number::ToUInt64(sv, numberFlags);
-    if (!converted.has_value())
-        return false;
-
-    value = converted.value();
-
-    return true;
-}
-
 LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
 {
     NumericFormatter formatter;
@@ -137,29 +19,6 @@ LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
     }
     callName.Add(sv);
     return callName;
-}
-
-std::optional<uint64> GetDirectBranchTarget(std::string_view operands)
-{
-    const bool isHex          = operands.size() > 2 && operands[0] == '0' && operands[1] == 'x';
-    const std::string_view sv = isHex ? operands.substr(2) : operands;
-    const uint64 base         = isHex ? 16u : 10u;
-    if (sv.empty())
-        return {};
-    uint64 value = 0;
-    for (const char c : sv) {
-        uint64 digit;
-        if (c >= '0' && c <= '9')
-            digit = static_cast<uint64>(c - '0');
-        else if (isHex && c >= 'a' && c <= 'f')
-            digit = static_cast<uint64>(c - 'a' + 10);
-        else
-            return {};
-        if (value > (UINT64_MAX - digit) / base)
-            return {};
-        value = value * base + digit;
-    }
-    return value;
 }
 
 namespace
@@ -279,6 +138,8 @@ bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* add
     // cs_disasm_iter leaves the position as it is on failure: the byte becomes a data line of its own
     const uint8_t value = **code;
     insn->id            = 0; // X86_INS_INVALID: a data line, not an instruction
+    if (insn->detail)
+        memset(insn->detail, 0, sizeof(cs_detail)); // no groups / operands (the previous instruction left its own)
     insn->address       = *address;
     insn->size          = 1;
     memset(insn->bytes, 0, sizeof(insn->bytes));

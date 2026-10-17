@@ -2,6 +2,7 @@
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
+#include "x86_x64/X86InstructionInfo.hpp"
 #include <catch.hpp>
 #include <array>
 
@@ -362,7 +363,6 @@ class DissasmTestInstance
         DissasmCodeZoneInitData initData      = {};
         initData.enableDeepScanDissasmOnStart  = true;
         initData.enableLocalVariablesDetection = enableLocalVariables;
-        initData.maxLocationMemoryMappingSize  = 6;
         initData.visibleRows                  = 53;
         initData.obj                          = obj;
 
@@ -637,42 +637,6 @@ class DissasmTestInstance
         delete instance;
     }
 };
-
-TEST_CASE("DissasmFunctions", "[Dissasm]Functions")
-{
-    uint64 value = 0;
-    REQUIRE(!CheckExtractInsnHexValue("mov eax, 0x1234", value, 5));
-
-    REQUIRE(CheckExtractInsnHexValue("f0x1234", value, 5));
-    REQUIRE(value == 0x1234);
-
-    REQUIRE(CheckExtractInsnHexValue("x1234", value, 5));
-    REQUIRE(value == 1234);
-
-    REQUIRE(!CheckExtractInsnHexValue("x", value, 5));
-
-    REQUIRE(CheckExtractInsnHexValue("123", value, 5));
-    REQUIRE(value == 123);
-
-    REQUIRE(CheckExtractInsnHexValue("0x123", value, 5));
-    REQUIRE(value == 0x123);
-
-    REQUIRE(CheckExtractInsnHexValue("0", value, 5));
-    REQUIRE(value == 0);
-
-    REQUIRE(CheckExtractInsnHexValue("0x0", value, 5));
-    REQUIRE(value == 0);
-
-    REQUIRE(CheckExtractInsnHexValue("  123", value, 5));
-    REQUIRE(value == 123);
-
-    REQUIRE(CheckExtractInsnHexValue("mov ptr [0x123]", value, 5));
-    REQUIRE(value == 0x123);
-
-    REQUIRE(!CheckExtractInsnHexValue("mov eax, [0x123]", value, 5));
-    REQUIRE(!CheckExtractInsnHexValue("mov [rbp + 0x123]", value, 5));
-    REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
-}
 
 TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]CollapsibleZones")
 {
@@ -1743,19 +1707,77 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     REQUIRE(restoredTruncated.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
 }
 
-TEST_CASE("DirectBranchTargets", "[Dissasm]Jumps")
+// the flow and the operands of the first instruction of `code`, decoded at `address` with the instruction details
+struct DecodedInfo {
+    X86Flow flow;
+    X86OperandsInfo operands;
+};
+static DecodedInfo DecodeInfo(std::initializer_list<unsigned char> code, bool is64, uint64 address = 0)
 {
-    REQUIRE(GetDirectBranchTarget("0x1f4") == 0x1f4u);
-    REQUIRE(GetDirectBranchTarget("7") == 7u);
-    REQUIRE(GetDirectBranchTarget("0xffffffffffffffff") == UINT64_MAX);
-    REQUIRE(!GetDirectBranchTarget("0x10000000000000000").has_value()); // does not fit in 64 bits
-    REQUIRE(!GetDirectBranchTarget("18446744073709551616").has_value());
-    REQUIRE(!GetDirectBranchTarget("").has_value());
-    REQUIRE(!GetDirectBranchTarget("0x").has_value());
-    REQUIRE(!GetDirectBranchTarget("eax").has_value());
-    REQUIRE(!GetDirectBranchTarget("dword ptr [0x404000]").has_value());
-    REQUIRE(!GetDirectBranchTarget("0x10:0x20").has_value()); // far pointer
-    REQUIRE(!GetDirectBranchTarget("0x1F4").has_value());     // capstone prints lower case hex digits
+    csh handle;
+    REQUIRE(cs_open(CS_ARCH_X86, is64 ? CS_MODE_64 : CS_MODE_32, &handle) == CS_ERR_OK);
+    REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    cs_insn* insn = cs_malloc(handle);
+    const std::vector<unsigned char> bytes(code);
+    const uint8_t* data = bytes.data();
+    size_t size         = bytes.size();
+    uint64_t current    = address;
+    REQUIRE(DecodeX86Line(handle, &data, &size, &current, insn));
+    DecodedInfo info{ GetX86Flow(*insn), GetX86OperandsInfo(*insn, is64) };
+    cs_free(insn, 1);
+    cs_close(&handle);
+    return info;
+}
+
+TEST_CASE("X86InstructionInfo", "[Dissasm]Jumps")
+{
+    // x64
+    auto info = DecodeInfo({ 0xE8, 0xFB, 0x00, 0x00, 0x00 }, true, 0x100); // call 0x200
+    REQUIRE(info.flow == X86Flow::Call);
+    REQUIRE(info.operands.directTarget == 0x200u);
+    info = DecodeInfo({ 0xFF, 0x15, 0x10, 0x00, 0x00, 0x00 }, true, 0x100); // call qword ptr [rip + 0x10]
+    REQUIRE(info.flow == X86Flow::Call);
+    REQUIRE(!info.operands.directTarget.has_value());
+    REQUIRE(info.operands.ripTarget == 0x116u);
+    info = DecodeInfo({ 0x48, 0x8D, 0x0D, 0xF0, 0xFF, 0xFF, 0xFF }, true, 0x100); // lea rcx, [rip - 0x10]
+    REQUIRE(info.flow == X86Flow::None);
+    REQUIRE(info.operands.ripTarget == 0xF7u);
+    info = DecodeInfo({ 0x75, 0x05 }, true, 0x10); // jne 0x17
+    REQUIRE(info.flow == X86Flow::ConditionalJump);
+    REQUIRE(info.operands.directTarget == 0x17u);
+    info = DecodeInfo({ 0xEB, 0xFE }, true, 0x10); // jmp 0x10
+    REQUIRE(info.flow == X86Flow::Jump);
+    REQUIRE(info.operands.directTarget == 0x10u);
+    info = DecodeInfo({ 0xFF, 0xE0 }, true); // jmp rax: indirect, no target
+    REQUIRE(info.flow == X86Flow::Jump);
+    REQUIRE(!info.operands.directTarget.has_value());
+    REQUIRE(DecodeInfo({ 0xC3 }, true).flow == X86Flow::Return);
+    REQUIRE(DecodeInfo({ 0xCC }, true).flow == X86Flow::Interrupt);
+    // gs: points to the thread data, not to an address of the file
+    info = DecodeInfo({ 0x65, 0x48, 0x8B, 0x04, 0x25, 0x30, 0x00, 0x00, 0x00 }, true); // mov rax, qword ptr gs:[0x30]
+    REQUIRE(!info.operands.absoluteMemory.has_value());
+    REQUIRE(!info.operands.ripTarget.has_value());
+    // a data line (db) has no flow and no operands
+    info = DecodeInfo({ 0x06 }, true); // push es: not valid in 64 bit code
+    REQUIRE(info.flow == X86Flow::None);
+    REQUIRE(info.operands.immediates.empty());
+
+    // x86
+    info = DecodeInfo({ 0xFF, 0x15, 0x00, 0x40, 0x40, 0x00 }, false); // call dword ptr [0x404000]
+    REQUIRE(info.flow == X86Flow::Call);
+    REQUIRE(info.operands.absoluteMemory == 0x404000u);
+    REQUIRE(!info.operands.directTarget.has_value());
+    info = DecodeInfo({ 0x68, 0x00, 0x30, 0x40, 0x00 }, false); // push 0x403000
+    REQUIRE(info.flow == X86Flow::None);
+    REQUIRE(info.operands.immediates == std::vector<uint64>{ 0x403000 });
+    info = DecodeInfo({ 0xE2, 0xFE }, false, 0x20); // loop 0x20
+    REQUIRE(info.flow == X86Flow::ConditionalJump);
+    REQUIRE(info.operands.directTarget == 0x20u);
+    info = DecodeInfo({ 0xE9, 0xF1, 0xFF, 0xFF, 0xFF }, false, 0x0); // jmp -0xa: wraps around at 4 GB in 32 bit code
+    REQUIRE(info.operands.directTarget == 0xFFFFFFF6u);
+    info = DecodeInfo({ 0xC7, 0x05, 0x10, 0x30, 0x40, 0x00, 0x01, 0x00, 0x00, 0x00 }, false); // mov dword ptr [0x403010], 1
+    REQUIRE(info.operands.absoluteMemory == 0x403010u);
+    REQUIRE(info.operands.immediates == std::vector<uint64>{ 1 });
 }
 
 TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")

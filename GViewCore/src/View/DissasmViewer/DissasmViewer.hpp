@@ -194,7 +194,6 @@ namespace View
             char mnemonic[CS_MNEMONIC_SIZE] = {};
             char* op_str       = nullptr;
             uint32 op_str_size = 0;
-            std::optional<uint64> hexValue;
             std::optional<uint64> branchTarget; // target of a direct jump / call, same base as `address`
             uint8 flags                           = 0;
             uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
@@ -256,7 +255,6 @@ namespace View
                 op_str_size = other.op_str_size;
                 memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
-                hexValue               = other.hexValue;
                 branchTarget           = other.branchTarget;
                 flags                  = other.flags;
                 memcpy(arrowCells, other.arrowCells, sizeof(arrowCells));
@@ -423,7 +421,6 @@ namespace View
             bool enableDeepScanDissasmOnStart;
             bool enableLocalVariablesDetection; // requires enableDeepScanDissasmOnStart
             Reference<GView::Object> obj;
-            uint64 maxLocationMemoryMappingSize;
             uint32 visibleRows;
         };
 
@@ -448,7 +445,6 @@ namespace View
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
-            uint64 maxLocationMemoryMappingSize;
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;

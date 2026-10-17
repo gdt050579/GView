@@ -27,6 +27,8 @@ target_sources(
 	x86_x64/DissasmX86.cpp
 	x86_x64/DissasmX86LocalVariables.hpp
 	x86_x64/DissasmX86LocalVariables.cpp
+	x86_x64/X86InstructionInfo.hpp
+	x86_x64/X86InstructionInfo.cpp
 
 	jclass/allocator.cpp
 	jclass/ast.cpp

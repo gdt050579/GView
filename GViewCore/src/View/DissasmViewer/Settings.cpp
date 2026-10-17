@@ -31,8 +31,6 @@ void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMap
 #ifndef DISSASM_DISABLE_API_CALLS
     INTERNAL_SETTINGS->memoryMappings.insert({ address, { std::string(name), mappingType } }); // a string_view is not NUL terminated
 #endif
-    if (address > INTERNAL_SETTINGS->maxLocationMemoryMappingSize)
-        INTERNAL_SETTINGS->maxLocationMemoryMappingSize = address;
 }
 
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
@@ -87,7 +85,6 @@ SettingsData::SettingsData()
     defaultLanguage              = DisassemblyLanguage::Default;
     availableID                  = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
     offsetTranslateCallback      = nullptr;
-    maxLocationMemoryMappingSize = 0;
 }
 
 bool Settings::SetName(std::string_view name)

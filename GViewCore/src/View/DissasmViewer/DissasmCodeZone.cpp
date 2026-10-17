@@ -1,6 +1,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
+#include "x86_x64/X86InstructionInfo.hpp"
 
 #include <algorithm>
 
@@ -22,10 +23,12 @@ inline bool ExtractCallsToInsertFunctionNames(
     if (codeSize == 0)
         return false;
 
+    // the instruction details give the branches and their targets (GetX86Flow / GetX86OperandsInfo)
     csh handle;
-    const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle);
-    if (resCode != CS_ERR_OK) {
-        // WriteErrorToScreen(dli, cs_strerror(resCode));
+    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+        return false;
+    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK) {
+        cs_close(&handle);
         return false;
     }
 
@@ -57,9 +60,10 @@ inline bool ExtractCallsToInsertFunctionNames(
         if (prologueStart.has_value())
             addFunctionStart(prologueStart.value());
 
-        const bool isJump = insn->mnemonic[0] == 'j';
-        if (TextPrefixAsUInt32(insn->mnemonic) == callOP || isJump) {
-            const auto target    = GetDirectBranchTarget(insn->op_str);
+        const auto flow = GetX86Flow(*insn);
+        if (IsX86Branch(flow)) {
+            const bool isJump    = flow != X86Flow::Call;
+            const auto target    = GetX86OperandsInfo(*insn, is64).directTarget;
             const auto offsetOpt = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
             if (offsetOpt.has_value()) {
                 const uint64 value = offsetOpt.value();
@@ -259,9 +263,14 @@ DissasmCodeZone::~DissasmCodeZone()
 
 csh DissasmCodeZone::GetDecodeHandle()
 {
-    // opening a handle allocates the capstone tables: it was done for every decoded line before
-    if (decodeHandle == 0 && internalArchitecture != 0 && cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &decodeHandle) != CS_ERR_OK)
-        decodeHandle = 0;
+    // opening a handle allocates the capstone tables: it was done for every decoded line before. The instruction details (groups,
+    // operands) give the meaning of the instructions (GetX86Flow / GetX86OperandsInfo).
+    if (decodeHandle == 0 && internalArchitecture != 0) {
+        if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &decodeHandle) != CS_ERR_OK)
+            decodeHandle = 0;
+        else if (cs_option(decodeHandle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
+            cs_close(&decodeHandle); // sets the handle to 0
+    }
     return decodeHandle;
 }
 
