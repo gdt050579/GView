@@ -413,7 +413,7 @@ void Instance::SaveCacheData()
     for (auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
-        const auto* dissasmZone = (DissasmCodeZone*) zone.get();
+        auto* dissasmZone = (DissasmCodeZone*) zone.get();
         FormatCodeZoneRecordName(zoneName, *dissasmZone);
         if (!dissasmZone->CanReachAsmLines()) {
             auto kept = keptRecords.find(zoneName.GetText());
@@ -489,11 +489,12 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
 // Code zone records: [magic][version] then
 //  - version 3: [comments by anchor][label names by address][local variables][decimal operands]. Nothing depends on the lines: a record
 //    applies to any analysis of the zone, what this analysis does not find (a label, a variable) is kept for later.
+//  - version 4: version 3 and [collapsible zones by the anchors of their first and last lines].
 //  - versions 1 and 2 (read only): [comments by line][annotations by line][local variables] and, from version 2, [decimal operands].
 // The records saved before the local variables existed start directly with the comments count (a count equal to the magic is not a
 // realistic value) and their lines do not contain the variable lines.
 constexpr uint32 DISSASM_CODE_ZONE_CACHE_MAGIC   = 0x5A434447; // "GDCZ"
-constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 3;
+constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 4;
 constexpr uint32 DISSASM_MAX_LABEL_NAME_SIZE     = 1024;
 
 // decimal operands: [count] then count x [instruction address (uint64)][numbers mask (uint32)]
@@ -552,7 +553,61 @@ static bool LabelNamesFromBuffer(const std::byte*& start, const std::byte* end, 
     return true;
 }
 
-bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
+// collapsible zones: [count] then count x [first line anchor][last line anchor][collapsed (uint8)][name size (uint32)][name], an anchor is
+// [kind (uint8)][address (uint64)][frame offset (int32)]
+static void AppendAnchor(std::vector<std::byte>& buffer, const DissasmCommentAnchor& anchor)
+{
+    append_bytes(buffer, static_cast<uint8>(anchor.kind));
+    append_bytes(buffer, anchor.address);
+    append_bytes(buffer, anchor.frameOffset);
+}
+
+static bool ReadAnchor(const std::byte*& start, const std::byte* end, DissasmCommentAnchor& anchor)
+{
+    uint8 kind = 0;
+    if (!read_primitive(start, end, kind) || !read_primitive(start, end, anchor.address) || !read_primitive(start, end, anchor.frameOffset))
+        return false;
+    if (kind > static_cast<uint8>(DissasmCommentAnchor::Kind::Variable))
+        return false;
+    anchor.kind = static_cast<DissasmCommentAnchor::Kind>(kind);
+    return true;
+}
+
+static void CollapsibleZonesToBuffer(const std::vector<DissasmCodeZone::CollapsibleZoneAnchors>& zones, std::vector<std::byte>& buffer)
+{
+    append_bytes(buffer, static_cast<uint32>(zones.size()));
+    for (const auto& zone : zones) {
+        AppendAnchor(buffer, zone.first);
+        AppendAnchor(buffer, zone.last);
+        append_bytes(buffer, static_cast<uint8>(zone.isCollapsed ? 1 : 0));
+        append_string(buffer, zone.name);
+    }
+}
+
+static bool CollapsibleZonesFromBuffer(const std::byte*& start, const std::byte* end, std::vector<DissasmCodeZone::CollapsibleZoneAnchors>& zones)
+{
+    constexpr size_t ANCHOR_SIZE         = sizeof(uint8) + sizeof(uint64) + sizeof(int32);
+    constexpr size_t MINIMUM_RECORD_SIZE = 2 * ANCHOR_SIZE + sizeof(uint8) + sizeof(uint32);
+    uint32 count                         = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / MINIMUM_RECORD_SIZE)
+        return false;
+    zones.reserve(count);
+    for (uint32 i = 0; i < count; i++) {
+        DissasmCodeZone::CollapsibleZoneAnchors zone{};
+        uint8 isCollapsed     = 0;
+        uint32 nameSize       = 0;
+        const std::byte* name = nullptr;
+        if (!ReadAnchor(start, end, zone.first) || !ReadAnchor(start, end, zone.last) || !read_primitive(start, end, isCollapsed) ||
+            !read_primitive(start, end, nameSize) || nameSize > DISSASM_MAX_LABEL_NAME_SIZE || !read_bytes(start, end, nameSize, name))
+            return false;
+        zone.isCollapsed = isCollapsed != 0;
+        zone.name        = std::string(reinterpret_cast<const char*>(name), nameSize);
+        zones.push_back(std::move(zone));
+    }
+    return true;
+}
+
+bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer)
 {
     buffer.clear(); // the same buffer is used for every zone
     append_bytes(buffer, DISSASM_CODE_ZONE_CACHE_MAGIC);
@@ -561,6 +616,7 @@ bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
     LabelNamesToBuffer(GetUserLabelNames(), buffer);
     localVariables.ToBuffer(buffer);
     DecimalOperandsToBuffer(decimalOperands, buffer);
+    CollapsibleZonesToBuffer(GetCollapsibleZoneAnchors(), buffer);
     return true;
 }
 
@@ -603,17 +659,18 @@ static void ApplyAddressKeyedVariables(DissasmCodeZone& zone, const DissasmLocal
     zoneLinesChanged = true;
 }
 
-// a version 3 record: [comments][label names][local variables][decimal operands]
+// a version 3 / 4 record: [comments][label names][local variables][decimal operands] and, from version 4, [collapsible zones]
 struct AddressKeyedZoneRecord {
     DissasmUserComments comments;
     std::vector<std::pair<uint64, std::string>> labelNames;
     DissasmLocalVariables variables;
     std::map<uint64, uint32> decimalOperands;
+    std::vector<DissasmCodeZone::CollapsibleZoneAnchors> collapsibleZones;
 
-    bool LoadFromBuffer(const std::byte*& start, const std::byte* end)
+    bool LoadFromBuffer(const std::byte*& start, const std::byte* end, uint32 version)
     {
         return comments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, labelNames) && variables.LoadFromBuffer(start, end) &&
-               DecimalOperandsFromBuffer(start, end, decimalOperands);
+               DecimalOperandsFromBuffer(start, end, decimalOperands) && (version < 4 || CollapsibleZonesFromBuffer(start, end, collapsibleZones));
     }
 };
 
@@ -623,10 +680,11 @@ static std::optional<AddressKeyedZoneRecord> ReadAddressKeyedZoneRecord(const Di
     const std::byte* start = entry.data.get();
     const std::byte* end   = start + entry.size;
     uint32 magic = 0, version = 0;
-    if (!read_primitive(start, end, magic) || magic != DISSASM_CODE_ZONE_CACHE_MAGIC || !read_primitive(start, end, version) || version != 3)
+    if (!read_primitive(start, end, magic) || magic != DISSASM_CODE_ZONE_CACHE_MAGIC || !read_primitive(start, end, version) || version < 3 ||
+        version > DISSASM_CODE_ZONE_CACHE_VERSION)
         return {};
     AddressKeyedZoneRecord record;
-    if (!record.LoadFromBuffer(start, end))
+    if (!record.LoadFromBuffer(start, end, version))
         return {};
     return record;
 }
@@ -637,7 +695,7 @@ static bool ApplyCachedZoneData(
       DissasmCodeZone& zone, DissasmComments& comments, AnnotationContainer& annotations, DissasmLocalVariables& variables, bool& zoneLinesChanged)
 {
     auto& root = zone.dissasmType;
-    if (!root.internalTypes.empty())
+    if (!zone.collapsibleZones.empty())
         return false; // loaded right after the zone initialization
 
     // every cached variable is one of the analyzed variables (renamed or not), the missing ones were removed by the user
@@ -686,14 +744,9 @@ static bool ApplyCachedZoneData(
     }
     root.annotations    = std::move(annotations);
     zone.localVariables = std::move(variables);
-    if (!removedLines.empty()) {
-        const auto removedCount = static_cast<uint32>(removedLines.size());
-        root.indexZoneEnd -= std::min(removedCount, root.indexZoneEnd);
-        root.workingIndexZoneEnd = root.indexZoneEnd;
-        zone.offsetCacheMaxLine  = 0;
-        zone.ResetTypesReferenceList();
+    zone.RebuildLineIndex(); // the annotations of the record
+    if (!removedLines.empty())
         zoneLinesChanged = true;
-    }
     return true;
 }
 
@@ -701,7 +754,7 @@ static bool ApplyCachedZoneData(
 static bool ApplyLegacyCachedZoneData(DissasmCodeZone& zone, DissasmComments& comments, AnnotationContainer& annotations)
 {
     auto& root = zone.dissasmType;
-    if (!root.internalTypes.empty())
+    if (!zone.collapsibleZones.empty())
         return false; // loaded right after the zone initialization
 
     std::vector<uint32> variableLines;
@@ -768,7 +821,7 @@ static bool ApplyRemappedCachedZoneData(
       DissasmCodeZone& zone, DissasmComments& comments, AnnotationContainer& annotations, DissasmLocalVariables& variables, bool& zoneLinesChanged)
 {
     auto& root = zone.dissasmType;
-    if (!root.internalTypes.empty())
+    if (!zone.collapsibleZones.empty())
         return false; // loaded right after the zone initialization
 
     // the lines of the analysis: one label per address, one line per local variable
@@ -902,8 +955,10 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
     if (zoneType != DissasmParseZoneType::DissasmCodeParseZone)
         return false;
     const bool loaded = TryLoadCodeZoneRecord(cache, zoneLinesChanged);
-    // a record that an older version could not apply (it was kept aside): its comments and names come back
-    MergeUnappliedRecord(cache);
+    // a record that an older version could not apply (it was kept aside): its comments, names and zones come back
+    if (MergeUnappliedRecord(cache))
+        zoneLinesChanged = true;
+    RebuildLineIndex(); // the annotations of the record
     return loaded;
 }
 
@@ -914,7 +969,7 @@ bool DissasmCodeZone::TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLines
         return false;
     // until it is applied: a record that can not be applied is kept aside by the next save (SaveCacheData)
     cacheRecordRejected = true;
-    if (!dissasmType.internalTypes.empty())
+    if (!collapsibleZones.empty())
         return false; // loaded right after the zone initialization
 
     // version 3: everything is keyed by address / anchor, it applies to this analysis whatever its lines are
@@ -927,6 +982,9 @@ bool DissasmCodeZone::TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLines
         for (const auto& [address, mask] : record->decimalOperands)
             if (codeSize == 0 || address < codeSize)
                 decimalOperands[address] = mask;
+        RebuildLineIndex(); // the removed variables lines
+        if (ApplyCollapsibleZoneAnchors(record->collapsibleZones))
+            zoneLinesChanged = true; // collapsed zones: less lines are shown
         cacheRecordRejected = false;
         return true;
     }
@@ -980,7 +1038,7 @@ bool DissasmCodeZone::TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLines
     return true;
 }
 
-void DissasmCodeZone::MergeUnappliedRecord(DissasmCache& cache)
+bool DissasmCodeZone::MergeUnappliedRecord(DissasmCache& cache)
 {
     LocalString<64> recordName;
     recordName.SetFormat("%.*s%llu",
@@ -989,11 +1047,11 @@ void DissasmCodeZone::MergeUnappliedRecord(DissasmCache& cache)
                          static_cast<unsigned long long>(zoneDetails.startingZonePoint));
     const auto it = cache.zonesData.find(recordName.GetText());
     if (it == cache.zonesData.end() || !it->second.data || !CanReachAsmLines())
-        return;
+        return false;
     // only the address keyed records can be merged into an analysis that already has its data (the line keyed ones need their layout)
     auto record = ReadAddressKeyedZoneRecord(it->second);
     if (!record.has_value())
-        return;
+        return false;
     // the data of the zone wins: only what it does not have is added
     for (auto& [anchor, text] : record->comments.comments)
         userComments.comments.try_emplace(anchor, std::move(text));
@@ -1006,4 +1064,9 @@ void DissasmCodeZone::MergeUnappliedRecord(DissasmCache& cache)
     for (const auto& [address, mask] : record->decimalOperands)
         decimalOperands.try_emplace(address, mask);
     mergedUnappliedRecord = true;
+    // the zones only when the zone has none (zones of two records may overlap)
+    if (!collapsibleZones.empty() || record->collapsibleZones.empty())
+        return false;
+    RebuildLineIndex();
+    return ApplyCollapsibleZoneAnchors(record->collapsibleZones);
 }

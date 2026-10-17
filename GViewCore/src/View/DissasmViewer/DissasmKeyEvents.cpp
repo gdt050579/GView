@@ -148,13 +148,16 @@ void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Ke
             }
             rightClickMenu.Show(this, x, y);
         }
-    } else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty()) {
-        for (const auto& btn : MyLine.buttons)
-            if (btn.x == x && btn.y == y) {
-                // the buttons are placed on screen rows (1 for the initial empty line), the zones use absolute lines
-                ChangeZoneCollapseState(btn.zone, Cursor.startViewLine + static_cast<uint32>(btn.y - 1));
-                break;
-            }
+    } else if (mpInfo.location == MouseLocation::Outside) {
+        // the buttons of the zones and the bullets of the collapsible zones inside the code zones; they are placed on screen rows (1 for the
+        // initial empty line), the zones use absolute lines
+        for (const auto* buttons : { &MyLine.buttons, &MyLine.bullets }) {
+            for (const auto& btn : *buttons)
+                if (btn.x == x && btn.y == y) {
+                    ChangeZoneCollapseState(btn.zone, Cursor.startViewLine + static_cast<uint32>(btn.y - 1));
+                    return;
+                }
+        }
     }
 }
 

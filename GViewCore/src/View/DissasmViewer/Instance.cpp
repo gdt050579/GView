@@ -508,7 +508,6 @@ void Instance::RenameLabel()
     lineParams.dli                          = nullptr;
     lineParams.settings                     = settings.get();
     lineParams.asmData                      = &asmData;
-    lineParams.isCollapsed                  = zone->isCollapsed;
 
     auto renameResult = convertedZone->TryRenameLine(startingLine, obj, nullptr, &lineParams);
     if (!renameResult.ok) {
@@ -1721,7 +1720,22 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
     }
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    uint64* offsetToReach    = nullptr;
+    // a collapsed zone line, or the first line of a collapsible zone that is not a jump / call: SPACE collapses / expands the zone
+    if (!goToEntryPoint && zonesFound[0].startingLine >= 2 && convertedZone->CanReachAsmLines()) {
+        DissasmInsnExtractLineParams params{};
+        params.obj         = obj;
+        params.zone        = convertedZone;
+        params.settings    = settings.get();
+        params.asmData     = &asmData;
+        const auto asmLine = convertedZone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+        const bool isBranch =
+              (asmLine.flags & (DissasmAsmPreCacheLine::InstructionFlag::CallFlag | DissasmAsmPreCacheLine::InstructionFlag::JmpFlag)) != 0;
+        if (asmLine.isCollapsedLine || (asmLine.shouldAddButton && !isBranch)) {
+            ChangeZoneCollapseState(zone.get(), linePos.line);
+            return;
+        }
+    }
+    uint64* offsetToReach = nullptr;
     if (goToEntryPoint)
         offsetToReach = &convertedZone->zoneDetails.entryPoint;
     DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine, offsetToReach);

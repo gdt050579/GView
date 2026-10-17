@@ -164,11 +164,8 @@ namespace View
             struct DrawLineInfo* dli;
             struct SettingsData* settings;
             struct AsmData* asmData;
-            bool isCollapsed;
-            const std::string* zoneName;
         };
 
-        struct DissasmCodeInternalType;
         struct DissasmAsmPreCacheLine {
             enum InstructionFlag : uint8 { NoneFlag = 0x00, CallFlag = 0x1, PushFlag = 0x2, JmpFlag = 0x4 };
 
@@ -198,7 +195,7 @@ namespace View
             uint8 flags                           = 0;
             uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
             const void* mapping                   = nullptr;
-            const DissasmCodeInternalType* parent = nullptr;
+            bool isCollapsedLine                  = false; // the line of a collapsed zone (it hides the other lines of the zone)
 
             bool shouldAddButton = false;
             bool isZoneCollapsed = false;
@@ -235,7 +232,6 @@ namespace View
             // op_str is an owned raw buffer: assigning would either leak or double free it
             DissasmAsmPreCacheLine& operator=(const DissasmAsmPreCacheLine&) = delete;
             DissasmAsmPreCacheLine& operator=(DissasmAsmPreCacheLine&&)      = delete;
-            bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, struct DrawLineInfo* dli = nullptr);
             bool TryGetDataFromInsn(DissasmInsnExtractLineParams& params);
             void SetMnemonic(std::string_view text); // always NUL terminated, truncated to CS_MNEMONIC_SIZE - 1
             void SetOperands(const char* operands, const struct DissasmCodeZone* zone);
@@ -259,7 +255,7 @@ namespace View
                 flags                  = other.flags;
                 memcpy(arrowCells, other.arrowCells, sizeof(arrowCells));
                 mapping                = other.mapping;
-                parent                 = other.parent;
+                isCollapsedLine        = other.isCollapsedLine;
                 shouldAddButton        = other.shouldAddButton;
                 isZoneCollapsed        = other.isZoneCollapsed;
                 localVariableKind      = other.localVariableKind;
@@ -350,68 +346,31 @@ namespace View
             void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails);
         };
 
-        struct DissasmCodeRemovableZoneDetails {
-            DissasmCodeInternalType* zone;
-            DissasmCodeInternalType* parent;
-            uint32 zoneIndex;
-        };
+        // The lines of a x86/x64 code zone in the expanded layout (every line shown, no zone collapsed): the labels and the local variable
+        // lines (annotations, keyed by their expanded line) placed between the instructions. The shown lines are derived from it
+        // (DissasmCodeZone::DisplayToExpanded): a collapsed zone is a single line that hides the other lines of its range.
         struct DissasmCodeInternalType {
-            std::string name;
-            uint32 indexZoneStart;
-            uint32 indexZoneEnd;
-            uint32 workingIndexZoneStart;
-            uint32 workingIndexZoneEnd;
-
-            uint32 beforeTextLines;
-            uint32 beforeAsmLines;
-
-            uint32 textLinesPassed;
-            uint32 asmLinesPassed;
             AnnotationContainer annotations;
+            // only while a cache record of versions 1 / 2 is loaded: its comments by line (DissasmCodeZone::MoveLineCommentsToAnchors)
             DissasmComments commentsData;
-            bool isCollapsed;
-            std::vector<DissasmCodeInternalType> internalTypes;
+        };
 
-            uint32 GetCurrentAsmLine() const
-            {
-                return beforeAsmLines + asmLinesPassed;
-            }
+        // A collapsible zone of a code zone: the range of lines [start, end) in the expanded layout. The zones are nested, never partially
+        // overlapping; a collapsed zone shows only one line ("collapsed" and its name).
+        struct DissasmCollapsibleZone {
+            uint32 start = 0;
+            uint32 end   = 0; // exclusive
+            std::string name;
+            bool isCollapsed = false;
 
-            uint32 GetCurrentTextLine() const
+            bool Contains(uint32 line) const
             {
-                return beforeTextLines + textLinesPassed;
+                return start <= line && line < end;
             }
-
-            uint32 GetCurrentActualLine() const
+            bool Contains(const DissasmCollapsibleZone& other) const
             {
-                return beforeAsmLines + asmLinesPassed + beforeTextLines + textLinesPassed;
+                return start <= other.start && other.end <= end;
             }
-
-            uint32 GetSize() const
-            {
-                if (isCollapsed)
-                    return workingIndexZoneEnd - workingIndexZoneStart;
-                return indexZoneEnd - indexZoneStart;
-            }
-
-            uint32 GetNewAsmBeforeLines() const
-            {
-                return GetSize() - (uint32) annotations.size();
-            }
-
-            void UpdateDataLineFromPrevious(const DissasmCodeInternalType& prev)
-            {
-                beforeTextLines = prev.beforeTextLines + (uint32) prev.annotations.size();
-                beforeAsmLines  = prev.beforeAsmLines + prev.GetNewAsmBeforeLines();
-            }
-            bool IsValidDataLine() const
-            {
-                return beforeTextLines + beforeAsmLines == workingIndexZoneStart;
-            }
-            bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
-            bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
-            DissasmCodeRemovableZoneDetails GetRemoveZoneCollapsibleDetails(uint32 zoneLine, uint32 depthLevel = 0);
-            bool RemoveCollapsibleZone(uint32 zoneLine, const DissasmCodeRemovableZoneDetails& removableDetails);
         };
 
         struct DissasmCodeZoneInitData {
@@ -424,11 +383,6 @@ namespace View
             uint32 visibleRows;
             // the VA of the start of the zone (DissasmCodeZone::labelAddressBase); none: the labels are named after the file offsets
             std::optional<uint64> labelAddressBase;
-        };
-
-        struct InternalTypeNewLevelChangeData {
-            bool hasName;
-            bool isCollapsed;
         };
 
         struct MemoryMappingEntry {

@@ -36,18 +36,6 @@ class DummyType : public GView::TypeInterface
     }
 };
 
-struct ZoneCheckData {
-    uint32 indexZoneStart;
-    uint32 indexZoneEnd;
-    bool shouldHaveName = false;
-};
-
-struct ZoneBeforeLines {
-    uint32 zoneIndex;
-    uint32 beforeTextLines;
-    uint32 beforeAsmLines;
-};
-
 /* Example test 1
  *#include <Windows.h>
  #include <stdio.h>
@@ -284,29 +272,6 @@ struct ZoneLayout {
 
 class DissasmTestInstance
 {
-    bool CheckLinesWorkingIndexesSameAsZonesRecursive(std::vector<DissasmCodeInternalType>* childrenToCheck)
-    {
-        if (!childrenToCheck)
-            return true;
-
-        for (auto& z : *childrenToCheck) {
-            if (z.indexZoneStart != z.workingIndexZoneStart || z.indexZoneEnd != z.workingIndexZoneEnd) {
-                printf(
-                      "CheckLinesWorkingIndexesSameAsZonesRecursive ERROR: zone %d<->%d, %d<->%d",
-                      z.indexZoneStart,
-                      z.workingIndexZoneStart,
-                      z.indexZoneEnd,
-                      z.workingIndexZoneEnd);
-                return false;
-            }
-            if (!z.internalTypes.empty())
-                if (!CheckLinesWorkingIndexesSameAsZonesRecursive(&z.internalTypes))
-                    return false;
-        }
-
-        return true;
-    }
-
   public:
     Instance* instance;
     std::vector<GView::Object> objects;
@@ -373,69 +338,23 @@ class DissasmTestInstance
         }
     }
 
-    bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
+    // the collapsible zones of the code zone (expanded lines): [start, end) and the collapsed state
+    bool CheckZones(std::initializer_list<DissasmCollapsibleZone> expected)
     {
-        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
-            return false;
+        const auto& zones = zone->collapsibleZones;
+        bool same         = zones.size() == expected.size();
+        auto it           = expected.begin();
+        for (size_t i = 0; same && i < zones.size(); i++, ++it)
+            same = zones[i].start == it->start && zones[i].end == it->end && zones[i].isCollapsed == it->isCollapsed;
+        if (!same) {
+            printf("zones:");
+            for (const auto& z : zones)
+                printf(" [%u, %u)%s", z.start, z.end, z.isCollapsed ? "c" : "");
+            printf("\n");
         }
-
-        std::vector<DissasmCodeInternalType>* childrenToCheck = &zone->dissasmType.internalTypes;
-        if (zoneIndex != UINT32_MAX)
-            childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
-
-        if (childrenToCheck->size() != zones.size()) {
-            printf("ERROR: invalid zone length %d >= %zu", zoneIndex, childrenToCheck->size());
-            return false;
-        }
-
-        auto it = childrenToCheck->begin();
-        for (auto& z : zones) {
-            if (it->indexZoneStart != z.indexZoneStart || it->indexZoneEnd != z.indexZoneEnd || !it->name.empty() != z.shouldHaveName) {
-                printf(
-                      "ERROR: zone %d<->%d, %d<->%d, %d<->%d",
-                      it->indexZoneStart,
-                      z.indexZoneStart,
-                      it->indexZoneEnd,
-                      z.indexZoneEnd,
-                      !it->name.empty(),
-                      z.shouldHaveName);
-                return false;
-            }
-            ++it;
-        }
-        return true;
+        return same;
     }
-    bool CheckBeforeLinesData(uint32 zoneIndex, std::initializer_list<ZoneBeforeLines> zones)
-    {
-        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
-            return false;
-        }
 
-        std::vector<DissasmCodeInternalType>* childrenToCheck = &zone->dissasmType.internalTypes;
-        if (zoneIndex != UINT32_MAX)
-            childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
-
-        for (auto& z : zones) {
-            if (z.zoneIndex >= childrenToCheck->size()) {
-                printf("ERROR: invalid zone index %d >= %zu", z.zoneIndex, childrenToCheck->size());
-                return false;
-            }
-            const auto& it = (*childrenToCheck)[z.zoneIndex];
-
-            // if (!it.IsValidDataLine()) {
-            //     printf("ERROR: !IsValidDataLine for zone %d, %d<->%d != %d", z.zoneIndex, it.beforeTextLines, it.beforeAsmLines, it.indexZoneStart);
-            //     return false;
-            // }
-
-            if (it.beforeTextLines != z.beforeTextLines || it.beforeAsmLines != z.beforeAsmLines) {
-                printf("ERROR: [%d]zone: %d<->%d, %d<->%d", z.zoneIndex, it.beforeTextLines, z.beforeTextLines, it.beforeAsmLines, z.beforeAsmLines);
-                return false;
-            }
-        }
-        return true;
-    }
     bool CheckLineOpStr(uint32 line, std::string_view startWithStr)
     {
         auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
@@ -444,10 +363,6 @@ class DissasmTestInstance
             return false;
         }
         return true;
-    }
-    bool CheckLinesWorkingIndexesSameAsZones()
-    {
-        return CheckLinesWorkingIndexesSameAsZonesRecursive(&zone->dissasmType.internalTypes);
     }
     bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
     {
@@ -480,11 +395,6 @@ class DissasmTestInstance
         return zone->GetComment(line, temp);
     }
 
-    DissasmCodeInternalType* GetDissasmCodeInternalTypeByLine(uint32 line)
-    {
-        return GetRecursiveCollpasedZoneByLine(zone->dissasmType, line);
-    }
-
     bool CheckComment(uint32 line, std::string expectedValue)
     {
         std::string temp = {};
@@ -501,10 +411,6 @@ class DissasmTestInstance
         return zone->RemoveComment(line, false);
     }
 
-    void ReachZoneLine(uint32 zoneLine)
-    {
-        zone->ReachZoneLine(zoneLine);
-    }
     DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 line)
     {
         auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
@@ -531,12 +437,6 @@ class DissasmTestInstance
         for (uint32 i = 0; i < count; i++) {
             auto val = zone->GetCurrentAsmLine(i, &objects[0], nullptr);
             printf("[%u] %s %s ", i, val.mnemonic, val.op_str);
-
-            for (const auto& type : zone->types) {
-                if (type.get().name.empty())
-                    continue;
-                printf("%s ", type.get().name.c_str());
-            }
 
             if (zone->GetComment(i, comment)) {
                 printf("\tComment: \"%s\"", comment.c_str());
@@ -667,317 +567,244 @@ static void WriteLineKeyedRecord(DissasmCodeZone& zone, uint32 version, const st
     }
 }
 
-TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]CollapsibleZones")
+// the lines of exampleTest1BinaryCode without local variables: 0-4 int3, 5 sub_5, 6 jmp, 7 EntryPoint, 8 jmp, 9 sub_F, 10 jmp, 11 jmp,
+// 12-34 int3, 35 sub_30, 36 push ebp ...
+constexpr uint32 EXAMPLE_TEST1_EXPANDED_LINES = 4570;
+std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine); // DissasmX86.cpp
+
+TEST_CASE("CollapsibleZonesAdd", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-
-    uint32 zoneEndingIndex = 4572;
-
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+    REQUIRE(dissasmInstance.zone->GetExpandedLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES);
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2 }, { 2, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 } }));
-
-    REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
-    REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
-
-    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, zoneEndingIndex } }));
-
+    REQUIRE(dissasmInstance.CheckZones({ { 2, 5 } }));
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5)); // the same zone
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4)); // partially overlapping
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));  // next to it
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));  // inside a zone
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 12)); // around zones
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 12 }, { 0, 2 }, { 2, 5 }, { 5, 11 }, { 7, 9 } }));
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(10, 13)); // partially overlapping
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(4, 4));
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(EXAMPLE_TEST1_EXPANDED_LINES - 1, EXAMPLE_TEST1_EXPANDED_LINES + 1)); // after the last line
+    REQUIRE(dissasmInstance.zone->GetDisplayLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES);
 
-    REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
-
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-
-    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 8, true }, { 8, 10 } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 10, true }, { 10, zoneEndingIndex - 1 } }));
-    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(7, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
+    // the first line of a zone has its button, the other lines do not
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(5).shouldAddButton);
+    REQUIRE(!dissasmInstance.GetCurrentAsmLine(6).shouldAddButton);
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
 }
 
-TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
+TEST_CASE("CollapsibleZonesCollapseAndExpand", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-    uint32 zoneEndingIndex = 4572;
-
-    std::array<const char*, 47> mnemonicArrayStart = { "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "sub_5",
-                                                       "jmp",  "EntryPoint",
-                                                       "jmp",  "sub_F",
-                                                       "jmp",  "jmp",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "sub_30",
-                                                       "push", "mov",
-                                                       "sub",  "push",
-                                                       "push", "push",
-                                                       "mov",  "call",
-                                                       "cmp",  "jle",
-                                                       "cmp" };
-    REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, static_cast<uint32>(mnemonicArrayStart.size()), mnemonicArrayStart.data()));
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5, "", true } }));
 
-    // dissasmInstance.PrintInstructions(50);
-    std::array<const char*, 43> mnemonicArrayCollapse1 = { "collapsed", "sub_5",
-                                                           "jmp",       "EntryPoint",
-                                                           "jmp",       "sub_F",
-                                                           "jmp",       "jmp",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "sub_30",
-                                                           "push",      "mov",
-                                                           "sub",       "push",
-                                                           "push",      "push",
-                                                           "mov",       "call",
-                                                           "cmp",       "jle",
-                                                           "cmp" };
+    std::array<const char*, 43> mnemonicArrayCollapse1 = { "collapsed", "sub_5", "jmp",  "EntryPoint", "jmp",  "sub_F", "jmp",  "jmp",  "int3",
+                                                           "int3",      "int3",  "int3", "int3",       "int3", "int3",  "int3", "int3", "int3",
+                                                           "int3",      "int3",  "int3", "int3",       "int3", "int3",  "int3", "int3", "int3",
+                                                           "int3",      "int3",  "int3", "int3",       "sub_30", "push", "mov", "sub",  "push",
+                                                           "push",      "push",  "mov",  "call",       "cmp",  "jle",   "cmp" };
     REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, static_cast<uint32>(mnemonicArrayCollapse1.size()), mnemonicArrayCollapse1.data()));
     REQUIRE(dissasmInstance.CheckLineOpStr(0, "Zone"));
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(0).isCollapsedLine);
 
+    // the shown lines 8..30 are the expanded lines 12..34
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 31));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 8 }, { 8, 31, true }, { 31, zoneEndingIndex } }));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5, "", true }, { 12, 35 } }));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
+    std::array<const char*, 21> mnemonicArrayCollapse2 = { "collapsed", "sub_5", "jmp",  "EntryPoint", "jmp",  "sub_F", "jmp",
+                                                           "jmp",       "collapsed", "sub_30", "push", "mov", "sub", "push",
+                                                           "push",      "push", "mov", "call", "cmp", "jle", "cmp" };
+    REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, static_cast<uint32>(mnemonicArrayCollapse2.size()), mnemonicArrayCollapse2.data()));
 
-    std::array<const char*, 21> mnemonicArrayCollapse2 = { "collapsed", "sub_5",
-                                                           "jmp",       "EntryPoint",
-                                                           "jmp",       "sub_F",
-                                                           "jmp",       "jmp",
-                                                           "collapsed", "sub_30",
-                                                           "push",      "mov",
-                                                           "sub",       "push",
-                                                           "push",      "push",
-                                                           "mov",       "call",
-                                                           "cmp",       "jle",
-                                                           "cmp" };
-    // dissasmInstance.PrintInstructions(50);
-    REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, mnemonicArrayCollapse2.size(), mnemonicArrayCollapse2.data()));
-    // dissasmInstance.PrintInstructions(50);
+    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse)); // already collapsed
+    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(6, DissasmCodeZone::CollapseExpandType::Collapse)); // not inside a zone
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::NegateCurrentState));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5, "", true }, { 12, 35 } }));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "int3"));
 }
 
 TEST_CASE("CollapsibleZonesSizesAndNestedZones", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-    const uint32 zoneEndingIndex = 4572;
-    const uint32 extendedSize    = zoneEndingIndex - 1; // the zone lines and the title
+    const uint32 extendedSize = EXAMPLE_TEST1_EXPANDED_LINES + 1u; // the zone lines and the title
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
 
-    // every collapse / expand gives the new size of the zone, not only the first one
+    // every collapse / expand gives the new size of the zone
     int32 newSize = 0;
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
     REQUIRE(newSize == static_cast<int32>(extendedSize - 4));
-    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(4, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(4, DissasmCodeZone::CollapseExpandType::Collapse, newSize)); // the shown line 4 is 8
     REQUIRE(newSize == static_cast<int32>(extendedSize - 5));
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand, newSize));
     REQUIRE(newSize == static_cast<int32>(extendedSize - 1));
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Expand, newSize));
     REQUIRE(newSize == static_cast<int32>(extendedSize));
 
-    // a line after the shown lines (but inside the expanded zone) must not loop forever, the next lines are reached again
+    // the last lines are reached when a zone is collapsed
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
-    dissasmInstance.ReachZoneLine(zoneEndingIndex - 2);
+    const uint32 shownLines = dissasmInstance.zone->GetDisplayLinesCount();
+    REQUIRE(shownLines == EXAMPLE_TEST1_EXPANDED_LINES - 4);
+    REQUIRE(dissasmInstance.GetLineText(shownLines - 1) == dissasmInstance.GetLineText(shownLines - 1)); // decodes, no endless walk
+    REQUIRE(!dissasmInstance.zone->DisplayToExpanded(shownLines).has_value());
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand, newSize));
 
-    // zones added inside a zone that already has children are split inside it
+    // zones inside zones
     REQUIRE(dissasmInstance.RemoveCollapsibleZone(8));
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
     REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(1, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 6));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(1, { { 5, 6, true }, { 6, 7 }, { 7, 9, true }, { 9, 11 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(1, { { 0, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5 }, { 5, 11 }, { 5, 6 }, { 7, 9 } }));
     REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
+
+    // the inner zone, then the outer zone (a line of the outer zone that is in no inner zone); expanding the outer zone keeps the inner
+    // zone collapsed
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "collapsed"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "sub_F"));
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(6, DissasmCodeZone::CollapseExpandType::Collapse));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "collapsed"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp")); // expanded line 11
+    REQUIRE(dissasmInstance.zone->GetDisplayLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES - 5);
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(5, DissasmCodeZone::CollapseExpandType::Expand));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "collapsed"));
+    REQUIRE(dissasmInstance.zone->GetDisplayLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES - 1);
+
+    // every shown line maps to an expanded line and back
+    for (uint32 line = 0; line < 100; line++) {
+        const auto place = dissasmInstance.zone->DisplayToExpanded(line);
+        REQUIRE(place.has_value());
+        REQUIRE(dissasmInstance.zone->ExpandedToDisplay(place->expandedLine) == line);
+    }
 }
 
 TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-
-    uint32 zoneEndingIndex = 4572;
-    // dissasmInstance.PrintInstructions(50);
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
-
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
-
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 }, { 2, 2, 6 }, { 3, 3, 7 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse));
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
-
+    REQUIRE(!dissasmInstance.RemoveCollapsibleZone(0)); // a collapsed zone is expanded first
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
     REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand)); // already expanded
+    for (uint32 line = 0; line < 5; line++)
+        REQUIRE(dissasmInstance.CheckLineMnemonic(line, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
 
     REQUIRE(dissasmInstance.RemoveCollapsibleZone(8));
-    // same as before, after dissasmInstance.AddCollpasibleZone(0, 5)
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5 } }));
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 }, { 2, 2, 6 }, { 3, 2, 8 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
-    REQUIRE(!dissasmInstance.RemoveCollapsibleZone(5));
+    REQUIRE(!dissasmInstance.RemoveCollapsibleZone(5)); // not inside a zone
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(6));
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(7));
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(10));
-
-    // dissasmInstance.PrintInstructions(12);
     REQUIRE(dissasmInstance.RemoveCollapsibleZone(4));
-    // dissasmInstance.PrintInstructions(12);
-
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+    REQUIRE(dissasmInstance.CheckZones({ { 8, 10 } }));
+    for (uint32 line = 0; line < 5; line++)
+        REQUIRE(dissasmInstance.CheckLineMnemonic(line, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 2, 6 }, { 2, 2, 8 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
+
+    // the innermost zone of the line is removed
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 12));
+    REQUIRE(dissasmInstance.RemoveCollapsibleZone(9));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 12 } }));
+    REQUIRE(dissasmInstance.RemoveCollapsibleZone(9));
+    REQUIRE(dissasmInstance.CheckZones({}));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
 }
 
-TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]CollapsibleZones")
+TEST_CASE("CollapsibleZonesFollowTheLines", "[Dissasm]CollapsibleZones")
 {
-    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    REQUIRE(edited.AddCollpasibleZone(0, 5));
+    REQUIRE(edited.AddCollpasibleZone(36, 50));
+    REQUIRE(edited.AddOrUpdateComment(40, "inside the zone"));
+    REQUIRE(edited.CheckCollapseOrExtendZone(36, DissasmCodeZone::CollapseExpandType::Collapse));
+    std::string_view zoneName = "isPrime body";
+    REQUIRE(edited.zone->TryRenameLine(36, &edited.objects[0], &zoneName).ok);
+    REQUIRE(edited.CheckLineOpStr(36, "isPrime body"));
 
-    uint32 zoneEndingIndex = 4572;
-    // dissasmInstance.PrintInstructions(20);
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
-
-    SECTION("removing first collapsible zones[2]")
+    SECTION("saved in the cache with their names and states")
     {
-        REQUIRE(dissasmInstance.AddCollpasibleZone(0, 6));
-        REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 6, true }, { 6, zoneEndingIndex } }));
-
-        REQUIRE(dissasmInstance.RemoveCollapsibleZone(5));
-        // dissasmInstance.PrintInstructions(20);
-        REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(zoneLinesChanged); // a collapsed zone: less lines are shown
+        REQUIRE(restored.CheckZones({ { 0, 5 }, { 36, 50, "", true } }));
+        REQUIRE(restored.CheckLineMnemonic(36, "collapsed"));
+        REQUIRE(restored.CheckLineOpStr(36, "isPrime body"));
+        REQUIRE(restored.zone->GetDisplayLinesCount() == edited.zone->GetDisplayLinesCount());
+        REQUIRE(restored.CheckCollapseOrExtendZone(36, DissasmCodeZone::CollapseExpandType::Expand));
+        REQUIRE(restored.CheckComment(40, "inside the zone"));
     }
 
-    SECTION("removing middle collapsible zones[3]")
+    SECTION("placed on the same lines in another layout")
     {
-        REQUIRE(dissasmInstance.AddCollpasibleZone(9, 11));
-        REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 9 }, { 9, 11, true }, { 11, zoneEndingIndex } }));
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+        // an analysis without the label sub_5: the second zone is one line above
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        restored.zone->RemoveRootAnnotationLines({ 5 });
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckZones({ { 0, 5 }, { 35, 49, "", true } }));
+    }
 
-        REQUIRE(dissasmInstance.RemoveCollapsibleZone(10));
-        // dissasmInstance.PrintInstructions(20);
-        REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
+    SECTION("the zones keep their lines when a line is removed")
+    {
+        edited.zone->RemoveRootAnnotationLines({ 5 }); // before the second zone
+        REQUIRE(edited.CheckZones({ { 0, 5 }, { 35, 49, "", true } }));
+        REQUIRE(edited.CheckLineMnemonic(35, "collapsed"));
+    }
+
+    SECTION("the zones of a record kept aside by an older version are merged")
+    {
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZoneUnapplied.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged)); // no record of its own
+        REQUIRE(zoneLinesChanged);
+        REQUIRE(restored.CheckZones({ { 0, 5 }, { 36, 50, "", true } }));
+        REQUIRE(restored.CheckComment(36, "inside the zone") == false); // the comment is on a line hidden by the collapsed zone
+    }
+
+    SECTION("following a jump lands on the collapsed zone that hides the target")
+    {
+        // the instruction index of a shown line, none for the collapsed line
+        REQUIRE(!DissasmGetCurrentAsmLineAndPrepareCodeZone(edited.zone.get(), 36).has_value());
+        const auto index = DissasmGetCurrentAsmLineAndPrepareCodeZone(edited.zone.get(), 37); // the first line after the zone
+        REQUIRE(index.has_value());
+        REQUIRE(edited.zone->ExpandedToDisplay(edited.zone->InstructionIndexToExpanded(index.value())) == 37);
+        const auto hiddenInstruction = edited.zone->ExpandedToInstructionIndex(40);
+        REQUIRE(edited.zone->ExpandedToDisplay(edited.zone->InstructionIndexToExpanded(hiddenInstruction)) == 36);
     }
 }
 
@@ -998,7 +825,7 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
     REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
+    REQUIRE(dissasmInstance.CheckZones({}));
 
     REQUIRE(dissasmInstance.AddOrUpdateComment(2, "c2"));
     REQUIRE(dissasmInstance.AddOrUpdateComment(5, "c5"));
@@ -1089,7 +916,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
     const auto variableLines = dissasmInstance.zone->dissasmType.annotations.size() - withoutVariables.zone->dissasmType.annotations.size();
     REQUIRE(variableLines == 7);
     REQUIRE(dissasmInstance.zone->asmLinesCount == withoutVariables.zone->asmLinesCount);
-    REQUIRE(dissasmInstance.zone->dissasmType.indexZoneEnd == withoutVariables.zone->dissasmType.indexZoneEnd + 7);
+    REQUIRE(dissasmInstance.zone->GetExpandedLinesCount() == withoutVariables.zone->GetExpandedLinesCount() + 7);
 
     // the same line decoded twice in a row must be the same instruction
     REQUIRE(dissasmInstance.CheckLineText(46, "cmp dword ptr [ebp + arg_0], 1"));
@@ -1125,9 +952,9 @@ TEST_CASE("LocalVariablesRenameAndRemove", "[Dissasm]LocalVariables")
     REQUIRE(dissasmInstance.AddOrUpdateComment(60, "c60"));
 
     // remove from an instruction: the definition line disappears and every following line moves up
-    const uint32 zoneEnd = zone.dissasmType.indexZoneEnd;
+    const uint32 zoneEnd = zone.GetExpandedLinesCount();
     REQUIRE(dissasmInstance.RemoveLocalVariable(55));
-    REQUIRE(zone.dissasmType.indexZoneEnd == zoneEnd - 1);
+    REQUIRE(zone.GetExpandedLinesCount() == zoneEnd - 1);
     REQUIRE(dissasmInstance.CheckLineText(35, "sub_30"));
     REQUIRE(dissasmInstance.CheckLineText(36, "number = dword ptr 8"));
     REQUIRE(dissasmInstance.CheckLineText(37, "push ebp"));
@@ -1149,11 +976,14 @@ TEST_CASE("LocalVariablesRenameAndRemove", "[Dissasm]LocalVariables")
     REQUIRE(dissasmInstance.CheckLineText(359, "var_C = dword ptr -0xc"));
     REQUIRE(!dissasmInstance.RemoveLocalVariable(36)); // nothing to remove
 
-    // the collapsible zones keep copies of the lines: removing is refused, renaming still works
+    // with collapsible zones: renaming and removing work, the zones keep their lines
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
-    REQUIRE(!dissasmInstance.RemoveLocalVariable(359));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(355, 365));
     REQUIRE(dissasmInstance.RenameLocalVariable(359, "c").ok);
     REQUIRE(dissasmInstance.CheckLineText(359, "c = dword ptr -0xc"));
+    REQUIRE(dissasmInstance.RemoveLocalVariable(359));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5 }, { 355, 364 } }));
+    REQUIRE(dissasmInstance.CheckLineText(358, "sub_2B0"));
 }
 
 TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
@@ -1181,7 +1011,7 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         bool zoneLinesChanged = false;
         REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
         REQUIRE(zoneLinesChanged);
-        REQUIRE(restored.zone->dissasmType.indexZoneEnd == edited.zone->dissasmType.indexZoneEnd);
+        REQUIRE(restored.zone->GetExpandedLinesCount() == edited.zone->GetExpandedLinesCount());
         REQUIRE(restored.zone->GetRootZoneLinesCount() == edited.zone->GetRootZoneLinesCount());
         const uint32 linesCount = edited.zone->GetRootZoneLinesCount();
         for (uint32 line = 0; line < linesCount; line++)
@@ -2827,7 +2657,6 @@ TEST_CASE("AddressKeyedComments", "[Dissasm]Comments")
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
         REQUIRE(restored.CheckLineText(5, "sub_5"));
         restored.zone->RemoveRootAnnotationLines({ 5 });
-        restored.zone->ResetTypesReferenceList();
         auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
         bool zoneLinesChanged = false;
         REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
@@ -2850,7 +2679,6 @@ TEST_CASE("AddressKeyedComments", "[Dissasm]Comments")
         // an analysis without the label of isPrime (line 35)
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
         restored.zone->RemoveRootAnnotationLines({ 35 });
-        restored.zone->ResetTypesReferenceList();
         auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
         bool zoneLinesChanged = false;
         REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));

@@ -10,17 +10,16 @@ struct DissasmCodeZone : public ParseZone {
     uint32 lastClosestLine    = 0;
     uint32 offsetCacheMaxLine = 0; // 0 forces the next decoded line to search its closest cached offset
     BufferView lastData;
-    uint32 lastReachedLine = UINT32_MAX;
 
     // fields only for dissasmx86/x64
     const uint8* asmData = nullptr;
     uint64 asmSize = 0, asmAddress = 0;
     uint64 asmWindowEnd = 0; // end (exclusive, relative address) of the bytes that can be decoded from the current cached offset
 
-    uint32 structureIndex = 0;
-    std::list<std::reference_wrapper<DissasmCodeInternalType>> types;
-    std::list<uint32> levels;
+    // the labels and the local variable lines, keyed by their line in the expanded layout (DissasmCodeInternalType)
     DissasmCodeInternalType dissasmType{};
+    // the collapsible zones, sorted by start (and the outer zone first for the same start), in the expanded layout
+    std::vector<DissasmCollapsibleZone> collapsibleZones;
 
     DissasmAsmPreCacheData asmPreCacheData;
 
@@ -28,8 +27,6 @@ struct DissasmCodeZone : public ParseZone {
     DisassemblyZone zoneDetails{};
     int internalArchitecture = 0; // used for dissasm libraries
     bool isInit              = false;
-    bool changedLevel        = false;
-    InternalTypeNewLevelChangeData newLevelChangeData{};
 
     // x86/x64: decoded instructions count (the zone lines are the instructions plus the annotations of the root type)
     uint32 asmLinesCount = 0;
@@ -70,25 +67,48 @@ struct DissasmCodeZone : public ParseZone {
     csh GetDecodeHandle();
 
     void ResetZoneCaching();
+    // the zone of the shown lines [zoneLineStart, zoneLineEnd) (a collapsed line counts as its whole zone); false when it would
+    // overlap a zone without being nested in it, or the same zone exists
     bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
-    bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
-    {
-        if (zoneLineStart > zoneLineEnd || zoneLineEnd > dissasmType.indexZoneEnd)
-            return false;
-        return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
-    }
+    // the innermost zone of the shown line `zoneLine` (the zone of a collapsed line); `difference` is the new size of the code zone (its
+    // lines and the title); false when there is no zone or it already has the requested state
     bool CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference);
+    // removes the innermost expanded zone of the shown line `zoneLine`
     bool RemoveCollapsibleZone(uint32 zoneLine);
 
     bool InitZone(DissasmCodeZoneInitData& initData);
-    // x86/x64 zone initialized successfully: only then the lines can be reached / decoded (the root type is in `types`)
+    // x86/x64 zone initialized successfully: only then the lines can be reached / decoded
     bool CanReachAsmLines() const
     {
-        return isInit && !types.empty() && (zoneDetails.language == DisassemblyLanguage::x86 || zoneDetails.language == DisassemblyLanguage::x64);
+        return isInit && linesReady && (zoneDetails.language == DisassemblyLanguage::x86 || zoneDetails.language == DisassemblyLanguage::x64);
     }
-    void ReachZoneLine(uint32 line);
 
-    bool ResetTypesReferenceList();
+    // the line index (the sorted lines of the annotations) after the annotations changed; the decoding starts again from a cached offset
+    void RebuildLineIndex();
+    // the lines of the expanded layout: the instructions and the annotations
+    uint32 GetExpandedLinesCount() const
+    {
+        return asmLinesCount + static_cast<uint32>(dissasmType.annotations.size());
+    }
+    // the shown lines: the collapsed zones are one line each
+    uint32 GetDisplayLinesCount() const;
+    struct LinePlace {
+        uint32 expandedLine;
+        const DissasmCollapsibleZone* collapsedZone; // the collapsed zone shown on the line (expandedLine is its start)
+    };
+    // the expanded line of a shown line; none after the last line
+    std::optional<LinePlace> DisplayToExpanded(uint32 displayLine) const;
+    // the shown line of an expanded line (the line of the collapsed zone that hides it)
+    uint32 ExpandedToDisplay(uint32 expandedLine) const;
+    // the instruction index of an expanded line that is not an annotation
+    uint32 ExpandedToInstructionIndex(uint32 expandedLine) const;
+    // the expanded line of the instruction `instructionIndex`
+    uint32 InstructionIndexToExpanded(uint32 instructionIndex) const;
+    bool IsAnnotationLine(uint32 expandedLine) const;
+    // the innermost zone that contains the expanded line / that starts on it
+    DissasmCollapsibleZone* FindInnermostZone(uint32 expandedLine);
+    const DissasmCollapsibleZone* FindInnermostZoneStartingAt(uint32 expandedLine) const;
+
     Utils::GStatus TryRenameLine(
           uint32 line, Reference<GView::Object> obj, std::string_view* newName = nullptr, DissasmInsnExtractLineParams* params = nullptr);
 
@@ -120,11 +140,11 @@ struct DissasmCodeZone : public ParseZone {
     Utils::GStatus RenameLocalVariable(uint64 functionStart, int32 frameOffset, std::string_view newName);
     // removes the variable and its definition line; the zone loses one line when `lineRemoved` is set
     Utils::GStatus RemoveLocalVariable(uint64 functionStart, int32 frameOffset, bool& lineRemoved);
-    // removes text lines of the root type (no collapsible zones) shifting the annotations, comments and the zone end
+    // removes annotation lines (expanded layout) shifting the annotations and the collapsible zones that follow them
     void RemoveRootAnnotationLines(const std::vector<uint32>& sortedLines);
     uint32 GetRootZoneLinesCount() const
     {
-        return asmLinesCount + static_cast<uint32>(dissasmType.annotations.size());
+        return GetExpandedLinesCount();
     }
 
     // switches the operand number `numberIndex` of the instruction at `address` between hexadecimal and decimal
@@ -135,7 +155,8 @@ struct DissasmCodeZone : public ParseZone {
         return it != decimalOperands.end() ? it->second : 0u;
     }
 
-    bool ToBuffer(std::vector<std::byte>& buffer) const;
+    // the record of the zone (cache version 4); not const: the anchors of the collapsible zones are read from their lines
+    bool ToBuffer(std::vector<std::byte>& buffer);
     // `zoneLinesChanged` is set when the cache removed lines (deleted local variables), the zone size must be adjusted
     bool TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesChanged);
     // the comments of the line keyed records (cache versions 1 and 2, kept in the root type by line) are moved to their anchors
@@ -146,14 +167,31 @@ struct DissasmCodeZone : public ParseZone {
     // name is used by another label
     bool ApplyUserLabelName(uint64 address, const std::string& name);
 
+    // the collapsible zones by the anchors of their first and last lines (saved in the cache): the lines move, the anchors stay
+    struct CollapsibleZoneAnchors {
+        DissasmCommentAnchor first;
+        DissasmCommentAnchor last;
+        std::string name;
+        bool isCollapsed;
+    };
+    std::vector<CollapsibleZoneAnchors> GetCollapsibleZoneAnchors();
+    // the zones placed on the lines of their anchors (the ones that can not be placed are ignored); true when the shown lines changed
+    bool ApplyCollapsibleZoneAnchors(const std::vector<CollapsibleZoneAnchors>& zones);
+    // the expanded line of an anchor; none when this analysis has no such line
+    std::optional<uint32> GetExpandedLineOfAnchor(const DissasmCommentAnchor& anchor);
+
   private:
     bool TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLinesChanged);
-    void MergeUnappliedRecord(DissasmCache& cache);
+    // true when the merged zones changed the shown lines
+    bool MergeUnappliedRecord(DissasmCache& cache);
+    // the line of the expanded layout as it is drawn (no collapsed zone)
+    DissasmAsmPreCacheLine BuildExpandedLine(uint32 expandedLine, uint32 displayLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
+    bool CanPlaceZone(const DissasmCollapsibleZone& zone) const;
+    void InsertZone(DissasmCollapsibleZone zone);
 
-  public:
-
-  private:
     csh decodeHandle = 0;
+    bool linesReady  = false;
+    std::vector<uint32> annotationLines; // the sorted lines of dissasmType.annotations
 };
 
 // the lines of the zone as they are shown (without the title), the collapsed zones count as one line
