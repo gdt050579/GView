@@ -39,10 +39,24 @@ inline bool ExtractCallsToInsertFunctionNames(
     std::vector<std::pair<uint64, std::string>> callsFound;
     std::unordered_map<uint64, bool> callsMap; // true for offset, false for sub
     callsFound.reserve(16);
-    bool foundCall     = false;
-    uint64 callAddress = 0;
+    auto addFunctionStart = [&](uint64 functionOffset) {
+        const auto it = callsMap.find(functionOffset);
+        if (it != callsMap.end() && !it->second)
+            return; // already a sub
+        callsFound.emplace_back(functionOffset, FormatFunctionName(functionOffset, "sub_0x").GetText());
+        callsMap.insert({ functionOffset, false });
+    };
+
+    const bool is64 = zone->Is64BitCode();
+    X86PrologueDetector prologueDetector(is64);
     while (linesToDecode > 0 && walker.Next(insn)) {
         linesToDecode--;
+        // functions that are not called directly (callbacks, virtual methods, exports): recognized by their prologue
+        const uint64 instructionOffset = offsets[0].offset + insn->address; // decoded inside the code: can not overflow
+        const auto prologueStart       = prologueDetector.Next(*insn, instructionOffset);
+        if (prologueStart.has_value())
+            addFunctionStart(prologueStart.value());
+
         const bool isJump = insn->mnemonic[0] == 'j';
         if (TextPrefixAsUInt32(insn->mnemonic) == callOP || isJump) {
             const auto target    = GetDirectBranchTarget(insn->op_str);
@@ -58,29 +72,6 @@ inline bool ExtractCallsToInsertFunctionNames(
                 auto callName = FormatFunctionName(value, prefix);
                 callsFound.emplace_back(value, callName.GetText());
                 callsMap.insert({ value, isJump });
-            }
-        } else {
-            const auto mnemonicVal = TextPrefixAsUInt32(insn->mnemonic);
-            if (foundCall) {
-                if (mnemonicVal == movOP && strcmp(insn->op_str, "ebp, esp") == 0) {
-                    const auto it = callsMap.find(callAddress);
-                    if (it != callsMap.end()) {
-                        if (!it->second)
-                            continue;
-                    }
-                    const char* prefix = "sub_0x";
-                    auto callName      = FormatFunctionName(callAddress, prefix);
-                    callsFound.emplace_back(callAddress, callName.GetText());
-                    callsMap.insert({ callAddress, true });
-                }
-                foundCall = false;
-            } else {
-                if (mnemonicVal == pushOP) {
-                    if (strcmp(insn->op_str, "ebp") == 0) {
-                        callAddress = offsets[0].offset + insn->address; // decoded inside the code: can not overflow
-                        foundCall   = true;
-                    }
-                }
             }
         }
     }
@@ -104,10 +95,9 @@ inline bool ExtractCallsToInsertFunctionNames(
     std::vector<uint32> indexesToErase;
     for (int32 i = static_cast<int32>(callsFound.size()) - 1; i >= 0; i--) {
         const auto& call = callsFound[i];
-        if (call.first == zone->zoneDetails.entryPoint) {
-            indexesToErase.push_back(i);
-            break;
-        }
+        // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
+        if (call.first == zone->zoneDetails.entryPoint)
+            indexesToErase.push_back(i); // descending indexes: erased in this order
     }
     for (const auto indexToErase : indexesToErase)
         callsFound.erase(callsFound.begin() + indexToErase);
@@ -224,11 +214,13 @@ inline bool populateOffsetsVector(
     // data cache window is decoded window after window.
     DissasmCodeLinesWalker walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, handle);
 
-    constexpr uint32 addInstructionsStop = 30;       // TODO: update this -> for now it stops, later will fold
-    constexpr uint32 alOpStr             = 7102752u; //* (uint32*) " al";
-    uint32 continuousAddInstructions     = 0;
-    uint32 lineIndex                     = 0;
-    uint64 lastOffset                    = 0;
+    // The zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is
+    // not shown. A run inside the code (between functions, data) is decoded as it is: stopping at the first long run of zeros hid the
+    // rest of the code.
+    constexpr uint32 trailingZerosMinimumLines = 4;
+    uint32 zeroRunLines                        = 0;
+    uint32 lineIndex                           = 0;
+    uint64 lastOffset                          = 0;
     offsets.clear();
     offsets.push_back({ zoneDetails.startingZonePoint, 0 });
 
@@ -241,19 +233,36 @@ inline bool populateOffsetsVector(
             offsets.push_back({ address + zoneDetails.startingZonePoint, lineIndex });
         }
 
-        if (TextPrefixAsUInt32(insn->mnemonic) == addOP && insn->op_str[0] == 'b' && TextPrefixAsUInt32(&insn->op_str[15]) == alOpStr) {
-            if (++continuousAddInstructions == addInstructionsStop) {
-                lineIndex -= continuousAddInstructions;
-                break;
-            }
-        } else
-            continuousAddInstructions = 0;
+        // 00 00 (add byte ptr [rax], al), or a last single 00 byte (a data line: db 0x00)
+        const bool isZeroPadding = (insn->id == X86_INS_ADD && insn->size == 2 && insn->bytes[0] == 0 && insn->bytes[1] == 0) ||
+                                   (insn->id == X86_INS_INVALID && insn->size == 1 && insn->bytes[0] == 0);
+        zeroRunLines             = isZeroPadding ? zeroRunLines + 1u : 0u;
+    }
+    if (zeroRunLines >= trailingZerosMinimumLines && zeroRunLines < lineIndex) {
+        lineIndex -= zeroRunLines;
+        // the cached offsets placed inside the removed lines point to lines that do not exist
+        while (offsets.size() > 1 && offsets.back().line >= lineIndex)
+            offsets.pop_back();
     }
 
     totalLines = lineIndex;
     cs_free(insn, 1);
     cs_close(&handle);
     return true;
+}
+
+DissasmCodeZone::~DissasmCodeZone()
+{
+    if (decodeHandle != 0)
+        cs_close(&decodeHandle);
+}
+
+csh DissasmCodeZone::GetDecodeHandle()
+{
+    // opening a handle allocates the capstone tables: it was done for every decoded line before
+    if (decodeHandle == 0 && internalArchitecture != 0 && cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &decodeHandle) != CS_ERR_OK)
+        decodeHandle = 0;
+    return decodeHandle;
 }
 
 bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)

@@ -29,7 +29,7 @@ void GoToDialog::Validate()
     const auto newLine = lineParser.value();
     if (newLine >= totalAvailableLines)
     {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Expected a line number `%s` lower than %lu!", tmp.GetText(), totalAvailableLines));
+        Dialogs::MessageBox::ShowError("Error", error.Format("Expected a line number `%s` lower than %u!", tmp.GetText(), totalAvailableLines));
         lineTextField->SetFocus();
         return;
     }

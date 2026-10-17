@@ -12,6 +12,7 @@ void SingleLineEditWindow::Validate()
     {
         Dialogs::MessageBox::ShowError("Error", "Please write something in the comment section !");
         textField->SetFocus();
+        return; // the dialog stays open: an empty text is not accepted
     }
     data = textField->GetText();
     Exit(Dialogs::Result::Ok);

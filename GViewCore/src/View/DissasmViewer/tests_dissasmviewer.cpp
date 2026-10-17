@@ -2289,3 +2289,337 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         REQUIRE(!restored.zone->cacheRecordRejected);
     }
 }
+
+// the function starts found by X86PrologueDetector for the code (file offsets, the code is placed at offset 0)
+static std::vector<uint64> DetectPrologues(const std::vector<unsigned char>& code, bool is64)
+{
+    csh handle;
+    REQUIRE(cs_open(CS_ARCH_X86, is64 ? CS_MODE_64 : CS_MODE_32, &handle) == CS_ERR_OK);
+    cs_insn* insn = cs_malloc(handle);
+    X86PrologueDetector detector(is64);
+    std::vector<uint64> starts;
+    const uint8_t* data = code.data();
+    size_t size         = code.size();
+    uint64_t address    = 0;
+    while (true) {
+        const uint64 offset = address;
+        if (!DecodeX86Line(handle, &data, &size, &address, insn))
+            break;
+        const auto start = detector.Next(*insn, offset);
+        if (start.has_value())
+            starts.push_back(start.value());
+    }
+    cs_free(insn, 1);
+    cs_close(&handle);
+    return starts;
+}
+
+TEST_CASE("PrologueDetection", "[Dissasm]Functions")
+{
+    // x64 MSVC: the home space save right after the int3 padding of the previous function
+    REQUIRE(DetectPrologues({ 0xC3, 0xCC, 0xCC, 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57 }, true) == std::vector<uint64>{ 3 });
+    // x64: sub rsp, 0x28 after a ret
+    REQUIRE(DetectPrologues({ 0xC3, 0x48, 0x83, 0xEC, 0x28, 0x90 }, true) == std::vector<uint64>{ 1 });
+    // x64: push rbx; push rsi after nop padding
+    REQUIRE(DetectPrologues({ 0x90, 0x53, 0x56, 0x48, 0x83, 0xEC, 0x20 }, true) == std::vector<uint64>{ 1 });
+    // x64: push rbp; mov rbp, rsp anywhere (the frame pointer setup)
+    REQUIRE(DetectPrologues({ 0x48, 0x31, 0xC0, 0x55, 0x48, 0x89, 0xE5 }, true) == std::vector<uint64>{ 3 });
+    // x64: endbr64 after a jmp
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0xEB, 0x00, 0xF3, 0x0F, 0x1E, 0xFA, 0xC3 }, true) == std::vector<uint64>{ 4 });
+    // x64: the start of the code is a function start
+    REQUIRE(DetectPrologues({ 0x48, 0x83, 0xEC, 0x28, 0xC3 }, true) == std::vector<uint64>{ 0 });
+    // x64: inside the code (no ret / padding before): sub rsp and the stores to [rsp + 0x20] (5th argument) are not prologues
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0x48, 0x83, 0xEC, 0x28, 0x48, 0x89, 0x44, 0x24, 0x20 }, true).empty());
+    // x64: after a jmp only endbr64 starts a function (the code after a jmp is usually the else branch)
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0xEB, 0x00, 0x48, 0x83, 0xEC, 0x28 }, true).empty());
+    // x64: rax is stored to the home space of the callee (outgoing argument), not saved: not a prologue
+    REQUIRE(DetectPrologues({ 0xC3, 0x48, 0x89, 0x44, 0x24, 0x08 }, true).empty());
+
+    // x86: hot patching prologue, the function starts at mov edi, edi
+    REQUIRE(DetectPrologues({ 0xCC, 0x8B, 0xFF, 0x55, 0x8B, 0xEC }, false) == std::vector<uint64>{ 1 });
+    // x86: push ebp; mov ebp, esp anywhere
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0x55, 0x8B, 0xEC }, false) == std::vector<uint64>{ 2 });
+    // x86: push esi; push edi after a ret
+    REQUIRE(DetectPrologues({ 0xC3, 0x56, 0x57, 0x8B, 0x7C, 0x24, 0x0C }, false) == std::vector<uint64>{ 1 });
+    // x86: a single push after padding is not enough (push 0 / push eax are arguments)
+    REQUIRE(DetectPrologues({ 0xC3, 0x56, 0x8B, 0xF1 }, false).empty());
+}
+
+TEST_CASE("PrologueFunctionsLabels", "[Dissasm]Functions")
+{
+    // two x64 functions that are never called directly: both get a sub_ label (the first one is the entry point)
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x0: sub rsp, 0x28 (entry point)
+        0x48, 0x83, 0xC4, 0x28,       // 0x4: add rsp, 0x28
+        0xC3,                         // 0x8: ret
+        0xCC, 0xCC, 0xCC,             // 0x9: padding
+        0x48, 0x89, 0x5C, 0x24, 0x08, // 0xC: mov qword ptr [rsp + 8], rbx
+        0x31, 0xC0,                   // 0x11: xor eax, eax
+        0xC3,                         // 0x13: ret
+    };
+    file.resize(64, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+
+    std::vector<std::pair<uint64, std::string>> labels;
+    for (const auto& [line, details] : dissasmInstance.zone->dissasmType.annotations.mappings)
+        labels.emplace_back(details.second, details.first);
+    REQUIRE(labels.size() == 2);
+    REQUIRE(labels[0] == std::pair<uint64, std::string>{ 0, "EntryPoint" });
+    REQUIRE(labels[1] == std::pair<uint64, std::string>{ 0xC, "sub_0x00000000C" });
+}
+
+TEST_CASE("ZeroBytesInsideTheCode", "[Dissasm]DataLines")
+{
+    // a run of zero bytes between two functions does not end the code; the zeros at the end of the zone (alignment) are not shown
+    std::vector<unsigned char> file = { 0x55, 0x89, 0xE5, 0x5D, 0xC3 }; // push ebp; mov ebp, esp; pop ebp; ret
+    file.resize(file.size() + 100, 0x00);                                 // 50 x add byte ptr [eax], al
+    const size_t secondFunction = file.size();
+    file.insert(file.end(), { 0x55, 0x89, 0xE5, 0x5D, 0xC3 });
+    file.resize(file.size() + 33, 0x00); // trailing padding: 16 x add byte ptr [eax], al + db 0x00
+
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x86;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // 4 + 50 + 4 instructions: the second function is decoded, the trailing zeros are not
+    REQUIRE(zone.asmLinesCount == 4 + 50 + 4);
+    bool foundSecondFunction = false;
+    for (const auto& [line, details] : zone.dissasmType.annotations.mappings)
+        foundSecondFunction |= details.second == secondFunction;
+    REQUIRE(foundSecondFunction);
+}
+
+TEST_CASE("StringPreview", "[Dissasm]Strings")
+{
+    std::vector<unsigned char> file(64, 0);
+    const char ascii[] = "Hello world";
+    memcpy(file.data() + 4, ascii, sizeof(ascii));
+    const char16_t wide[] = u"Wide text";
+    memcpy(file.data() + 20, wide, sizeof(wide));
+    file[50] = 'a'; // too short to be a string
+    file[51] = 'b';
+    file.resize(256, 0xCC);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size());
+    Reference<GView::Object> obj = &dissasmInstance.objects[0];
+    REQUIRE(TryExtractStringPreview(obj, 4) == std::optional<std::string>("\"Hello world\""));
+    REQUIRE(TryExtractStringPreview(obj, 10) == std::optional<std::string>("\"world\""));
+    REQUIRE(TryExtractStringPreview(obj, 20) == std::optional<std::string>("L\"Wide text\""));
+    REQUIRE(!TryExtractStringPreview(obj, 50).has_value());
+    REQUIRE(!TryExtractStringPreview(obj, 0).has_value());   // zeros
+    REQUIRE(!TryExtractStringPreview(obj, 100).has_value()); // int3 bytes are not printable
+}
+
+TEST_CASE("AsmListingExport", "[Dissasm]Export")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x0: sub rsp, 0x28 (entry point)
+        0xE8, 0x07, 0x00, 0x00, 0x00, // 0x4: call 0x10
+        0x48, 0x83, 0xC4, 0x28,       // 0x9: add rsp, 0x28
+        0xC3,                         // 0xD: ret
+        0xCC, 0xCC,                   // 0xE: padding
+        0x31, 0xC0,                   // 0x10: xor eax, eax
+        0xC3,                         // 0x12: ret
+    };
+    file.resize(32, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // line 0: EntryPoint, 1: sub rsp, 2: call
+    REQUIRE(dissasmInstance.CheckLineText(2, "call 0x10"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(2, "calls the helper"));
+
+    SettingsData settings;
+    AsmData asmData;
+    std::string listing;
+    REQUIRE(BuildX86AsmListing(zone, &dissasmInstance.objects[0], &settings, &asmData, listing));
+    INFO(listing);
+    REQUIRE(listing.starts_with("; GView disassembly listing (x64)"));
+    REQUIRE(listing.find("\nEntryPoint:\n0x00000000  sub    rsp, 0x28\n") != std::string::npos);
+    // the call uses the label of its target and keeps the comment of the user
+    const auto callLine = listing.find("0x00000004  call   sub_0x000000010");
+    REQUIRE(callLine != std::string::npos);
+    const auto callLineEnd = listing.find('\n', callLine);
+    REQUIRE(listing.substr(callLine, callLineEnd - callLine).ends_with("; calls the helper"));
+    REQUIRE(listing.find("\nsub_0x000000010:\n0x00000010  xor    eax, eax\n") != std::string::npos);
+    // every line of the zone is written: 2 labels + all the instructions
+    REQUIRE(GetCodeZoneLinesCount(zone) == zone.asmLinesCount + 2);
+}
+
+TEST_CASE("DissasmCacheFilePath", "[Dissasm]Cache")
+{
+    // next to the analysed file
+    REQUIRE(DissasmCache::GetCacheFilePath(u"/samples/a.exe", true) == std::filesystem::path(u"/samples/a.exe.dissasm.cache"));
+
+    // in the cache folder of the user: one file per analysed file (it used to be one "..dissasm.cache" file shared by every file)
+    const std::filesystem::path folder = u"/cache";
+    const auto first                   = DissasmCache::GetCacheFilePath(u"/samples/a.exe", false, folder);
+    const auto second                  = DissasmCache::GetCacheFilePath(u"/other/a.exe", false, folder);
+    REQUIRE(first.parent_path() == folder);
+    REQUIRE(first.filename().u8string().starts_with(u8"a.exe."));
+    REQUIRE(first.filename().u8string().ends_with(u8".dissasm.cache"));
+    REQUIRE(first != second);
+    REQUIRE(first == DissasmCache::GetCacheFilePath(u"/samples/a.exe", false, folder)); // the same file every time
+}
+
+TEST_CASE("DissasmCacheFileSave", "[Dissasm]Cache")
+{
+    std::error_code ec;
+    const auto folder = std::filesystem::temp_directory_path(ec) / ("gview_dissasm_cache_test_" + std::to_string(reinterpret_cast<uintptr_t>(&ec)));
+    REQUIRE(std::filesystem::create_directories(folder, ec));
+    const auto cachePath = folder / "sub" / "file.dissasm.cache"; // the folder of the cache file is created
+
+    const std::byte firstData[]  = { std::byte{ 1 }, std::byte{ 2 }, std::byte{ 3 } };
+    const std::byte secondData[] = { std::byte{ 9 } };
+
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("first", firstData, sizeof(firstData)));
+    REQUIRE(cache.SaveCacheFile(cachePath.u16string()));
+    REQUIRE(!std::filesystem::exists(cachePath.string() + ".tmp", ec)); // replaced the cache file
+
+    DissasmCache loaded;
+    REQUIRE(loaded.LoadCacheFile(cachePath.u16string()));
+    REQUIRE(loaded.zonesData.size() == 1);
+    REQUIRE(loaded.zonesData["first"].size == sizeof(firstData));
+    REQUIRE(memcmp(loaded.zonesData["first"].data.get(), firstData, sizeof(firstData)) == 0);
+
+    // a cache file that could not be used is copied before it is overwritten
+    DissasmCache replacement;
+    replacement.keepBackupOnSave = true;
+    REQUIRE(replacement.AddRegion("second", secondData, sizeof(secondData)));
+    REQUIRE(replacement.SaveCacheFile(cachePath.u16string()));
+    REQUIRE(!replacement.keepBackupOnSave); // only once
+    DissasmCache backup;
+    REQUIRE(backup.LoadCacheFile((cachePath.u16string() + u".bak")));
+    REQUIRE(backup.zonesData.contains("first"));
+    DissasmCache current;
+    REQUIRE(current.LoadCacheFile(cachePath.u16string()));
+    REQUIRE(current.zonesData.contains("second"));
+
+    std::filesystem::remove_all(folder, ec);
+}
+
+// a cache file with the records written as they are (name, data); `version` is written as the version record when it is not 0
+static bool WriteRawCacheFile(const std::filesystem::path& path, uint32 version, const std::vector<std::pair<std::string, std::vector<uint8>>>& records)
+{
+    std::vector<uint8> data;
+    auto appendU32 = [&data](uint32 value) {
+        const auto bytes = reinterpret_cast<const uint8*>(&value);
+        data.insert(data.end(), bytes, bytes + sizeof(value));
+    };
+    appendU32(static_cast<uint32>(records.size()) + (version != 0 ? 1u : 0u));
+    if (version != 0) {
+        appendU32(static_cast<uint32>(DISSASM_CACHE_VERSION_RECORD.size()));
+        data.insert(data.end(), DISSASM_CACHE_VERSION_RECORD.begin(), DISSASM_CACHE_VERSION_RECORD.end());
+        appendU32(sizeof(version));
+        appendU32(version);
+    }
+    for (const auto& [name, value] : records) {
+        appendU32(static_cast<uint32>(name.size()));
+        data.insert(data.end(), name.begin(), name.end());
+        appendU32(static_cast<uint32>(value.size()));
+        data.insert(data.end(), value.begin(), value.end());
+    }
+    AppCUI::OS::File file;
+    const bool written = file.Create(path, true) && file.Write(data.data(), static_cast<uint32>(data.size()));
+    file.Close();
+    return written;
+}
+
+TEST_CASE("DissasmCacheFileVersions", "[Dissasm]Cache")
+{
+    static_assert(DISSASM_CACHE_OLDEST_LOADABLE_VERSION <= DISSASM_CACHE_VERSION);
+    std::error_code ec;
+    const auto folder = std::filesystem::temp_directory_path(ec) / ("gview_dissasm_cache_versions_" + std::to_string(reinterpret_cast<uintptr_t>(&ec)));
+    REQUIRE(std::filesystem::create_directories(folder, ec));
+    const auto path = folder / "file.dissasm.cache";
+
+    // the files written before the version record are version 1
+    REQUIRE(WriteRawCacheFile(path, 0, { { "zone", { 1, 2, 3 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(cache.LoadCacheFile(path.u16string()));
+        REQUIRE(cache.fileVersion == 1);
+        REQUIRE(cache.zonesData.size() == 1);
+    }
+    // the current version: the version record is not a zone record
+    REQUIRE(WriteRawCacheFile(path, DISSASM_CACHE_VERSION, { { "zone", { 1, 2, 3 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(cache.LoadCacheFile(path.u16string()));
+        REQUIRE(cache.fileVersion == DISSASM_CACHE_VERSION);
+        REQUIRE(cache.zonesData.size() == 1);
+        REQUIRE(!cache.zonesData.contains(std::string(DISSASM_CACHE_VERSION_RECORD)));
+    }
+    // a file written by a newer version is not loaded
+    REQUIRE(WriteRawCacheFile(path, DISSASM_CACHE_VERSION + 1, { { "zone", { 1, 2, 3 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(!cache.LoadCacheFile(path.u16string()));
+    }
+    // a version record that is not a 32 bit number
+    REQUIRE(WriteRawCacheFile(path, 0, { { std::string(DISSASM_CACHE_VERSION_RECORD), { 2, 0 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(!cache.LoadCacheFile(path.u16string()));
+    }
+    // the saved files have the current version
+    {
+        DissasmCache cache;
+        const std::byte data[] = { std::byte{ 7 } };
+        REQUIRE(cache.AddRegion("zone", data, sizeof(data)));
+        REQUIRE(cache.SaveCacheFile(path.u16string()));
+        DissasmCache loaded;
+        REQUIRE(loaded.LoadCacheFile(path.u16string()));
+        REQUIRE(loaded.fileVersion == DISSASM_CACHE_VERSION);
+        REQUIRE(loaded.zonesData.size() == 1);
+    }
+    std::filesystem::remove_all(folder, ec);
+}
+
+TEST_CASE("DissasmCacheZoneValidation", "[Dissasm]Cache")
+{
+    // a zone bigger than the data cache window: the version 1 record hashes the first window, version 2 adds the hash of the whole zone
+    std::vector<unsigned char> file(256 * 1024, 0x90); // nop
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.cacheSize  = 64 * 1024;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    Reference<GView::Object> obj = &dissasmInstance.objects[0];
+
+    SettingsData settings;
+    settings.disassemblyZones[0] = DisassemblyZone{ 0, file.size(), 0, DisassemblyLanguage::x86 };
+    DissasmCache cache;
+    REQUIRE(settings.SaveToCache(cache, obj));
+    REQUIRE(cache.zonesData.contains("DisassemblyZone.0"));
+    REQUIRE(cache.zonesData.contains("DisassemblyZoneHash.0"));
+    // the hashes (the first 32 characters) differ: the whole zone is hashed, not only the first window
+    REQUIRE(memcmp(cache.zonesData["DisassemblyZone.0"].data.get(), cache.zonesData["DisassemblyZoneHash.0"].data.get(), 32) != 0);
+
+    cache.fileVersion = DISSASM_CACHE_VERSION;
+    REQUIRE(settings.ValidateCacheData(cache, obj));
+
+    // a whole zone hash that does not match: the zone changed after its first window
+    cache.zonesData["DisassemblyZoneHash.0"].data[0] ^= std::byte{ 1 };
+    REQUIRE(!settings.ValidateCacheData(cache, obj));
+    // a version 1 file has no whole zone hash: the first window is checked (as the readers of version 1 do)
+    cache.fileVersion = 1;
+    REQUIRE(settings.ValidateCacheData(cache, obj));
+    cache.zonesData.erase("DisassemblyZoneHash.0");
+    REQUIRE(settings.ValidateCacheData(cache, obj));
+    // a version 2 file without the whole zone hash is not valid
+    cache.fileVersion = DISSASM_CACHE_VERSION;
+    REQUIRE(!settings.ValidateCacheData(cache, obj));
+}

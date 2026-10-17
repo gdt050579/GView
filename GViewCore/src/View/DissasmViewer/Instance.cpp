@@ -170,7 +170,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     if ((_settings) && (_settings->data)) {
         // move settings data pointer
         this->settings.reset((SettingsData*) _settings->data);
-        //_settings->data = nullptr; //TODO: is this ok?
+        _settings->data = nullptr; // owned by the viewer now: the plugin settings must not use (or free) it again
     } else {
         this->settings.reset(new SettingsData());
     }
@@ -492,7 +492,7 @@ void Instance::RenameLabel()
 
     uint32 startingLine = zonesFound[0].startingLine;
     if (startingLine == 0 || startingLine == 1) {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line inside the dissasm zone to rename it, not the title!");
         return;
     }
     startingLine--;
@@ -837,7 +837,12 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
         if (isSignedValue) {
             int64 value;
             memcpy(&value, buffer, sizeof(value));
-            AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), value);
+            // Int8 / Int16 / Int32: the bytes after the field are zero, the sign of the field is extended (-1 was shown as 255)
+            if (typeSize < sizeof(value)) {
+                const uint32 unusedBits = static_cast<uint32>(sizeof(value) - typeSize) * 8u;
+                value                   = static_cast<int64>(static_cast<uint64>(value) << unusedBits) >> unusedBits;
+            }
+            AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), static_cast<long long>(value));
         } else {
             uint64 value;
             memcpy(&value, buffer, sizeof(value));
@@ -1279,7 +1284,16 @@ bool Instance::ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb)
     AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::PrintableAscii);
     for (uint32 i = 0; i < selection.GetCount(); i++) {
         if (selection.HasSelection(i)) {
-            found_data       = true;
+            found_data = true;
+            std::string codeText;
+            if (TryGetCodeZoneSelectionText(i, codeText)) {
+                for (const char c : codeText) {
+                    FixSizeString<1> cc;
+                    CHECK(cc.AddChar(c == '\n' ? c : static_cast<char>(cp[static_cast<uint8>(c)] & 0xFF)), false, "");
+                    CHECK(usb.Add(cc), false, "");
+                }
+                continue;
+            }
             auto storageData = selection.GetStorage(i);
             for (const auto c : *storageData) {
                 FixSizeString<1> cc;
@@ -1505,7 +1519,7 @@ bool Instance::ShowCopyDialog()
 
     if (GView::App::SetClipboardText(usb) == false) {
         LocalString<128> message;
-        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", obj->GetData().GetSize(), 100), false, "");
+        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", static_cast<unsigned long long>(obj->GetData().GetSize()), 100ull), false, "");
         Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
         return false;
     }
@@ -1643,6 +1657,13 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line)
     }
 }
 
+void Instance::RefreshDrawnLines()
+{
+    for (const auto& codeZone : asmData.zonesToClear)
+        codeZone->asmPreCacheData.Clear();
+    drawnLinesGeneration++; // the columns of the numbers under the cursor moved
+}
+
 Instance::~Instance()
 {
     while (!settings->buffersToDelete.empty()) {
@@ -1652,8 +1673,9 @@ Instance::~Instance()
     }
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails, DissasmComments& comments)
+void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails)
 {
+    // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
         return;
     constexpr uint32 MAX_LINE_DIFF = 10;
@@ -1667,18 +1689,14 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
         if (it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             continue;
 
-        LocalString<128> commentResult;
-        commentResult.SetFormat("%s", functionDetails->params[pushIndex].name);
-        std::string foundComment;
-        if (comments.GetComment(it->currentLine, foundComment)) {
-            if (foundComment.starts_with(commentResult.GetText())) {
-                pushesRemaining--;
-                pushIndex++;
-                continue;
-            }
-            commentResult.AddFormat(" %s", foundComment.c_str());
+        std::string text = functionDetails->params[pushIndex].name;
+        if (!it->autoComment.empty() && !it->autoComment.starts_with(text)) {
+            text += ' ';
+            text += it->autoComment; // lpFileName "C:\\file.txt"
+            it->autoComment = std::move(text);
+        } else if (it->autoComment.empty()) {
+            it->autoComment = std::move(text);
         }
-        comments.AddOrUpdateComment(it->currentLine, commentResult.GetText());
         pushesRemaining--;
         pushIndex++;
     }
@@ -1828,6 +1846,12 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         return;
     }
     QuerySmartAssistantParams params = {};
+    if (lineEnd >= lineStart && (queryType == QueryTypeSmartAssistant::ExplainCode || queryType == QueryTypeSmartAssistant::ConvertToHighLevel)) {
+        // the selected code: from the first selected line to the last one
+        params.startsAtSelectedLine = true;
+        params.maxLines             = lineEnd - lineStart + 1u;
+    }
+    const char* architectureName = convertedZone->zoneDetails.language == DisassemblyLanguage::x64 ? "x64" : "x86";
     if (queryType == QueryTypeSmartAssistant::FunctionName) {
         params.mnemonicStarsWith              = "sub_";
         params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "
@@ -1847,12 +1871,16 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         params.displayPrompt = "Explain the selected code";
-        params.prompt = "Explain what this x86/x84 assembly code does. Please also add a new section at the end for comments where you explain each line "
-                        "in order and suggest "
-                        "maximum 8 words for comments describing what happens in than line. Please mark the new section by writing CommentsZoneExplained and "
-                        "then on the new line they start."
-                        "The format for the this section should be instruction found separated by # character and then the comment without additional special "
-                        "characters.";
+        LocalString<640> prompt;
+        prompt.SetFormat(
+              "Explain what this %s assembly code does. Please also add a new section at the end for comments where you explain each line "
+              "in order and suggest "
+              "maximum 8 words for comments describing what happens in that line. Please mark the new section by writing CommentsZoneExplained and "
+              "then on the new line they start. "
+              "The format for this section should be the instruction found, separated by the # character, and then the comment without additional "
+              "special characters.",
+              architectureName);
+        params.prompt = prompt.GetText();
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         params.displayPrompt                  = "Decompile the following assembly into a higher level language.";

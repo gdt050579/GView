@@ -41,6 +41,16 @@ struct DissasmCodeZone : public ParseZone {
     // the cache had a record for this zone that could not be applied to the analysis: it is kept aside on save (not overwritten)
     bool cacheRecordRejected = false;
 
+    DissasmCodeZone() = default;
+    // owns the capstone handle
+    DissasmCodeZone(const DissasmCodeZone&)            = delete;
+    DissasmCodeZone& operator=(const DissasmCodeZone&) = delete;
+    ~DissasmCodeZone() override;
+
+    // x86/x64: the capstone handle that decodes the lines, opened once (in the mode of the zone) and closed with the zone; 0 when capstone
+    // can not open it
+    csh GetDecodeHandle();
+
     void ResetZoneCaching();
     bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
     bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
@@ -105,6 +115,15 @@ struct DissasmCodeZone : public ParseZone {
     bool ToBuffer(std::vector<std::byte>& buffer) const;
     // `zoneLinesChanged` is set when the cache removed lines (deleted local variables), the zone size must be adjusted
     bool TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesChanged);
+
+  private:
+    csh decodeHandle = 0;
 };
+
+// the lines of the zone as they are shown (without the title), the collapsed zones count as one line
+uint32 GetCodeZoneLinesCount(const DissasmCodeZone& zone);
+// the listing of an initialized x86/x64 code zone (an .asm file): the lines as they are shown (labels, local variables, jump / call targets
+// with their labels, import names) with the comments of the user and the generated comments
+bool BuildX86AsmListing(DissasmCodeZone& zone, Reference<GView::Object> obj, SettingsData* settings, AsmData* asmData, std::string& listing);
 
 } // namespace GView::View::DissasmViewer

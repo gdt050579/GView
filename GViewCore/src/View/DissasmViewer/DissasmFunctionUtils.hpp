@@ -72,6 +72,36 @@ class DissasmCodeLinesWalker
     }
 };
 
+// the text found at `offset`, quoted: "ascii" or L"utf-16" (printable characters, at least DISSASM_MINIMUM_STRING_PREVIEW of them, until a
+// NUL or the first non printable character); none when the bytes do not look like a string
+std::optional<std::string> TryExtractStringPreview(Reference<GView::Object> obj, AppCUI::uint64 offset);
+
+// Recognizes the functions that are not reached by a direct call (callbacks, virtual methods, exports) by their prologue. It is fed with
+// every decoded line of the code, in order (DecodeX86Line); Next returns the file offset of a function start once a prologue is complete:
+//  - push ebp / rbp; mov ebp, esp / rbp, rsp                          anywhere (the frame pointer setup)
+//  - at the start of the code or right after a ret / padding (int3, nop, undecodable bytes, zeros):
+//      x86: mov edi, edi; push ebp; mov ebp, esp (hot patching)
+//      x64: mov qword ptr [rsp + 8..0x20], rcx/rdx/r8/r9/rbx/rsi/rdi/rbp (home space), sub rsp, N, mov rax / r11, rsp
+//      push <callee saved register> followed by a push, sub esp / rsp or mov ebp, esp / rbp, rsp
+//      push ebp / rbp followed by a push or sub esp / rsp (frame pointer saved, not used)
+//  - endbr32 / endbr64 after a ret, a jmp or padding
+class X86PrologueDetector
+{
+    enum class Pending : uint8 { None, FramePush, SavedRegisterPush, HotPatch };
+    bool is64;
+    bool afterPadding = true; // start of the code, or the previous line ends the code flow (ret) or is padding
+    bool afterJump    = false;
+    Pending pending   = Pending::None;
+    bool pendingAfterPadding = false;
+    AppCUI::uint64 pendingOffset = 0;
+
+  public:
+    explicit X86PrologueDetector(bool is64) : is64(is64)
+    {
+    }
+    std::optional<AppCUI::uint64> Next(const cs_insn& insn, AppCUI::uint64 fileOffset);
+};
+
 cs_insn* GetCurrentInstructionByOffset(
       uint64 offsetToReach,
       GView::View::DissasmViewer::DissasmCodeZone* zone,

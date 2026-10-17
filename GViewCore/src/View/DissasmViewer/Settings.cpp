@@ -29,7 +29,7 @@ void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zone
 void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType)
 {
 #ifndef DISSASM_DISABLE_API_CALLS
-    INTERNAL_SETTINGS->memoryMappings.insert({ address, { name.data(), mappingType } });
+    INTERNAL_SETTINGS->memoryMappings.insert({ address, { std::string(name), mappingType } }); // a string_view is not NUL terminated
 #endif
     if (address > INTERNAL_SETTINGS->maxLocationMemoryMappingSize)
         INTERNAL_SETTINGS->maxLocationMemoryMappingSize = address;

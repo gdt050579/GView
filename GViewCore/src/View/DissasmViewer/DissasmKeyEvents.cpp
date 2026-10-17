@@ -136,7 +136,16 @@ void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Ke
             const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
             MoveTo(offsetDiff, linesDiff, keyCode, false);
         } else if (button == MouseButton::Right) {
-            // rightClickOffset = mpInfo.bufferOffset;
+            // the menu acts on the clicked line (it acted on the line of the cursor); a click inside the selection keeps it (the selection
+            // based actions: collapsible zones, assistant)
+            const uint32 clickedLine = Cursor.startViewLine + mpInfo.lines;
+            const bool insideSelection =
+                  selection.HasSelection(0) && selection.GetSelectionStart(0).line <= clickedLine && clickedLine <= selection.GetSelectionEnd(0).line;
+            if (!insideSelection && (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset)) {
+                const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
+                const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
+                MoveTo(offsetDiff, linesDiff, Key::None, false);
+            }
             rightClickMenu.Show(this, x, y);
         }
     } else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty()) {
@@ -197,7 +206,8 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
             MoveTo(-1, 0, Key::Left, select);
         return true;
     case COMMAND_NAV_RIGHT:
-        if (this->Cursor.offset < this->Layout.textSize)
+        // the last column is textSize - 1: a cursor placed after it was converted to the first column of the next line
+        if (this->Cursor.offset + 1 < this->Layout.textSize)
             MoveTo(1, 0, Key::Right, select);
         return true;
     case COMMAND_NAV_PAGE_DOWN:
@@ -232,7 +242,7 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
             MoveScrollTo(-1, 0);
         return true;
     case COMMAND_NAV_SCROLL_RIGHT:
-        if (this->Cursor.offset < Layout.textSize)
+        if (this->Cursor.offset + 1 < Layout.textSize)
             MoveScrollTo(1, 0);
         return true;
     case COMMAND_NAV_SPACE:
@@ -300,6 +310,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
+            RefreshDrawnLines();
             return true;
         // case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
         //     AddNewCollapsibleTextZone();

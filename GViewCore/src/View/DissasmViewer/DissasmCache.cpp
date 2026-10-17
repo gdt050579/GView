@@ -31,43 +31,117 @@ bool DissasmCache::AddRegion(std::string regionName, const std::byte* data, AppC
     return true;
 }
 
-std::filesystem::path DissasmCache::GetCacheFilePath(std::u16string_view fileLocation, bool cacheSameLocationAsAnalyzedFile)
+// the cache folder of the user: %LOCALAPPDATA%\GView\DissasmCache, $XDG_CACHE_HOME/gview/dissasm or ~/.cache/gview/dissasm
+static std::filesystem::path GetDefaultUserCacheFolder()
 {
-    constexpr char16 currentLoc  = '.';
-    const auto cacheDataLocation = cacheSameLocationAsAnalyzedFile ? fileLocation : std::u16string_view(&currentLoc, 1);
+#ifdef _WIN32
+    wchar_t* localAppData = nullptr;
+    size_t length         = 0;
+    std::filesystem::path folder;
+    if (_wdupenv_s(&localAppData, &length, L"LOCALAPPDATA") == 0 && localAppData && *localAppData)
+        folder = std::filesystem::path(localAppData) / "GView" / "DissasmCache";
+    free(localAppData);
+    return folder;
+#else
+    const char* xdgCache = getenv("XDG_CACHE_HOME");
+    if (xdgCache && *xdgCache)
+        return std::filesystem::path(xdgCache) / "gview" / "dissasm";
+    const char* home = getenv("HOME");
+    if (home && *home)
+        return std::filesystem::path(home) / ".cache" / "gview" / "dissasm";
+    return {};
+#endif
+}
 
-    std::filesystem::path path = cacheDataLocation;
-    path += ".dissasm.cache";
+std::filesystem::path DissasmCache::GetCacheFilePath(
+      std::u16string_view fileLocation, bool cacheSameLocationAsAnalyzedFile, const std::filesystem::path& userCacheFolder)
+{
+    std::filesystem::path analysedFile = fileLocation;
+    const auto folder                  = cacheSameLocationAsAnalyzedFile ? std::filesystem::path{}
+                                                                         : (userCacheFolder.empty() ? GetDefaultUserCacheFolder() : userCacheFolder);
+    if (folder.empty()) {
+        // next to the analysed file (also when the user has no cache folder: a single file shared by every analysed file mixed them)
+        analysedFile += ".dissasm.cache";
+        return analysedFile;
+    }
+
+    // one file per analysed file: the file name and a hash (FNV-1a) of the full path, so files with the same name do not share it
+    uint64 hash = 14695981039346656037ull;
+    for (const char16 c : fileLocation) {
+        hash ^= static_cast<uint64>(c);
+        hash *= 1099511628211ull;
+    }
+    LocalString<32> suffix;
+    suffix.SetFormat(".%016llx.dissasm.cache", static_cast<unsigned long long>(hash));
+    auto path = folder / analysedFile.filename();
+    path += suffix.GetText();
     return path;
 }
-    
+
 bool DissasmCache::SaveCacheFile(std::u16string_view location)
 {
     if (zonesData.empty())
         return false;
     const std::filesystem::path filePath(location.begin(), location.end());
-    bool created = cacheFile.Create(filePath, true);
-    if (!created)
+    std::error_code ec;
+    if (filePath.has_parent_path())
+        std::filesystem::create_directories(filePath.parent_path(), ec); // the cache folder of the user may not exist yet
+
+    // a cache file that could not be loaded is kept (it may hold the annotations of another version of the analysed file)
+    if (keepBackupOnSave && std::filesystem::exists(filePath, ec)) {
+        auto backupPath = filePath;
+        backupPath += ".bak";
+        std::filesystem::copy_file(filePath, backupPath, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec)
+            return false; // never overwrite it without its copy
+        keepBackupOnSave = false;
+    }
+
+    auto temporaryPath = filePath;
+    temporaryPath += ".tmp";
+    if (!cacheFile.Create(temporaryPath, true))
         return false;
-    const uint32 zonesCount = (uint32) zonesData.size();
+    bool written            = true;
+    auto write              = [this, &written](const void* data, uint32 size) { written = written && (size == 0 || cacheFile.Write(data, size)); };
+    zonesData.erase(std::string(DISSASM_CACHE_VERSION_RECORD)); // written below, once
+    const uint32 zonesCount = (uint32) zonesData.size() + 1u;
     uint32 entrySize;
-    cacheFile.Write((const char*) &zonesCount, sizeof(zonesCount));
+    write(&zonesCount, sizeof(zonesCount));
+
+    // the version record: a record as the others, the readers that do not know it ignore it
+    entrySize = static_cast<uint32>(DISSASM_CACHE_VERSION_RECORD.size());
+    write(&entrySize, sizeof(entrySize));
+    write(DISSASM_CACHE_VERSION_RECORD.data(), entrySize);
+    const uint32 version = DISSASM_CACHE_VERSION;
+    entrySize            = sizeof(version);
+    write(&entrySize, sizeof(entrySize));
+    write(&version, sizeof(version));
+
     for (auto& [name, entry] : zonesData) {
         entrySize = (uint32) name.size();
-        cacheFile.Write((const char*) &entrySize, sizeof(entrySize));
-        cacheFile.Write(name.data(), entrySize);
+        write(&entrySize, sizeof(entrySize));
+        write(name.data(), entrySize);
 
         entrySize = entry.size;
-        cacheFile.Write((const char*) &entrySize, sizeof(entrySize));
-        cacheFile.Write(reinterpret_cast<const char*>(entry.data.get()), entry.size);
+        write(&entrySize, sizeof(entrySize));
+        write(entry.data.get(), entry.size);
     }
     cacheFile.Close();
+    std::error_code renameError;
+    if (written)
+        std::filesystem::rename(temporaryPath, filePath, renameError); // replaces the previous cache file
+    if (!written || renameError) {
+        std::filesystem::remove(temporaryPath, ec);
+        return false;
+    }
+    fileVersion = DISSASM_CACHE_VERSION;
     return true;
 }
 
 bool DissasmCache::LoadCacheFile(std::u16string_view location)
 {
     const std::filesystem::path filePath(location.begin(), location.end());
+    fileVersion       = 1; // the files written before the version record
     const bool opened = cacheFile.OpenRead(filePath);
     if (!opened)
         return false;
@@ -115,21 +189,37 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
         const auto entryData = buffer.data() + offset;
         offset += entrySize;
 
+        if (entryName == DISSASM_CACHE_VERSION_RECORD) {
+            if (entrySize != sizeof(fileVersion))
+                return false;
+            memcpy(&fileVersion, entryData, sizeof(fileVersion));
+            continue; // not a zone record
+        }
         auto newCacheEntry = DissasmCacheEntry{ std::make_unique<std::byte[]>(entrySize), entrySize };
         memcpy(newCacheEntry.data.get(), entryData, entrySize);
         zonesData.emplace(entryName, std::move(newCacheEntry));
     }
-    return true;
+    // a file written by a newer version may use a format this version does not know: it is not loaded (nor overwritten without a copy)
+    return fileVersion >= DISSASM_CACHE_OLDEST_LOADABLE_VERSION && fileVersion <= DISSASM_CACHE_VERSION;
 }
 
-bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj) const
+bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj, bool hashWholeZone) const
 {
     Hashes::OpenSSLHash hash(Hashes::OpenSSLHashKind::Md5);
-    const auto zoneData = obj->GetData().Get(startingZonePoint, (uint32) size, false);
-    if (zoneData.Empty())
-        return false;
-    if (!hash.Update(zoneData.GetData(), (uint32) zoneData.GetLength()))
-        return false;
+    // the data cache returns at most one window: the whole zone is hashed window after window (the caches saved before hashed only the
+    // first window, ValidateCacheData still accepts them)
+    const uint64 fileSize = obj->GetData().GetSize();
+    const uint64 end      = startingZonePoint < fileSize ? std::min(fileSize, startingZonePoint + std::min(size, fileSize)) : startingZonePoint;
+    uint64 position       = startingZonePoint;
+    do {
+        const uint64 remaining = end > position ? end - position : 0;
+        const auto zoneData    = obj->GetData().Get(position, static_cast<uint32>(std::min<uint64>(remaining, UINT32_MAX)), false);
+        if (zoneData.Empty())
+            return false;
+        if (!hash.Update(zoneData.GetData(), (uint32) zoneData.GetLength()))
+            return false;
+        position += zoneData.GetLength();
+    } while (hashWholeZone && position < end);
     const auto hashValue = hash.GetHexValue();
     buffer.reserve(hashValue.size() + sizeof(DisassemblyZone));
     buffer.clear();
@@ -253,12 +343,12 @@ void Instance::LoadCacheData()
     if (GView::Security::Learning::Hooks::IsMemoryOnlyObject(obj))
         return;
     const std::filesystem::path path = DissasmCache::GetCacheFilePath(obj->GetPath(), config.CacheSameLocationAsAnalyzedFile);
-    if (!cacheData.LoadCacheFile(path.u16string())) {
+    std::error_code ec;
+    const bool cacheFileExists = std::filesystem::exists(path, ec);
+    if (!cacheData.LoadCacheFile(path.u16string()) || !settings->ValidateCacheData(cacheData, obj)) {
         cacheData.ClearCache(true);
-        return;
-    }
-    if (!settings->ValidateCacheData(cacheData, obj)) {
-        cacheData.ClearCache(true);
+        // the next save replaces it: its annotations are kept in a copy instead of being lost
+        cacheData.keepBackupOnSave = cacheFileExists;
         return;
     }
     cacheData.hasCache = true;
@@ -346,9 +436,16 @@ bool SettingsData::SaveToCache(DissasmCache& cache, Reference<GView::Object> obj
     std::vector<std::byte> buffer;
     LocalString<64> zoneName;
     for (auto& [start, zone] : disassemblyZones) {
-        if (!zone.ToBuffer(buffer, obj))
+        // the version 1 record (the hash of the first data cache window): the readers of version 1 still validate the file
+        if (!zone.ToBuffer(buffer, obj, false))
             return false;
         zoneName.SetFormat("DisassemblyZone.%llu", start);
+        if (!cache.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+            return false;
+        // version 2: the hash of the whole zone (a change after the first window is found as well)
+        if (!zone.ToBuffer(buffer, obj, true))
+            return false;
+        zoneName.SetFormat("DisassemblyZoneHash.%llu", start);
         if (!cache.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
             return false;
     }
@@ -360,17 +457,24 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
     std::vector<std::byte> buffer;
     LocalString<64> zoneName;
     for (auto& [start, zone] : disassemblyZones) {
+        // every version: the version 1 record (or the raw structure written before the field by field format)
         zoneName.SetFormat("DisassemblyZone.%llu", start);
-        if (!cache.zonesData.contains(zoneName.GetText()))
+        const auto entry = cache.zonesData.find(zoneName.GetText());
+        if (entry == cache.zonesData.end() || !zone.ToBuffer(buffer, obj, false))
             return false;
-        const auto& entry = cache.zonesData[zoneName.GetText()];
-        if (!zone.ToBuffer(buffer, obj))
+        const bool isSameZone = IsSameLegacyDisassemblyZone(entry->second, buffer, zone) ||
+                                (entry->second.size == buffer.size() && memcmp(entry->second.data.get(), buffer.data(), buffer.size()) == 0);
+        if (!isSameZone)
             return false;
-        if (IsSameLegacyDisassemblyZone(entry, buffer, zone))
+
+        // from version 2: the whole zone
+        if (cache.fileVersion < 2)
             continue;
-        if (entry.size != buffer.size())
+        zoneName.SetFormat("DisassemblyZoneHash.%llu", start);
+        const auto hashEntry = cache.zonesData.find(zoneName.GetText());
+        if (hashEntry == cache.zonesData.end() || !zone.ToBuffer(buffer, obj, true))
             return false;
-        if (memcmp(entry.data.get(), buffer.data(), buffer.size()) != 0)
+        if (hashEntry->second.size != buffer.size() || memcmp(hashEntry->second.data.get(), buffer.data(), buffer.size()) != 0)
             return false;
     }
     return true;

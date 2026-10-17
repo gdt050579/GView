@@ -291,6 +291,129 @@ bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* add
     return true;
 }
 
+namespace
+{
+// ret, padding or undecodable bytes: the next line can start a function
+bool IsFlowEndOrPadding(const cs_insn& insn)
+{
+    switch (insn.id) {
+    case X86_INS_INVALID: // db 0x..
+    case X86_INS_RET:
+    case X86_INS_RETF:
+    case X86_INS_RETFQ:
+    case X86_INS_INT3:
+    case X86_INS_HLT:
+    case X86_INS_UD2:
+    case X86_INS_NOP:
+        return true;
+    case X86_INS_ADD: // 00 00: zero padding
+        return strcmp(insn.op_str, "byte ptr [rax], al") == 0 || strcmp(insn.op_str, "byte ptr [eax], al") == 0;
+    default:
+        return false;
+    }
+}
+
+bool IsCalleeSavedRegister(std::string_view reg, bool is64)
+{
+    if (is64)
+        return reg == "rbx" || reg == "rsi" || reg == "rdi" || reg == "rbp" || reg == "r12" || reg == "r13" || reg == "r14" || reg == "r15";
+    return reg == "ebx" || reg == "esi" || reg == "edi" || reg == "ebp";
+}
+
+// mov qword ptr [rsp + 8], rbx: an argument / non volatile register saved in the home space (MSVC x64)
+bool IsHomeSpaceSave(std::string_view operands)
+{
+    constexpr std::string_view prefix = "qword ptr [rsp + ";
+    if (!operands.starts_with(prefix))
+        return false;
+    operands.remove_prefix(prefix.size());
+    for (const std::string_view slot : { "8], ", "0x10], ", "0x18], ", "0x20], " }) {
+        if (!operands.starts_with(slot))
+            continue;
+        const auto reg = operands.substr(slot.size());
+        return reg == "rcx" || reg == "rdx" || reg == "r8" || reg == "r9" || reg == "rbx" || reg == "rsi" || reg == "rdi" || reg == "rbp";
+    }
+    return false;
+}
+} // namespace
+
+std::optional<uint64> X86PrologueDetector::Next(const cs_insn& insn, uint64 fileOffset)
+{
+    const std::string_view operands     = insn.op_str;
+    const std::string_view framePointer = is64 ? "rbp" : "ebp";
+    const std::string_view frameSetup   = is64 ? "rbp, rsp" : "ebp, esp";
+    const std::string_view stackSub     = is64 ? "rsp, " : "esp, ";
+
+    const bool wasAfterPadding = afterPadding;
+    const bool wasAfterJump    = afterJump;
+    afterPadding               = IsFlowEndOrPadding(insn);
+    afterJump                  = insn.id == X86_INS_JMP || insn.id == X86_INS_LJMP;
+
+    // the second line of a prologue
+    const Pending previous = pending;
+    pending                = Pending::None;
+    const bool isPush      = insn.id == X86_INS_PUSH;
+    const bool isStackSub  = insn.id == X86_INS_SUB && operands.starts_with(stackSub);
+    const bool isFrameMov  = insn.id == X86_INS_MOV && operands == frameSetup;
+    switch (previous) {
+    case Pending::FramePush:
+        if (isFrameMov || (pendingAfterPadding && (isPush || isStackSub)))
+            return pendingOffset;
+        break;
+    case Pending::SavedRegisterPush:
+        if (isPush || isStackSub || isFrameMov)
+            return pendingOffset;
+        break;
+    case Pending::HotPatch:
+        if (isPush && operands == framePointer) {
+            pending = Pending::FramePush; // mov edi, edi; push ebp: the function starts at the mov
+            return {};
+        }
+        break;
+    case Pending::None:
+        break;
+    }
+
+    // the first line of a prologue
+    if (isPush && operands == framePointer) {
+        pending             = Pending::FramePush;
+        pendingOffset       = fileOffset;
+        pendingAfterPadding = wasAfterPadding;
+        return {};
+    }
+    if (insn.id == X86_INS_ENDBR32 || insn.id == X86_INS_ENDBR64)
+        return (wasAfterPadding || wasAfterJump) ? std::optional<uint64>(fileOffset) : std::nullopt;
+    if (!wasAfterPadding || afterPadding)
+        return {}; // inside the code, or more padding
+
+    switch (insn.id) {
+    case X86_INS_MOV:
+        if (!is64 && operands == "edi, edi") {
+            pending             = Pending::HotPatch;
+            pendingOffset       = fileOffset;
+            pendingAfterPadding = true;
+            return {};
+        }
+        if (is64 && (IsHomeSpaceSave(operands) || operands == "rax, rsp" || operands == "r11, rsp"))
+            return fileOffset;
+        break;
+    case X86_INS_SUB:
+        if (is64 && isStackSub)
+            return fileOffset;
+        break;
+    case X86_INS_PUSH:
+        if (IsCalleeSavedRegister(operands, is64)) {
+            pending             = Pending::SavedRegisterPush;
+            pendingOffset       = fileOffset;
+            pendingAfterPadding = true;
+        }
+        break;
+    default:
+        break;
+    }
+    return {};
+}
+
 bool DissasmCodeLinesWalker::Next(cs_insn* insn)
 {
     if (address >= codeSize)
@@ -334,12 +457,10 @@ cs_insn* GetCurrentInstructionByOffset(
         return nullptr;
     }
 
-    // TODO: keep the handle open and insn open until the program ends
-    csh handle;
-    const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(zone->internalArchitecture), &handle);
-    if (resCode != CS_ERR_OK) {
+    const csh handle = zone->GetDecodeHandle();
+    if (handle == 0) {
         if (dli)
-            dli->WriteErrorToScreen(cs_strerror(resCode));
+            dli->WriteErrorToScreen("ERROR: capstone could not be initialized!");
         return nullptr;
     }
 
@@ -355,13 +476,11 @@ cs_insn* GetCurrentInstructionByOffset(
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
             cs_free(insn, 1);
-            cs_close(&handle);
             return nullptr;
         }
         diffLines++;
     }
     diffLines += closestData.line - 1;
-    cs_close(&handle);
     return insn;
 }
 

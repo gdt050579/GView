@@ -34,9 +34,11 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
     switch (propertyID) {
     case ShowFileContentConfig:
         config.ShowFileContent = std::get<bool>(value);
+        RecomputeDissasmZones(); // as the command does: the zones of the file content are added / removed
         return true;
     case ShowOnlyDissasmConfig:
         config.ShowOnlyDissasm = std::get<bool>(value);
+        RefreshDrawnLines();
         return true;
     case DeepScanDissasmOnStartConfig:
         config.EnableDeepScanDissasmOnStart = std::get<bool>(value);

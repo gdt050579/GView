@@ -39,6 +39,7 @@ namespace View
         static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 180;
+        static constexpr size_t DISSASM_MINIMUM_STRING_PREVIEW = 3; // shorter texts are rarely strings (random bytes, small numbers)
 
         // x86/x64: a cached offset (zone line <-> file offset) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes of code, so decoding
         // any line never needs more than the bytes between two cached offsets
@@ -57,6 +58,10 @@ namespace View
             std::string_view mnemonicStarsWith, mnemonicStartsWithError;
             std::string_view displayPrompt;
             std::string_view prompt;
+            // selection based queries: the code starts at the selected line (not below a function label) and at most `maxLines`
+            // zone lines are analysed (0 = the default limit)
+            bool startsAtSelectedLine;
+            uint32 maxLines;
         };
 
         struct DisassemblyZone {
@@ -65,7 +70,9 @@ namespace View
             uint64 entryPoint;
             DisassemblyLanguage language;
 
-            bool ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj) const;
+            // the validation record of the zone: the hash of its bytes (`hashWholeZone` false: only the first data cache window, as the
+            // caches saved before did) and its fields
+            bool ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj, bool hashWholeZone = true) const;
         };
 
         enum class InternalDissasmType : uint8 {
@@ -204,6 +211,10 @@ namespace View
             uint32 localVariableNameStart       = 0; // position of the variable name inside op_str
             uint32 localVariableNameSize        = 0;
 
+            // generated text shown after the user comment (referenced string, import, API argument name): recomputed every time the line
+            // is built, never saved and never mixed with the comments of the user
+            std::string autoComment;
+
             uint32 GetLineSize() const
             {
                 return size * 2 + op_str_size;
@@ -258,6 +269,7 @@ namespace View
                 localVariableFunction  = other.localVariableFunction;
                 localVariableNameStart = other.localVariableNameStart;
                 localVariableNameSize  = other.localVariableNameSize;
+                autoComment            = other.autoComment;
             }
         };
 
@@ -336,7 +348,8 @@ namespace View
                 Clear();
             }
 
-            void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails, DissasmComments& comments);
+            // the arguments of a known API: the names of its parameters are added to the automatic comments of the pushes placed before the call
+            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails);
         };
 
         struct DissasmCodeRemovableZoneDetails {
@@ -687,6 +700,9 @@ namespace View
 
             // Utils
             bool ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb);
+            // the text of selection `index` when it is inside one x86/x64 code zone, built from the zone as the lines are drawn (the
+            // selection storage only has the lines that were drawn on the screen)
+            bool TryGetCodeZoneSelectionText(uint32 index, std::string& text);
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             // inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
@@ -722,6 +738,8 @@ namespace View
 
             // hexadecimal <-> decimal operand numbers
             void RefreshCursorLineNumbers();
+            // the display options changed (columns shown): the prepared lines of every drawn zone are built again
+            void RefreshDrawnLines();
             // the number under the cursor, or the only number of the cursor line
             const CursorLineNumber* GetCursorLineNumber();
             void ToggleNumberBase();
