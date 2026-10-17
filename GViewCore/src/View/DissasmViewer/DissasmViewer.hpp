@@ -156,6 +156,8 @@ namespace View
         };
 
         struct DissasmCodeZone;
+        struct X86OperandsInfo;
+        struct MemoryMappingEntry;
         struct DissasmInsnExtractLineParams {
             Reference<GView::Object> obj;
             uint32 asmLine;
@@ -196,6 +198,10 @@ namespace View
             uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
             const void* mapping                   = nullptr;
             bool isCollapsedLine                  = false; // the line of a collapsed zone (it hides the other lines of the zone)
+
+            // the argument of the x64 calling convention written by the instruction (GetX64ArgumentSlot)
+            static constexpr uint8 NO_ARGUMENT = 0xFF;
+            uint8 argumentSlot                 = NO_ARGUMENT;
 
             bool shouldAddButton = false;
             bool isZoneCollapsed = false;
@@ -266,6 +272,7 @@ namespace View
                 isCollapsedLine        = other.isCollapsedLine;
                 shouldAddButton        = other.shouldAddButton;
                 isZoneCollapsed        = other.isZoneCollapsed;
+                argumentSlot           = other.argumentSlot;
                 localVariableKind      = other.localVariableKind;
                 localVariableOffset    = other.localVariableOffset;
                 localVariableFunction  = other.localVariableFunction;
@@ -352,7 +359,9 @@ namespace View
             }
 
             // the arguments of a known API: the names of its parameters are added to the automatic comments of the pushes placed before the call
-            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails);
+            // the arguments of a call to a known function, on the lines prepared before it: the pushes (x86) or the instructions that write
+            // the argument registers / stack slots (x64)
+            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments);
         };
 
         // The lines of a x86/x64 code zone in the expanded layout (every line shown, no zone collapsed): the labels and the local variable
@@ -403,6 +412,8 @@ namespace View
             std::function<bool(uint64)> isFileAddress;
             // the known starts of functions given by the plugin, by file offset (exports, exception data, TLS callbacks); can be null
             const std::map<uint64, DissasmFunctionEntry>* functionEntries = nullptr;
+            // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
+            std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
         };
 
         struct MemoryMappingEntry {
@@ -472,6 +483,8 @@ namespace View
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
             std::deque<DissasmCodeZone*> zonesToClear;
         };
+        // the Windows APIs with known arguments (AnnounceCallInstruction)
+        void AddKnownFunctions(AsmData& asmData);
 
         struct DrawLineInfo {
             const uint8* start;

@@ -1583,16 +1583,19 @@ void Instance::OnStart()
     this->RecomputeDissasmLayout();
     this->RecomputeDissasmZones();
 
+    AddKnownFunctions(asmData);
+    LoadCacheData();
+}
+
+void GView::View::DissasmViewer::AddKnownFunctions(AsmData& asmData)
+{
     GView::Hashes::CRC32 crc32{};
     uint32 hashVal = 0;
     for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++) {
-        if (!crc32.Init(Hashes::CRC32Type::JAMCRC) || !crc32.Update(KNOWN_FUNCTIONS[i].functionName) || !crc32.Final(hashVal)) {
-            // show err
+        if (!crc32.Init(Hashes::CRC32Type::JAMCRC) || !crc32.Update(KNOWN_FUNCTIONS[i].functionName) || !crc32.Final(hashVal))
             return;
-        }
         asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
     }
-    LoadCacheData();
 }
 
 void Instance::RecomputeDissasmLayout()
@@ -1664,30 +1667,56 @@ Instance::~Instance()
     }
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails)
+void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments)
 {
     // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
         return;
-    constexpr uint32 MAX_LINE_DIFF = 10;
-
+    // the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"
+    auto nameArgument = [](DissasmAsmPreCacheLine& line, const char* name) {
+        std::string text = name;
+        if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
+            text += ' ';
+            text += line.autoComment;
+            line.autoComment = std::move(text);
+        } else if (line.autoComment.empty()) {
+            line.autoComment = std::move(text);
+        }
+    };
     const uint32 startingLine = cachedAsmLines.back().currentLine;
-    uint32 pushIndex = 0, pushesRemaining = (uint32) functionDetails->params.size();
+    const auto paramsCount    = static_cast<uint32>(functionDetails->params.size());
 
+    if (registerArguments) {
+        // x64: the last instruction before the call that writes an argument register / stack slot gives that argument; the search stops
+        // at the start of the block (a label, another call, a jmp or ret); a conditional jump continues into the call
+        constexpr uint32 MAX_LINE_DIFF_X64 = 24;
+        constexpr uint32 MAX_ARGUMENTS     = 20;
+        bool named[MAX_ARGUMENTS]          = {};
+        uint32 remaining                   = std::min(paramsCount, MAX_ARGUMENTS);
+        for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
+            const std::string_view mnemonic = it->mnemonic;
+            if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || it->size == 0 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
+                mnemonic == "jmp" || mnemonic == "ret")
+                break;
+            const uint8 slot = it->argumentSlot;
+            if (slot >= paramsCount || slot >= MAX_ARGUMENTS || named[slot])
+                continue;
+            named[slot] = true;
+            remaining--;
+            nameArgument(*it, functionDetails->params[slot].name);
+        }
+        return;
+    }
+
+    // x86: the pushes, the last one is the first argument
+    constexpr uint32 MAX_LINE_DIFF = 10;
+    uint32 pushIndex = 0, pushesRemaining = paramsCount;
     for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && pushesRemaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
         if (it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             continue;
-
-        std::string text = functionDetails->params[pushIndex].name;
-        if (!it->autoComment.empty() && !it->autoComment.starts_with(text)) {
-            text += ' ';
-            text += it->autoComment; // lpFileName "C:\\file.txt"
-            it->autoComment = std::move(text);
-        } else if (it->autoComment.empty()) {
-            it->autoComment = std::move(text);
-        }
+        nameArgument(*it, functionDetails->params[pushIndex].name);
         pushesRemaining--;
         pushIndex++;
     }

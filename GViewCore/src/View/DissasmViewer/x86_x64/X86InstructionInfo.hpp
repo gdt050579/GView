@@ -25,6 +25,10 @@ struct X86OperandsInfo {
 X86Flow GetX86Flow(const cs_insn& insn);
 X86OperandsInfo GetX86OperandsInfo(const cs_insn& insn, bool is64);
 
+// The argument of the Windows x64 calling convention written by the instruction (its first operand): 0-3 for rcx / rdx / r8 / r9 (any size)
+// or xmm0-3, 4 and more for the stack slots [rsp + 0x20 + 8 * n]; none when it writes no argument.
+std::optional<AppCUI::uint8> GetX64ArgumentSlot(const cs_insn& insn);
+
 inline bool IsX86Branch(X86Flow flow)
 {
     return flow == X86Flow::Call || flow == X86Flow::Jump || flow == X86Flow::ConditionalJump;

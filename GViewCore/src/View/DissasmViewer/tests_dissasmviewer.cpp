@@ -270,6 +270,20 @@ struct ZoneLayout {
     std::optional<uint64> labelAddressBase; // the VA of the zone start (the plugins with an offset translation)
     std::function<bool(uint64)> isFileAddress; // the addresses of the file (cross references of the immediates)
     std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
+    std::unordered_map<uint64, MemoryMappingEntry> imports;  // the imports by the RVA of their slot (the VA for x86 without translation)
+    bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
+};
+
+// the RVA (and the VA) of an offset is the offset
+struct TestIdentityTranslation : public GView::View::BufferViewer::OffsetTranslateInterface {
+    uint64_t TranslateToFileOffset(uint64 value, uint32) override
+    {
+        return value;
+    }
+    uint64_t TranslateFromFileOffset(uint64 value, uint32) override
+    {
+        return value;
+    }
 };
 
 class DissasmTestInstance
@@ -281,6 +295,8 @@ class DissasmTestInstance
 
     bool enableLocalVariables;
     ZoneLayout layout;
+    SettingsData settingsData; // the imports of the layout
+    TestIdentityTranslation translation;
 
     DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false, ZoneLayout layout = {})
         : enableLocalVariables(enableLocalVariables), layout(layout)
@@ -335,6 +351,14 @@ class DissasmTestInstance
         initData.labelAddressBase             = layout.labelAddressBase;
         initData.isFileAddress                = layout.isFileAddress;
         initData.functionEntries              = &layout.functionEntries;
+        if (layout.translateOffsets)
+            settingsData.offsetTranslateCallback = &translation;
+        settingsData.memoryMappings = layout.imports;
+        if (!layout.imports.empty()) {
+            auto* settings      = &settingsData;
+            auto* codeZone      = zone.get();
+            initData.findImport = [settings, codeZone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, codeZone, operands); };
+        }
         initData.obj                          = obj;
 
         if (!zone->InitZone(initData)) {
@@ -486,6 +510,17 @@ class DissasmTestInstance
         params.asmData  = &asmData;
         params.zone     = zone.get();
         return zone->GetCurrentAsmLine(line, &objects[0], &params);
+    }
+
+    // the .asm listing with the imports of the layout and the known Windows APIs (their arguments are named)
+    std::string GetListing()
+    {
+        AsmData asmData;
+        AddKnownFunctions(asmData);
+        std::string listing;
+        if (!BuildX86AsmListing(*zone, &objects[0], &settingsData, &asmData, listing))
+            FAIL("DissasmTestInstance: BuildX86AsmListing failed");
+        return listing;
     }
 
     bool CheckDrawnLineText(uint32 line, std::string_view expected)
@@ -2932,4 +2967,109 @@ TEST_CASE("FunctionEntriesFromSeveralSources", "[Dissasm]FunctionEntries")
     REQUIRE(entry.isExport);
     REQUIRE(entry.size == 0x30);
     delete data;
+}
+
+// the text of the listing line that contains `instruction` (empty when there is none)
+static std::string_view FindListingLine(std::string_view listing, std::string_view instruction)
+{
+    const auto position = listing.find(instruction);
+    if (position == std::string_view::npos)
+        return {};
+    const auto start = listing.rfind('\n', position);
+    const auto end   = listing.find('\n', position);
+    const size_t from = start == std::string_view::npos ? 0 : start + 1;
+    return listing.substr(from, (end == std::string_view::npos ? listing.size() : end) - from);
+}
+
+TEST_CASE("ImportThunksX86", "[Dissasm]Thunks")
+{
+    std::vector<unsigned char> file = {
+        0x6A, 0x00,                         // 0x00: push 0 (uType)
+        0x6A, 0x01,                         // 0x02: push 1 (lpCaption)
+        0x6A, 0x02,                         // 0x04: push 2 (lpText)
+        0x6A, 0x03,                         // 0x06: push 3 (hWnd)
+        0xE8, 0x13, 0x00, 0x00, 0x00,       // 0x08: call 0x20 (the thunk)
+        0xC3,                               // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x20: jmp dword ptr [0x401080] (thunk of MessageBoxA)
+    file.resize(0x28, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x28: another thunk of MessageBoxA
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0x8B, 0xC0, 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x30: mov eax, eax; jmp [0x401080] (inside a block: no thunk)
+    file.resize(0x40, 0xCC);
+
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "MessageBoxA", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.GetLabelNameAt(0x20) == "j_MessageBoxA");
+    REQUIRE(zone.GetLabelNameAt(0x28) == "j_MessageBoxA_1");
+    REQUIRE(zone.GetLabelNameAt(0x32).empty());
+    REQUIRE(zone.thunkImports.size() == 2);
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x20, 0x28 });
+
+    // the call through the thunk names the pushed arguments (the last push is the first argument)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "call   j_MessageBoxA").size() > 0);
+    REQUIRE(FindListingLine(listing, "push   3").ends_with("; hWnd"));
+    REQUIRE(FindListingLine(listing, "push   2").ends_with("; lpText"));
+    REQUIRE(FindListingLine(listing, "push   1").ends_with("; lpCaption"));
+    REQUIRE(FindListingLine(listing, "push   0").ends_with("; uType"));
+}
+
+TEST_CASE("CallArgumentsX64", "[Dissasm]Thunks")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+        0x45, 0x31, 0xC9,                         // 0x04: xor r9d, r9d (uType)
+        0x4C, 0x8D, 0x05, 0x82, 0x00, 0x00, 0x00, // 0x07: lea r8, [rip + 0x82] -> 0x90 (lpCaption)
+        0x48, 0x8D, 0x15, 0x8B, 0x00, 0x00, 0x00, // 0x0e: lea rdx, [rip + 0x8b] -> 0xa0 (lpText)
+        0x31, 0xC9,                               // 0x15: xor ecx, ecx (hWnd)
+        0xE8, 0x14, 0x00, 0x00, 0x00,             // 0x17: call 0x30 (the thunk)
+        0x48, 0x83, 0xC4, 0x28,                   // 0x1c: add rsp, 0x28
+        0xC3,                                     // 0x20: ret
+    };
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x4A, 0x00, 0x00, 0x00 }); // 0x30: jmp qword ptr [rip + 0x4a] -> slot 0x80 (MessageBoxA)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });                         // 0x40: mov rcx, rbx (hObject)
+    file.insert(file.end(), { 0x85, 0xC0, 0x75, 0x06 });                   // 0x43: test eax, eax; jne 0x4d (or continues into the call)
+    file.insert(file.end(), { 0xFF, 0x15, 0x3B, 0x00, 0x00, 0x00, 0xC3 }); // 0x47: call qword ptr [rip + 0x3b] -> slot 0x88 (CloseHandle); ret
+    file.resize(0x90, 0x00);
+    for (const char c : std::string_view("Caption"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0xA0, 0x00);
+    for (const char c : std::string_view("Text"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0xB0, 0x00);
+
+    ZoneLayout layout;
+    layout.size             = 0x80; // the code; the import slots and the strings follow it
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = {
+        { 0x80, { "MessageBoxA", MemoryMappingType::FunctionMapping } },
+        { 0x88, { "CloseHandle", MemoryMappingType::FunctionMapping } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x30) == "j_MessageBoxA");
+
+    // the last write of every argument register before the call
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "call   j_MessageBoxA").size() > 0);
+    REQUIRE(FindListingLine(listing, "xor    ecx, ecx").ends_with("; hWnd"));
+    REQUIRE(FindListingLine(listing, "lea    rdx").find("; lpText") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "lea    r8").find("; lpCaption") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "xor    r9d, r9d").ends_with("; uType"));
+    REQUIRE(FindListingLine(listing, "sub    rsp, 0x28").find(';') == std::string_view::npos);
+    // a call through the import slot
+    REQUIRE(FindListingLine(listing, "mov    rcx, rbx").ends_with("; hObject"));
 }

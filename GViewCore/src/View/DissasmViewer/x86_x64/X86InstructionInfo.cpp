@@ -76,3 +76,49 @@ X86OperandsInfo GView::View::DissasmViewer::GetX86OperandsInfo(const cs_insn& in
     }
     return info;
 }
+
+std::optional<uint8> GView::View::DissasmViewer::GetX64ArgumentSlot(const cs_insn& insn)
+{
+    if (insn.id == X86_INS_INVALID || !insn.detail || insn.detail->x86.op_count == 0)
+        return {};
+    const cs_x86_op& op = insn.detail->x86.operands[0];
+    if ((op.access & CS_AC_WRITE) == 0)
+        return {};
+    if (op.type == X86_OP_REG) {
+        switch (op.reg) {
+        case X86_REG_RCX:
+        case X86_REG_ECX:
+        case X86_REG_CX:
+        case X86_REG_CL:
+        case X86_REG_XMM0:
+            return 0;
+        case X86_REG_RDX:
+        case X86_REG_EDX:
+        case X86_REG_DX:
+        case X86_REG_DL:
+        case X86_REG_XMM1:
+            return 1;
+        case X86_REG_R8:
+        case X86_REG_R8D:
+        case X86_REG_R8W:
+        case X86_REG_R8B:
+        case X86_REG_XMM2:
+            return 2;
+        case X86_REG_R9:
+        case X86_REG_R9D:
+        case X86_REG_R9W:
+        case X86_REG_R9B:
+        case X86_REG_XMM3:
+            return 3;
+        default:
+            return {};
+        }
+    }
+    // the arguments after the fourth: above the 0x20 bytes of home space of the registers
+    constexpr int64 HOME_SPACE    = 0x20;
+    constexpr int64 MAX_STACK_ARG = 16;
+    if (op.type == X86_OP_MEM && op.mem.base == X86_REG_RSP && op.mem.index == X86_REG_INVALID && op.mem.disp >= HOME_SPACE &&
+        op.mem.disp % 8 == 0 && op.mem.disp < HOME_SPACE + 8 * MAX_STACK_ARG)
+        return static_cast<uint8>(4 + (op.mem.disp - HOME_SPACE) / 8);
+    return {};
+}

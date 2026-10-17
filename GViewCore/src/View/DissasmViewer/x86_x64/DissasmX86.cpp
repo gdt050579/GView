@@ -522,11 +522,11 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     localVariableNameSize = static_cast<uint32>(variable->name.size());
 }
 
-// the import (memory mapping, keyed by the RVA of its slot) used by the operands of a call / jmp: [rip + 0x...] on x64, the VA of the
-// slot ([0x402010]) on x86
-static const MemoryMappingEntry* FindOperandsMemoryMapping(DissasmInsnExtractLineParams& params, const X86OperandsInfo& operands)
+const MemoryMappingEntry* GView::View::DissasmViewer::FindX86OperandsImport(SettingsData* settings, const DissasmCodeZone* zone, const X86OperandsInfo& operands)
 {
-    const auto& mappings = params.settings->memoryMappings;
+    if (!settings || zone->cachedCodeOffsets.empty())
+        return nullptr;
+    const auto& mappings = settings->memoryMappings;
     if (mappings.empty())
         return nullptr;
     auto find = [&mappings](uint64 key) -> const MemoryMappingEntry* {
@@ -535,16 +535,16 @@ static const MemoryMappingEntry* FindOperandsMemoryMapping(DissasmInsnExtractLin
     };
 
     // the plugins without an offset translation (RVA) do not set the callback: only an absolute address can be looked up as it is
-    if (!params.settings->offsetTranslateCallback.IsValid())
+    if (!settings->offsetTranslateCallback.IsValid())
         return operands.absoluteMemory.has_value() ? find(operands.absoluteMemory.value()) : nullptr;
 
     if (operands.ripTarget.has_value()) // the decoded addresses are relative to the first decoded instruction
-        return find(GetCodeStartRVA(params.settings, params.zone) + operands.ripTarget.value());
+        return find(GetCodeStartRVA(settings, zone) + operands.ripTarget.value());
     if (operands.absoluteMemory.has_value()) {
-        const auto offset = TranslateOperandAddressToFileOffset(params.settings, operands.absoluteMemory.value(), true);
+        const auto offset = TranslateOperandAddressToFileOffset(settings, operands.absoluteMemory.value(), true);
         if (!offset.has_value())
             return nullptr;
-        return find(params.settings->offsetTranslateCallback->TranslateFromFileOffset(offset.value(), static_cast<uint32>(DissasmPEConversionType::RVA)));
+        return find(settings->offsetTranslateCallback->TranslateFromFileOffset(offset.value(), static_cast<uint32>(DissasmPEConversionType::RVA)));
     }
     return nullptr;
 }
@@ -587,6 +587,19 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
         line.autoComment = std::move(text.value());
 }
 
+// a call to a known Windows API (KNOWN_FUNCTIONS): its arguments are named on the lines prepared before the call
+static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
+{
+    GView::Hashes::CRC32 crc32{};
+    uint32 hash = 0;
+    if (!crc32.Init(GView::Hashes::CRC32Type::JAMCRC) || !crc32.Update(reinterpret_cast<const uint8*>(functionName.data()), static_cast<uint32>(functionName.size())) ||
+        !crc32.Final(hash))
+        return;
+    const auto it = params.asmData->functions.find(hash);
+    if (it != params.asmData->functions.end())
+        params.zone->asmPreCacheData.AnnounceCallInstruction(it->second, params.zone->Is64BitCode());
+}
+
 bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& params)
 {
     uint32 diffLines = 0;
@@ -610,6 +623,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     // the meaning of the instruction from the capstone details (groups, operands), not from its text
     const auto flow     = GetX86Flow(*insn);
     const auto operands = GetX86OperandsInfo(*insn, params.zone->Is64BitCode());
+    if (params.zone->Is64BitCode()) {
+        const auto slot = GetX64ArgumentSlot(*insn); // mov rcx, ... / mov [rsp + 0x20], ...: an argument of the next call
+        argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
+    }
     if (flow == X86Flow::Call)
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
     else if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump)
@@ -635,25 +652,12 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     bool shouldConsiderCall = false;
     if (flags & (DissasmAsmPreCacheLine::InstructionFlag::CallFlag | DissasmAsmPreCacheLine::InstructionFlag::JmpFlag) && !targetFileOffset.has_value()) {
         // call / jmp through an import slot: call qword ptr [rip + 0x...], jmp dword ptr [0x402010] (import thunks)
-        const auto mappingPtr = FindOperandsMemoryMapping(params, operands);
+        const auto mappingPtr = FindX86OperandsImport(params.settings, params.zone, operands);
         if (mappingPtr) {
             mapping     = mappingPtr;
             op_str_size = (uint32) mappingPtr->name.size();
-            // the arguments are pushed only by 32 bit code (x64 passes them in registers, its pushes save registers)
-            if (flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag && mappingPtr->type == MemoryMappingType::FunctionMapping &&
-                !params.zone->Is64BitCode()) {
-                // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
-                GView::Hashes::CRC32 crc32{};
-                uint32 hash    = 0;
-                const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
-                                 crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
-                                 crc32.Final(hash);
-                if (res) {
-                    const auto it = params.asmData->functions.find(hash);
-                    if (it != params.asmData->functions.end())
-                        params.zone->asmPreCacheData.AnnounceCallInstruction(it->second);
-                }
-            }
+            if (flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag && mappingPtr->type == MemoryMappingType::FunctionMapping)
+                AnnounceKnownFunctionCall(params, mappingPtr->name);
             return true; // the import name is drawn instead of the operands
         }
     }
@@ -678,6 +682,13 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 SetOperands(insn->op_str, params.zone); // indirect: the operands are shown as they are
             }
             return true;
+        }
+
+        // a call through an import thunk (call j_CreateFileW): the arguments of the import
+        if (shouldConsiderCall) {
+            const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
+            if (thunk != params.zone->thunkImports.end())
+                AnnounceKnownFunctionCall(params, thunk->second);
         }
 
         // the label of the target with its current name (renamed, an export, a function reached by a jmp keeps its sub_ label); a target
@@ -1014,6 +1025,10 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         initData.isFileAddress = [fileSize](uint64 offset) { return offset < fileSize; };
     }
     initData.functionEntries = &settings->functionEntries;
+    if (!settings->memoryMappings.empty()) {
+        auto* settingsData  = settings.get();
+        initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };
+    }
 
     if (!zone->InitZone(initData))
         return false;
@@ -1067,8 +1082,7 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
     constexpr size_t commentsColumn = 60;
     std::string comment;
     bool hasCollapsedZones = false;
-    for (uint32 line = 0; line < linesCount; line++) {
-        const auto asmLine = zone.GetCurrentAsmLine(line, obj, &params);
+    auto appendLine        = [&](const DissasmAsmPreCacheLine& asmLine) {
         const std::string_view operands =
               asmLine.op_str ? std::string_view{ asmLine.op_str, asmLine.op_str_size }
                              : (asmLine.mapping ? std::string_view{ static_cast<const MemoryMappingEntry*>(asmLine.mapping)->name } : std::string_view{});
@@ -1101,7 +1115,32 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
                 listing.append(" ").append(asmLine.autoComment);
         }
         listing.append("\n");
+    };
+
+    // the lines wait in the drawn lines cache before they are written: a call names its arguments on the lines placed before it (as on
+    // the screen, AnnounceCallInstruction)
+    constexpr size_t WAITING_LINES = 24;
+    auto& waitingLines             = zone.asmPreCacheData.cachedAsmLines;
+    waitingLines.clear();
+    auto writeWaitingLines = [&](size_t linesToKeep) {
+        if (waitingLines.size() <= linesToKeep)
+            return;
+        const size_t linesToWrite = waitingLines.size() - linesToKeep;
+        for (size_t index = 0; index < linesToWrite; index++)
+            appendLine(waitingLines[index]);
+        std::vector<DissasmAsmPreCacheLine> kept; // the lines can not be assigned (they own their operands): moved in a new vector
+        kept.reserve(WAITING_LINES * 2);
+        for (size_t index = linesToWrite; index < waitingLines.size(); index++)
+            kept.emplace_back(std::move(waitingLines[index]));
+        waitingLines.swap(kept);
+    };
+    for (uint32 line = 0; line < linesCount; line++) {
+        auto asmLine = zone.GetCurrentAsmLine(line, obj, &params);
+        waitingLines.emplace_back(std::move(asmLine));
+        if (waitingLines.size() >= WAITING_LINES * 2)
+            writeWaitingLines(WAITING_LINES);
     }
+    writeWaitingLines(0);
     if (hasCollapsedZones)
         listing.append("; some zones are collapsed: expand them in the viewer to export their lines\n");
     zone.asmPreCacheData.Clear(); // the drawn lines are prepared again (the decoding position moved)

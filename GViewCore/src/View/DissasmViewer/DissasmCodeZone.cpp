@@ -19,7 +19,8 @@ inline bool ExtractCallsToInsertFunctionNames(
       uint32& totalLines,
       bool detectLocalVariables,
       const std::function<bool(uint64)>& isFileAddress,
-      const std::map<uint64, DissasmFunctionEntry>* functionEntries)
+      const std::map<uint64, DissasmFunctionEntry>* functionEntries,
+      const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport)
 {
     // the code is [offsets[0], end of the zone): the same lines as the ones counted by populateOffsetsVector
     const uint64 codeSize = zone->GetCodeSize();
@@ -64,6 +65,9 @@ inline bool ExtractCallsToInsertFunctionNames(
     const uint64 addressMask = is64 ? UINT64_MAX : 0xFFFFFFFFull; // the addresses of 32 bit code wrap around at 4 GB
     const uint64 labelBase   = zone->labelAddressBase;
     zone->xrefs.Clear();
+    zone->thunkImports.clear();
+    std::vector<std::pair<uint64, std::string>> thunks; // file offset of an import thunk, the import
+    bool atBlockStart = true; // the previous instruction does not continue into the current one (ret, jmp, int3, nop padding)
     X86PrologueDetector prologueDetector(is64);
     while (linesToDecode > 0 && walker.Next(insn)) {
         linesToDecode--;
@@ -77,6 +81,18 @@ inline bool ExtractCallsToInsertFunctionNames(
         const auto flow     = GetX86Flow(*insn);
         const auto operands = GetX86OperandsInfo(*insn, is64);
         const uint64 from   = labelBase + insn->address;
+
+        // an import thunk (IDA j_Name): a jmp through an import slot that starts a block, reached by calls instead of the import itself
+        const bool isBlockStart = atBlockStart;
+        atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_NOP;
+        if (isBlockStart && flow == X86Flow::Jump && !operands.directTarget.has_value() && findImport) {
+            const auto import = findImport(operands);
+            if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
+                thunks.emplace_back(instructionOffset, import->name);
+                zone->thunkImports[insn->address] = import->name;
+                addFunctionStart(instructionOffset);
+            }
+        }
         if (IsX86Branch(flow) && operands.directTarget.has_value()) {
             const auto kind = flow == X86Flow::Call ? DissasmXrefKind::Call : (flow == X86Flow::Jump ? DissasmXrefKind::Jump : DissasmXrefKind::ConditionalJump);
             zone->xrefs.Add(from, (labelBase + operands.directTarget.value()) & addressMask, kind);
@@ -164,18 +180,37 @@ inline bool ExtractCallsToInsertFunctionNames(
         return std::binary_search(functionStarts.begin(), functionStarts.end(), relativeAddress);
     };
 
-    // the names given by the plugin (exports, TLS callbacks); the entry point keeps its name, a name used twice is not applied again
-    if (functionEntries && !functionEntries->empty()) {
+    // the names given by the plugin (exports, TLS callbacks), then the names of the import thunks; the entry point keeps its name, a name
+    // used twice is not applied again
+    const bool hasFunctionEntries = functionEntries && !functionEntries->empty();
+    if (hasFunctionEntries || !thunks.empty()) {
         std::unordered_set<std::string> usedNames;
         usedNames.reserve(callsFound.size());
         for (const auto& call : callsFound)
             usedNames.insert(call.second);
+        std::unordered_set<uint64> namedByPlugin;
         for (auto& call : callsFound) {
-            const auto entry = functionEntries->find(call.first);
-            if (entry == functionEntries->end() || entry->second.name.empty() || call.first == zone->zoneDetails.entryPoint)
+            if (!hasFunctionEntries || call.first == zone->zoneDetails.entryPoint)
                 continue;
-            if (usedNames.insert(entry->second.name).second)
+            const auto entry = functionEntries->find(call.first);
+            if (entry == functionEntries->end() || entry->second.name.empty())
+                continue;
+            if (usedNames.insert(entry->second.name).second) {
                 call.second = entry->second.name;
+                namedByPlugin.insert(call.first);
+            }
+        }
+        for (const auto& [thunkOffset, importName] : thunks) {
+            const auto call = std::lower_bound(
+                  callsFound.begin(), callsFound.end(), thunkOffset, [](const auto& item, uint64 value) { return item.first < value; });
+            if (call == callsFound.end() || call->first != thunkOffset || call->first == zone->zoneDetails.entryPoint || namedByPlugin.contains(thunkOffset))
+                continue;
+            // a second thunk of the same import: j_Name_1, j_Name_2, ...
+            std::string name = "j_" + importName;
+            for (uint32 index = 1; usedNames.contains(name) && index < 1000; index++)
+                name = "j_" + importName + "_" + std::to_string(index);
+            if (usedNames.insert(name).second)
+                call->second = std::move(name);
         }
     }
 
@@ -514,7 +549,8 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
               totalLines,
               initData.enableLocalVariablesDetection,
               initData.isFileAddress,
-              initData.functionEntries);
+              initData.functionEntries,
+              initData.findImport);
         if (!scanned) {
             initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;

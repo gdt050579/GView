@@ -52,6 +52,7 @@ struct DissasmCodeZone : public ParseZone {
     // x86/x64 (deep scan): the cross references of the code (address space of the labels) and the function starts (relative, sorted)
     DissasmXrefs xrefs;
     std::vector<uint64> functionStarts;
+    std::unordered_map<uint64, std::string> thunkImports; // relative address of an import thunk (jmp [slot]) -> the import
 
     // the name shown for the label at the relative address (renamed or not); empty when there is no label there
     std::string GetLabelNameAt(uint64 relativeAddress) const;
@@ -210,5 +211,7 @@ uint32 GetCodeZoneLinesCount(const DissasmCodeZone& zone);
 // the listing of an initialized x86/x64 code zone (an .asm file): the lines as they are shown (labels, local variables, jump / call targets
 // with their labels, import names) with the comments of the user and the generated comments
 bool BuildX86AsmListing(DissasmCodeZone& zone, Reference<GView::Object> obj, SettingsData* settings, AsmData* asmData, std::string& listing);
+// the import (memory mapping, keyed by the RVA of its slot) used by the operands: [rip + 0x...] on x64, the VA of the slot ([0x402010]) on x86
+const MemoryMappingEntry* FindX86OperandsImport(SettingsData* settings, const DissasmCodeZone* zone, const X86OperandsInfo& operands);
 
 } // namespace GView::View::DissasmViewer
