@@ -3,6 +3,7 @@
 #include "Internal.hpp"
 
 #include <cstring>
+#include <capstone/capstone.h>
 
 constexpr uint32 callOP = 1819042147u; //*(uint32*) "call";
 constexpr uint32 addOP  = 6579297u;    //*((uint32*) "add");
@@ -39,6 +40,37 @@ std::vector<OperandNumber> FindOperandNumbers(std::string_view operands);
 // writes the hexadecimal numbers whose index has the bit set in `decimalMask` as (unsigned) decimal numbers;
 // `trackedPosition` (a position inside `operands`) is moved to the same character of the result
 std::string FormatOperandNumbers(std::string_view operands, AppCUI::uint32 decimalMask, AppCUI::uint32* trackedPosition = nullptr);
+
+// Decodes the next x86/x64 line, as cs_disasm_iter does. A byte that can not be decoded is a 1 byte data line ("db 0xNN", as
+// disassemblers show it) and the decoding continues right after it: inline data (jump tables, padding) never ends the code. False only
+// when there are no bytes left. Every walk over the lines of a code zone (counting, cached offsets, navigation, drawing, export) decodes
+// with it, so a line index maps to the same offset everywhere.
+bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn);
+
+// Walks the lines (DecodeX86Line) of the code [codeStart, codeStart + codeSize) of a file from its first byte. The bytes are read from the
+// data cache line by line: a zone bigger than the data cache window is decoded entirely, window after window. The addresses of the
+// decoded lines are relative to codeStart.
+class DissasmCodeLinesWalker
+{
+    Reference<GView::Object> obj;
+    uint64 codeStart;
+    uint64 codeSize;
+    uint64 address;
+    csh handle;
+
+  public:
+    DissasmCodeLinesWalker(Reference<GView::Object> obj, uint64 codeStart, uint64 codeSize, csh handle)
+        : obj(obj), codeStart(codeStart), codeSize(codeSize), address(0), handle(handle)
+    {
+    }
+    // false at the end of the code (or when the file has no more bytes)
+    bool Next(cs_insn* insn);
+    // relative address of the next line
+    uint64 GetAddress() const
+    {
+        return address;
+    }
+};
 
 cs_insn* GetCurrentInstructionByOffset(
       uint64 offsetToReach,

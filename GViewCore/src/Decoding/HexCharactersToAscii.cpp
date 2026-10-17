@@ -27,7 +27,8 @@ bool Decode(BufferView view, Buffer& output)
     //     return false; // Hex string must have an even length
     // }
 
-    for (uint32 i = 0; i < view.GetLength(); i += 2) {
+    // an odd trailing character (no pair) is ignored
+    for (size_t i = 0; i + 1 < view.GetLength(); i += 2) {
         const char high = view[i];
         const char low  = view[i + 1];
 

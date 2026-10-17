@@ -646,7 +646,8 @@ class KeysWindow : public Window
                 title.Add(fileWindow->GetTypePlugin()->GetName());
                 title.Add(" / ");
             }
-            title.Add(fileWindow->GetCurrentView()->GetName());
+            if (auto currentView = fileWindow->GetCurrentView(); currentView.IsValid())
+                title.Add(currentView->GetName());
             SetText(title);
         }
 

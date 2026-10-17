@@ -47,7 +47,8 @@ void JsonBuilderImpl::AddU16String(std::string_view key, std::u16string_view val
 {
     ValidateKey(key);
     json* node = parent ? static_cast<json*>(parent) : static_cast<json*>(data);
-    (*node)[std::string(key)] = std::u16string(value);
+    // nlohmann serializes std::u16string as an array of numbers, so convert it to an UTF-8 string first
+    (*node)[std::string(key)] = UTF16ToUTF8(value);
 }
 
 void JsonBuilderImpl::AddStringArray(std::string_view key, const std::vector<std::string>& values, JsonNode parent)
@@ -61,7 +62,12 @@ void JsonBuilderImpl::AddU16StringArray(std::string_view key, const std::vector<
 {
     ValidateKey(key);
     json* node      = parent ? static_cast<json*>(parent) : static_cast<json*>(data);
-    (*node)[std::string(key)] = values;
+    // nlohmann serializes std::u16string as an array of numbers, so convert every value to an UTF-8 string first
+    std::vector<std::string> utf8Values;
+    utf8Values.reserve(values.size());
+    for (const auto& value : values)
+        utf8Values.push_back(UTF16ToUTF8(value));
+    (*node)[std::string(key)] = std::move(utf8Values);
 }
 
 void JsonBuilderImpl::AddInt(std::string_view key, int64_t value, JsonNode parent)
@@ -117,7 +123,7 @@ void JsonBuilderImpl::AddU16StringToArray(std::u16string_view value, JsonNode ar
     if (!arrayNode)
         return;
     json* arrayNodeJson = static_cast<json*>(arrayNode);
-    arrayNodeJson->push_back(std::u16string(value));
+    arrayNodeJson->push_back(UTF16ToUTF8(value)); // UTF-8 string, not the array of numbers nlohmann makes from a std::u16string
 }
 
 void JsonBuilderImpl::AddBoolToArray(bool value, JsonNode arrayNode)

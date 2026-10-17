@@ -468,6 +468,7 @@ TEST_CASE("Update.ExtractRelease", "[update]")
             { { exe, "x" }, { "a.dll", "1" }, { "A.dll", "2" } },
             { { "libGViewCore.dll", "no executable" } },
             { { exe, "x" }, { "sub/" + exe, "two executables" } },
+            { { exe, "x" }, { "Apply.Manifest", "collides with the generated manifest" } },
         };
         int index = 0;
         for (const auto& entries : hostile) {
@@ -481,6 +482,13 @@ TEST_CASE("Update.ExtractRelease", "[update]")
             REQUIRE_FALSE(fs::exists(t.path / "evil.dll"));
             REQUIRE_FALSE(fs::exists(t.path.parent_path() / "evil.dll"));
         }
+    }
+    SECTION("a file name that is not UTF-8 never throws and leaves nothing behind when refused")
+    {
+        MakeZip(t.path / "r.zip", { { exe, "x" }, { "bad\xff\xfe.dll", "b" } });
+        const auto r = ExtractRelease(t.path / "r.zip", t.path / "staging", Version{ 1, 2, 3 }, progress, cancel);
+        if (!r.ok) // refused on Windows (no UTF-16 form); POSIX file names are plain bytes
+            REQUIRE_FALSE(fs::exists(t.path / "staging"));
     }
     SECTION("not a zip")
     {

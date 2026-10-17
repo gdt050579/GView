@@ -87,6 +87,8 @@ class ContextProvider
     Role role{ Role::Server };
     std::shared_ptr<Context> current;
     std::filesystem::file_time_type stamps[3];
+    std::filesystem::file_time_type reportedStamps[3]; // files whose reload error was already reported
+    bool hasReportedStamps{ false };
     std::chrono::steady_clock::time_point lastCheck;
     std::mutex lock;
 

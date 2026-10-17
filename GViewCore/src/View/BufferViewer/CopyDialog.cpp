@@ -85,13 +85,14 @@ bool CopyDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 
 bool CopyDialog::Process()
 {
-    const auto cacheSize = instance->GetObject()->GetData().GetCacheSize();
+    const auto cacheSize = static_cast<uint64>(instance->GetObject()->GetData().GetCacheSize());
     const auto zonesNo   = instance->GetObject()->GetContentType()->GetSelectionZonesCount();
 
     Buffer b{};
     BufferView bf{};
 
-    if (zonesNo == 0)
+    // "Copy entire file" is only enabled (and meaningful) when there is a selection
+    if (zonesNo == 0 || copyFile->IsChecked())
     {
         bf = instance->GetObject()->GetData().GetEntireFile();
         if (bf.IsValid() == false)
@@ -106,13 +107,16 @@ bool CopyDialog::Process()
             Dialogs::MessageBox::ShowError("Error copying to clipboard", message);
             return false;
         }
+        // bf is a view into the live data cache - work on a private copy ("as seen" rewrites the bytes in place)
+        b  = bf;
+        bf = b;
     }
     else
     {
         for (uint32 i = 0; i < zonesNo; i++)
         {
             const auto z             = instance->GetObject()->GetContentType()->GetSelectionZone(i);
-            const auto selectionSize = (uint32) (z.end - z.start + 1);
+            const auto selectionSize = z.end - z.start + 1;
 
             if (selectionSize > cacheSize)
             {
@@ -124,7 +128,7 @@ bool CopyDialog::Process()
                 return false;
             }
 
-            b.Add(instance->GetObject()->GetData().CopyToBuffer(z.start, selectionSize));
+            b.Add(instance->GetObject()->GetData().CopyToBuffer(z.start, static_cast<uint32>(selectionSize)));
         }
 
         bf = b;
@@ -263,7 +267,7 @@ void CopyDialog::ShowCopiedDataInformation()
     LocalString<512> message;
 
     const auto zonesNo = instance->GetObject()->GetContentType()->GetSelectionZonesCount();
-    if (zonesNo == 0)
+    if (zonesNo == 0 || copyFile->IsChecked())
     {
         CHECKRET(message.AddFormat("Copied entire file (%llu bytes) to clipboard.", instance->GetObject()->GetData().GetSize()), "");
     }

@@ -101,6 +101,11 @@ Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
 
     // TestTextEditor();
 }
+Instance::~Instance()
+{
+    // the unicode text buffer is owned by this instance (UnicodeString does not release it by itself)
+    this->text.Destroy();
+}
 
 void Instance::RecomputeTokenPositions()
 {
@@ -178,7 +183,7 @@ void Instance::ComputeOriginalPositions()
     // skip to the first visible
     while ((idx < tknCount) && (!this->tokens[idx].IsVisible()))
         idx++;
-    uint32 tknOffs = tknCount > 0 ? this->tokens[idx].start : 0xFFFFFFFF;
+    uint32 tknOffs = idx < tknCount ? this->tokens[idx].start : 0xFFFFFFFF;
     while (p < e)
     {
         if ((*p) == '\t')
@@ -194,6 +199,12 @@ void Instance::ComputeOriginalPositions()
                 pos += (this->tokens[idx].end - this->tokens[idx].start);
                 if (p >= e)
                     break;
+                idx++;
+                if (idx >= tknCount)
+                    break;
+                tknOffs = this->tokens[idx].start;
+                // the next token may start right after the hidden one --> re-check the current position
+                continue;
             }
             else
             {
@@ -987,10 +998,11 @@ void Instance::Paint(Graphics::Renderer& renderer)
     // draw line number bar
     renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
 
+    // clear the fold column first (so that no stale block IDs are kept if nothing is painted)
+    foldColumn.Clear(this->GetHeight());
     // check if there are items to be shown
     if (noItemsVisible)
         return;
-    foldColumn.Clear(this->GetHeight());
 
     NumericFormatter num;
     WriteTextParams params(WriteTextFlags::FitTextToWidth | WriteTextFlags::SingleLine);
@@ -1280,6 +1292,7 @@ void Instance::MoveToNextSimilarToken(int32 direction)
     if (tok.hash == 0)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "This type of token has similarity search disabled !");
+        return;
     }
     do
     {
@@ -1321,7 +1334,8 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
         if (recursive)
         {
             const auto& block = this->blocks[tok.blockID];
-            for (auto idx = block.tokenStart; idx < block.tokenEnd; idx++)
+            const auto endIdx = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
+            for (auto idx = block.tokenStart; idx < endIdx; idx++)
             {
                 auto& currentTok = this->tokens[idx];
                 if (currentTok.IsBlockStarter())
@@ -1856,19 +1870,22 @@ void Instance::ShowSaveAsDialog()
 
     // actual save
     // step 1 --> make sure that we save all tokens , not just the visible ones
+    // (token positions also hold the fold status --> restoring them from backup restores the folded blocks as well)
     BakupTokensPositions();
-    auto originalShowMetaDataValue = this->showMetaData;
-
-    if (dlg.ShouldIgnoreMetadataOnSave())
+    auto originalShowMetaDataValue   = this->showMetaData;
+    auto originalNoItemsVisibleValue = this->noItemsVisible;
+    auto originalScroll              = this->Scroll;
+    auto restoreViewState            = [&]()
     {
-        this->showMetaData = false;
-    }
-    else
-    {
-        this->showMetaData = true;
-        ExpandAll();
-    }
+        RestoreTokensPositionsFromBackup();
+        this->showMetaData   = originalShowMetaDataValue;
+        this->noItemsVisible = originalNoItemsVisibleValue;
+        this->Scroll         = originalScroll;
+    };
 
+    this->showMetaData = !dlg.ShouldIgnoreMetadataOnSave();
+    // expand all blocks (tokens from folded blocks are not visible) and recompute visibility for metadata tokens
+    ExpandAll();
 
     // Step 2 --> create a buffer for the entire text
     Buffer b;
@@ -1887,12 +1904,14 @@ void Instance::ShowSaveAsDialog()
             continue;
         if (y < tok.pos.y)
         {
+            b.Add(encChar.Flush()); // an unpaired high surrogate must be written before the separator
             b.AddMultipleTimes(newLine, tok.pos.y - y);
             x = 0;
             y = tok.pos.y;
         }
         if (x < tok.pos.x)
         {
+            b.Add(encChar.Flush());
             b.AddMultipleTimes(" ", tok.pos.x - x);
             x = tok.pos.x;
         }
@@ -1909,6 +1928,7 @@ void Instance::ShowSaveAsDialog()
                 }
                 else
                 {
+                    b.Add(encChar.Flush());
                     b.Add(newLine);
                     b.AddMultipleTimes(" ", tok.pos.x);
                     x = tok.pos.x;
@@ -1927,6 +1947,7 @@ void Instance::ShowSaveAsDialog()
         {
             if (f.Write(static_cast<const void*>(b.GetData()), static_cast<uint32>(b.GetLength())) == false)
             {
+                restoreViewState();
                 AppCUI::Dialogs::MessageBox::ShowError("Error", "Writing to file failed !");
                 f.Close();
                 return;
@@ -1934,9 +1955,9 @@ void Instance::ShowSaveAsDialog()
             b.Resize(0);
         }
     }
+    b.Add(encChar.Flush());
     // Stept 3 --> restore the original tokens positions
-    RestoreTokensPositionsFromBackup();
-    this->showMetaData = originalShowMetaDataValue;
+    restoreViewState();
 
     // Step 4 --> save
     if (b.GetLength() > 0)
@@ -1999,7 +2020,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, I
     if (x == (this->lineNrWidth - 1))
     {
         auto blockID = foldColumn.MouseToBlockIndex(y);
-        if (blockID != BlockObject::INVALID_ID)
+        if ((blockID != BlockObject::INVALID_ID) && ((size_t) blockID < this->blocks.size()))
         {
             auto currentScroll = this->Scroll;
             SetFoldStatus(this->blocks[blockID].tokenStart, FoldStatus::Reverse, false);

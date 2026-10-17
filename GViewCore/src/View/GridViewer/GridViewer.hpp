@@ -2,6 +2,7 @@
 
 #include "Internal.hpp"
 #include <array>
+#include <filesystem>
 namespace GView
 {
 namespace View
@@ -126,8 +127,8 @@ namespace View
 
             static Config config;
             FindDialog findDialog;
-            std::string exportedPathUTF8;
-            std::string exportedFolderPath;
+            std::filesystem::path exportedPath;       // <file path without extension>_exported (cell export prefix)
+            std::filesystem::path exportedFolderPath; // folder of the file (column exports create a sub-folder here)
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
 

@@ -22,6 +22,7 @@ class PluginsThatMatches
     uint32 countExtensionMatches;
     uint32 countContentMatches;
     uint32 countTypePlugins;
+    uint32 countAllowedPlugins;
 
   public:
     PluginsThatMatches(
@@ -40,14 +41,20 @@ class PluginsThatMatches
         countExtensionMatches = 0;
         countContentMatches   = 0;
         countTypePlugins      = static_cast<uint32>(typePlugins.size());
+        countAllowedPlugins   = 0;
         auto idx              = 0U;
+
+        // plugins outside the course policy are never validated (their code does not run) and never listed
+        for (auto& pType : typePlugins)
+            if (GView::Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()))
+                countAllowedPlugins++;
 
         // check extension
         if (extensionHash != 0)
         {
             for (auto& pType : typePlugins)
             {
-                if (pType.MatchExtension(extensionHash))
+                if (GView::Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()) && pType.MatchExtension(extensionHash))
                 {
                     if (pType.IsOfType(buf, textParser))
                     {
@@ -62,7 +69,7 @@ class PluginsThatMatches
         idx = 0;
         for (auto& pType : typePlugins)
         {
-            if (pType.MatchContent(buf, textParser))
+            if (GView::Security::RestrictedMode::Internal::IsPluginAllowed(pType.GetName()) && pType.MatchContent(buf, textParser))
             {
                 if (pType.IsOfType(buf, textParser))
                 {
@@ -84,7 +91,7 @@ class PluginsThatMatches
     }
     inline bool HasNoMatches() const
     {
-        return (countExtensionMatches + countContentMatches) < countTypePlugins;
+        return (countExtensionMatches + countContentMatches) < countAllowedPlugins;
     }
     inline bool IsMatchByExtension(uint32 index) const
     {
@@ -183,7 +190,8 @@ void SelectTypeDialog::PopulateTypes(
         cbType->AddSeparator("Not matched");
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
-            if ((pm.IsMatchByContent(idx) == false) && (pm.IsMatchByExtension(idx) == false))
+            if ((pm.IsMatchByContent(idx) == false) && (pm.IsMatchByExtension(idx) == false) &&
+                GView::Security::RestrictedMode::Internal::IsPluginAllowed(typePlugins[idx].GetName()))
                 cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]), idx);
         }
     }
@@ -381,6 +389,12 @@ void SelectTypeDialog::Validate()
         return;
     }
     auto* plg = &typePlugins[idx];
+    // the course policy may have changed while the dialog was open
+    if (!GView::Security::RestrictedMode::Internal::IsPluginAllowed(plg->GetName()))
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This type plugin is not allowed by the course policy !");
+        return;
+    }
     if (plg->IsOfType(buf, textParser) == false)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Selected plugin can not process/match current buffer/text !");

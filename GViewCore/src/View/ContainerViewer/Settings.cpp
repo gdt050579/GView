@@ -39,6 +39,7 @@ bool Settings::AddProperty(string_view name, const ConstString& value, ListViewI
 void Settings::SetColumns(std::initializer_list<ConstString> columns)
 {
     for (const auto& col : columns) {
+        CHECKRET(SD->columnsCount < SettingsData::MAX_COLUMNS, "Too many columns!");
         SD->columns[SD->columnsCount].layout.Set(col);
         SD->columnsCount++;
     }

@@ -14,6 +14,11 @@ const uint8 string_lowercase_table[256] = {
     208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233,
     234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255
 };
+// the lowercase table only covers the first 256 code points - leave the rest unchanged
+static inline char16 ToLowerChar16(char16 ch)
+{
+    return ch < 256 ? static_cast<char16>(string_lowercase_table[ch]) : ch;
+}
 
 #define GROW_TO(newSize)                                                                                                                   \
     if (((newSize) > allocated) && (this->Grow(newSize) == false))                                                                         \
@@ -95,13 +100,13 @@ std::optional<uint32> TextEditor::Find(uint32 startOffset, std::string_view text
         firstChar = string_lowercase_table[firstChar];
         while (p < e)
         {
-            if (string_lowercase_table[*p] == firstChar)
+            if (ToLowerChar16(*p) == firstChar)
             {
                 const auto* s = p;
                 const auto* t = txt;
                 for (; (t < txt_e); t++, s++)
                 {
-                    if (string_lowercase_table[*t] != string_lowercase_table[*s])
+                    if (string_lowercase_table[*t] != ToLowerChar16(*s))
                         break;
                 }
                 if (t == txt_e)
@@ -224,8 +229,8 @@ bool TextEditor::ReplaceAll(std::string_view textToSearch, std::string_view text
     if ((textToSearch.empty()) || (this->size == 0))
         return false;
 
-    auto pos = 0;
-    auto len = static_cast<uint32>(textToSearch.size());
+    uint32 pos = 0;
+    auto len   = static_cast<uint32>(textToSearch.size());
 
     do
     {
@@ -234,7 +239,8 @@ bool TextEditor::ReplaceAll(std::string_view textToSearch, std::string_view text
             break;
         if (Replace(res.value(), len, textToReplaceWith) == false)
             return false;
-        pos += len;
+        // continue after the inserted text (otherwise the replacement itself could be matched again)
+        pos = res.value() + static_cast<uint32>(textToReplaceWith.size());
     } while (true);
     return true;
 }

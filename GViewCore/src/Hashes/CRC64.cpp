@@ -50,9 +50,9 @@ static const uint64 CRC64Table[256] = {
 
 bool CRC64::Final()
 {
+    // only validates the state: the final XOR is applied when the value is read (Final(hash) / GetHexValue),
+    // so reading the result does not alter it and the two can be called in any order, any number of times
     CHECK(init, false, "");
-    value ^= static_cast<uint64>(type);
-    init = false;
     return true;
 }
 
@@ -83,20 +83,31 @@ bool CRC64::Update(const unsigned char* input, uint32 length)
 
 bool CRC64::Update(const Buffer& buffer)
 {
-    CHECK(buffer.IsValid(), false, "");
-    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+    return Update(static_cast<BufferView>(buffer));
 }
 
 bool CRC64::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
-    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+
+    // feed the data in uint32-sized chunks so that buffers larger than 4 GB are not truncated
+    auto input  = buffer.GetData();
+    uint64 left = buffer.GetLength();
+    while (left > 0)
+    {
+        const uint32 chunk = left > 0xFFFFFFFFULL ? 0xFFFFFFFFU : static_cast<uint32>(left);
+        CHECK(Update(input, chunk), false, "");
+        input += chunk;
+        left -= chunk;
+    }
+
+    return true;
 }
 
 bool CRC64::Final(uint64& hash)
 {
     CHECK(Final(), false, "");
-    hash = value;
+    hash = value ^ static_cast<uint64>(type);
     return true;
 }
 
@@ -111,9 +122,8 @@ std::string_view CRC64::GetName(CRC64Type type)
 
 const std::string_view CRC64::GetHexValue()
 {
-    Final();
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("%.16llX", value);
+    ls.Format("%.16llX", value ^ static_cast<uint64>(type));
     memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
     return { hexDigest, ResultBytesLength * 2 };
 }

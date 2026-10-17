@@ -62,6 +62,10 @@ bool Instance::DrawDissasmJavaByteCodeZone(DrawLineInfo& dli, DissasmCodeZone* z
         constexpr std::string_view zoneName = "[JClass] JavaBytecode";
         chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
 
+        // chars.Set/Add can reallocate the buffer (long lines): the line pointers are taken once the line is built
+        dli.chLineStart   = this->chars.GetBuffer();
+        dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
+        dli.chText        = dli.chNameAndSize;
         HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(zoneName.size()), static_cast<uint32>(zoneName.size()) + Layout.startingTextLineOffset);
 
         RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
@@ -71,11 +75,16 @@ bool Instance::DrawDissasmJavaByteCodeZone(DrawLineInfo& dli, DissasmCodeZone* z
     }
 
     const uint32 currentLine = dli.textLineToDraw - 1u;
+    if (currentLine >= zone->asmPreCacheData.cachedAsmLines.size()) // the lines are the zone content, they are built only once
+        return false;
 
     const char* lineText = zone->asmPreCacheData.cachedAsmLines[currentLine].op_str;
     chars.Add(lineText, ColorMan.Colors.AsmJumpInstruction);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
+    dli.chLineStart         = this->chars.GetBuffer();
+    dli.chNameAndSize       = dli.chLineStart + Layout.startingTextLineOffset;
+    dli.chText              = dli.chNameAndSize;
     HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
 
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);

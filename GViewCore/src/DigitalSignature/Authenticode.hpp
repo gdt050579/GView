@@ -50,11 +50,12 @@ typedef struct
     ASN1_OCTET_STRING* serializedData;
 } SpcSerializedObject;
 
+/* OpenSSL stores the index of the selected ASN1_CHOICE template in SpcLink::type (url [0], moniker [1], file [2]) */
 enum class SPCLinkChoice
 {
-    SPC_URL_LINK_CHOICE     = 1,
-    SPC_MONIKER_LINK_CHOICE = 2,
-    SPC_FILE_LINK_CHOICE    = 3
+    SPC_URL_LINK_CHOICE     = 0,
+    SPC_MONIKER_LINK_CHOICE = 1,
+    SPC_FILE_LINK_CHOICE    = 2
 };
 
 typedef struct
@@ -294,8 +295,8 @@ class AuthenticodeParser
     static std::string GetCounterSignatureFlags(uint32_t flags);
 
   private:
-    bool AuthenticodeParseSignature(const uint8_t* data, long len, std::vector<AuthenticodeSignature>& result);
-    void ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<AuthenticodeSignature>& result);
+    bool AuthenticodeParseSignature(const uint8_t* data, long len, std::vector<AuthenticodeSignature>& result, uint32_t depth = 0);
+    void ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<AuthenticodeSignature>& result, uint32_t depth);
     static std::vector<Certificate> ParseSignerChain(X509* signerCert, STACK_OF(X509) * certs);
 };
 

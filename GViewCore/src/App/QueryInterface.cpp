@@ -397,6 +397,31 @@ int computeRelevanceScore(const std::string& fieldName, std::string_view userPro
     return score;
 }
 
+// [SmartAssistants] ContextCharacterLimit = <n> : maximum size (characters of serialized JSON) of the file context sent
+// with each prompt, for every assistant. When missing (or not a number) the assistant's own GetCharacterLimit() is used
+// (64K for the built-in assistants). The value is clamped to [1K, 1M].
+constexpr std::string_view SMART_ASSISTANTS_CONTEXT_LIMIT_KEY = "ContextCharacterLimit";
+constexpr uint64 SMART_ASSISTANTS_MIN_CONTEXT_LIMIT           = 1024ULL;
+constexpr uint64 SMART_ASSISTANTS_MAX_CONTEXT_LIMIT           = 1024ULL * 1024ULL;
+
+static uint32 GetContextCharacterLimit(SmartAssistantRegisterInterface& assistant)
+{
+    uint64 limit        = assistant.GetCharacterLimit();
+    const auto settings = Application::GetAppSettings();
+    if (settings && settings->HasSection(SMART_ASSISTANTS_CONFIGURATION_NAME)) {
+        auto section     = settings->GetSection(SMART_ASSISTANTS_CONFIGURATION_NAME);
+        const auto value = section.GetValue(SMART_ASSISTANTS_CONTEXT_LIMIT_KEY);
+        if (value.HasValue()) {
+            const auto configured = value.AsUInt64();
+            if (configured.has_value()) {
+                limit = configured.value();
+            }
+        }
+    }
+    return static_cast<uint32>(std::clamp(limit, SMART_ASSISTANTS_MIN_CONTEXT_LIMIT, SMART_ASSISTANTS_MAX_CONTEXT_LIMIT));
+}
+
+// maxPromptSize is a character limit for the returned (serialized) context
 std::string GetFinalContext(const json& contextualData, std::string_view userPrompt, uint32 maxPromptSize)
 {
     // Vector to store fields with their relevance scores
@@ -412,15 +437,16 @@ std::string GetFinalContext(const json& contextualData, std::string_view userPro
     // Sort fields based on relevance scores (descending order)
     std::sort(scoredFields.begin(), scoredFields.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
 
-    json resultContext;
-    // Add fields to final context based on relevance, until max size N is reached
+    json resultContext = json::object();
+    // Add fields to final context based on relevance, as long as the serialized context fits in maxPromptSize characters.
+    // A field that does not fit is skipped (not a stop): smaller, less relevant fields may still fit, so one large field
+    // can not leave the context empty.
     for (const auto& [key, score] : scoredFields) {
         resultContext[key] = contextualData[key].dump();
 
-        // Check if adding this field exceeds max size
-        if (resultContext.size() >= maxPromptSize) {
+        if (resultContext.dump().size() > maxPromptSize) {
             resultContext.erase(key);
-            break;
+            continue;
         }
     }
 
@@ -441,7 +467,7 @@ std::string SmartAssistantPromptInterfaceProxy::BuildChatContext(std::string_vie
     }
 
     json* jsonData = static_cast<json*>(pluginTypeContextJsonInterface->GetData());
-    const uint32 maxSize = smartAssistants[assistantIndex]->GetCharacterLimit();
+    const uint32 maxSize = GetContextCharacterLimit(*smartAssistants[assistantIndex]);
     auto finalContext    = GetFinalContext(*jsonData, prompt, maxSize);
     Utils::JsonBuilderInterface::Destroy(pluginTypeContextJsonInterface);
     return finalContext;
@@ -488,12 +514,13 @@ void SmartAssistantPromptInterfaceProxy::Start(Reference<FileWindow> fileWindow)
                 auto dataValue = currentData.AsString();
                 if (dataValue.has_value()) {
                     const auto actualValue = dataValue.value();
-                    if (strlen(actualValue) == 0)
-                        continue;
-                    hasConfig = true;
-                    smartAssistant->ReceiveConfigToken(actualValue);
-                    ++validAssistants;
-                    validSmartAssistants[index] = true;
+                    // an empty token is "no configuration" (the index must still advance)
+                    if (strlen(actualValue) != 0) {
+                        hasConfig = true;
+                        smartAssistant->ReceiveConfigToken(actualValue);
+                        ++validAssistants;
+                        validSmartAssistants[index] = true;
+                    }
                 }
             }
         }

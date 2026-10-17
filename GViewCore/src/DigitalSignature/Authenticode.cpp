@@ -142,6 +142,43 @@ IMPLEMENT_ASN1_FUNCTIONS(TimeStampToken)
 /* clang-format on */
 
 constexpr auto MAX_NESTED_COUNT = 16;
+/* Maximum recursion depth of nested signatures (each one can carry its own nested signatures) */
+constexpr uint32_t MAX_NESTING_DEPTH = 16;
+
+/* ASN1_TYPE is a tagged union: value.sequence is only valid when type is V_ASN1_SEQUENCE
+ * (NULL / BOOLEAN types store an int or (void*)1 in the union) */
+static const ASN1_STRING* GetSequence(const ASN1_TYPE* type)
+{
+    if (!type || type->type != V_ASN1_SEQUENCE || !type->value.sequence)
+        return nullptr;
+    return type->value.sequence;
+}
+
+static const ASN1_TIME* GetTime(const ASN1_TYPE* type)
+{
+    if (!type || (type->type != V_ASN1_UTCTIME && type->type != V_ASN1_GENERALIZEDTIME))
+        return nullptr;
+    return type->type == V_ASN1_UTCTIME ? type->value.utctime : type->value.generalizedtime;
+}
+
+static const ASN1_OCTET_STRING* GetOctetString(const ASN1_TYPE* type)
+{
+    if (!type || type->type != V_ASN1_OCTET_STRING || !type->value.octet_string)
+        return nullptr;
+    return type->value.octet_string;
+}
+
+static void FreeX509Stack(STACK_OF(X509) * stack)
+{
+    sk_X509_free(stack);
+}
+
+static void FreeX509StackAndCerts(STACK_OF(X509) * stack)
+{
+    sk_X509_pop_free(stack, X509_free);
+}
+
+using X509_STACK_ptr = std::unique_ptr<STACK_OF(X509), void (*)(STACK_OF(X509)*)>;
 
 static SpcIndirectDataContent* GetContent(PKCS7* content)
 {
@@ -151,34 +188,39 @@ static SpcIndirectDataContent* GetContent(PKCS7* content)
     if (OBJ_obj2nid(content->type) != OBJ_txt2nid(NID_spc_indirect_data))
         return nullptr;
 
-    SpcIndirectDataContent* spcContent = SpcIndirectDataContent_new();
-    if (!spcContent)
+    const ASN1_STRING* sequence = GetSequence(content->d.other);
+    if (!sequence)
         return nullptr;
 
-    int len             = content->d.other->value.sequence->length;
-    const uint8_t* data = content->d.other->value.sequence->data;
+    int len             = sequence->length;
+    const uint8_t* data = sequence->data;
 
-    d2i_SpcIndirectDataContent(&spcContent, &data, len);
-
-    return spcContent;
+    return d2i_SpcIndirectDataContent(nullptr, &data, len);
 }
 
-bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
+bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer& signer)
 {
-    const auto* sdata      = spcAttr->value.sequence->data;
-    SpcSpOpusInfo* spcInfo = d2i_SpcSpOpusInfo(nullptr, &sdata, spcAttr->value.sequence->length);
+    const ASN1_STRING* sequence = GetSequence(spcAttr);
+    if (!sequence)
+        return false;
+
+    const auto* sdata      = sequence->data;
+    SpcSpOpusInfo* spcInfo = d2i_SpcSpOpusInfo(nullptr, &sdata, sequence->length);
     if (!spcInfo)
         return false;
 
+    /* ASN1_STRING_to_UTF8 leaves dataRaw untouched on failure: reset it before every call so a failed conversion
+     * never hands the pointer already owned by `data` back to data.reset() (double free) */
     uint8_t* dataRaw = nullptr;
     OpenSSL_ptr data(dataRaw, My_OpenSSL_free);
 
     if (spcInfo->programName)
     {
         /* Should be Windows UTF16..., try to convert it to UTF8 */
+        dataRaw     = nullptr;
         int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->programName->value.unicode);
         data.reset(dataRaw);
-        if (nameLen >= 0 && nameLen < spcAttr->value.sequence->length)
+        if (nameLen >= 0 && nameLen < sequence->length)
         {
             signer.programName.resize(nameLen + 1);
             memcpy(signer.programName.data(), data.get(), nameLen);
@@ -191,6 +233,7 @@ bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
         if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_URL_LINK_CHOICE)
         {
             /* Should be Windows UTF16..., try to convert it to UTF8 */
+            dataRaw     = nullptr;
             int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.url);
             data.reset(dataRaw);
             if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.url->length)
@@ -203,6 +246,7 @@ bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
         else if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_FILE_LINK_CHOICE)
         {
             /* Should be Windows UTF16..., try to convert it to UTF8 */
+            dataRaw     = nullptr;
             int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.file->value.unicode);
             data.reset(dataRaw);
             if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.file->value.unicode->length)
@@ -219,6 +263,7 @@ bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
         if (spcInfo->publisherInfo->type == (uint32_t) SPCLinkChoice::SPC_URL_LINK_CHOICE)
         {
             /* Should be Windows UTF16..., try to convert it to UTF8 */
+            dataRaw     = nullptr;
             int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->publisherInfo->value.url);
             data.reset(dataRaw);
             if (nameLen >= 0 && nameLen < spcInfo->publisherInfo->value.url->length)
@@ -231,6 +276,7 @@ bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
         else if (spcInfo->publisherInfo->type == (uint32_t) SPCLinkChoice::SPC_FILE_LINK_CHOICE)
         {
             /* Should be Windows UTF16..., try to convert it to UTF8 */
+            dataRaw     = nullptr;
             int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->publisherInfo->value.file->value.unicode);
             data.reset(dataRaw);
             if (nameLen >= 0 && nameLen < spcInfo->publisherInfo->value.file->value.unicode->length)
@@ -254,8 +300,12 @@ static void ParseCertificates(const STACK_OF(X509) * certs, std::vector<Certific
     }
 }
 
-void AuthenticodeParser::ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<AuthenticodeSignature>& auth)
+void AuthenticodeParser::ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<AuthenticodeSignature>& auth, uint32_t depth)
 {
+    /* Every nested signature can carry its own nested signatures: bound the recursion for malformed samples */
+    if (depth >= MAX_NESTING_DEPTH)
+        return;
+
     STACK_OF(X509_ATTRIBUTE)* attrs = PKCS7_get_attributes(si);
     int idx                         = X509at_get_attr_by_NID(attrs, OBJ_txt2nid(NID_spc_nested_signature), -1);
     X509_ATTRIBUTE* attr            = X509at_get_attr(attrs, idx);
@@ -272,9 +322,15 @@ void AuthenticodeParser::ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vec
         ASN1_TYPE* nested = X509_ATTRIBUTE_get0_type(attr, i);
         if (nested == nullptr)
             break;
-        int len             = nested->value.sequence->length;
-        const uint8_t* data = nested->value.sequence->data;
-        AuthenticodeParseSignature(data, len, auth);
+        const ASN1_STRING* sequence = GetSequence(nested);
+        if (!sequence)
+        {
+            auth.emplace_back().verifyFlags = (uint32_t) AuthenticodeVFY::CantParse;
+            continue;
+        }
+        int len             = sequence->length;
+        const uint8_t* data = sequence->data;
+        AuthenticodeParseSignature(data, len, auth, depth + 1);
     }
 }
 
@@ -303,8 +359,14 @@ static void ParsePKCS9Countersignature(PKCS7_ptr& p7, AuthenticodeSignature& aut
         ASN1_TYPE* nested = X509_ATTRIBUTE_get0_type(attr, i);
         if (nested == nullptr)
             break;
-        int len             = nested->value.sequence->length;
-        const uint8_t* data = nested->value.sequence->data;
+        const ASN1_STRING* sequence = GetSequence(nested);
+        if (!sequence)
+        {
+            auth.counterSignatures.emplace_back().verifyFlags = (int32_t) CountersignatureVFY::CantParse;
+            continue;
+        }
+        int len             = sequence->length;
+        const uint8_t* data = sequence->data;
 
         auth.counterSignatures.emplace_back().ParsePKCS9(data, len, p7->d.sign->cert, si->enc_digest, si);
     }
@@ -313,7 +375,7 @@ static void ParsePKCS9Countersignature(PKCS7_ptr& p7, AuthenticodeSignature& aut
 static void ExtractCertificatesFromMSCountersignature(const uint8_t* data, int len, std::vector<Certificate>& result)
 {
     PKCS7_ptr p7(d2i_PKCS7(nullptr, &data, len), PKCS7_free);
-    if (!p7)
+    if (!p7 || !PKCS7_type_is_signed(p7) || !p7->d.sign)
         return;
 
     STACK_OF(X509)* certs = p7->d.sign->cert;
@@ -343,8 +405,14 @@ static void ExtractCertificatesFromMSCountersignature(const uint8_t* data, int l
         ASN1_TYPE* nested = X509_ATTRIBUTE_get0_type(attr, i);
         if (nested == nullptr)
             break;
-        int len             = nested->value.sequence->length;
-        const uint8_t* data = nested->value.sequence->data;
+        const ASN1_STRING* sequence = GetSequence(nested);
+        if (!sequence)
+        {
+            auth.counterSignatures.emplace_back().verifyFlags = (int32_t) CountersignatureVFY::CantParse;
+            continue;
+        }
+        int len             = sequence->length;
+        const uint8_t* data = sequence->data;
 
         /* Because MS TimeStamp countersignature has it's own SET of certificates
          * extract it back into parent signature for consistency with PKCS9 */
@@ -355,8 +423,14 @@ static void ExtractCertificatesFromMSCountersignature(const uint8_t* data, int l
 
 static bool AuthenticodeVerify(PKCS7_ptr& p7, PKCS7_SIGNER_INFO* si, X509* signCert)
 {
-    const uint8_t* contentData = p7->d.sign->contents->d.other->value.sequence->data;
-    long contentLen             = p7->d.sign->contents->d.other->value.sequence->length;
+    if (!p7->d.sign || !p7->d.sign->contents)
+        return false;
+    const ASN1_STRING* content = GetSequence(p7->d.sign->contents->d.other);
+    if (!content)
+        return false;
+
+    const uint8_t* contentData = content->data;
+    long contentLen            = content->length;
 
     uint64_t version = 0;
     ASN1_INTEGER_get_uint64(&version, p7->d.sign->version);
@@ -364,12 +438,21 @@ static bool AuthenticodeVerify(PKCS7_ptr& p7, PKCS7_SIGNER_INFO* si, X509* signC
     {
         /* Move the pointer to the actual contents - skip OID and length */
         int pclass = 0, ptag = 0;
-        ASN1_get_object(&contentData, &contentLen, &ptag, &pclass, contentLen);
+        /* 0x80 = error (e.g. the encoded length runs past the buffer, contentLen is then not trustworthy) */
+        if (ASN1_get_object(&contentData, &contentLen, &ptag, &pclass, contentLen) & 0x80)
+            return false;
     }
 
     BIO* contentBio = BIO_new_mem_buf(contentData, static_cast<int>(contentLen));
+    if (!contentBio)
+        return false;
     /* Create `digest` type BIO to calculate content digest for verification */
     BIO* p7bio = PKCS7_dataInit(p7.get(), contentBio);
+    if (!p7bio)
+    {
+        BIO_free(contentBio);
+        return false;
+    }
 
     char buf[4096];
     /* We now have to 'read' from p7bio to calculate content digest */
@@ -392,27 +475,30 @@ AuthenticodeParser::AuthenticodeParser() : signatures()
     OBJ_create(NID_spc_indirect_data, "spcIndirectData", "SPC_INDIRECT_DATA");
 }
 
-bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long len, std::vector<AuthenticodeSignature>& result)
+bool AuthenticodeParser::AuthenticodeParseSignature(
+      const uint8_t* data, long len, std::vector<AuthenticodeSignature>& result, uint32_t depth)
 {
-    if (!data || len == 0)
-        return false;
-
     AuthenticodeSignature auth{};
+
+    /* A signature that can not be parsed or verified is still reported (with its failure flag),
+     * so a broken security directory never looks like a valid (or absent) signature */
+    const auto fail = [&](AuthenticodeVFY flag) {
+        auth.verifyFlags = (uint32_t) flag;
+        result.emplace_back(std::move(auth));
+        return false;
+    };
+
+    if (!data || len <= 0)
+        return fail(AuthenticodeVFY::CantParse);
 
     /* Let openssl parse the PKCS7 structure */
     PKCS7_ptr p7(d2i_PKCS7(nullptr, &data, len), PKCS7_free);
     if (!p7)
-    {
-        auth.verifyFlags = (int) AuthenticodeVFY::CantParse;
-        return false;
-    }
+        return fail(AuthenticodeVFY::CantParse);
 
-    /* We expect SignedData type of PKCS7 */
-    if (!PKCS7_type_is_signed(p7))
-    {
-        auth.verifyFlags = (int) AuthenticodeVFY::WrongPKCS7Type;
-        return false;
-    }
+    /* We expect SignedData type of PKCS7 (its content is optional in the ASN.1 and may be absent) */
+    if (!PKCS7_type_is_signed(p7) || !p7->d.sign)
+        return fail(AuthenticodeVFY::WrongPKCS7Type);
 
     PKCS7_SIGNED* p7data = p7->d.sign;
 
@@ -426,10 +512,7 @@ bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long le
     /* Get Signature content that contains the message digest and it's algorithm */
     SpcIndirectDataContent* dataContent = GetContent(p7data->contents);
     if (!dataContent)
-    {
-        auth.verifyFlags = (int) AuthenticodeVFY::BadContent;
-        return false;
-    }
+        return fail(AuthenticodeVFY::BadContent);
 
     DigestInfo* messageDigest = dataContent->messageDigest;
 
@@ -447,14 +530,11 @@ bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long le
      * and nested signatures or countersignatures */
     PKCS7_SIGNER_INFO* si = sk_PKCS7_SIGNER_INFO_value(PKCS7_get_signer_info(p7.get()), 0);
     if (!si)
-    {
-        auth.verifyFlags = (int) AuthenticodeVFY::NoSignerInfo;
-        return false;
-    }
+        return fail(AuthenticodeVFY::NoSignerInfo);
 
     /* Authenticode can contain SET of nested Authenticode signatures
      * and countersignatures in unauthenticated attributes */
-    ParseNestedAuthenticode(si, result);
+    ParseNestedAuthenticode(si, result, depth);
     ParsePKCS9Countersignature(p7, auth);
     // ParseMSCountersignature(p7, auth);
 
@@ -464,9 +544,8 @@ bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long le
     X509* signCert = sk_X509_value(signCertStack, 0);
     if (!signCert)
     {
-        auth.verifyFlags = (int) AuthenticodeVFY::NoSignerCert;
         sk_X509_free(signCertStack);
-        return false;
+        return fail(AuthenticodeVFY::NoSignerCert);
     }
 
     sk_X509_free(signCertStack);
@@ -474,18 +553,15 @@ bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long le
     auth.signer.chain = ParseSignerChain(signCert, certs);
 
     /* Get the Signers digest of Authenticode content */
-    ASN1_TYPE* digest = PKCS7_get_signed_attribute(si, NID_pkcs9_messageDigest);
+    const ASN1_OCTET_STRING* digest = GetOctetString(PKCS7_get_signed_attribute(si, NID_pkcs9_messageDigest));
     if (!digest)
-    {
-        auth.verifyFlags = (int) AuthenticodeVFY::DigestMissing;
-        return false;
-    }
+        return fail(AuthenticodeVFY::DigestMissing);
 
     digestnid = OBJ_obj2nid(si->digest_alg->algorithm);
     auth.signer.digestAlg.assign(OBJ_nid2ln(digestnid));
 
-    digestLen  = digest->value.asn1_string->length;
-    digestData = digest->value.asn1_string->data;
+    digestLen  = digest->length;
+    digestData = digest->data;
     auth.signer.digest.insert(auth.signer.digest.end(), digestData, digestData + digestLen);
 
     /* Authenticode stores optional programName in non-optional SpcSpOpusInfo attribute */
@@ -509,12 +585,15 @@ static bool AuthenticodeDigest(
       const EVP_MD* md, const uint8_t* pe_data, uint32_t pe_hdr_offset, bool is_64bit, uint32_t cert_table_addr, uint8_t* digest)
 {
     uint32_t buffer_size = 0xFFFF;
-    uint8_t* buffer      = (uint8_t*) malloc(buffer_size);
+    std::unique_ptr<uint8_t, decltype(&free)> bufferOwner((uint8_t*) malloc(buffer_size), free);
+    uint8_t* buffer = bufferOwner.get();
 
     /* BIO with the file data */
-    BIO* bio = BIO_new_mem_buf(pe_data, cert_table_addr);
+    BIO_ptr bioOwner(BIO_new_mem_buf(pe_data, cert_table_addr), BIO_free);
+    BIO* bio = bioOwner.get();
 
-    EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
+    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> mdctxOwner(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    EVP_MD_CTX* mdctx = mdctxOwner.get();
     if (!buffer || !bio || !mdctx)
     {
         return false;
@@ -605,10 +684,6 @@ static bool AuthenticodeDigest(
 
     bool status = EVP_DigestFinal(mdctx, digest, nullptr);
 
-    EVP_MD_CTX_free(mdctx);
-    BIO_free_all(bio);
-    free(buffer);
-
     return status;
 }
 
@@ -654,10 +729,15 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* peData, uint64_t pe_le
         return false;
 
     uint32_t dwLength = letoh32(*(const uint32_t*) (peData + certAddress));
-    if (pe_len < certAddress + dwLength)
+    /* dwLength includes the 8 bytes of the WIN_CERTIFICATE header and must fit in the security directory */
+    if (dwLength < 0x8 || dwLength > certLength || pe_len < certAddress + dwLength)
         return false;
     /* dwLength = offsetof(WIN_CERTIFICATE, bCertificate) + (size of the variable-length binary array contained within bCertificate) */
     AuthenticodeParseSignature(peData + certAddress + 0x8, dwLength - 0x8, signatures);
+
+    /* Nothing parsed means nothing verified */
+    if (signatures.empty())
+        return false;
 
     /* Compare valid signatures file digests to actual file digest, to complete verification */
     for (auto& sig : signatures)
@@ -676,18 +756,25 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* peData, uint64_t pe_le
 #else
         int mdlen = EVP_MD_size(md);
 #endif
+        if (mdlen <= 0)
+        {
+            if (sig.verifyFlags == (int) AuthenticodeVFY::Valid)
+                sig.verifyFlags = (int) AuthenticodeVFY::UnknownAlgorithm;
+            continue;
+        }
         sig.fileDigest.resize(mdlen);
 
         if (AuthenticodeDigest(
                   md, peData, peOffset, is64, static_cast<uint32_t>(certAddress), reinterpret_cast<uint8_t*>(sig.fileDigest.data())) ==
             false)
         {
+            /* every signature gets its own verdict: never leave the remaining ones marked Valid */
             if (sig.verifyFlags == (int) AuthenticodeVFY::Valid)
                 sig.verifyFlags = (int) AuthenticodeVFY::InternalError;
-            break;
+            continue;
         }
 
-        if (memcmp(sig.fileDigest.data(), sig.digest.data(), mdlen) != 0)
+        if (sig.digest.size() != (size_t) mdlen || memcmp(sig.fileDigest.data(), sig.digest.data(), mdlen) != 0)
             sig.verifyFlags = (int) AuthenticodeVFY::WrongFileDigest;
     }
 
@@ -911,7 +998,11 @@ bool Certificate::Parse(X509* x509)
     ParseNameAttributes(subjectName, subjectAttributes);
 
     version = X509_get_version(x509);
-    serial.assign(IntegerToSerial(X509_get_serialNumber(x509)));
+    if (char* serialText = IntegerToSerial(X509_get_serialNumber(x509)))
+    {
+        serial.assign(serialText);
+        free(serialText);
+    }
     notAfter    = ASN1_TIME_to_time_t(X509_get0_notAfter(x509));
     notBefore   = ASN1_TIME_to_time_t(X509_get0_notBefore(x509));
     int sig_nid = X509_get_signature_nid(x509);
@@ -924,7 +1015,11 @@ bool Certificate::Parse(X509* x509)
     EVP_PKEY* pkey = X509_get0_pubkey(x509);
     if (pkey)
     {
-        key.assign(PubkeyToPEM(pkey));
+        if (char* keyText = PubkeyToPEM(pkey))
+        {
+            key.assign(keyText);
+            free(keyText);
+        }
 #if OPENSSL_VERSION_NUMBER >= 0x3000000fL
         keyAlg.assign(OBJ_nid2sn(EVP_PKEY_get_base_id(pkey)));
 #else
@@ -974,7 +1069,7 @@ bool CounterSignature::ParsePKCS9(
 {
     this->type = CounterSignatureType::RFC3161;
 
-    PKCS7_SIGNER_INFO* si = d2i_PKCS7_SIGNER_INFO(nullptr, &data, size);
+    PKCS7_SIGNER_INFO_ptr si(d2i_PKCS7_SIGNER_INFO(nullptr, &data, size), PKCS7_SIGNER_INFO_free);
     if (!si)
     {
         BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
@@ -996,8 +1091,9 @@ bool CounterSignature::ParsePKCS9(
 
         STACK_OF(CMS_SignerInfo)* cmsSigners = CMS_get0_SignerInfos(cms.get());
         int32_t cmsSignersCount              = sk_CMS_SignerInfo_num(cmsSigners);
-        if (cmsSignersCount == 0)
+        if (cmsSignersCount <= 0)
         {
+            verifyFlags = (int) CountersignatureVFY::NoSignerCert;
             return false;
         }
 
@@ -1015,40 +1111,41 @@ bool CounterSignature::ParsePKCS9(
         }
         else
         {
-            ASN1_TYPE* signTime = X509_ATTRIBUTE_get0_type(signTimeAttr, 0);
+            const ASN1_TIME* signTime = GetTime(X509_ATTRIBUTE_get0_type(signTimeAttr, 0));
             if (!signTime)
             {
                 verifyFlags = (int) CountersignatureVFY::TimeMissing;
                 return false;
             }
 
-            this->signTime = ASN1_TIME_to_time_t(signTime->value.utctime);
+            this->signTime = ASN1_TIME_to_time_t(signTime);
         }
 
-        STACK_OF(X509)* allCerts = CMS_get1_certs(cms.get());
+        /* CMS_get1_certs returns new references, CMS_get0_signers a new stack (certificates owned by cms) */
+        X509_STACK_ptr allCerts(CMS_get1_certs(cms.get()), FreeX509StackAndCerts);
         if (!allCerts)
         {
             verifyFlags = (int) CountersignatureVFY::NoSignerCert;
             return false;
         }
-        auto certsCount = sk_X509_num(allCerts);
-        if (!certsCount)
+        auto certsCount = sk_X509_num(allCerts.get());
+        if (certsCount <= 0)
         {
             verifyFlags = (int) CountersignatureVFY::NoSignerCert;
             return false;
         }
 
-        STACK_OF(X509)* signCerts = CMS_get0_signers(cms.get());
-        auto signCertsCount       = sk_X509_num(signCerts);
-        if (!signCertsCount)
+        X509_STACK_ptr signCerts(CMS_get0_signers(cms.get()), FreeX509Stack);
+        auto signCertsCount = sk_X509_num(signCerts.get());
+        if (signCertsCount <= 0)
         {
             verifyFlags = (int) CountersignatureVFY::NoSignerCert;
             return false;
         }
-        const auto signCert = sk_X509_value(signCerts, 0);
+        const auto signCert = sk_X509_value(signCerts.get(), 0);
 
         /* PKCS9 stores certificates in the corresponding PKCS7 it countersigns */
-        chain = AuthenticodeParser::ParseSignerChain(signCert, allCerts);
+        chain = AuthenticodeParser::ParseSignerChain(signCert, allCerts.get());
 
         ASN1_OCTET_STRING** pos = CMS_get0_content(cms.get());
         if (pos == nullptr || *pos == nullptr)
@@ -1058,7 +1155,8 @@ bool CounterSignature::ParsePKCS9(
         }
 
         const unsigned char* p = (*pos)->data;
-        TimeStampToken* token  = d2i_TimeStampToken(nullptr, &p, (*pos)->length);
+        std::unique_ptr<TimeStampToken, decltype(&TimeStampToken_free)> token(
+              d2i_TimeStampToken(nullptr, &p, (*pos)->length), TimeStampToken_free);
         if (token == nullptr)
         {
             verifyFlags = (int) CountersignatureVFY::DigestMissing;
@@ -1069,27 +1167,28 @@ bool CounterSignature::ParsePKCS9(
         int digestnid = OBJ_obj2nid(token->messageImprint->digestAlgorithm->algorithm);
         digestAlg.assign(OBJ_nid2ln(digestnid));
 
-        const EVP_MD* md  = EVP_get_digestbynid(digestnid);
-        EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
-        if (!EVP_DigestInit(mdctx, md))
+        const EVP_MD* md = EVP_get_digestbynid(digestnid);
+        std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> mdctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+        if (!md || !mdctx || !EVP_DigestInit(mdctx.get(), md))
         {
-            EVP_MD_CTX_free(mdctx);
             verifyFlags = (int) CountersignatureVFY::DigestMissing;
             return false;
         }
 
-        EVP_DigestUpdate(mdctx, counter->enc_digest->data, (size_t) counter->enc_digest->length);
+        EVP_DigestUpdate(mdctx.get(), counter->enc_digest->data, (size_t) counter->enc_digest->length);
         unsigned char mdbuf[EVP_MAX_MD_SIZE];
-        EVP_DigestFinal(mdctx, mdbuf, nullptr);
-        EVP_MD_CTX_free(mdctx);
+        unsigned int mdbufLen = 0;
+        if (!EVP_DigestFinal(mdctx.get(), mdbuf, &mdbufLen))
+            mdbufLen = 0;
 
-        /* compare the provided hash against the computed hash */
-        ASN1_OCTET_STRING* hash = token->messageImprint->digest;
-        /* hash->length == EVP_MD_size(md) */
+        /* compare the provided hash against the computed hash: the imprint comes from the token,
+         * so its length must be the one of the digest we computed */
+        const ASN1_OCTET_STRING* hash = token->messageImprint->digest;
 
-        bool result = (memcmp(mdbuf, hash->data, (size_t) hash->length) == 0);
+        bool result = mdbufLen > 0 && hash != nullptr && hash->length == (int) mdbufLen &&
+                      memcmp(mdbuf, hash->data, (size_t) mdbufLen) == 0;
 
-        TimeStampToken_free(token);
+        token.reset();
 
         const uint8_t* digestData = counter->enc_digest->data;
         digest.insert(digest.end(), digestData, digestData + counter->enc_digest->length);
@@ -1106,14 +1205,14 @@ bool CounterSignature::ParsePKCS9(
     int digestnid = OBJ_obj2nid(si->digest_alg->algorithm);
     digestAlg.assign(OBJ_nid2ln(digestnid));
 
-    const ASN1_TYPE* signTime = PKCS7_get_signed_attribute(si, NID_pkcs9_signingTime);
+    const ASN1_TIME* signTime = GetTime(PKCS7_get_signed_attribute(si.get(), NID_pkcs9_signingTime));
     if (!signTime)
     {
         verifyFlags = (int) CountersignatureVFY::TimeMissing;
         return false;
     }
 
-    this->signTime = ASN1_TIME_to_time_t(signTime->value.utctime);
+    this->signTime = ASN1_TIME_to_time_t(signTime);
 
     X509* signCert = X509_find_by_issuer_and_serial(certs, si->issuer_and_serial->issuer, si->issuer_and_serial->serial);
     if (!signCert)
@@ -1126,28 +1225,42 @@ bool CounterSignature::ParsePKCS9(
     chain = AuthenticodeParser::ParseSignerChain(signCert, certs);
 
     /* Get digest that corresponds to decrypted encrypted digest in signature */
-    ASN1_TYPE* messageDigest = PKCS7_get_signed_attribute(si, NID_pkcs9_messageDigest);
+    const ASN1_OCTET_STRING* messageDigest = GetOctetString(PKCS7_get_signed_attribute(si.get(), NID_pkcs9_messageDigest));
     if (!messageDigest)
     {
         verifyFlags = (int) CountersignatureVFY::DigestMissing;
         return false;
     }
 
-    size_t digestLen = messageDigest->value.octet_string->length;
+    size_t digestLen = messageDigest->length > 0 ? (size_t) messageDigest->length : 0;
 
     if (!digestLen)
     {
         verifyFlags = (int) CountersignatureVFY::DigestMissing;
     }
 
+    const uint8_t* digestData = messageDigest->data;
+    digest.insert(digest.end(), digestData, digestData + digestLen);
+
+    /* Nothing below can be verified without the digest algorithm */
     const EVP_MD* md = EVP_get_digestbynid(digestnid);
     if (!md)
     {
         verifyFlags = (int) CountersignatureVFY::UnknownAlgorithm;
+        return false;
     }
 
-    const uint8_t* digestData = messageDigest->value.octet_string->data;
-    digest.insert(digest.end(), digestData, digestData + digestLen);
+#if OPENSSL_VERSION_NUMBER >= 0x3000000fL
+    const int mdSize = EVP_MD_get_size(md);
+#else
+    const int mdSize = EVP_MD_size(md);
+#endif
+    if (mdSize <= 0)
+    {
+        verifyFlags = (int) CountersignatureVFY::UnknownAlgorithm;
+        return false;
+    }
+    const size_t mdLen = (size_t) mdSize;
 
     /* By this point we all necessary things for verification
      * Get DER representation of the authenticated attributes to calculate its
@@ -1155,71 +1268,69 @@ bool CounterSignature::ParsePKCS9(
     uint8_t* authAttrsData = nullptr;
     int authAttrsLen       = ASN1_item_i2d((ASN1_VALUE*) si->auth_attr, &authAttrsData, ASN1_ITEM_rptr(PKCS7_ATTR_VERIFY));
 
-    uint8_t calc_digest[EVP_MAX_MD_SIZE];
-    CalculateDigest(md, authAttrsData, authAttrsLen, calc_digest);
+    uint8_t calc_digest[EVP_MAX_MD_SIZE]{};
+    const bool authAttrsHashed = authAttrsLen > 0 && CalculateDigest(md, authAttrsData, (size_t) authAttrsLen, calc_digest) == mdSize;
     OPENSSL_free(authAttrsData);
 
     /* Get public key to decrypt encrypted digest of auth attrs */
-    EVP_PKEY* pkey    = X509_get0_pubkey(signCert);
-    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(pkey, nullptr);
+    EVP_PKEY* pkey = X509_get0_pubkey(signCert);
+    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> ctx(pkey ? EVP_PKEY_CTX_new(pkey, nullptr) : nullptr, EVP_PKEY_CTX_free);
 
     /* TODO try to get rid of hardcoded length bound */
     size_t decLen = 65536;
-    std::unique_ptr<uint8_t> decData((uint8_t*) malloc(decLen));
+    std::unique_ptr<uint8_t, decltype(&free)> decData((uint8_t*) malloc(decLen), free);
     if (!decData)
     {
-        EVP_PKEY_CTX_free(ctx);
         verifyFlags = (int) CountersignatureVFY::InternalError;
+        return false;
     }
 
     uint8_t* encData = si->enc_digest->data;
     size_t encLen    = si->enc_digest->length;
 
     /* Decrypt the encrypted digest */
-    EVP_PKEY_verify_recover_init(ctx);
-    bool isDecrypted = EVP_PKEY_verify_recover(ctx, decData.get(), &decLen, encData, encLen) == 1;
-    EVP_PKEY_CTX_free(ctx);
+    bool isDecrypted = ctx && EVP_PKEY_verify_recover_init(ctx.get()) > 0 &&
+                       EVP_PKEY_verify_recover(ctx.get(), decData.get(), &decLen, encData, encLen) == 1;
+    ctx.reset();
 
     if (!isDecrypted)
     {
         verifyFlags = (int) CountersignatureVFY::CantDecryptDigest;
     }
-
-    /* compare the encrypted digest and calculated digest */
-    bool isValid = false;
-
-#if OPENSSL_VERSION_NUMBER >= 0x3000000fL
-    size_t mdLen = EVP_MD_get_size(md);
-#else
-    size_t mdLen = EVP_MD_size(md);
-#endif
-    /* Sometimes signed data contains DER encoded DigestInfo structure which contains hash of
-     * authenticated attributes (39c9d136f026a9ad18fb9f41a64f76dd8418e8de625dce5d3a372bd242fc5edd)
-     * but other times it is just purely and I didn't find another way to  distinguish it but only
-     * based on the length of data we get. Found mention of this in openssl mailing list:
-     * https://mta.openssl.org/pipermail/openssl-users/2015-September/002054.html */
-    if (mdLen == decLen)
-    {
-        isValid = !memcmp(calc_digest, decData.get(), mdLen);
-    }
     else
     {
-        const uint8_t* data = decData.get();
-        DigestInfo* info    = d2i_DigestInfo(nullptr, &data, static_cast<uint32_t>(decLen));
-        if (info)
+        /* compare the encrypted digest and calculated digest */
+        bool isValid = false;
+
+        /* Sometimes signed data contains DER encoded DigestInfo structure which contains hash of
+         * authenticated attributes (39c9d136f026a9ad18fb9f41a64f76dd8418e8de625dce5d3a372bd242fc5edd)
+         * but other times it is just purely and I didn't find another way to  distinguish it but only
+         * based on the length of data we get. Found mention of this in openssl mailing list:
+         * https://mta.openssl.org/pipermail/openssl-users/2015-September/002054.html */
+        if (mdLen == decLen)
         {
-            isValid = !memcmp(info->digest->data, calc_digest, mdLen);
-            DigestInfo_free(info);
+            isValid = authAttrsHashed && !memcmp(calc_digest, decData.get(), mdLen);
         }
         else
         {
-            isValid = false;
+            const uint8_t* data = decData.get();
+            DigestInfo* info    = d2i_DigestInfo(nullptr, &data, static_cast<long>(decLen));
+            if (info)
+            {
+                isValid = authAttrsHashed && info->digest && (size_t) info->digest->length == mdLen &&
+                          !memcmp(info->digest->data, calc_digest, mdLen);
+                DigestInfo_free(info);
+            }
+            else
+            {
+                isValid = false;
+            }
         }
-    }
 
-    if (!isValid)
-    {
-        verifyFlags = (int) CountersignatureVFY::Invalid;
+        if (!isValid)
+        {
+            verifyFlags = (int) CountersignatureVFY::Invalid;
+        }
     }
 
     /* Now check the countersignature message-digest that should correspond
@@ -1232,7 +1343,6 @@ bool CounterSignature::ParsePKCS9(
         verifyFlags = (int) CountersignatureVFY::DoesntMatchSignature;
     }
 
-    PKCS7_SIGNER_INFO_free(si);
     return true;
 }
 
@@ -1454,31 +1564,8 @@ static inline std::string_view GetSignatureFlagName(AuthenticodeVFY flag)
 
 std::string AuthenticodeParser::GetSignatureFlags(uint32_t flags)
 {
-    static constexpr std::initializer_list<AuthenticodeVFY> types{
-        AuthenticodeVFY::Valid,         AuthenticodeVFY::CantParse,       AuthenticodeVFY::NoSignerCert,    AuthenticodeVFY::DigestMissing,
-        AuthenticodeVFY::InternalError, AuthenticodeVFY::NoSignerInfo,    AuthenticodeVFY::WrongPKCS7Type,  AuthenticodeVFY::BadContent,
-        AuthenticodeVFY::Invalid,       AuthenticodeVFY::WrongFileDigest, AuthenticodeVFY::UnknownAlgorithm
-    };
-
-    if (flags == static_cast<uint32_t>(AuthenticodeVFY::Valid))
-    {
-        return "Valid";
-    }
-
-    std::string output;
-    for (const auto& t : types)
-    {
-        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t) && t != AuthenticodeVFY::Valid)
-        {
-            if (!output.empty())
-            {
-                output += " | ";
-            }
-            output += GetSignatureFlagName(t);
-        }
-    }
-
-    return output;
+    // verifyFlags holds a single AuthenticodeVFY value (not a bit mask)
+    return std::string(GetSignatureFlagName(static_cast<AuthenticodeVFY>(flags)));
 }
 
 static inline std::string_view GetCounterSignatureFlagName(CountersignatureVFY flag)
@@ -1512,32 +1599,7 @@ static inline std::string_view GetCounterSignatureFlagName(CountersignatureVFY f
 
 std::string AuthenticodeParser::GetCounterSignatureFlags(uint32_t flags)
 {
-    static constexpr std::initializer_list<CountersignatureVFY> types{
-        CountersignatureVFY::Valid,         CountersignatureVFY::CantParse,
-        CountersignatureVFY::NoSignerCert,  CountersignatureVFY::UnknownAlgorithm,
-        CountersignatureVFY::Invalid,       CountersignatureVFY::CantDecryptDigest,
-        CountersignatureVFY::DigestMissing, CountersignatureVFY::DoesntMatchSignature,
-        CountersignatureVFY::InternalError, CountersignatureVFY::TimeMissing
-    };
-
-    if (flags == static_cast<uint32_t>(CountersignatureVFY::Valid))
-    {
-        return "Valid";
-    }
-
-    std::string output;
-    for (const auto& t : types)
-    {
-        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t) && t != CountersignatureVFY::Valid)
-        {
-            if (!output.empty())
-            {
-                output += " | ";
-            }
-            output += GetCounterSignatureFlagName(t);
-        }
-    }
-
-    return output;
+    // verifyFlags holds a single CountersignatureVFY value (not a bit mask)
+    return std::string(GetCounterSignatureFlagName(static_cast<CountersignatureVFY>(flags)));
 }
 } // namespace Authenticode

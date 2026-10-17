@@ -71,6 +71,18 @@ struct Stream
         PushUInt16();
     }
 
+    // refills the bit buffer (16 bits at a time, bits past the end of the stream are 0) until it holds at least bitsToRead bits
+    inline bool Fill(uint8 bitsToRead)
+    {
+        CHECK(bitsToRead <= MAX_BITS_COUNT, false, "");
+        while (bitsCount < bitsToRead)
+        {
+            CHECK(bitsCount <= UINT32_BITS_COUNT - UINT16_BITS_COUNT, false, ""); // the bit buffer can not take 16 more bits
+            PushUInt16();
+        }
+        return true;
+    }
+
     inline uint32 GetBits() const
     {
         return bits;
@@ -95,8 +107,10 @@ struct Stream
 
         if (bitsCount < bitsToRead)
         {
-            CHECK(Read(bitsToRead), false, "");
+            CHECK(Fill(bitsToRead), false, "");
         }
+        // keeps the shifts below in [0, 31]
+        CHECK(bitsCount >= bitsToRead && bitsCount <= MAX_BITS_COUNT, false, "");
 
         value = bits;
 
@@ -144,8 +158,8 @@ struct Stream
 struct HuffmanTree
 {
     uint8 maximumCodeSize;
-    std::unique_ptr<int32> symbols;
-    std::unique_ptr<int32> codeSizeCounts;
+    std::unique_ptr<int32[]> symbols;
+    std::unique_ptr<int32[]> codeSizeCounts;
 
     bool Initialize(int32 symbolsCount, uint8 _maximumCodeSize)
     {
@@ -195,7 +209,7 @@ struct HuffmanTree
             CHECK(leftValue >= 0, false, "");
         }
 
-        std::unique_ptr<int32> symbolOffsets(new int32[size]);
+        std::unique_ptr<int32[]> symbolOffsets(new int32[size]);
         CHECK(symbolOffsets.get() != nullptr, false, "");
 
         symbolOffsets.get()[0] = 0;
@@ -227,9 +241,9 @@ struct HuffmanTree
 
     bool GetSymbol(Stream& stream, uint32& symbol)
     {
-        while (stream.GetBitsCount() < maximumCodeSize)
+        if (stream.GetBitsCount() < maximumCodeSize)
         {
-            CHECK(stream.Read(maximumCodeSize), false, "");
+            CHECK(stream.Fill(maximumCodeSize), false, "");
         }
 
         const uint8 bitsCount = maximumCodeSize < stream.GetBitsCount() ? maximumCodeSize : stream.GetBitsCount();
@@ -351,7 +365,12 @@ bool Update(Stream& stream, Buffer& uncompressed, size_t& uncompressedDataOffset
 
             compressionOffset = (uint32) (uncompressedDataOffset - compressionOffset);
 
-            memcpy(uncompressed.GetData() + uncompressedDataOffset, uncompressed.GetData() + compressionOffset, compressionSize);
+            // byte by byte: an LZ77 match may overlap the bytes it produces (offset < length), memcpy is undefined then
+            auto* data = uncompressed.GetData();
+            for (uint32 j = 0; j < compressionSize; j++)
+            {
+                data[uncompressedDataOffset + j] = data[compressionOffset + j];
+            }
             uncompressedDataOffset += compressionSize;
             compressionOffset += compressionSize;
             compressionSize = 0;

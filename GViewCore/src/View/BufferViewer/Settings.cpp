@@ -35,7 +35,13 @@ void Settings::SetZonesListForObjectHighlighting(const GView::Utils::ZonesList& 
 {
     auto data = reinterpret_cast<SettingsData*>(this->data);
     CHECKRET(data, "");
-    data->zListObjects = zones;
+    // ZonesList owns its storage and is not copyable -> copy the zones one by one
+    data->zListObjects.Clear();
+    for (uint32 i = 0; i < zones.GetCount(); i++) {
+        const auto zone = zones.GetZone(i);
+        CHECKRET(zone.has_value(), "");
+        CHECKRET(data->zListObjects.Add(*zone), "");
+    }
 }
 
 void Settings::AddBookmark(uint8 bookmarkID, uint64 fileOffset)

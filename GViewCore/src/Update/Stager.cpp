@@ -3,6 +3,7 @@
 
 #include <mz.h>
 #include <mz_strm.h>
+#include <mz_strm_os.h>
 #include <mz_zip.h>
 #include <mz_zip_rw.h>
 #include <openssl/evp.h>
@@ -49,6 +50,23 @@ namespace
         }
         ZipReader(const ZipReader&)            = delete;
         ZipReader& operator=(const ZipReader&) = delete;
+    };
+
+    // a file opened once (hashed, then extracted through the same handle); must outlive the ZipReader using it
+    struct OsStream {
+        void* handle{ nullptr };
+        OsStream() : handle(mz_stream_os_create())
+        {
+        }
+        ~OsStream()
+        {
+            if (handle) {
+                mz_stream_os_close(handle);
+                mz_stream_os_delete(&handle);
+            }
+        }
+        OsStream(const OsStream&)            = delete;
+        OsStream& operator=(const OsStream&) = delete;
     };
 
     struct EntryInfo {
@@ -209,6 +227,125 @@ namespace
         }
         return clean && !ec;
     }
+
+    // read(buffer, size) returns the number of bytes read, 0 at the end, < 0 on error
+    template <typename ReadFn>
+    std::string Sha256Digest(ReadFn&& read, const std::atomic<bool>& cancel)
+    {
+        std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+        if (!ctx || EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
+            return {};
+        std::unique_ptr<char[]> buffer(new char[1024 * 1024]);
+        while (true) {
+            if (cancel.load(std::memory_order_acquire))
+                return {};
+            const int64 n = read(buffer.get(), 1024 * 1024);
+            if (n < 0)
+                return {};
+            if (n == 0)
+                break;
+            if (EVP_DigestUpdate(ctx.get(), buffer.get(), static_cast<size_t>(n)) != 1)
+                return {};
+        }
+        uint8 digest[EVP_MAX_MD_SIZE];
+        unsigned int len = 0;
+        if (EVP_DigestFinal_ex(ctx.get(), digest, &len) != 1 || len != 32)
+            return {};
+        static constexpr char HEX[] = "0123456789abcdef";
+        std::string hex;
+        hex.reserve(64);
+        for (unsigned int i = 0; i < len; i++) {
+            hex.push_back(HEX[digest[i] >> 4]);
+            hex.push_back(HEX[digest[i] & 0x0F]);
+        }
+        return hex;
+    }
+
+    // validates and extracts the archive opened in 'reader' into 'stagingDir' (must not exist) and writes the manifest
+    StageResult ExtractFromReader(void* reader, const fs::path& stagingDir, const Version& version, StageProgress& progress, const std::atomic<bool>& cancel)
+    {
+        std::vector<EntryInfo> entries;
+        std::string error;
+        if (!ScanArchive(reader, entries, error))
+            return Fail(error);
+
+        std::vector<std::string> names;
+        names.reserve(entries.size());
+        for (const auto& e : entries)
+            if (!e.isDir)
+                names.push_back(e.path);
+        const auto prefix = FindPayloadPrefix(names, GVIEW_EXECUTABLE_NAME);
+        if (!prefix.has_value())
+            return Fail("the archive does not contain exactly one " + std::string(GVIEW_EXECUTABLE_NAME));
+
+        uint64 total = 0;
+        for (const auto& e : entries) {
+            if (e.isDir || !e.path.starts_with(*prefix))
+                continue;
+            // the generated manifest would overwrite it (and then list itself as a file to install)
+            if (LowerAscii(e.path.substr(prefix->size())) == LowerAscii(MANIFEST_NAME))
+                return Fail("the archive contains a file named " + std::string(MANIFEST_NAME));
+            total += e.size;
+        }
+
+        std::error_code ec;
+        if (fs::exists(stagingDir, ec))
+            return Fail("the staging folder already exists");
+        fs::create_directories(stagingDir, ec);
+        if (ec)
+            return Fail("unable to create the staging folder");
+
+        progress.done.store(0);
+        progress.total.store(total);
+
+        StageResult result;
+        result.stagingDir = stagingDir;
+        try {
+            // Pass 2: walk the central directory again in the same order as ScanArchive
+            int32 err = mz_zip_reader_goto_first_entry(reader);
+            for (size_t index = 0; index < entries.size(); index++) {
+                if (index > 0)
+                    err = mz_zip_reader_goto_next_entry(reader);
+                if (err != MZ_OK) {
+                    fs::remove_all(stagingDir, ec);
+                    return Fail("the archive is corrupted");
+                }
+                const auto& e = entries[index];
+                if (e.isDir || !e.path.starts_with(*prefix))
+                    continue;
+                const auto relative = e.path.substr(prefix->size());
+                if (relative.empty() || IsProtectedPayloadPath(relative))
+                    continue;
+                if (!ExtractEntry(reader, e, stagingDir / FromUtf8(relative), cancel, progress, error)) {
+                    fs::remove_all(stagingDir, ec);
+                    result.cancelled = error == "cancelled";
+                    result.error     = std::move(error);
+                    return result;
+                }
+                result.files.push_back(relative);
+            }
+
+            // manifest consumed by GViewUpdater (plain text, one entry per line; names never contain control characters)
+            {
+                std::ofstream m(stagingDir / FromUtf8(MANIFEST_NAME), std::ios::binary | std::ios::trunc);
+                m << MANIFEST_HEADER << '\n' << "version " << version.ToString() << '\n';
+                for (const auto& f : result.files)
+                    m << "file " << f << '\n';
+                m << "end\n";
+                if (!m) {
+                    fs::remove_all(stagingDir, ec);
+                    return Fail("unable to write the update manifest");
+                }
+            }
+        } catch (const std::exception&) {
+            // e.g. an entry name that is not valid UTF-8 can not become a path on Windows
+            fs::remove_all(stagingDir, ec);
+            return Fail("the archive contains a file name that can not be used on this system");
+        }
+        result.ok = true;
+        progress.phase.store(StagePhase::Done);
+        return result;
+    }
 } // namespace
 
 fs::path UpdateWorkDir(const fs::path& installDir)
@@ -246,32 +383,14 @@ std::string Sha256File(const fs::path& file, const std::atomic<bool>& cancel)
     std::ifstream in(file, std::ios::binary);
     if (!in)
         return {};
-    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-    if (!ctx || EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
-        return {};
-    std::unique_ptr<char[]> buffer(new char[1024 * 1024]);
-    while (in) {
-        if (cancel.load(std::memory_order_acquire))
-            return {};
-        in.read(buffer.get(), 1024 * 1024);
-        const auto n = in.gcount();
-        if (n > 0 && EVP_DigestUpdate(ctx.get(), buffer.get(), static_cast<size_t>(n)) != 1)
-            return {};
-    }
-    if (in.bad())
-        return {};
-    uint8 digest[EVP_MAX_MD_SIZE];
-    unsigned int len = 0;
-    if (EVP_DigestFinal_ex(ctx.get(), digest, &len) != 1 || len != 32)
-        return {};
-    static constexpr char HEX[] = "0123456789abcdef";
-    std::string hex;
-    hex.reserve(64);
-    for (unsigned int i = 0; i < len; i++) {
-        hex.push_back(HEX[digest[i] >> 4]);
-        hex.push_back(HEX[digest[i] & 0x0F]);
-    }
-    return hex;
+    return Sha256Digest(
+          [&in](char* buffer, int32 size) -> int64 {
+              in.read(buffer, size);
+              if (in.bad())
+                  return -1;
+              return static_cast<int64>(in.gcount());
+          },
+          cancel);
 }
 
 StageResult ExtractRelease(
@@ -284,76 +403,7 @@ StageResult ExtractRelease(
     const auto zipUtf8 = zipPath.u8string();
     if (mz_zip_reader_open_file(zip.handle, reinterpret_cast<const char*>(zipUtf8.c_str())) != MZ_OK)
         return Fail("the downloaded file is not a valid zip archive");
-
-    std::vector<EntryInfo> entries;
-    std::string error;
-    if (!ScanArchive(zip.handle, entries, error))
-        return Fail(error);
-
-    std::vector<std::string> names;
-    names.reserve(entries.size());
-    for (const auto& e : entries)
-        if (!e.isDir)
-            names.push_back(e.path);
-    const auto prefix = FindPayloadPrefix(names, GVIEW_EXECUTABLE_NAME);
-    if (!prefix.has_value())
-        return Fail("the archive does not contain exactly one " + std::string(GVIEW_EXECUTABLE_NAME));
-
-    std::error_code ec;
-    if (fs::exists(stagingDir, ec))
-        return Fail("the staging folder already exists");
-    fs::create_directories(stagingDir, ec);
-    if (ec)
-        return Fail("unable to create the staging folder");
-
-    uint64 total = 0;
-    for (const auto& e : entries)
-        if (!e.isDir && e.path.starts_with(*prefix))
-            total += e.size;
-    progress.done.store(0);
-    progress.total.store(total);
-
-    StageResult result;
-    result.stagingDir = stagingDir;
-    // Pass 2: walk the central directory again in the same order as ScanArchive
-    int32 err = mz_zip_reader_goto_first_entry(zip.handle);
-    for (size_t index = 0; index < entries.size(); index++) {
-        if (index > 0)
-            err = mz_zip_reader_goto_next_entry(zip.handle);
-        if (err != MZ_OK) {
-            fs::remove_all(stagingDir, ec);
-            return Fail("the archive is corrupted");
-        }
-        const auto& e = entries[index];
-        if (e.isDir || !e.path.starts_with(*prefix))
-            continue;
-        const auto relative = e.path.substr(prefix->size());
-        if (relative.empty() || IsProtectedPayloadPath(relative))
-            continue;
-        if (!ExtractEntry(zip.handle, e, stagingDir / FromUtf8(relative), cancel, progress, error)) {
-            fs::remove_all(stagingDir, ec);
-            result.cancelled = error == "cancelled";
-            result.error     = std::move(error);
-            return result;
-        }
-        result.files.push_back(relative);
-    }
-
-    // manifest consumed by GViewUpdater (plain text, one entry per line; names never contain control characters)
-    {
-        std::ofstream m(stagingDir / FromUtf8(MANIFEST_NAME), std::ios::binary | std::ios::trunc);
-        m << MANIFEST_HEADER << '\n' << "version " << version.ToString() << '\n';
-        for (const auto& f : result.files)
-            m << "file " << f << '\n';
-        m << "end\n";
-        if (!m) {
-            fs::remove_all(stagingDir, ec);
-            return Fail("unable to write the update manifest");
-        }
-    }
-    result.ok = true;
-    progress.phase.store(StagePhase::Done);
-    return result;
+    return ExtractFromReader(zip.handle, stagingDir, version, progress, cancel);
 }
 
 StageResult StageRelease(
@@ -431,20 +481,36 @@ StageResult StageRelease(
         }
     }
 
-    // 3. integrity
+    // 3. integrity - the archive is opened once: the bytes that were verified are the bytes that get extracted
     progress.phase.store(StagePhase::Verifying);
-    if (!expectedDigest.empty()) {
-        const auto digest = Sha256File(zipPath, cancel);
-        if (digest != expectedDigest) {
-            fs::remove(zipPath, ec);
-            StageResult r = Fail(cancel.load() ? "cancelled" : "checksum mismatch: the downloaded file is corrupted or was tampered with");
-            r.cancelled   = cancel.load();
-            return r;
+    StageResult result;
+    {
+        OsStream file;
+        ZipReader zip;
+        if (file.handle == nullptr || zip.handle == nullptr) {
+            result = Fail("out of memory");
+        } else {
+            const auto zipUtf8 = zipPath.u8string();
+            if (mz_stream_os_open(file.handle, reinterpret_cast<const char*>(zipUtf8.c_str()), MZ_OPEN_MODE_READ) != MZ_OK) {
+                result = Fail("unable to open the downloaded file");
+            } else {
+                std::string digest;
+                if (!expectedDigest.empty())
+                    digest = Sha256Digest([&file](char* buffer, int32 size) -> int64 { return mz_stream_os_read(file.handle, buffer, size); }, cancel);
+                if (digest != expectedDigest) {
+                    result           = Fail(cancel.load() ? "cancelled" : "checksum mismatch: the downloaded file is corrupted or was tampered with");
+                    result.cancelled = cancel.load();
+                } else if (mz_stream_os_seek(file.handle, 0, MZ_SEEK_SET) != MZ_OK || mz_zip_reader_open(zip.handle, file.handle) != MZ_OK) {
+                    result = Fail("the downloaded file is not a valid zip archive");
+                } else {
+                    // 4. extraction
+                    progress.phase.store(StagePhase::Extracting);
+                    result = ExtractFromReader(zip.handle, stagingDir, release.version, progress, cancel);
+                }
+            }
         }
+        // zip is closed before file (reverse declaration order) and both before the file is removed
     }
-
-    // 4. extraction
-    auto result = ExtractRelease(zipPath, stagingDir, release.version, progress, cancel);
     fs::remove(zipPath, ec);
     return result;
 }

@@ -47,7 +47,8 @@ class XORKeyWindow : public Window
             break;
         }
         case Event::WindowAccept:
-            Validate();
+            if (Validate())
+                Exit(Dialogs::Result::Ok);
             return true;
         case Event::WindowClose:
             Exit(Dialogs::Result::Cancel);

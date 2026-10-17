@@ -498,7 +498,13 @@ void TelemetryFlusher::FlushRound()
         for (int round = 0; round < 8; round++)
         {
             auto outcome = FlushOnce(*transport, *collector, metaProvider(), 15, &cancel, &expired);
-            if (!outcome.has_value() || *outcome != FlushOutcome::Accepted || collector->PendingCount() == 0)
+            if (!outcome.has_value() || *outcome != FlushOutcome::Accepted)
+                break;
+            // the queue changes between runs of a web job (events recorded meanwhile, the next batch already taken
+            // by a later round): read it once, otherwise a replay could stop before that round and leave its batch
+            // in flight forever (JobReplay.hpp)
+            const bool drained = JobReplay::Once([&]() { return collector->PendingCount() == 0; });
+            if (drained)
                 break;
         }
         if (expired && onPolicyExpired)

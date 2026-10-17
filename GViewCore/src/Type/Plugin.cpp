@@ -84,7 +84,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
     description.Set(section.GetValue("Description").ToStringView());
 
     // priority
-    this->priority = std::max<>(section.GetValue("Priority").ToUInt32(0xFFFF), 0xFFFFU);
+    this->priority = static_cast<uint16>(std::min<>(section.GetValue("Priority").ToUInt32(0xFFFF), 0xFFFFU));
 
     // patterns
     auto PatternValue = section.GetValue("Pattern");

@@ -96,6 +96,9 @@ namespace View
 
             std::vector<DissasmStructureType> internalTypes{};
             uint32 GetExpandedSize() const;
+            // bytes of the file covered by the type, the fields one after another as they are drawn (no padding); 0 for the types whose
+            // size depends on the data (strings)
+            uint64 GetByteSize() const;
 
             DissasmStructureType() = default;
             DissasmStructureType(InternalDissasmType primary, std::string_view name, uint32 secondary = 0, uint32 width = 0, uint32 height = 0)
@@ -445,6 +448,28 @@ namespace View
             bool ValidateCacheData(DissasmCache& cache, Reference<GView::Object> obj);
             SettingsData();
         };
+
+        // Zones layout (Instance::RecomputeDissasmZones): the zones are placed in the order of their file offsets, one after another.
+        // The bytes of the file that are not shown by a structure / code / collapsible zone are shown as raw text by the text zones: a gap
+        // zone covers the bytes between the end of the previous zone and the start of the next one, the trailing zone the bytes after
+        // the last zone (until the end of the file).
+        struct DissasmZonesLayoutParams {
+            uint32 textSize;   // bytes shown on a text line
+            uint64 fileSize;
+            bool showFileContent; // the gap / trailing text zones are shown
+            bool structuresInitialCollapsedState;
+        };
+        void BuildDissasmParseZones(SettingsData& settings, const DissasmZonesLayoutParams& params);
+        // lines of the text of a text zone: a collapsible zone has its title line besides them
+        uint32 GetTextZoneExtendedSize(const CollapsibleAndTextData& data, uint32 textSize);
+        // the text line size changed: the text zones get their new number of lines and every zone is moved after the previous one (the
+        // structure and code zones keep their lines); true when any line changed
+        bool RelayoutDissasmParseZones(std::vector<std::unique_ptr<ParseZone>>& zones, uint32 textSize);
+
+        // The code zone records were keyed by the first line of their zone ("DissasmParseZoneType.<line>"): it depended on the view width
+        // and on the zones placed before, so it rarely matches the current layout. When the cache is loaded they are moved (once) to the
+        // file offset key of their zone ("DissasmCodeZone.<offset>"): the next save writes them under that key.
+        void MigrateLegacyCodeZoneRecords(DissasmCache& cache, const std::vector<std::unique_ptr<ParseZone>>& zones);
 
         struct LayoutDissasm {
             uint32 visibleRows;

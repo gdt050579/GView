@@ -51,7 +51,7 @@ struct _Entry
     uint32_t external_fa{};        /* external file attributes */
 
     std::u8string filename{};              /* filename utf8 null-terminated string */
-    std::unique_ptr<uint8_t> extrafield{}; /* extrafield data */
+    std::unique_ptr<uint8_t[]> extrafield{}; /* extrafield data */
     std::u8string comment{};               /* comment utf8 null-terminated string */
     std::u8string linkname{};              /* sym-link filename utf8 null-terminated string */
 
@@ -323,11 +323,15 @@ bool Info::Decompress(Buffer& output, uint32 index, const std::string& password)
     auto& entry = info->entries.at(index);
     CHECK(entry.type == EntryType::File, false, "");
 
+    CHECK(entry.uncompressed_size >= 0 && entry.uncompressed_size <= INT32_MAX, false, "");
+    CHECK(entry.filename.empty() == false, false, "");
+
     mz_zip_reader_create_ptr reader{ mz_zip_reader_create() };
     mz_zip_reader_set_password(reader.value, password.c_str());
-    mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
 
     CHECK(mz_zip_reader_open_file(reader.value, info->path.c_str()) == MZ_OK, false, "");
+    // exact name lookup (a pattern would treat '*' / '?' in the name as wildcards)
+    CHECK(mz_zip_reader_locate_entry(reader.value, reinterpret_cast<const char*>(entry.filename.c_str()), 0) == MZ_OK, false, "");
 
     output.Reserve(entry.uncompressed_size);
 
@@ -347,17 +351,22 @@ bool Info::Decompress(const BufferView& input, Buffer& output, uint32 index, con
     auto& entry = info->entries.at(index);
     CHECK(entry.type == EntryType::File, false, "");
 
+    CHECK(entry.uncompressed_size >= 0 && entry.uncompressed_size <= INT32_MAX, false, "");
+    CHECK(entry.filename.empty() == false, false, "");
+    CHECK(input.GetLength() <= static_cast<size_t>(INT32_MAX), false, "");
+
     mz_zip_reader_create_ptr reader{ mz_zip_reader_create() };
     mz_zip_reader_set_password(reader.value, password.c_str());
-    mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
 
     CHECK(mz_zip_reader_open_buffer(
                 reader.value,
                 const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(input.GetData())),
-                (int32_t) input.GetLength(),
+                static_cast<int32_t>(input.GetLength()),
                 /* don't copy */ 0) == MZ_OK,
           false,
           "");
+    // exact name lookup (a pattern would treat '*' / '?' in the name as wildcards)
+    CHECK(mz_zip_reader_locate_entry(reader.value, reinterpret_cast<const char*>(entry.filename.c_str()), 0) == MZ_OK, false, "");
 
     output.Reserve(entry.uncompressed_size);
 
@@ -388,14 +397,16 @@ bool GetInfo(std::u16string_view path, Info& info)
         CHECKBK(mz_zip_reader_entry_get_info(internalInfo->reader.value, &zipFile) == MZ_OK, "");
         mz_zip_reader_set_pattern(internalInfo->reader.value, nullptr, 1); // do we need a pattern?
 
-        size_t entryIndex = internalInfo->entries.size();
-        auto& entry       = internalInfo->entries.emplace_back();
-      
+        auto& entry = internalInfo->entries.emplace_back();
+
         ConvertZipFileInfoToEntry(zipFile, entry);
 
-        std::u8string_view filename = entry.filename;
-        if (entry.type == EntryType::Directory && filename[filename.size() - 1] == '/') {
-            filename = { filename.data(), filename.size() - 1 };
+        // copies: the emplace_back() below may reallocate entries (and invalidate references / views into them)
+        std::u8string filename      = entry.filename;
+        const auto versionMadeBy    = entry.version_madeby;
+        const auto versionNeeded    = entry.version_needed;
+        if (entry.type == EntryType::Directory && filename.empty() == false && filename.back() == '/') {
+            filename.pop_back();
         }
 
         size_t offset = 0;
@@ -406,8 +417,7 @@ bool GetInfo(std::u16string_view path, Info& info)
             CHECKBK(pos != std::string::npos, "");
 
             // add the parent as well if not already present
-            auto& entry         = internalInfo->entries[entryIndex];
-            auto parentFilename = entry.filename.substr(0, pos + 1);
+            auto parentFilename = filename.substr(0, pos + 1);
 
             auto it = std::find_if(
                   internalInfo->entries.begin(), internalInfo->entries.end(), [&](const _Entry& e) -> bool { return e.filename == parentFilename; });
@@ -416,8 +426,8 @@ bool GetInfo(std::u16string_view path, Info& info)
                 parentEntry.filename       = parentFilename;
                 parentEntry.filename_size  = static_cast<uint16_t>(parentFilename.size());
                 parentEntry.type           = EntryType::Directory;
-                parentEntry.version_madeby = entry.version_madeby;
-                parentEntry.version_needed = entry.version_needed;
+                parentEntry.version_madeby = versionMadeBy;
+                parentEntry.version_needed = versionNeeded;
             }
 
             offset = pos + 1;
@@ -444,15 +454,20 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
     // every option has its downsides
     auto buffer = cache.GetEntireFile();
     CHECK(buffer.IsValid(), false, "");
+    CHECK(buffer.GetLength() <= static_cast<size_t>(INT32_MAX), false, ""); // minizip-ng takes an int32_t length
 
     CHECK(mz_zip_reader_open_buffer(
                 internalInfo->reader.value,
                 const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(buffer.GetData())),
-                static_cast<uint32>(buffer.GetLength()), // max 4GB
+                static_cast<int32_t>(buffer.GetLength()),
                 /* don't copy */ 0) == MZ_OK,
           false,
           "");
-    CHECK(mz_zip_reader_goto_first_entry(internalInfo->reader.value) == MZ_OK, false, "");
+    if (mz_zip_reader_goto_first_entry(internalInfo->reader.value) != MZ_OK)
+    {
+        internalInfo->reader.Reset(); // the reader points into the cache window => do not keep it
+        RETURNERROR(false, "");
+    }
 
     do
     {
@@ -460,14 +475,16 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
         CHECKBK(mz_zip_reader_entry_get_info(internalInfo->reader.value, &zipFile) == MZ_OK, "");
         mz_zip_reader_set_pattern(internalInfo->reader.value, nullptr, 1); // do we need a pattern?
 
-        size_t entryIndex = internalInfo->entries.size();
         auto& entry = internalInfo->entries.emplace_back();
 
         ConvertZipFileInfoToEntry(zipFile, entry);
 
-        std::u8string_view filename = entry.filename;
-        if (entry.type == EntryType::Directory && filename[filename.size() - 1] == '/') {
-            filename = { filename.data(), filename.size() - 1 };
+        // copies: the emplace_back() below may reallocate entries (and invalidate references / views into them)
+        std::u8string filename      = entry.filename;
+        const auto versionMadeBy    = entry.version_madeby;
+        const auto versionNeeded    = entry.version_needed;
+        if (entry.type == EntryType::Directory && filename.empty() == false && filename.back() == '/') {
+            filename.pop_back();
         }
 
         size_t offset = 0;
@@ -478,8 +495,7 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
             CHECKBK(pos != std::string::npos, "");
 
             // add the parent as well if not already present
-            auto& entry         = internalInfo->entries[entryIndex];
-            auto parentFilename = entry.filename.substr(0, pos + 1);
+            auto parentFilename = filename.substr(0, pos + 1);
 
             auto it = std::find_if(
                   internalInfo->entries.begin(), internalInfo->entries.end(), [&](const _Entry& e) -> bool { return e.filename == parentFilename; });
@@ -488,8 +504,8 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
                 parentEntry.filename       = parentFilename;
                 parentEntry.filename_size  = static_cast<uint16_t>(parentFilename.size());
                 parentEntry.type           = EntryType::Directory;
-                parentEntry.version_madeby = entry.version_madeby;
-                parentEntry.version_needed = entry.version_needed;
+                parentEntry.version_madeby = versionMadeBy;
+                parentEntry.version_needed = versionNeeded;
             }
 
             offset = pos + 1;
@@ -497,6 +513,9 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
 
         CHECKBK(mz_zip_reader_goto_next_entry(internalInfo->reader.value) == MZ_OK, "");
     } while (true);
+
+    // the reader reads from the cache window (not copied) => it must not outlive this call (nothing uses it afterwards)
+    internalInfo->reader.Reset();
 
     return true;
 }

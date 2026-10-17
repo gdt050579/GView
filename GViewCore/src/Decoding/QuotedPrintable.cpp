@@ -36,7 +36,6 @@ bool GView::Decoding::QuotedPrintable::Decode(BufferView view, Buffer& output)
 {
     CHECK(view.IsValid(), false, "");
     CHECK(view.GetLength() >= 3, false, "");
-    CHECK(view.GetData()[0] == '=', false, "");
 
     char temp_buffer[2] = {};
     // Iterate over each character in the input buffer

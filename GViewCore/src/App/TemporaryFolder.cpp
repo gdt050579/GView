@@ -25,6 +25,7 @@
 #    include <fcntl.h>
 #    include <stdlib.h> // mkdtemp
 #    include <sys/file.h>
+#    include <sys/stat.h> // lstat
 #    include <unistd.h>
 #endif
 
@@ -112,6 +113,22 @@ namespace
         }
     }
 
+#if !defined(BUILD_FOR_WASM)
+    // a real folder (not a symbolic link) owned by the current user. In a shared base folder (/tmp) another user can
+    // create GView-* folders and swap them for a symbolic link at any time; folders of the current user can not be
+    // renamed or replaced by others in a sticky folder, so only those are swept.
+    bool IsOwnFolder(const fs::path& folder)
+    {
+#    if defined(BUILD_FOR_WINDOWS)
+        (void) folder; // the default base folder (%TEMP%) is private to the user
+        return true;
+#    else
+        struct stat st {};
+        return lstat(folder.c_str(), &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid();
+#    endif
+    }
+#endif
+
     // removes the GView-* folders left behind by GView instances that are no longer running
     void RemoveStaleFolders(const fs::path& base) noexcept
     {
@@ -123,14 +140,15 @@ namespace
                 try {
                     const auto name = it->path().filename().u8string();
                     std::error_code entryError;
-                    if (!name.starts_with(u8"GView-") || it->is_symlink(entryError) || !it->is_directory(entryError))
+                    if (!name.starts_with(u8"GView-") || it->is_symlink(entryError) || !it->is_directory(entryError) || !IsOwnFolder(it->path()))
                         continue;
                     const auto lockFile = it->path() / LOCK_FILE_NAME;
                     const auto created  = fs::last_write_time(lockFile, entryError); // fails when there is no lock file
                     if (entryError || now - created < STALE_FOLDER_AGE)
                         continue;
                     FolderLock lock;
-                    if (lock.TryAcquire(lockFile))
+                    // checked again right before the removal (the lock file was opened through the folder path)
+                    if (lock.TryAcquire(lockFile) && IsOwnFolder(it->path()))
                         RemoveLockedFolder(it->path(), lock);
                 } catch (...) {
                     // e.g. a name that can not be converted => not one of ours

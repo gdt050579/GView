@@ -10,6 +10,7 @@ The following section should be seen in a ``GView.ini`` file:
 * ``[Keys.<xxx>]`` - the keyboard shortcuts changed by the user from the *Keyboard shortcuts* window (see :doc:`keyboard_shortcuts`)
 * ``[Type.<XXX>]`` - various sections that describe characteristics of each supported type in GView
 * ``[View.<xxx>]`` - various section for each smart view
+* ``[SmartAssistants]`` - the API keys and the settings of the smart assistants (see `Smart assistants`_ below)
 
 Temporary folder
 ----------------
@@ -32,6 +33,29 @@ written anywhere else: the operation is skipped (WinTrust) or fails (archives th
 
 Learning and Evaluation Mode never writes memory-only task content (or anything extracted from it) to this folder, and
 nothing at all while the course policy restricts ``Export``.
+
+Smart assistants
+----------------
+
+The ``[SmartAssistants]`` section configures the LLM assistants shown in the *Smart Assistants* panel:
+
+* ``<AssistantName> = <API key>`` - the API key of an assistant, using its name as the key (``GeminiPro1.5``,
+  ``GPT4o``). An assistant without a key (or with an empty one) is shown as not configured and can not be used.
+* ``PromptRetries`` - how many times some queries (for example the function name suggestions of the disassembly view)
+  are sent to the assistant to collect more answers (default ``1``).
+* ``ContextCharacterLimit`` - the maximum size, in characters, of the file context (the information the type plugin
+  extracts from the file, serialized as JSON) that is sent with each prompt. It applies to every assistant. The fields
+  most relevant to the prompt are added first; a field that does not fit is skipped and smaller fields can still be
+  added. The default is ``65536`` (64K characters, roughly 16K tokens: well inside the context window of the built-in
+  models, while keeping each request small and fast). Values are clamped to ``1024`` - ``1048576`` (1K - 1M).
+
+..  code-block:: ini
+
+    [SmartAssistants]
+    GeminiPro1.5 = <your Gemini API key>
+    GPT4o = <your OpenAI API key>
+    PromptRetries = 1
+    ContextCharacterLimit = 131072
 
 Types
 -----

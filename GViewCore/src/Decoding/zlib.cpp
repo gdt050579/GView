@@ -1,18 +1,25 @@
 #include "../include/GView.hpp"
 #include <zlib.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace GView::Decoding::ZLIB
 {
 bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize)
 {
     CHECK(input.IsValid(), false, "");
     CHECK(inputSize > 0, false, "");
+    CHECK(inputSize <= input.GetLength(), false, "");
     CHECK(outputSize > inputSize, false, "");
+    // uLong / uLongf is 32 bits on Windows
+    CHECK(static_cast<uLong>(inputSize) == inputSize, false, "");
+    CHECK(static_cast<uLongf>(outputSize) == outputSize, false, "");
 
     output.Resize(outputSize);
 
-    uint64 outputSizeCopy = outputSize;
-    int32 ret             = uncompress(output.GetData(), (uLongf*) &outputSizeCopy, input.GetData(), static_cast<uLong>(inputSize));
+    uLongf outputSizeCopy = static_cast<uLongf>(outputSize);
+    int32 ret             = uncompress(output.GetData(), &outputSizeCopy, input.GetData(), static_cast<uLong>(inputSize));
     CHECK(outputSize == outputSizeCopy, false, "ZLIB error: %d!", ret);
     CHECK(ret == Z_OK, false, "ZLIB error: %d!", ret);
 
@@ -51,16 +58,26 @@ bool DecompressStream(const BufferView& input, Buffer& output, String& message, 
 
     while (ret == Z_OK || ret == Z_BUF_ERROR) {
         ret = inflate(&stream, Z_NO_FLUSH);
-        if (ret == Z_BUF_ERROR) {
-            output.Resize(stream.total_out * 2);
-            stream.avail_out = static_cast<uInt>(stream.total_out);
-            stream.next_out  = reinterpret_cast<Bytef*>(output.GetData() + stream.total_out);
+        if (ret != Z_OK && ret != Z_BUF_ERROR) {
+            break; // Z_STREAM_END or an error
+        }
+        if (stream.avail_out == 0) {
+            // output is full => grow it
+            const uint64 produced = stream.total_out;
+            output.Resize(produced * 2);
+            stream.avail_out = static_cast<uInt>((std::min<uint64>)(produced, (std::numeric_limits<uInt>::max)()));
+            stream.next_out  = reinterpret_cast<Bytef*>(output.GetData() + produced);
+            ret              = Z_OK;
+        } else if (stream.avail_in == 0 || ret == Z_BUF_ERROR) {
+            // all the input was consumed (or no progress is possible) but the stream did not end => truncated stream
+            ret = Z_BUF_ERROR;
+            break;
         }
     }
 
     output.Resize(stream.total_out);
     sizeConsumed = stream.total_in;
-    message.Format("Return code: %d with msg: %s", ret, stream.msg);
+    message.Format("Return code: %d with msg: %s", ret, stream.msg ? stream.msg : "");
 
     CHECK(ret == Z_OK || ret == Z_STREAM_END, false, "");
 

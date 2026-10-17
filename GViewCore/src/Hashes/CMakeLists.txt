@@ -5,3 +5,5 @@ target_sources(GViewCore PRIVATE
         CRC64.cpp
         OpenSSL.cpp
 )
+
+add_testing_sources(GViewCore tests_hashes.cpp)

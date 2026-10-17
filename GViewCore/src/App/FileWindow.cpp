@@ -160,14 +160,16 @@ Reference<GView::Object> FileWindow::GetObject()
 void FileWindow::ShowGoToDialog()
 {
     GView::Security::Learning::Hooks::OnSimpleEvent(this->obj.get(), GView::Security::Learning::Hooks::SimpleEvent::GotoDialog);
-    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog() == false)
+    auto v = GetCurrentView(); // no current view while the window has none
+    if (!v.IsValid() || v->ShowGoToDialog() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
     }
 }
 void FileWindow::ShowFindDialog()
 {
-    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowFindDialog() == false)
+    auto v = GetCurrentView();
+    if (!v.IsValid() || v->ShowFindDialog() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Find command !");
     }
@@ -176,7 +178,8 @@ void FileWindow::ShowCopyDialog()
 {
     if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Copy, "copying from the viewer"))
         return;
-    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowCopyDialog() == false)
+    auto v = GetCurrentView();
+    if (!v.IsValid() || v->ShowCopyDialog() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Copy command !");
     }
@@ -367,8 +370,8 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    if (INSTANCE_CHANGE_VIEW.Key != Key::None)
-        commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    if (auto v = GetCurrentView(); INSTANCE_CHANGE_VIEW.Key != Key::None && v.IsValid())
+        commandBar.SetCommand(INSTANCE_CHANGE_VIEW.Key, v->GetName(), CMD_NEXT_VIEW);
     if (INSTANCE_COMMAND_GOTO.Key != Key::None)
         commandBar.SetCommand(INSTANCE_COMMAND_GOTO.Key, "GoTo", CMD_GOTO);
     if (INSTANCE_COMMAND_FIND.Key != Key::None)

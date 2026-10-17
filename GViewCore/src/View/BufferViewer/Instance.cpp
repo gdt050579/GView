@@ -326,9 +326,10 @@ void Instance::MoveTillEndBlock(bool selected)
     uint32 lastValue = 0xFFFFFFFF;
     uint32 count     = 0;
 
-    fileSize = this->obj->GetData().GetSize();
+    fileSize            = this->obj->GetData().GetSize();
+    const auto startPos = this->cursor.GetCurrentPosition();
 
-    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;) {
+    for (tr = startPos; tr < fileSize;) {
         auto buf = this->obj->GetData().Get(tr, 4096, false);
         if (!buf.IsValid())
             break;
@@ -347,7 +348,9 @@ void Instance::MoveTillEndBlock(bool selected)
         }
         tr += (s - buf.begin());
         if (count == 16) {
-            tr -= 16;
+            // tr is the 16th identical byte: stop on the last byte before that run, but never before the
+            // starting position (a run that starts at the cursor would otherwise move back / underflow at offset 0)
+            tr = (tr >= startPos + 16) ? tr - 16 : startPos;
             break;
         }
     }
@@ -373,7 +376,8 @@ bool Instance::ShowFindDialog()
     findDialog.UpdateData(this->cursor.GetCurrentPosition(), this->obj);
     CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
 
-    const auto [start, length] = findDialog.GetNextMatch(this->cursor.GetCurrentPosition());
+    // accepting the dialog already ran the search (from the cursor position): use its outcome instead of searching again
+    const auto [start, length] = findDialog.GetAcceptedMatch();
     if (start != GView::Utils::INVALID_OFFSET && length != GView::Utils::INVALID_OFFSET) {
         if (findDialog.AlignToUpperRightCorner()) {
             MoveScrollTo(start);
@@ -387,9 +391,10 @@ bool Instance::ShowFindDialog()
             this->selection.UpdateSelection(0, start + length - 1);
             UpdateCurrentSelection();
         }
-    } else {
+    } else if (findDialog.LastSearchCompleted()) {
         Dialogs::MessageBox::ShowError("Error!", "Pattern not found!");
     }
+    // otherwise the search stopped on an input / regex error (the dialog already reported it) or was canceled
 
     return true;
 }
@@ -688,9 +693,12 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         this->chars.Resize(dli.offsetAndNameSize + dli.textSize + dli.numbersSize);
         dli.recomputeOffsets = false;
     }
-    auto buf          = this->obj->GetData().Get(dli.offset, dli.textSize, false);
-    dli.start         = buf.GetData();
-    dli.end           = buf.GetData() + buf.GetLength();
+    auto buf = this->obj->GetData().Get(dli.offset, dli.textSize, false);
+    // OffsetToColor (called while the line is drawn) may re-fill the data cache and invalidate 'buf',
+    // so the line is drawn from a private copy of its bytes
+    dli.lineBytes.assign(buf.begin(), buf.end());
+    dli.start         = dli.lineBytes.data();
+    dli.end           = dli.lineBytes.data() + dli.lineBytes.size();
     dli.chNameAndSize = this->chars.GetBuffer();
     dli.chText        = dli.chNameAndSize + (dli.offsetAndNameSize + dli.numbersSize);
     dli.chNumbers     = dli.chNameAndSize + dli.offsetAndNameSize;
@@ -1396,7 +1404,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             if (samePosition) {
                 Dialogs::MessageBox::ShowError("Error!", "No next match found!");
             }
-        } else {
+        } else if (findDialog.LastSearchCompleted()) { // an input / regex error was already reported by the search
             Dialogs::MessageBox::ShowError("Error!", "No next match found!");
         }
 
@@ -1430,7 +1438,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             if (samePosition) {
                 Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
             }
-        } else {
+        } else if (findDialog.LastSearchCompleted()) { // an input / regex error was already reported by the search
             Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
         }
 
@@ -1502,7 +1510,7 @@ bool Instance::Select(uint64 offset, uint64 size)
     auto end = offset + size - 1;
     if ((end < offset) || (end + 1 < size))
         return false;
-    if (end > this->obj->GetData().GetSize())
+    if (end >= this->obj->GetData().GetSize()) // end is inclusive (last selected byte)
         return false;
     this->selection.SetSelection(0, offset, end);
     return true;

@@ -2011,7 +2011,9 @@ void PEFile::RunCommand(std::string_view commandName)
 #endif
 
             while (!signatureChecked) {
-                Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
+                // dwLength comes from the file: it includes the 8-byte WIN_CERTIFICATE header and must fit in the directory
+                const uint32 blobSize = (cert.dwLength >= 8 && cert.dwLength <= securityDirectory.Size) ? cert.dwLength - 8 : 0;
+                Buffer blob           = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, blobSize);
                 GView::DigitalSignature::AuthenticodeToHumanReadable(blob, data.data.humanReadable);
 
                 signatureChecked = true;

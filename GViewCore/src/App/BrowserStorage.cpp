@@ -19,6 +19,9 @@
 #include <emscripten/emscripten.h>
 #include <sys/stat.h>
 
+#include <algorithm>
+#include <set>
+
 #include <nlohmann/json.hpp>
 
 EM_JS_DEPS(gview_browser_storage, "$FS,$UTF8ToString,$stringToUTF8,$lengthBytesUTF8");
@@ -164,29 +167,47 @@ namespace
                                static_cast<int64>(st.st_mtim.tv_sec) * 1000 + static_cast<int64>(st.st_mtim.tv_nsec / 1000000) };
     }
 
-    Storage::Snapshot Scan(const std::filesystem::path& home)
+    // tooLarge: files present but not scanned; complete: false when the scan stopped early (entry limit, error)
+    Storage::Snapshot Scan(const std::filesystem::path& home, std::set<std::string>& tooLarge, bool& complete)
     {
         Storage::Snapshot snapshot;
         std::error_code ec;
+        complete = true;
         // symbolic links are never followed (/files points back into the home folder)
         auto it = std::filesystem::recursive_directory_iterator(home, std::filesystem::directory_options::skip_permission_denied, ec);
         uint32 count = 0;
         for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
         {
             if (++count > MAX_SCANNED_ENTRIES)
+            {
+                complete = false;
                 break;
+            }
             if (it.depth() >= MAX_SCAN_DEPTH)
                 it.disable_recursion_pending();
             if (it->is_symlink(ec) || !it->is_regular_file(ec))
                 continue;
             const auto stamp = StampOf(it->path());
-            if (!stamp.has_value() || stamp->size > MAX_SCANNER_FILE_SIZE)
+            if (!stamp.has_value())
                 continue;
             auto relative = it->path().lexically_relative(home).generic_string();
+            if (stamp->size > MAX_SCANNER_FILE_SIZE)
+            {
+                tooLarge.insert(std::move(relative));
+                continue;
+            }
             if (Storage::IsStorablePath(relative))
                 snapshot.emplace(std::move(relative), *stamp);
         }
+        if (ec)
+            complete = false;
         return snapshot;
+    }
+
+    // files deeper than MAX_SCAN_DEPTH are never listed by Scan (a relative path with N '/' is at depth N)
+    bool IsBeyondScanDepth(const std::string& relativePath)
+    {
+        return std::count(relativePath.begin(), relativePath.end(), '/') > MAX_SCAN_DEPTH;
     }
 
     std::string ReadJsText(int32 size, int32 (*copy)(char*, uint32_t), uint32 maxSize)
@@ -312,7 +333,9 @@ bool StorageOnFrame(bool pageHidden)
         return false;
 
     const auto home    = HomeFolder();
-    auto current       = Scan(home);
+    std::set<std::string> tooLarge;
+    bool complete      = true;
+    auto current       = Scan(home, tooLarge, complete);
     // hidden page: no time to wait for a second scan - every changed file counts as stable
     const auto changes = Storage::Diff(pageHidden ? current : previousScan, current, stored);
     for (const auto& path : changes.persist)
@@ -325,6 +348,9 @@ bool StorageOnFrame(bool pageHidden)
     }
     for (const auto& path : changes.remove)
     {
+        // not seen because the scan skipped it (too large, too deep, scan cut short): that is not a deletion
+        if (!complete || tooLarge.contains(path) || IsBeyondScanDepth(path))
+            continue;
         gview_js_storage_remove(path.c_str());
         stored.erase(path);
     }

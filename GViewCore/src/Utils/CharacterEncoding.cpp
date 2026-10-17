@@ -4,13 +4,19 @@ namespace GView::Utils::CharacterEncoding
 {
 bool ExpandedCharacter::FromUTF8Buffer(const uint8* p, const uint8* end)
 {
+    // on failure the character stays empty (the caller treats the first byte as a binary character)
+    this->codePoint = 0;
+    this->length    = 0;
     // unicode encoding (based on the code described in https://en.wikipedia.org/wiki/UTF-8)
+    // overlong forms, UTF-16 surrogates (U+D800..U+DFFF) and code points above U+10FFFF are invalid sequences
     if (((*p) >> 5) == 6) // binary encoding 110xxxxx, followed by 10xxxxxx
     {
         CHECK(p + 1 < end, false, "Invalid unicode sequence (missing one extra character after 110xxxx)");
         CHECK((p[1] >> 6) == 2, false, "Invalid unicode sequence (110xxxx should be followed by 10xxxxxx)");
-        this->unicodeValue = (((uint16) ((*p) & 0x1F)) << 6) | ((uint16) ((*(p + 1)) & 63));
-        this->length       = 2;
+        const uint32 value = (static_cast<uint32>(p[0] & 0x1F) << 6) | static_cast<uint32>(p[1] & 63);
+        CHECK(value >= 0x80, false, "Invalid unicode sequence (overlong 2 bytes encoding)");
+        this->codePoint = value;
+        this->length    = 2;
         return true;
     }
     if (((*p) >> 4) == 14) // binary encoding 1110xxxx, followed by 2 bytes with 10xxxxxx
@@ -18,42 +24,93 @@ bool ExpandedCharacter::FromUTF8Buffer(const uint8* p, const uint8* end)
         CHECK(p + 2 < end, false, "Invalid unicode sequence (missing two extra characters after 1110xxxx)");
         CHECK((p[1] >> 6) == 2, false, "Invalid unicode sequence (1110xxxx should be followed by 10xxxxxx)");
         CHECK((p[2] >> 6) == 2, false, "Invalid unicode sequence (10xxxxxx should be followed by 10xxxxxx)");
-        this->unicodeValue = (((uint16) ((*p) & 0x0F)) << 12) | (((uint16) ((*(p + 1)) & 63)) << 6) | ((uint16) ((*(p + 2)) & 63));
-        this->length       = 3;
+        const uint32 value =
+              (static_cast<uint32>(p[0] & 0x0F) << 12) | (static_cast<uint32>(p[1] & 63) << 6) | static_cast<uint32>(p[2] & 63);
+        CHECK(value >= 0x800, false, "Invalid unicode sequence (overlong 3 bytes encoding)");
+        CHECK((value < 0xD800) || (value > 0xDFFF), false, "Invalid unicode sequence (UTF-16 surrogate encoded in UTF-8)");
+        this->codePoint = value;
+        this->length    = 3;
         return true;
     }
     if (((*p) >> 3) == 30) // binary encoding 11110xxx, followed by 3 bytes with 10xxxxxx
     {
-        CHECK(p + 3 < end, false, "Invalid unicode sequence (missing two extra characters after 11110xxx)");
+        CHECK(p + 3 < end, false, "Invalid unicode sequence (missing three extra characters after 11110xxx)");
         CHECK((p[1] >> 6) == 2, false, "Invalid unicode sequence (11110xxx should be followed by 10xxxxxx)");
         CHECK((p[2] >> 6) == 2, false, "Invalid unicode sequence (10xxxxxx should be followed by 10xxxxxx)");
         CHECK((p[3] >> 6) == 2, false, "Invalid unicode sequence (10xxxxxx should be followed by 10xxxxxx)");
-        this->unicodeValue = (((uint16) ((*p) & 7)) << 18) | (((uint16) ((*(p + 1)) & 63)) << 12) | (((uint16) ((*(p + 2)) & 63)) << 6) |
-                             ((uint16) ((*(p + 3)) & 63));
-        this->length = 4;
+        const uint32 value = (static_cast<uint32>(p[0] & 7) << 18) | (static_cast<uint32>(p[1] & 63) << 12) |
+                             (static_cast<uint32>(p[2] & 63) << 6) | static_cast<uint32>(p[3] & 63);
+        CHECK(value >= 0x10000, false, "Invalid unicode sequence (overlong 4 bytes encoding)");
+        CHECK(value <= UNICODE_MAX_CODE_POINT, false, "Invalid unicode sequence (code point above U+10FFFF)");
+        this->codePoint = value;
+        this->length    = 4;
         return true;
     }
     // invalid 16 bytes encoding
     RETURNERROR(false, "Invalid UTF-8 encoding ");
 }
+
+// writes the UTF-8 form of a code point (at most U+10FFFF) and returns the number of bytes written (1..4)
+static uint32 WriteUTF8CodePoint(uint8* output, uint32 cp)
+{
+    if (cp < 0x80)
+    {
+        output[0] = static_cast<uint8>(cp);
+        return 1;
+    }
+    if (cp <= 0x7FF)
+    {
+        output[0] = static_cast<uint8>(0b11000000 | (cp >> 6));
+        output[1] = static_cast<uint8>(0b10000000 | (cp & 63));
+        return 2;
+    }
+    if (cp <= 0xFFFF)
+    {
+        output[0] = static_cast<uint8>(0b11100000 | (cp >> 12));
+        output[1] = static_cast<uint8>(0b10000000 | ((cp >> 6) & 63));
+        output[2] = static_cast<uint8>(0b10000000 | (cp & 63));
+        return 3;
+    }
+    output[0] = static_cast<uint8>(0b11110000 | (cp >> 18));
+    output[1] = static_cast<uint8>(0b10000000 | ((cp >> 12) & 63));
+    output[2] = static_cast<uint8>(0b10000000 | ((cp >> 6) & 63));
+    output[3] = static_cast<uint8>(0b10000000 | (cp & 63));
+    return 4;
+}
 BufferView EncodedCharacter::ToUTF8(char16 ch)
 {
-    if (ch <= 0x80)
+    uint32 size = 0;
+    if (this->pendingHighSurrogate != 0)
     {
-        this->internalBuffer[0] = static_cast<uint8>(ch);
-        return BufferView(this->internalBuffer, 2);
+        const uint32 high          = this->pendingHighSurrogate;
+        this->pendingHighSurrogate = 0;
+        if (IsLowSurrogate(ch))
+        {
+            // high + low surrogate --> one 4 bytes sequence
+            const uint32 cp = 0x10000 + ((high - 0xD800) << 10) + (static_cast<uint32>(ch) - 0xDC00);
+            size            = WriteUTF8CodePoint(this->internalBuffer, cp);
+            return BufferView(this->internalBuffer, size);
+        }
+        // the previous high surrogate is not followed by a low surrogate
+        size = WriteUTF8CodePoint(this->internalBuffer, UNICODE_REPLACEMENT_CHARACTER);
     }
-    if (ch<=0x7FF)
+    if (IsHighSurrogate(ch))
     {
-        this->internalBuffer[0] = static_cast<uint8>(0b11000000) | static_cast<uint8>(ch >> 6);
-        this->internalBuffer[1] = static_cast<uint8>(0b10000000) | static_cast<uint8>(ch & 63);
-        return BufferView(this->internalBuffer, 2);
+        // wait for the low surrogate (next call)
+        this->pendingHighSurrogate = ch;
+        return BufferView(this->internalBuffer, size);
     }
-    // else rest of characters
-    this->internalBuffer[0] = static_cast<uint8>(0b11100000) | static_cast<uint8>(ch >> 12);
-    this->internalBuffer[1] = static_cast<uint8>(0b10000000) | static_cast<uint8>((ch >> 6) & 63);
-    this->internalBuffer[2] = static_cast<uint8>(0b10000000) | static_cast<uint8>(ch & 63);
-    return BufferView(this->internalBuffer, 3);
+    // an unpaired low surrogate is not a valid character
+    size += WriteUTF8CodePoint(this->internalBuffer + size, IsLowSurrogate(ch) ? UNICODE_REPLACEMENT_CHARACTER : static_cast<uint32>(ch));
+    return BufferView(this->internalBuffer, size);
+}
+BufferView EncodedCharacter::Flush()
+{
+    if (this->pendingHighSurrogate == 0)
+        return BufferView(this->internalBuffer, 0);
+    // a high surrogate at the end of the text (not followed by a low surrogate)
+    this->pendingHighSurrogate = 0;
+    return BufferView(this->internalBuffer, WriteUTF8CodePoint(this->internalBuffer, UNICODE_REPLACEMENT_CHARACTER));
 }
 uint8 utf8BOM[] = {0xEF, 0xBB, 0xBf};
 uint8 unicode16LEBOM[] = {0xFF, 0xFE};
@@ -189,15 +246,17 @@ UnicodeString ConvertToUnicode16(BufferView buf)
     {
         if (ch.FromEncoding(enc,start,end))
         {
-            *pos = ch.GetChar();
+            // code points above U+FFFF become a surrogate pair; a decoded character always uses at least as many bytes
+            // as the UTF-16 units it produces, so 'ptr' (one char16 per input byte) can not overflow
+            pos += ch.ToUTF16(pos);
             start += ch.Length();
         }
         else
         {
             *pos = *start;
             start++;
+            pos++;
         }
-        pos++;
     }
     return UnicodeString(ptr, static_cast<uint32>(pos - ptr), static_cast<uint32>(buf.GetLength()));
 }

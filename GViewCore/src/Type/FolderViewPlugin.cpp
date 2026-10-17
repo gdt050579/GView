@@ -107,7 +107,14 @@ bool FolderType::PopulateItem(TreeViewItem item)
             item.SetText("Fail to read name");
     }
 
-    dirIT++;
+    // non-throwing increment: a read error while advancing simply ends the enumeration
+    std::error_code ec;
+    dirIT.increment(ec);
+    if (ec)
+    {
+        dirIT = std::filesystem::directory_iterator();
+        return false;
+    }
 
     return dirIT != std::filesystem::directory_iterator();
 }

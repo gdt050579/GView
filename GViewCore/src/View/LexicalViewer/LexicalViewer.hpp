@@ -175,9 +175,11 @@ namespace View
             {
                 return tokenStart;
             }
+            // exclusive end (first token after the block)
+            // tokenEnd is always part of the block: either the end marker or (for blocks without an end marker) the last token of the block
             inline uint32 GetEndIndex() const
             {
-                return ((flags & BlockFlags::EndMarker) != BlockFlags::None) ? tokenEnd + 1 : tokenEnd;
+                return tokenEnd + 1;
             }
             inline bool HasEndMarker() const
             {
@@ -443,6 +445,7 @@ namespace View
 
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
+            virtual ~Instance() override;
 
             inline uint32 GetUnicodeTextLen() const
             {
@@ -554,6 +557,7 @@ namespace View
             void RunStringOperation(uint32 commandID);
           public:
             StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
+            virtual ~StringOpDialog() override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline bool ShouldOpenANewWindow() const
             {

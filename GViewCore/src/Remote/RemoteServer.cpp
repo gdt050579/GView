@@ -438,6 +438,10 @@ void Server::ReverseLoop()
         ServerSession* session = nullptr;
         {
             std::lock_guard<std::mutex> guard(sessionsLock);
+            // Stop() raises `stopping` and then stops every listed session under this lock: a session added after
+            // that would never be told to stop (and Stop() would wait forever for this thread)
+            if (stopping.load())
+                break;
             sessions.push_back(std::make_unique<ServerSession>(*this, nextSessionId++, target, std::move(stream)));
             session = sessions.back().get();
         }

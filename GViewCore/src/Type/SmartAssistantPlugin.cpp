@@ -20,6 +20,20 @@ using namespace GView::CommonInterfaces::SmartAssistants;
 
 using json = nlohmann::json;
 
+#ifdef GVIEW_ENABLE_NETWORK
+// the requests are blocking (UI thread): bound them so an unreachable / hung API does not freeze GView forever
+// (the total timeout is generous because LLM answers can take a while to be generated)
+constexpr long SMART_ASSISTANT_CONNECT_TIMEOUT_SECONDS = 15L;
+constexpr long SMART_ASSISTANT_TOTAL_TIMEOUT_SECONDS   = 120L;
+#endif
+
+// Default size (in characters of serialized JSON) of the file context sent with a prompt. 64K characters is roughly 16K
+// tokens (~4 characters / token): far below the context window of the built-in models (GPT-4o: 128K tokens,
+// Gemini 1.5 Pro: 1M+ tokens), so the prompt, the chat history and the answer still fit, while the request stays small
+// enough for a quick, cheap call (the context is sent again with every prompt) and for low API rate-limit tiers.
+// Users can change it with "ContextCharacterLimit" in the [SmartAssistants] section of GView.ini (see QueryInterface.cpp).
+constexpr uint32 SMART_ASSISTANT_DEFAULT_CONTEXT_CHARACTER_LIMIT = 64u * 1024u;
+
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s)
 {
     const size_t totalSize = size * nmemb;
@@ -35,10 +49,12 @@ std::string callGeminiAPI(const std::string& apiKey, std::string_view prompt, bo
 #ifdef GVIEW_ENABLE_NETWORK
     CURL* curl = curl_easy_init();
     if (curl) {
-        const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=" + apiKey;
+        const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent";
 
         struct curl_slist* headers = nullptr;
         headers                    = curl_slist_append(headers, "Content-Type: application/json");
+        // the API key goes in a header (not in the URL query) so it does not end up in URL/proxy logs
+        headers = curl_slist_append(headers, ("x-goog-api-key: " + apiKey).c_str());
 
         const json payload = { { "contents",
                                  { { "parts",
@@ -53,6 +69,8 @@ std::string callGeminiAPI(const std::string& apiKey, std::string_view prompt, bo
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, SMART_ASSISTANT_CONNECT_TIMEOUT_SECONDS);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, SMART_ASSISTANT_TOTAL_TIMEOUT_SECONDS);
 
         const CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
@@ -123,6 +141,8 @@ std::string callGPT4oAPI(const std::string& apiKey, std::string_view prompt, boo
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, SMART_ASSISTANT_CONNECT_TIMEOUT_SECONDS);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, SMART_ASSISTANT_TOTAL_TIMEOUT_SECONDS);
 
         CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
@@ -206,7 +226,7 @@ struct ChatGPT4oAssistant : SmartAssistantRegisterInterface {
     {
         const std::string gptQuery = callGPT4oAPI(configData, prompt, isSuccess);
         if (!isSuccess) {
-            return "Error calling Gemini API!";
+            return "Error calling GPT4o API!";
         }
 
         std::string gptResponse;
@@ -219,9 +239,10 @@ struct ChatGPT4oAssistant : SmartAssistantRegisterInterface {
         this->configData = configDataParam;
     }
 
+    // default context size; the [SmartAssistants] ContextCharacterLimit setting overrides it
     uint32 GetCharacterLimit() override
     {
-        return 1024u;
+        return SMART_ASSISTANT_DEFAULT_CONTEXT_CHARACTER_LIMIT;
     }
 };
 
@@ -259,9 +280,10 @@ struct GeminiPro1_5SmartAssistant : SmartAssistantRegisterInterface
         this->configData = configDataParam;
     }
 
+    // default context size; the [SmartAssistants] ContextCharacterLimit setting overrides it
     uint32 GetCharacterLimit() override
     {
-        return 1024u;
+        return SMART_ASSISTANT_DEFAULT_CONTEXT_CHARACTER_LIMIT;
     }
 };
 

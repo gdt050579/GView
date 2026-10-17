@@ -657,6 +657,9 @@ TEST_CASE("TLS 1.3 mutual authentication over loopback", "[Remote][TLS]")
     REQUIRE(Tls::GenerateCertificates(pki.path, "127.0.0.1", 7, 30, report, error));
     REQUIRE(Tls::GenerateCertificates(pki.path, "analyst", 7, 30, report, error));
     REQUIRE(report.find("(reused)") != std::string::npos); // the CA created by the first call was reused
+    // a leaf certificate may never overwrite the CA files
+    REQUIRE_FALSE(Tls::GenerateCertificates(pki.path, "gview-ca", 7, 30, report, error));
+    REQUIRE_FALSE(Tls::GenerateCertificates(pki.path, "GView-CA", 7, 30, report, error));
 
     const auto serverIdentity = Identity(pki, "127.0.0.1");
     const auto clientIdentity = Identity(pki, "analyst");

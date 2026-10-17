@@ -63,6 +63,8 @@ class CharacterStream
         if (this->ec.FromEncoding(this->settings->encoding, this->pos, this->end))
         {
             this->decodingError = false;
+            // one decoded character = one cell; a cell holds a single char16, so code points above U+FFFF (e.g. emoji)
+            // are shown as U+FFFD, while pos still advances over all of their bytes (4 in UTF-8 / a surrogate pair in UTF-16)
             this->ch            = this->ec.GetChar();
             this->rawCharCode   = this->ch;
             this->charIsTab     = ch == '\t';
@@ -148,7 +150,7 @@ class UnicodeLine
         if (buf.GetLength() > allocated)
         {
             if (chars)
-                delete chars;
+                delete[] chars;
 
             allocated               = 0;
             uint32 newAllocatedSize = (static_cast<uint32>(buf.GetLength()) | 0xFF) + 1;
@@ -336,7 +338,7 @@ void Instance::RecomputeLineIndexes()
         if ((ch == '\n') || (ch == '\r'))
             crlf_count++;
 
-    auto estimated_count = ((crlf_count * sz) / buf.GetLength()) + 16;
+    auto estimated_count = (buf.GetLength() > 0 ? ((crlf_count * sz) / buf.GetLength()) : 0) + 16; // empty file -> no data to sample
 
     this->lines.clear();
     this->lines.reserve(estimated_count);
@@ -352,7 +354,7 @@ void Instance::RecomputeLineIndexes()
     {
         buf = this->obj->GetData().Get(offset, csz, false);
         if (buf.Empty())
-            return;
+            break;
         // process the buffer
         auto* p       = buf.begin();
         auto* e       = buf.end();
@@ -419,11 +421,11 @@ void Instance::RecomputeLineIndexes()
                 }
             }
         }
-        if (charCount > 0)
-        {
-            // last line
-            lines.emplace_back(start, charCount, (uint32) (offset - start));
-        }
+    }
+    // last line (emitted once, after all cache chunks - a line can continue into the next chunk)
+    if (charCount > 0)
+    {
+        lines.emplace_back(start, charCount, (uint32) (offset - start));
     }
 
     auto linesCount = this->lines.size() + 1;
@@ -1499,6 +1501,13 @@ bool Instance::ShowCopyDialog()
 //======================================================================[Mouse coords]==================
 void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex)
 {
+    if (ViewPort.linesCount == 0)
+    {
+        // nothing displayed (e.g. empty / BOM-only file) - scrolling can not bring a line into view
+        lineNo    = 0;
+        charIndex = 0;
+        return;
+    }
     if ((y >= 0) && (y < (int) ViewPort.linesCount))
     {
         const auto vd = this->ViewPort.Lines + y;
@@ -1525,6 +1534,7 @@ void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIn
             }
             auto bestDif = 0xFFFFFF; // a large number
             lineNo       = vd->lineNo;
+            charIndex    = 0; // no visible character (e.g. scrolled past the end of the line)
             while (cs.Next())
             {
                 const int charXPos = (cs.GetXOffset() + vd->xStart - xScroll) + 1 + this->lineNumberWidth;
