@@ -422,6 +422,8 @@ namespace View
             bool enableLocalVariablesDetection; // requires enableDeepScanDissasmOnStart
             Reference<GView::Object> obj;
             uint32 visibleRows;
+            // the VA of the start of the zone (DissasmCodeZone::labelAddressBase); none: the labels are named after the file offsets
+            std::optional<uint64> labelAddressBase;
         };
 
         struct InternalTypeNewLevelChangeData {
@@ -736,6 +738,10 @@ namespace View
             void RefreshCursorLineNumbers();
             // the display options changed (columns shown): the prepared lines of every drawn zone are built again
             void RefreshDrawnLines();
+            // the address of the first decoded instruction of the zone as it is shown (config.AddressMode: VA, RVA or file offset)
+            uint64 GetDisplayAddressBase(DissasmCodeZone* zone);
+            // VA -> RVA -> file offset -> VA (only file offsets without the offset translation of a plugin)
+            void ChangeAddressMode();
             // the number under the cursor, or the only number of the cursor line
             const CursorLineNumber* GetCursorLineNumber();
             void ToggleNumberBase();

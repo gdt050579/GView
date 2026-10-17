@@ -837,6 +837,7 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         for (const auto& [address, mask] : cachedDecimalOperands)
             if (codeSize == 0 || address < codeSize)
                 decimalOperands[address] = mask;
+        MigrateLegacyLabelNames(); // the records saved before the VA names
         cacheRecordRejected = false;
         return true;
     }
@@ -849,6 +850,7 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         return false;
     if (!ApplyLegacyCachedZoneData(*this, comments, annotations))
         return false;
+    MigrateLegacyLabelNames();
     cacheRecordRejected = false;
     return true;
 }

@@ -308,6 +308,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             config.ShowFileContent = !config.ShowFileContent;
             this->RecomputeDissasmZones();
             return true;
+        case COMMAND_CHANGE_ADDRESS_MODE:
+            ChangeAddressMode();
+            return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
             RefreshDrawnLines();

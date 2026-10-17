@@ -46,7 +46,7 @@ inline bool ExtractCallsToInsertFunctionNames(
         const auto it = callsMap.find(functionOffset);
         if (it != callsMap.end() && !it->second)
             return; // already a sub
-        callsFound.emplace_back(functionOffset, FormatFunctionName(functionOffset, "sub_0x").GetText());
+        callsFound.emplace_back(functionOffset, zone->GetLabelName("sub_", functionOffset - offsets[0].offset));
         callsMap.insert({ functionOffset, false });
     };
 
@@ -67,14 +67,12 @@ inline bool ExtractCallsToInsertFunctionNames(
             const auto offsetOpt = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
             if (offsetOpt.has_value()) {
                 const uint64 value = offsetOpt.value();
-                const char* prefix = isJump ? "offset_0x" : "sub_0x";
-                const auto it      = callsMap.find(value);
+                const auto it = callsMap.find(value);
                 if (it != callsMap.end()) {
                     if (isJump == it->second)
                         continue;
                 }
-                auto callName = FormatFunctionName(value, prefix);
-                callsFound.emplace_back(value, callName.GetText());
+                callsFound.emplace_back(value, zone->GetLabelName(isJump ? "loc_" : "sub_", target.value()));
                 callsMap.insert({ value, isJump });
             }
         }
@@ -89,9 +87,7 @@ inline bool ExtractCallsToInsertFunctionNames(
             return OTHER;
         if (memcmp(s.c_str(), "sub_", 4) == 0)
             return SUB;
-        if (s.size() < 7)
-            return OTHER;
-        if (memcmp(s.c_str(), "offset_", 7) == 0)
+        if (memcmp(s.c_str(), "loc_", 4) == 0)
             return OFFSET;
         return OTHER;
     };
@@ -274,8 +270,50 @@ csh DissasmCodeZone::GetDecodeHandle()
     return decodeHandle;
 }
 
+std::string DissasmCodeZone::GetLabelName(std::string_view prefix, uint64 address) const
+{
+    LocalString<64> name;
+    name.SetFormat("%.*s%llX", static_cast<int>(prefix.size()), prefix.data(), static_cast<unsigned long long>(labelAddressBase + address));
+    return name.GetText();
+}
+
+void DissasmCodeZone::MigrateLegacyLabelNames()
+{
+    if (cachedCodeOffsets.empty())
+        return;
+    auto& annotations      = dissasmType.annotations;
+    const uint64 codeStart = cachedCodeOffsets[0].offset;
+    for (auto& [line, details] : annotations.mappings) {
+        if (IsLocalVariableAnnotation(details))
+            continue;
+        // the initial name of the label (its name before any rename of the user)
+        std::string initialName = details.first;
+        const auto initial      = annotations.current_name_to_initial_name.find(details.first);
+        if (initial != annotations.current_name_to_initial_name.end())
+            initialName = initial->second;
+
+        std::string newInitialName;
+        if (initialName == FormatFunctionName(codeStart + details.second, "sub_0x").GetText())
+            newInitialName = GetLabelName("sub_", details.second);
+        else if (initialName == FormatFunctionName(codeStart + details.second, "offset_0x").GetText())
+            newInitialName = GetLabelName("loc_", details.second);
+        else
+            continue; // EntryPoint, or already a VA name
+
+        const bool isRenamed           = details.first != initialName;
+        const std::string currentName  = isRenamed ? details.first : newInitialName;
+        annotations.initial_name_to_current_name.erase(initialName);
+        annotations.current_name_to_initial_name.erase(details.first);
+        annotations.initial_name_to_current_name[newInitialName] = currentName;
+        annotations.current_name_to_initial_name[currentName]    = newInitialName;
+        details.first                                            = currentName;
+    }
+}
+
 bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 {
+    labelAddressBase = initData.labelAddressBase.value_or(zoneDetails.startingZonePoint); // the first decoded instruction is the zone start
+
     // TODO: move this on init
     if (!cs_support(CS_ARCH_X86)) {
         initData.dli->WriteErrorToScreen("Capstone does not support X86");

@@ -142,7 +142,9 @@ inline void DissasmAddColorsToInstruction(
     // AppCUI::Graphics:: GetCharacterCode
     // TODO: in loc de label jmp_address:
     LocalString<128> string;
-    string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
+    // the address column: VA / RVA / file offset (addressPadding is the address of the first decoded instruction)
+    string.SetFormat("0x%08" PRIx64, insn.address + addressPadding);
+    string.AddChars(' ', string.Len() + 1u < addressTotalLength ? addressTotalLength - 1u - string.Len() : 1u);
     cb.Add(string, colors.AsmOffsetColor);
 
     if (!cfg.ShowOnlyDissasm) {
@@ -703,25 +705,32 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     }
 
     if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
-        if (!targetFileOffset.has_value()) { // indirect, or outside of the decoded code: the operands are shown as they are
+        if (!targetFileOffset.has_value()) {
             flags = 0;
-            SetOperands(insn->op_str, params.zone);
+            if (operands.directTarget.has_value()) {
+                // outside of the decoded code (another section): its address (VA), the decoded addresses are relative to the zone
+                LocalString<32> target;
+                const uint64 addressMask = params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull; // 32 bit addresses wrap around
+                target.SetFormat("0x%llx", static_cast<unsigned long long>((params.zone->labelAddressBase + operands.directTarget.value()) & addressMask));
+                SetOperands(target.GetText(), params.zone);
+            } else {
+                SetOperands(insn->op_str, params.zone); // indirect: the operands are shown as they are
+            }
             return true;
         }
 
-        const char* prefix = !shouldConsiderCall ? "offset_0x" : "sub_0x";
-
-        auto fnName = FormatFunctionName(targetFileOffset.value(), prefix);
-        // fnName.AddFormat(" (%s)", res.data());
-
-        if (parent) {
-            auto new_name = parent->annotations.get_name_change(fnName.GetText());
-            if (!new_name.empty())
-                fnName.Set(new_name.c_str(), (uint32) new_name.size());
-        }
-
-        op_str      = strdup(fnName.GetText());
-        op_str_size = static_cast<uint32>(fnName.Len());
+        // the label of the target, renamed or not (the renames are kept by the root type, the collapsible zones are its children): a
+        // function reached by a jmp (tail call, thunk) keeps its sub_ label, a jump target reached by a call its loc_ label
+        const auto& rootAnnotations = params.zone->dissasmType.annotations;
+        const std::string subName   = params.zone->GetLabelName("sub_", operands.directTarget.value());
+        const std::string locName   = params.zone->GetLabelName("loc_", operands.directTarget.value());
+        std::string labelName       = rootAnnotations.get_name_change(subName);
+        if (labelName.empty())
+            labelName = rootAnnotations.get_name_change(locName);
+        if (labelName.empty())
+            labelName = shouldConsiderCall ? subName : locName;
+        op_str      = portable_strdup(labelName.c_str());
+        op_str_size = static_cast<uint32>(labelName.size());
     }
 
     if (!op_str && !mapping)
@@ -869,8 +878,10 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (dli.textLineToDraw == 1 || firstLineToDraw) {
         const ColorPair titleColumnColor = { ColorMan.Colors.AsmTitleColumnColor.Foreground, ColorMan.Colors.AsmTitleColor.Background };
 
-        constexpr std::string_view address = "File address";
-        chars.Add(address.data(), ColorMan.Colors.AsmTitleColor);
+        const std::string_view address = !settings->offsetTranslateCallback.IsValid() || config.AddressMode == static_cast<uint8>(DissasmPEConversionType::FileOffset)
+                                               ? "File offset"
+                                               : (config.AddressMode == static_cast<uint8>(DissasmPEConversionType::RVA) ? "Address (RVA)" : "Address (VA)");
+        chars.Add(address, ColorMan.Colors.AsmTitleColor);
 
         spaces.Clear();
         spaces.SetChars(' ', addressTotalLength - static_cast<uint32>(address.size()) - 1u);
@@ -960,7 +971,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
     uint32 arrowsColumn = UINT32_MAX;
-    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, nullptr, &arrowsColumn);
+    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone), nullptr, &arrowsColumn);
     std::string comment;
     if (!asmCacheLine->parent)
         return false;
@@ -1032,6 +1043,12 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     initData.obj                           = obj;
     initData.dli                           = &dli;
     initData.visibleRows                   = Layout.visibleRows;
+    // the labels are named after the VA (as IDA), when the plugin translates the file offsets
+    if (settings->offsetTranslateCallback.IsValid()) {
+        const auto va = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::VA));
+        if (va != static_cast<uint64>(-1))
+            initData.labelAddressBase = va;
+    }
 
     if (!zone->InitZone(initData))
         return false;
@@ -1064,17 +1081,18 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
     if (!zone.CanReachAsmLines() || zone.cachedCodeOffsets.empty())
         return false;
 
-    const uint64 codeStart  = zone.cachedCodeOffsets[0].offset;
+    const uint64 codeStart  = zone.labelAddressBase; // the addresses of the labels: VA (or file offset when there is no translation)
     const uint32 linesCount = GetCodeZoneLinesCount(zone);
 
     LocalString<256> text;
     text.SetFormat(
           "; GView disassembly listing (%s)\n; code: file offset 0x%" PRIx64 ", size 0x%" PRIx64 ", entry point 0x%" PRIx64 "\n"
-          "; the addresses are file offsets\n",
+          "; the addresses are %s\n",
           zone.Is64BitCode() ? "x64" : "x86",
           zone.zoneDetails.startingZonePoint,
           zone.zoneDetails.size,
-          zone.zoneDetails.entryPoint);
+          zone.zoneDetails.entryPoint,
+          zone.labelAddressBase != zone.zoneDetails.startingZonePoint ? "virtual addresses (VA)" : "file offsets");
     listing.append(text.GetText(), text.Len());
 
     DissasmInsnExtractLineParams params{};
@@ -1267,6 +1285,36 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         GView::Security::Learning::Hooks::OnJumpFollow(obj, jumpFromAddress, computedValue, jumpMnemonic);
 }
 
+uint64 Instance::GetDisplayAddressBase(DissasmCodeZone* zone)
+{
+    const uint64 codeStart = zone->cachedCodeOffsets[0].offset;
+    if (!settings->offsetTranslateCallback.IsValid() || config.AddressMode == static_cast<uint8>(DissasmPEConversionType::FileOffset))
+        return codeStart;
+    // inside the zone (one section) the addresses grow with the file offsets: the address of the first instruction is enough
+    const auto address = settings->offsetTranslateCallback->TranslateFromFileOffset(codeStart, config.AddressMode);
+    return address != static_cast<uint64>(-1) ? address : codeStart;
+}
+
+void Instance::ChangeAddressMode()
+{
+    if (!settings->offsetTranslateCallback.IsValid()) {
+        Dialogs::MessageBox::ShowNotification("Info", "This file has only file offsets!");
+        return;
+    }
+    switch (static_cast<DissasmPEConversionType>(config.AddressMode)) {
+    case DissasmPEConversionType::VA:
+        config.AddressMode = static_cast<uint8>(DissasmPEConversionType::RVA);
+        break;
+    case DissasmPEConversionType::RVA:
+        config.AddressMode = static_cast<uint8>(DissasmPEConversionType::FileOffset);
+        break;
+    default:
+        config.AddressMode = static_cast<uint8>(DissasmPEConversionType::VA);
+        break;
+    }
+    RefreshDrawnLines(); // the address column changes its width: the columns of the numbers move
+}
+
 void Instance::RefreshCursorLineNumbers()
 {
     const uint32 line = Cursor.startViewLine + Cursor.lineInView;
@@ -1310,7 +1358,7 @@ void Instance::RefreshCursorLineNumbers()
 
     CharacterBuffer lineText; // drawn without the left margin: its columns have the same base as Cursor.offset
     std::vector<uint32> opStrColumns;
-    DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, &opStrColumns);
+    DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone), &opStrColumns);
     if (opStrColumns.size() != asmLine.op_str_size)
         return;
 
@@ -1359,7 +1407,7 @@ bool Instance::TryGetCodeZoneSelectionText(uint32 index, std::string& text)
             continue;
         auto asmLine = zone->GetCurrentAsmLine(zoneLine - 2, obj, &params);
         CharacterBuffer lineText;
-        DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset);
+        DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone));
 
         std::string lineString;
         lineString.reserve(lineText.Len() + 32);

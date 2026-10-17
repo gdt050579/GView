@@ -279,6 +279,7 @@ struct ZoneLayout {
     uint64 entryPoint            = 10;
     DisassemblyLanguage language = DisassemblyLanguage::x86;
     uint32 cacheSize             = 0; // data cache size, 0 for the whole file (the data cache has at least 64 KB)
+    std::optional<uint64> labelAddressBase; // the VA of the zone start (the plugins with an offset translation)
 };
 
 class DissasmTestInstance
@@ -364,6 +365,7 @@ class DissasmTestInstance
         initData.enableDeepScanDissasmOnStart  = true;
         initData.enableLocalVariablesDetection = enableLocalVariables;
         initData.visibleRows                  = 53;
+        initData.labelAddressBase             = layout.labelAddressBase;
         initData.obj                          = obj;
 
         if (!zone->InitZone(initData)) {
@@ -698,9 +700,9 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
 
     std::array<const char*, 47> mnemonicArrayStart = { "int3", "int3",
                                                        "int3", "int3",
-                                                       "int3", "sub_0x000000005",
+                                                       "int3", "sub_5",
                                                        "jmp",  "EntryPoint",
-                                                       "jmp",  "sub_0x00000000F",
+                                                       "jmp",  "sub_F",
                                                        "jmp",  "jmp",
                                                        "int3", "int3",
                                                        "int3", "int3",
@@ -713,7 +715,7 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
                                                        "int3", "int3",
                                                        "int3", "int3",
                                                        "int3", "int3",
-                                                       "int3", "sub_0x000000030",
+                                                       "int3", "sub_30",
                                                        "push", "mov",
                                                        "sub",  "push",
                                                        "push", "push",
@@ -728,9 +730,9 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
 
     // dissasmInstance.PrintInstructions(50);
-    std::array<const char*, 43> mnemonicArrayCollapse1 = { "collapsed", "sub_0x000000005",
+    std::array<const char*, 43> mnemonicArrayCollapse1 = { "collapsed", "sub_5",
                                                            "jmp",       "EntryPoint",
-                                                           "jmp",       "sub_0x00000000F",
+                                                           "jmp",       "sub_F",
                                                            "jmp",       "jmp",
                                                            "int3",      "int3",
                                                            "int3",      "int3",
@@ -743,7 +745,7 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
                                                            "int3",      "int3",
                                                            "int3",      "int3",
                                                            "int3",      "int3",
-                                                           "int3",      "sub_0x000000030",
+                                                           "int3",      "sub_30",
                                                            "push",      "mov",
                                                            "sub",       "push",
                                                            "push",      "push",
@@ -758,11 +760,11 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 8 }, { 8, 31, true }, { 31, zoneEndingIndex } }));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
 
-    std::array<const char*, 21> mnemonicArrayCollapse2 = { "collapsed", "sub_0x000000005",
+    std::array<const char*, 21> mnemonicArrayCollapse2 = { "collapsed", "sub_5",
                                                            "jmp",       "EntryPoint",
-                                                           "jmp",       "sub_0x00000000F",
+                                                           "jmp",       "sub_F",
                                                            "jmp",       "jmp",
-                                                           "collapsed", "sub_0x000000030",
+                                                           "collapsed", "sub_30",
                                                            "push",      "mov",
                                                            "sub",       "push",
                                                            "push",      "push",
@@ -812,7 +814,7 @@ TEST_CASE("CollapsibleZonesSizesAndNestedZones", "[Dissasm]CollapsibleZones")
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
     REQUIRE(dissasmInstance.CheckInternalTypes(1, { { 5, 6, true }, { 6, 7 }, { 7, 9, true }, { 9, 11 } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(1, { { 0, 0, 5 } }));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
@@ -829,7 +831,7 @@ TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
 
@@ -852,7 +854,7 @@ TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
@@ -883,7 +885,7 @@ TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 2, 6 }, { 2, 2, 8 } }));
     REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
@@ -900,11 +902,11 @@ TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]CollapsibleZones")
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
@@ -921,11 +923,11 @@ TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]CollapsibleZones")
         REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
+        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
     }
@@ -942,11 +944,11 @@ TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]CollapsibleZones")
         REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
+        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
     }
@@ -962,11 +964,11 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
@@ -1027,7 +1029,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
 {
     DissasmTestInstance withoutVariables(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
     REQUIRE(withoutVariables.zone->localVariables.Empty());
-    REQUIRE(withoutVariables.CheckLineText(35, "sub_0x000000030"));
+    REQUIRE(withoutVariables.CheckLineText(35, "sub_30"));
     REQUIRE(withoutVariables.CheckLineText(36, "push ebp"));
     REQUIRE(withoutVariables.CheckLineText(44, "cmp dword ptr [ebp + 8], 1"));
 
@@ -1040,7 +1042,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
     REQUIRE(functions[2].startAddress == 0x320);
 
     // isPrime(int number): IDA like variables below the label, the instructions use their names
-    REQUIRE(dissasmInstance.CheckLineText(35, "sub_0x000000030"));
+    REQUIRE(dissasmInstance.CheckLineText(35, "sub_30"));
     REQUIRE(dissasmInstance.CheckLineText(36, "var_44 = dword ptr -0x44"));
     REQUIRE(dissasmInstance.CheckLineText(37, "arg_0 = dword ptr 8"));
     REQUIRE(dissasmInstance.CheckLineText(38, "push ebp"));
@@ -1049,7 +1051,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
     REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
 
     // main(): int a = 1, b = 2, c = 3;
-    REQUIRE(dissasmInstance.CheckLineText(360, "sub_0x0000002B0"));
+    REQUIRE(dissasmInstance.CheckLineText(360, "sub_2B0"));
     REQUIRE(dissasmInstance.CheckLineText(361, "var_C = dword ptr -0xc"));
     REQUIRE(dissasmInstance.CheckLineText(362, "var_8 = dword ptr -8"));
     REQUIRE(dissasmInstance.CheckLineText(363, "var_4 = dword ptr -4"));
@@ -1100,11 +1102,11 @@ TEST_CASE("LocalVariablesRenameAndRemove", "[Dissasm]LocalVariables")
     const uint32 zoneEnd = zone.dissasmType.indexZoneEnd;
     REQUIRE(dissasmInstance.RemoveLocalVariable(55));
     REQUIRE(zone.dissasmType.indexZoneEnd == zoneEnd - 1);
-    REQUIRE(dissasmInstance.CheckLineText(35, "sub_0x000000030"));
+    REQUIRE(dissasmInstance.CheckLineText(35, "sub_30"));
     REQUIRE(dissasmInstance.CheckLineText(36, "number = dword ptr 8"));
     REQUIRE(dissasmInstance.CheckLineText(37, "push ebp"));
     REQUIRE(dissasmInstance.CheckLineText(45, "cmp dword ptr [ebp + number], 1"));
-    REQUIRE(dissasmInstance.CheckLineText(49, "offset_0x00000004F"));
+    REQUIRE(dissasmInstance.CheckLineText(49, "loc_4F"));
     REQUIRE(dissasmInstance.CheckLineText(54, "mov dword ptr [ebp - 0x44], eax")); // not a variable anymore
     REQUIRE(dissasmInstance.CheckComment(30, "c30"));
     REQUIRE(!dissasmInstance.HasComment(36)); // the comment of the removed line is gone
@@ -1117,7 +1119,7 @@ TEST_CASE("LocalVariablesRenameAndRemove", "[Dissasm]LocalVariables")
     REQUIRE(zone.localVariables.functions.size() == 2);
     REQUIRE(dissasmInstance.CheckLineText(36, "push ebp"));
     REQUIRE(dissasmInstance.CheckLineText(44, "cmp dword ptr [ebp + 8], 1"));
-    REQUIRE(dissasmInstance.CheckLineText(358, "sub_0x0000002B0"));
+    REQUIRE(dissasmInstance.CheckLineText(358, "sub_2B0"));
     REQUIRE(dissasmInstance.CheckLineText(359, "var_C = dword ptr -0xc"));
     REQUIRE(!dissasmInstance.RemoveLocalVariable(36)); // nothing to remove
 
@@ -1177,7 +1179,7 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         bool zoneLinesChanged = false;
         REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
         REQUIRE(!zoneLinesChanged);
-        REQUIRE(restored.CheckLineText(35, "sub_0x000000030"));
+        REQUIRE(restored.CheckLineText(35, "sub_30"));
         REQUIRE(restored.CheckLineText(36, "var_44 = dword ptr -0x44"));
         REQUIRE(!restored.HasComment(100));
 
@@ -1235,7 +1237,7 @@ TEST_CASE("CodeZoneCacheRecordKey", "[Dissasm]Cache")
     REQUIRE(restored.CheckLineText(35, "isPrime"));
     REQUIRE(restored.CheckComment(100, "c100"));
     // the jumps / calls to a label renamed by the assistant (TryRenameLine with a name) use the new name as well
-    REQUIRE(edited.zone->dissasmType.annotations.get_name_change("sub_0x000000030") == "isPrime");
+    REQUIRE(edited.zone->dissasmType.annotations.get_name_change("sub_30") == "isPrime");
 }
 
 TEST_CASE("LocalVariablesOperandsAndNames", "[Dissasm]LocalVariables")
@@ -1604,7 +1606,7 @@ TEST_CASE("OperandNumbers", "[Dissasm]DecimalOperands")
     REQUIRE(numbersOf("dword ptr [ebp + var_8], r8d").empty());
     REQUIRE(numbersOf("xmm0, xmm1").empty());
     REQUIRE(numbersOf("st(0)").empty());
-    REQUIRE(numbersOf("sub_0x000000030").empty());
+    REQUIRE(numbersOf("sub_30").empty());
     REQUIRE(numbersOf("eax, 1st").empty());
 
     const auto numbers = FindOperandNumbers("eax, 0xffffffff");
@@ -1813,8 +1815,8 @@ TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
 
     // the labels are placed on the targets and keep their address relative to the code
     const auto& annotations = zone.dissasmType.annotations;
-    const auto subLine      = annotations.get_line_by_annotation_name("sub_0x000000280");
-    const auto offsetLine   = annotations.get_line_by_annotation_name("offset_0x000000300");
+    const auto subLine      = annotations.get_line_by_annotation_name("sub_280");
+    const auto offsetLine   = annotations.get_line_by_annotation_name("loc_300");
     REQUIRE(subLine.has_value());
     REQUIRE(offsetLine.has_value());
     REQUIRE(annotations.find(subLine.value())->second.second == 0x180);
@@ -1823,16 +1825,17 @@ TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
     REQUIRE(dissasmInstance.CheckLineText(subLine.value() + 1, "push ebp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(offsetLine.value() + 1, "ret"));
 
-    // the drawn operands use the same labels, the targets outside of the code keep their operands
+    // the drawn operands use the same labels, the targets outside of the code are shown with their address (the address space of the labels:
+    // the file offsets here, there is no offset translation)
     REQUIRE(dissasmInstance.CheckDrawnLineText(0, "EntryPoint"));
-    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "jmp offset_0x000000300"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "jmp loc_300"));
     REQUIRE(dissasmInstance.GetDrawnAsmLine(1).branchTarget == 0x200u);
-    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "call sub_0x000000280"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "call sub_280"));
     REQUIRE(dissasmInstance.GetDrawnAsmLine(2).branchTarget == 0x180u);
-    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0xfffffff0"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0xf0")); // 0x10 bytes before the zone
     REQUIRE(!dissasmInstance.GetDrawnAsmLine(3).branchTarget.has_value());
     REQUIRE(dissasmInstance.CheckDrawnLineText(4, "call dword ptr [0x404000]"));
-    REQUIRE(dissasmInstance.CheckDrawnLineText(5, "jmp 0x300"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(5, "jmp 0x400"));
     REQUIRE(!dissasmInstance.GetDrawnAsmLine(5).branchTarget.has_value());
 }
 
@@ -2285,7 +2288,7 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         REQUIRE(restored.CheckLineText(36, "count = dword ptr -0x44"));
         REQUIRE(restored.CheckComment(10, "c10"));
         REQUIRE(restored.CheckComment(100, "c100"));
-        REQUIRE(restored.zone->dissasmType.annotations.get_name_change("sub_0x000000030") == "isPrime");
+        REQUIRE(restored.zone->dissasmType.annotations.get_name_change("sub_30") == "isPrime");
     }
 
     SECTION("a record that can not be placed is rejected and the zone is left unchanged")
@@ -2301,7 +2304,7 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
         REQUIRE(!zoneLinesChanged);
         REQUIRE(restored.zone->cacheRecordRejected); // SaveCacheData keeps it aside instead of overwriting it
-        REQUIRE(restored.CheckLineText(35, "sub_0x000000030"));
+        REQUIRE(restored.CheckLineText(35, "sub_30"));
         REQUIRE(!restored.HasComment(100));
 
         // no record: nothing to keep aside
@@ -2391,7 +2394,7 @@ TEST_CASE("PrologueFunctionsLabels", "[Dissasm]Functions")
         labels.emplace_back(details.second, details.first);
     REQUIRE(labels.size() == 2);
     REQUIRE(labels[0] == std::pair<uint64, std::string>{ 0, "EntryPoint" });
-    REQUIRE(labels[1] == std::pair<uint64, std::string>{ 0xC, "sub_0x00000000C" });
+    REQUIRE(labels[1] == std::pair<uint64, std::string>{ 0xC, "sub_C" });
 }
 
 TEST_CASE("ZeroBytesInsideTheCode", "[Dissasm]DataLines")
@@ -2470,11 +2473,11 @@ TEST_CASE("AsmListingExport", "[Dissasm]Export")
     REQUIRE(listing.starts_with("; GView disassembly listing (x64)"));
     REQUIRE(listing.find("\nEntryPoint:\n0x00000000  sub    rsp, 0x28\n") != std::string::npos);
     // the call uses the label of its target and keeps the comment of the user
-    const auto callLine = listing.find("0x00000004  call   sub_0x000000010");
+    const auto callLine = listing.find("0x00000004  call   sub_10");
     REQUIRE(callLine != std::string::npos);
     const auto callLineEnd = listing.find('\n', callLine);
     REQUIRE(listing.substr(callLine, callLineEnd - callLine).ends_with("; calls the helper"));
-    REQUIRE(listing.find("\nsub_0x000000010:\n0x00000010  xor    eax, eax\n") != std::string::npos);
+    REQUIRE(listing.find("\nsub_10:\n0x00000010  xor    eax, eax\n") != std::string::npos);
     // every line of the zone is written: 2 labels + all the instructions
     REQUIRE(GetCodeZoneLinesCount(zone) == zone.asmLinesCount + 2);
 }
@@ -2644,4 +2647,95 @@ TEST_CASE("DissasmCacheZoneValidation", "[Dissasm]Cache")
     // a version 2 file without the whole zone hash is not valid
     cache.fileVersion = DISSASM_CACHE_VERSION;
     REQUIRE(!settings.ValidateCacheData(cache, obj));
+}
+
+// the label names written by the versions before the VA names: sub_0x<file offset> / offset_0x<file offset> (the renamed labels keep
+// their names, their initial names are the legacy ones)
+static void UseLegacyLabelNames(DissasmCodeZone& zone)
+{
+    auto& annotations      = zone.dissasmType.annotations;
+    const uint64 codeStart = zone.cachedCodeOffsets[0].offset;
+    for (auto& [line, details] : annotations.mappings) {
+        if (IsLocalVariableAnnotation(details) || details.first == "EntryPoint")
+            continue;
+        const std::string initial = annotations.current_name_to_initial_name.at(details.first);
+        const std::string legacy  = FormatFunctionName(codeStart + details.second, initial.starts_with("sub_") ? "sub_0x" : "offset_0x").GetText();
+        const std::string current = details.first == initial ? legacy : details.first;
+        annotations.initial_name_to_current_name.erase(initial);
+        annotations.current_name_to_initial_name.erase(details.first);
+        annotations.initial_name_to_current_name[legacy] = current;
+        annotations.current_name_to_initial_name[current] = legacy;
+        details.first                                    = current;
+    }
+}
+
+TEST_CASE("LegacyLabelNamesMigration", "[Dissasm]Cache")
+{
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    std::string_view labelName = "isPrime";
+    REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+    REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+    UseLegacyLabelNames(*edited.zone);
+    REQUIRE(edited.CheckLineText(5, "sub_0x000000005")); // the record as the previous versions saved it
+    REQUIRE(edited.CheckLineText(48, "offset_0x00000004F"));
+    std::vector<std::byte> buffer;
+    REQUIRE(edited.zone->ToBuffer(buffer));
+
+    DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    auto cache                   = std::make_unique<DissasmCache>();
+    cache->hasCache              = true;
+    const std::string recordName = "DissasmCodeZone." + std::to_string(restored.zone->zoneDetails.startingZonePoint);
+    REQUIRE(cache->AddRegion(recordName, buffer.data(), static_cast<uint32>(buffer.size())));
+    bool zoneLinesChanged = false;
+    REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+
+    // the default names are the names of the analysis, the name given by the user stays
+    const auto& annotations = restored.zone->dissasmType.annotations;
+    REQUIRE(restored.CheckLineText(5, "sub_5"));
+    REQUIRE(restored.CheckLineText(48, "loc_4F"));
+    REQUIRE(restored.CheckLineText(35, "isPrime"));
+    REQUIRE(restored.CheckComment(100, "c100"));
+    REQUIRE(annotations.get_name_change("sub_30") == "isPrime");
+    REQUIRE(annotations.get_name_change("sub_5") == "sub_5");
+    REQUIRE(!annotations.contains_annotation_name("sub_0x000000005"));
+    REQUIRE(annotations.get_name_change("sub_0x000000030").empty());
+    // the jumps / calls to the labels use the same names: the jmp of the thunk to the renamed function shows its name
+    REQUIRE(restored.CheckDrawnLineText(6, "jmp isPrime"));
+    // a label can be renamed again after the migration
+    std::string_view newName = "isPrimeNumber";
+    REQUIRE(restored.zone->TryRenameLine(35, &restored.objects[0], &newName).ok);
+    REQUIRE(restored.CheckDrawnLineText(6, "jmp isPrimeNumber"));
+}
+
+TEST_CASE("LabelNamesFromTheLabelAddresses", "[Dissasm]Functions")
+{
+    // the labels are named after labelAddressBase + the relative address (the VA of the zone start when the plugin translates the offsets)
+    std::vector<unsigned char> file = {
+        0xE8, 0x07, 0x00, 0x00, 0x00, // 0x0: call 0xc
+        0xEB, 0x05,                   // 0x5: jmp 0xc (a tail call to the same function)
+        0xE9, 0x00, 0x10, 0x00, 0x00, // 0x7: jmp 0x100c (outside of the zone)
+        0x31, 0xC0,                   // 0xc: xor eax, eax
+        0xC3,                         // 0xe: ret
+    };
+    file.resize(32, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    {
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        REQUIRE(dissasmInstance.zone->labelAddressBase == 0); // no translation: the file offsets
+        REQUIRE(dissasmInstance.CheckLineText(4, "sub_C"));
+    }
+
+    // as the VA of a PE file
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    REQUIRE(dissasmInstance.zone->GetLabelName("loc_", 0x20) == "loc_401020");
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "sub_40100C"));
+    // the call and the jmp to the same function use its label
+    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "call sub_40100C"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "jmp sub_40100C"));
+    // a target outside of the zone: its VA (32 bit)
+    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0x40200c"));
 }

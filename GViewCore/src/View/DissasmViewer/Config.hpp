@@ -19,6 +19,7 @@ constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
 constexpr uint32 COMMAND_RENAME_LABEL           = 113;
 constexpr uint32 COMMAND_REMOVE_LOCAL_VARIABLE  = 114;
 constexpr uint32 COMMAND_TOGGLE_NUMBER_BASE     = 115;
+constexpr uint32 COMMAND_CHANGE_ADDRESS_MODE    = 116;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -169,6 +170,11 @@ namespace View
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
 
+            // the same key and name as the address mode of the buffer view
+            inline static KeyboardControl ChangeAddressModeCommand = {
+                Input::Key::F3, "ChangeAddressMode", "Show the addresses as VA, RVA or file offsets", COMMAND_CHANGE_ADDRESS_MODE
+            };
+
             inline static KeyboardControl CommandQueryFunctionName = {
                 Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
             };
@@ -177,8 +183,9 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 7> CommandBarCommands = {
-                /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 8> CommandBarCommands = {
+                /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
@@ -261,8 +268,9 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 13> AllKeyboardCommands = {
-                /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 14> AllKeyboardCommands = {
+                /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
@@ -280,6 +288,8 @@ namespace View
 
             bool ShowFileContent;
             bool ShowOnlyDissasm;
+            // the addresses of the instructions (the labels are always named after the VA): VA, RVA or file offset (DissasmPEConversionType)
+            uint8 AddressMode = 2;
             bool EnableDeepScanDissasmOnStart;
             bool CacheSameLocationAsAnalyzedFile;
             static void Update(AppCUI::Utils::IniSection sect);

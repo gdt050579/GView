@@ -40,6 +40,15 @@ struct DissasmCodeZone : public ParseZone {
     std::map<uint64, uint32> decimalOperands;
     // the cache had a record for this zone that could not be applied to the analysis: it is kept aside on save (not overwritten)
     bool cacheRecordRejected = false;
+    // x86/x64: the address of the first decoded instruction in the address space of the labels, the VA (offset translation of the plugin)
+    // or the file offset when the plugin has no translation. The label of the relative address r is named after labelAddressBase + r.
+    uint64 labelAddressBase = 0;
+
+    // the name of the label placed at the relative address `address` (as IDA: sub_140001000, loc_140001020)
+    std::string GetLabelName(std::string_view prefix, uint64 address) const;
+    // the labels loaded from a cache saved before the labels were named after the VA (sub_0x<file offset> / offset_0x<file offset>) get
+    // the names of the analysis; the labels renamed by the user keep their names
+    void MigrateLegacyLabelNames();
 
     DissasmCodeZone() = default;
     // owns the capstone handle

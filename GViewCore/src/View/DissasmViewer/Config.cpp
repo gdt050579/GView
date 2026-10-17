@@ -232,12 +232,12 @@ void Config::OnPreviewWindowDraw(
     ++startingY;
 
     r.WriteSingleLineText(startingX + 1, startingY, "jmp", *AsmJumpInstructionTheme);
-    r.WriteSingleLineText(startingX + 6, startingY, "offset_0x0000", *AsmOffsetColorTheme);
+    r.WriteSingleLineText(startingX + 6, startingY, "loc_401000", *AsmOffsetColorTheme);
     r.WriteSingleLineText(startingX + 20, startingY, "; AsmJumpInstructionTheme", *AsmCommentTheme);
     ++startingY;
 
     r.WriteSingleLineText(startingX + 1, startingY, "call", *AsmFunctionColorTheme);
-    r.WriteSingleLineText(startingX + 6, startingY, "sub_0x3121", *AsmDefaultColorTheme);
+    r.WriteSingleLineText(startingX + 6, startingY, "sub_401120", *AsmDefaultColorTheme);
     r.WriteSingleLineText(startingX + 20, startingY, "; AsmFunctionColorTheme", *AsmCommentTheme);
     ++startingY;
 
