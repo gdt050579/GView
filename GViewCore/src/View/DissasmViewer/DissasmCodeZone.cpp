@@ -196,7 +196,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const bool isBlockStart = atBlockStart || (called != callsMap.end() && !called->second) ||
                                       std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
             auto pairOperands       = operands;
-            const auto pair = isArm64 ? adrpTracker.Next(*insn, isBlockStart) : arm32Tracker.Next(*insn, insnArch == DissasmArch::Thumb, isBlockStart);
+            auto pair = isArm64 ? adrpTracker.Next(*insn, isBlockStart) : arm32Tracker.Next(*insn, insnArch == DissasmArch::Thumb, isBlockStart);
+            // movw / movt also build constants (the magic numbers of the divisions): only an address of the file is an address
+            if (pair.has_value() && isArm32 && insn->id == ARM_INS_MOVT && isFileAddress && !isFileAddress(labelBase + pair->address))
+                pair.reset();
             if (pair.has_value()) {
                 resolvedAddresses[insn->address] = pair->address;
                 pairOperands.ripTarget           = pair->address;

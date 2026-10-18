@@ -263,6 +263,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
     void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<MachOFile> machO, Reference<GView::Object> obj)
     {
         auto& translation = machO->dissasmTranslation;
+        const bool isArm  = machO->header.cputype == MAC::CPU_TYPE_ARM;
         constexpr uint32 VA = 2;
         if (machO->dySymTab.has_value())
         {
@@ -281,11 +282,16 @@ GVIEW_PLUGIN_ENTRY_POINTS
                     symbol.symbolNameDemangled.empty())
                     continue;
                 const uint64 offset = translation.TranslateToFileOffset(symbol.n_value, VA);
-                if (offset != static_cast<uint64>(-1))
-                    settings.AddFunctionEntry(
+                if (offset == static_cast<uint64>(-1))
+                    continue;
+                settings.AddFunctionEntry(
+                      offset,
+                      symbol.symbolNameDemangled,
+                      (symbol.n_type & EXT) != 0 ? DissasmViewer::FunctionEntryType::Export : DissasmViewer::FunctionEntryType::Symbol);
+                if (isArm) // armv7: N_ARM_THUMB_DEF marks a Thumb function
+                    settings.AddArmCodeMode(
                           offset,
-                          symbol.symbolNameDemangled,
-                          (symbol.n_type & EXT) != 0 ? DissasmViewer::FunctionEntryType::Export : DissasmViewer::FunctionEntryType::Symbol);
+                          (symbol.n_desc & static_cast<uint16>(MAC::N_DESC_BIT_TYPE::ARM_THUMB_DEF)) ? DissasmViewer::ArmCodeMode::Thumb : DissasmViewer::ArmCodeMode::Arm);
             }
         }
         // LC_FUNCTION_STARTS: ULEB128 distances, the first one from the start of the __TEXT segment
@@ -312,9 +318,13 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 if (delta == 0)
                     break; // the end of the list
                 address += delta;
-                const uint64 offset = translation.TranslateToFileOffset(address, VA);
-                if (offset != static_cast<uint64>(-1))
-                    settings.AddFunctionEntry(offset, {}, DissasmViewer::FunctionEntryType::Symbol);
+                // armv7: the bit 0 of an address is the Thumb mode of the function
+                const uint64 offset = translation.TranslateToFileOffset(isArm ? address & ~static_cast<uint64>(1) : address, VA);
+                if (offset == static_cast<uint64>(-1))
+                    continue;
+                settings.AddFunctionEntry(offset, {}, DissasmViewer::FunctionEntryType::Symbol);
+                if (isArm)
+                    settings.AddArmCodeMode(offset, (address & 1) ? DissasmViewer::ArmCodeMode::Thumb : DissasmViewer::ArmCodeMode::Arm);
             }
         }
     }
@@ -332,8 +342,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
             language = DissasmViewer::DisassemblyLanguage::x86;
         else if (machO->header.cputype == MAC::CPU_TYPE_ARM64)
             language = DissasmViewer::DisassemblyLanguage::ARM64;
+        else if (machO->header.cputype == MAC::CPU_TYPE_ARM) // armv7: Thumb-2 code mostly, the symbols give the mode of every function
+            language = DissasmViewer::DisassemblyLanguage::Thumb;
         else
-            return; // the disassembly view decodes x86 / x64 / ARM64
+            return; // the disassembly view decodes x86 / x64 / ARM64 / ARM
+        const bool isArm = machO->header.cputype == MAC::CPU_TYPE_ARM;
 
         uint64 start = UINT64_MAX, end = 0;
         std::vector<uint64> sectionStarts; // the padding between two sections never hides the start of the next one
@@ -350,6 +363,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
             return;
         // LC_MAIN: the offset of the entry point from the start of the __TEXT segment (its file offset); a library starts at the code
         uint64 entryPoint = machO->main.has_value() ? machO->main->entryoff : start;
+        if (isArm)
+            entryPoint &= ~static_cast<uint64>(1); // the Thumb bit
         if (entryPoint < start || entryPoint >= end)
             entryPoint = start;
 
@@ -357,6 +372,14 @@ GVIEW_PLUGIN_ENTRY_POINTS
         settings.AddDisassemblyZone(start, end - start, entryPoint, language);
         for (const uint64 sectionStart : sectionStarts)
             settings.AddInstructionBoundary(sectionStart);
+        if (isArm) // armv7: the stubs (__picsymbolstub4, __symbol_stub4) are ARM code, the other sections Thumb until the symbols say otherwise
+            for (const auto& segment : machO->segments)
+                for (const auto& section : segment.sections)
+                    if (IsInstructionsSection(section))
+                        settings.AddArmCodeMode(
+                              section.offset,
+                              (section.flags & MAC::SECTION_TYPE) == static_cast<uint32>(MAC::SectionType::SYMBOL_STUBS) ? DissasmViewer::ArmCodeMode::Arm
+                                                                                                                       : DissasmViewer::ArmCodeMode::Thumb);
         settings.SetOffsetTranslationList({ "RVA", "VA" }, &machO->dissasmTranslation);
         AddDissasmImports(settings, machO, win->GetObject());
         AddDissasmFunctionEntries(settings, machO, win->GetObject());
