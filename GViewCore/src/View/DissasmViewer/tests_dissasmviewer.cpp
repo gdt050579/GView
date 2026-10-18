@@ -5013,3 +5013,67 @@ TEST_CASE("Arm32SwitchTables", "[Dissasm]Arm32")
         REQUIRE_FALSE(run(tracker, { { { 0xDF, 0xE8, 0x00, 0xF0 }, 0x04 } }, true).has_value());
     }
 }
+
+TEST_CASE("Arm32FrameVariables", "[Dissasm]Arm32")
+{
+    std::vector<unsigned char> file = {
+        0x00, 0x48, 0x2D, 0xE9, // 0x00: push {r11, lr}               (ARM)
+        0x0D, 0xB0, 0xA0, 0xE1, // 0x04: mov r11, sp                  (the frame register: fp)
+        0x0C, 0xD0, 0x4D, 0xE2, // 0x08: sub sp, sp, #12              (sp = fp - 0xc)
+        0x04, 0x00, 0x8D, 0xE5, // 0x0c: str r0, [sp, #4]             -> var_8
+        0x00, 0x00, 0x8D, 0xE5, // 0x10: str r0, [sp]                 -> var_C
+        0x04, 0x20, 0x0B, 0xE5, // 0x14: str r2, [r11, #-4]           -> var_4
+        0x0B, 0xD0, 0xA0, 0xE1, // 0x18: mov sp, r11
+        0x00, 0x88, 0xBD, 0xE8, // 0x1c: pop {r11, pc}
+        0x82, 0xB0,             // 0x20: sub sp, #8                   (Thumb, a leaf without a frame register)
+        0x01, 0x90,             // 0x22: str r0, [sp, #4]             -> the sp of the entry - 4: var_4
+        0x01, 0x98,             // 0x24: ldr r0, [sp, #4]
+        0x02, 0xB0,             // 0x26: add sp, #8
+        0x70, 0x47,             // 0x28: bx lr
+    };
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM;
+    layout.armCodeModes     = { { 0x20, ArmCodeMode::Thumb } };
+    layout.functionEntries  = { { 0x20, { "leaf", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->frameRegister == 11);
+    REQUIRE(frame->stackOffset == -0xC);
+    REQUIRE(frame->variables.size() == 3);
+    REQUIRE(frame->variables[0].frameOffset == -0xC);
+    REQUIRE(frame->variables[1].frameOffset == -8);
+    REQUIRE(frame->variables[2].frameOffset == -4);
+
+    const auto* leaf = zone.localVariables.FindFunctionByStart(0x20);
+    REQUIRE(leaf != nullptr);
+    REQUIRE_FALSE(leaf->usesFrameRegister);
+    REQUIRE(leaf->variables.size() == 1);
+    REQUIRE(leaf->variables[0].name == "var_4");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("str    r0, [sp, #var_8]") != std::string::npos);
+    REQUIRE(listing.find("str    r0, [sp, #var_C]") != std::string::npos); // [sp]: the name is inserted
+    REQUIRE(listing.find("str    r2, [fp, #var_4]") != std::string::npos);
+    REQUIRE(listing.find("str    r0, [sp, #var_4]") != std::string::npos); // the Thumb leaf
+}
+
+TEST_CASE("ArmFrameOperandForms", "[Dissasm]Arm32")
+{
+    Arm64FrameOperand slot{};
+    REQUIRE(FindArmFrameOperand("r0, [fp, #-0x14]", "fp", slot));
+    REQUIRE(slot.displacement == -0x14);
+    REQUIRE_FALSE(slot.needsSeparator);
+    REQUIRE(FindArmFrameOperand("r0, [sp]", "r7", slot));
+    REQUIRE(slot.isStackPointerBased);
+    REQUIRE(slot.needsSeparator);
+    REQUIRE(slot.displacement == 0);
+    REQUIRE_FALSE(FindArmFrameOperand("lr, [sp, #-4]!", "fp", slot));
+    REQUIRE_FALSE(FindArmFrameOperand("r4, [sp], #4", "fp", slot));
+    REQUIRE_FALSE(FindArmFrameOperand("r0, [r7, #4]", "fp", slot)); // r7 is not the frame register of an ARM mode function
+}

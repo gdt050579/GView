@@ -492,15 +492,16 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     const DissasmLocalVariable* variable = nullptr;
     X86FrameOperand frameOperand{};
     std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]
-    if (zone && !zone->localVariables.Empty() && zone->IsArm64Code()) {
+    if (zone && !zone->localVariables.Empty() && zone->IsArmCode()) {
+        // ARM: [x29, #var_8] / [fp, #var_8] / [r7, #var_8] / [sp, #var_10] / [sp] -> [sp, #var_18]
+        function = zone->localVariables.FindFunctionByAddress(address);
         Arm64FrameOperand slot{};
-        if (FindArm64FrameOperand(text, slot)) {
-            function = zone->localVariables.FindFunctionByAddress(address);
-            if (function && (slot.isStackPointerBased || function->usesFrameRegister)) {
-                frameOperand = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + function->stackOffset : slot.displacement };
-                variable     = function->FindVariable(frameOperand.frameOffset);
-                joiner       = {};
-            }
+        const std::string_view frameRegister =
+              zone->IsArm64Code() ? std::string_view("x29") : (function && function->frameRegister == 11 ? std::string_view("fp") : std::string_view("r7"));
+        if (function && FindArmFrameOperand(text, frameRegister, slot) && (slot.isStackPointerBased || function->usesFrameRegister)) {
+            frameOperand = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + function->stackOffset : slot.displacement };
+            variable     = function->FindVariable(frameOperand.frameOffset);
+            joiner       = slot.needsSeparator ? std::string_view(", #") : std::string_view();
         }
     } else if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
         function = zone->localVariables.FindFunctionByAddress(address);

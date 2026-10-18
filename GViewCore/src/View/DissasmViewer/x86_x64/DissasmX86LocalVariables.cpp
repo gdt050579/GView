@@ -541,41 +541,253 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
 
 bool GView::View::DissasmViewer::FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result)
 {
-    // [x29, #-0x10] / [sp, #0x18]: one slot (not [sp, #-0x10]! or [sp], #0x10, the writeback of the prologue / epilogue)
-    for (const std::string_view base : { std::string_view("[x29, #"), std::string_view("[sp, #") }) {
-        const size_t start = operands.find(base);
-        if (start == std::string_view::npos)
+    return FindArmFrameOperand(operands, "x29", result);
+}
+
+bool GView::View::DissasmViewer::FindArmFrameOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result)
+{
+    // [x29, #-0x10] / [fp, #-4] / [sp, #0x18] / [sp]: one slot (not the writeback forms [sp, #-0x10]! / [sp], #0x10 of a prologue)
+    for (int pass = 0; pass < 2; pass++) {
+        const std::string_view base = pass == 0 ? frameRegister : std::string_view("sp");
+        if (base.empty())
             continue;
-        size_t position       = start + base.size();
-        const size_t length   = operands.size();
-        const bool isNegative = position < length && operands[position] == '-';
-        if (isNegative)
-            position++;
-        uint64 value  = 0;
-        uint32 digits = 0;
-        const bool isHex = position + 1 < length && operands[position] == '0' && operands[position + 1] == 'x';
-        if (isHex)
-            position += 2;
-        for (; position < length; position++, digits++) {
-            const char c = operands[position];
-            uint32 digit = 0;
-            if (c >= '0' && c <= '9')
-                digit = static_cast<uint32>(c - '0');
-            else if (isHex && c >= 'a' && c <= 'f')
-                digit = static_cast<uint32>(c - 'a' + 10);
-            else
-                break;
-            value = value * (isHex ? 16 : 10) + digit;
-            if (value > 0x7FFFFFFF)
+        for (size_t start = operands.find('['); start != std::string_view::npos; start = operands.find('[', start + 1)) {
+            if (operands.substr(start + 1, base.size()) != base)
+                continue;
+            size_t position     = start + 1 + base.size();
+            const size_t length = operands.size();
+            if (position < length && operands[position] == ']') { // [sp]: the displacement 0, ", #name" is inserted
+                if (position + 1 < length && (operands[position + 1] == '!' || operands[position + 1] == ','))
+                    return false;
+                result.replaceStart        = static_cast<uint32>(position);
+                result.replaceEnd          = static_cast<uint32>(position);
+                result.displacement        = 0;
+                result.isStackPointerBased = pass == 1;
+                result.needsSeparator      = true;
+                return true;
+            }
+            if (operands.substr(position, 3) != ", #")
+                continue;
+            position += 3;
+            const size_t replaceStart = position;
+            const bool isNegative     = position < length && operands[position] == '-';
+            if (isNegative)
+                position++;
+            uint64 value     = 0;
+            uint32 digits    = 0;
+            const bool isHex = position + 1 < length && operands[position] == '0' && operands[position + 1] == 'x';
+            if (isHex)
+                position += 2;
+            for (; position < length; position++, digits++) {
+                const char c = operands[position];
+                uint32 digit = 0;
+                if (c >= '0' && c <= '9')
+                    digit = static_cast<uint32>(c - '0');
+                else if (isHex && c >= 'a' && c <= 'f')
+                    digit = static_cast<uint32>(c - 'a' + 10);
+                else
+                    break;
+                value = value * (isHex ? 16 : 10) + digit;
+                if (value > 0x7FFFFFFF)
+                    return false;
+            }
+            if (digits == 0 || position >= length || operands[position] != ']' || (position + 1 < length && operands[position + 1] == '!'))
                 return false;
+            result.replaceStart        = static_cast<uint32>(replaceStart);
+            result.replaceEnd          = static_cast<uint32>(position);
+            result.displacement        = isNegative ? -static_cast<int32>(value) : static_cast<int32>(value);
+            result.isStackPointerBased = pass == 1;
+            result.needsSeparator      = false;
+            return true;
         }
-        if (digits == 0 || position >= length || operands[position] != ']' || (position + 1 < length && operands[position + 1] == '!'))
-            return false;
-        result.replaceStart        = static_cast<uint32>(start + base.size());
-        result.replaceEnd          = static_cast<uint32>(position);
-        result.displacement        = isNegative ? -static_cast<int32>(value) : static_cast<int32>(value);
-        result.isStackPointerBased = base[1] == 's';
-        return true;
     }
     return false;
+}
+
+namespace
+{
+// the bytes moved by a 32 bit ARM load / store (ldrd / strd: two words); 0 for the other instructions
+uint16 Arm32AccessSize(unsigned int id, bool& isPair)
+{
+    isPair = false;
+    switch (id) {
+    case ARM_INS_LDRB:
+    case ARM_INS_STRB:
+    case ARM_INS_LDRSB:
+        return 1;
+    case ARM_INS_LDRH:
+    case ARM_INS_STRH:
+    case ARM_INS_LDRSH:
+        return 2;
+    case ARM_INS_LDR:
+    case ARM_INS_STR:
+        return 4;
+    case ARM_INS_LDRD:
+    case ARM_INS_STRD:
+        isPair = true;
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+// push {r4, r11, lr} / stmdb sp!, {...}: 4 bytes for every register of the list
+int64 Arm32PushedBytes(const cs_arm& arm, bool skipFirst)
+{
+    int64 count = 0;
+    for (uint8 index = skipFirst ? 1 : 0; index < arm.op_count; index++)
+        if (arm.operands[index].type == ARM_OP_REG)
+            count++;
+    return count * 4;
+}
+} // namespace
+
+bool GView::View::DissasmViewer::AnalyzeArm32FunctionFrame(
+      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool thumb, DissasmFunctionFrame& frame)
+{
+    frame.startAddress  = codeAddress;
+    frame.endAddress    = codeAddress;
+    frame.stackOffset   = 0;
+    frame.frameRegister = 0;
+    frame.variables.clear();
+    if (!code || codeSize == 0 || limitAddress <= codeAddress)
+        return false;
+    if (cs_option(detailHandle, CS_OPT_MODE, thumb ? CS_MODE_THUMB : CS_MODE_ARM) != CS_ERR_OK)
+        return false;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return false;
+
+    constexpr uint32 MAX_PROLOGUE_INSTRUCTIONS = 8;
+    const uint8* data           = code;
+    size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
+    uint64 address              = codeAddress;
+    uint64 furthestBranchTarget = 0;
+    uint32 decodedInstructions  = 0;
+    bool hasFrame               = false;
+    bool stackOnly              = false;
+    arm_reg frameRegister       = ARM_REG_INVALID;
+    int64 entryDelta            = 0; // sp - the sp of the entry, during the prologue
+    int64 stackPointer          = 0; // sp - the frame register (sp - the sp of the entry without one)
+    std::optional<int64> bodyStackPointer;
+    std::vector<FrameAccess> accesses;
+    accesses.reserve(32);
+
+    while (decodedInstructions < MAX_FUNCTION_INSTRUCTIONS && size >= 2) {
+        const uint8* bytes = data;
+        size_t left        = std::min<size_t>(size, 4);
+        uint64 at          = address;
+        if (!cs_disasm_iter(detailHandle, &bytes, &left, &at, insn.get()))
+            break; // a data word (a literal pool): the frame is not followed further
+        const size_t length = insn->size;
+        data += length;
+        size -= length;
+        address += length;
+        decodedInstructions++;
+        frame.endAddress       = address;
+        const cs_insn& current = *insn;
+        const cs_arm& arm      = current.detail->arm;
+        const auto isRegister  = [&arm](uint8 index, arm_reg reg) {
+            return index < arm.op_count && arm.operands[index].type == ARM_OP_REG && arm.operands[index].reg == reg;
+        };
+        const auto immediateAt = [&arm](uint8 index) -> std::optional<int64> {
+            return index < arm.op_count && arm.operands[index].type == ARM_OP_IMM ? std::optional<int64>(arm.operands[index].imm) : std::nullopt;
+        };
+        // sub sp, sp, #N (Thumb: sub sp, #N) / add sp, ... / push / pop / the writeback of [sp, #-4]!
+        int64 spChange = 0;
+        if ((current.id == ARM_INS_SUB || current.id == ARM_INS_ADD) && isRegister(0, ARM_REG_SP)) {
+            const auto value = arm.op_count == 2 ? immediateAt(1) : (isRegister(1, ARM_REG_SP) ? immediateAt(2) : std::nullopt);
+            if (value.has_value())
+                spChange = current.id == ARM_INS_SUB ? -value.value() : value.value();
+        } else if (current.id == ARM_INS_PUSH)
+            spChange = -Arm32PushedBytes(arm, false);
+        else if (current.id == ARM_INS_POP)
+            spChange = Arm32PushedBytes(arm, false);
+        else if (current.id == ARM_INS_STMDB && arm.writeback && isRegister(0, ARM_REG_SP))
+            spChange = -Arm32PushedBytes(arm, true);
+        else if (arm.writeback) {
+            for (uint8 index = 0; index < arm.op_count; index++)
+                if (arm.operands[index].type == ARM_OP_MEM && arm.operands[index].mem.base == ARM_REG_SP)
+                    spChange = arm.post_index ? immediateAt(static_cast<uint8>(arm.op_count - 1)).value_or(0) : arm.operands[index].mem.disp;
+        }
+
+        if (!hasFrame) {
+            // mov r11, sp / add r11, sp, #M (ARM) / mov r7, sp / add r7, sp, #M (Thumb): the frame register, the saved r11 / r7 and lr at it
+            const bool setsR11 = isRegister(0, ARM_REG_R11), setsR7 = isRegister(0, ARM_REG_R7);
+            if ((setsR11 || setsR7) && isRegister(1, ARM_REG_SP) && (current.id == ARM_INS_MOV || (current.id == ARM_INS_ADD && immediateAt(2).has_value()))) {
+                stackPointer  = current.id == ARM_INS_ADD ? -immediateAt(2).value() : 0;
+                frameRegister = setsR11 ? ARM_REG_R11 : ARM_REG_R7;
+                hasFrame      = true;
+                continue;
+            }
+            const bool isPrologue = spChange != 0; // push, sub sp, str lr, [sp, #-4]!
+            if (isPrologue && decodedInstructions < MAX_PROLOGUE_INSTRUCTIONS) {
+                entryDelta += spChange;
+                continue;
+            }
+            if (entryDelta >= 0)
+                return false; // no frame: the locals (if any) are in registers
+            hasFrame     = true; // sub sp without a frame register: the slots from the sp of the entry
+            stackOnly    = true;
+            stackPointer = entryDelta;
+            spChange     = 0;
+        }
+        stackPointer += spChange;
+
+        bool isPair             = false;
+        const uint16 accessSize = Arm32AccessSize(current.id, isPair);
+        bool writesFrameRegister = false;
+        for (uint8 index = 0; index < arm.op_count; index++) {
+            const cs_arm_op& op = arm.operands[index];
+            if (op.type == ARM_OP_REG && (op.access & CS_AC_WRITE) && frameRegister != ARM_REG_INVALID && op.reg == frameRegister)
+                writesFrameRegister = true;
+            if (op.type != ARM_OP_MEM || op.mem.index != ARM_REG_INVALID || arm.writeback || accessSize == 0)
+                continue;
+            int64 offset = 0;
+            if (!stackOnly && op.mem.base == frameRegister)
+                offset = op.mem.disp;
+            else if (op.mem.base == ARM_REG_SP) {
+                if (!bodyStackPointer.has_value())
+                    bodyStackPointer = stackPointer;
+                if (stackPointer != bodyStackPointer.value())
+                    continue;
+                offset = op.mem.disp + stackPointer;
+            } else
+                continue;
+            if (offset >= 0 && (stackOnly || offset < 8))
+                continue; // the saved frame register and lr; a function without a frame register: the slots of its caller
+            if (offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
+                continue;
+            accesses.push_back({ static_cast<int32>(offset), accessSize });
+            if (isPair)
+                accesses.push_back({ static_cast<int32>(offset + accessSize), accessSize });
+        }
+        if (accesses.size() >= ACCESSES_COMPACT_THRESHOLD && !CompactAccesses(accesses))
+            return false;
+        if (writesFrameRegister && current.id != ARM_INS_POP && current.id != ARM_INS_LDM && !stackOnly)
+            break; // another frame (the pop of the epilogue restores the register)
+
+        // the branches inside the function: the code after a return / b belongs to it when one of them reaches it
+        const auto flow     = GetArm32Flow(current);
+        const auto operands = GetArm32OperandsInfo(current, thumb);
+        if ((flow == X86Flow::ConditionalJump || flow == X86Flow::Jump) && operands.directTarget.has_value()) {
+            const uint64 target = operands.directTarget.value();
+            if (target > current.address && target < limitAddress)
+                furthestBranchTarget = std::max(furthestBranchTarget, target);
+        }
+        if ((flow == X86Flow::Return || flow == X86Flow::Jump) && furthestBranchTarget < address)
+            break;
+    }
+    if (!hasFrame || !CompactAccesses(accesses))
+        return false;
+    frame.stackOffset       = static_cast<int32>(bodyStackPointer.value_or(stackPointer));
+    frame.usesFrameRegister = !stackOnly;
+    frame.frameRegister     = static_cast<uint8>(frameRegister == ARM_REG_R11 ? 11 : (frameRegister == ARM_REG_R7 ? 7 : 0));
+    frame.variables.reserve(accesses.size());
+    for (const auto& access : accesses) {
+        DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
+        FormatDefaultLocalVariableName(access.frameOffset, false, variable.name); // the arguments above the saved register and lr: arg_0
+        frame.variables.push_back(std::move(variable));
+    }
+    return true;
 }

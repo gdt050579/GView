@@ -38,7 +38,16 @@ struct Arm64FrameOperand {
     uint32 replaceEnd;   // position of the closing ']'
     int32 displacement;
     bool isStackPointerBased; // [sp, #n]: the frame offset is n + frame.stackOffset
+    bool needsSeparator;      // [sp]: no displacement, ", #" goes before the name
 };
-// Finds a slot operand of the capstone operands string: [x29, #-0x10], [sp, #0x18] (not the writeback forms [sp, #-0x10]! / [sp], #0x10)
+// Finds a slot operand of the capstone operands string: [x29, #-0x10], [sp, #0x18], [sp] (not the writeback forms [sp, #-0x10]! /
+// [sp], #0x10); `frameRegister`: x29, fp (r11) or r7
 bool FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result);
+bool FindArmFrameOperand(std::string_view operands, std::string_view frameRegister, Arm64FrameOperand& result);
+
+// 32 bit ARM (the mode of the function: `thumb`): push {..., r11, lr}; mov r11, sp / add r11, sp, #M (ARM) or push {r7, lr}; mov r7, sp
+// (Thumb), then the slots of the frame register and of sp (in frame register offsets), as AnalyzeArm64FunctionFrame; a function without
+// a frame register that reserves stack: the slots from the sp of its entry. frame.frameRegister: 11 or 7 (0 without one)
+bool AnalyzeArm32FunctionFrame(
+      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool thumb, DissasmFunctionFrame& frame);
 } // namespace GView::View::DissasmViewer

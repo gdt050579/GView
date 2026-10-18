@@ -74,7 +74,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
     DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
         : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture),
-          detectLocalVariables(initData.enableLocalVariablesDetection && !zone->IsArm32Code()), // no 32 bit ARM frames
+          detectLocalVariables(initData.enableLocalVariablesDetection),
           isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), findImport(initData.findImport),
           addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
           asmLines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
@@ -445,9 +445,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return;
 
         DissasmFunctionFrame frame{};
-        const bool analyzed = arch == DissasmArch::Arm64
-                                    ? AnalyzeArm64FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame)
-                                    : AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame);
+        const auto functionArch = zone->GetArchAt(relativeAddress);
+        bool analyzed           = false;
+        if (functionArch == DissasmArch::Arm64)
+            analyzed = AnalyzeArm64FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame);
+        else if (functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb)
+            analyzed = AnalyzeArm32FunctionFrame(
+                  detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch == DissasmArch::Thumb, frame);
+        else
+            analyzed = AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame);
         if (!analyzed || frame.variables.empty())
             return;
         // IDA like: the variables are listed right below the function label
