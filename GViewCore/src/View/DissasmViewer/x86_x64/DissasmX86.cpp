@@ -720,14 +720,19 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     const uint64 minimalAddress = cachedAsmLines.front().address;
     const uint64 maximalAddress = cachedAsmLines.back().address;
 
-    // the branches going to the same line share one arrow: its lane spans the target and all its sources
+    // the branches going to the same line share one arrow: its lane spans the target and all its sources. A jump to a line that is not
+    // drawn (above or below the view) gets an arrow to the edge of the view, without a head (IDA like)
     constexpr uint32 NO_LANE = UINT32_MAX;
+    enum class Edge : uint8 { None, Above, Below };
     struct Arrow {
-        size_t first, last, target;
+        size_t first, last;
+        size_t target;        // the target line (Edge::None)
+        uint64 targetAddress; // the target of the arrows that go to an edge
+        Edge edge;
         uint32 lane;
+        std::vector<size_t> sources;
     };
     std::vector<Arrow> arrows;
-    std::vector<size_t> targetOfLine(linesCount, SIZE_MAX);
     for (size_t sourceIndex = 0; sourceIndex < linesCount; sourceIndex++) {
         const auto& source = cachedAsmLines[sourceIndex];
         if (source.flags != Line::InstructionFlag::CallFlag && source.flags != Line::InstructionFlag::JmpFlag)
@@ -735,8 +740,23 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
         if (!source.branchTarget.has_value())
             continue;
         const uint64 target = source.branchTarget.value();
-        if (target < minimalAddress || target > maximalAddress)
+        if (target < minimalAddress || target > maximalAddress) {
+            // only the jumps (the calls go to other functions, their arrows would cover the view)
+            if (source.flags != Line::InstructionFlag::JmpFlag)
+                continue;
+            const Edge edge = target < minimalAddress ? Edge::Above : Edge::Below;
+            auto arrow      = std::find_if(arrows.begin(), arrows.end(), [&](const Arrow& a) { return a.edge == edge && a.targetAddress == target; });
+            if (arrow == arrows.end()) {
+                const size_t first = edge == Edge::Above ? 0 : sourceIndex;
+                const size_t last  = edge == Edge::Above ? sourceIndex : linesCount - 1;
+                arrows.push_back({ first, last, SIZE_MAX, target, edge, NO_LANE, { sourceIndex } });
+            } else {
+                arrow->first = std::min(arrow->first, sourceIndex);
+                arrow->last  = std::max(arrow->last, sourceIndex);
+                arrow->sources.push_back(sourceIndex);
+            }
             continue;
+        }
         // first visible line placed at the target (its label when it has one); a target in the middle of an instruction has no line
         const auto targetIt = std::find_if(cachedAsmLines.begin(), cachedAsmLines.end(), [target](const Line& line) { return line.address == target; });
         if (targetIt == cachedAsmLines.end())
@@ -745,22 +765,24 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
         if (targetIndex == sourceIndex)
             continue;
 
-        targetOfLine[sourceIndex] = targetIndex;
-        const auto arrow          = std::find_if(arrows.begin(), arrows.end(), [targetIndex](const Arrow& a) { return a.target == targetIndex; });
+        const auto arrow = std::find_if(arrows.begin(), arrows.end(), [targetIndex](const Arrow& a) { return a.edge == Edge::None && a.target == targetIndex; });
         if (arrow == arrows.end()) {
-            arrows.push_back({ std::min(sourceIndex, targetIndex), std::max(sourceIndex, targetIndex), targetIndex, NO_LANE });
+            arrows.push_back({ std::min(sourceIndex, targetIndex), std::max(sourceIndex, targetIndex), targetIndex, target, Edge::None, NO_LANE, { sourceIndex } });
         } else {
             arrow->first = std::min(arrow->first, sourceIndex);
             arrow->last  = std::max(arrow->last, sourceIndex);
+            arrow->sources.push_back(sourceIndex);
         }
     }
 
-    // the shortest arrows get the lanes next to the code and the longer ones go around them; arrows sharing a line never share a
-    // lane, the ones that do not fit are not drawn
+    // the arrows that are drawn whole get the lanes first; the shortest arrows get the lanes next to the code and the longer ones go
+    // around them; arrows sharing a line never share a lane, the ones that do not fit are not drawn
     std::sort(arrows.begin(), arrows.end(), [](const Arrow& a, const Arrow& b) {
+        if ((a.edge == Edge::None) != (b.edge == Edge::None))
+            return a.edge == Edge::None;
         if (a.last - a.first != b.last - b.first)
             return a.last - a.first < b.last - b.first;
-        return a.target < b.target; // one arrow per target
+        return a.targetAddress < b.targetAddress;
     });
     for (size_t i = 0; i < arrows.size(); i++) {
         for (uint32 lane = Line::ARROW_LANES; lane-- > 0;) {
@@ -781,22 +803,25 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
             line.arrowCells[column] |= Line::ArrowLeft | Line::ArrowRight;
         line.arrowCells[Line::ARROW_LANES] |= Line::ArrowLeft | (isTarget ? Line::ArrowHead : Line::ArrowNone);
     };
-    std::vector<uint32> laneOfTarget(linesCount, NO_LANE);
     for (const auto& arrow : arrows) {
         if (arrow.lane == NO_LANE)
             continue;
-        laneOfTarget[arrow.target] = arrow.lane;
         for (size_t i = arrow.first; i <= arrow.last; i++) {
             if (i > arrow.first)
                 cachedAsmLines[i].arrowCells[arrow.lane] |= Line::ArrowUp;
             if (i < arrow.last)
                 cachedAsmLines[i].arrowCells[arrow.lane] |= Line::ArrowDown;
         }
-        addHorizontalLine(cachedAsmLines[arrow.target], arrow.lane, true);
+        // the line continues out of the view
+        if (arrow.edge == Edge::Above)
+            cachedAsmLines[arrow.first].arrowCells[arrow.lane] |= Line::ArrowUp;
+        else if (arrow.edge == Edge::Below)
+            cachedAsmLines[arrow.last].arrowCells[arrow.lane] |= Line::ArrowDown;
+        else
+            addHorizontalLine(cachedAsmLines[arrow.target], arrow.lane, true);
+        for (const size_t source : arrow.sources)
+            addHorizontalLine(cachedAsmLines[source], arrow.lane, false);
     }
-    for (size_t i = 0; i < linesCount; i++)
-        if (targetOfLine[i] != SIZE_MAX && laneOfTarget[targetOfLine[i]] != NO_LANE)
-            addHorizontalLine(cachedAsmLines[i], laneOfTarget[targetOfLine[i]], false);
 }
 
 bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
@@ -986,6 +1011,13 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         }
     }
 
+    // every occurrence of the name / register / number under the cursor (IDA like), in the instructions and the comments
+    if (arrowsColumn != UINT32_MAX) {
+        const std::string token = GetCursorToken();
+        if (!token.empty())
+            HighlightTokenOccurrences(chars, arrowsColumn + DissasmAsmPreCacheLine::ARROW_COLUMNS, token, ColorMan.Colors.Highlight);
+    }
+
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
 
     /*if (isCursorLine)
@@ -1006,6 +1038,17 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
             dli.renderer.WriteSpecialCharacter(
                   static_cast<int>(column), static_cast<int>(dli.screenLineToDraw) + 1, GetArrowCellCharacter(cell).special, bufferToDraw[column].Color);
         }
+    }
+    // the label of a function: a line in the empty columns of the bytes, it separates the functions
+    const bool isFunctionLabel = asmCacheLine->size == 0 && !asmCacheLine->isCollapsedLine &&
+                                 asmCacheLine->localVariableKind != DissasmAsmPreCacheLine::LocalVariableKind::Definition &&
+                                 std::binary_search(zone->functionStarts.begin(), zone->functionStarts.end(), asmCacheLine->address);
+    if (isFunctionLabel && arrowsColumn != UINT32_MAX) {
+        const uint32 columnsStart = Layout.startingTextLineOffset + addressTotalLength;
+        for (uint32 column = columnsStart; column < arrowsColumn && column < bufferToDraw.length(); column++)
+            if (bufferToDraw[column].Code == ' ')
+                dli.renderer.WriteSpecialCharacter(
+                      static_cast<int>(column), static_cast<int>(dli.screenLineToDraw) + 1, SpecialChars::BoxHorizontalSingleLine, ColorMan.Colors.AsmTitleColumnColor);
     }
     // poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
     bool foundZone = false;
@@ -1431,6 +1474,9 @@ void Instance::RefreshCursorLineNumbers()
     cursorLineNumbers.valid      = false;
     cursorLineNumbers.zone       = nullptr;
     cursorLineNumbers.numbers.clear();
+    cursorLineNumbers.location.clear();
+    cursorLineNumbers.operands.clear();
+    cursorLineNumbers.operandColumns.clear();
 
     const auto zonesFound = GetZonesIndexesFromLinePosition(line);
     if (zonesFound.size() != 1)
@@ -1447,14 +1493,23 @@ void Instance::RefreshCursorLineNumbers()
     if (zoneLine < 2 || Cursor.lineInView == 0)
         return;
 
-    // the same line (and layout) as the one that is drawn
+    // the same line (and layout) as the one that is drawn; without the known functions: a call would name the arguments on the drawn lines
+    // (AnnounceCallInstruction), this line is built while they are drawn
+    AsmData withoutKnownFunctions;
     DissasmInsnExtractLineParams params{};
     params.obj      = obj;
     params.settings = settings.get();
-    params.asmData  = &asmData;
+    params.asmData  = &withoutKnownFunctions;
     params.dli      = nullptr;
     params.zone     = zone;
     auto asmLine    = zone->GetCurrentAsmLine(zoneLine - 2u, obj, &params);
+
+    // where the cursor is: sub_140001010+0x1A, the file offset (labels and local variables included)
+    if (!asmLine.isCollapsedLine) {
+        LocalString<32> fileOffset;
+        fileOffset.SetFormat("  file offset 0x%llX", static_cast<unsigned long long>(zone->cachedCodeOffsets[0].offset + asmLine.address));
+        cursorLineNumbers.location = zone->FormatCodeAddress(asmLine.address) + fileOffset.GetText();
+    }
 
     // only instructions: not labels, local variable lines or collapsed zones
     const bool isCollapsedZoneLine = asmLine.isCollapsedLine;
@@ -1470,6 +1525,8 @@ void Instance::RefreshCursorLineNumbers()
     cursorLineNumbers.valid   = true;
     cursorLineNumbers.zone    = zone;
     cursorLineNumbers.address = asmLine.address;
+    cursorLineNumbers.operands.assign(asmLine.op_str, asmLine.op_str_size);
+    cursorLineNumbers.operandColumns = opStrColumns;
 
     const auto numbers = FindOperandNumbers({ asmLine.op_str, asmLine.op_str_size });
     for (uint32 index = 0; index < static_cast<uint32>(numbers.size()) && index < 32u; index++) {
@@ -1537,6 +1594,39 @@ bool Instance::TryGetCodeZoneSelectionText(uint32 index, std::string& text)
     }
     zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
     return true;
+}
+
+std::string Instance::GetCursorToken()
+{
+    RefreshCursorLineNumbers();
+    if (!cursorLineNumbers.valid)
+        return {};
+    const auto& operands = cursorLineNumbers.operands;
+    const auto& columns  = cursorLineNumbers.operandColumns;
+    size_t position      = SIZE_MAX;
+    for (size_t index = 0; index < columns.size() && index < operands.size(); index++)
+        if (columns[index] == Cursor.offset) {
+            position = index;
+            break;
+        }
+    if (position == SIZE_MAX || !IsTokenCharacter(static_cast<unsigned char>(operands[position])))
+        return {};
+    size_t start = position, end = position + 1;
+    while (start > 0 && IsTokenCharacter(static_cast<unsigned char>(operands[start - 1])))
+        start--;
+    while (end < operands.size() && IsTokenCharacter(static_cast<unsigned char>(operands[end])))
+        end++;
+    return operands.substr(start, end - start);
+}
+
+int Instance::PrintCursorLocationInfo(int x, int y, Renderer& r)
+{
+    RefreshCursorLineNumbers();
+    if (cursorLineNumbers.location.empty())
+        return x;
+    r.WriteSingleLineText(x, y, "At:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 4, y, cursorLineNumbers.location, this->ColorMan.Colors.CursorNormal);
+    return x + 4 + static_cast<int>(cursorLineNumbers.location.size()) + 1;
 }
 
 const Instance::CursorLineNumber* Instance::GetCursorLineNumber()

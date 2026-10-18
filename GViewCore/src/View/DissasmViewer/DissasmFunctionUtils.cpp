@@ -371,3 +371,31 @@ AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLin
         *index = left;
     return values[left];
 }
+
+// the characters of a name, a register or a number (mangled names: ?Name@@YAXXZ, $LN5)
+bool IsTokenCharacter(char16_t c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '@' || c == '?' || c == '$' || c == '.';
+}
+
+// the occurrences of `token` (a whole name: the characters around it are not name characters) get `color`
+void HighlightTokenOccurrences(AppCUI::Graphics::CharacterBuffer& chars, AppCUI::uint32 fromColumn, std::string_view token, AppCUI::Graphics::ColorPair color)
+{
+    Character* buffer   = chars.GetBuffer();
+    const uint32 length = chars.Len();
+    const auto size     = static_cast<uint32>(token.size());
+    for (uint32 column = fromColumn; column + size <= length; column++) {
+        if (column > 0 && IsTokenCharacter(buffer[column - 1].Code))
+            continue;
+        if (column + size < length && IsTokenCharacter(buffer[column + size].Code))
+            continue;
+        bool matches = true;
+        for (uint32 index = 0; index < size && matches; index++)
+            matches = buffer[column + index].Code == static_cast<char16>(static_cast<unsigned char>(token[index]));
+        if (!matches)
+            continue;
+        for (uint32 index = 0; index < size; index++)
+            buffer[column + index].Color = color;
+        column += size - 1;
+    }
+}

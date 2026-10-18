@@ -52,6 +52,11 @@ class DissasmCodeLinesWalker
     }
 };
 
+// the characters of a name, a register or a number (mangled names: ?Name@@YAXXZ, $LN5)
+bool IsTokenCharacter(char16_t c);
+// the occurrences of `token` from `fromColumn` (whole names: the characters around them are not name characters) get `color`
+void HighlightTokenOccurrences(AppCUI::Graphics::CharacterBuffer& chars, AppCUI::uint32 fromColumn, std::string_view token, AppCUI::Graphics::ColorPair color);
+
 // the text found at `offset`, quoted: "ascii" or L"utf-16" (printable characters, at least DISSASM_MINIMUM_STRING_PREVIEW of them, until a
 // NUL or the first non printable character); none when the bytes do not look like a string
 std::optional<std::string> TryExtractStringPreview(Reference<GView::Object> obj, AppCUI::uint64 offset);

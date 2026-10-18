@@ -3509,3 +3509,78 @@ TEST_CASE("SearchCode", "[Dissasm]Search")
     REQUIRE(strings[0].text == "\"Hello\"");
     REQUIRE(strings[0].xrefs == 1);
 }
+
+TEST_CASE("ArrowsToTheEdges", "[Dissasm]Arrows")
+{
+    using Line = DissasmAsmPreCacheLine;
+    // 5 drawn instructions: a jmp below the view, a call below the view, a jcc above the view
+    DissasmAsmPreCacheData data{};
+    const uint64 addresses[] = { 0x10, 0x12, 0x14, 0x16, 0x18 };
+    for (uint32 index = 0; index < 5; index++) {
+        Line line;
+        line.address     = addresses[index];
+        line.size        = 2;
+        line.currentLine = index;
+        data.cachedAsmLines.push_back(std::move(line));
+    }
+    data.cachedAsmLines[1].flags        = Line::InstructionFlag::JmpFlag;
+    data.cachedAsmLines[1].branchTarget = 0x100;
+    data.cachedAsmLines[2].flags        = Line::InstructionFlag::CallFlag;
+    data.cachedAsmLines[2].branchTarget = 0x200;
+    data.cachedAsmLines[3].flags        = Line::InstructionFlag::JmpFlag;
+    data.cachedAsmLines[3].branchTarget = 0x0;
+    data.PrepareLabelArrows();
+
+    // the lane of an arrow: the column of its source with ArrowRight
+    const auto laneOf = [&](size_t index) -> std::optional<uint32> {
+        for (uint32 lane = 0; lane < Line::ARROW_LANES; lane++)
+            if (data.cachedAsmLines[index].arrowCells[lane] & Line::ArrowRight)
+                return lane;
+        return {};
+    };
+    const auto down = laneOf(1);
+    const auto up   = laneOf(3);
+    REQUIRE(down.has_value());
+    REQUIRE(up.has_value());
+    REQUIRE(down.value() != up.value()); // they share lines 1..3
+
+    // the jmp below: from its line to the last line, continued out of the view, without a head
+    for (size_t index = 1; index < 5; index++)
+        REQUIRE((data.cachedAsmLines[index].arrowCells[down.value()] & Line::ArrowDown) != 0);
+    REQUIRE((data.cachedAsmLines[0].arrowCells[down.value()] & (Line::ArrowUp | Line::ArrowDown)) == 0);
+    // the jcc above: from the first line to its line, continued out of the view
+    for (size_t index = 0; index < 4; index++)
+        REQUIRE((data.cachedAsmLines[index].arrowCells[up.value()] & (index == 3 ? Line::ArrowUp : Line::ArrowDown)) != 0);
+    REQUIRE((data.cachedAsmLines[0].arrowCells[up.value()] & Line::ArrowUp) != 0);
+    // no arrow head on the drawn lines, and the call got no arrow
+    for (size_t index = 0; index < 5; index++)
+        REQUIRE((data.cachedAsmLines[index].arrowCells[Line::ARROW_LANES] & Line::ArrowHead) == 0);
+    REQUIRE_FALSE(laneOf(2).has_value());
+}
+
+TEST_CASE("TokenHighlight", "[Dissasm]Arrows")
+{
+    const ColorPair normal{ Color::White, Color::Black };
+    const ColorPair highlight{ Color::Black, Color::Yellow };
+    const auto sameColor = [](ColorPair left, ColorPair right) { return left.Foreground == right.Foreground && left.Background == right.Background; };
+    CharacterBuffer chars;
+    chars.Add("xx mov rax, qword ptr [rax + 8] ; rax = raxx, eax", normal);
+
+    // whole names only: raxx and eax are other names; the columns before `fromColumn` are not searched
+    HighlightTokenOccurrences(chars, 3, "rax", highlight);
+    std::string highlighted;
+    for (uint32 column = 0; column < chars.Len(); column++)
+        highlighted += sameColor(chars.GetBuffer()[column].Color, highlight) ? '^' : ' ';
+    std::string expected(chars.Len(), ' '); // rax at the columns 7, 23 and 34
+    for (const uint32 column : { 7u, 8u, 9u, 23u, 24u, 25u, 34u, 35u, 36u })
+        expected[column] = '^';
+    REQUIRE(highlighted == expected);
+    // xx is not searched (before the column)
+    HighlightTokenOccurrences(chars, 3, "xx", highlight);
+    REQUIRE(sameColor(chars.GetBuffer()[0].Color, normal));
+
+    REQUIRE(IsTokenCharacter(u'?'));
+    REQUIRE(IsTokenCharacter(u'_'));
+    REQUIRE_FALSE(IsTokenCharacter(u'['));
+    REQUIRE_FALSE(IsTokenCharacter(u' '));
+}
