@@ -81,6 +81,8 @@ struct Arm64JumpTable {
     AppCUI::uint64 base;
     AppCUI::uint8 shift;
     AppCUI::uint32 count;
+    bool absolute = false; // 32 bit ARM (ldr pc, [pc, r0, lsl #2]): the entries are the VAs of the cases; entrySize 0 (add pc, pc, r0,
+                           // lsl #2): no table, the case i is at base + (i << shift)
 };
 
 // ARM64: a prologue at a block start (stp x29, x30, [sp, #-N]! / sub sp, sp, #N / pacibsp / paciasp / bti c): a function start
@@ -147,20 +149,38 @@ class Arm32Tracker
     {
     }
     std::optional<Result> Next(const cs_insn& insn, bool thumb, bool atBlockStart);
+    // the jump table of the indirect jump given to the last Next (once): tbb / tbh, ldr pc, [pc, rN, lsl #2], add pc, rA, rE, add pc, pc,
+    // rN, lsl #2, bx rN; the bound: cmp rN, #N then an instruction executed above it (bhi, bxhi lr, movhi) or the jump itself (addls pc)
+    std::optional<Arm64JumpTable> TakeJumpTable()
+    {
+        auto table = jumpTable;
+        jumpTable.reset();
+        return table;
+    }
     void Reset();
 
   private:
+    struct TableEntry {
+        AppCUI::uint64 table;
+        AppCUI::uint8 size;
+        bool isSigned;
+    };
     struct Value {
         std::optional<AppCUI::uint64> address; // relative
         std::optional<AppCUI::uint32> literal; // ldr rd, [pc, #off]: the word of the literal pool
         std::optional<AppCUI::uint64> slot;    // ldr rd, [rn, #off]: the register holds the value of the slot
         std::optional<AppCUI::uint32> low16;   // movw rd, #imm
+        std::optional<TableEntry> entry;       // ldr r0, [r1, r0, lsl #2]: an entry of the table at r1
+        std::optional<Arm64JumpTable> jump;    // add r2, r1, r0: an address plus an entry
         AppCUI::uint64 start = 0;
         bool startAtBlock    = false;
     };
     std::array<Value, 15> registers{}; // r0 .. r12, sp, lr
     AppCUI::uint64 addressBase;
     ReadWord readWord;
+    std::optional<AppCUI::uint64> compared; // cmp rN, #N: N
+    std::optional<AppCUI::uint32> bound;    // the number of cases
+    std::optional<Arm64JumpTable> jumpTable;
 };
 
 inline X86Flow GetInstructionFlow(const cs_insn& insn, DissasmArch arch)

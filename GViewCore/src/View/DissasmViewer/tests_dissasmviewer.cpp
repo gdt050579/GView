@@ -4944,3 +4944,72 @@ TEST_CASE("Arm32ModesInOneZone", "[Dissasm]Arm32")
     REQUIRE(listing.find("bx     lr") != std::string::npos);
     REQUIRE(std::find(zone.functionStarts.begin(), zone.functionStarts.end(), 0x10) != zone.functionStarts.end());
 }
+
+TEST_CASE("Arm32SwitchTables", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    const auto run = [&decoder](Arm32Tracker& tracker, std::initializer_list<std::pair<std::vector<uint8_t>, uint64>> instructions, bool thumb) {
+        std::optional<Arm64JumpTable> table;
+        for (const auto& [bytes, address] : instructions) {
+            cs_option(decoder.handle, CS_OPT_MODE, thumb ? CS_MODE_THUMB : CS_MODE_ARM);
+            cs_insn* insn = nullptr;
+            REQUIRE(cs_disasm(decoder.handle, bytes.data(), bytes.size(), address, 1, &insn) == 1);
+            tracker.Next(*insn, thumb, false);
+            table = tracker.TakeJumpTable();
+            cs_free(insn, 1);
+        }
+        return table;
+    };
+    {
+        // Thumb: cmp r0, #11; bhi default; tbb [pc, r0]: the byte table follows the tbb, the case i is at the tbb + 4 + 2 * entry i
+        Arm32Tracker tracker;
+        const auto table = run(tracker, { { { 0x0B, 0x28 }, 0x00 }, { { 0x10, 0xD8 }, 0x02 }, { { 0xDF, 0xE8, 0x00, 0xF0 }, 0x04 } }, true);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 12);
+        REQUIRE(table->table == 0x08);
+        REQUIRE(table->entrySize == 1);
+        REQUIRE(table->base == 0x08);
+        REQUIRE(table->shift == 1);
+    }
+    {
+        // ARM (clang): cmp r0, #11; bxhi lr; add r1, pc, #4; ldr r0, [r1, r0, lsl #2]; add pc, r1, r0: words relative to the table
+        Arm32Tracker tracker;
+        const auto table = run(tracker,
+                               { { { 0x0B, 0x00, 0x50, 0xE3 }, 0x00 },
+                                 { { 0x1E, 0xFF, 0x2F, 0x81 }, 0x04 },
+                                 { { 0x04, 0x10, 0x8F, 0xE2 }, 0x08 },
+                                 { { 0x00, 0x01, 0x91, 0xE7 }, 0x0C },
+                                 { { 0x00, 0xF0, 0x81, 0xE0 }, 0x10 } },
+                               false);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 12);
+        REQUIRE(table->table == 0x08 + 8 + 4);
+        REQUIRE(table->entrySize == 4);
+        REQUIRE(table->base == table->table);
+        REQUIRE(table->shift == 0);
+    }
+    {
+        // ARM (gcc): cmp r0, #3; ldrls pc, [pc, r0, lsl #2]: the addresses of the cases follow
+        Arm32Tracker tracker;
+        const auto table = run(tracker, { { { 0x03, 0x00, 0x50, 0xE3 }, 0x00 }, { { 0x00, 0xF1, 0x9F, 0x97 }, 0x04 } }, false);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 4);
+        REQUIRE(table->absolute);
+        REQUIRE(table->table == 0x04 + 8);
+    }
+    {
+        // ARM (gcc): cmp r0, #3; addls pc, pc, r0, lsl #2: a branch for every case after the add (and its b default)
+        Arm32Tracker tracker;
+        const auto table = run(tracker, { { { 0x03, 0x00, 0x50, 0xE3 }, 0x00 }, { { 0x00, 0xF1, 0x8F, 0x90 }, 0x04 } }, false);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 4);
+        REQUIRE(table->entrySize == 0);
+        REQUIRE(table->base == 0x04 + 8);
+        REQUIRE(table->shift == 2);
+    }
+    {
+        // no bound: no table
+        Arm32Tracker tracker;
+        REQUIRE_FALSE(run(tracker, { { { 0xDF, 0xE8, 0x00, 0xF0 }, 0x04 } }, true).has_value());
+    }
+}

@@ -103,8 +103,11 @@ X86Flow GView::View::DissasmViewer::GetArm32Flow(const cs_insn& insn)
     case ARM_INS_POP: // pop {r4, pc} / ldm sp!, {r4, pc}: a return
     case ARM_INS_LDM:
         return !conditional && HasRegister(arm, ARM_REG_PC) ? X86Flow::Return : X86Flow::None;
-    case ARM_INS_LDR: // ldr pc, [ip, #off]!: through a slot (a PLT stub, a jump table)
-        return !conditional && arm.op_count > 0 && arm.operands[0].type == ARM_OP_REG && arm.operands[0].reg == ARM_REG_PC ? X86Flow::Jump : X86Flow::None;
+    case ARM_INS_LDR: // ldr pc, [ip, #off]!: through a slot (a PLT stub, a jump table; ldrls pc, [pc, r0, lsl #2]: a switch)
+    case ARM_INS_ADD: // add pc, r1, r0 / addls pc, pc, r0, lsl #2: a switch
+        if (arm.op_count == 0 || arm.operands[0].type != ARM_OP_REG || arm.operands[0].reg != ARM_REG_PC)
+            return X86Flow::None;
+        return conditional ? X86Flow::ConditionalJump : X86Flow::Jump;
     case ARM_INS_MOV: // mov pc, lr
         if (conditional || arm.op_count < 2 || arm.operands[0].type != ARM_OP_REG || arm.operands[0].reg != ARM_REG_PC)
             return X86Flow::None;
@@ -217,10 +220,13 @@ bool GView::View::DissasmViewer::IsArm32PrologueStart(const cs_insn& insn)
 void Arm32Tracker::Reset()
 {
     registers.fill({});
+    compared.reset();
+    bound.reset();
 }
 
 std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool thumb, bool atBlockStart)
 {
+    jumpTable.reset();
     if (insn.id == ARM_INS_INVALID || !insn.detail) {
         Reset(); // a data line (a literal pool): the code before it is another block
         return {};
@@ -239,8 +245,38 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
         kept                           = target;
     };
 
+    // the bound of a switch: cmp r0, #N, then an instruction executed above it (bhi default / bxhi lr / movhi) or the jump itself, executed
+    // below or same (addls pc, ... / ldrls pc, ...)
+    std::optional<uint32> ownBound;
+    if (insn.id == ARM_INS_CMP) {
+        compared.reset();
+        bound.reset();
+        if (arm.op_count == 2 && ImmediateAt(arm, 1).has_value())
+            compared = ImmediateAt(arm, 1).value();
+    } else if (compared.has_value()) {
+        if (arm.cc == ARM_CC_HI || arm.cc == ARM_CC_HS)
+            bound = static_cast<uint32>(arm.cc == ARM_CC_HI ? compared.value() + 1 : compared.value());
+        else if (arm.cc == ARM_CC_LS || arm.cc == ARM_CC_LO)
+            ownBound = static_cast<uint32>(arm.cc == ARM_CC_LS ? compared.value() + 1 : compared.value());
+    }
+    constexpr uint32 MAX_CASES = 4096;
+    const auto cases           = ownBound.has_value() ? ownBound : bound;
+    const bool hasCases        = cases.has_value() && cases.value() > 0 && cases.value() <= MAX_CASES;
+    const auto setJumpTable    = [&](Arm64JumpTable table) {
+        if (!hasCases)
+            return;
+        table.count = cases.value();
+        jumpTable   = table;
+    };
+
     const int target = registerOf(0);
     switch (insn.id) {
+    case ARM_INS_TBB: // tbb [pc, r0] / tbh [pc, r0, lsl #1]: the table follows the instruction, the case i is at pc + 2 * entry i
+    case ARM_INS_TBH: {
+        const uint64 base = Wrap(insn.address + 4, addressBase);
+        setJumpTable({ base, static_cast<uint8>(insn.id == ARM_INS_TBB ? 1 : 2), false, base, 1, 0 });
+        break;
+    }
     case ARM_INS_MOVW: // movw r12, #:lower16:address (capstone names the movw of Thumb-2 mov)
     case ARM_INS_MOV:
         if (target >= 0 && ImmediateAt(arm, 1).has_value() && ImmediateAt(arm, 1).value() <= 0xFFFF) {
@@ -269,9 +305,36 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
         break;
     case ARM_INS_ADD:
     case ARM_INS_SUB: {
+        const bool isAdd = insn.id == ARM_INS_ADD;
+        if (isAdd && arm.op_count == 3 && arm.operands[1].type == ARM_OP_REG && arm.operands[2].type == ARM_OP_REG) {
+            const auto& indexOperand = arm.operands[2];
+            const uint8 shift        = static_cast<uint8>(indexOperand.shift.type == ARM_SFT_LSL ? indexOperand.shift.value : 0);
+            if (isPc(0) && isPc(1)) {
+                // addls pc, pc, r0, lsl #2: a table of branches, the case i is at pc + (i << 2)
+                setJumpTable({ 0, 0, false, pc, shift, 0 });
+                break;
+            }
+            // add pc, r1, r0 / add r2, r1, r0: an address (the table, an anchor) plus an entry of the table
+            const int first  = registerOf(1);
+            const int second = registerOf(2);
+            const bool firstIsAddress = first >= 0 && registers[first].address.has_value() && second >= 0 && registers[second].entry.has_value();
+            const bool secondIsAddress = first >= 0 && registers[first].entry.has_value() && second >= 0 && registers[second].address.has_value();
+            if (firstIsAddress || secondIsAddress) {
+                const auto entry   = (firstIsAddress ? registers[second] : registers[first]).entry.value();
+                const uint64 base  = (firstIsAddress ? registers[first] : registers[second]).address.value();
+                const Arm64JumpTable table{ entry.table, entry.size, entry.isSigned, base, firstIsAddress ? shift : static_cast<uint8>(0), 0 };
+                if (isPc(0))
+                    setJumpTable(table);
+                else if (target >= 0) {
+                    registers[target]      = {};
+                    registers[target].jump = table;
+                    kept                   = target;
+                }
+                break;
+            }
+        }
         if (target < 0)
             break;
-        const bool isAdd = insn.id == ARM_INS_ADD;
         if (arm.op_count >= 3 && arm.operands[2].type == ARM_OP_IMM) {
             // add r12, pc, #0, #12 (the PLT, the adr of ARM mode) / add r12, r12, #0x20000
             const uint32 value = ImmediateAt(arm, 2).value_or(0);
@@ -296,17 +359,42 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
         break;
     }
     case ARM_INS_BX:
-    case ARM_INS_BLX: // bx r12 / blx r3: through the slot read before
+    case ARM_INS_BLX: // bx r12 / blx r3: through the slot read before; bx r2: the case of a switch
         if (target >= 0 && arm.operands[0].type == ARM_OP_REG && registers[target].slot.has_value())
             result = Result{ registers[target].slot.value(), true, registers[target].start, registers[target].startAtBlock, CS_AC_READ };
+        if (target >= 0 && insn.id == ARM_INS_BX && registers[target].jump.has_value())
+            setJumpTable(registers[target].jump.value());
         break;
     default:
         if (!IsLoad(insn.id) && !IsStore(insn.id))
             break;
         for (uint8 index = 0; index < arm.op_count; index++) {
             const cs_arm_op& op = arm.operands[index];
-            if (op.type != ARM_OP_MEM || op.mem.index != ARM_REG_INVALID)
+            if (op.type != ARM_OP_MEM)
                 continue;
+            if (op.mem.index != ARM_REG_INVALID) {
+                if (!IsLoad(insn.id))
+                    break;
+                if (op.mem.base == ARM_REG_PC && insn.id == ARM_INS_LDR && isPc(0)) {
+                    // ldrls pc, [pc, r0, lsl #2]: a table of the addresses (VA) of the cases, at pc
+                    setJumpTable({ pc, 4, false, 0, 0, 0, true });
+                    break;
+                }
+                // ldr r0, [r1, r0, lsl #2] / ldrb r0, [r1, r0]: an entry of the table that r1 points to
+                const int base = RegisterIndex(op.mem.base);
+                if (target >= 0 && base >= 0 && registers[base].address.has_value()) {
+                    uint8 size = 4;
+                    if (insn.id == ARM_INS_LDRB || insn.id == ARM_INS_LDRSB)
+                        size = 1;
+                    else if (insn.id == ARM_INS_LDRH || insn.id == ARM_INS_LDRSH)
+                        size = 2;
+                    const uint64 table      = registers[base].address.value();
+                    registers[target]       = {};
+                    registers[target].entry = TableEntry{ table, size, insn.id == ARM_INS_LDRSB || insn.id == ARM_INS_LDRSH };
+                    kept                    = target;
+                }
+                break;
+            }
             if (op.mem.base == ARM_REG_PC) {
                 // ldr r0, [pc, #off]: the word of the literal pool (a PIC offset, an address)
                 if (insn.id == ARM_INS_LDR && target >= 0 && readWord) {

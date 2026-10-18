@@ -212,9 +212,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 }
             }
             // the jump table of a switch (br x10): the cases are read from the table
-            if (const auto table = isArm64 ? adrpTracker.TakeJumpTable() : std::nullopt; table.has_value() && addressToFileOffset) {
+            if (const auto table = isArm64 ? adrpTracker.TakeJumpTable() : arm32Tracker.TakeJumpTable(); table.has_value() && addressToFileOffset) {
                 std::vector<uint64> targets; // VA
                 for (uint32 index = 0; index < table->count; index++) {
+                    // no table (add pc, pc, r0, lsl #2: the cases are branches placed one after the other)
+                    if (table->entrySize == 0) {
+                        const uint64 target = table->base + (static_cast<uint64>(index) << table->shift);
+                        if (target >= codeSize) {
+                            targets.clear();
+                            break;
+                        }
+                        targets.push_back(labelBase + target);
+                        continue;
+                    }
                     const auto value = ReadTableValue(labelBase + table->table + static_cast<uint64>(index) * table->entrySize, table->entrySize);
                     if (!value.has_value()) {
                         targets.clear();
@@ -225,7 +235,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         const uint32 unused = 64 - 8u * table->entrySize;
                         entry               = static_cast<uint64>(static_cast<int64>(entry << unused) >> unused);
                     }
-                    const uint64 target = table->base + (entry << table->shift);
+                    // the VA of the case (its Thumb bit cleared), or a base plus the entry
+                    const uint64 target = table->absolute ? (entry & ~static_cast<uint64>(1)) - labelBase : table->base + (entry << table->shift);
                     if (target >= codeSize) { // not a table of this code
                         targets.clear();
                         break;
