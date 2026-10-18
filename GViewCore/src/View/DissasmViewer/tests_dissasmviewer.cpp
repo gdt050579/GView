@@ -6171,3 +6171,74 @@ TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
     // the pointers are references to what they point to: the entry point is referred to by the table
     REQUIRE(codeZone.FormatXrefsSummary(0x00) == "xref: off_401048 (offset)");
 }
+
+TEST_CASE("FunctionsFromTakenAddresses", "[Dissasm]Functions")
+{
+    // x86 at 0x401000: a callback pushed (a function), a string of the code pushed (data), a continuation returned by a catch block
+    std::vector<unsigned char> file = {
+        0x68, 0x20, 0x10, 0x40, 0x00, // 0x00: push 0x401020 (a callback)
+        0x68, 0x30, 0x10, 0x40, 0x00, // 0x05: push 0x401030 (a string in the code)
+        0xE8, 0x31, 0x00, 0x00, 0x00, // 0x0a: call 0x401040
+        0xC3,                         // 0x0f: ret
+        0xB8, 0x50, 0x10, 0x40, 0x00, // 0x10: mov eax, 0x401050 (the continuation of a catch block)
+        0xC3,                         // 0x15: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x33, 0xC0, 0x40, 0xC3 }); // 0x20: xor eax, eax; inc eax; ret (the callback)
+    file.resize(0x30, 0xCC);
+    for (const char c : std::string_view("Wide")) { // 0x30: L"Wide"
+        file.push_back(static_cast<unsigned char>(c));
+        file.push_back(0);
+    }
+    file.insert(file.end(), { 0x00, 0x00 });
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x40: the called function
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC9, 0xC3 }); // 0x50: xor ecx, ecx; ret (the continuation)
+    file.resize(0x60, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x86;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& starts = dissasmInstance.zone->functionStarts;
+    INFO(dissasmInstance.GetListing());
+    const auto has = [&starts](uint64 address) { return std::find(starts.begin(), starts.end(), address) != starts.end(); };
+    REQUIRE(has(0x20));       // the callback
+    REQUIRE(has(0x40));       // the called function
+    REQUIRE_FALSE(has(0x30)); // the string: push edi; add byte ptr [ecx], ch ... is not code
+    REQUIRE_FALSE(has(0x50)); // mov eax, offset X; ret: where a function continues
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x20) == "sub_401020");
+}
+
+TEST_CASE("FunctionsFromDataPointers", "[Dissasm]Functions")
+{
+    // x64: a method reached only through a table of pointers of a data zone (a vtable)
+    std::vector<unsigned char> file = { 0xC3 }; // 0x00: ret (the entry point)
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0xC1, 0xC3 }); // 0x10: mov rax, rcx; ret (the method)
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0xC2, 0xC3 }); // 0x20: mov rax, rdx; ret (nothing points to it)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x10, 0x10, 0x00, 0x40, 0x01, 0x00, 0x00, 0x00 }); // 0x40: dq 0x140001010
+    file.insert(file.end(), { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+    file.resize(0x60, 0x00);
+
+    DissasmCodeZone dataZone; // only its place in the file is read: the code zones are analyzed before the data zones
+    dataZone.zoneType                      = DissasmParseZoneType::DissasmCodeParseZone;
+    dataZone.zoneDetails.startingZonePoint = 0x40;
+    dataZone.zoneDetails.size              = 0x20;
+    dataZone.zoneDetails.isData            = true;
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    layout.siblings         = { &dataZone };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& starts = dissasmInstance.zone->functionStarts;
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x10) != starts.end());
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x20) == starts.end());
+}

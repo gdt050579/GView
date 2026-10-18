@@ -178,6 +178,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     Arm64AdrpTracker adrpTracker;
     Arm32Tracker arm32Tracker;
     std::vector<uint64> prologueCandidates;         // ARM64: file offsets of the prologues at a block start
+    // the code whose address is taken (lea rcx, [rip + func], push offset func; the pointer tables of the data zones): a function when it
+    // starts a block (after a ret / jmp / padding), relative addresses
+    std::vector<uint64> addressTakenTargets;
+    std::vector<bool> blockStarts; // the instructions that start a block, by relative address
+    std::optional<uint64> returnedAddress; // mov eax, offset X: an address taken only when the next instruction is not a ret
     std::unordered_set<uint64> conditionalTargets;  // ARM64: relative targets of the conditional branches
     std::vector<uint64> functionStarts;
     AnnotationContainer annotations;
@@ -253,6 +258,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         insn   = cs_malloc(handle);
         walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
         callsFound.reserve(16);
+        constexpr uint64 MAX_BLOCK_STARTS_MAP = 256ull * 1024 * 1024; // a bit per byte of code
+        if (!zone->zoneDetails.isData && codeSize <= MAX_BLOCK_STARTS_MAP)
+            blockStarts.assign(static_cast<size_t>(codeSize), false);
         if (zone->zoneDetails.isData) {
             StartDataZone();
             return true;
@@ -350,6 +358,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         arm32Tracker = Arm32Tracker(labelBase, LiteralReader());
         prologueCandidates.clear();
         conditionalTargets.clear();
+        addressTakenTargets.clear();
+        returnedAddress.reset();
+        blockStarts.assign(blockStarts.size(), false);
         tableEntries.clear();
         pendingRanges.clear();
         linesToDecode = lines;
@@ -530,6 +541,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             // a prologue at a block start: a function (a candidate until the end of the sweep: a shrink wrapped prologue is reached by a
             // conditional branch of its own function)
+            if (isBlockStart && insn->address < blockStarts.size() && insn->id != 0 && GetInstructionKind(insn->id, insn->mnemonic, insnArch) != X86InstructionKind::Padding)
+                blockStarts[insn->address] = true; // not the padding (nop, the data lines)
             if (isBlockStart && (isArm64 ? IsArm64PrologueStart(*insn) : IsArm32PrologueStart(*insn)))
                 prologueCandidates.push_back(instructionOffset);
             if (flow == X86Flow::ConditionalJump && operands.directTarget.has_value())
@@ -548,6 +561,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // a boundary (a section start of the plugin, a function entry) starts a block
         const bool isBlockStart = atBlockStart || std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
         const bool isEndbr      = insn->id == X86_INS_ENDBR64 || insn->id == X86_INS_ENDBR32;
+        if (isBlockStart && insn->address < blockStarts.size() && insn->id != X86_INS_INVALID && insn->id != X86_INS_INT3 && insn->id != X86_INS_NOP)
+            blockStarts[insn->address] = true; // not the padding (int3, nop, align, db)
         const uint64 thunkStart = blockEndbr.value_or(instructionOffset);
         blockEndbr              = isBlockStart && isEndbr ? std::optional<uint64>(instructionOffset) : std::nullopt;
         // the padding between the blocks: nop, int3 (an interrupt), the undecodable bytes (db)
@@ -560,6 +575,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 thunkImports[thunkStart - codeStart] = import->name;
                 AddFunctionStart(thunkStart);
             }
+        }
+
+        // mov eax, offset X; ret: the catch block of a C++ exception returns where its function continues, not a function
+        if (returnedAddress.has_value()) {
+            if (flow != X86Flow::Return)
+                addressTakenTargets.push_back(returnedAddress.value());
+            returnedAddress.reset();
         }
 
         // the jump table of a switch: every case is a jump target (loc_) referenced by the jmp
@@ -609,6 +631,21 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto dataKind = takesAddress ? DissasmXrefKind::Offset : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
         if (operands.ripTarget.has_value())
             xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind);
+        // x86 / x64: the address of code taken by lea / push offset / mov reg, offset (a callback, a thread routine, a window procedure)
+        if (arch == DissasmArch::X86 || arch == DissasmArch::X64) {
+            if (takesAddress && operands.ripTarget.has_value() && operands.ripTarget.value() < codeSize)
+                addressTakenTargets.push_back(operands.ripTarget.value());
+            const bool toAccumulator = insn->id == X86_INS_MOV && insn->detail && insn->detail->x86.op_count == 2 &&
+                                       insn->detail->x86.operands[0].type == X86_OP_REG &&
+                                       (insn->detail->x86.operands[0].reg == X86_REG_EAX || insn->detail->x86.operands[0].reg == X86_REG_RAX);
+            for (const uint64 value : operands.immediates) // small values are counters, sizes and flags
+                if (value >= 0x10000 && value >= labelBase && value - labelBase < codeSize) {
+                    if (toAccumulator)
+                        returnedAddress = value - labelBase; // decided by the next instruction
+                    else
+                        addressTakenTargets.push_back(value - labelBase);
+                }
+        }
         if (operands.absoluteMemory.has_value() && isFileAddress && isFileAddress(operands.absoluteMemory.value()))
             xrefs.Add(from, operands.absoluteMemory.value(), dataKind);
         if (!is64 && arch == DissasmArch::X86 && isFileAddress) { // push offset aText / mov ecx, offset aText (x64 uses lea [rip + ...])
@@ -632,6 +669,86 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // the first instructions at `target` look like code, not like the data that the code refers to (a string, a GUID kept in .text): no
+    // data line, no opcode 00 (add byte ptr [...], r8: the zeros of data), none of the instructions that data decodes to and code never
+    // uses (in / out, hlt, the BCD adjustments, arpl, bound, les / lds), until a return / a jump or 16 instructions
+    bool LooksLikeCode(uint64 target)
+    {
+        DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, target, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+        for (uint32 count = 0; count < 16; count++) {
+            if (!probe.Next(insn) || insn->id == X86_INS_INVALID || insn->bytes[0] == 0x00)
+                return false;
+            switch (insn->id) {
+            case X86_INS_IN:
+            case X86_INS_OUT:
+            case X86_INS_INSB:
+            case X86_INS_INSW:
+            case X86_INS_INSD:
+            case X86_INS_OUTSB:
+            case X86_INS_OUTSW:
+            case X86_INS_OUTSD:
+            case X86_INS_HLT:
+            case X86_INS_AAA:
+            case X86_INS_AAS:
+            case X86_INS_AAM:
+            case X86_INS_AAD:
+            case X86_INS_DAA:
+            case X86_INS_DAS:
+            case X86_INS_ARPL:
+            case X86_INS_BOUND:
+            case X86_INS_LES:
+            case X86_INS_LDS:
+            case X86_INS_INT3:
+                return false;
+            default:
+                break;
+            }
+            const auto flow = GetX86Flow(*insn);
+            if (flow == X86Flow::Return || flow == X86Flow::Jump)
+                return true;
+        }
+        return true;
+    }
+
+    // the aligned values of the data zones of the file that point into this code (their bytes in the file: the data zones are analyzed
+    // after the code)
+    void AddDataZonePointerTargets()
+    {
+        constexpr uint64 MAX_DATA_ZONE_SIZE = 64ull * 1024 * 1024;
+        const uint8 pointerSize             = is64 ? 8 : 4;
+        if (arch != DissasmArch::X86 && arch != DissasmArch::X64)
+            return; // LooksLikeCode knows the x86 instructions only
+        for (const auto* sibling : zone->siblingZones) {
+            const auto& details = sibling->zoneDetails;
+            if (!details.isData || details.startingZonePoint >= obj->GetData().GetSize())
+                continue;
+            const uint64 size  = std::min<uint64>({ details.size, MAX_DATA_ZONE_SIZE, obj->GetData().GetSize() - details.startingZonePoint });
+            const auto bytes   = obj->GetData().CopyToBuffer(details.startingZonePoint, static_cast<uint32>(size), false);
+            const uint8* data  = bytes.GetData();
+            const auto readValue = [data, pointerSize](uint64 position) {
+                uint64 value = 0;
+                for (uint8 index = 0; index < pointerSize; index++)
+                    value |= static_cast<uint64>(data[position + index]) << (8 * index);
+                return value;
+            };
+            // x86: the exception tables point inside their functions (the __except filters and blocks, the catch blocks and the unwind
+            // actions follow a jmp): the SEH scope records {EnclosingLevel, FilterFunc, HandlerFunc}, the C++ unwind map {toState, action},
+            // the catch handlers {..., dispCatchObj, addressOfHandler}. A code pointer after a small (or small negative) number, or the
+            // second pointer of such a record, is not a function
+            const auto isSmallNumber = [](uint64 value) { return value < 0x10000 || value >= 0xFFFF0000; };
+            for (uint64 position = 0; data && position + pointerSize <= bytes.GetLength(); position += pointerSize) {
+                const uint64 value = readValue(position);
+                if (value < labelBase || value - labelBase >= codeSize)
+                    continue;
+                if (!is64 && position >= 4 && isSmallNumber(readValue(position - 4)))
+                    continue; // FilterFunc, action, addressOfHandler
+                if (!is64 && position >= 8 && isSmallNumber(readValue(position - 8)))
+                    continue; // HandlerFunc
+                addressTakenTargets.push_back(value - labelBase);
+            }
+        }
+    }
+
     // the end of the sweep: the labels are sorted, the functions and their names are known
     void FinishSweep()
     {
@@ -639,6 +756,21 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         for (const uint64 candidate : prologueCandidates)
             if (!conditionalTargets.contains(candidate - codeStart))
                 AddFunctionStart(candidate);
+        // the code whose address is taken, by the code or by the pointers of the data zones (the virtual methods of the vtables, the
+        // callbacks): a function when it starts a block
+        // (not a case of a switch, an absolute jump table of GCC in .rodata; not the target of a conditional jump, inside a function)
+        AddDataZonePointerTargets();
+        if (!addressTakenTargets.empty()) {
+            std::unordered_set<uint64> insideFunctions;
+            for (const auto& xref : xrefs.byTarget)
+                if ((xref.kind == DissasmXrefKind::Switch || xref.kind == DissasmXrefKind::ConditionalJump) && xref.to >= labelBase)
+                    insideFunctions.insert(xref.to - labelBase);
+            std::sort(addressTakenTargets.begin(), addressTakenTargets.end());
+            addressTakenTargets.erase(std::unique(addressTakenTargets.begin(), addressTakenTargets.end()), addressTakenTargets.end());
+            for (const uint64 target : addressTakenTargets)
+                if (target < blockStarts.size() && blockStarts[target] && !insideFunctions.contains(target) && LooksLikeCode(target))
+                    AddFunctionStart(codeStart + target);
+        }
         // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
         if (zone->zoneDetails.HasEntryPoint()) {
             callsFound.erase(
