@@ -38,8 +38,9 @@ class DissasmCodeLinesWalker
     csh handle;
 
   public:
-    DissasmCodeLinesWalker(Reference<GView::Object> obj, uint64 codeStart, uint64 codeSize, csh handle)
-        : obj(obj), codeStart(codeStart), codeSize(codeSize), address(0), handle(handle)
+    // startAddress: the relative address of an instruction of the listing (0: the first one)
+    DissasmCodeLinesWalker(Reference<GView::Object> obj, uint64 codeStart, uint64 codeSize, csh handle, uint64 startAddress = 0)
+        : obj(obj), codeStart(codeStart), codeSize(codeSize), address(startAddress), handle(handle)
     {
     }
     // false at the end of the code (or when the file has no more bytes)

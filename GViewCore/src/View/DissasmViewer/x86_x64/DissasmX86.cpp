@@ -1844,8 +1844,12 @@ void Instance::ShowXrefs()
     std::string targetName = zone->GetLabelNameAt(target);
     if (targetName.empty())
         targetName = zone->FormatCodeAddress(target);
+    ShowXrefsTo(zone, zone->labelAddressBase + target, targetName);
+}
 
-    const auto [first, last] = zone->xrefs.To(zone->labelAddressBase + target);
+void Instance::ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::string& targetName)
+{
+    const auto [first, last] = zone->xrefs.To(target);
     if (first == last) {
         Dialogs::MessageBox::ShowNotification("Info", "There are no cross references to " + targetName);
         return;
@@ -1972,6 +1976,270 @@ void Instance::ShowFunctions()
     if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
         return;
     MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + functions[window.GetSelectedRow().value()].start, true);
+}
+
+// The search (Ctrl+F): the text of the listing, a byte pattern or an immediate value; F6 finds the next match
+class FindDialog : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_OK         = 1;
+    static constexpr int BTN_CANCEL     = 2;
+    static constexpr int KIND_GROUP     = 3;
+    static constexpr int KIND_TEXT      = 10;
+    static constexpr int KIND_BYTES     = 11;
+    static constexpr int KIND_IMMEDIATE = 12;
+    Reference<TextField> textField;
+    Reference<RadioBox> textKind, bytesKind, immediateKind;
+    Reference<CheckBox> matchCase;
+    DissasmSearch result;
+
+    void Validate()
+    {
+        LocalString<256> text;
+        if (!text.Set(textField->GetText()) || text.Len() == 0) {
+            Dialogs::MessageBox::ShowError("Error", "Please write what to search!");
+            textField->SetFocus();
+            return;
+        }
+        result.text      = text.GetText();
+        result.matchCase = matchCase->IsChecked();
+        result.kind      = bytesKind->IsChecked() ? DissasmSearchKind::Bytes
+                                                  : (immediateKind->IsChecked() ? DissasmSearchKind::Immediate : DissasmSearchKind::Text);
+        if (result.kind == DissasmSearchKind::Bytes && !ParseDissasmBytePattern(result.text).has_value()) {
+            Dialogs::MessageBox::ShowError("Error", "Expecting hexadecimal bytes, ?? for any byte (48 8B ?? 05)!");
+            textField->SetFocus();
+            return;
+        }
+        if (result.kind == DissasmSearchKind::Immediate && !ParseDissasmSearchNumber(result.text).has_value()) {
+            Dialogs::MessageBox::ShowError("Error", "Expecting a decimal number, or hexadecimal with 0x / h (0x1000, 1000h)!");
+            textField->SetFocus();
+            return;
+        }
+        Exit(Dialogs::Result::Ok);
+    }
+
+  public:
+    FindDialog(const std::optional<DissasmSearch>& last) : Window("Find", "d:c,w:70,h:13", WindowFlags::ProcessReturn)
+    {
+        Factory::Label::Create(this, "&Find:", "x:1,y:1,w:8");
+        textField = Factory::TextField::Create(this, last.has_value() ? std::string_view(last->text) : std::string_view(), "x:10,y:1,w:56");
+        textField->SetHotKey('F');
+        const auto kind = last.has_value() ? last->kind : DissasmSearchKind::Text;
+        textKind  = Factory::RadioBox::Create(this, "&Text of the listing (labels, instructions, comments)", "x:1,y:3,w:64", KIND_GROUP, KIND_TEXT,
+                                             kind == DissasmSearchKind::Text);
+        bytesKind = Factory::RadioBox::Create(this, "&Bytes (48 8B ?? 05, ?? is any byte)", "x:1,y:4,w:64", KIND_GROUP, KIND_BYTES,
+                                              kind == DissasmSearchKind::Bytes);
+        immediateKind = Factory::RadioBox::Create(this, "&Immediate value (4096, 0x1000, 1000h)", "x:1,y:5,w:64", KIND_GROUP, KIND_IMMEDIATE,
+                                                  kind == DissasmSearchKind::Immediate);
+        matchCase = Factory::CheckBox::Create(this, "&Match case (text)", "x:1,y:7,w:30");
+        matchCase->SetChecked(last.has_value() && last->matchCase);
+        Factory::Label::Create(this, "The search starts after the cursor; F6 finds the next match", "x:1,y:8,w:66");
+        Factory::Button::Create(this, "&OK", "l:21,b:0,w:13", BTN_OK);
+        Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_CANCEL);
+        textField->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (eventType == Event::ButtonClicked && ID == BTN_OK) {
+            Validate();
+            return true;
+        }
+        if ((eventType == Event::ButtonClicked && ID == BTN_CANCEL) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::WindowAccept) {
+            Validate();
+            return true;
+        }
+        return Window::OnEvent(control, eventType, ID);
+    }
+
+    const DissasmSearch& GetResult() const
+    {
+        return result;
+    }
+};
+
+bool Instance::ShowFindDialog()
+{
+    FindDialog dialog(lastSearch);
+    if (dialog.Show() != Dialogs::Result::Ok)
+        return true;
+    lastSearch = dialog.GetResult();
+    RunSearch(lastSearch.value(), true);
+    return true;
+}
+
+void Instance::FindNext()
+{
+    if (!lastSearch.has_value()) {
+        ShowFindDialog();
+        return;
+    }
+    RunSearch(lastSearch.value(), true);
+}
+
+bool Instance::RunSearch(const DissasmSearch& search, bool showErrors)
+{
+    FinishDeepScans(); // the labels are searched too
+
+    // the code zone of the cursor (or the first one); the search starts after the cursor and continues from the start of the zone
+    DissasmCodeZone* zone = nullptr;
+    std::optional<uint32> cursorZoneLine;
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex]->zoneType == DissasmParseZoneType::DissasmCodeParseZone) {
+        zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+        if (zonesFound[0].startingLine >= 2)
+            cursorZoneLine = zonesFound[0].startingLine - 2u; // the title and the columns header
+    }
+    for (size_t index = 0; !zone && index < settings->parseZones.size(); index++)
+        if (settings->parseZones[index]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines() || zone->isCollapsed) {
+        if (showErrors)
+            Dialogs::MessageBox::ShowNotification("Info", "The search needs a shown disassembly zone!");
+        return false;
+    }
+
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.zone     = zone;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    const uint32 linesCount = zone->GetDisplayLinesCount();
+    bool found              = false;
+    if (search.kind == DissasmSearchKind::Text) {
+        const uint32 from = cursorZoneLine.has_value() ? cursorZoneLine.value() + 1u : 0u;
+        auto line         = zone->FindText(search.text, search.matchCase, from, linesCount, &params);
+        if (!line.has_value() && from > 0)
+            line = zone->FindText(search.text, search.matchCase, 0, from, &params);
+        if (line.has_value()) {
+            // the found line gets the cursor, a few lines below the top of the view
+            const uint32 zoneLine = line.value() + 2u;
+            const auto from       = SaveCursorState();
+            Cursor.lineInView     = std::min<uint32>(5, zoneLine);
+            Cursor.startViewLine  = zoneLine + zone->startLineIndex - Cursor.lineInView;
+            Cursor.hasMovedView   = true;
+            RecordJump(from);
+            found = true;
+        }
+    } else {
+        // the instruction of the cursor: the bytes are searched after its first byte, the immediates from the next instruction
+        uint64 from = 0;
+        if (cursorZoneLine.has_value() && cursorZoneLine.value() < linesCount) {
+            const auto cursorLine = zone->GetCurrentAsmLine(cursorZoneLine.value(), obj, &params);
+            from                  = cursorLine.address + (cursorLine.size == 0 ? 0u : (search.kind == DissasmSearchKind::Bytes ? 1u : cursorLine.size));
+        }
+        const uint64 codeSize = zone->GetCodeSize();
+        std::optional<uint64> address;
+        if (search.kind == DissasmSearchKind::Bytes) {
+            const auto pattern = ParseDissasmBytePattern(search.text);
+            if (pattern.has_value()) {
+                address = zone->FindBytes(pattern.value(), from, codeSize);
+                if (!address.has_value() && from > 0)
+                    address = zone->FindBytes(pattern.value(), 0, std::min<uint64>(codeSize, from + pattern->size() - 1));
+            }
+        } else {
+            const auto value = ParseDissasmSearchNumber(search.text);
+            if (value.has_value()) {
+                address = zone->FindImmediate(value.value(), from, codeSize);
+                if (!address.has_value() && from > 0)
+                    address = zone->FindImmediate(value.value(), 0, from);
+            }
+        }
+        if (address.has_value())
+            found = MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
+    }
+    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+    if (!found && showErrors)
+        Dialogs::MessageBox::ShowNotification("Find", "`" + search.text + "` was not found!");
+    return found;
+}
+
+// The strings used by the code (IDA Shift+F12): the search bar filters them, Enter shows the instructions that use the selected one
+class StringsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO    = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    StringsWindow(const std::vector<DissasmStringReference>& strings) : Window("Strings", "d:c,w:90%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:String,w:90", "n:Address,w:20", "n:Xrefs,w:8,a:r" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        LocalString<32> address, xrefs;
+        for (size_t index = 0; index < strings.size(); index++) {
+            address.SetFormat("0x%016llx", static_cast<unsigned long long>(strings[index].address));
+            xrefs.SetFormat("%6u", strings[index].xrefs); // padded: the columns are sorted by their text
+            auto item = list->AddItem({ std::string_view(strings[index].text), address.ToStringView(), xrefs.ToStringView() });
+            item.SetData(static_cast<uint64>(index));
+        }
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowStrings()
+{
+    DissasmCodeZone* zone = nullptr;
+    for (size_t index = 0; !zone && index < settings->parseZones.size(); index++)
+        if (settings->parseZones[index]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The strings are found when the disassembly zone is shown!");
+        return;
+    }
+    // the addresses of the labels are VAs when the plugin translates the offsets, file offsets otherwise
+    const uint64 fileSize          = obj->GetData().GetSize();
+    auto* settingsData             = settings.get();
+    const bool labelsAreVirtual    = settingsData->offsetTranslateCallback.IsValid() && zone->labelAddressBase != zone->zoneDetails.startingZonePoint;
+    const auto addressToFileOffset = [settingsData, fileSize, labelsAreVirtual](uint64 address) -> std::optional<uint64> {
+        const uint64 offset =
+              labelsAreVirtual ? settingsData->offsetTranslateCallback->TranslateToFileOffset(address, static_cast<uint32>(DissasmPEConversionType::VA))
+                               : address;
+        return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+    };
+    const auto strings = zone->GetReferencedStrings(addressToFileOffset);
+    if (strings.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "No strings are used by the code (they are found by the deep scan)!");
+        return;
+    }
+    StringsWindow window(strings);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
+        return;
+    const auto& selected     = strings[window.GetSelectedRow().value()];
+    const auto [first, last] = zone->xrefs.To(selected.address);
+    if (last - first == 1) // used once: the instruction that uses it
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + (first->from - zone->labelAddressBase), false);
+    else
+        ShowXrefsTo(zone, selected.address, selected.text);
 }
 
 constexpr uint32 BTN_CLOSE_ID   = 0;

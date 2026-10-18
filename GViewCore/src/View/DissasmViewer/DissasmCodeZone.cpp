@@ -877,6 +877,217 @@ std::optional<DissasmGoToRequest> GView::View::DissasmViewer::ParseDissasmGoToTe
     return request;
 }
 
+std::optional<std::vector<int16>> GView::View::DissasmViewer::ParseDissasmBytePattern(std::string_view text)
+{
+    constexpr size_t MAX_PATTERN_SIZE = 256;
+    const auto hexValue               = [](char c) -> int {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+    std::vector<int16> pattern;
+    size_t position = 0;
+    while (position < text.size()) {
+        // the tokens are separated by spaces: 48 8B ?? 05 / 488B??05 / 48 8B ? 05
+        while (position < text.size() && (text[position] == ' ' || text[position] == '\t'))
+            position++;
+        const size_t start = position;
+        while (position < text.size() && text[position] != ' ' && text[position] != '\t')
+            position++;
+        const auto token = text.substr(start, position - start);
+        if (token.empty())
+            break;
+        if (token == "?" || token == "??") {
+            pattern.push_back(-1);
+            continue;
+        }
+        if (token.size() % 2 != 0)
+            return {};
+        for (size_t index = 0; index < token.size(); index += 2) {
+            if (token[index] == '?' && token[index + 1] == '?') {
+                pattern.push_back(-1);
+                continue;
+            }
+            const int high = hexValue(token[index]);
+            const int low  = hexValue(token[index + 1]);
+            if (high < 0 || low < 0)
+                return {};
+            pattern.push_back(static_cast<int16>(high * 16 + low));
+        }
+    }
+    if (pattern.empty() || pattern.size() > MAX_PATTERN_SIZE)
+        return {};
+    return pattern;
+}
+
+std::optional<uint64> GView::View::DissasmViewer::ParseDissasmSearchNumber(std::string_view text)
+{
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
+        text.remove_prefix(1);
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
+        text.remove_suffix(1);
+    const bool negative = !text.empty() && text.front() == '-';
+    if (negative)
+        text.remove_prefix(1);
+    uint32 base = 10;
+    if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
+        base = 16;
+        text.remove_prefix(2);
+    } else if (text.size() > 1 && (text.back() == 'h' || text.back() == 'H')) {
+        base = 16;
+        text.remove_suffix(1);
+    }
+    if (text.empty())
+        return {};
+    uint64 value = 0;
+    for (const char c : text) {
+        uint64 digit = 0;
+        if (c >= '0' && c <= '9')
+            digit = static_cast<uint64>(c - '0');
+        else if (base == 16 && c >= 'a' && c <= 'f')
+            digit = static_cast<uint64>(c - 'a' + 10);
+        else if (base == 16 && c >= 'A' && c <= 'F')
+            digit = static_cast<uint64>(c - 'A' + 10);
+        else
+            return {};
+        if (value > (UINT64_MAX - digit) / base)
+            return {}; // does not fit in 64 bits
+        value = value * base + digit;
+    }
+    return negative ? static_cast<uint64>(0) - value : value;
+}
+
+std::vector<DissasmStringReference> DissasmCodeZone::GetReferencedStrings(const std::function<std::optional<uint64>(uint64)>& addressToFileOffset) const
+{
+    std::vector<DissasmStringReference> strings;
+    if (!addressToFileOffset || !zoneObject.IsValid())
+        return strings;
+    Reference<GView::Object> obj = zoneObject;
+    const uint64 fileSize        = obj->GetData().GetSize();
+    const auto& references       = xrefs.byTarget; // sorted by target
+    for (size_t index = 0; index < references.size();) {
+        const uint64 target = references[index].to;
+        uint32 dataReferences = 0;
+        for (; index < references.size() && references[index].to == target; index++)
+            if (references[index].kind == DissasmXrefKind::Read || references[index].kind == DissasmXrefKind::Offset)
+                dataReferences++;
+        if (dataReferences == 0)
+            continue;
+        const auto offset = addressToFileOffset(target);
+        if (!offset.has_value() || offset.value() >= fileSize)
+            continue;
+        auto text = TryExtractStringPreview(obj, offset.value());
+        if (text.has_value())
+            strings.push_back({ target, std::move(text.value()), dataReferences });
+    }
+    return strings;
+}
+
+std::optional<uint64> DissasmCodeZone::FindBytes(const std::vector<int16>& pattern, uint64 from, uint64 to) const
+{
+    if (pattern.empty() || cachedCodeOffsets.empty() || !zoneObject.IsValid())
+        return {};
+    to = std::min(to, GetCodeSize());
+    if (from >= to || to - from < pattern.size())
+        return {};
+    Reference<GView::Object> obj = zoneObject;
+    const uint64 codeStart       = cachedCodeOffsets[0].offset;
+    // the code is read window after window; two windows overlap with the size of the pattern
+    constexpr uint64 WINDOW = 0x10000;
+    uint64 position         = from;
+    while (to - position >= pattern.size()) {
+        const auto requested = static_cast<uint32>(std::min<uint64>(to - position, WINDOW + pattern.size() - 1));
+        const auto view      = obj->GetData().Get(codeStart + position, requested, false);
+        if (!view.IsValid() || view.GetLength() < pattern.size())
+            return {};
+        const uint8* data   = view.GetData();
+        const size_t length = std::min<size_t>(view.GetLength(), requested);
+        for (size_t index = 0; index + pattern.size() <= length; index++) {
+            bool matches = true;
+            for (size_t patternIndex = 0; patternIndex < pattern.size() && matches; patternIndex++)
+                matches = pattern[patternIndex] < 0 || data[index + patternIndex] == static_cast<uint8>(pattern[patternIndex]);
+            if (matches)
+                return position + index;
+        }
+        position += length - pattern.size() + 1;
+    }
+    return {};
+}
+
+std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, uint64 to) const
+{
+    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || internalArchitecture == 0)
+        return {};
+    to = std::min(to, GetCodeSize());
+    if (from >= to)
+        return {};
+    csh handle = 0;
+    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+        return {};
+    std::optional<uint64> result;
+    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
+        cs_insn* insn           = cs_malloc(handle);
+        const uint64 mask       = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+        const uint64 wanted     = value & mask;
+        Reference<GView::Object> obj = zoneObject;
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from);
+        while (!result.has_value() && walker.Next(insn) && insn->address < to) {
+            if (insn->id == X86_INS_INVALID || !insn->detail)
+                continue; // a data line (db)
+            const cs_x86& x86 = insn->detail->x86;
+            for (uint8 index = 0; index < x86.op_count; index++) {
+                const cs_x86_op& op = x86.operands[index];
+                // the immediates, and the displacements that are written ([rbp - 0x10], [0x402010]; not the 0 of [rax])
+                const bool isImmediate    = op.type == X86_OP_IMM && (static_cast<uint64>(op.imm) & mask) == wanted;
+                const bool isDisplacement = op.type == X86_OP_MEM && op.mem.disp != 0 && (static_cast<uint64>(op.mem.disp) & mask) == wanted;
+                if (isImmediate || isDisplacement) {
+                    result = insn->address;
+                    break;
+                }
+            }
+        }
+        cs_free(insn, 1);
+    }
+    cs_close(&handle);
+    return result;
+}
+
+std::optional<uint32> DissasmCodeZone::FindText(std::string_view text, bool matchCase, uint32 fromLine, uint32 toLine, DissasmInsnExtractLineParams* params)
+{
+    if (text.empty() || !CanReachAsmLines() || !zoneObject.IsValid())
+        return {};
+    const auto lower = [](std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return value;
+    };
+    const std::string wanted = matchCase ? std::string(text) : lower(std::string(text));
+    toLine                   = std::min(toLine, GetDisplayLinesCount());
+    std::string lineText, comment;
+    for (uint32 line = fromLine; line < toLine; line++) {
+        const auto asmLine = GetCurrentAsmLine(line, zoneObject, params);
+        // the text of the line as it is shown: a label, a variable, or the mnemonic and its operands, then the comments
+        lineText.assign(asmLine.GetMnemonicText());
+        if (asmLine.op_str) {
+            lineText += ' ';
+            lineText.append(asmLine.op_str, asmLine.op_str_size);
+        } else if (asmLine.mapping) {
+            lineText += ' ';
+            lineText += static_cast<const MemoryMappingEntry*>(asmLine.mapping)->name;
+        }
+        if (GetComment(asmLine, comment))
+            lineText.append(" ; ").append(comment);
+        if (!asmLine.autoComment.empty())
+            lineText.append(" ; ").append(asmLine.autoComment);
+        if ((matchCase ? lineText : lower(lineText)).find(wanted) != std::string::npos)
+            return line;
+    }
+    return {};
+}
+
 std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
 {
     // the function that contains the address: the last function start placed before it

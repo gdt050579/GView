@@ -431,6 +431,13 @@ namespace View
 
         // TODO: improve to be more generic!
         enum class DissasmPEConversionType : uint8 { FileOffset = 0, RVA = 1, VA = 2 };
+        // what the search (Ctrl+F) looks for: the text of the listing, a byte pattern, an immediate / displacement value
+        enum class DissasmSearchKind : uint8 { Text, Bytes, Immediate };
+        struct DissasmSearch {
+            DissasmSearchKind kind = DissasmSearchKind::Text;
+            std::string text;
+            bool matchCase = false;
+        };
 
         struct SettingsData {
             String name;
@@ -740,6 +747,12 @@ namespace View
             void ChangeAddressMode();
             // the cross references to the label / target of the cursor line, Enter jumps to one
             void ShowXrefs();
+            // the instructions that use `target` (address space of the labels); the selected one gets the cursor
+            void ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::string& targetName);
+            void ShowStrings();
+            void FindNext(); // the next match of the last search (F6)
+            std::optional<DissasmSearch> lastSearch;
+            bool RunSearch(const DissasmSearch& search, bool showErrors);
             // moves the cursor to the instruction at the file offset (and to the labels above it); recorded in the jumps history
             bool MoveCursorToZoneFileOffset(DissasmCodeZone* zone, uint64 fileOffset, bool landOnLabels);
             // the deep scans that did not end in InitZone continue in the frame updates; their end adds the labels (the lines change)

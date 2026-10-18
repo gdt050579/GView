@@ -27,6 +27,19 @@ struct DissasmGoToRequest {
 };
 std::optional<DissasmGoToRequest> ParseDissasmGoToText(std::string_view text, DissasmPEConversionType shownAddressType);
 
+// a string used by the code (DissasmCodeZone::GetReferencedStrings)
+struct DissasmStringReference {
+    uint64 address = 0; // in the address space of the labels (VA)
+    std::string text;   // quoted: "ascii" or L"utf-16"
+    uint32 xrefs = 0;
+};
+
+// Search (Ctrl+F): text of the listing, a byte pattern (48 8B ?? 05, ?? is any byte) or an immediate / displacement value
+// the bytes of a pattern, -1 for ?? (any byte); none when the text is not a pattern
+std::optional<std::vector<int16>> ParseDissasmBytePattern(std::string_view text);
+// a decimal number, or hexadecimal with 0x / h (0x1000, 1000h); a minus sign for a negative value
+std::optional<uint64> ParseDissasmSearchNumber(std::string_view text);
+
 struct DissasmCodeZone : public ParseZone {
     enum class CollapseExpandType : uint8 { Collapse, Expand, NegateCurrentState };
     uint32 lastDrawnLine      = 0; // optimization not to recompute buffer every time
@@ -84,6 +97,14 @@ struct DissasmCodeZone : public ParseZone {
     std::optional<uint64> FindLabelByName(std::string_view name) const;
     // the functions of the analysis, by address; functionEntries (the plugin) gives the exports and the sizes it knows
     std::vector<DissasmFunctionInfo> GetFunctions(const std::map<uint64, DissasmFunctionEntry>* functionEntries) const;
+    // the strings at the data addresses used by the instructions (lea rcx, [rip + ...] / push offset), by address
+    std::vector<DissasmStringReference> GetReferencedStrings(const std::function<std::optional<uint64>(uint64)>& addressToFileOffset) const;
+    // the relative address of the first match in [from, to) of the code
+    std::optional<uint64> FindBytes(const std::vector<int16>& pattern, uint64 from, uint64 to) const;
+    // the first instruction in [from, to) (relative addresses, from is an instruction of the listing) with this immediate / displacement
+    std::optional<uint64> FindImmediate(uint64 value, uint64 from, uint64 to) const;
+    // the first shown line in [fromLine, toLine) whose text contains `text` (labels, instructions, comments)
+    std::optional<uint32> FindText(std::string_view text, bool matchCase, uint32 fromLine, uint32 toLine, DissasmInsnExtractLineParams* params);
     // "sub_140001010+0x1A": the function that contains the relative address (its name as shown)
     std::string FormatCodeAddress(uint64 relativeAddress) const;
     // the references to the label at the relative address, shown after the label: "xrefs: sub_140001010+0x84 (call), ... +3"

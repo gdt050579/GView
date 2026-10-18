@@ -332,6 +332,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_SHOW_FUNCTIONS:
             ShowFunctions();
             return true;
+        case COMMAND_SHOW_STRINGS:
+            ShowStrings();
+            return true;
+        case COMMAND_FIND_NEXT:
+            FindNext();
+            return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
             RefreshDrawnLines();

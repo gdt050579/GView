@@ -3432,3 +3432,80 @@ TEST_CASE("FunctionsList", "[Dissasm]GoTo")
     REQUIRE(zone.FindLabelByName("helper") == 0x10ull);
     REQUIRE(zone.GetFunctions(nullptr)[1].name == "helper");
 }
+
+TEST_CASE("SearchInputs", "[Dissasm]Search")
+{
+    REQUIRE(ParseDissasmBytePattern("48 8B ?? 05") == std::vector<int16>{ 0x48, 0x8B, -1, 0x05 });
+    REQUIRE(ParseDissasmBytePattern("488b??05") == std::vector<int16>{ 0x48, 0x8B, -1, 0x05 });
+    REQUIRE(ParseDissasmBytePattern(" 48  ?  c3 ") == std::vector<int16>{ 0x48, -1, 0xC3 });
+    REQUIRE_FALSE(ParseDissasmBytePattern("").has_value());
+    REQUIRE_FALSE(ParseDissasmBytePattern("4").has_value());
+    REQUIRE_FALSE(ParseDissasmBytePattern("48 zz").has_value());
+
+    REQUIRE(ParseDissasmSearchNumber("4096") == 4096ull);
+    REQUIRE(ParseDissasmSearchNumber("0x1000") == 0x1000ull);
+    REQUIRE(ParseDissasmSearchNumber(" 1000h ") == 0x1000ull);
+    REQUIRE(ParseDissasmSearchNumber("-8") == static_cast<uint64>(-8));
+    REQUIRE_FALSE(ParseDissasmSearchNumber("12ab").has_value()); // decimal without a hexadecimal mark
+    REQUIRE_FALSE(ParseDissasmSearchNumber("").has_value());
+    REQUIRE_FALSE(ParseDissasmSearchNumber("99999999999999999999999").has_value());
+}
+
+TEST_CASE("SearchCode", "[Dissasm]Search")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+        0x48, 0x8D, 0x15, 0x29, 0x00, 0x00, 0x00, // 0x04: lea rdx, [rip + 0x29] -> 0x34 ("Hello")
+        0xB9, 0x00, 0x10, 0x00, 0x00,             // 0x0b: mov ecx, 0x1000
+        0x48, 0x8B, 0x45, 0xF8,                   // 0x10: mov rax, qword ptr [rbp - 8]
+        0xB9, 0x00, 0x10, 0x00, 0x00,             // 0x14: mov ecx, 0x1000
+        0x48, 0x83, 0xC4, 0x28,                   // 0x19: add rsp, 0x28
+        0xC3,                                     // 0x1d: ret
+    };
+    file.resize(0x30, 0xCC);
+    file.resize(0x34, 0x00);
+    for (const char c : std::string_view("Hello"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x40, 0x00);
+
+    ZoneLayout layout;
+    layout.size       = 0x30;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    const uint64 codeSize = zone.GetCodeSize();
+
+    // byte patterns: the first match after `from`
+    REQUIRE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0, codeSize) == 0x0Bull);
+    REQUIRE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0x0C, codeSize) == 0x14ull);
+    REQUIRE(zone.FindBytes({ 0x48, -1, 0x45 }, 0, codeSize) == 0x10ull);
+    REQUIRE_FALSE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0x15, codeSize).has_value());
+    REQUIRE_FALSE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0, 0x0D).has_value()); // the match must end before `to`
+
+    // immediates and displacements, from an instruction of the listing
+    REQUIRE(zone.FindImmediate(0x1000, 0, codeSize) == 0x0Bull);
+    REQUIRE(zone.FindImmediate(0x1000, 0x10, codeSize) == 0x14ull);
+    REQUIRE(zone.FindImmediate(static_cast<uint64>(-8), 0, codeSize) == 0x10ull); // [rbp - 8]
+    REQUIRE(zone.FindImmediate(0x28, 0x04, codeSize) == 0x19ull);
+    REQUIRE_FALSE(zone.FindImmediate(0x1234, 0, codeSize).has_value());
+
+    // the text of the shown lines: 0 EntryPoint, 1 sub, 2 lea, 3 mov, 4 mov, 5 mov
+    REQUIRE(zone.FindText("ecx, 0x1000", false, 0, UINT32_MAX, nullptr) == 3u);
+    REQUIRE(zone.FindText("ECX, 0X1000", false, 4, UINT32_MAX, nullptr) == 5u);
+    REQUIRE_FALSE(zone.FindText("ECX", true, 0, UINT32_MAX, nullptr).has_value()); // match case
+    REQUIRE(zone.FindText("entrypoint", false, 0, UINT32_MAX, nullptr) == 0u);
+    REQUIRE(dissasmInstance.AddOrUpdateComment(4, "the size of the buffer"));
+    REQUIRE(zone.FindText("buffer", false, 0, UINT32_MAX, nullptr) == 4u);
+    REQUIRE_FALSE(zone.FindText("missing", false, 0, UINT32_MAX, nullptr).has_value());
+
+    // the strings used by the code
+    const uint64 fileSize = file.size();
+    const auto strings    = zone.GetReferencedStrings([fileSize](uint64 offset) -> std::optional<uint64> {
+        return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+    });
+    REQUIRE(strings.size() == 1);
+    REQUIRE(strings[0].address == 0x34);
+    REQUIRE(strings[0].text == "\"Hello\"");
+    REQUIRE(strings[0].xrefs == 1);
+}

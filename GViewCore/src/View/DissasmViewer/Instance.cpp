@@ -1602,10 +1602,6 @@ bool Instance::ShowGoToDialog()
     }
     return true;
 }
-bool Instance::ShowFindDialog()
-{
-    NOT_IMPLEMENTED(false);
-}
 bool Instance::ShowCopyDialog()
 {
     if (GView::App::IsBlockedByPolicy(GView::Security::RestrictedMode::Feature::Copy, "copying from the disassembly view"))
