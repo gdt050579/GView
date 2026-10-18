@@ -20,6 +20,8 @@ std::vector<OperandNumber> FindOperandNumbers(std::string_view operands);
 // writes the hexadecimal numbers whose index has the bit set in `decimalMask` as (unsigned) decimal numbers;
 // `trackedPosition` (a position inside `operands`) is moved to the same character of the result
 std::string FormatOperandNumbers(std::string_view operands, AppCUI::uint32 decimalMask, AppCUI::uint32* trackedPosition = nullptr);
+// the bytes of a zone at a file offset: the file, or zeros for the offsets of the uninitialized zones (DISSASM_UNINITIALIZED_ZONES_BASE)
+AppCUI::Utils::BufferView GetZoneBytes(Reference<GView::Object> obj, AppCUI::uint64 fileOffset, AppCUI::uint32 size);
 
 // The operands with the name of the data they refer to, as IDA writes them; none when the operands have no such place:
 // - x86 / x64: the memory operand at a fixed address ([rip + 0x...] on x64, [0x403000] on x86) becomes cs:name / ds:name, the size

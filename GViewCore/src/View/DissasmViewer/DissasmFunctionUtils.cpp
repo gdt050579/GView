@@ -223,6 +223,15 @@ std::optional<std::string> SubstituteArm64PageOffset(std::string_view operands, 
     return result;
 }
 
+AppCUI::Utils::BufferView GetZoneBytes(Reference<GView::Object> obj, AppCUI::uint64 fileOffset, AppCUI::uint32 size)
+{
+    if (fileOffset >= DISSASM_UNINITIALIZED_ZONES_BASE) {
+        static const std::vector<uint8_t> zeros(64 * 1024, 0);
+        return AppCUI::Utils::BufferView(zeros.data(), std::min<size_t>(size, zeros.size()));
+    }
+    return obj->GetData().Get(fileOffset, size, false);
+}
+
 AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetLine>& values, uint64 searchedOffset, uint32* index)
 {
     assert(!values.empty());
@@ -314,10 +323,33 @@ void SetDataLine(cs_insn* insn, uint64_t address, const uint8_t* bytes, size_t l
 
 // An entry of a jump table: a data line of `unit` bytes (db / dw / dd / dq, ARM: db / .short / .word / .quad); a last entry shorter than the
 // unit (the end of the table, of the code) is a db line
-bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, uint8_t unit, bool isArm)
+bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, uint8_t unit, bool isArm, bool uninitialized)
 {
     if (available == 0)
         return false;
+    if (uninitialized) {
+        // no values: db 0x10 dup(?) for a row, db ? / dw ? / dd ? / dq ? (ARM: .byte / .short / .word / .quad) for a variable
+        const bool isRow   = unit == DissasmInstructionSet::BYTES_ROW || !DissasmInstructionSet::IsValidDataUnit(unit) || unit > 8 || available < unit;
+        const size_t width = isRow ? std::min<size_t>(available, 16 - static_cast<size_t>(*address % 16)) : unit;
+        char text[32];
+        const char* mnemonic = isArm ? ".byte" : "db";
+        if (isRow)
+            snprintf(text, sizeof(text), width == 1 ? "?" : "0x%zx dup(?)", width);
+        else {
+            snprintf(text, sizeof(text), "?");
+            if (width == 2)
+                mnemonic = isArm ? ".short" : "dw";
+            else if (width == 4)
+                mnemonic = isArm ? ".word" : "dd";
+            else if (width == 8)
+                mnemonic = isArm ? ".quad" : "dq";
+        }
+        SetDataLine(insn, *address, *code, width, mnemonic, text);
+        *code += width;
+        *size -= width;
+        *address += width;
+        return true;
+    }
     if (unit == DissasmInstructionSet::BYTES_ROW) {
         // a row of a data zone: up to the next 16 bytes aligned address (the zones start at aligned addresses)
         const size_t width = std::min<size_t>(available, 16 - static_cast<size_t>(*address % 16));
@@ -511,7 +543,7 @@ bool DecodeX86Line(
     if (instructionSet && !instructionSet->dataRanges.empty()) {
         if (const auto* range = instructionSet->DataRangeAt(*address)) {
             const size_t left = static_cast<size_t>(std::min<AppCUI::uint64>(range->end - *address, available));
-            return DecodeTableLine(code, size, address, insn, left, range->unit, instructionSet->kind != DissasmInstructionSet::Kind::X86);
+            return DecodeTableLine(code, size, address, insn, left, range->unit, instructionSet->kind != DissasmInstructionSet::Kind::X86, instructionSet->uninitialized);
         }
         const auto nextRange = instructionSet->NextDataRangeStart(*address);
         if (nextRange.has_value() && nextRange.value() - *address < available)
@@ -677,7 +709,7 @@ bool DissasmCodeLinesWalker::Next(cs_insn* insn)
     // a whole instruction (or the end of the code): the same bytes as the code windows of the drawn lines, so the same lines are decoded.
     // The view is taken again for every line, nothing else can refill the data cache under it.
     const uint32 requested = static_cast<uint32>(std::min<uint64>(codeSize - address, DISSASM_MAX_LINE_SIZE));
-    const auto view        = obj->GetData().Get(codeStart + address, requested, false);
+    const auto view        = GetZoneBytes(obj, codeStart + address, requested);
     if (!view.IsValid() || view.GetLength() == 0)
         return false;
     const uint8_t* data = view.GetData();

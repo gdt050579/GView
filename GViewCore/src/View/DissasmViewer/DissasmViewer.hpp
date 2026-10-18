@@ -50,11 +50,17 @@ namespace View
         // a line: an instruction, or the padding up to the next 16 bytes aligned address (align 0x10, DecodeX86Line)
         static constexpr uint64 DISSASM_MAX_LINE_SIZE             = 16;
         static constexpr uint64 DISSASM_NO_PADDING_ALIGNMENT      = UINT64_MAX; // DecodeX86Line: every padding instruction is a line
+        // the zones of the uninitialized data (AddUninitializedDataZone) have no bytes in the file: they get file offsets from here on (after
+        // the end of any file, one space of DISSASM_UNINITIALIZED_ZONE_SPACE each, in their order), their bytes read as zeros (GetZoneBytes)
+        static constexpr uint64 DISSASM_UNINITIALIZED_ZONES_BASE = 1ull << 62;
+        static constexpr uint64 DISSASM_UNINITIALIZED_ZONE_SPACE = 1ull << 40;
+        static constexpr uint64 DISSASM_MAX_UNINITIALIZED_ZONE   = 64ull * 1024 * 1024;
 
         // DecodeX86Line: the instruction set of a zone; 32 bit ARM: the mode at every address (ARM, Thumb, data), from its changes
         struct DissasmInstructionSet {
             enum class Kind : uint8 { X86, Arm64, Arm32 };
             Kind kind               = Kind::X86;
+            bool uninitialized      = false; // the data lines of an uninitialized zone have no values: dd ? / db 0x10 dup(?)
             ArmCodeMode defaultMode = ArmCodeMode::Arm;
             std::vector<std::pair<uint64, ArmCodeMode>> modeChanges; // relative address -> the mode from there on, sorted
             ArmCodeMode ModeAt(uint64 address) const
@@ -132,6 +138,9 @@ namespace View
             DisassemblyLanguage language;
             std::string name; // shown in the title of the zone (a section name), not saved in the cache
             bool isData = false; // a data zone (AddDataZone): no instructions, its bytes are data lines
+            // an uninitialized data zone (AddUninitializedDataZone): its VA, its file offset is from DISSASM_UNINITIALIZED_ZONES_BASE
+            bool isUninitialized  = false;
+            uint64 virtualAddress = 0;
 
             bool HasEntryPoint() const
             {
@@ -267,6 +276,7 @@ namespace View
             uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
             const void* mapping                   = nullptr;
             bool isCollapsedLine                  = false; // the line of a collapsed zone (it hides the other lines of the zone)
+            bool hasNoBytes                       = false; // a line of an uninitialized zone: no op codes, no text
 
             // the argument of the x64 calling convention written by the instruction (GetX64ArgumentSlot)
             static constexpr uint8 NO_ARGUMENT = 0xFF;
@@ -344,6 +354,7 @@ namespace View
                 memcpy(arrowCells, other.arrowCells, sizeof(arrowCells));
                 mapping                = other.mapping;
                 isCollapsedLine        = other.isCollapsedLine;
+                hasNoBytes             = other.hasNoBytes;
                 shouldAddButton        = other.shouldAddButton;
                 isZoneCollapsed        = other.isZoneCollapsed;
                 argumentSlot           = other.argumentSlot;
@@ -541,6 +552,16 @@ namespace View
             // (or the headless analysis) takes the settings
             std::vector<uint8> chainedFixups;
             uint64 chainedFixupsImageBase = 0;
+            // the file offset (from DISSASM_UNINITIALIZED_ZONES_BASE) of a VA of an uninitialized data zone
+            std::optional<uint64> GetUninitializedFileOffset(uint64 address) const
+            {
+                for (auto it = disassemblyZones.lower_bound(DISSASM_UNINITIALIZED_ZONES_BASE); it != disassemblyZones.end(); ++it) {
+                    const auto& zone = it->second;
+                    if (zone.isUninitialized && address >= zone.virtualAddress && address - zone.virtualAddress < zone.size)
+                        return zone.startingZonePoint + (address - zone.virtualAddress);
+                }
+                return {};
+            }
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmStructureType> dissasmTypeMapped; // mapped types against the offset of the file

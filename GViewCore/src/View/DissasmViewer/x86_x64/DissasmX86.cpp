@@ -154,8 +154,9 @@ inline void DissasmAddColorsToInstruction(
     if (!cfg.ShowOnlyDissasm) {
         cb.InsertChar('|', cb.Len(), colors.AsmTitleColumnColor);
 
+        const uint32 shownBytes = insn.hasNoBytes ? 0u : static_cast<uint32>(insn.size); // an uninitialized zone has no bytes
         for (uint32 i = 0; i < opCodesGroupsShown; i++) {
-            if (i >= insn.size) {
+            if (i >= shownBytes) {
                 string.Clear();
                 const uint32 remaining = opCodesGroupsShown - i;
                 // const uint32 spaces    = remaining >= 2 ? remaining - 2 : 0;
@@ -175,7 +176,7 @@ inline void DissasmAddColorsToInstruction(
         cb.InsertChar('|', cb.Len(), colors.AsmTitleColumnColor);
 
         for (uint32 i = 0; i < textColumnTextLength; i++) {
-            if (i >= insn.size) {
+            if (i >= shownBytes) {
                 string.Clear();
                 const uint32 remaining = textColumnTextLength - i - 1;
                 string.SetChars(' ', remaining);
@@ -446,7 +447,7 @@ static std::optional<uint64> TranslateOperandAddressToFileOffset(SettingsData* s
     const auto type   = isVA ? DissasmPEConversionType::VA : DissasmPEConversionType::RVA;
     const auto offset = settings->offsetTranslateCallback->TranslateToFileOffset(value, static_cast<uint32>(type));
     if (offset == static_cast<uint64>(-1))
-        return {};
+        return isVA ? settings->GetUninitializedFileOffset(value) : std::nullopt; // a variable of the uninitialized data
     return offset;
 }
 
@@ -811,6 +812,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
     address = insn->address;
     memcpy(bytes, insn->bytes, std::min<uint32>(sizeof(bytes), sizeof(insn->bytes)));
+    hasNoBytes = params.zone->zoneDetails.isUninitialized;
     size        = insn->size;
     currentLine = params.actualLine;
 
@@ -1429,8 +1431,10 @@ void Instance::ForgetLinesReferringTo(DissasmCodeZone* zone)
 void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> obj, DissasmCodeZone* zone, DissasmCodeZoneInitData& initData)
 {
     initData.obj = obj;
-    // the labels are named after the VA (as IDA), when the plugin translates the file offsets
-    if (settings->offsetTranslateCallback.IsValid()) {
+    // the labels are named after the VA (as IDA), when the plugin translates the file offsets; an uninitialized zone has its own VA
+    if (zone->zoneDetails.isUninitialized)
+        initData.labelAddressBase = zone->zoneDetails.virtualAddress;
+    else if (settings->offsetTranslateCallback.IsValid()) {
         const auto va = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::VA));
         if (va != static_cast<uint64>(-1))
             initData.labelAddressBase = va;
@@ -1441,7 +1445,8 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
         auto* settingsData           = settings;
         initData.addressToFileOffset = [settingsData, fileSize](uint64 va) -> std::optional<uint64> {
             const auto offset = settingsData->offsetTranslateCallback->TranslateToFileOffset(va, static_cast<uint32>(DissasmPEConversionType::VA));
-            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+            // a variable of the uninitialized data: the offset of its zone (its bytes are zeros)
+            return offset < fileSize ? std::optional<uint64>(offset) : settingsData->GetUninitializedFileOffset(va);
         };
         // the image base: the VA of the zone start minus its RVA
         const auto rva = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::RVA));
@@ -2093,6 +2098,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
 uint64 Instance::GetDisplayAddressBase(DissasmCodeZone* zone)
 {
+    if (zone->zoneDetails.isUninitialized)
+        return zone->labelAddressBase; // no file offset: its VA
     const uint64 codeStart = zone->cachedCodeOffsets[0].offset;
     if (!settings->offsetTranslateCallback.IsValid() || config.AddressMode == static_cast<uint8>(DissasmPEConversionType::FileOffset))
         return codeStart;
@@ -2189,8 +2196,11 @@ void Instance::RefreshCursorLineNumbers()
 
     // where the cursor is: sub_140001010+0x1A, the file offset (labels and local variables included)
     if (!asmLine.isCollapsedLine) {
-        LocalString<32> fileOffset;
-        fileOffset.SetFormat("  file offset 0x%llX", static_cast<unsigned long long>(zone->cachedCodeOffsets[0].offset + asmLine.address));
+        LocalString<48> fileOffset;
+        if (zone->zoneDetails.isUninitialized)
+            fileOffset.SetFormat("  uninitialized (no bytes in the file)");
+        else
+            fileOffset.SetFormat("  file offset 0x%llX", static_cast<unsigned long long>(zone->cachedCodeOffsets[0].offset + asmLine.address));
         cursorLineNumbers.location = zone->FormatCodeAddress(asmLine.address) + fileOffset.GetText();
     }
 

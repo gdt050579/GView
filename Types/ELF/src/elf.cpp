@@ -383,6 +383,32 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 addDataSection(index, section.sh_flags, section.sh_type, section.sh_offset, section.sh_size);
             }
         }
+        // the uninitialized data (.bss, .sbss, .lbss: no bytes in the file); not the thread local ones (.tbss: their addresses are offsets of
+        // the TLS block)
+        const auto addUninitializedSection = [&](size_t index, uint64 flags, uint32 type, uint64 address, uint64 size) {
+            if (type != ELF::SHT_NOBITS || (flags & ELF::SHF_ALLOC) == 0 || (flags & (ELF::SHF_EXECINSTR | ELF::SHF_TLS)) != 0 || size == 0 || address == 0)
+                return;
+            const std::string name = index < elf->sectionNames.size() ? elf->sectionNames[index] : std::string(".bss");
+            if (name == ".relro_padding") // lld: the page alignment after RELRO, no variables
+                return;
+            settings.AddUninitializedDataZone(address, size, language, name);
+        };
+        if (elf->is64)
+        {
+            for (size_t index = 0; index < elf->sections64.size(); index++)
+            {
+                const auto& section = elf->sections64[index];
+                addUninitializedSection(index, section.sh_flags, section.sh_type, section.sh_addr, section.sh_size);
+            }
+        }
+        else
+        {
+            for (size_t index = 0; index < elf->sections32.size(); index++)
+            {
+                const auto& section = elf->sections32[index];
+                addUninitializedSection(index, section.sh_flags, section.sh_type, section.sh_addr, section.sh_size);
+            }
+        }
         // 32 bit x86 position independent code: ebx is the global offset table in the PLT stubs (jmp dword ptr [ebx + 0xc])
         if (machine == ELF::EM_386 && !elf->is64 && elf->header32.e_type == ELF::ET_DYN)
         {

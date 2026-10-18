@@ -1835,6 +1835,12 @@ namespace View
              */
             void AddChainedFixups(BufferView data, uint64 imageBase);
             /**
+             * \brief A data zone without bytes in the file: the uninitialized data of the program at the VA `address` (ELF .bss, Mach-O
+             * zero fill sections, the part of a PE section past its raw data). Its lines are the variables the code uses (dd ?), placed
+             * after the end of the file.
+             */
+            void AddUninitializedDataZone(uint64 address, uint64 size, DisassemblyLanguage lang, std::string_view name);
+            /**
              * \brief 32 bit ARM: the code from the file offset is decoded in `mode` (until the next mode change); the ELF mapping symbols
              * ($a, $t, $d), the Thumb bit of the function symbols, the ARM .plt of a Thumb file. A later call for the same offset wins.
              */

@@ -23,7 +23,8 @@ constexpr uint64 DISSASM_MAX_ANALYZED_FUNCTION_SIZE = 0x1000000; // 16 MB, large
 // window after window.
 struct GView::View::DissasmViewer::DissasmLineCounter {
     // the zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is not
-    // shown. A run inside the code (between functions, data) is decoded as it is
+    // shown. A run inside the code (between functions, data) is decoded as it is. Not in a data zone: its zeros are the variables
+    // initialized to 0 (the plugins give the size of the data, not of its padding)
     static constexpr uint32 TRAILING_ZEROS_MINIMUM_LINES = 4;
     static constexpr uint32 LINES_BETWEEN_DEADLINE_CHECKS = 4096;
 
@@ -40,6 +41,7 @@ struct GView::View::DissasmViewer::DissasmLineCounter {
     uint32 zeroRunLines = 0;
     uint64 lastOffset   = 0;
     bool ended          = false;
+    bool trimTrailingZeros;
 
     DissasmLineCounter(
           vector<AsmOffsetLine>& offsets,
@@ -48,7 +50,8 @@ struct GView::View::DissasmViewer::DissasmLineCounter {
           const std::vector<uint64>* boundaries,
           uint64 alignmentBase)
         : offsets(offsets), obj(obj), zoneStart(zoneDetails.startingZonePoint), zoneSize(zoneDetails.size), boundaries(boundaries),
-          alignmentBase(alignmentBase), walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, 0, 0, boundaries, alignmentBase)
+          alignmentBase(alignmentBase), walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, 0, 0, boundaries, alignmentBase),
+          trimTrailingZeros(!zoneDetails.isData)
     {
     }
 
@@ -97,7 +100,7 @@ struct GView::View::DissasmViewer::DissasmLineCounter {
                     return false;
             }
         }
-        if (zeroRunLines >= TRAILING_ZEROS_MINIMUM_LINES && zeroRunLines < lines) {
+        if (trimTrailingZeros && zeroRunLines >= TRAILING_ZEROS_MINIMUM_LINES && zeroRunLines < lines) {
             lines -= zeroRunLines;
             // the cached offsets placed inside the removed lines point to lines that do not exist
             while (offsets.size() > 1 && offsets.back().line >= lines)
@@ -300,7 +303,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (range && range->start == target && (range->unit == DissasmInstructionSet::ASCII_STRING || range->unit == DissasmInstructionSet::UTF16_STRING)) {
                 // the text of the string (UTF-16: the low bytes)
                 const bool wide    = range->unit == DissasmInstructionSet::UTF16_STRING;
-                const auto view    = obj->GetData().Get(codeStart + target, static_cast<uint32>(std::min<uint64>(range->end - target, 64)), false);
+                const auto view    = GetZoneBytes(obj, codeStart + target, static_cast<uint32>(std::min<uint64>(range->end - target, 64)));
                 std::string value;
                 for (size_t index = 0; view.IsValid() && index < view.GetLength(); index += wide ? 2 : 1)
                     value.push_back(static_cast<char>(view.GetData()[index]));
@@ -1158,8 +1161,8 @@ inline bool IsValidCodeZone(const DisassemblyZone& zoneDetails, Reference<GView:
 {
     if (zoneDetails.size == 0 || zoneDetails.size > UINT64_MAX - zoneDetails.startingZonePoint)
         return false;
-    // the lines end with the file when the zone goes past it
-    if (zoneDetails.startingZonePoint >= obj->GetData().GetSize())
+    // the lines end with the file when the zone goes past it; an uninitialized zone has no bytes in the file
+    if (zoneDetails.startingZonePoint >= obj->GetData().GetSize() && !zoneDetails.isUninitialized)
         return false;
     // the entry point may be after the end of the file (a truncated file): the lines are counted until there, the entry point simply has
     // no line (the init must not fail on every paint). A zone without an entry point (another executable section) is valid.
@@ -1425,6 +1428,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     instructionSet             = {};
     instructionSet.kind        = IsArm64Code() ? DissasmInstructionSet::Kind::Arm64 : (IsArm32Code() ? DissasmInstructionSet::Kind::Arm32 : DissasmInstructionSet::Kind::X86);
     instructionSet.defaultMode = zoneDetails.language == DisassemblyLanguage::Thumb ? ArmCodeMode::Thumb : ArmCodeMode::Arm;
+    instructionSet.uninitialized = zoneDetails.isUninitialized;
     if (IsArm32Code() && initData.armCodeModes) {
         for (const auto& [fileOffset, mode] : *initData.armCodeModes) {
             if (fileOffset <= zoneDetails.startingZonePoint)
@@ -1491,18 +1495,28 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
             std::sort(fixedRanges.begin(), fixedRanges.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
         }
         const uint64 fileSize = initData.obj->GetData().GetSize();
-        const uint64 dataSize = zoneDetails.startingZonePoint < fileSize ? std::min<uint64>({ zoneDetails.size, MAX_DATA_ZONE_SIZE, fileSize - zoneDetails.startingZonePoint }) : 0;
-        auto bytes            = initData.obj->GetData().CopyToBuffer(zoneDetails.startingZonePoint, static_cast<uint32>(dataSize), false);
-        ApplyRelocatedPointers(relocatedPointers, zoneDetails.startingZonePoint, bytes.GetData(), bytes.GetLength(), Is64BitCode() ? 8 : 4);
+        const uint64 dataSize = zoneDetails.isUninitialized ? std::min<uint64>(zoneDetails.size, MAX_DATA_ZONE_SIZE)
+                                : zoneDetails.startingZonePoint < fileSize ? std::min<uint64>({ zoneDetails.size, MAX_DATA_ZONE_SIZE, fileSize - zoneDetails.startingZonePoint })
+                                                                           : 0;
+        // an uninitialized zone: zeros (no strings, no pointers; the variables the code uses and rows)
+        std::vector<uint8> zeros;
+        AppCUI::Utils::Buffer fileBytes;
+        if (zoneDetails.isUninitialized)
+            zeros.assign(static_cast<size_t>(dataSize), 0);
+        else
+            fileBytes = initData.obj->GetData().CopyToBuffer(zoneDetails.startingZonePoint, static_cast<uint32>(dataSize), false);
+        uint8* bytesData       = zoneDetails.isUninitialized ? zeros.data() : fileBytes.GetData();
+        const uint64 bytesSize = zoneDetails.isUninitialized ? zeros.size() : fileBytes.GetLength();
+        ApplyRelocatedPointers(relocatedPointers, zoneDetails.startingZonePoint, bytesData, bytesSize, Is64BitCode() ? 8 : 4);
         // the pointers: only with the addresses of the plugin (the VAs), every small number is a file offset otherwise; and not the small
         // values (a position independent image loaded at 0: its first VAs are counters and sizes too)
         const uint8 pointerSize = Is64BitCode() ? 8 : 4;
         std::function<bool(uint64)> isPointer;
         if (initData.labelAddressBase.has_value() && initData.isFileAddress)
             isPointer = [isFileAddress = initData.isFileAddress](uint64 value) { return value >= 0x10000 && isFileAddress(value); };
-        instructionSet.dataRanges = BuildDataZoneRanges(bytes.GetData(), bytes.GetLength(), targets, targetSizes, fixedRanges, pointerSize, isPointer);
-        if (bytes.GetLength() < zoneDetails.size) // the bytes past the limit: rows
-            instructionSet.dataRanges.push_back({ bytes.GetLength(), zoneDetails.size, DissasmInstructionSet::BYTES_ROW });
+        instructionSet.dataRanges = BuildDataZoneRanges(bytesData, bytesSize, targets, targetSizes, fixedRanges, pointerSize, isPointer);
+        if (bytesSize < zoneDetails.size) // the bytes past the limit: rows
+            instructionSet.dataRanges.push_back({ bytesSize, zoneDetails.size, DissasmInstructionSet::BYTES_ROW });
     } else {
         // the data defined by the user: the lines are counted with them (a range that does not fit any more is dropped)
         for (const auto& range : userDataRanges)
@@ -2443,7 +2457,7 @@ bool DissasmCodeZone::DefineUserString(uint64 address)
     if (address >= codeSize || cachedCodeOffsets.empty() || !zoneObject.IsValid())
         return false;
     Reference<GView::Object> obj = zoneObject;
-    const auto view = obj->GetData().Get(cachedCodeOffsets[0].offset + address, static_cast<uint32>(std::min<uint64>(codeSize - address, MAX_STRING_SIZE)), false);
+    const auto view = GetZoneBytes(obj, cachedCodeOffsets[0].offset + address, static_cast<uint32>(std::min<uint64>(codeSize - address, MAX_STRING_SIZE)));
     if (!view.IsValid())
         return false;
     const auto isText = [](uint8 value) { return (value >= 0x20 && value < 0x7F) || value == '\t' || value == '\r' || value == '\n'; };
@@ -2703,7 +2717,7 @@ std::optional<uint64> DissasmCodeZone::FindBytes(const std::vector<int16>& patte
     uint64 position         = from;
     while (to - position >= pattern.size()) {
         const auto requested = static_cast<uint32>(std::min<uint64>(to - position, WINDOW + pattern.size() - 1));
-        const auto view      = obj->GetData().Get(codeStart + position, requested, false);
+        const auto view      = GetZoneBytes(obj, codeStart + position, requested);
         if (!view.IsValid() || view.GetLength() < pattern.size())
             return {};
         const uint8* data   = view.GetData();
@@ -3578,7 +3592,7 @@ bool DissasmCodeZone::FetchCodeWindow(Reference<GView::Object> obj, uint64 relat
     // windows are small (the distance between two cached offsets): fetching again is O(1) while the bytes are cached and it never
     // decodes stale bytes after another reader (string preview, other views) refilled the data cache
     const uint32 requested = static_cast<uint32>(std::min<uint64>(relativeEnd - relativeStart, DISSASM_MAX_CODE_WINDOW_SIZE));
-    lastData               = obj->GetData().Get(cachedCodeOffsets[0].offset + relativeStart, requested, false);
+    lastData               = GetZoneBytes(obj, cachedCodeOffsets[0].offset + relativeStart, requested);
     if (!lastData.IsValid() || lastData.GetLength() == 0) {
         asmData = nullptr;
         asmSize = 0;

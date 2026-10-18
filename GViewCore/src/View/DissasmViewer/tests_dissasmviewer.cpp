@@ -291,6 +291,7 @@ struct ZoneLayout {
     std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
     std::map<uint64, ArmCodeMode> armCodeModes;               // 32 bit ARM: the mode changes, by file offset
     std::map<uint64, uint64> relocatedPointers;               // the pointers the loader writes (file offset -> VA)
+    bool isUninitialized = false;                             // an uninitialized data zone (start: its file offset, labelAddressBase: its VA)
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -364,6 +365,8 @@ class DissasmTestInstance
         zone->zoneDetails.size              = layout.size;
         zone->zoneDetails.entryPoint        = layout.entryPoint;
         zone->zoneDetails.isData            = layout.isData;
+        zone->zoneDetails.isUninitialized   = layout.isUninitialized;
+        zone->zoneDetails.virtualAddress    = layout.labelAddressBase.value_or(0);
         zone->siblingZones                  = layout.siblings;
 
         DissasmCodeZoneInitData initData      = {};
@@ -6830,4 +6833,67 @@ TEST_CASE("SymbolicDataOperands", "[Dissasm]Operands")
     // past the item of the last label: no name (a variable of the uninitialized part of the section)
     REQUIRE(data.zone->FormatCodeAddress(0x02) == "dword_40+0x2");
     REQUIRE(data.zone->FormatCodeAddress(0x1C).starts_with("0x"));
+}
+
+TEST_CASE("UninitializedDataZone", "[Dissasm]DataZone")
+{
+    // x64 code reads a dword and writes a qword of the uninitialized data (.bss at 0x402000, no bytes in the file): the zone has a line for
+    // each of them (dd ? / dq ?) and rows for the rest, the operands name them
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0xFA, 0x0F, 0x00, 0x00,       // 0x00: mov eax, dword ptr [rip + 0xffa] (0x402000)
+        0x48, 0x89, 0x05, 0xFB, 0x0F, 0x00, 0x00, // 0x06: mov qword ptr [rip + 0xffb], rax (0x402008)
+        0xC3,                                     // 0x0d: ret
+    };
+    file.resize(0x40, 0xCC);
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        if (address >= 0x401000 && address < 0x401040)
+            return address - 0x401000;
+        if (address >= 0x402000 && address < 0x402040) // the uninitialized zone: its own file offsets
+            return DISSASM_UNINITIALIZED_ZONES_BASE + (address - 0x402000);
+        return std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.labelAddressBase    = 0x401000;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start            = DISSASM_UNINITIALIZED_ZONES_BASE;
+    layout.size             = 0x40;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x402000;
+    layout.isData           = true;
+    layout.isUninitialized  = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance bss(file.data(), file.size(), false, layout);
+    auto& zone = *bss.zone;
+    REQUIRE(zone.GetLabelNameAt(0x00) == "dword_402000");
+    REQUIRE(zone.GetLabelNameAt(0x08) == "qword_402008");
+    const std::string listing = bss.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dd     ?").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     ?").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     0x10 dup(?)").size() > 0); // no zero trimmed: every byte of the zone has a line
+    REQUIRE(zone.GetDisplayLinesCount() == 2 + 2 + 1 + 3); // 2 labels, dd, dq, the row up to 0x10, the rows of 0x10 .. 0x40
+    // the bytes read as zeros (no file under these offsets)
+    const auto view = GetZoneBytes(nullptr, DISSASM_UNINITIALIZED_ZONES_BASE + 4, 8);
+    REQUIRE(view.GetLength() == 8);
+    REQUIRE(std::all_of(view.begin(), view.end(), [](uint8 value) { return value == 0; }));
+}
+
+TEST_CASE("DataZoneKeepsTrailingZeros", "[Dissasm]DataZone")
+{
+    // the zeros at the end of a data zone are variables initialized to 0 (a code zone trims them: the padding of its section)
+    std::vector<unsigned char> file(0x100, 0x00);
+    file[0] = 0x01;
+    ZoneLayout layout;
+    layout.size       = 0x100;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.language   = DisassemblyLanguage::x64;
+    layout.isData     = true;
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetDisplayLinesCount() == 0x100 / 16);
 }

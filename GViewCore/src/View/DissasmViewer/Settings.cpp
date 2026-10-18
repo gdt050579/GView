@@ -81,6 +81,22 @@ void Settings::AddChainedFixups(BufferView data, uint64 imageBase)
     INTERNAL_SETTINGS->chainedFixupsImageBase = imageBase;
 }
 
+void Settings::AddUninitializedDataZone(uint64 address, uint64 size, DisassemblyLanguage lang, std::string_view name)
+{
+    if (size == 0)
+        return;
+    // a file offset of its own after the end of the file, in the order of the zones (the listing places the zones by their offsets)
+    const uint64 index =
+          std::count_if(INTERNAL_SETTINGS->disassemblyZones.begin(), INTERNAL_SETTINGS->disassemblyZones.end(), [](const auto& zone) {
+              return zone.second.isUninitialized;
+          });
+    const uint64 fileOffset = DISSASM_UNINITIALIZED_ZONES_BASE + index * DISSASM_UNINITIALIZED_ZONE_SPACE;
+    AddDataZone(fileOffset, std::min(size, DISSASM_MAX_UNINITIALIZED_ZONE), lang, name);
+    auto& zone           = INTERNAL_SETTINGS->disassemblyZones[fileOffset];
+    zone.isUninitialized = true;
+    zone.virtualAddress  = address;
+}
+
 void Settings::AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode)
 {
     INTERNAL_SETTINGS->armCodeModes[fileOffset] = mode;

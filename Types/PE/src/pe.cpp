@@ -426,6 +426,16 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
             const auto& section = pe->sect[tr];
             const uint64 start  = section.PointerToRawData;
             const uint64 size   = section.SizeOfRawData;
+            // the uninitialized data of a data section: the part past its raw data (VirtualSize > SizeOfRawData), a .bss without raw data
+            const bool isExecutableSection = (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) != 0;
+            if (!isExecutableSection && section.Misc.VirtualSize > size) {
+                pe->CopySectionName(tr, sectionName);
+                auto uninitializedName = sectionName.ToStringView();
+                uninitializedName      = uninitializedName.substr(0, uninitializedName.find('\0'));
+                if (uninitializedName != ".rsrc" && uninitializedName != ".reloc" && uninitializedName != ".pdata")
+                    settings.AddUninitializedDataZone(
+                          pe->imageBase + section.VirtualAddress + size, section.Misc.VirtualSize - size, language, std::string(uninitializedName) + " (uninitialized)");
+            }
             if (size == 0 || start >= fileSize) // UPX0: no bytes in the file
                 continue;
             const bool hasEntryPoint = entryPoint != PE_INVALID_ADDRESS && entryPoint >= start && entryPoint - start < size;
@@ -444,8 +454,8 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
             if (overlaps)
                 continue;
             zones.emplace_back(start, start + size);
-            if (isData)
-                settings.AddDataZone(start, size, language, name);
+            if (isData) // the data, not the file alignment padding after it (VirtualSize < SizeOfRawData); its zeros are variables
+                settings.AddDataZone(start, section.Misc.VirtualSize != 0 ? std::min<uint64>(size, section.Misc.VirtualSize) : size, language, name);
             else
                 settings.AddDisassemblyZone(start, size, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
         }

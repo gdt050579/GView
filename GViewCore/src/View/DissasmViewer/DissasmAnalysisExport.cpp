@@ -68,7 +68,8 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
     json result             = { { "language", zone.GetArchitectureName() },
                                 { "name", details.name },
                                 { "kind", details.isData ? "data" : "code" },
-                                { "fileOffset", Hex(details.startingZonePoint) },
+                                { "fileOffset", details.isUninitialized ? json(nullptr) : json(Hex(details.startingZonePoint)) },
+                                { "uninitialized", details.isUninitialized },
                                 { "size", Hex(details.size) },
                                 { "entryPoint", details.HasEntryPoint() ? json(Hex(base + (details.entryPoint - details.startingZonePoint))) : json(nullptr) },
                                 { "addresses", base != details.startingZonePoint ? "VA" : "file offset" } };

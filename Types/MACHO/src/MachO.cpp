@@ -390,6 +390,18 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 const std::string name = std::string(segmentName) + "," + std::string(sectionName);
                 settings.AddDataZone(offset, std::min<uint64>(section.size, fileSize - offset), language, name);
             }
+        // the zero fill sections (__bss, __common): the uninitialized data, no bytes in the file (not the thread local ones)
+        for (const auto& segment : machO->segments)
+            for (const auto& section : segment.sections)
+            {
+                const uint32 type = section.flags & MAC::SECTION_TYPE;
+                if ((type != static_cast<uint32>(MAC::SectionType::ZEROFILL) && type != static_cast<uint32>(MAC::SectionType::GB_ZEROFILL)) ||
+                    section.size == 0 || section.addr == 0)
+                    continue;
+                const std::string_view sectionName(section.sectname, strnlen(section.sectname, sizeof(section.sectname)));
+                const std::string_view segmentName(section.segname, strnlen(section.segname, sizeof(section.segname)));
+                settings.AddUninitializedDataZone(section.addr, section.size, language, std::string(segmentName) + "," + std::string(sectionName));
+            }
         if (isArm) // armv7: the stubs (__picsymbolstub4, __symbol_stub4) are ARM code, the other sections Thumb until the symbols say otherwise
             for (const auto& segment : machO->segments)
                 for (const auto& section : segment.sections)

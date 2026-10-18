@@ -4,6 +4,7 @@
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
 #include "DissasmIOHelpers.hpp"
+#include "DissasmFunctionUtils.hpp"
 
 #include <algorithm>
 #include <map>
@@ -208,12 +209,13 @@ bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::
     Hashes::OpenSSLHash hash(Hashes::OpenSSLHashKind::Md5);
     // the data cache returns at most one window: the whole zone is hashed window after window (the caches saved before hashed only the
     // first window, ValidateCacheData still accepts them)
-    const uint64 fileSize = obj->GetData().GetSize();
+    // an uninitialized zone: its bytes are zeros (GetZoneBytes)
+    const uint64 fileSize = isUninitialized ? startingZonePoint + size : obj->GetData().GetSize();
     const uint64 end      = startingZonePoint < fileSize ? std::min(fileSize, startingZonePoint + std::min(size, fileSize)) : startingZonePoint;
     uint64 position       = startingZonePoint;
     do {
         const uint64 remaining = end > position ? end - position : 0;
-        const auto zoneData    = obj->GetData().Get(position, static_cast<uint32>(std::min<uint64>(remaining, UINT32_MAX)), false);
+        const auto zoneData    = GetZoneBytes(obj, position, static_cast<uint32>(std::min<uint64>(remaining, UINT32_MAX)));
         if (zoneData.Empty())
             return false;
         if (!hash.Update(zoneData.GetData(), (uint32) zoneData.GetLength()))
