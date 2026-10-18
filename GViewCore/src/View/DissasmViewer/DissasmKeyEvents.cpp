@@ -361,6 +361,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_SHOW_CALL_TREE:
             ShowCallTree();
             return true;
+        case COMMAND_SHOW_GRAPH:
+            ShowFunctionGraph();
+            return true;
         case COMMAND_TOGGLE_AI_SUGGESTIONS:
             showAISuggestions = !showAISuggestions;
             RefreshDrawnLines();

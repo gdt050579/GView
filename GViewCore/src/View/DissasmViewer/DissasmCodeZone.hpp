@@ -55,6 +55,26 @@ struct DissasmCallReference {
     bool isTailJump = false;             // a jmp to another function
 };
 
+// The basic blocks of a function (the graph view, DissasmCodeZone::BuildFunctionGraph): blocks[0] is the entry, only the blocks reached
+// from it are kept, the blocks are sorted by address
+struct DissasmGraphBlock {
+    enum class EdgeKind : uint8 { Jump, True, False, Switch }; // Jump: a jmp or the next block (no branch)
+    struct Edge {
+        size_t target; // index of the block
+        EdgeKind kind;
+    };
+    uint64 start = 0, end = 0;          // relative addresses [start, end)
+    std::vector<uint32> instructions;   // the ordinals of the instructions (decode order from the function start)
+    std::vector<uint64> addresses;      // their relative addresses
+    std::vector<Edge> successors;
+    bool exits = false; // ret, a jmp out of the function (a tail call)
+};
+struct DissasmFunctionGraph {
+    uint64 functionStart = 0;
+    std::vector<DissasmGraphBlock> blocks;
+    bool truncated = false; // too many blocks / instructions: the graph stops there
+};
+
 // a string used by the code (DissasmCodeZone::GetReferencedStrings)
 struct DissasmStringReference {
     uint64 address = 0; // in the address space of the labels (VA)
@@ -132,6 +152,8 @@ struct DissasmCodeZone : public ParseZone {
     std::vector<DissasmFunctionInfo> GetFunctions(const std::map<uint64, DissasmFunctionEntry>* functionEntries) const;
     // the start of the function that contains a relative address (the last function start before it)
     std::optional<uint64> GetFunctionContaining(uint64 relativeAddress) const;
+    // the basic blocks of the function, up to the next function start
+    DissasmFunctionGraph BuildFunctionGraph(uint64 functionStart) const;
     // the calls (and tail jumps) to the function, by the place of the call
     std::vector<DissasmCallReference> GetCallers(uint64 functionStart) const;
     // the calls (and tail jumps) of the function, in its order; findImport names the calls through the import slots

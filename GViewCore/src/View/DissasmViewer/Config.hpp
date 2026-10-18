@@ -32,6 +32,7 @@ constexpr uint32 COMMAND_ACCEPT_AI_SUGGESTION  = 125;
 constexpr uint32 COMMAND_DISMISS_AI_SUGGESTION = 126;
 constexpr uint32 COMMAND_TOGGLE_AI_SUGGESTIONS = 127;
 constexpr uint32 COMMAND_SUGGEST_NAMES         = 128;
+constexpr uint32 COMMAND_SHOW_GRAPH            = 129;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -201,6 +202,10 @@ namespace View
                                                                   "Ask the assistant names for the current function and the functions it calls",
                                                                   COMMAND_SUGGEST_NAMES };
 
+            inline static KeyboardControl ShowGraphCommand = {
+                Input::Key::Ctrl | Input::Key::B, "ShowGraph", "Show the graph of the basic blocks of the current function", COMMAND_SHOW_GRAPH
+            };
+
             inline static KeyboardControl ShowCallTreeCommand = {
                 Input::Key::Ctrl | Input::Key::R, "ShowCallTree", "Show the callers and the callees of the current function", COMMAND_SHOW_CALL_TREE
             };
@@ -226,8 +231,9 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 18> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 19> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowGraphCommand,
                 ToggleAISuggestionsCommand,
                 SuggestNamesCommand,
                 ShowCallTreeCommand,
@@ -329,8 +335,9 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 24> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 25> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowGraphCommand,
                 ToggleAISuggestionsCommand,
                 SuggestNamesCommand,
                 ShowCallTreeCommand,

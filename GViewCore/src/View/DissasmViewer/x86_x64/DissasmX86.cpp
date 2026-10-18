@@ -2800,6 +2800,233 @@ bool Instance::RunAINamingStep()
     return true;
 }
 
+// The graph of a function (Ctrl+B): its basic blocks as boxes in layers (the longest path from the entry), every block under its
+// predecessors; the branches are green (taken) / red (not taken), the jumps aqua, the switch cases yellow, the loops go around on the right
+class FunctionGraphWindow : public AppCUI::Controls::Window
+{
+    struct Box {
+        int x = 0, y = 0, width = 0, height = 0;
+        int layer = 0;
+        std::string title;
+        std::vector<std::string> lines;
+    };
+
+  public:
+    FunctionGraphWindow(
+          const std::string& title,
+          const DissasmFunctionGraph& graph,
+          const std::vector<std::string>& titles,
+          const std::vector<std::vector<std::string>>& texts,
+          std::optional<size_t> currentBlock,
+          const DissasmColors& colors)
+        : Window(title, "d:c,w:95%,h:90%", WindowFlags::Sizeable)
+    {
+        constexpr int MIN_BOX_WIDTH = 16, MAX_BOX_WIDTH = 64, GAP_X = 6, GAP_Y = 5, MARGIN = 2;
+        const size_t count = graph.blocks.size();
+        std::vector<Box> boxes(count);
+        for (size_t index = 0; index < count; index++) {
+            auto& box   = boxes[index];
+            box.title   = titles[index];
+            box.lines   = texts[index];
+            int longest = static_cast<int>(box.title.size());
+            for (const auto& line : box.lines)
+                longest = std::max(longest, static_cast<int>(line.size()));
+            box.width  = std::clamp(longest + 4, MIN_BOX_WIDTH, MAX_BOX_WIDTH);
+            box.height = static_cast<int>(box.lines.size()) + 3; // the borders and the title
+        }
+        // the layers: the longest path from the entry over the forward edges (the blocks are sorted by address: a forward edge goes to a
+        // block of a bigger index)
+        int layersCount = 1;
+        for (size_t index = 0; index < count; index++)
+            for (const auto& edge : graph.blocks[index].successors)
+                if (edge.target > index) {
+                    boxes[edge.target].layer = std::max(boxes[edge.target].layer, boxes[index].layer + 1);
+                    layersCount              = std::max(layersCount, boxes[edge.target].layer + 1);
+                }
+        std::vector<std::vector<std::pair<double, size_t>>> layers(layersCount);
+        std::vector<std::vector<size_t>> forwardPredecessors(count);
+        for (size_t index = 0; index < count; index++)
+            for (const auto& edge : graph.blocks[index].successors)
+                if (edge.target > index)
+                    forwardPredecessors[edge.target].push_back(index);
+        // the places: a block under the middle of its predecessors, the blocks of a layer never overlap
+        std::vector<int> layerTop(layersCount, MARGIN), layerHeight(layersCount, 0);
+        for (size_t index = 0; index < count; index++)
+            layers[boxes[index].layer].push_back({ 0.0, index });
+        int top = MARGIN, width = 0;
+        for (int layer = 0; layer < layersCount; layer++) {
+            for (auto& [desired, index] : layers[layer]) {
+                desired = MARGIN + boxes[index].width / 2.0;
+                if (!forwardPredecessors[index].empty()) {
+                    double sum = 0;
+                    for (const size_t predecessor : forwardPredecessors[index])
+                        sum += boxes[predecessor].x + boxes[predecessor].width / 2.0;
+                    desired = sum / forwardPredecessors[index].size();
+                }
+            }
+            std::stable_sort(layers[layer].begin(), layers[layer].end());
+            int right = MARGIN - GAP_X;
+            for (const auto& [desired, index] : layers[layer]) {
+                auto& box  = boxes[index];
+                box.x      = std::max({ static_cast<int>(desired) - box.width / 2, right + GAP_X, MARGIN });
+                box.y      = top;
+                right      = box.x + box.width;
+                width      = std::max(width, right);
+                layerHeight[layer] = std::max(layerHeight[layer], box.height);
+            }
+            layerTop[layer] = top;
+            top += layerHeight[layer] + GAP_Y;
+        }
+        // the loops (back edges) go up on the right of the graph, one column each
+        int backEdges = 0;
+        for (size_t index = 0; index < count; index++)
+            for (const auto& edge : graph.blocks[index].successors)
+                if (edge.target <= index)
+                    backEdges++;
+        constexpr int MAX_CANVAS_WIDTH = 4000, MAX_CANVAS_HEIGHT = 20000;
+        const int canvasWidth  = std::min(width + MARGIN * 2 + backEdges * 2 + 2, MAX_CANVAS_WIDTH);
+        const int canvasHeight = std::min(top + MARGIN, MAX_CANVAS_HEIGHT);
+
+        viewer      = Factory::CanvasViewer::Create(this, "l:0,t:0,r:0,b:0", canvasWidth, canvasHeight, ViewerFlags::None);
+        auto canvas = viewer->GetCanvas();
+        canvas->Clear(' ', colors.Normal);
+
+        const ColorPair taken{ Color::Green, Color::Transparent }, notTaken{ Color::Red, Color::Transparent };
+        const ColorPair jump{ Color::Aqua, Color::Transparent }, switchCase{ Color::Yellow, Color::Transparent }, loop{ Color::Blue, Color::Transparent };
+        const auto edgeColor = [&](DissasmGraphBlock::EdgeKind kind) {
+            switch (kind) {
+            case DissasmGraphBlock::EdgeKind::True:
+                return taken;
+            case DissasmGraphBlock::EdgeKind::False:
+                return notTaken;
+            case DissasmGraphBlock::EdgeKind::Switch:
+                return switchCase;
+            default:
+                return jump;
+            }
+        };
+        // the edges first: the boxes are drawn over the lines that cross them
+        int backColumn = width + MARGIN + 1;
+        for (size_t index = 0; index < count; index++) {
+            const auto& source     = boxes[index];
+            const auto& successors = graph.blocks[index].successors;
+            for (size_t edgeIndex = 0; edgeIndex < successors.size(); edgeIndex++) {
+                const auto& edge   = successors[edgeIndex];
+                const auto& target = boxes[edge.target];
+                if (edge.target > index) {
+                    // down from the bottom of the source to the gap below its layer, across, then down to the top of the target
+                    const int spread  = successors.size() > 1 ? static_cast<int>(edgeIndex * 4) - static_cast<int>((successors.size() - 1) * 2) : 0;
+                    const int fromX   = std::clamp(source.x + source.width / 2 + spread, source.x + 1, source.x + source.width - 2);
+                    const int fromY   = source.y + source.height;
+                    const int channel = layerTop[source.layer] + layerHeight[source.layer] + 1 + static_cast<int>(edgeIndex % 3);
+                    const int toX     = target.x + target.width / 2;
+                    const int toY     = target.y - 1;
+                    const auto color  = edgeColor(edge.kind);
+                    canvas->DrawVerticalLine(fromX, fromY, channel, color);
+                    canvas->DrawHorizontalLine(std::min(fromX, toX), channel, std::max(fromX, toX), color);
+                    canvas->DrawVerticalLine(toX, channel, toY, color);
+                    canvas->WriteSpecialCharacter(toX, toY, SpecialChars::TriangleDown, color);
+                } else {
+                    // a loop: right from the source, up on its own column, left into the target
+                    const int fromY = source.y + source.height / 2;
+                    const int toY   = target.y + 1;
+                    canvas->DrawHorizontalLine(source.x + source.width, fromY, backColumn, loop);
+                    canvas->DrawVerticalLine(backColumn, toY, fromY, loop);
+                    canvas->DrawHorizontalLine(target.x + target.width, toY, backColumn, loop);
+                    canvas->WriteSpecialCharacter(target.x + target.width, toY, SpecialChars::TriangleLeft, loop);
+                    backColumn += 2;
+                }
+            }
+        }
+        for (size_t index = 0; index < count; index++) {
+            const auto& box       = boxes[index];
+            const bool isCurrent  = currentBlock == index;
+            const ColorPair frame = isCurrent ? colors.Selection : colors.AsmTitleColumnColor;
+            canvas->FillRect(box.x, box.y, box.x + box.width - 1, box.y + box.height - 1, ' ', colors.Normal);
+            canvas->DrawRect(box.x, box.y, box.x + box.width - 1, box.y + box.height - 1, frame, LineType::Single);
+            const auto clip = [&box](const std::string& text) { return text.size() > static_cast<size_t>(box.width - 4) ? text.substr(0, box.width - 5) + "~" : text; };
+            canvas->WriteSingleLineText(box.x + 2, box.y + 1, clip(box.title), colors.AsmFunctionColor);
+            for (size_t line = 0; line < box.lines.size(); line++)
+                canvas->WriteSingleLineText(box.x + 2, box.y + 2 + static_cast<int>(line), clip(box.lines[line]), colors.Normal);
+            if (graph.blocks[index].exits)
+                canvas->WriteSingleLineText(box.x + box.width - 7, box.y + box.height - 1, " end ", colors.AsmComment);
+        }
+        viewer->SetFocus();
+    }
+
+  private:
+    Reference<CanvasViewer> viewer;
+};
+
+void Instance::ShowFunctionGraph()
+{
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines() || zone->functionStarts.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan of a shown disassembly zone!");
+        return;
+    }
+    // the function and the address of the cursor line
+    AsmData withoutKnownFunctions;
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.zone     = zone;
+    params.settings = settings.get();
+    params.asmData  = &withoutKnownFunctions;
+    uint64 functionStart = zone->functionStarts.front();
+    std::optional<uint64> cursorAddress;
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex].get() == zone && zonesFound[0].startingLine >= 2) {
+        cursorAddress    = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params).address;
+        const auto start = zone->GetFunctionContaining(cursorAddress.value());
+        if (start.has_value())
+            functionStart = start.value();
+    }
+    const auto graph = zone->BuildFunctionGraph(functionStart);
+    if (graph.blocks.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The function has no instructions!");
+        return;
+    }
+
+    // the text of the blocks: the lines of the listing (labels, imports, the numbers base of the user)
+    uint32 firstInstruction = 0;
+    if (cs_insn* insn = GetCurrentInstructionByOffset(zone->cachedCodeOffsets[0].offset + functionStart, zone, obj, firstInstruction))
+        cs_free(insn, 1);
+    std::vector<std::string> titles;
+    std::vector<std::vector<std::string>> texts;
+    std::optional<size_t> currentBlock;
+    std::string comment;
+    for (size_t index = 0; index < graph.blocks.size(); index++) {
+        const auto& block = graph.blocks[index];
+        std::string title = zone->GetLabelNameAt(block.start);
+        titles.push_back(title.empty() ? zone->GetLabelName("loc_", block.start) : title);
+        auto& lines = texts.emplace_back();
+        for (const uint32 ordinal : block.instructions) {
+            const uint32 line  = zone->ExpandedToDisplay(zone->InstructionIndexToExpanded(firstInstruction + ordinal));
+            const auto asmLine = zone->GetCurrentAsmLine(line, obj, &params);
+            std::string text   = asmLine.mnemonic;
+            if (asmLine.op_str)
+                text.append(" ").append(asmLine.op_str, asmLine.op_str_size);
+            else if (asmLine.mapping)
+                text.append(" ").append(static_cast<const MemoryMappingEntry*>(asmLine.mapping)->name);
+            if (zone->GetComment(asmLine, comment))
+                text.append(" ; ").append(comment);
+            lines.push_back(std::move(text));
+        }
+        if (cursorAddress.has_value() && cursorAddress.value() >= block.start && cursorAddress.value() < block.end)
+            currentBlock = index;
+    }
+    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+
+    LocalString<320> title;
+    // the keys in the title: the scroll bars of the canvas use the bottom line
+    title.SetFormat("Graph of %s (%zu blocks%s) - arrows / Shift+arrows / mouse: scroll, Home: the entry, Esc: close",
+                    titles.front().c_str(),
+                    graph.blocks.size(),
+                    graph.truncated ? ", too big: it stops at the limit" : "");
+    FunctionGraphWindow window(title.GetText(), graph, titles, texts, currentBlock, ColorMan.Colors);
+    window.Show();
+}
+
 constexpr uint32 BTN_CLOSE_ID   = 0;
 constexpr uint32 BTN_APPLY_ID   = 1;
 constexpr uint32 RADIO_GROUP_ID = 2;

@@ -3982,3 +3982,52 @@ TEST_CASE("InstructionBoundaries", "[Dissasm]Boundaries")
     DissasmTestInstance withEntry(file.data(), file.size(), false, layout);
     REQUIRE(withEntry.zone->GetLabelNameAt(0x10) == "j_puts");
 }
+
+TEST_CASE("FunctionGraph", "[Dissasm]Graph")
+{
+    std::vector<unsigned char> file = {
+        0x85, 0xFF,                   // 0x00: test edi, edi
+        0x74, 0x07,                   // 0x02: je 0x0b
+        0xB8, 0x01, 0x00, 0x00, 0x00, // 0x04: mov eax, 1 (else)
+        0xEB, 0x05,                   // 0x09: jmp 0x10
+        0xB8, 0x02, 0x00, 0x00, 0x00, // 0x0b: mov eax, 2 (then, continues into the loop)
+        0xFF, 0xC8,                   // 0x10: dec eax (the loop)
+        0x75, 0xFC,                   // 0x12: jne 0x10
+        0xC3,                         // 0x14: ret
+    };
+    file.resize(0x20, 0xCC); // padding: not reached from the entry
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto graph = dissasmInstance.zone->BuildFunctionGraph(0x0);
+    using Kind       = DissasmGraphBlock::EdgeKind;
+
+    REQUIRE_FALSE(graph.truncated);
+    REQUIRE(graph.blocks.size() == 5);
+    const auto& blocks = graph.blocks;
+    REQUIRE(blocks[0].start == 0x00);
+    REQUIRE(blocks[0].end == 0x04);
+    REQUIRE(blocks[0].successors.size() == 2);
+    REQUIRE(blocks[0].successors[0].target == 2); // je: the then block
+    REQUIRE(blocks[0].successors[0].kind == Kind::True);
+    REQUIRE(blocks[0].successors[1].target == 1); // the else block, right after
+    REQUIRE(blocks[0].successors[1].kind == Kind::False);
+    REQUIRE(blocks[1].start == 0x04);
+    REQUIRE(blocks[1].successors.size() == 1);
+    REQUIRE(blocks[1].successors[0].target == 3); // jmp to the loop
+    REQUIRE(blocks[2].start == 0x0B);
+    REQUIRE(blocks[2].successors[0].target == 3); // no branch: the next block
+    REQUIRE(blocks[2].successors[0].kind == Kind::Jump);
+    REQUIRE(blocks[3].start == 0x10);
+    REQUIRE(blocks[3].instructions.size() == 2);
+    REQUIRE(blocks[3].successors[0].target == 3); // the loop: a back edge to itself
+    REQUIRE(blocks[3].successors[0].kind == Kind::True);
+    REQUIRE(blocks[3].successors[1].target == 4);
+    REQUIRE(blocks[4].start == 0x14);
+    REQUIRE(blocks[4].exits);
+    REQUIRE(blocks[4].successors.empty());
+    // the ordinals of the instructions follow the listing: 7 instructions before the ret
+    REQUIRE(blocks[4].instructions == std::vector<uint32>{ 7 });
+}

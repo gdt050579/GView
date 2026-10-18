@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <set>
+#include <map>
 
 using namespace GView::View::DissasmViewer;
 using GView::Utils::GStatus;
@@ -1023,6 +1025,167 @@ std::optional<uint64> DissasmCodeZone::GetFunctionContaining(uint64 relativeAddr
     if (next == functionStarts.begin())
         return {};
     return *(next - 1);
+}
+
+DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) const
+{
+    DissasmFunctionGraph graph;
+    graph.functionStart = functionStart;
+    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || internalArchitecture == 0)
+        return graph;
+    constexpr uint64 MAX_FUNCTION_SIZE  = 0x40000;
+    constexpr size_t MAX_INSTRUCTIONS   = 20000;
+    constexpr size_t MAX_BLOCKS         = 400;
+    const uint64 codeSize               = GetCodeSize();
+    const auto next                     = std::upper_bound(functionStarts.begin(), functionStarts.end(), functionStart);
+    uint64 end                          = std::min<uint64>(next != functionStarts.end() ? *next : codeSize, codeSize);
+    if (end - std::min(end, functionStart) > MAX_FUNCTION_SIZE) {
+        end             = functionStart + MAX_FUNCTION_SIZE;
+        graph.truncated = true;
+    }
+    if (functionStart >= end)
+        return graph;
+
+    // the instructions of the function, in the order of the listing
+    struct Instruction {
+        uint64 address, size;
+        X86Flow flow;
+        std::optional<uint64> target;
+    };
+    std::vector<Instruction> instructions;
+    csh handle = 0;
+    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+        return graph;
+    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
+        cs_insn* insn                = cs_malloc(handle);
+        Reference<GView::Object> obj = zoneObject;
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries);
+        while (walker.Next(insn) && insn->address < end) {
+            if (instructions.size() == MAX_INSTRUCTIONS) {
+                graph.truncated = true;
+                break;
+            }
+            const auto flow     = GetX86Flow(*insn);
+            const auto operands = IsX86Branch(flow) ? GetX86OperandsInfo(*insn, Is64BitCode()) : X86OperandsInfo{};
+            instructions.push_back({ insn->address, insn->size, flow, operands.directTarget });
+        }
+        cs_free(insn, 1);
+    }
+    cs_close(&handle);
+    if (instructions.empty())
+        return graph;
+
+    // the cases of the switches of the function
+    std::unordered_map<uint64, std::vector<uint64>> switchTargets;
+    for (const auto& xref : xrefs.byTarget)
+        if (xref.kind == DissasmXrefKind::Switch && xref.from - labelAddressBase >= functionStart && xref.from - labelAddressBase < end)
+            switchTargets[xref.from - labelAddressBase].push_back(xref.to - labelAddressBase);
+
+    // the leaders: the start, the targets of the branches, the instruction after a jump / ret
+    const auto inside = [functionStart, end](uint64 address) { return address >= functionStart && address < end; };
+    std::set<uint64> leaders{ functionStart };
+    for (size_t index = 0; index < instructions.size(); index++) {
+        const auto& instruction = instructions[index];
+        const bool isJump       = instruction.flow == X86Flow::Jump || instruction.flow == X86Flow::ConditionalJump;
+        if (isJump && instruction.target.has_value() && inside(instruction.target.value()))
+            leaders.insert(instruction.target.value());
+        if (const auto cases = switchTargets.find(instruction.address); cases != switchTargets.end())
+            for (const uint64 target : cases->second)
+                if (inside(target))
+                    leaders.insert(target);
+        if ((isJump || instruction.flow == X86Flow::Return) && index + 1 < instructions.size())
+            leaders.insert(instructions[index + 1].address);
+    }
+
+    // the blocks: from a leader to the next one; their edges
+    std::vector<DissasmGraphBlock> blocks;
+    std::map<uint64, size_t> blockOfAddress;
+    for (size_t index = 0; index < instructions.size(); index++) {
+        if (leaders.contains(instructions[index].address) || blocks.empty()) {
+            blockOfAddress[instructions[index].address] = blocks.size();
+            blocks.emplace_back();
+            blocks.back().start = instructions[index].address;
+        }
+        auto& block = blocks.back();
+        block.instructions.push_back(static_cast<uint32>(index));
+        block.addresses.push_back(instructions[index].address);
+        block.end = instructions[index].address + instructions[index].size;
+    }
+    const auto blockAt = [&blockOfAddress](uint64 address) -> std::optional<size_t> {
+        const auto it = blockOfAddress.find(address);
+        return it != blockOfAddress.end() ? std::optional<size_t>(it->second) : std::nullopt;
+    };
+    for (size_t index = 0; index < blocks.size(); index++) {
+        auto& block             = blocks[index];
+        const auto& last        = instructions[block.instructions.back()];
+        const auto nextBlock    = index + 1 < blocks.size() && blocks[index + 1].start == block.end ? std::optional<size_t>(index + 1) : std::nullopt;
+        const auto targetBlock  = last.target.has_value() ? blockAt(last.target.value()) : std::nullopt;
+        if (const auto cases = switchTargets.find(last.address); cases != switchTargets.end()) {
+            std::set<size_t> targets;
+            for (const uint64 target : cases->second)
+                if (const auto caseBlock = blockAt(target); caseBlock.has_value() && targets.insert(caseBlock.value()).second)
+                    block.successors.push_back({ caseBlock.value(), DissasmGraphBlock::EdgeKind::Switch });
+            continue;
+        }
+        switch (last.flow) {
+        case X86Flow::ConditionalJump:
+            if (targetBlock.has_value())
+                block.successors.push_back({ targetBlock.value(), DissasmGraphBlock::EdgeKind::True });
+            else
+                block.exits = true; // a conditional tail call
+            if (nextBlock.has_value())
+                block.successors.push_back({ nextBlock.value(), DissasmGraphBlock::EdgeKind::False });
+            break;
+        case X86Flow::Jump:
+            if (targetBlock.has_value())
+                block.successors.push_back({ targetBlock.value(), DissasmGraphBlock::EdgeKind::Jump });
+            else
+                block.exits = true; // a tail call / an indirect jmp
+            break;
+        case X86Flow::Return:
+            block.exits = true;
+            break;
+        default:
+            if (nextBlock.has_value())
+                block.successors.push_back({ nextBlock.value(), DissasmGraphBlock::EdgeKind::Jump });
+            else
+                block.exits = true;
+            break;
+        }
+    }
+
+    // only the blocks reached from the entry (not the padding between the functions), renumbered in the order of the addresses
+    std::vector<bool> reached(blocks.size(), false);
+    std::vector<size_t> pending{ 0 };
+    reached[0] = true;
+    while (!pending.empty()) {
+        const size_t index = pending.back();
+        pending.pop_back();
+        for (const auto& edge : blocks[index].successors)
+            if (!reached[edge.target]) {
+                reached[edge.target] = true;
+                pending.push_back(edge.target);
+            }
+    }
+    std::vector<size_t> newIndex(blocks.size(), SIZE_MAX);
+    for (size_t index = 0; index < blocks.size(); index++) {
+        if (!reached[index])
+            continue;
+        if (graph.blocks.size() == MAX_BLOCKS) {
+            graph.truncated = true;
+            break;
+        }
+        newIndex[index] = graph.blocks.size();
+        graph.blocks.push_back(std::move(blocks[index]));
+    }
+    for (auto& block : graph.blocks) {
+        std::vector<DissasmGraphBlock::Edge> edges;
+        for (const auto& edge : block.successors)
+            if (newIndex[edge.target] != SIZE_MAX)
+                edges.push_back({ newIndex[edge.target], edge.kind });
+        block.successors = std::move(edges);
+    }
+    return graph;
 }
 
 std::vector<DissasmCallReference> DissasmCodeZone::GetCallers(uint64 functionStart) const
