@@ -1093,39 +1093,10 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     initData.obj                           = obj;
     initData.dli                           = &dli;
     initData.visibleRows                   = Layout.visibleRows;
-    // the labels are named after the VA (as IDA), when the plugin translates the file offsets
-    if (settings->offsetTranslateCallback.IsValid()) {
-        const auto va = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::VA));
-        if (va != static_cast<uint64>(-1))
-            initData.labelAddressBase = va;
-    }
-    // the cross references of the immediates / absolute operands: only the addresses that are locations of the file
-    const uint64 fileSize = obj->GetData().GetSize();
-    if (initData.labelAddressBase.has_value()) {
-        auto* settingsData           = settings.get();
-        initData.addressToFileOffset = [settingsData, fileSize](uint64 va) -> std::optional<uint64> {
-            const auto offset = settingsData->offsetTranslateCallback->TranslateToFileOffset(va, static_cast<uint32>(DissasmPEConversionType::VA));
-            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
-        };
-        // the image base: the VA of the zone start minus its RVA
-        const auto rva = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::RVA));
-        if (rva != static_cast<uint64>(-1) && rva <= initData.labelAddressBase.value())
-            initData.imageBase = initData.labelAddressBase.value() - rva;
-    } else {
-        initData.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
-            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
-        };
-    }
-    initData.isFileAddress = [toFileOffset = initData.addressToFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
-    initData.functionEntries = &settings->functionEntries;
-    if (!settings->memoryMappings.empty()) {
-        auto* settingsData  = settings.get();
-        initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };
-    }
-
     // a big zone is shown before its deep scan ends: the scan continues in the frame updates (OnFrameUpdate)
     constexpr auto DEEP_SCAN_BUDGET_IN_INIT = std::chrono::milliseconds(150);
     initData.deepScanBudget                 = DEEP_SCAN_BUDGET_IN_INIT;
+    PrepareCodeZoneInitData(settings.get(), obj, zone, initData);
 
     if (!zone->InitZone(initData))
         return false;
@@ -1143,6 +1114,41 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (zoneLinesChanged)                                                 // local variables removed by the user in a previous session
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
     return true;
+}
+
+void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> obj, DissasmCodeZone* zone, DissasmCodeZoneInitData& initData)
+{
+    initData.obj = obj;
+    // the labels are named after the VA (as IDA), when the plugin translates the file offsets
+    if (settings->offsetTranslateCallback.IsValid()) {
+        const auto va = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::VA));
+        if (va != static_cast<uint64>(-1))
+            initData.labelAddressBase = va;
+    }
+    // the cross references of the immediates / absolute operands: only the addresses that are locations of the file
+    const uint64 fileSize = obj->GetData().GetSize();
+    if (initData.labelAddressBase.has_value()) {
+        auto* settingsData           = settings;
+        initData.addressToFileOffset = [settingsData, fileSize](uint64 va) -> std::optional<uint64> {
+            const auto offset = settingsData->offsetTranslateCallback->TranslateToFileOffset(va, static_cast<uint32>(DissasmPEConversionType::VA));
+            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+        };
+        // the image base: the VA of the zone start minus its RVA
+        const auto rva = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::RVA));
+        if (rva != static_cast<uint64>(-1) && rva <= initData.labelAddressBase.value())
+            initData.imageBase = initData.labelAddressBase.value() - rva;
+    } else {
+        initData.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+        };
+    }
+    initData.isFileAddress = [toFileOffset = initData.addressToFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    initData.functionEntries = &settings->functionEntries;
+    if (!settings->memoryMappings.empty()) {
+        auto* settingsData  = settings;
+        initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };
+    }
+
 }
 
 bool Instance::HasPendingDeepScans() const

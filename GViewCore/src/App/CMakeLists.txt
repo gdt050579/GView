@@ -17,6 +17,7 @@ target_sources(GViewCore PRIVATE
     UpdateDialog.cpp
     GViewDesktop.cpp
     TemporaryFolder.cpp
+    HeadlessAnalysis.cpp
 )
 
 # change detection of the persistent storage of the web build: pure logic, built everywhere for the unit tests

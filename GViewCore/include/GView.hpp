@@ -1871,6 +1871,9 @@ namespace App
     bool CORE_EXPORT Init(bool isTestingEnabled);
     void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
+    // the analysis of the disassembly of a file (functions, calls, strings, switches, the data of the user) as JSON, without a window;
+    // Init must be called first. typeName forces the type of the file (empty: the first type that matches)
+    bool CORE_EXPORT AnalyzeFile(const std::filesystem::path& path, std::string_view typeName, std::string& json, std::string& error);
     // Auto-updater: the command line is reused to restart GView after an update; call FinishPendingUpdate after Run
     // (it installs an update accepted by the user, restarts GView and returns the exit code to use, 0 when idle).
 #ifdef BUILD_FOR_WINDOWS

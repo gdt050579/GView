@@ -647,7 +647,9 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
 
     // TODO: move this on init
     if (!cs_support(CS_ARCH_X86)) {
-        initData.dli->WriteErrorToScreen("Capstone does not support X86");
+        if (initData.dli.IsValid())
+            if (initData.dli.IsValid())
+                initData.dli->WriteErrorToScreen("Capstone does not support X86");
         initData.adjustedZoneSize = 1;
         initData.hasAdjustedSize  = true;
         return false;
@@ -661,14 +663,18 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         internalArchitecture = CS_MODE_64;
         break;
     default: {
-        initData.dli->WriteErrorToScreen("ERROR: unsupported language!");
+        if (initData.dli.IsValid())
+            if (initData.dli.IsValid())
+                initData.dli->WriteErrorToScreen("ERROR: unsupported language!");
         return false;
     }
     }
 
     uint32 totalLines = 0;
     if (!populateOffsetsVector(cachedCodeOffsets, zoneDetails, initData.obj, internalArchitecture, totalLines)) {
-        initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+        if (initData.dli.IsValid())
+            if (initData.dli.IsValid())
+                initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
         return false;
     }
     asmLinesCount = totalLines;
@@ -679,7 +685,9 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         deepScan = std::make_unique<DissasmDeepScan>(this, initData, internalArchitecture, totalLines);
         if (!deepScan->Start()) {
             deepScan.reset();
-            initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+            if (initData.dli.IsValid())
+            if (initData.dli.IsValid())
+                initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;
         }
         const auto deadline = initData.deepScanBudget.has_value() ? std::chrono::steady_clock::now() + initData.deepScanBudget.value()
@@ -700,7 +708,9 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     isInit                 = true;
 
     if (!FetchCodeWindow(initData.obj, 0, DISSASM_INSTRUCTION_OFFSET_MARGIN + DISSASM_MAX_INSTRUCTION_SIZE)) {
-        initData.dli->WriteErrorToScreen("ERROR: extract valid data from file!");
+        if (initData.dli.IsValid())
+            if (initData.dli.IsValid())
+                initData.dli->WriteErrorToScreen("ERROR: extract valid data from file!");
         return false;
     }
 

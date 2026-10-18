@@ -1,6 +1,8 @@
 #include "DissasmCodeZone.hpp"
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
+#include "DissasmAnalysisExport.hpp"
+#include <nlohmann/json.hpp>
 #include "x86_x64/DissasmX86LocalVariables.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
 #include <catch.hpp>
@@ -3858,4 +3860,52 @@ TEST_CASE("AssistantNameAnswers", "[Dissasm]AI")
     REQUIRE(ParseAssistantSuggestedName("  ,  ,  ") == "");
     REQUIRE(ParseAssistantSuggestedName("") == "");
     REQUIRE(ParseAssistantSuggestedName("Sure! Here: x") == "Sure"); // the first name of the text
+}
+
+TEST_CASE("HeadlessAnalysisJson", "[Dissasm]Analyze")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret (the export "Worker")
+    file.resize(0x30, 0xCC);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+
+    // the settings a plugin gives to the viewer
+    Settings settings;
+    settings.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+    settings.AddFunctionEntry(0x20, "Worker", FunctionEntryType::Export);
+    std::string text, error;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error));
+    REQUIRE(settings.data == nullptr); // the analysis owns the settings data
+
+    const auto root = nlohmann::json::parse(text);
+    REQUIRE(root["zones"].size() == 1);
+    const auto& zone = root["zones"][0];
+    REQUIRE(zone["language"] == "x64");
+    REQUIRE(zone["addresses"] == "file offset");
+    REQUIRE(zone["entryPoint"] == "0x0");
+    const auto& functions = zone["functions"];
+    REQUIRE(functions.size() == 2);
+    REQUIRE(functions[0]["name"] == "EntryPoint");
+    REQUIRE(functions[0]["kind"] == "entry");
+    REQUIRE(functions[0]["callees"].size() == 1);
+    REQUIRE(functions[0]["callees"][0]["function"] == "Worker");
+    REQUIRE(functions[0]["callees"][0]["address"] == "0x20");
+    REQUIRE(functions[0]["callees"][0]["site"] == "0x4");
+    REQUIRE(functions[1]["name"] == "Worker");
+    REQUIRE(functions[1]["kind"] == "export");
+    REQUIRE(functions[1]["callers"].size() == 1);
+    REQUIRE(functions[1]["callers"][0]["function"] == "EntryPoint");
+    REQUIRE(zone["switches"].empty());
+    REQUIRE(zone["comments"].empty());
+
+    // a plugin without disassembly zones
+    Settings empty;
+    REQUIRE_FALSE(BuildAnalysisJson(&dissasmInstance.objects[0], empty, text, error));
+    REQUIRE(error == "The file has no disassembly zone!");
 }

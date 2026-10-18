@@ -50,6 +50,14 @@ bool UpdateSettingsForGenericPlugin(AppCUI::Utils::IniObject& ini, const std::fi
     fnUpdateSettings(sect);
     return true;
 }
+bool GView::App::AnalyzeFile(const std::filesystem::path& path, std::string_view typeName, std::string& json, std::string& error)
+{
+    if (!gviewAppInstance) {
+        error = "GView is not initialized!";
+        return false;
+    }
+    return gviewAppInstance->AnalyzeFile(path, typeName, json, error);
+}
 bool GView::App::Init(bool isTestingEnabled)
 {
     gviewAppInstance = new GView::App::Instance();

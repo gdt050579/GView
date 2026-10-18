@@ -1,5 +1,7 @@
 #include "../GViewCore/include/GView.hpp"
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 
 enum class CommandID {
     Unknown,
@@ -14,6 +16,7 @@ enum class CommandID {
     Connect,
     Listen,
     RemoteCerts,
+    Analyze,
 };
 
 struct CommandInfo
@@ -48,6 +51,7 @@ CommandInfo commands[] = {
     { CommandID::Connect, _U("connect") },
     { CommandID::Listen, _U("listen") },
     { CommandID::RemoteCerts, _U("remote-certs") },
+    { CommandID::Analyze, _U("analyze") },
 };
 
 std::string_view help = R"HELP(
@@ -79,6 +83,14 @@ Where <command> is on of:
 
    list-types               List all available types (as loaded from gview.ini).
                             Ex: 'GView list-types' 
+
+   analyze <file> [--out <file.json>] [--type:<type>]
+                            Analyzes the disassembly of a file without a window
+                            and writes it as JSON (to stdout without --out):
+                            the functions with their callers and callees, the
+                            strings used by the code, the switches and the
+                            comments / names of the user (from its cache).
+                            Ex: 'GView analyze sample.exe --out sample.json'
 
 Remote mode (requires a build with -DGVIEW_ENABLE_REMOTE=ON):
    serve [files] [options]  Runs GView as a server: the analysis runs here and
@@ -177,6 +189,54 @@ std::string readFile(const std::filesystem::path& path)
 
     auto content = std::string(reinterpret_cast<char*>(dataBuffer.GetData()), dataBuffer.GetLength());
     return content;
+}
+
+// GView analyze <file> [--out <file.json>] [--type:<type>]
+template <typename T>
+int ProcessAnalyzeCommand(int argc, T** argv)
+{
+    std::filesystem::path file, output;
+    std::string type;
+    for (int index = 2; index < argc; index++) {
+        const std::string argument = ArgumentToUtf8(argv[index]);
+        if (argument == "--out" && index + 1 < argc) {
+            output = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument.starts_with("--type:")) {
+            type = argument.substr(7);
+            continue;
+        }
+        if (!argument.empty() && argument[0] == '-') {
+            std::cout << "Unknown option: " << argument << std::endl;
+            return 1;
+        }
+        if (!file.empty()) {
+            std::cout << "Only one file can be analyzed" << std::endl;
+            return 1;
+        }
+        file = std::filesystem::path(argv[index]);
+    }
+    if (file.empty()) {
+        std::cout << "Use: GView analyze <file> [--out <file.json>] [--type:<type>]" << std::endl;
+        return 1;
+    }
+    CHECK(GView::App::Init(true), 1, ""); // the testing terminal: nothing is drawn
+    std::string json, error;
+    if (!GView::App::AnalyzeFile(file, type, json, error)) {
+        std::cerr << "Error: " << error << std::endl;
+        return 1;
+    }
+    if (output.empty()) {
+        std::cout << json << std::endl;
+        return 0;
+    }
+    std::ofstream stream(output, std::ios::binary);
+    if (!stream || !(stream << json)) {
+        std::cerr << "Error: unable to write " << ArgumentToUtf8(output.c_str()) << std::endl;
+        return 1;
+    }
+    return 0;
 }
 
 template <typename T>
@@ -315,6 +375,8 @@ int main(int argc, const char** argv)
         return ProcessRemoteCommand("listen", argc, argv);
     case CommandID::RemoteCerts:
         return ProcessRemoteCommand("remote-certs", argc, argv);
+    case CommandID::Analyze:
+        return ProcessAnalyzeCommand(argc, argv);
     case CommandID::Unknown:
         return ProcessOpenCommand(argc, argv, 1);
     default:
