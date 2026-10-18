@@ -372,7 +372,7 @@ inline cs_insn* GetCurrentInstructionByLine(
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
         const bool decoded =
               DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase,
-                            zone->IsArm64Code());
+                            &zone->instructionSet);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the line is after the decoded code
             zone->offsetCacheMaxLine = 0;
@@ -574,6 +574,49 @@ static std::string FormatAddress(uint64 address)
     return text.GetText();
 }
 
+// 32 bit ARM: the import of a slot; a literal load (ldr r0, [pc, #off]): the string its word points to (an absolute address) or the word
+// itself (=0x...: a PIC offset, a constant); an address taken (adr, add r0, pc, #imm, the PIC add pc of a literal): its string or the
+// address; a slot read / written through the registers: the address
+static void AddArm32DataComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    if (!operands.ripTarget.has_value())
+        return;
+    const auto settings = params.settings;
+    const uint64 rva    = GetCodeStartRVA(settings, params.zone) + operands.ripTarget.value();
+    const auto mapping  = settings->memoryMappings.find(rva);
+    if (mapping != settings->memoryMappings.end()) {
+        line.autoComment = mapping->second.name;
+        return;
+    }
+    const auto stringAt = [&line, &params](std::optional<uint64> offset) {
+        if (!offset.has_value() || offset.value() >= params.obj->GetData().GetSize())
+            return false;
+        auto text = TryExtractStringPreview(params.obj, offset.value());
+        if (!text.has_value())
+            return false;
+        line.autoComment = std::move(text.value());
+        return true;
+    };
+    const auto fileOffset  = TranslateOperandAddressToFileOffset(settings, rva, false);
+    const bool isResolved  = params.zone->resolvedAddresses.contains(insn.address);
+    const bool isLiteral   = insn.id == ARM_INS_LDR && operands.memoryAccess == CS_AC_READ && !isResolved;
+    if (isLiteral) {
+        uint32 word = 0;
+        if (!fileOffset.has_value() || !params.obj->GetData().Copy<uint32>(fileOffset.value(), word))
+            return;
+        if (!stringAt(TranslateOperandAddressToFileOffset(settings, word, true))) {
+            LocalString<24> text;
+            text.SetFormat("=0x%x", word);
+            line.autoComment = text.GetText();
+        }
+        return;
+    }
+    if (operands.memoryAccess == 0 && stringAt(fileOffset))
+        return;
+    if (operands.memoryAccess == 0 || isResolved)
+        line.autoComment = FormatAddress(params.zone->labelAddressBase + operands.ripTarget.value());
+}
+
 // the data referenced by the operands, shown as an automatic comment (never saved): the import loaded by mov rax, [rip + 0x...] or the
 // string of lea rcx, [rip + 0x...] on x64, the string of push / mov offset aText (an immediate VA) on x86
 static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
@@ -581,6 +624,10 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
     const auto settings = params.settings;
     if (!settings->offsetTranslateCallback.IsValid() || params.zone->cachedCodeOffsets.empty())
         return;
+    if (params.zone->IsArm32Code()) {
+        AddArm32DataComment(line, insn, operands, params);
+        return;
+    }
 
     std::optional<uint64> fileOffset;
     if (params.zone->Is64BitCode()) {
@@ -624,7 +671,7 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
 // ARM64: the operands before the last one, the address (cbz x0, / tbnz w1, #3, / adr x0,). Empty for x86 / x64
 static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const DissasmCodeZone* zone)
 {
-    if (!zone->IsArm64Code())
+    if (!zone->IsArmCode())
         return {};
     const std::string_view operands = insn.op_str;
     const auto separator            = operands.rfind(", ");
@@ -635,7 +682,7 @@ static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const Dissa
 // conventions)
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
-    if (params.zone->IsArm64Code())
+    if (params.zone->IsArmCode())
         return;
     GView::Hashes::CRC32 crc32{};
     uint32 hash = 0;
@@ -679,7 +726,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
     else if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump)
         flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
-    else if (insn->id == X86_INS_PUSH && !params.zone->IsArm64Code())
+    else if (insn->id == X86_INS_PUSH && !params.zone->IsArmCode())
         flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
     else {
         if (params.zone->IsArm64Code() && insn->id == ARM64_INS_ADRP) {
@@ -711,6 +758,12 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     if (flags & (DissasmAsmPreCacheLine::InstructionFlag::CallFlag | DissasmAsmPreCacheLine::InstructionFlag::JmpFlag) && !targetFileOffset.has_value()) {
         // call / jmp through an import slot: call qword ptr [rip + 0x...], jmp dword ptr [0x402010] (import thunks)
         const auto mappingPtr = FindX86OperandsImport(params.settings, params.zone, operands);
+        if (mappingPtr && params.zone->IsArm32Code() && insn->id == ARM_INS_LDR) {
+            // ldr pc, [ip, #off]! (a PLT stub): the operands stay (pc is the target), the import is the comment
+            SetOperands(insn->op_str, params.zone);
+            autoComment = mappingPtr->name;
+            return true;
+        }
         if (mappingPtr) {
             mapping     = mappingPtr;
             op_str_size = (uint32) mappingPtr->name.size();
@@ -1210,6 +1263,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.isFileAddress = [toFileOffset = initData.addressToFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
     initData.functionEntries       = &settings->functionEntries;
     initData.instructionBoundaries = &settings->instructionBoundaries;
+    initData.armCodeModes          = &settings->armCodeModes;
     if (!settings->memoryMappings.empty()) {
         auto* settingsData  = settings;
         initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };

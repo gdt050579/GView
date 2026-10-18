@@ -51,6 +51,11 @@ void Settings::AddInstructionBoundary(uint64 fileOffset)
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);
 }
 
+void Settings::AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode)
+{
+    INTERNAL_SETTINGS->armCodeModes[fileOffset] = mode;
+}
+
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
 {
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { static_cast<InternalDissasmType>(type), name };

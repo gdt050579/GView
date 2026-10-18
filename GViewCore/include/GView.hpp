@@ -1773,7 +1773,9 @@ namespace View
     {
         using TypeID = uint32;
 
-        enum class DisassemblyLanguage : uint32 { Default, x86, x64, JavaByteCode, ARM64, Count };
+        // ARM / Thumb: 32 bit ARM code, the mode of the zone start (AddArmCodeMode changes it at other places: ARM and Thumb code mix)
+        enum class DisassemblyLanguage : uint32 { Default, x86, x64, JavaByteCode, ARM64, ARM, Thumb, Count };
+        enum class ArmCodeMode : uint8 { Arm, Thumb, Data }; // Data: a literal pool / a table inside the code (ELF $d)
 
         enum class VariableType : uint32 { UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, AsciiZ, Utf16Z, Utf32Z };
 
@@ -1809,6 +1811,11 @@ namespace View
              * boundaries as well.
              */
             void AddInstructionBoundary(uint64 fileOffset);
+            /**
+             * \brief 32 bit ARM: the code from the file offset is decoded in `mode` (until the next mode change); the ELF mapping symbols
+             * ($a, $t, $d), the Thumb bit of the function symbols, the ARM .plt of a Thumb file. A later call for the same offset wins.
+             */
+            void AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**

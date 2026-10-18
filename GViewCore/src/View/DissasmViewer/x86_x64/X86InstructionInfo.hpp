@@ -4,6 +4,7 @@
 #include <capstone/capstone.h>
 
 #include <array>
+#include <functional>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -50,7 +51,14 @@ inline bool IsX86Branch(X86Flow flow)
 
 // The instruction set of a code zone. The ARM64 versions give the same results as the x86 ones (x86_x64/Arm64InstructionInfo.cpp): the
 // branches and their targets (b / bl / cbz / tbz / b.cond: the last operand), the addresses taken by adr and read by ldr literal (ripTarget)
-enum class DissasmArch : AppCUI::uint8 { X86, X64, Arm64 };
+enum class DissasmArch : AppCUI::uint8 { X86, X64, Arm64, Arm, Thumb };
+
+// 32 bit ARM (x86_x64/Arm32InstructionInfo.cpp): b / bl / blx / cbz, bx lr / pop {..., pc} (returns), ldr pc / bx rN (indirect jumps); the
+// literal loads (ldr r0, [pc, #off]) and adr / add rd, pc, #imm give the address read / taken: pc is the address + 8 (ARM) or the 4 bytes
+// aligned address + 4 (Thumb), computed on the VA (`addressBase`: the VA of the relative address 0)
+X86Flow GetArm32Flow(const cs_insn& insn);
+X86OperandsInfo GetArm32OperandsInfo(const cs_insn& insn, bool thumb, AppCUI::uint64 addressBase = 0);
+X86InstructionKind GetArm32InstructionKind(unsigned int id, std::string_view mnemonic);
 X86Flow GetArm64Flow(const cs_insn& insn);
 X86OperandsInfo GetArm64OperandsInfo(const cs_insn& insn);
 X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mnemonic);
@@ -123,16 +131,72 @@ class Arm64AdrpTracker
     std::optional<Arm64JumpTable> jumpTable;
 };
 
+// 32 bit ARM: a prologue at a block start (push {..., lr} / stmdb sp!, {..., lr}): a function start
+bool IsArm32PrologueStart(const cs_insn& insn);
+
+// Follows the addresses that 32 bit ARM code builds in its registers (the imports, the PIC data): movw / movt (an absolute address),
+// add rd, pc, #imm (and add rd, rd, #imm), ldr rd, [pc, #off] then add rd, pc, rd (a PIC address from a literal pool, read through
+// `readWord`), ldr rd, [rn, #off] (a slot read), then ldr pc, [..] / bx / blx rn through the slot: the ELF PLT stubs
+// (add ip, pc, ...; add ip, ip, ...; ldr pc, [ip, #off]!) and the Windows import thunks (movw r12; movt r12; ldr r12, [r12]; bx r12)
+class Arm32Tracker
+{
+  public:
+    using Result   = Arm64AdrpTracker::Result;
+    using ReadWord = std::function<std::optional<AppCUI::uint32>(AppCUI::uint64 relativeAddress)>;
+    explicit Arm32Tracker(AppCUI::uint64 addressBase = 0, ReadWord readWord = {}) : addressBase(addressBase), readWord(std::move(readWord))
+    {
+    }
+    std::optional<Result> Next(const cs_insn& insn, bool thumb, bool atBlockStart);
+    void Reset();
+
+  private:
+    struct Value {
+        std::optional<AppCUI::uint64> address; // relative
+        std::optional<AppCUI::uint32> literal; // ldr rd, [pc, #off]: the word of the literal pool
+        std::optional<AppCUI::uint64> slot;    // ldr rd, [rn, #off]: the register holds the value of the slot
+        std::optional<AppCUI::uint32> low16;   // movw rd, #imm
+        AppCUI::uint64 start = 0;
+        bool startAtBlock    = false;
+    };
+    std::array<Value, 15> registers{}; // r0 .. r12, sp, lr
+    AppCUI::uint64 addressBase;
+    ReadWord readWord;
+};
+
 inline X86Flow GetInstructionFlow(const cs_insn& insn, DissasmArch arch)
 {
-    return arch == DissasmArch::Arm64 ? GetArm64Flow(insn) : GetX86Flow(insn);
+    switch (arch) {
+    case DissasmArch::Arm64:
+        return GetArm64Flow(insn);
+    case DissasmArch::Arm:
+    case DissasmArch::Thumb:
+        return GetArm32Flow(insn);
+    default:
+        return GetX86Flow(insn);
+    }
 }
-inline X86OperandsInfo GetInstructionOperands(const cs_insn& insn, DissasmArch arch)
+inline X86OperandsInfo GetInstructionOperands(const cs_insn& insn, DissasmArch arch, AppCUI::uint64 addressBase = 0)
 {
-    return arch == DissasmArch::Arm64 ? GetArm64OperandsInfo(insn) : GetX86OperandsInfo(insn, arch == DissasmArch::X64);
+    switch (arch) {
+    case DissasmArch::Arm64:
+        return GetArm64OperandsInfo(insn);
+    case DissasmArch::Arm:
+    case DissasmArch::Thumb:
+        return GetArm32OperandsInfo(insn, arch == DissasmArch::Thumb, addressBase);
+    default:
+        return GetX86OperandsInfo(insn, arch == DissasmArch::X64);
+    }
 }
 inline X86InstructionKind GetInstructionKind(unsigned int id, std::string_view mnemonic, DissasmArch arch)
 {
-    return arch == DissasmArch::Arm64 ? GetArm64InstructionKind(id, mnemonic) : GetX86InstructionKind(id, mnemonic);
+    switch (arch) {
+    case DissasmArch::Arm64:
+        return GetArm64InstructionKind(id, mnemonic);
+    case DissasmArch::Arm:
+    case DissasmArch::Thumb:
+        return GetArm32InstructionKind(id, mnemonic);
+    default:
+        return GetX86InstructionKind(id, mnemonic);
+    }
 }
 } // namespace GView::View::DissasmViewer

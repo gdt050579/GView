@@ -155,12 +155,17 @@ struct DissasmCodeZone : public ParseZone {
     // the operands of an instruction (GetInstructionOperands) with the address of its adrp pair (ARM64)
     X86OperandsInfo GetOperandsInfo(const cs_insn& insn) const
     {
-        auto operands = GetInstructionOperands(insn, GetArch());
+        auto operands = GetInstructionOperands(insn, GetArchAt(insn.address), labelAddressBase);
         if (!resolvedAddresses.empty()) {
             const auto resolved = resolvedAddresses.find(insn.address);
             if (resolved != resolvedAddresses.end()) {
-                operands.ripTarget    = resolved->second;
-                operands.memoryAccess = insn.id == ARM64_INS_ADD ? 0 : static_cast<uint8>(insn.id == ARM64_INS_STR || insn.id == ARM64_INS_STRB || insn.id == ARM64_INS_STRH ? CS_AC_WRITE : CS_AC_READ);
+                operands.ripTarget = resolved->second;
+                if (IsArm32Code()) { // ldr / bx / blx: read; str: written; movt / add r0, pc, r0 / adr: the address is taken
+                    const bool isRead     = insn.id == ARM_INS_LDR || insn.id == ARM_INS_LDRB || insn.id == ARM_INS_LDRH || insn.id == ARM_INS_BX || insn.id == ARM_INS_BLX;
+                    const bool isWritten  = insn.id == ARM_INS_STR || insn.id == ARM_INS_STRB || insn.id == ARM_INS_STRH;
+                    operands.memoryAccess = static_cast<uint8>(isRead ? CS_AC_READ : (isWritten ? CS_AC_WRITE : 0));
+                } else
+                    operands.memoryAccess = insn.id == ARM64_INS_ADD ? 0 : static_cast<uint8>(insn.id == ARM64_INS_STR || insn.id == ARM64_INS_STRB || insn.id == ARM64_INS_STRH ? CS_AC_WRITE : CS_AC_READ);
             }
         }
         return operands;
@@ -328,19 +333,60 @@ struct DissasmCodeZone : public ParseZone {
     {
         return zoneDetails.language == DisassemblyLanguage::ARM64;
     }
+    // 32 bit ARM (ARM / Thumb modes)
+    bool IsArm32Code() const
+    {
+        return zoneDetails.language == DisassemblyLanguage::ARM || zoneDetails.language == DisassemblyLanguage::Thumb;
+    }
+    bool IsArmCode() const
+    {
+        return IsArm64Code() || IsArm32Code();
+    }
     DissasmArch GetArch() const
     {
-        return IsArm64Code() ? DissasmArch::Arm64 : (zoneDetails.language == DisassemblyLanguage::x64 ? DissasmArch::X64 : DissasmArch::X86);
+        switch (zoneDetails.language) {
+        case DisassemblyLanguage::ARM64:
+            return DissasmArch::Arm64;
+        case DisassemblyLanguage::ARM:
+            return DissasmArch::Arm;
+        case DisassemblyLanguage::Thumb:
+            return DissasmArch::Thumb;
+        case DisassemblyLanguage::x64:
+            return DissasmArch::X64;
+        default:
+            return DissasmArch::X86;
+        }
+    }
+    // the instruction set at an address: 32 bit ARM changes its mode (ARM / Thumb) inside a zone
+    DissasmArch GetArchAt(uint64 relativeAddress) const
+    {
+        if (!IsArm32Code())
+            return GetArch();
+        return instructionSet.ModeAt(relativeAddress) == ArmCodeMode::Thumb ? DissasmArch::Thumb : DissasmArch::Arm;
     }
     const char* GetArchitectureName() const
     {
-        return IsArm64Code() ? "ARM64" : (zoneDetails.language == DisassemblyLanguage::x64 ? "x64" : "x86");
+        switch (zoneDetails.language) {
+        case DisassemblyLanguage::ARM64:
+            return "ARM64";
+        case DisassemblyLanguage::ARM:
+            return "ARM";
+        case DisassemblyLanguage::Thumb:
+            return "Thumb";
+        case DisassemblyLanguage::x64:
+            return "x64";
+        default:
+            return "x86";
+        }
     }
-    // the code decoded by capstone (x86, x64, ARM64), not the Java bytecode
+    // the code decoded by capstone (x86, x64, ARM64, ARM / Thumb), not the Java bytecode
     static bool IsNativeCodeLanguage(DisassemblyLanguage language)
     {
-        return language == DisassemblyLanguage::x86 || language == DisassemblyLanguage::x64 || language == DisassemblyLanguage::ARM64;
+        return language == DisassemblyLanguage::x86 || language == DisassemblyLanguage::x64 || language == DisassemblyLanguage::ARM64 ||
+               language == DisassemblyLanguage::ARM || language == DisassemblyLanguage::Thumb;
     }
+    // DecodeX86Line: the instruction set, the modes of 32 bit ARM code
+    DissasmInstructionSet instructionSet;
     // the variable defined by `line` (variable line) or used by the instruction on `line`
     bool GetLocalVariableFromLine(uint32 line, Reference<GView::Object> obj, uint64& functionStart, int32& frameOffset);
     Utils::GStatus RenameLocalVariable(uint64 functionStart, int32 frameOffset, std::string_view newName);

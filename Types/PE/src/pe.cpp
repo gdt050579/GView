@@ -143,9 +143,12 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             settings.AddFunctionEntry(fa, item.Name, DissasmViewer::FunctionEntryType::Export);
     }
 
-    // ARM64 exception data (.pdata): 8 bytes entries, the start of a function and its unwind data: packed (the function length in its bits
-    // 2..12, in instructions) or the RVA of its .xdata record (the function length in the bits 0..17 of its first word)
-    if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARM64) {
+    // ARM64 / ARM (Thumb-2) exception data (.pdata): 8 bytes entries, the start of a function and its unwind data: packed (the function
+    // length in its bits 2..12) or the RVA of its .xdata record (the function length in the bits 0..17 of its first word); the length is in
+    // 4 bytes units for ARM64, in 2 bytes units for ARM, whose function starts have the Thumb bit
+    const auto machine = static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine);
+    if (machine == PE::MachineType::ARM64 || machine == PE::MachineType::ARMNT) {
+        const uint64 lengthUnit = machine == PE::MachineType::ARM64 ? 4 : 2;
         struct Arm64RuntimeFunction {
             uint32 BeginAddress;
             uint32 UnwindData;
@@ -158,20 +161,20 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             Arm64RuntimeFunction function;
             if (!data.Copy<Arm64RuntimeFunction>(start + static_cast<uint64>(index) * sizeof(Arm64RuntimeFunction), function))
                 break;
-            if (function.BeginAddress == 0)
+            if ((function.BeginAddress & ~1u) == 0)
                 continue;
             uint64 length    = 0;
             const uint32 flag = function.UnwindData & 3;
             if (flag == 1 || flag == 2) // packed unwind data
-                length = static_cast<uint64>((function.UnwindData >> 2) & 0x7FF) * 4;
+                length = static_cast<uint64>((function.UnwindData >> 2) & 0x7FF) * lengthUnit;
             else if (flag == 0) {
                 uint32 header       = 0;
                 const auto xdataFa = pe->RVAToFA(function.UnwindData);
                 if (xdataFa != PE_INVALID_ADDRESS && data.Copy<uint32>(xdataFa, header))
-                    length = static_cast<uint64>(header & 0x3FFFF) * 4;
+                    length = static_cast<uint64>(header & 0x3FFFF) * lengthUnit;
             } else
                 continue; // 3: a reserved form
-            const auto fa = pe->RVAToFA(function.BeginAddress);
+            const auto fa = pe->RVAToFA(function.BeginAddress & ~1u);
             if (fa != PE_INVALID_ADDRESS)
                 settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, length);
         }
@@ -255,6 +258,10 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
                 DissasmViewer::DisassemblyLanguage language = pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
                 if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARM64)
                     language = DissasmViewer::DisassemblyLanguage::ARM64;
+                else if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARMNT) {
+                    language   = DissasmViewer::DisassemblyLanguage::Thumb; // Windows on ARM 32: Thumb-2 only
+                    entryPoint = pe->RVAToFA(pe->nth32.OptionalHeader.AddressOfEntryPoint & ~1u);
+                }
 
                 settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, language);
                 break;

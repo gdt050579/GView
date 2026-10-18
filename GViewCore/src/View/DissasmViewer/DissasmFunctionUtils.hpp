@@ -37,7 +37,7 @@ bool DecodeX86Line(
       cs_insn* insn,
       const std::vector<AppCUI::uint64>* boundaries = nullptr,
       AppCUI::uint64 alignmentBase                  = GView::View::DissasmViewer::DISSASM_NO_PADDING_ALIGNMENT,
-      bool arm64                                    = false); // ARM64 code: 4 bytes instructions, an undecodable word is .word 0x...
+      const GView::View::DissasmViewer::DissasmInstructionSet* instructionSet = nullptr); // null: x86; ARM64 / ARM / Thumb (.word data lines)
 
 // Walks the lines (DecodeX86Line) of the code [codeStart, codeStart + codeSize) of a file from its first byte. The bytes are read from the
 // data cache line by line: a zone bigger than the data cache window is decoded entirely, window after window. The addresses of the
@@ -51,7 +51,7 @@ class DissasmCodeLinesWalker
     csh handle;
     const std::vector<uint64>* boundaries; // DecodeX86Line
     uint64 alignmentBase;                  // DecodeX86Line
-    bool arm64;                            // DecodeX86Line
+    const GView::View::DissasmViewer::DissasmInstructionSet* instructionSet; // DecodeX86Line
 
   public:
     // startAddress: the relative address of an instruction of the listing (0: the first one)
@@ -63,9 +63,9 @@ class DissasmCodeLinesWalker
           uint64 startAddress               = 0,
           const std::vector<uint64>* boundaries = nullptr,
           uint64 alignmentBase              = GView::View::DissasmViewer::DISSASM_NO_PADDING_ALIGNMENT,
-          bool arm64                        = false)
+          const GView::View::DissasmViewer::DissasmInstructionSet* instructionSet = nullptr)
         : obj(obj), codeStart(codeStart), codeSize(codeSize), address(startAddress), handle(handle), boundaries(boundaries), alignmentBase(alignmentBase),
-          arm64(arm64)
+          instructionSet(instructionSet)
     {
     }
     // false at the end of the code (or when the file has no more bytes)

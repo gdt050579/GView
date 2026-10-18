@@ -50,6 +50,20 @@ namespace View
         // a line: an instruction, or the padding up to the next 16 bytes aligned address (align 0x10, DecodeX86Line)
         static constexpr uint64 DISSASM_MAX_LINE_SIZE             = 16;
         static constexpr uint64 DISSASM_NO_PADDING_ALIGNMENT      = UINT64_MAX; // DecodeX86Line: every padding instruction is a line
+
+        // DecodeX86Line: the instruction set of a zone; 32 bit ARM: the mode at every address (ARM, Thumb, data), from its changes
+        struct DissasmInstructionSet {
+            enum class Kind : uint8 { X86, Arm64, Arm32 };
+            Kind kind               = Kind::X86;
+            ArmCodeMode defaultMode = ArmCodeMode::Arm;
+            std::vector<std::pair<uint64, ArmCodeMode>> modeChanges; // relative address -> the mode from there on, sorted
+            ArmCodeMode ModeAt(uint64 address) const
+            {
+                const auto next = std::upper_bound(
+                      modeChanges.begin(), modeChanges.end(), address, [](uint64 value, const std::pair<uint64, ArmCodeMode>& change) { return value < change.first; });
+                return next == modeChanges.begin() ? defaultMode : (next - 1)->second;
+            }
+        };
         static constexpr uint64 DISSASM_MAX_CODE_WINDOW_SIZE      = 4096;
 
         static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
@@ -422,6 +436,8 @@ namespace View
             const std::map<uint64, DissasmFunctionEntry>* functionEntries = nullptr;
             // the file offsets where an instruction starts (the section starts of the plugin); the function entries are ones as well
             const std::vector<uint64>* instructionBoundaries = nullptr;
+            // 32 bit ARM: the mode from a file offset on (ARM, Thumb, data); can be null
+            const std::map<uint64, ArmCodeMode>* armCodeModes = nullptr;
             // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
             std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
             // the file offset of an address (address space of the labels): the jump tables of the switches are read there
@@ -462,6 +478,7 @@ namespace View
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::map<uint64, DissasmFunctionEntry> functionEntries;         // the known function starts, by file offset
             std::vector<uint64> instructionBoundaries;                      // the file offsets where an instruction starts (sections)
+            std::map<uint64, ArmCodeMode> armCodeModes;                     // 32 bit ARM: the mode from a file offset on
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmStructureType> dissasmTypeMapped; // mapped types against the offset of the file

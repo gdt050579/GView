@@ -246,6 +246,46 @@ bool DecodeArm64Line(csh handle, const uint8_t** code, size_t* size, uint64_t* a
     advance(1);
     return true;
 }
+
+// 32 bit ARM: the mode of the address (ARM: 4 bytes, Thumb: 2 or 4 bytes; the handle is switched to it). An undecodable instruction is a
+// data line (.word 0x.. / .short 0x..); a data region (a literal pool, ELF $d) is made of .word lines; less than a unit before a boundary:
+// db lines
+bool DecodeArm32Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, ArmCodeMode mode)
+{
+    const auto advance = [code, size, address](size_t length) {
+        *code += length;
+        *size -= length;
+        *address += length;
+    };
+    char text[24];
+    const uint8_t* bytes = *code;
+    const auto dataLine  = [&](size_t width) {
+        if (width == 4)
+            snprintf(text, sizeof(text), "0x%08x", static_cast<unsigned int>(bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (static_cast<uint32_t>(bytes[3]) << 24)));
+        else if (width == 2)
+            snprintf(text, sizeof(text), "0x%04x", static_cast<unsigned int>(bytes[0] | (bytes[1] << 8)));
+        else
+            snprintf(text, sizeof(text), "0x%02x", static_cast<unsigned int>(bytes[0]));
+        SetDataLine(insn, *address, bytes, width, width == 4 ? ".word" : (width == 2 ? ".short" : "db"), text);
+        advance(width);
+        return true;
+    };
+    if (mode == ArmCodeMode::Data)
+        return dataLine(available >= 4 ? 4 : 1);
+    const bool thumb      = mode == ArmCodeMode::Thumb;
+    const size_t unitSize = thumb ? 2 : 4;
+    if (available < unitSize)
+        return dataLine(1);
+    cs_option(handle, CS_OPT_MODE, thumb ? CS_MODE_THUMB : CS_MODE_ARM);
+    const uint8_t* data = *code;
+    size_t left         = std::min<size_t>(available, 4);
+    uint64_t at         = *address;
+    if (cs_disasm_iter(handle, &data, &left, &at, insn)) {
+        advance(insn->size);
+        return true;
+    }
+    return dataLine(unitSize);
+}
 } // namespace
 
 bool DecodeX86Line(
@@ -256,7 +296,7 @@ bool DecodeX86Line(
       cs_insn* insn,
       const std::vector<AppCUI::uint64>* boundaries,
       AppCUI::uint64 alignmentBase,
-      bool arm64)
+      const DissasmInstructionSet* instructionSet)
 {
     if (*size == 0)
         return false;
@@ -267,8 +307,10 @@ bool DecodeX86Line(
         if (next != boundaries->end() && *next - *address < available)
             available = static_cast<size_t>(*next - *address);
     }
-    if (arm64)
+    if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm64)
         return DecodeArm64Line(handle, code, size, address, insn, available, alignmentBase);
+    if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm32)
+        return DecodeArm32Line(handle, code, size, address, insn, available, instructionSet->ModeAt(*address));
     if (alignmentBase != DISSASM_NO_PADDING_ALIGNMENT && IsPaddingStart(*code, available) &&
         DecodeX86Padding(handle, code, size, address, insn, available, alignmentBase))
         return true;
@@ -431,7 +473,7 @@ bool DissasmCodeLinesWalker::Next(cs_insn* insn)
     const uint8_t* data = view.GetData();
     size_t size         = static_cast<size_t>(std::min<uint64>(view.GetLength(), requested));
     uint64_t current    = address;
-    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries, alignmentBase, arm64))
+    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries, alignmentBase, instructionSet))
         return false;
     address = current;
     return true;
@@ -476,7 +518,7 @@ cs_insn* GetCurrentInstructionByOffset(
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
         const bool decoded =
               DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase,
-                            zone->IsArm64Code());
+                            &zone->instructionSet);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the offset is after the decoded code
             if (dli)

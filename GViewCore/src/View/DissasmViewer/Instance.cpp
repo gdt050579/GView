@@ -1028,6 +1028,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     case DisassemblyLanguage::x86:
     case DisassemblyLanguage::x64:
     case DisassemblyLanguage::ARM64:
+    case DisassemblyLanguage::ARM:
+    case DisassemblyLanguage::Thumb:
         return DrawDissasmX86AndX64CodeZone(dli, zone);
     case DisassemblyLanguage::JavaByteCode:
         return DrawDissasmJavaByteCodeZone(dli, zone);

@@ -131,11 +131,17 @@ GVIEW_PLUGIN_ENTRY_POINTS
     void AddDissasmImports(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf, Reference<GView::Object> obj)
     {
         const uint64 imageBase = elf->GetImageBase() == static_cast<uint64>(-1) ? 0 : elf->GetImageBase();
-        const bool isAarch64   = (elf->is64 ? elf->header64.e_machine : elf->header32.e_machine) == ELF::EM_AARCH64;
+        const auto machine     = elf->is64 ? elf->header64.e_machine : elf->header32.e_machine;
+        constexpr unsigned R_ARM_GLOB_DAT  = 21;
+        constexpr unsigned R_ARM_JUMP_SLOT = 22;
         auto addSlot           = [&](uint64 slot, uint64 symbolIndex, uint64 type) {
-            // jump slots (PLT) and global data (GOT): the same numbers in x86 and x64, their own in AArch64
-            if (isAarch64 ? (type != ELF::R_AARCH64_JUMP_SLOT && type != ELF::R_AARCH64_GLOB_DAT)
-                          : (type != ELF::R_X86_64_JUMP_SLOT && type != ELF::R_X86_64_GLOB_DAT))
+            // jump slots (PLT) and global data (GOT): the same numbers in x86 and x64, their own in AArch64 and in ARM
+            bool isImport = type == ELF::R_X86_64_JUMP_SLOT || type == ELF::R_X86_64_GLOB_DAT;
+            if (machine == ELF::EM_AARCH64)
+                isImport = type == ELF::R_AARCH64_JUMP_SLOT || type == ELF::R_AARCH64_GLOB_DAT;
+            else if (machine == ELF::EM_ARM)
+                isImport = type == R_ARM_JUMP_SLOT || type == R_ARM_GLOB_DAT;
+            if (!isImport)
                 return;
             if (symbolIndex == 0 || symbolIndex >= elf->dynamicSymbolsNames.size() || elf->dynamicSymbolsNames[symbolIndex].empty() || slot < imageBase)
                 return;
@@ -183,19 +189,65 @@ GVIEW_PLUGIN_ENTRY_POINTS
         }
     }
 
+    // ARM: the mode of every executable section: the .plt stubs of glibc are ARM code even in a Thumb file, the others have the mode of the
+    // entry point (a stripped file: the function and the mapping symbols are gone)
+    void AddDissasmArmModes(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf, bool isThumb)
+    {
+        for (size_t index = 0; index < elf->sections32.size(); index++)
+        {
+            const auto& section = elf->sections32[index];
+            if ((section.sh_flags & ELF::SHF_EXECINSTR) == 0 || section.sh_type == ELF::SHT_NOBITS || section.sh_size == 0)
+                continue;
+            const bool isPlt = index < elf->sectionNames.size() && elf->sectionNames[index] == ".plt";
+            settings.AddArmCodeMode(section.sh_offset, isPlt || !isThumb ? DissasmViewer::ArmCodeMode::Arm : DissasmViewer::ArmCodeMode::Thumb);
+        }
+    }
+
+    // ARM: the mapping symbols of the assembler ($a: ARM code, $t: Thumb code, $d: data, also $a.N ...) in the static symbols
+    void AddDissasmMappingSymbols(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf)
+    {
+        for (size_t index = 0; index < elf->staticSymbols32.size() && index < elf->staticSymbolsNames.size(); index++)
+        {
+            const auto& name = elf->staticSymbolsNames[index];
+            if (name.size() < 2 || name[0] != '$' || (name.size() > 2 && name[2] != '.'))
+                continue;
+            DissasmViewer::ArmCodeMode mode;
+            if (name[1] == 'a')
+                mode = DissasmViewer::ArmCodeMode::Arm;
+            else if (name[1] == 't')
+                mode = DissasmViewer::ArmCodeMode::Thumb;
+            else if (name[1] == 'd')
+                mode = DissasmViewer::ArmCodeMode::Data;
+            else
+                continue;
+            const auto& symbol = elf->staticSymbols32[index];
+            if (symbol.st_shndx == ELF::SHN_UNDEF)
+                continue;
+            const uint64 offset = elf->VAToFileOffset(symbol.st_value);
+            if (offset != ELF::ELF_INVALID_ADDRESS)
+                settings.AddArmCodeMode(offset, mode);
+        }
+    }
+
     // The functions of the symbols (the static ones of an unstripped file, the exported ones): named labels with their sizes
     void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf)
     {
         // a function of both tables gets its exported name (an alias of the static one: malloc, not __libc_malloc)
-        auto addSymbols = [&](const auto& symbols, const std::vector<std::string>& names, DissasmViewer::FunctionEntryType type) {
+        const bool isArm = !elf->is64 && elf->header32.e_machine == ELF::EM_ARM;
+        auto addSymbols  = [&](const auto& symbols, const std::vector<std::string>& names, DissasmViewer::FunctionEntryType type) {
             for (size_t index = 0; index < symbols.size() && index < names.size(); index++)
             {
                 const auto& symbol = symbols[index];
                 if ((symbol.st_info & 0xF) != ELF::STT_FUNC || symbol.st_shndx == ELF::SHN_UNDEF || symbol.st_value == 0 || names[index].empty())
                     continue;
-                const uint64 offset = elf->VAToFileOffset(symbol.st_value);
-                if (offset != ELF::ELF_INVALID_ADDRESS)
-                    settings.AddFunctionEntry(offset, names[index], type, symbol.st_size);
+                // ARM: the bit 0 of a function address is its Thumb mode
+                const uint64 value  = isArm ? (symbol.st_value & ~static_cast<uint64>(1)) : symbol.st_value;
+                const uint64 offset = elf->VAToFileOffset(value);
+                if (offset == ELF::ELF_INVALID_ADDRESS)
+                    continue;
+                settings.AddFunctionEntry(offset, names[index], type, symbol.st_size);
+                if (isArm)
+                    settings.AddArmCodeMode(offset, (symbol.st_value & 1) ? DissasmViewer::ArmCodeMode::Thumb : DissasmViewer::ArmCodeMode::Arm);
             }
         };
         if (elf->is64)
@@ -222,8 +274,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
             language = DissasmViewer::DisassemblyLanguage::x86;
         else if (machine == ELF::EM_AARCH64 && elf->is64)
             language = DissasmViewer::DisassemblyLanguage::ARM64;
+        else if (machine == ELF::EM_ARM && !elf->is64) // the bit 0 of the entry point: Thumb code
+            language = (elf->header32.e_entry & 1) ? DissasmViewer::DisassemblyLanguage::Thumb : DissasmViewer::DisassemblyLanguage::ARM;
         else
-            return; // the disassembly view decodes x86 / x64 / AArch64
+            return; // the disassembly view decodes x86 / x64 / AArch64 / ARM
+        const bool isArm = machine == ELF::EM_ARM;
 
         uint64 start = UINT64_MAX, end = 0;
         std::vector<uint64> sectionStarts; // the padding between two sections never hides the start of the next one
@@ -249,7 +304,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
         if (start >= end)
             return;
         // the entry point; a library (no entry point) starts at the code
-        uint64 entryPoint = elf->VAToFileOffset(elf->is64 ? elf->header64.e_entry : elf->header32.e_entry);
+        uint64 entryPoint = elf->VAToFileOffset(elf->is64 ? elf->header64.e_entry : (isArm ? elf->header32.e_entry & ~1u : elf->header32.e_entry));
         if (entryPoint == ELF::ELF_INVALID_ADDRESS || entryPoint < start || entryPoint >= end)
             entryPoint = start;
 
@@ -259,7 +314,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
             settings.AddInstructionBoundary(sectionStart);
         settings.SetOffsetTranslationList({ "RVA", "VA" }, &elf->dissasmTranslation);
         AddDissasmImports(settings, elf, win->GetObject());
-        AddDissasmFunctionEntries(settings, elf);
+        if (isArm)
+            AddDissasmArmModes(settings, elf, language == DissasmViewer::DisassemblyLanguage::Thumb);
+        AddDissasmFunctionEntries(settings, elf); // the Thumb bit of the function symbols
+        if (isArm)
+            AddDissasmMappingSymbols(settings, elf); // the most precise: the mapping symbols of the assembler
         win->CreateViewer(settings);
     }
 

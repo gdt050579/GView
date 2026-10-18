@@ -63,6 +63,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, uint32> switchJumps;
     std::unordered_map<uint64, uint64> resolvedAddresses; // ARM64: the addresses of the adrp pairs
     Arm64AdrpTracker adrpTracker;
+    Arm32Tracker arm32Tracker;
     std::vector<uint64> prologueCandidates;         // ARM64: file offsets of the prologues at a block start
     std::unordered_set<uint64> conditionalTargets;  // ARM64: relative targets of the conditional branches
     std::vector<uint64> functionStarts;
@@ -73,12 +74,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
     DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
         : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture),
-          detectLocalVariables(initData.enableLocalVariablesDetection),
+          detectLocalVariables(initData.enableLocalVariablesDetection && !zone->IsArm32Code()), // no 32 bit ARM frames
           isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), findImport(initData.findImport),
           addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
           asmLines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
           labelBase(zone->labelAddressBase), arch(zone->GetArch()), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
-          switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase)
+          switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase),
+          arm32Tracker(zone->labelAddressBase, [this](uint64 relativeAddress) -> std::optional<uint32> {
+              // a word of a literal pool (32 bit ARM)
+              if (!addressToFileOffset)
+                  return {};
+              const auto value = ReadTableValue(labelBase + relativeAddress, 4);
+              return value.has_value() ? std::optional<uint32>(static_cast<uint32>(value.value())) : std::nullopt;
+          })
     {
     }
 
@@ -124,7 +132,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
             return false;
         insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, zone->IsArm64Code());
+        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &zone->instructionSet);
         callsFound.reserve(16);
 
         // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
@@ -166,22 +174,29 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         // functions that are not called directly (callbacks, virtual methods, exports): recognized by their prologue
         const uint64 instructionOffset = codeStart + insn->address; // decoded inside the code: can not overflow
-        const bool isArm64             = arch == DissasmArch::Arm64;
-        if (!isArm64) { // the x86 / x64 prologues (the ARM64 functions come from the calls and from the plugin)
+        const DissasmArch insnArch     = zone->GetArchAt(insn->address); // 32 bit ARM: the mode of the line (ARM / Thumb)
+        const bool isArm64             = insnArch == DissasmArch::Arm64;
+        const bool isArm32             = insnArch == DissasmArch::Arm || insnArch == DissasmArch::Thumb;
+        if (!isArm64 && !isArm32) { // the x86 / x64 prologues (the ARM functions: the calls, the plugin, IsArm*PrologueStart)
             const auto prologueStart = prologueDetector.Next(*insn, instructionOffset);
             if (prologueStart.has_value())
                 AddFunctionStart(prologueStart.value());
         }
 
         // the cross references, in the address space of the labels (VA)
-        const auto flow     = GetInstructionFlow(*insn, arch);
-        const auto operands = GetInstructionOperands(*insn, arch);
+        const auto flow     = GetInstructionFlow(*insn, insnArch);
+        const auto operands = GetInstructionOperands(*insn, insnArch, labelBase);
         const uint64 from   = labelBase + insn->address;
-        if (isArm64) {
-            // the adrp pairs: the address of add / ldr / str [page + offset], the import slot of br / blr (import stubs, import calls)
-            const bool isBlockStart = atBlockStart || std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
+        if (isArm64 || isArm32) {
+            // the addresses built in the registers (ARM64: the adrp pairs; ARM: movw / movt, add pc, the literal pools): the data of add /
+            // ldr / str, the import slot of br / blr / bx / ldr pc (import stubs, import calls)
+            // a call target starts a block too (the PLT stubs after the padding of PLT0, which decodes as an ARM instruction when the
+            // mapping symbols are stripped)
+            const auto called       = callsMap.find(instructionOffset);
+            const bool isBlockStart = atBlockStart || (called != callsMap.end() && !called->second) ||
+                                      std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
             auto pairOperands       = operands;
-            const auto pair         = adrpTracker.Next(*insn, isBlockStart);
+            const auto pair = isArm64 ? adrpTracker.Next(*insn, isBlockStart) : arm32Tracker.Next(*insn, insnArch == DissasmArch::Thumb, isBlockStart);
             if (pair.has_value()) {
                 resolvedAddresses[insn->address] = pair->address;
                 pairOperands.ripTarget           = pair->address;
@@ -197,7 +212,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 }
             }
             // the jump table of a switch (br x10): the cases are read from the table
-            if (const auto table = adrpTracker.TakeJumpTable(); table.has_value() && addressToFileOffset) {
+            if (const auto table = isArm64 ? adrpTracker.TakeJumpTable() : std::nullopt; table.has_value() && addressToFileOffset) {
                 std::vector<uint64> targets; // VA
                 for (uint32 index = 0; index < table->count; index++) {
                     const auto value = ReadTableValue(labelBase + table->table + static_cast<uint64>(index) * table->entrySize, table->entrySize);
@@ -221,14 +236,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             // a prologue at a block start: a function (a candidate until the end of the sweep: a shrink wrapped prologue is reached by a
             // conditional branch of its own function)
-            if (isBlockStart && IsArm64PrologueStart(*insn))
+            if (isBlockStart && (isArm64 ? IsArm64PrologueStart(*insn) : IsArm32PrologueStart(*insn)))
                 prologueCandidates.push_back(instructionOffset);
             if (flow == X86Flow::ConditionalJump && operands.directTarget.has_value())
                 conditionalTargets.insert(operands.directTarget.value());
-            const bool takesAddress = insn->id == ARM64_INS_ADR || (insn->id == ARM64_INS_ADD && pair.has_value());
+            const bool takesAddress = isArm64 ? insn->id == ARM64_INS_ADR || (insn->id == ARM64_INS_ADD && pair.has_value())
+                                              : (pair.has_value() && pair->memoryAccess == 0) || insn->id == ARM_INS_ADR || insn->id == ARM_INS_ADD || insn->id == ARM_INS_SUB;
             AnalyzeBranchesAndData(flow, pairOperands, from, takesAddress);
-            atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == ARM64_INS_NOP ||
-                           insn->id == ARM64_INS_INVALID;
+            const bool isNop = isArm64 ? insn->id == ARM64_INS_NOP : insn->id == ARM_INS_NOP;
+            atBlockStart     = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || isNop || insn->id == 0;
             return;
         }
 
@@ -291,7 +307,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind);
         if (operands.absoluteMemory.has_value() && isFileAddress && isFileAddress(operands.absoluteMemory.value()))
             xrefs.Add(from, operands.absoluteMemory.value(), dataKind);
-        if (!is64 && isFileAddress) { // push offset aText / mov ecx, offset aText (x64 uses lea [rip + ...])
+        if (!is64 && arch == DissasmArch::X86 && isFileAddress) { // push offset aText / mov ecx, offset aText (x64 uses lea [rip + ...])
             for (const uint64 value : operands.immediates)
                 if (value >= 0x10000 && isFileAddress(value))
                     xrefs.Add(from, value, DissasmXrefKind::Offset);
@@ -541,14 +557,14 @@ struct GView::View::DissasmViewer::DissasmLineCounter {
             cs_close(&handle);
     }
 
-    bool Start(cs_arch arch, int internalArchitecture)
+    bool Start(cs_arch arch, int internalArchitecture, const DissasmInstructionSet* instructionSet)
     {
         if (cs_open(arch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
             handle = 0;
             return false;
         }
         insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, zoneStart, zoneSize, handle, 0, boundaries, alignmentBase, arch == CS_ARCH_ARM64);
+        walker = DissasmCodeLinesWalker(obj, zoneStart, zoneSize, handle, 0, boundaries, alignmentBase, instructionSet);
         offsets.clear();
         offsets.push_back({ zoneStart, 0 });
         return insn != nullptr;
@@ -816,6 +832,17 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
             return false;
         }
         break;
+    case DisassemblyLanguage::ARM:
+    case DisassemblyLanguage::Thumb:
+        // the mode of every line is set by DecodeX86Line (the mode changes of the zone)
+        capstoneArch         = CS_ARCH_ARM;
+        internalArchitecture = zoneDetails.language == DisassemblyLanguage::Thumb ? CS_MODE_THUMB : CS_MODE_ARM;
+        if (!cs_support(CS_ARCH_ARM)) {
+            if (initData.dli.IsValid())
+                initData.dli->WriteErrorToScreen("Capstone does not support ARM");
+            return false;
+        }
+        break;
     default: {
         if (initData.dli.IsValid())
             if (initData.dli.IsValid())
@@ -837,6 +864,20 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     if (initData.instructionBoundaries)
         for (const uint64 fileOffset : *initData.instructionBoundaries)
             addBoundary(fileOffset);
+    // the instruction set; 32 bit ARM: the mode changes inside the zone (a change is an instruction start)
+    instructionSet             = {};
+    instructionSet.kind        = IsArm64Code() ? DissasmInstructionSet::Kind::Arm64 : (IsArm32Code() ? DissasmInstructionSet::Kind::Arm32 : DissasmInstructionSet::Kind::X86);
+    instructionSet.defaultMode = zoneDetails.language == DisassemblyLanguage::Thumb ? ArmCodeMode::Thumb : ArmCodeMode::Arm;
+    if (IsArm32Code() && initData.armCodeModes) {
+        for (const auto& [fileOffset, mode] : *initData.armCodeModes) {
+            if (fileOffset <= zoneDetails.startingZonePoint)
+                instructionSet.defaultMode = mode; // the last change before the zone: the mode of its start
+            else if (fileOffset - zoneDetails.startingZonePoint < zoneDetails.size) {
+                instructionSet.modeChanges.emplace_back(fileOffset - zoneDetails.startingZonePoint, mode);
+                addBoundary(fileOffset);
+            }
+        }
+    }
     std::sort(instructionBoundaries.begin(), instructionBoundaries.end());
     instructionBoundaries.erase(std::unique(instructionBoundaries.begin(), instructionBoundaries.end()), instructionBoundaries.end());
 
@@ -846,7 +887,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     lineCounter.reset();
     if (IsValidCodeZone(zoneDetails, initData.obj)) {
         lineCounter = std::make_unique<DissasmLineCounter>(cachedCodeOffsets, zoneDetails, initData.obj, &instructionBoundaries, paddingAlignmentBase);
-        if (!lineCounter->Start(capstoneArch, internalArchitecture))
+        if (!lineCounter->Start(capstoneArch, internalArchitecture, &instructionSet))
             lineCounter.reset();
     }
     if (!lineCounter) {
@@ -1242,7 +1283,7 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, IsArm64Code());
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, &instructionSet);
         while (walker.Next(insn) && insn->address < end) {
             if (instructions.size() == MAX_INSTRUCTIONS) {
                 graph.truncated = true;
@@ -1419,7 +1460,7 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, IsArm64Code());
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, &instructionSet);
         while (walker.Next(insn) && insn->address < end) {
             const auto flow = GetInstructionFlow(*insn, GetArch());
             if (flow != X86Flow::Call && flow != X86Flow::Jump)
@@ -1529,10 +1570,17 @@ std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, 
         const uint64 mask       = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
         const uint64 wanted     = value & mask;
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from, &instructionBoundaries, paddingAlignmentBase, IsArm64Code());
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from, &instructionBoundaries, paddingAlignmentBase, &instructionSet);
         while (!result.has_value() && walker.Next(insn) && insn->address < to) {
             if (insn->id == X86_INS_INVALID || !insn->detail)
                 continue; // a data line (db)
+            if (IsArm32Code()) { // mov r0, #0x10 / cmp r1, #0x20
+                const cs_arm& arm = insn->detail->arm;
+                for (uint8 index = 0; index < arm.op_count && !result.has_value(); index++)
+                    if (arm.operands[index].type == ARM_OP_IMM && (static_cast<uint64>(static_cast<uint32>(arm.operands[index].imm)) & mask) == wanted)
+                        result = insn->address;
+                continue;
+            }
             if (IsArm64Code()) { // mov x0, #0x10 / cmp w1, #0x20 / add x0, x1, #0x8
                 const cs_arm64& arm64 = insn->detail->arm64;
                 for (uint8 index = 0; index < arm64.op_count && !result.has_value(); index++)

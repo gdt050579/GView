@@ -283,6 +283,7 @@ struct ZoneLayout {
     std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
     bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
     std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
+    std::map<uint64, ArmCodeMode> armCodeModes;               // 32 bit ARM: the mode changes, by file offset
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -370,6 +371,7 @@ class DissasmTestInstance
         initData.deepScanBudget      = layout.deepScanBudget;
         initData.alignPadding        = layout.alignPadding;
         initData.lineCountBudget     = layout.lineCountBudget;
+        initData.armCodeModes        = &layout.armCodeModes;
         initData.instructionBoundaries = &layout.instructionBoundaries;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
@@ -4243,7 +4245,7 @@ TEST_CASE("RegisterAndTokenColors", "[Dissasm]Colors")
     for (const auto name : { "rsp", "esp", "sp", "spl", "rbp", "ebp", "rsi", "sil", "rdi", "dil", "rip" })
         CHECK(GetX86RegisterKind(name) == Register::Pointer);
     // the last letter does not make a register any more (the old rule colored them)
-    for (const auto name : { "r7", "r16", "r08", "xmm32", "mm8", "rx", "box", "dword", "ptr", "sub_401000", "j_puts", "0x10", "loc_1", "eaxx" })
+    for (const auto name : { "r16", "r08", "xmm32", "mm8", "rx", "box", "dword", "ptr", "sub_401000", "j_puts", "0x10", "loc_1", "eaxx" })
         CHECK(GetX86RegisterKind(name) == Register::None);
 
     DissasmColors colors{};
@@ -4808,4 +4810,137 @@ TEST_CASE("Arm64FrameOperands", "[Dissasm]Arm64")
     REQUIRE_FALSE(FindArm64FrameOperand("x29, x30, [sp, #-0x10]!", slot)); // the writeback of the prologue
     REQUIRE_FALSE(FindArm64FrameOperand("x29, x30, [sp], #0x10", slot));
     REQUIRE_FALSE(FindArm64FrameOperand("x0, [x20, #8]", slot));
+}
+
+namespace
+{
+// decodes one instruction of 32 bit ARM code (`thumb`: Thumb mode) at a relative address, with the details
+struct Arm32Decoder {
+    csh handle = 0;
+    Arm32Decoder()
+    {
+        REQUIRE(cs_open(CS_ARCH_ARM, CS_MODE_THUMB, &handle) == CS_ERR_OK);
+        REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    }
+    ~Arm32Decoder()
+    {
+        cs_close(&handle);
+    }
+    template <typename Callback>
+    void Decode(std::initializer_list<uint8_t> bytes, uint64 address, bool thumb, Callback&& callback)
+    {
+        cs_option(handle, CS_OPT_MODE, thumb ? CS_MODE_THUMB : CS_MODE_ARM);
+        const std::vector<uint8_t> code(bytes);
+        cs_insn* insn      = nullptr;
+        const size_t count = cs_disasm(handle, code.data(), code.size(), address, 1, &insn);
+        REQUIRE(count == 1);
+        INFO(insn->mnemonic << " " << insn->op_str << " id " << insn->id);
+        callback(*insn);
+        cs_free(insn, count);
+    }
+};
+} // namespace
+
+TEST_CASE("Arm32Tracker", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    using Result = Arm32Tracker::Result;
+    // a Windows import thunk (Thumb-2): movw r12, #0x2050; movt r12, #0x40; ldr.w pc, [r12] at the VA 0x401040, the code starts at 0x401000
+    {
+        Arm32Tracker tracker(0x401000);
+        std::optional<Result> result;
+        decoder.Decode({ 0x42, 0xF2, 0x50, 0x0C }, 0x40, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, true); });
+        decoder.Decode({ 0xC0, 0xF2, 0x40, 0x0C }, 0x44, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value()); // movt: the address is taken
+        REQUIRE(result->address == 0x1050);
+        decoder.Decode({ 0xDC, 0xF8, 0x00, 0xF0 }, 0x48, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(result->address == 0x1050);
+        REQUIRE(result->throughSlot);          // ldr pc, [r12]: a jump through the slot
+        REQUIRE(result->sequenceStart == 0x40); // the movw
+        REQUIRE(result->sequenceAtBlockStart);
+    }
+    // an ELF PLT stub (ARM): add ip, pc, #0, #12; add ip, ip, #32, #20; ldr pc, [ip, #0x94]! at 0x102e0, the code starts at 0x10268
+    {
+        Arm32Tracker tracker(0x10268);
+        std::optional<Result> result;
+        decoder.Decode({ 0x00, 0xC6, 0x8F, 0xE2 }, 0x102E0 - 0x10268, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, true); });
+        decoder.Decode({ 0x20, 0xCA, 0x8C, 0xE2 }, 0x102E4 - 0x10268, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, false); });
+        decoder.Decode({ 0x94, 0xF0, 0xBC, 0xE5 }, 0x102E8 - 0x10268, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(result->throughSlot);
+        REQUIRE(result->address == 0x102E8 + 0x20000 + 0x94 - 0x10268); // pc (0x102e0 + 8) + 0x20000 + 0x94
+    }
+    // PIC data (Thumb): ldr r0, [pc, #0x18]; add r0, pc: the literal is an offset from pc; the address is before the code (the VA wraps)
+    {
+        Arm32Tracker tracker(0x10268, [](uint64 relativeAddress) -> std::optional<uint32> {
+            return relativeAddress == 0x10288 - 0x10268 ? std::optional<uint32>(0xFFFEFFE0) : std::nullopt;
+        });
+        std::optional<Result> result;
+        decoder.Decode({ 0x06, 0x48 }, 0x1026E - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        decoder.Decode({ 0x78, 0x44 }, 0x10270 - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(0x10268 + result->address == 0x254); // 0x10274 + 0xfffeffe0, on 32 bits
+        REQUIRE(result->memoryAccess == 0);
+    }
+}
+
+TEST_CASE("Arm32FlowAndOperands", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    using Flow = X86Flow;
+    decoder.Decode({ 0x17, 0x00, 0x00, 0xEB }, 0x14, false, [](const cs_insn& insn) { // bl #0x70
+        REQUIRE(GetArm32Flow(insn) == Flow::Call);
+        REQUIRE(GetArm32OperandsInfo(insn, false).directTarget == std::optional<uint64>(0x14 + 8 + 0x17 * 4));
+    });
+    decoder.Decode({ 0x01, 0x00, 0x00, 0xBA }, 0x1C, false, [](const cs_insn& insn) { // blt
+        REQUIRE(GetArm32Flow(insn) == Flow::ConditionalJump);
+        REQUIRE(GetArm32InstructionKind(insn.id, insn.mnemonic) == X86InstructionKind::ConditionalJump);
+    });
+    decoder.Decode({ 0x00, 0x88, 0xBD, 0xE8 }, 0x48, false, [](const cs_insn& insn) { REQUIRE(GetArm32Flow(insn) == Flow::Return); });  // pop {fp, pc}
+    decoder.Decode({ 0x70, 0x47 }, 0x10, true, [](const cs_insn& insn) { REQUIRE(GetArm32Flow(insn) == Flow::Return); });            // bx lr
+    decoder.Decode({ 0x60, 0x47 }, 0x10, true, [](const cs_insn& insn) { REQUIRE(GetArm32Flow(insn) == Flow::Jump); });              // bx ip
+    decoder.Decode({ 0x80, 0xB5 }, 0x10, true, [](const cs_insn& insn) { REQUIRE(IsArm32PrologueStart(insn)); });                   // push {r7, lr}
+    decoder.Decode({ 0x20, 0x00, 0x9F, 0xE5 }, 0x0C, false, [](const cs_insn& insn) { // ldr r0, [pc, #0x20]: pc = the address + 8
+        const auto operands = GetArm32OperandsInfo(insn, false);
+        REQUIRE(operands.ripTarget == std::optional<uint64>(0x0C + 8 + 0x20));
+        REQUIRE(operands.memoryAccess == CS_AC_READ);
+    });
+    decoder.Decode({ 0x06, 0x48 }, 0x06, true, [](const cs_insn& insn) { // ldr r0, [pc, #0x18] (Thumb): pc = the aligned address + 4
+        REQUIRE(GetArm32OperandsInfo(insn, true).ripTarget == std::optional<uint64>(0x08 + 0x18));
+    });
+    for (const auto name : { "r0", "r7", "sb", "sl" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::General);
+    CHECK(GetX86RegisterKind("pc") == X86RegisterKind::Pointer);
+}
+
+TEST_CASE("Arm32ModesInOneZone", "[Dissasm]Arm32")
+{
+    // Thumb code that calls an ARM stub (blx): the mode changes at 0x10 (ARM) and a literal pool at 0x0c (data)
+    std::vector<unsigned char> file = {
+        0x80, 0xB5,             // 0x00: push {r7, lr}
+        0x00, 0xF0, 0x06, 0xE8, // 0x02: blx #0x10 (to ARM code)
+        0x80, 0xBD,             // 0x06: pop {r7, pc}
+        0x00, 0xBF, 0x00, 0xBF, // 0x08: nop; nop
+        0x78, 0x56, 0x34, 0x12, // 0x0c: .word 0x12345678 (a literal pool)
+        0x01, 0x00, 0xA0, 0xE3, // 0x10: mov r0, #1 (ARM)
+        0x1E, 0xFF, 0x2F, 0xE1, // 0x14: bx lr
+    };
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::Thumb;
+    layout.armCodeModes = { { 0x0C, ArmCodeMode::Data }, { 0x10, ArmCodeMode::Arm } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetArchAt(0x02) == DissasmArch::Thumb);
+    REQUIRE(zone.GetArchAt(0x10) == DissasmArch::Arm);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("push   {r7, lr}") != std::string::npos);
+    REQUIRE(listing.find("blx    sub_10") != std::string::npos);
+    REQUIRE(listing.find(".word  0x12345678") != std::string::npos);
+    REQUIRE(listing.find("mov    r0, #1") != std::string::npos);
+    REQUIRE(listing.find("bx     lr") != std::string::npos);
+    REQUIRE(std::find(zone.functionStarts.begin(), zone.functionStarts.end(), 0x10) != zone.functionStarts.end());
 }
