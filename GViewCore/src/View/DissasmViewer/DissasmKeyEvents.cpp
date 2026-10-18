@@ -307,8 +307,21 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
         return true;
 
-    if (keyCode == Key::Escape)
+    // the IDA profile: ; and : add a comment (they are characters, not keys of AppCUI)
+    if (Config::ActiveKeyProfile == Config::KeyProfile::IDA && (charCode == ';' || charCode == ':') &&
+        (keyCode & (Key::Ctrl | Key::Alt)) == Key::None) {
+        FinishDeepScans();
+        AddComment();
+        return true;
+    }
+    if (keyCode == Key::Escape) {
         SaveCacheData();
+        // Esc is the jump back (the IDA profile): handled here, before the command bar; with no history the key goes on
+        if (config.JumpBackCommand.Key == Key::Escape && JumpInHistory(true)) {
+            GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::JumpBack);
+            return true;
+        }
+    }
 
     return ViewControl::OnKeyEvent(keyCode, charCode);
 }
@@ -363,6 +376,15 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case COMMAND_SHOW_GRAPH:
             ShowFunctionGraph();
+            return true;
+        case COMMAND_GOTO_ADDRESS:
+            ShowGoToDialog();
+            return true;
+        case COMMAND_FIND:
+            ShowFindDialog();
+            return true;
+        case COMMAND_TOGGLE_KEY_PROFILE:
+            ToggleKeyProfile();
             return true;
         case COMMAND_TOGGLE_AI_SUGGESTIONS:
             showAISuggestions = !showAISuggestions;
@@ -449,4 +471,24 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     }
 
     return false;
+}
+
+// Ctrl+Shift+P: the keys of GView <-> the keys of IDA; saved in GView.ini, applied to every viewer (the user's keys win)
+void Instance::ToggleKeyProfile()
+{
+    const bool toIDA = Config::ActiveKeyProfile != Config::KeyProfile::IDA;
+    if (auto ini = AppCUI::Application::GetAppSettings()) {
+        ini->GetSection("View.Dissasm").UpdateValue("Config.KeyProfile", toIDA ? "ida" : "default", false);
+        AppCUI::Application::SaveAppSettings();
+    }
+    GView::App::ReapplyKeyBindings(); // RegisterKeys reads the profile again
+    const auto profile = toIDA ? Config::KeyProfile::IDA : Config::KeyProfile::Default;
+    if (Config::ActiveKeyProfile != profile) { // no settings file / no app: only the default keys of this profile
+        ApplyKeyProfile(profile);
+        OnKeysChanged();
+    }
+    Dialogs::MessageBox::ShowNotification(
+          "Keys",
+          toIDA ? "The IDA keys: G go to, X xrefs, ; comment, Esc back, Ctrl+Enter forward, Enter follow, Space graph, Alt+T find, Ctrl+T next"
+                : "The GView keys: F5 go to, Ctrl+X xrefs, C comment, Ctrl+Q back, Ctrl+E forward, Space follow, Ctrl+B graph, Ctrl+F find");
 }

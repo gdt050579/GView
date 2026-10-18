@@ -50,6 +50,11 @@ bool UpdateSettingsForGenericPlugin(AppCUI::Utils::IniObject& ini, const std::fi
     fnUpdateSettings(sect);
     return true;
 }
+void GView::App::ReapplyKeyBindings()
+{
+    if (gviewAppInstance)
+        gviewAppInstance->ApplyKeyBindings();
+}
 bool GView::App::AnalyzeFile(const std::filesystem::path& path, std::string_view typeName, std::string& json, std::string& error)
 {
     if (!gviewAppInstance) {

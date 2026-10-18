@@ -73,6 +73,7 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     sect.UpdateValue("Config.ShowOnlyDissasm", false, true);
     sect.UpdateValue("Config.DeepScanDissasmOnStart", true, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
+    sect.UpdateValue("Config.KeyProfile", "default", true); // default | ida
 }
 
 #define LOAD_COLOR_IF_EXISTS(name) \
@@ -272,14 +273,57 @@ void Config::OnThemeChanged(const Application::Config& config)
     ConfigColors.hasChanges = true;
 }
 
+// The default keys of the active profile (the registry applies the keys of the user over them)
+void GView::View::DissasmViewer::ApplyKeyProfile(Config::KeyProfile profile)
+{
+    using Key = Input::Key;
+    const std::pair<KeyboardControl*, Key> idaKeys[] = {
+        { &Config::GoToAddressCommand, Key::G },
+        { &Config::ShowXrefsCommand, Key::X },
+        { &Config::AddZoneCommand, Key::Ctrl | Key::Shift | Key::X },
+        { &Config::AddOrEditCommentCommand, Key::None }, // ; and : (characters, they are not keys of AppCUI: OnKeyEvent)
+        { &Config::JumpBackCommand, Key::Escape },
+        { &Config::JumpForwardCommand, Key::Ctrl | Key::Enter },
+        { &Config::SpaceCommand, Key::Enter }, // follow the operand
+        { &Config::OpenSelectionCommand, Key::Ctrl | Key::Shift | Key::O },
+        { &Config::ShowGraphCommand, Key::Space },
+        { &Config::FindCommand, Key::Alt | Key::T },
+        { &Config::FindNextCommand, Key::Ctrl | Key::T },
+    };
+    // the GView keys are the declared ones, kept before the first change
+    static std::vector<Key> gviewKeys;
+    if (gviewKeys.empty())
+        for (const auto& [control, key] : idaKeys)
+            gviewKeys.push_back(control->DefaultKey);
+    for (size_t index = 0; index < std::size(idaKeys); index++) {
+        const Key key                 = profile == Config::KeyProfile::IDA ? idaKeys[index].second : gviewKeys[index];
+        idaKeys[index].first->DefaultKey = key;
+        idaKeys[index].first->Key        = key;
+    }
+    Config::ActiveKeyProfile = profile;
+}
+
+Config::KeyProfile GView::View::DissasmViewer::ReadKeyProfile()
+{
+    auto ini = AppCUI::Application::GetAppSettings();
+    if (!ini)
+        return Config::KeyProfile::Default;
+    const auto value = ini->GetSection("View.Dissasm").GetValue("Config.KeyProfile").AsStringView().value_or(std::string_view("default"));
+    return value.size() == 3 && (value[0] == 'i' || value[0] == 'I') && (value[1] == 'd' || value[1] == 'D') && (value[2] == 'a' || value[2] == 'A')
+                 ? Config::KeyProfile::IDA
+                 : Config::KeyProfile::Default;
+}
+
 void GView::View::DissasmViewer::RegisterKeys(KeyboardControlsInterface* interface)
 {
+    ApplyKeyProfile(ReadKeyProfile());
     for (auto& key : Config::AllKeyboardCommands)
         interface->RegisterKey(&key.get());
     interface->BeginCategory("Navigation & editing");
     for (auto key : Config::NavigationCommands)
         interface->RegisterKey(key);
     interface->RegisterKeyText("Escape", "SaveCacheOnEscape", "Escape also saves the disassembly cache");
+    interface->RegisterKeyText("; / :", "CommentIDA", "The IDA profile: add or edit the comment of the line");
 }
 void GView::View::DissasmViewer::OnKeysChanged()
 {

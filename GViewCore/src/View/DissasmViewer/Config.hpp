@@ -33,6 +33,9 @@ constexpr uint32 COMMAND_DISMISS_AI_SUGGESTION = 126;
 constexpr uint32 COMMAND_TOGGLE_AI_SUGGESTIONS = 127;
 constexpr uint32 COMMAND_SUGGEST_NAMES         = 128;
 constexpr uint32 COMMAND_SHOW_GRAPH            = 129;
+constexpr uint32 COMMAND_GOTO_ADDRESS          = 130;
+constexpr uint32 COMMAND_FIND                  = 131;
+constexpr uint32 COMMAND_TOGGLE_KEY_PROFILE    = 132;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -202,6 +205,21 @@ namespace View
                                                                   "Ask the assistant names for the current function and the functions it calls",
                                                                   COMMAND_SUGGEST_NAMES };
 
+            // the key profiles: the keys of GView, or the ones of IDA (G, X, ; / :, Esc, Ctrl+Enter, Enter, Space, Alt+T, Ctrl+T); the user's
+            // keys ([Keys.View.Dissasm]) win over both
+            enum class KeyProfile : uint8 { Default, IDA };
+            inline static KeyProfile ActiveKeyProfile = KeyProfile::Default;
+            inline static KeyboardControl GoToAddressCommand = {
+                Input::Key::None, "GoToAddress", "Go to an address or a label name (the IDA profile: G; both: F5 of the window)", COMMAND_GOTO_ADDRESS
+            };
+            inline static KeyboardControl FindCommand = {
+                Input::Key::None, "Find", "Find a text, bytes or an immediate value (the IDA profile: Alt+T; both: Ctrl+F of the window)", COMMAND_FIND
+            };
+            inline static KeyboardControl ToggleKeyProfileCommand = { Input::Key::Ctrl | Input::Key::Shift | Input::Key::P,
+                                                                      "ToggleKeyProfile",
+                                                                      "Switch the keys between the GView and the IDA profiles (saved in GView.ini)",
+                                                                      COMMAND_TOGGLE_KEY_PROFILE };
+
             inline static KeyboardControl ShowGraphCommand = {
                 Input::Key::Ctrl | Input::Key::B, "ShowGraph", "Show the graph of the basic blocks of the current function", COMMAND_SHOW_GRAPH
             };
@@ -231,8 +249,11 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 19> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 22> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                GoToAddressCommand,
+                FindCommand,
+                ToggleKeyProfileCommand,
                 ShowGraphCommand,
                 ToggleAISuggestionsCommand,
                 SuggestNamesCommand,
@@ -335,8 +356,11 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 25> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 28> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                GoToAddressCommand,
+                FindCommand,
+                ToggleKeyProfileCommand,
                 ShowGraphCommand,
                 ToggleAISuggestionsCommand,
                 SuggestNamesCommand,
@@ -385,6 +409,8 @@ namespace View
             void OnThemeChanged(const Application::Config& config) override;
         };
 
+        void ApplyKeyProfile(Config::KeyProfile profile);
+        Config::KeyProfile ReadKeyProfile();
         void RegisterKeys(KeyboardControlsInterface* interface);
         void OnKeysChanged();
     } // namespace DissasmViewer

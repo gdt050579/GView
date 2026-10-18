@@ -764,6 +764,7 @@ namespace View
             void ShowCommandPalette();
             void ShowCallTree(); // Ctrl+R: the callers and the callees of the function of the cursor
             void ShowFunctionGraph(); // Ctrl+B: the basic blocks of the function of the cursor
+            void ToggleKeyProfile();  // Ctrl+Shift+P: the GView keys <-> the IDA keys
             // the suggestions of the assistant: shown (Ctrl+Shift+A), accepted (A) / dismissed (Shift+A) on the line of the cursor
             bool showAISuggestions = true;
             void AcceptOrDismissAISuggestion(bool accept);

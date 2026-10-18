@@ -559,6 +559,9 @@ namespace Type
 
 namespace App
 {
+    // the key bindings are applied again to every viewer (a viewer changed the default keys: its key profile)
+    void ReapplyKeyBindings();
+
     namespace MenuCommands
     {
         constexpr int ARRANGE_VERTICALLY       = 100000;

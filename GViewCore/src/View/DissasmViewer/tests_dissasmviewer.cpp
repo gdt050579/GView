@@ -4031,3 +4031,51 @@ TEST_CASE("FunctionGraph", "[Dissasm]Graph")
     // the ordinals of the instructions follow the listing: 7 instructions before the ret
     REQUIRE(blocks[4].instructions == std::vector<uint32>{ 7 });
 }
+
+TEST_CASE("KeyProfileIDA", "[Dissasm]Keys")
+{
+    using Key = AppCUI::Input::Key;
+    const auto gviewGoTo = Config::GoToAddressCommand.DefaultKey;
+    const auto gviewComment = Config::AddOrEditCommentCommand.DefaultKey;
+    const auto gviewBack    = Config::JumpBackCommand.DefaultKey;
+    const auto gviewSpace   = Config::SpaceCommand.DefaultKey;
+
+    ApplyKeyProfile(Config::KeyProfile::IDA);
+    REQUIRE(Config::ActiveKeyProfile == Config::KeyProfile::IDA);
+    REQUIRE(Config::GoToAddressCommand.Key == Key::G);
+    REQUIRE(Config::ShowXrefsCommand.Key == Key::X);
+    REQUIRE(Config::AddZoneCommand.Key == (Key::Ctrl | Key::Shift | Key::X));
+    REQUIRE(Config::AddOrEditCommentCommand.Key == Key::None);
+    REQUIRE(Config::JumpBackCommand.Key == Key::Escape);
+    REQUIRE(Config::JumpForwardCommand.Key == (Key::Ctrl | Key::Enter));
+    REQUIRE(Config::SpaceCommand.Key == Key::Enter);
+    REQUIRE(Config::ShowGraphCommand.Key == Key::Space);
+    REQUIRE(Config::FindCommand.Key == (Key::Alt | Key::T));
+    REQUIRE(Config::FindNextCommand.DefaultKey == (Key::Ctrl | Key::T));
+    // the keys that IDA shares with GView stay
+    REQUIRE(Config::RenameLabelCommand.Key == Key::N);
+    REQUIRE(Config::ToggleNumberBaseCommand.Key == Key::H);
+
+    // no key of the view is bound twice
+    std::set<const AppCUI::Input::KeyBinding*> controls;
+    for (const auto& control : Config::AllKeyboardCommands)
+        controls.insert(&control.get());
+    controls.insert(Config::KeyEventCommands.begin(), Config::KeyEventCommands.end());
+    std::map<uint32, std::string_view> used;
+    for (const auto* control : controls) {
+        if (control->Key == Key::None)
+            continue;
+        const auto [it, added] = used.insert({ static_cast<uint32>(control->Key), control->Caption });
+        INFO(control->Caption << " and " << it->second);
+        REQUIRE(added);
+    }
+
+    // back to the keys of GView
+    ApplyKeyProfile(Config::KeyProfile::Default);
+    REQUIRE(Config::ActiveKeyProfile == Config::KeyProfile::Default);
+    REQUIRE(Config::GoToAddressCommand.Key == gviewGoTo);
+    REQUIRE(Config::AddOrEditCommentCommand.Key == gviewComment);
+    REQUIRE(Config::JumpBackCommand.Key == gviewBack);
+    REQUIRE(Config::SpaceCommand.Key == gviewSpace);
+    REQUIRE(Config::ShowXrefsCommand.Key == (Key::Ctrl | Key::X));
+}
