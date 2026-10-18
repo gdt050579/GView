@@ -144,6 +144,54 @@ X86InstructionKind GView::View::DissasmViewer::GetArm64InstructionKind(unsigned 
     }
 }
 
+uint8 GView::View::DissasmViewer::GetArm64AccessSize(const cs_insn& insn)
+{
+    if (!insn.detail)
+        return 0;
+    switch (insn.id) {
+    case ARM64_INS_LDRB:
+    case ARM64_INS_LDRSB:
+    case ARM64_INS_STRB:
+    case ARM64_INS_LDURB:
+    case ARM64_INS_LDURSB:
+    case ARM64_INS_STURB:
+        return 1;
+    case ARM64_INS_LDRH:
+    case ARM64_INS_LDRSH:
+    case ARM64_INS_STRH:
+    case ARM64_INS_LDURH:
+    case ARM64_INS_LDURSH:
+    case ARM64_INS_STURH:
+        return 2;
+    case ARM64_INS_LDRSW:
+    case ARM64_INS_LDURSW:
+        return 4;
+    case ARM64_INS_LDR: // the size of the register: ldr w0 / ldr x0 / ldr s0 / ldr q0
+    case ARM64_INS_STR:
+    case ARM64_INS_LDUR:
+    case ARM64_INS_STUR:
+        break;
+    default:
+        return 0;
+    }
+    const cs_arm64& arm64 = insn.detail->arm64;
+    if (arm64.op_count == 0 || arm64.operands[0].type != ARM64_OP_REG)
+        return 0;
+    const auto reg = arm64.operands[0].reg;
+    if ((reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30) || reg == ARM64_REG_WZR || (reg >= ARM64_REG_S0 && reg <= ARM64_REG_S31))
+        return 4;
+    if ((reg >= ARM64_REG_X0 && reg <= ARM64_REG_X28) || reg == ARM64_REG_X29 || reg == ARM64_REG_X30 || reg == ARM64_REG_XZR ||
+        (reg >= ARM64_REG_D0 && reg <= ARM64_REG_D31))
+        return 8;
+    if (reg >= ARM64_REG_B0 && reg <= ARM64_REG_B31)
+        return 1;
+    if (reg >= ARM64_REG_H0 && reg <= ARM64_REG_H31)
+        return 2;
+    if (reg >= ARM64_REG_Q0 && reg <= ARM64_REG_Q31)
+        return 16;
+    return 0;
+}
+
 namespace
 {
 // x0 .. x30 (and their w halves): 0 .. 30; -1 for the other registers (sp, xzr, the vector registers)

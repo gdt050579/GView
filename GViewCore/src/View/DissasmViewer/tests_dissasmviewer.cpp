@@ -6442,3 +6442,161 @@ TEST_CASE("FunctionGraphLayout", "[Dissasm]Graph")
         REQUIRE(layout.width >= layout.nodes[1].x + layout.nodes[1].width);
     }
 }
+
+TEST_CASE("ArmAccessSizes", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    const auto arm32 = [&decoder](std::initializer_list<uint8_t> bytes) {
+        uint8 size = 0xFF;
+        decoder.Decode(bytes, 0, false, [&size](const cs_insn& insn) { size = GetArm32AccessSize(insn); });
+        return size;
+    };
+    REQUIRE(arm32({ 0x00, 0x20, 0xD2, 0xE5 }) == 1); // ldrb r2, [r2]
+    REQUIRE(arm32({ 0xF0, 0x30, 0xD3, 0xE1 }) == 2); // ldrsh r3, [r3]
+    REQUIRE(arm32({ 0x00, 0x00, 0x90, 0xE5 }) == 4); // ldr r0, [r0]
+    REQUIRE(arm32({ 0x00, 0x10, 0x82, 0xE5 }) == 4); // str r1, [r2]
+    REQUIRE(arm32({ 0xD0, 0x00, 0xC2, 0xE1 }) == 8); // ldrd r0, r1, [r2]
+    REQUIRE(arm32({ 0x00, 0x0B, 0x90, 0xED }) == 8); // vldr d0, [r0]
+    REQUIRE(arm32({ 0x00, 0x0A, 0x90, 0xED }) == 4); // vldr s0, [r0]
+    REQUIRE(arm32({ 0x10, 0x40, 0x2D, 0xE9 }) == 0); // push {r4, lr}
+
+    csh handle = 0;
+    REQUIRE(cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle) == CS_ERR_OK);
+    REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    const auto arm64 = [handle](uint32 word) {
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, 0, 1, &insn) == 1);
+        const uint8 size = GetArm64AccessSize(*insn);
+        cs_free(insn, 1);
+        return size;
+    };
+    CHECK(arm64(0xB9424908) == 4);  // ldr w8, [x8, #0x248]
+    CHECK(arm64(0xB9024900) == 4);  // str w0, [x8, #0x248]
+    CHECK(arm64(0x3949614A) == 1);  // ldrb w10, [x10, #0x258]
+    CHECK(arm64(0x79C4B96B) == 2);  // ldrsh w11, [x11, #0x25c]
+    CHECK(arm64(0xF9400020) == 8);  // ldr x0, [x1]
+    CHECK(arm64(0x3DC00020) == 16); // ldr q0, [x1]
+    CHECK(arm64(0xA8C17BFD) == 0);  // ldp x29, x30, [sp], #0x10
+    cs_close(&handle);
+}
+
+TEST_CASE("Arm32TrackerLiterals", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    using Result = Arm32Tracker::Result;
+    // ldr r0, =variable (ARM, no PIC): the word of the literal pool is an absolute address, the next load reads the variable there
+    {
+        Arm32Tracker tracker(0x10000, [](uint64 relativeAddress) -> std::optional<uint32> {
+            return relativeAddress == 0x18 ? std::optional<uint32>(0x10044) : std::nullopt;
+        });
+        std::optional<Result> result;
+        decoder.Decode({ 0x10, 0x00, 0x9F, 0xE5 }, 0x00, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, true); });
+        REQUIRE_FALSE(result.has_value()); // ldr r0, [pc, #0x10]: a word, not yet an access
+        decoder.Decode({ 0x00, 0x10, 0xD0, 0xE5 }, 0x04, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, false); });
+        REQUIRE(result.has_value()); // ldrb r1, [r0]
+        REQUIRE(result->address == 0x44);
+        REQUIRE(result->memoryAccess == CS_AC_READ);
+        REQUIRE(result->absolute); // checked against the file by the deep scan: a constant is not an address
+    }
+    // add r0, pc (Thumb) at an address that is not 4 bytes aligned: pc is the address + 4, not aligned (only the literals align it)
+    {
+        Arm32Tracker tracker(0x10268, [](uint64 relativeAddress) -> std::optional<uint32> {
+            return relativeAddress == 0x10288 - 0x10268 ? std::optional<uint32>(0x100) : std::nullopt;
+        });
+        std::optional<Result> result;
+        decoder.Decode({ 0x06, 0x48 }, 0x1026E - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        decoder.Decode({ 0x78, 0x44 }, 0x10272 - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(0x10268 + result->address == 0x10276 + 0x100);
+        REQUIRE_FALSE(result->absolute);
+    }
+}
+
+TEST_CASE("ArmAddressTakenFunctions", "[Dissasm]Arm32")
+{
+    // ARM without the mapping symbols: the literal pool after the function becomes data lines (a load reads it), the function after the
+    // pool starts a block; its address is a word of the pool (ldr r2, =callback): a function. The pool word of a variable names its
+    // place in the data zone after the size of the access (ldrb: byte_)
+    std::vector<unsigned char> file = {
+        0x10, 0x00, 0x9F, 0xE5, // 0x00: ldr r0, [pc, #0x10]      (=0x10044, a variable of the data zone)
+        0x00, 0x10, 0xD0, 0xE5, // 0x04: ldrb r1, [r0]
+        0x0C, 0x20, 0x9F, 0xE5, // 0x08: ldr r2, [pc, #0xc]       (=0x10020, the callback)
+        0x1E, 0xFF, 0x2F, 0xE1, // 0x0c: bx lr
+        0x00, 0x00, 0xA0, 0xE1, // 0x10: nop
+        0x00, 0x00, 0xA0, 0xE1, // 0x14: nop
+        0x44, 0x00, 0x01, 0x00, // 0x18: .word 0x10044
+        0x20, 0x00, 0x01, 0x00, // 0x1c: .word 0x10020
+        0x01, 0x00, 0xA0, 0xE3, // 0x20: mov r0, #1                (the callback: no call reaches it)
+        0x1E, 0xFF, 0x2F, 0xE1, // 0x24: bx lr
+    };
+    file.resize(0x40, 0x00);
+    file.insert(file.end(), { 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00 }); // 0x40: the data zone (0x10040)
+    file.resize(0x50, 0x00);
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        return address >= 0x10000 && address < 0x10050 ? std::optional<uint64>(address - 0x10000) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.size                = 0x28;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::ARM;
+    layout.labelAddressBase    = 0x10000;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    auto& codeZone = *code.zone;
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(std::find(codeZone.functionStarts.begin(), codeZone.functionStarts.end(), 0x20) != codeZone.functionStarts.end());
+    REQUIRE(codeZone.GetLabelNameAt(0x20) == "sub_10020");
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x18) != nullptr); // the pool: data lines
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x1C) != nullptr);
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x18)->isOffset);
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x00) == nullptr);
+
+    layout.start            = 0x40;
+    layout.size             = 0x10;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x10040;
+    layout.isData           = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x04) == "byte_10044");
+}
+
+TEST_CASE("ArmDataZonePointerFunctions", "[Dissasm]Arm32")
+{
+    // a pointer of a data zone to Thumb code (bit 0 set: a callback table, .init_array of 32 bit ARM): a function at the address
+    std::vector<unsigned char> file = {
+        0x01, 0x20, // 0x00: movs r0, #1
+        0x70, 0x47, // 0x02: bx lr
+        0x02, 0x20, // 0x04: movs r0, #2                (reached only through the pointer)
+        0x70, 0x47, // 0x06: bx lr
+    };
+    file.resize(0x10, 0x00);
+    file.insert(file.end(), { 0x05, 0x00, 0x01, 0x00 }); // 0x10: the data zone (0x10010): 0x10005, the Thumb function at 0x10004
+    file.resize(0x20, 0x00);
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        return address >= 0x10000 && address < 0x10020 ? std::optional<uint64>(address - 0x10000) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start            = 0x10;
+    layout.size             = 0x10;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.language         = DisassemblyLanguage::Thumb;
+    layout.labelAddressBase = 0x10010;
+    layout.isData              = true;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+
+    layout.start            = 0;
+    layout.size             = 0x08;
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x10000;
+    layout.isData           = false;
+    layout.siblings         = { data.zone.get() };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    INFO(code.GetListing());
+    REQUIRE(code.zone->GetLabelNameAt(0x04) == "sub_10004");
+}

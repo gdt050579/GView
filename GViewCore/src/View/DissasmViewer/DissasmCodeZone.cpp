@@ -384,7 +384,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
     // the bytes [start, end) (relative) of a table inside the code: data lines of `unit` bytes after the next sweep. A range that covers
     // a function entry / a section start, or overlaps another table, is not a table
-    void AddDataCandidate(uint64 start, uint64 end, uint8 unit)
+    void AddDataCandidate(uint64 start, uint64 end, uint8 unit, bool isOffset = false)
     {
         end = std::min(end, codeSize);
         if (start >= end)
@@ -392,7 +392,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto boundary = std::upper_bound(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), start);
         if (boundary != zone->instructionBoundaries.end() && *boundary < end)
             return;
-        const DissasmInstructionSet::DataRange range{ start, end, unit };
+        const DissasmInstructionSet::DataRange range{ start, end, unit, isOffset };
         if (const auto* known = instructionSet.DataRangeAt(start); known && known->start == start && known->end == end)
             return; // a data line already
         for (const auto& pending : pendingRanges)
@@ -500,8 +500,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                                       std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
             auto pairOperands       = operands;
             auto pair = isArm64 ? adrpTracker.Next(*insn, isBlockStart) : arm32Tracker.Next(*insn, insnArch == DissasmArch::Thumb, isBlockStart);
-            // movw / movt also build constants (the magic numbers of the divisions): only an address of the file is an address
-            if (pair.has_value() && isArm32 && insn->id == ARM_INS_MOVT && isFileAddress && !isFileAddress(labelBase + pair->address))
+            // movw / movt and the literal pools also hold constants (the magic numbers of the divisions): only an address of the file is
+            // an address
+            if (pair.has_value() && isArm32 && pair->absolute && isFileAddress && !isFileAddress(labelBase + pair->address))
                 pair.reset();
             if (pair.has_value()) {
                 resolvedAddresses[insn->address] = pair->address;
@@ -561,6 +562,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 prologueCandidates.push_back(instructionOffset);
             if (flow == X86Flow::ConditionalJump && operands.directTarget.has_value())
                 conditionalTargets.insert(operands.directTarget.value());
+            // ldr r0, [pc, #off] (32 bit ARM): the word read is a literal of a pool after the function, a data line (.word) after the next
+            // sweep (without the mapping symbols the pools decode as instructions, the function after a pool does not start a block); an
+            // absolute address of code there (ldr r0, =callback) takes the address of a function
+            if (isArm32 && insn->id == ARM_INS_LDR && operands.ripTarget.has_value() && operands.memoryAccess == CS_AC_READ) {
+                const uint64 literal = operands.ripTarget.value();
+                if (literal > insn->address && literal < codeSize && ((labelBase + literal) & 3) == 0 &&
+                    !std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), literal)) {
+                    const auto word     = ReadTableValue(labelBase + literal, 4);
+                    const bool isOffset = word.has_value() && word.value() >= 0x10000 && isFileAddress && isFileAddress(word.value());
+                    AddDataCandidate(literal, literal + 4, 4, isOffset);
+                    if (isOffset && word.value() >= labelBase)
+                        AddTakenCodeAddress(word.value() - labelBase);
+                }
+            }
             const bool takesAddress = isArm64 ? insn->id == ARM64_INS_ADR || (insn->id == ARM64_INS_ADD && pair.has_value())
                                               : (pair.has_value() && pair->memoryAccess == 0) || insn->id == ARM_INS_ADR || insn->id == ARM_INS_ADD || insn->id == ARM_INS_SUB;
             AnalyzeBranchesAndData(flow, pairOperands, from, takesAddress);
@@ -648,13 +663,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         const auto dataKind = takesAddress ? DissasmXrefKind::Offset : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
         // x86 / x64: the size of the memory operand (the type of the data: byte_ / word_ / dword_ / qword_ / xmmword_)
+        // ARM: the size of the load / store (ldrb: byte_, ldr w0: dword_, ldr x0: qword_)
         uint8 accessSize = 0;
         if (dataKind != DissasmXrefKind::Offset && (arch == DissasmArch::X86 || arch == DissasmArch::X64) && insn->detail)
             for (uint8 index = 0; index < insn->detail->x86.op_count; index++)
                 if (insn->detail->x86.operands[index].type == X86_OP_MEM)
                     accessSize = insn->detail->x86.operands[index].size;
+        if (dataKind != DissasmXrefKind::Offset && IsArmArch(arch))
+            accessSize = arch == DissasmArch::Arm64 ? GetArm64AccessSize(*insn) : GetArm32AccessSize(*insn);
         if (operands.ripTarget.has_value())
             xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind, accessSize);
+        // ARM: the address of code built by adr / adrp + add / add pc / movw + movt (a callback stored, passed to a function)
+        if (IsArmArch(arch) && takesAddress && operands.ripTarget.has_value())
+            AddTakenCodeAddress(operands.ripTarget.value());
         // x86 / x64: the address of code taken by lea / push offset / mov reg, offset (a callback, a thread routine, a window procedure)
         if (arch == DissasmArch::X86 || arch == DissasmArch::X64) {
             if (takesAddress && operands.ripTarget.has_value() && operands.ripTarget.value() < codeSize)
@@ -691,6 +712,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 callsMap.insert({ value, isJump });
             }
         }
+    }
+
+    // ARM: code whose address is taken (relative): a function when it starts a block (FinishSweep). The address of a Thumb function has
+    // bit 0 set; the ARM64 instructions are 4 bytes aligned
+    void AddTakenCodeAddress(uint64 target)
+    {
+        uint64 address = labelBase + target;
+        if (arch == DissasmArch::Arm64 && (address & 3) != 0)
+            return;
+        address &= ~static_cast<uint64>(1);
+        if (address >= labelBase && address - labelBase < codeSize)
+            addressTakenTargets.push_back(address - labelBase);
     }
 
     // 32 bit x86 PIC: ebx holds the global offset table in the functions that set it (call $+5; pop ebx / call __x86.get_pc_thunk.bx, then
@@ -772,9 +805,24 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the first instructions at `target` look like code, not like the data that the code refers to (a string, a GUID kept in .text): no
     // data line, no opcode 00 (add byte ptr [...], r8: the zeros of data), none of the instructions that data decodes to and code never
     // uses (in / out, hlt, the BCD adjustments, arpl, bound, les / lds), until a return / a jump or 16 instructions
+    // ARM: no data line (a literal pool), no zero word, no udf / bkpt / brk / hlt
     bool LooksLikeCode(uint64 target)
     {
         DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, target, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+        if (IsArmArch(arch)) {
+            for (uint32 count = 0; count < 16; count++) {
+                if (!probe.Next(insn) || insn->id == 0 || std::all_of(insn->bytes, insn->bytes + insn->size, [](uint8 value) { return value == 0; }))
+                    return false;
+                const DissasmArch insnArch = zone->GetArchAt(insn->address);
+                if (insnArch == DissasmArch::Arm64 ? insn->id == ARM64_INS_UDF || insn->id == ARM64_INS_BRK || insn->id == ARM64_INS_HLT
+                                                   : insn->id == ARM_INS_UDF || insn->id == ARM_INS_BKPT)
+                    return false;
+                const auto flow = GetInstructionFlow(*insn, insnArch);
+                if (flow == X86Flow::Return || flow == X86Flow::Jump)
+                    return true;
+            }
+            return true;
+        }
         for (uint32 count = 0; count < 16; count++) {
             if (!probe.Next(insn) || insn->id == X86_INS_INVALID || insn->bytes[0] == 0x00)
                 return false;
@@ -816,8 +864,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         constexpr uint64 MAX_DATA_ZONE_SIZE = 64ull * 1024 * 1024;
         const uint8 pointerSize             = is64 ? 8 : 4;
-        if (arch != DissasmArch::X86 && arch != DissasmArch::X64)
-            return; // LooksLikeCode knows the x86 instructions only
+        const bool isArm                    = IsArmArch(arch);
         for (const auto* sibling : zone->siblingZones) {
             const auto& details = sibling->zoneDetails;
             if (!details.isData || details.startingZonePoint >= obj->GetData().GetSize())
@@ -840,6 +887,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const uint64 value = readValue(position);
                 if (value < labelBase || value - labelBase >= codeSize)
                     continue;
+                if (isArm) { // a Thumb function: bit 0 set
+                    AddTakenCodeAddress(value - labelBase);
+                    continue;
+                }
                 if (!is64 && position >= 4 && isSmallNumber(readValue(position - 4)))
                     continue; // FilterFunc, action, addressOfHandler
                 if (!is64 && position >= 8 && isSmallNumber(readValue(position - 8)))

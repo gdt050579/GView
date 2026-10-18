@@ -911,6 +911,8 @@ namespace View
             bool ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background);
             void FillCodeZoneInitData(DissasmCodeZoneInitData& initData, DrawLineInfo* dli, DissasmCodeZone* zone);
             void RefreshDataZones(); // the data zones analyzed again: a code zone changed its references (its labels there)
+            // a data zone got its labels: the lines of the code are prepared again (their comments name the data: ; dword_30168)
+            void ForgetLinesReferringTo(DissasmCodeZone* dataZone);
             int PrintCursorValueInfo(int x, int y, Renderer& r);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);

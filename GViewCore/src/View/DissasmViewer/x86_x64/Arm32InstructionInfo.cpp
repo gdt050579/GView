@@ -54,6 +54,12 @@ uint64 ProgramCounter(const cs_insn& insn, bool thumb, uint64 addressBase)
     return ((addressBase + insn.address + 4) & ~static_cast<uint64>(3)) - addressBase;
 }
 
+// pc read as a register operand (add r0, pc / add r0, pc, r0): Thumb does not align it (only the literals and adr do)
+uint64 RegisterProgramCounter(const cs_insn& insn, bool thumb)
+{
+    return insn.address + (thumb ? 4 : 8);
+}
+
 // a relative address of 32 bit code: the VA wraps around at 4 GB (a PIC offset is often negative), the relative address is VA - addressBase
 uint64 Wrap(uint64 relative, uint64 addressBase)
 {
@@ -204,6 +210,41 @@ X86InstructionKind GView::View::DissasmViewer::GetArm32InstructionKind(unsigned 
     }
 }
 
+uint8 GView::View::DissasmViewer::GetArm32AccessSize(const cs_insn& insn)
+{
+    if (!insn.detail)
+        return 0;
+    switch (insn.id) {
+    case ARM_INS_LDRB:
+    case ARM_INS_LDRSB:
+    case ARM_INS_STRB:
+        return 1;
+    case ARM_INS_LDRH:
+    case ARM_INS_LDRSH:
+    case ARM_INS_STRH:
+        return 2;
+    case ARM_INS_LDR:
+    case ARM_INS_STR:
+        return 4;
+    case ARM_INS_LDRD:
+    case ARM_INS_STRD:
+        return 8;
+    case ARM_INS_VLDR: // vldr s0 / vldr d0
+    case ARM_INS_VSTR: {
+        const cs_arm& arm = insn.detail->arm;
+        if (arm.op_count == 0 || arm.operands[0].type != ARM_OP_REG)
+            return 0;
+        if (arm.operands[0].reg >= ARM_REG_S0 && arm.operands[0].reg <= ARM_REG_S31)
+            return 4;
+        if (arm.operands[0].reg >= ARM_REG_D0 && arm.operands[0].reg <= ARM_REG_D31)
+            return 8;
+        return 0;
+    }
+    default:
+        return 0;
+    }
+}
+
 bool GView::View::DissasmViewer::IsArm32PrologueStart(const cs_insn& insn)
 {
     if (!insn.detail)
@@ -293,7 +334,8 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
             const auto from = registers[target];
             if (va >= addressBase) { // the address is taken (a string, a variable, a slot)
                 setAddress(target, va - addressBase, from.start, from.startAtBlock);
-                result = Result{ va - addressBase, false, from.start, from.startAtBlock, 0 };
+                registers[target].absolute = true;
+                result                     = Result{ va - addressBase, false, from.start, from.startAtBlock, 0, true };
             }
         }
         break;
@@ -343,17 +385,18 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
             else if (const int base = registerOf(1); base >= 0 && registers[base].address.has_value()) {
                 const auto from = registers[base];
                 setAddress(target, isAdd ? from.address.value() + value : from.address.value() - value, from.start, from.startAtBlock);
+                registers[target].absolute = from.absolute;
             }
         } else if (isAdd && arm.op_count == 3) {
             // add r0, pc, r0: a PIC address, the offset was read from the literal pool
             const int other = isPc(1) ? registerOf(2) : (isPc(2) ? registerOf(1) : -1);
             if (other >= 0 && registers[other].literal.has_value()) {
-                result = Result{ Wrap(pc + registers[other].literal.value(), addressBase), false, insn.address, atBlockStart, 0 };
+                result = Result{ Wrap(RegisterProgramCounter(insn, thumb) + registers[other].literal.value(), addressBase), false, insn.address, atBlockStart, 0 };
                 setAddress(target, result->address, insn.address, atBlockStart);
             }
         } else if (isAdd && arm.op_count == 2 && isPc(1) && registers[target].literal.has_value()) {
             // add r0, pc (Thumb): the same
-            result = Result{ Wrap(pc + registers[target].literal.value(), addressBase), false, insn.address, atBlockStart, 0 };
+            result = Result{ Wrap(RegisterProgramCounter(insn, thumb) + registers[target].literal.value(), addressBase), false, insn.address, atBlockStart, 0 };
             setAddress(target, result->address, insn.address, atBlockStart);
         }
         break;
@@ -361,7 +404,7 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
     case ARM_INS_BX:
     case ARM_INS_BLX: // bx r12 / blx r3: through the slot read before; bx r2: the case of a switch
         if (target >= 0 && arm.operands[0].type == ARM_OP_REG && registers[target].slot.has_value())
-            result = Result{ registers[target].slot.value(), true, registers[target].start, registers[target].startAtBlock, CS_AC_READ };
+            result = Result{ registers[target].slot.value(), true, registers[target].start, registers[target].startAtBlock, CS_AC_READ, registers[target].absolute };
         if (target >= 0 && insn.id == ARM_INS_BX && registers[target].jump.has_value())
             setJumpTable(registers[target].jump.value());
         break;
@@ -396,12 +439,19 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
                 break;
             }
             if (op.mem.base == ARM_REG_PC) {
-                // ldr r0, [pc, #off]: the word of the literal pool (a PIC offset, an address)
+                // ldr r0, [pc, #off]: the word of the literal pool (a PIC offset added to pc next, or the address of a variable read
+                // next: ldr r0, =variable; ldr r1, [r0])
                 if (insn.id == ARM_INS_LDR && target >= 0 && readWord) {
                     if (const auto word = readWord(Wrap(pc + static_cast<uint64>(static_cast<int64>(op.mem.disp)), addressBase)); word.has_value()) {
                         registers[target]         = {};
                         registers[target].literal = word.value();
-                        kept                      = target;
+                        if (word.value() >= addressBase) {
+                            registers[target].address      = word.value() - addressBase;
+                            registers[target].absolute     = true;
+                            registers[target].start        = insn.address;
+                            registers[target].startAtBlock = atBlockStart;
+                        }
+                        kept = target;
                     }
                 }
                 break;
@@ -413,12 +463,13 @@ std::optional<Arm32Tracker::Result> Arm32Tracker::Next(const cs_insn& insn, bool
             const auto from   = registers[base];
             const uint64 slot = Wrap(arm.post_index ? from.address.value() : from.address.value() + static_cast<uint64>(static_cast<int64>(op.mem.disp)), addressBase);
             const bool isJump = insn.id == ARM_INS_LDR && isPc(0); // ldr pc, [ip, #off]!: the PLT stub
-            result            = Result{ slot, isJump, from.start, from.startAtBlock, static_cast<uint8>(IsStore(insn.id) ? CS_AC_WRITE : CS_AC_READ) };
+            result = Result{ slot, isJump, from.start, from.startAtBlock, static_cast<uint8>(IsStore(insn.id) ? CS_AC_WRITE : CS_AC_READ), from.absolute };
             if (insn.id == ARM_INS_LDR && target >= 0) {
                 registers[target]              = {};
                 registers[target].slot         = slot;
                 registers[target].start        = from.start;
                 registers[target].startAtBlock = from.startAtBlock;
+                registers[target].absolute     = from.absolute;
                 kept                           = target;
             }
             break;

@@ -578,6 +578,20 @@ static std::string FormatAddress(uint64 address)
     return text.GetText();
 }
 
+// an address (VA) that the code reads, writes or takes: its name in a data zone (dword_30168, off_1048+0x8), the label of code placed
+// there (a callback), else 0x...
+static std::string FormatDataAddress(const DissasmCodeZone* zone, uint64 address)
+{
+    const auto other = zone->FindCodeZoneOfAddress(address);
+    if (other && !other->IsDeepScanPending()) {
+        if (other->zoneDetails.isData)
+            return other->FormatCodeAddress(address - other->labelAddressBase);
+        if (auto label = other->GetLabelNameAt(address - other->labelAddressBase); !label.empty())
+            return label;
+    }
+    return FormatAddress(address);
+}
+
 // 32 bit ARM: the import of a slot; a literal load (ldr r0, [pc, #off]): the string its word points to (an absolute address) or the word
 // itself (=0x...: a PIC offset, a constant); an address taken (adr, add r0, pc, #imm, the PIC add pc of a literal): its string or the
 // address; a slot read / written through the registers: the address
@@ -608,17 +622,29 @@ static void AddArm32DataComment(DissasmAsmPreCacheLine& line, const cs_insn& ins
         uint32 word = 0;
         if (!fileOffset.has_value() || !params.obj->GetData().Copy<uint32>(fileOffset.value(), word))
             return;
-        if (!stringAt(TranslateOperandAddressToFileOffset(settings, word, true))) {
-            LocalString<24> text;
-            text.SetFormat("=0x%x", word);
-            line.autoComment = text.GetText();
+        const auto wordOffset = TranslateOperandAddressToFileOffset(settings, word, true);
+        if (!stringAt(wordOffset)) {
+            // ldr r0, =variable: the name of the variable or of the function (a Thumb function: bit 0 set); else the word (a PIC offset,
+            // a constant)
+            std::string name;
+            if (word >= 0x10000 && wordOffset.has_value()) {
+                name = FormatDataAddress(params.zone, word);
+                if (name.starts_with("0x") && (word & 1) != 0)
+                    name = FormatDataAddress(params.zone, word & ~1u);
+            }
+            if (name.empty() || name.starts_with("0x")) {
+                LocalString<24> text;
+                text.SetFormat("0x%x", word);
+                name = text.GetText();
+            }
+            line.autoComment = "=" + name;
         }
         return;
     }
     if (operands.memoryAccess == 0 && stringAt(fileOffset))
         return;
     if (operands.memoryAccess == 0 || isResolved)
-        line.autoComment = FormatAddress(params.zone->labelAddressBase + operands.ripTarget.value());
+        line.autoComment = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());
 }
 
 // the data referenced by the operands, shown as an automatic comment (never saved): the import loaded by mov rax, [rip + 0x...] or the
@@ -650,7 +676,7 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
             // the other instructions read / write the data (a variable, a pointer), only lea / adr / add take the address of a string. The
             // address of an ARM64 adrp pair is not in the operands: it is shown
             if (params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address))
-                line.autoComment = FormatAddress(params.zone->labelAddressBase + operands.ripTarget.value());
+                line.autoComment = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());
             return;
         }
         fileOffset = TranslateOperandAddressToFileOffset(settings, rva, false);
@@ -666,7 +692,7 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
     }
     const bool isAdrpPair = params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address);
     if (isAdrpPair && operands.ripTarget.has_value())
-        line.autoComment = FormatAddress(params.zone->labelAddressBase + operands.ripTarget.value()); // add x0, x0, #off: the address, when it is not a string
+        line.autoComment = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value()); // add x0, x0, #off: the address, when it is not a string
     if (!fileOffset.has_value() || fileOffset.value() >= params.obj->GetData().GetSize())
         return;
     auto text = TryExtractStringPreview(params.obj, fileOffset.value());
@@ -1302,7 +1328,17 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
     }
     if (zoneLinesChanged)                                                 // local variables removed by the user in a previous session
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+    ForgetLinesReferringTo(zone);
     return true;
+}
+
+void Instance::ForgetLinesReferringTo(DissasmCodeZone* dataZone)
+{
+    if (!dataZone->zoneDetails.isData)
+        return;
+    for (auto* sibling : dataZone->siblingZones)
+        if (!sibling->zoneDetails.isData)
+            sibling->asmPreCacheData.Clear();
 }
 
 void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> obj, DissasmCodeZone* zone, DissasmCodeZoneInitData& initData)
@@ -1370,6 +1406,7 @@ void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
             MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
         if (!zone->zoneDetails.isData)
             RefreshDataZones(); // their labels are the places this code refers to
+        ForgetLinesReferringTo(zone);
         return;
     }
     // until the scan ends the lines of the zone are its instructions: the cursor stays on the same instruction (the view moves with it)
@@ -1398,6 +1435,7 @@ void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
         Cursor.hasMovedView = true;
     }
     zone->asmPreCacheData.Clear();
+    ForgetLinesReferringTo(zone);
 }
 
 bool Instance::PrepareNextCodeZone()
@@ -2243,6 +2281,7 @@ bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAd
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // a collapsed zone placed again
         if (!zone->zoneDetails.isData)
             RefreshDataZones(); // their labels are the places this code refers to
+        ForgetLinesReferringTo(zone);
     }
     if (keepAddress.has_value())
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + keepAddress.value(), false);

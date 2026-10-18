@@ -52,6 +52,10 @@ inline bool IsX86Branch(X86Flow flow)
 // The instruction set of a code zone. The ARM64 versions give the same results as the x86 ones (x86_x64/Arm64InstructionInfo.cpp): the
 // branches and their targets (b / bl / cbz / tbz / b.cond: the last operand), the addresses taken by adr and read by ldr literal (ripTarget)
 enum class DissasmArch : AppCUI::uint8 { X86, X64, Arm64, Arm, Thumb };
+inline bool IsArmArch(DissasmArch arch)
+{
+    return arch == DissasmArch::Arm64 || arch == DissasmArch::Arm || arch == DissasmArch::Thumb;
+}
 
 // 32 bit ARM (x86_x64/Arm32InstructionInfo.cpp): b / bl / blx / cbz, bx lr / pop {..., pc} (returns), ldr pc / bx rN (indirect jumps); the
 // literal loads (ldr r0, [pc, #off]) and adr / add rd, pc, #imm give the address read / taken: pc is the address + 8 (ARM) or the 4 bytes
@@ -62,6 +66,10 @@ X86InstructionKind GetArm32InstructionKind(unsigned int id, std::string_view mne
 X86Flow GetArm64Flow(const cs_insn& insn);
 X86OperandsInfo GetArm64OperandsInfo(const cs_insn& insn);
 X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mnemonic);
+// the size of the data that an ARM load / store reads or writes (ldrb: 1, ldrh: 2, ldr w0 / ldr r0 / ldrsw: 4, ldr x0 / ldrd: 8, ldr q0:
+// 16); 0 for the other instructions and the loads of several registers (ldp, ldm)
+AppCUI::uint8 GetArm64AccessSize(const cs_insn& insn);
+AppCUI::uint8 GetArm32AccessSize(const cs_insn& insn);
 
 // Follows the adrp pairs of the instructions of a linear sweep (ARM64): adrp x0, page then add x1, x0, #off / ldr / str [x0, #off] give
 // the address; ldr x16, [x16, #off] then br / blr x16 jump / call through the slot that was read (an import stub / an import call). A pair
@@ -100,6 +108,9 @@ class Arm64AdrpTracker
         AppCUI::uint64 sequenceStart; // the address of the adrp
         bool sequenceAtBlockStart;
         AppCUI::uint8 memoryAccess; // CS_AC_READ (ldr, br, blr) / CS_AC_WRITE (str); 0: the address is taken (add)
+        // 32 bit ARM: the address is a constant of the code (movw / movt, a word of a literal pool): an address only when it is one of
+        // the file (the deep scan checks it), a constant otherwise
+        bool absolute = false;
     };
     std::optional<Result> Next(const cs_insn& insn, bool atBlockStart);
     // the jump table of the br given to the last Next (once)
@@ -174,6 +185,7 @@ class Arm32Tracker
         std::optional<Arm64JumpTable> jump;    // add r2, r1, r0: an address plus an entry
         AppCUI::uint64 start = 0;
         bool startAtBlock    = false;
+        bool absolute        = false; // the address is a constant (movw / movt, ldr r0, =variable): Result::absolute
     };
     std::array<Value, 15> registers{}; // r0 .. r12, sp, lr
     AppCUI::uint64 addressBase;
