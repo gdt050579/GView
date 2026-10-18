@@ -601,7 +601,7 @@ static std::string FormatDataAddress(const DissasmCodeZone* zone, uint64 address
 static std::string GetDataOperandName(DissasmInsnExtractLineParams& params, const X86OperandsInfo& operands, uint64 address, uint8 accessSize = 0)
 {
     if (const auto* import = FindX86OperandsImport(params.settings, params.zone, operands); import && !import->name.empty())
-        return "__imp_" + import->name;
+        return import->type == MemoryMappingType::FunctionMapping ? "__imp_" + import->name : import->name; // selRef_alloc
     std::string name = FormatDataAddress(params.zone, address);
     if (!name.starts_with("0x"))
         return name;
@@ -768,6 +768,13 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
         const auto mapping = settings->memoryMappings.find(rva);
         if (mapping != settings->memoryMappings.end()) {
             line.autoComment = mapping->second.name;
+            // ARM64: the pair that loads the slot (ldr x1, [x1, #selRef_alloc@PAGEOFF] / ldr x16, [x16, #__imp_malloc@PAGEOFF])
+            if (params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address)) {
+                const std::string name = mapping->second.type == MemoryMappingType::FunctionMapping ? "__imp_" + mapping->second.name : mapping->second.name;
+                const uint64 target    = params.zone->labelAddressBase + operands.ripTarget.value();
+                if (const auto replaced = SubstituteArm64PageOffset({ line.op_str ? line.op_str : "", line.op_str_size }, target & 0xFFF, name))
+                    line.SetOperands(replaced->c_str(), params.zone);
+            }
             return;
         }
         const bool takesAddress = params.zone->IsArm64Code() ? insn.id == ARM64_INS_ADR || insn.id == ARM64_INS_ADD : insn.id == X86_INS_LEA;
@@ -859,7 +866,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     if (insn->id == 0 && params.zone->zoneDetails.isData && insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
         X86OperandsInfo slot;
         slot.absoluteMemory = params.zone->labelAddressBase + insn->address;
-        if (const auto* import = FindX86OperandsImport(params.settings, params.zone, slot); import && !import->name.empty()) {
+        const auto* import = FindX86OperandsImport(params.settings, params.zone, slot);
+        if (import && !import->name.empty() && import->type == MemoryMappingType::FunctionMapping) {
             SetOperands(import->name.c_str(), params.zone);
             return true;
         }
@@ -1493,6 +1501,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.globalOffsetTable     = settings->globalOffsetTable;
     initData.armCodeModes          = &settings->armCodeModes;
     initData.relocatedPointers     = &settings->relocatedPointers;
+    initData.memoryMappings        = &settings->memoryMappings;
     if (!settings->memoryMappings.empty()) {
         auto* settingsData  = settings;
         initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };

@@ -190,6 +190,9 @@ struct DissasmCodeZone : public ParseZone {
     std::unordered_map<uint64, uint32> switchJumps;        // relative address of the indirect jmp of a switch -> its cases count
     // the jump tables inside the code shown as data lines (instructionSet.dataRanges): relative address of an entry -> its case (relative)
     std::map<uint64, uint64> tableEntries;
+    // a data zone: the slots named by the plugin (the import slots, the Objective-C references and classes), relative addresses, sorted: a
+    // label each, even when no code refers to them (CollectDataZoneTargets)
+    std::vector<uint64> namedSlots;
     // the pointers the loader writes (the relocations of a PIE / shared object), by file offset; can be null
     const std::map<uint64, uint64>* relocatedPointers = nullptr;
     // the value of the pointer at a relative address that the loader writes (its bytes in the file are 0 or the addend)

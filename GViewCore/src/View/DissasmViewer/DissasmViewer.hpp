@@ -505,6 +505,8 @@ namespace View
             const std::map<uint64, ArmCodeMode>* armCodeModes = nullptr;
             // the pointers the loader writes, by file offset (SettingsData::relocatedPointers); can be null
             const std::map<uint64, uint64>* relocatedPointers = nullptr;
+            // the named places of the plugin (imports, Objective-C references), keyed by RVA (by VA without an offset translation); can be null
+            const std::unordered_map<uint64, MemoryMappingEntry>* memoryMappings = nullptr;
             // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
             std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
             // the file offset of an address (address space of the labels): the jump tables of the switches are read there

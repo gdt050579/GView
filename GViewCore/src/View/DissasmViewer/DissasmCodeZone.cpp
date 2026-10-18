@@ -313,10 +313,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 operands.absoluteMemory = labelBase + target;
                 const auto* import      = findImport ? findImport(operands) : nullptr;
                 if (import && !import->name.empty()) {
-                    // an import slot: __imp_ and the name of the import (a demangled C++ name keeps its letters and digits)
-                    name = "__imp_";
+                    // an import slot: __imp_ and the name of the import (a demangled C++ name keeps its letters and digits); a slot named by
+                    // the metadata (TextMapping: selRef_alloc, classRef_NSString, _OBJC_CLASS_$_Animal) keeps its name
+                    name = import->type == MemoryMappingType::FunctionMapping ? "__imp_" : "";
                     for (const char c : import->name)
-                        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
+                        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$')
                             name.push_back(c);
                         else if (name.back() != '_')
                             name.push_back('_');
@@ -1451,6 +1452,17 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     if (zoneDetails.isData) {
         // a data zone: every byte is a data line; the places the code refers to (the xrefs of the other zones) start their lines
         constexpr uint64 MAX_DATA_ZONE_SIZE = 64ull * 1024 * 1024;
+        // the places named by the plugin (import slots, Objective-C references and structures): labels too
+        namedSlots.clear();
+        if (initData.memoryMappings && initData.findImport) {
+            const uint64 rvaBase = initData.imageBase.value_or(0); // the mappings are keyed by RVA
+            for (const auto& [key, entry] : *initData.memoryMappings) {
+                const uint64 address = key + rvaBase;
+                if (!entry.name.empty() && address >= labelAddressBase && address - labelAddressBase < zoneDetails.size)
+                    namedSlots.push_back(address - labelAddressBase);
+            }
+            std::sort(namedSlots.begin(), namedSlots.end());
+        }
         std::vector<uint64> targets;
         std::vector<uint8> targetSizes;
         CollectDataZoneTargets(targets, targetSizes);
@@ -1469,8 +1481,9 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
                     return range.start < target + slotSize && target < range.end;
                 });
                 const bool overlapsSlot = !slots.empty() && slots.back().end > target;
-                if (!overlapsUser && !overlapsSlot && target + slotSize <= zoneDetails.size && initData.findImport(operands))
-                    slots.push_back({ target, target + slotSize, slotSize });
+                const auto* import      = !overlapsUser && !overlapsSlot && target + slotSize <= zoneDetails.size ? initData.findImport(operands) : nullptr;
+                if (import)
+                    slots.push_back({ target, target + slotSize, slotSize, import->type == MemoryMappingType::TextMapping });
             }
             fixedRanges.insert(fixedRanges.end(), slots.begin(), slots.end());
             std::sort(fixedRanges.begin(), fixedRanges.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
@@ -2417,6 +2430,8 @@ void DissasmCodeZone::CollectDataZoneTargets(std::vector<uint64>& targets, std::
                 auto& size = found[xref.to - labelAddressBase];
                 size       = std::max(size, xref.size);
             }
+    for (const uint64 slot : namedSlots)
+        found.try_emplace(slot, 0);
     targets.clear();
     sizes.clear();
     for (const auto& [target, size] : found) {

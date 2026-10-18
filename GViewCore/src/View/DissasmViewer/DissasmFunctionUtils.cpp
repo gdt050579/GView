@@ -130,6 +130,18 @@ std::optional<size_t> FindHexToken(std::string_view operands, uint64 value, size
 }
 } // namespace
 
+namespace
+{
+// a name that says the place is a pointer: off_, an import slot, an Objective-C reference (the size of the operand is not written)
+bool IsPointerName(std::string_view name)
+{
+    for (const std::string_view prefix : { "off_", "__imp_", "selRef_", "classRef_", "superRef_" })
+        if (name.starts_with(prefix))
+            return true;
+    return false;
+}
+} // namespace
+
 std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands, std::string_view name, bool isLea, bool is64)
 {
     if (name.empty())
@@ -170,7 +182,7 @@ std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands,
         // the size is said by the name: byte_ / word_ / dword_ / qword_ / xmmword_, a pointer (off_, __imp_) of the size of the code
         const std::string_view pointerSize = is64 ? "qword" : "dword";
         const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
-                                                  (size == pointerSize && (name.starts_with("off_") || name.starts_with("__imp_"))));
+                                                  (size == pointerSize && IsPointerName(name)));
         if (!size.empty() && !sizeInName)
             result.append(size).append(" ptr ");
         result.append(is64 ? "cs:" : "ds:").append(name);
@@ -211,7 +223,7 @@ std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, 
     if (!isLea) {
         const std::string_view pointerSize = is64 ? "qword" : "dword";
         const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
-                                                  (size == pointerSize && (name.starts_with("off_") || name.starts_with("__imp_"))));
+                                                  (size == pointerSize && IsPointerName(name)));
         if (!size.empty() && !sizeInName)
             result.append(size).append(" ptr ");
         result.append("ds:");

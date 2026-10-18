@@ -25,6 +25,8 @@ target_sources(
 	DissasmAnalysisExport.cpp
 	DissasmChainedFixups.hpp
 	DissasmChainedFixups.cpp
+	DissasmObjC.hpp
+	DissasmObjC.cpp
 	DissasmAssistantRequest.hpp
 	DissasmAnnotations.hpp
 	DissasmAnnotations.cpp

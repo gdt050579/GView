@@ -1,5 +1,6 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmChainedFixups.hpp"
+#include "DissasmObjC.hpp"
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmAnalysisExport.hpp"
@@ -4609,7 +4610,7 @@ TEST_CASE("Arm64AdrpPairs", "[Dissasm]Arm64")
     REQUIRE(listing.find("bl     j_malloc") != std::string::npos); // the stub is an import thunk
     REQUIRE(zone.GetLabelNameAt(0x24) == "j_malloc");
     REQUIRE(listing.find("; 0x1008") != std::string::npos);         // str w1, [x9, #8]: the address written
-    REQUIRE(listing.find("; puts") != std::string::npos);           // ldr x8, [x8, #0x10]: the import of the slot
+    REQUIRE(listing.find("ldr    x8, [x8, #__imp_puts@PAGEOFF]") != std::string::npos); // ldr x8, [x8, #0x10]: the import of the slot
 
     // the cross references of the data
     const auto kindsTo = [&zone](uint64 address) {
@@ -6955,4 +6956,80 @@ TEST_CASE("TableOperands", "[Dissasm]Operands")
     REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10040[ecx*4]").size() > 0);
     REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10048[ebx + ecx*4]").size() > 0);
     REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10020").size() > 0); // no label inside the code: the name of its access
+}
+
+TEST_CASE("ObjCMetadata", "[Dissasm]MachO")
+{
+    // a class Animal (a relative method list: -legs; its metaclass a classic one: +create), a category Extra of the imported NSObject (a
+    // bind: -eyes), two selector references and a class reference
+    std::map<uint64, uint64> pointers;
+    std::map<uint64, uint32> words;
+    std::map<uint64, std::string> strings = { { 0x5000, "Animal" }, { 0x5100, "legs" }, { 0x5200, "create" }, { 0x5300, "Extra" }, { 0x5400, "eyes" } };
+    const auto relative = [](uint64 from, uint64 to) { return static_cast<uint32>(static_cast<int32>(static_cast<int64>(to) - static_cast<int64>(from))); };
+    pointers[0x1000] = 0x2000;              // __objc_classlist
+    pointers[0x2000] = 0x2100;              // isa: the metaclass
+    pointers[0x2020] = 0x3000 | 1;          // data: the class_ro_t (and a flag in the low bits)
+    pointers[0x3018] = 0x5000;              // name
+    pointers[0x3020] = 0x4000;              // baseMethods
+    words[0x4000]    = 0x8000000C;          // a relative list of 12 bytes entries
+    words[0x4004]    = 1;
+    words[0x4008]    = relative(0x4008, 0x6000); // the name: a selector reference
+    words[0x4010]    = relative(0x4010, 0x7000); // the implementation
+    pointers[0x6000] = 0x5100;              // selRef: "legs"
+    pointers[0x2120] = 0x3100;              // the metaclass data
+    pointers[0x3118] = 0x5000;
+    pointers[0x3120] = 0x4100;
+    words[0x4100]    = 24;                  // a classic list: {name, types, imp}
+    words[0x4104]    = 1;
+    pointers[0x4108] = 0x5200;              // "create"
+    pointers[0x4118] = 0x7100;
+    pointers[0x1100] = 0x2200;              // __objc_catlist
+    pointers[0x2200] = 0x5300;              // "Extra"
+    pointers[0x2208] = 0;                   // cls: a bind
+    pointers[0x2210] = 0x4200;              // instanceMethods
+    words[0x4200]    = 0x8000000C;
+    words[0x4204]    = 1;
+    words[0x4208]    = relative(0x4208, 0x6008);
+    words[0x4210]    = relative(0x4210, 0x7200);
+    pointers[0x6008] = 0x5400;              // selRef: "eyes"
+    pointers[0x6100] = 0x2000;              // classRef: Animal
+
+    ObjCMemory memory;
+    memory.readPointer = [&pointers](uint64 address) -> std::optional<uint64> {
+        const auto it = pointers.find(address);
+        return it != pointers.end() ? std::optional<uint64>(it->second) : std::optional<uint64>(0);
+    };
+    memory.readU32 = [&words](uint64 address) -> std::optional<uint32> {
+        const auto it = words.find(address);
+        return it != words.end() ? std::optional<uint32>(it->second) : std::nullopt;
+    };
+    memory.readString = [&strings](uint64 address) {
+        const auto it = strings.find(address);
+        return it != strings.end() ? it->second : std::string();
+    };
+    memory.bindName = [](uint64 address) { return address == 0x2208 ? std::string("_OBJC_CLASS_$_NSObject") : std::string(); };
+    ObjCSections sections;
+    sections.classLists    = { { 0x1000, 8 } };
+    sections.categoryLists = { { 0x1100, 8 } };
+    sections.selectorRefs  = { { 0x6000, 0x10 } };
+    sections.classRefs     = { { 0x6100, 8 } };
+    ObjCMetadata metadata;
+    ParseObjCMetadata(sections, memory, metadata);
+
+    std::map<uint64, std::string> methods(metadata.methods.begin(), metadata.methods.end());
+    REQUIRE(methods.size() == 3);
+    REQUIRE(methods[0x7000] == "-[Animal legs]");
+    REQUIRE(methods[0x7100] == "+[Animal create]");
+    REQUIRE(methods[0x7200] == "-[NSObject(Extra) eyes]");
+    std::map<uint64, std::string> selectors(metadata.selectorRefs.begin(), metadata.selectorRefs.end());
+    REQUIRE(selectors[0x6000] == "legs");
+    REQUIRE(selectors[0x6008] == "eyes");
+    REQUIRE(metadata.classRefs.size() == 1);
+    REQUIRE(metadata.classRefs[0].second == "Animal");
+    std::map<uint64, std::string> structures(metadata.structures.begin(), metadata.structures.end());
+    REQUIRE(structures[0x2000] == "_OBJC_CLASS_$_Animal");
+    REQUIRE(structures[0x2100] == "_OBJC_METACLASS_$_Animal");
+    REQUIRE(structures[0x3000] == "__OBJC_CLASS_RO_$_Animal");
+    REQUIRE(structures[0x4000] == "__OBJC_$_INSTANCE_METHODS_Animal");
+    REQUIRE(structures[0x2200] == "__OBJC_$_CATEGORY_NSObject_$_Extra");
 }

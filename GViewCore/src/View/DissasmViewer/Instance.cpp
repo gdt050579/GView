@@ -3,6 +3,7 @@
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
 #include "DissasmChainedFixups.hpp"
+#include "DissasmObjC.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -176,6 +177,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
         this->settings.reset(new SettingsData());
     }
     ApplyChainedFixups(*this->settings, obj); // Mach-O: the pointers and the import slots that dyld writes
+    ApplyObjCMetadata(*this->settings, obj);  // Mach-O: the methods of the Objective-C classes, the selector / class references
 
     queryInterface = nullptr;
     if (config.Loaded == false)
