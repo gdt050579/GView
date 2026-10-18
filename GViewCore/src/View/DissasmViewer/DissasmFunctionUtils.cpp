@@ -128,12 +128,22 @@ uint64 GetCachedOffsetWindowEnd(const DissasmCodeZone* zone, uint32 cachedOffset
     return offsets[cachedOffsetIndex].offset - offsets[0].offset + DISSASM_INSTRUCTION_OFFSET_MARGIN + 2 * DISSASM_MAX_INSTRUCTION_SIZE;
 }
 
-bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn)
+bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, const std::vector<AppCUI::uint64>* boundaries)
 {
     if (*size == 0)
         return false;
-    if (cs_disasm_iter(handle, code, size, address, insn))
+    // an instruction never ends after the next boundary
+    size_t available = *size;
+    if (boundaries && !boundaries->empty()) {
+        const auto next = std::upper_bound(boundaries->begin(), boundaries->end(), static_cast<AppCUI::uint64>(*address));
+        if (next != boundaries->end() && *next - *address < available)
+            available = static_cast<size_t>(*next - *address);
+    }
+    size_t left = available;
+    if (cs_disasm_iter(handle, code, &left, address, insn)) {
+        *size -= available - left;
         return true;
+    }
 
     // cs_disasm_iter leaves the position as it is on failure: the byte becomes a data line of its own
     const uint8_t value = **code;
@@ -288,7 +298,7 @@ bool DissasmCodeLinesWalker::Next(cs_insn* insn)
     const uint8_t* data = view.GetData();
     size_t size         = static_cast<size_t>(std::min<uint64>(view.GetLength(), requested));
     uint64_t current    = address;
-    if (!DecodeX86Line(handle, &data, &size, &current, insn))
+    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries))
         return false;
     address = current;
     return true;
@@ -331,7 +341,7 @@ cs_insn* GetCurrentInstructionByOffset(
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (zone->asmAddress <= offsetToReach) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
-        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
+        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the offset is after the decoded code
             if (dli)

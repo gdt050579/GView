@@ -116,7 +116,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
             return false;
         insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle);
+        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries);
         callsFound.reserve(16);
 
         // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
@@ -166,11 +166,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // an import thunk (IDA j_Name): a jmp through an import slot that starts a block, reached by calls instead of the import itself.
         // An endbr at the start of a block keeps it a block start: the CET stubs (ELF .plt.sec: endbr64; bnd jmp [rip + ...]) start with
         // it, the thunk (and the calls to it) is at the endbr
-        const bool isBlockStart = atBlockStart;
+        // a boundary (a section start of the plugin, a function entry) starts a block
+        const bool isBlockStart = atBlockStart || std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
         const bool isEndbr      = insn->id == X86_INS_ENDBR64 || insn->id == X86_INS_ENDBR32;
         const uint64 thunkStart = blockEndbr.value_or(instructionOffset);
         blockEndbr              = isBlockStart && isEndbr ? std::optional<uint64>(instructionOffset) : std::nullopt;
-        atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_NOP || (isBlockStart && isEndbr);
+        // the padding between the blocks: nop, int3 (an interrupt), the undecodable bytes (db)
+        atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_NOP ||
+                       insn->id == X86_INS_INVALID || (isBlockStart && isEndbr);
         if (isBlockStart && !isEndbr && flow == X86Flow::Jump && !operands.directTarget.has_value() && findImport) {
             const auto import = findImport(operands);
             if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
@@ -395,7 +398,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 };
 
 inline bool populateOffsetsVector(
-      vector<AsmOffsetLine>& offsets, DisassemblyZone& zoneDetails, Reference<GView::Object> obj, int internalArchitecture, uint32& totalLines)
+      vector<AsmOffsetLine>& offsets,
+      DisassemblyZone& zoneDetails,
+      Reference<GView::Object> obj,
+      int internalArchitecture,
+      uint32& totalLines,
+      const std::vector<uint64>* boundaries)
 {
     if (zoneDetails.size == 0 || zoneDetails.size > UINT64_MAX - zoneDetails.startingZonePoint)
         return false;
@@ -420,7 +428,7 @@ inline bool populateOffsetsVector(
     // the cached zones (labels, comments) are keyed on these lines.
     // An undecodable byte is a data line (db) and the decoding continues after it (inline data, jump tables); a zone bigger than the
     // data cache window is decoded window after window.
-    DissasmCodeLinesWalker walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, handle);
+    DissasmCodeLinesWalker walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, handle, 0, boundaries);
 
     // The zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is
     // not shown. A run inside the code (between functions, data) is decoded as it is: stopping at the first long run of zeros hid the
@@ -676,8 +684,23 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     }
     }
 
+    // the places where an instruction starts (the function entries, the section starts of the plugin), relative to the zone start
+    instructionBoundaries.clear();
+    auto addBoundary = [this](uint64 fileOffset) {
+        if (fileOffset > zoneDetails.startingZonePoint && fileOffset - zoneDetails.startingZonePoint < zoneDetails.size)
+            instructionBoundaries.push_back(fileOffset - zoneDetails.startingZonePoint);
+    };
+    if (initData.functionEntries)
+        for (const auto& [fileOffset, entry] : *initData.functionEntries)
+            addBoundary(fileOffset);
+    if (initData.instructionBoundaries)
+        for (const uint64 fileOffset : *initData.instructionBoundaries)
+            addBoundary(fileOffset);
+    std::sort(instructionBoundaries.begin(), instructionBoundaries.end());
+    instructionBoundaries.erase(std::unique(instructionBoundaries.begin(), instructionBoundaries.end()), instructionBoundaries.end());
+
     uint32 totalLines = 0;
-    if (!populateOffsetsVector(cachedCodeOffsets, zoneDetails, initData.obj, internalArchitecture, totalLines)) {
+    if (!populateOffsetsVector(cachedCodeOffsets, zoneDetails, initData.obj, internalArchitecture, totalLines, &instructionBoundaries)) {
         if (initData.dli.IsValid())
             if (initData.dli.IsValid())
                 initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
@@ -1050,7 +1073,7 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries);
         while (walker.Next(insn) && insn->address < end) {
             const auto flow = GetX86Flow(*insn);
             if (flow != X86Flow::Call && flow != X86Flow::Jump)
@@ -1160,7 +1183,7 @@ std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, 
         const uint64 mask       = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
         const uint64 wanted     = value & mask;
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from, &instructionBoundaries);
         while (!result.has_value() && walker.Next(insn) && insn->address < to) {
             if (insn->id == X86_INS_INVALID || !insn->detail)
                 continue; // a data line (db)

@@ -366,7 +366,7 @@ inline cs_insn* GetCurrentInstructionByLine(
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (lineDifferences > 0) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
-        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
+        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the line is after the decoded code
             zone->offsetCacheMaxLine = 0;
@@ -1143,7 +1143,8 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
         };
     }
     initData.isFileAddress = [toFileOffset = initData.addressToFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
-    initData.functionEntries = &settings->functionEntries;
+    initData.functionEntries       = &settings->functionEntries;
+    initData.instructionBoundaries = &settings->instructionBoundaries;
     if (!settings->memoryMappings.empty()) {
         auto* settingsData  = settings;
         initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };

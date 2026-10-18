@@ -124,6 +124,42 @@ bool MachOFile::HasPanel(Panels::IDs id)
     return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
 }
 
+uint64 DissasmAddressTranslation::GetImageBase() const
+{
+    for (const auto& segment : machO->segments)
+        if (strncmp(segment.segname, "__TEXT", sizeof(segment.segname)) == 0)
+            return segment.vmaddr;
+    return 0;
+}
+
+uint64 DissasmAddressTranslation::TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex)
+{
+    if (fromTranslationIndex == 0)
+        return value;
+    const uint64 va = fromTranslationIndex == 1 ? value + GetImageBase() : value;
+    if (fromTranslationIndex > 2)
+        return static_cast<uint64>(-1);
+    for (const auto& segment : machO->segments)
+        if (segment.filesize > 0 && va >= segment.vmaddr && va - segment.vmaddr < segment.filesize)
+            return segment.fileoff + (va - segment.vmaddr);
+    return static_cast<uint64>(-1);
+}
+
+uint64 DissasmAddressTranslation::TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex)
+{
+    if (toTranslationIndex == 0)
+        return value;
+    for (const auto& segment : machO->segments) {
+        if (segment.filesize == 0 || value < segment.fileoff || value - segment.fileoff >= segment.filesize)
+            continue;
+        const uint64 va = segment.vmaddr + (value - segment.fileoff);
+        if (toTranslationIndex == 1)
+            return va >= GetImageBase() ? va - GetImageBase() : static_cast<uint64>(-1);
+        return toTranslationIndex == 2 ? va : static_cast<uint64>(-1);
+    }
+    return static_cast<uint64>(-1);
+}
+
 uint64_t MachOFile::TranslateToFileOffset(uint64 value, uint32)
 {
     return value;

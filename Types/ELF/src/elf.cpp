@@ -222,11 +222,13 @@ GVIEW_PLUGIN_ENTRY_POINTS
             return; // the disassembly view decodes only x86 / x64
 
         uint64 start = UINT64_MAX, end = 0;
+        std::vector<uint64> sectionStarts; // the padding between two sections never hides the start of the next one
         auto addSection = [&](uint64 flags, uint32 type, uint64 offset, uint64 size) {
             if ((flags & ELF::SHF_EXECINSTR) == 0 || type == ELF::SHT_NOBITS || size == 0)
                 return;
             start = std::min(start, offset);
             end   = std::max(end, offset + size);
+            sectionStarts.push_back(offset);
         };
         if (elf->is64)
         {
@@ -249,6 +251,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
 
         DissasmViewer::Settings settings;
         settings.AddDisassemblyZone(start, end - start, entryPoint, language);
+        for (const uint64 sectionStart : sectionStarts)
+            settings.AddInstructionBoundary(sectionStart);
         settings.SetOffsetTranslationList({ "RVA", "VA" }, &elf->dissasmTranslation);
         AddDissasmImports(settings, elf, win->GetObject());
         AddDissasmFunctionEntries(settings, elf);

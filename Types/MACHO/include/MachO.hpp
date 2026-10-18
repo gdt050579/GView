@@ -30,6 +30,22 @@ namespace Panels
     };
 };
 
+class MachOFile;
+// The addresses of the disassembly viewer: its translation indexes are 0 (file offset), 1 (RVA) and 2 (VA), through the segments. A Mach-O
+// has no RVA: it is the VA minus the address of the __TEXT segment
+class DissasmAddressTranslation : public View::BufferViewer::OffsetTranslateInterface
+{
+    MachOFile* machO;
+
+  public:
+    explicit DissasmAddressTranslation(MachOFile* machO) : machO(machO)
+    {
+    }
+    uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
+    uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
+    uint64 GetImageBase() const; // the VA of the __TEXT segment
+};
+
 class MachOFile : public TypeInterface,
                   public View::BufferViewer::OffsetTranslateInterface,
                   public View::ContainerViewer::EnumerateInterface,
@@ -195,6 +211,7 @@ class MachOFile : public TypeInterface,
 
     uint32 showOpcodesMask{ 0 };
     std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+    DissasmAddressTranslation dissasmTranslation{ this }; // the addresses of the disassembly view
 
   public:
     // OffsetTranslateInterface

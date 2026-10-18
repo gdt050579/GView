@@ -413,6 +413,8 @@ namespace View
             std::function<bool(uint64)> isFileAddress;
             // the known starts of functions given by the plugin, by file offset (exports, exception data, TLS callbacks); can be null
             const std::map<uint64, DissasmFunctionEntry>* functionEntries = nullptr;
+            // the file offsets where an instruction starts (the section starts of the plugin); the function entries are ones as well
+            const std::vector<uint64>* instructionBoundaries = nullptr;
             // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
             std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
             // the file offset of an address (address space of the labels): the jump tables of the switches are read there
@@ -449,6 +451,7 @@ namespace View
 
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::map<uint64, DissasmFunctionEntry> functionEntries;         // the known function starts, by file offset
+            std::vector<uint64> instructionBoundaries;                      // the file offsets where an instruction starts (sections)
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmStructureType> dissasmTypeMapped; // mapped types against the offset of the file

@@ -277,6 +277,7 @@ struct ZoneLayout {
     std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
     std::optional<uint64> imageBase;
     std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
+    std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -362,6 +363,7 @@ class DissasmTestInstance
         initData.addressToFileOffset = layout.addressToFileOffset;
         initData.imageBase           = layout.imageBase;
         initData.deepScanBudget      = layout.deepScanBudget;
+        initData.instructionBoundaries = &layout.instructionBoundaries;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
             auto* codeZone      = zone.get();
@@ -3938,4 +3940,45 @@ TEST_CASE("ImportThunksWithEndbr", "[Dissasm]Thunks")
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
     REQUIRE(listing.find("call   j_puts") != std::string::npos);
+}
+
+TEST_CASE("InstructionBoundaries", "[Dissasm]Boundaries")
+{
+    // a gap of one zero byte before a stub (the end of __text before __stubs): 00 FF decodes as add bh, bh and hides the stub
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00, // 0x00: call 0x10
+        0xC3,                         // 0x05: ret
+    };
+    file.resize(0x0F, 0xCC);
+    file.push_back(0x00);                                                // 0x0f: padding
+    file.insert(file.end(), { 0xFF, 0x25, 0x2A, 0x00, 0x00, 0x00 });     // 0x10: jmp qword ptr [rip + 0x2a] -> slot 0x40 (puts)
+    file.resize(0x48, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "puts", MemoryMappingType::FunctionMapping } } };
+    {
+        DissasmTestInstance misaligned(file.data(), file.size(), false, layout);
+        REQUIRE(misaligned.zone->GetLabelNameAt(0x10) != "j_puts");
+    }
+
+    // the start of the section is a boundary: the padding is a data line, the stub a thunk
+    layout.instructionBoundaries = { 0x10 };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.instructionBoundaries == std::vector<uint64>{ 0x10 });
+    REQUIRE(zone.GetLabelNameAt(0x10) == "j_puts");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("db     0x00") != std::string::npos);
+    REQUIRE(listing.find("call   j_puts") != std::string::npos);
+
+    // a function entry is a boundary as well
+    layout.instructionBoundaries.clear();
+    layout.functionEntries = { { 0x10, { "", 0, false } } };
+    DissasmTestInstance withEntry(file.data(), file.size(), false, layout);
+    REQUIRE(withEntry.zone->GetLabelNameAt(0x10) == "j_puts");
 }

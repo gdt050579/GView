@@ -1803,6 +1803,12 @@ namespace View
              * \param size The size of the function in bytes when it is known (exception data); 0: unknown.
              */
             void AddFunctionEntry(uint64 fileOffset, std::string_view name, FunctionEntryType type, uint64 size = 0);
+            /**
+             * rief Adds a file offset where an instruction starts (the start of a code section): the disassembly never decodes an
+             * instruction across it (the padding between two sections does not hide the code that follows). The function entries are
+             * boundaries as well.
+             */
+            void AddInstructionBoundary(uint64 fileOffset);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**

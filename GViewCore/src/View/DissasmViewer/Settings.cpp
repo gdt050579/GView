@@ -46,6 +46,11 @@ void Settings::AddFunctionEntry(uint64 fileOffset, std::string_view name, Functi
         entry.size = size;
 }
 
+void Settings::AddInstructionBoundary(uint64 fileOffset)
+{
+    INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);
+}
+
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
 {
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { static_cast<InternalDissasmType>(type), name };

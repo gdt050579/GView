@@ -24,7 +24,9 @@ std::string FormatOperandNumbers(std::string_view operands, AppCUI::uint32 decim
 // disassemblers show it) and the decoding continues right after it: inline data (jump tables, padding) never ends the code. False only
 // when there are no bytes left. Every walk over the lines of a code zone (counting, cached offsets, navigation, drawing, export) decodes
 // with it, so a line index maps to the same offset everywhere.
-bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn);
+// `boundaries` (sorted, the same base as `address`): the places where an instruction starts (section / function starts); no instruction
+// is decoded across one (the bytes before it are data lines), the misaligned bytes of a gap between sections do not hide the next code
+bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, const std::vector<AppCUI::uint64>* boundaries = nullptr);
 
 // Walks the lines (DecodeX86Line) of the code [codeStart, codeStart + codeSize) of a file from its first byte. The bytes are read from the
 // data cache line by line: a zone bigger than the data cache window is decoded entirely, window after window. The addresses of the
@@ -36,11 +38,13 @@ class DissasmCodeLinesWalker
     uint64 codeSize;
     uint64 address;
     csh handle;
+    const std::vector<uint64>* boundaries; // DecodeX86Line
 
   public:
     // startAddress: the relative address of an instruction of the listing (0: the first one)
-    DissasmCodeLinesWalker(Reference<GView::Object> obj, uint64 codeStart, uint64 codeSize, csh handle, uint64 startAddress = 0)
-        : obj(obj), codeStart(codeStart), codeSize(codeSize), address(startAddress), handle(handle)
+    DissasmCodeLinesWalker(
+          Reference<GView::Object> obj, uint64 codeStart, uint64 codeSize, csh handle, uint64 startAddress = 0, const std::vector<uint64>* boundaries = nullptr)
+        : obj(obj), codeStart(codeStart), codeSize(codeSize), address(startAddress), handle(handle), boundaries(boundaries)
     {
     }
     // false at the end of the code (or when the file has no more bytes)
