@@ -23,6 +23,8 @@ target_sources(
 	DissasmCache.cpp
 	DissasmAnalysisExport.hpp
 	DissasmAnalysisExport.cpp
+	DissasmAssistantRequest.hpp
+	DissasmAssistantRequest.cpp
 	DissasmIOHelpers.hpp
 
 	x86_x64/DissasmX86.hpp        

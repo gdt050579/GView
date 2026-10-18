@@ -289,7 +289,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     const auto action = Config::Map.Resolve(keyCode);
     if (keyCode == Key::Escape && aiNaming.zone) {
-        aiNaming = {}; // the names received so far stay
+        StopAINaming(); // the names received so far stay
         RefreshDrawnLines();
         return true;
     }

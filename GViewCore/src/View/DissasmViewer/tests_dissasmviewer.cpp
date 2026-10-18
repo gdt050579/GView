@@ -2,6 +2,9 @@
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmAnalysisExport.hpp"
+#include "DissasmAssistantRequest.hpp"
+#include <atomic>
+#include <thread>
 #include <nlohmann/json.hpp>
 #include "x86_x64/DissasmX86LocalVariables.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
@@ -4299,4 +4302,83 @@ TEST_CASE("InstructionKindOfTheLines", "[Dissasm]Colors")
             kinds.push_back(static_cast<Kind>(asmLine.instructionKind));
     }
     REQUIRE(kinds == std::vector<Kind>{ Kind::Stack, Kind::System, Kind::ConditionalJump, Kind::Return, Kind::Stack, Kind::Return, Kind::Padding });
+}
+
+namespace
+{
+// answers once it is released (the HTTP call of a real assistant), on the thread that asks it
+struct TestAssistant : GView::CommonInterfaces::SmartAssistants::SmartAssistantPromptInterface {
+    std::promise<void> release;
+    std::shared_future<void> released = release.get_future().share();
+    std::atomic<std::thread::id> askedOn{};
+    bool fail = false;
+    std::string AskSmartAssistant(std::string_view prompt, std::string_view, bool& isSuccess) override
+    {
+        askedOn = std::this_thread::get_id();
+        released.wait();
+        if (fail)
+            throw std::runtime_error("network down");
+        isSuccess = true;
+        return "Name for " + std::string(prompt);
+    }
+};
+} // namespace
+
+TEST_CASE("AssistantRequestOnWorkerThread", "[Dissasm]Assistant")
+{
+    TestAssistant assistant;
+    DissasmAssistantRequest request;
+    REQUIRE_FALSE(request.IsRunning());
+    request.Start(&assistant, "sub_10", "Give me a name");
+    REQUIRE(request.IsRunning());
+    REQUIRE_FALSE(request.IsReady()); // the assistant has not answered: the UI thread goes on
+    assistant.release.set_value();
+    const auto answer = request.Take();
+    REQUIRE(answer.success);
+    REQUIRE(answer.text == "Name for sub_10");
+    REQUIRE(assistant.askedOn.load() != std::this_thread::get_id());
+    REQUIRE_FALSE(request.IsRunning());
+}
+
+TEST_CASE("AssistantRequestAtOnce", "[Dissasm]Assistant")
+{
+    TestAssistant assistant;
+    assistant.release.set_value();
+    DissasmAssistantRequest request;
+    request.Start(&assistant, "sub_20", "Give me a name", false); // a frontend without frame updates
+    REQUIRE(request.IsReady());
+    REQUIRE(assistant.askedOn.load() == std::this_thread::get_id());
+    REQUIRE(request.Take().text == "Name for sub_20");
+
+    // an assistant that throws is a failed answer
+    TestAssistant failing;
+    failing.fail = true;
+    failing.release.set_value();
+    request.Start(&failing, "sub_30", "Give me a name");
+    const auto answer = request.Take();
+    REQUIRE_FALSE(answer.success);
+    REQUIRE(answer.text.find("network down") != std::string::npos);
+}
+
+TEST_CASE("AssistantRequestAbandoned", "[Dissasm]Assistant")
+{
+    TestAssistant assistant;
+    DissasmAssistantRequest::AbandonedRequests abandoned;
+    {
+        DissasmAssistantRequest request;
+        request.Start(&assistant, "sub_40", "Give me a name");
+        request.Abandon(abandoned); // Esc: the request goes on without anyone waiting for it
+        REQUIRE_FALSE(request.IsRunning());
+        REQUIRE(abandoned.size() == 1);
+    } // the request object is gone, the UI did not wait
+    assistant.release.set_value();
+    abandoned.front().wait();
+    // the finished requests are removed when another one is abandoned
+    TestAssistant other;
+    other.release.set_value();
+    DissasmAssistantRequest next;
+    next.Start(&other, "sub_50", "Give me a name");
+    next.Take();
+    next.Abandon(abandoned); // nothing running: nothing added
+    REQUIRE(abandoned.empty());
 }

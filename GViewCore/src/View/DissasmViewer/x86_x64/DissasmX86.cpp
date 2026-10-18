@@ -873,7 +873,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         }
         if (aiNaming.zone == zone) {
             LocalString<64> progress;
-            progress.SetFormat(" - assistant naming %u/%u (Esc stops it)", aiNaming.total - static_cast<uint32>(aiNaming.functions.size()), aiNaming.total);
+            progress.SetFormat(" - assistant naming %u/%u (Esc stops it)", aiNaming.answered, aiNaming.total);
             chars.Add(progress, ColorMan.Colors.AsmComment);
             titleSize += progress.Len();
         }
@@ -1220,10 +1220,12 @@ bool Instance::OnFrameUpdate()
     frameUpdatesSeen   = true;
     bool repaintAsked  = repaintRequested;
     repaintRequested   = false;
-    if (aiNaming.zone && !HasPendingDeepScans()) { // one request of the assistant (the labels must be known)
-        RunAINamingStep();
-        RefreshDrawnLines();
-        repaintAsked = true;
+    if (aiNaming.zone && !HasPendingDeepScans()) { // the requests of the assistant (the labels must be known)
+        const uint32 answered = aiNaming.answered;
+        if (!RunAINamingStep(false) || aiNaming.answered != answered) {
+            RefreshDrawnLines(); // a new suggestion, the progress in the title
+            repaintAsked = true;
+        }
     }
     if (!HasPendingDeepScans())
         return repaintAsked;
@@ -2747,7 +2749,7 @@ void Instance::StartAINaming()
     zone->asmPreCacheData.Clear();
 
     constexpr size_t MAX_FUNCTIONS = 50;
-    aiNaming      = {};
+    StopAINaming();
     aiNaming.zone = zone;
     for (const uint64 candidate : candidates) {
         const bool hasAutomaticName = zone->GetLabelNameAt(candidate).starts_with("sub_");
@@ -2763,46 +2765,56 @@ void Instance::StartAINaming()
     }
     // a frontend without frame updates (no FPS mode): every request now
     if (!frameUpdatesSeen)
-        while (RunAINamingStep()) {
+        while (RunAINamingStep(true)) {
         }
 }
 
-bool Instance::RunAINamingStep()
+void Instance::StopAINaming()
+{
+    aiNaming.request.Abandon(abandonedAssistantRequests); // an answer that is on its way is dropped; the names received so far stay
+    aiNaming = {};
+}
+
+// One step of the naming (Ctrl+Shift+K): the answer of the running request is applied once it is ready, then the request of the next
+// function is started on a worker thread: the UI stays responsive while the assistant answers. `wait`: the frontend has no frame
+// updates, every request is answered at once. False when the naming ended.
+bool Instance::RunAINamingStep(bool wait)
 {
     const auto zone = aiNaming.zone;
-    if (!zone || aiNaming.functions.empty()) {
-        aiNaming = {};
+    if (!zone)
         return false;
-    }
-    const uint64 functionStart = aiNaming.functions.front();
-    aiNaming.functions.pop_front();
-    const auto assistantInterface = queryInterface ? queryInterface->GetSmartAssistantInterface() : nullptr;
-    if (!assistantInterface) {
-        aiNaming = {};
-        return false;
-    }
-    DissasmInsnExtractLineParams params{};
-    params.obj      = obj;
-    params.zone     = zone;
-    params.settings = settings.get();
-    params.asmData  = &asmData;
-    const std::string code = zone->BuildAssistantFunctionText(functionStart, &params);
-    zone->asmPreCacheData.Clear(); // the lines were built for the request
-    if (!code.empty()) {
-        const std::string prompt =
-              "Suggest one name for this function based on what it does. Write only the name, in CamelCase, without any other text or symbols. " + code;
-        const std::string displayPrompt = "Give me a name for the function " + zone->GetLabelNameAt(functionStart);
-        bool isSuccess                  = false;
-        const auto answer               = assistantInterface->AskSmartAssistant(prompt, displayPrompt, isSuccess);
-        const auto name                 = isSuccess ? ParseAssistantSuggestedName(answer) : std::string();
+    if (aiNaming.request.IsRunning()) {
+        if (!wait && !aiNaming.request.IsReady())
+            return true;
+        const auto answer = aiNaming.request.Take();
+        const auto name   = answer.success ? ParseAssistantSuggestedName(answer.text) : std::string();
         if (!name.empty())
-            zone->suggestedNames[functionStart] = name;
+            zone->suggestedNames[aiNaming.requestFunction] = name;
+        aiNaming.answered++;
     }
-    if (aiNaming.functions.empty()) {
-        aiNaming = {};
-        return false;
+    const auto assistantInterface = queryInterface ? queryInterface->GetSmartAssistantInterface() : nullptr;
+    while (assistantInterface && !aiNaming.functions.empty()) {
+        const uint64 functionStart = aiNaming.functions.front();
+        aiNaming.functions.pop_front();
+        DissasmInsnExtractLineParams params{};
+        params.obj      = obj;
+        params.zone     = zone;
+        params.settings = settings.get();
+        params.asmData  = &asmData;
+        const std::string code = zone->BuildAssistantFunctionText(functionStart, &params);
+        zone->asmPreCacheData.Clear(); // the lines were built for the request
+        if (code.empty()) {
+            aiNaming.answered++;
+            continue;
+        }
+        std::string prompt = "Suggest one name for this function based on what it does. Write only the name, in CamelCase, without any other text or symbols. " + code;
+        std::string displayPrompt = "Give me a name for the function " + zone->GetLabelNameAt(functionStart);
+        aiNaming.requestFunction  = functionStart;
+        aiNaming.request.Start(assistantInterface, std::move(prompt), std::move(displayPrompt), !wait);
+        return true;
     }
-    return true;
+    aiNaming = {}; // no request is running
+    return false;
 }
 
 // The canvas of the graph: scrolled (arrows, Shift+arrows, PageUp / PageDown, the wheel, a drag), a block selected (Tab / Shift+Tab,
@@ -3580,6 +3592,74 @@ static const char* GetAssistantOperands(const DissasmAsmPreCacheLine& line)
     return "";
 }
 
+// Shown while the assistant answers on a worker thread: the time the request takes; Esc / Cancel stop waiting for it
+class AssistantWaitWindow : public AppCUI::Controls::Window
+{
+    static constexpr int CANCEL_ID = 1;
+
+  public:
+    AssistantWaitWindow(const DissasmAssistantRequest& request, std::string_view what)
+        : Window("Smart assistant", "d:c,w:64,h:8", WindowFlags::None), request(request), start(std::chrono::steady_clock::now())
+    {
+        Factory::Label::Create(this, what, "l:1,t:1,r:1,h:1");
+        status = Factory::Label::Create(this, "", "l:1,t:2,r:1,h:1");
+        Factory::Button::Create(this, "&Cancel", "x:50%,y:100%,a:b,w:14", CANCEL_ID);
+        UpdateStatus();
+    }
+
+    bool OnFrameUpdate() override
+    {
+        if (request.IsReady()) {
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        return UpdateStatus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if ((eventType == Event::ButtonClicked && ID == CANCEL_ID) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return Window::OnEvent(control, eventType, ID);
+    }
+
+  private:
+    const DissasmAssistantRequest& request;
+    std::chrono::steady_clock::time_point start;
+    Reference<Label> status;
+    int64 shownSeconds = -1;
+
+    bool UpdateStatus()
+    {
+        const int64 seconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start).count();
+        if (seconds == shownSeconds)
+            return false;
+        shownSeconds = seconds;
+        LocalString<96> text;
+        text.SetFormat("Waiting for the answer... %llds (Esc: cancel)", static_cast<long long>(seconds));
+        status->SetText(text.GetText());
+        return true;
+    }
+};
+
+std::optional<DissasmAssistantAnswer> Instance::AskAssistantWaiting(
+      DissasmAssistantRequest::Assistant* assistant, std::string prompt, std::string displayPrompt)
+{
+    DissasmAssistantRequest request;
+    // a frontend without frame updates could not see the end of the request: it is answered at once
+    request.Start(assistant, std::move(prompt), displayPrompt, frameUpdatesSeen);
+    if (!request.IsReady()) {
+        AssistantWaitWindow window(request, displayPrompt);
+        if (window.Show() != Dialogs::Result::Ok) {
+            request.Abandon(abandonedAssistantRequests); // it goes on in the background, its answer is dropped
+            return std::nullopt;
+        }
+    }
+    return request.Take();
+}
+
 void Instance::QuerySmartAssistantX86X64(
       DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType)
 {
@@ -3686,8 +3766,11 @@ void Instance::QuerySmartAssistantX86X64(
     // bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
     auto textData = bufferToSendToAssistant.GetText();
 
-    bool isSuccess = false;
-    auto result    = assistantInterface->AskSmartAssistant(textData, displayPrompt, isSuccess);
+    const auto answer = AskAssistantWaiting(assistantInterface, textData, displayPrompt.GetText());
+    if (!answer.has_value())
+        return; // cancelled
+    bool isSuccess = answer->success;
+    auto result    = answer->text;
     if (!isSuccess) {
         bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
         Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());
@@ -3719,7 +3802,11 @@ void Instance::QuerySmartAssistantX86X64(
             if (--retriesNumber == 0)
                 break;
             names.clear();
-            result = assistantInterface->AskSmartAssistant(textData, displayPrompt, isSuccess);
+            const auto retry = AskAssistantWaiting(assistantInterface, textData, displayPrompt.GetText());
+            if (!retry.has_value())
+                return; // cancelled
+            result    = retry->text;
+            isSuccess = retry->success;
             if (!isSuccess) {
                 bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
                 Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());

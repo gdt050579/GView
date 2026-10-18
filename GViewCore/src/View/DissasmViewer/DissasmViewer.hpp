@@ -12,6 +12,7 @@
 #include <capstone/capstone.h>
 
 #include "AdvancedSelection.hpp"
+#include "DissasmAssistantRequest.hpp"
 #include "DissasmDataTypes.hpp"
 #include "Config.hpp"
 #include "DissasmCache.hpp"
@@ -773,15 +774,24 @@ namespace View
             // the suggestions of the assistant: shown (Ctrl+Shift+A), accepted (A) / dismissed (Shift+A) on the line of the cursor
             bool showAISuggestions = true;
             void AcceptOrDismissAISuggestion(bool accept);
-            // names suggested for the current function and the functions it calls (Ctrl+Shift+K): one request in every frame update,
-            // the UI stays responsive between them, Esc stops them
+            // names suggested for the current function and the functions it calls (Ctrl+Shift+K): one request at a time on a worker
+            // thread, followed by the frame updates (the UI stays responsive while the assistant answers), Esc stops them
             struct {
                 DissasmCodeZone* zone = nullptr;
-                std::deque<uint64> functions; // relative addresses
-                uint32 total = 0;
+                std::deque<uint64> functions; // relative addresses, not asked yet
+                uint32 total    = 0;
+                uint32 answered = 0;
+                DissasmAssistantRequest request; // the request of requestFunction
+                uint64 requestFunction = 0;
             } aiNaming;
             void StartAINaming();
-            bool RunAINamingStep(); // false when there is nothing left
+            bool RunAINamingStep(bool wait); // false when the naming ended
+            void StopAINaming();
+            // asks the assistant on a worker thread while a window shows the time it takes; none when the user cancels it (Esc)
+            std::optional<DissasmAssistantAnswer> AskAssistantWaiting(DissasmAssistantRequest::Assistant* assistant, std::string prompt, std::string displayPrompt);
+            // the requests that were cancelled go on in the background: the view waits for them when it is destroyed (the assistant
+            // belongs to the window)
+            DissasmAssistantRequest::AbandonedRequests abandonedAssistantRequests;
             void FindNext(); // the next match of the last search (F6)
             std::optional<DissasmSearch> lastSearch;
             bool RunSearch(const DissasmSearch& search, bool showErrors);
