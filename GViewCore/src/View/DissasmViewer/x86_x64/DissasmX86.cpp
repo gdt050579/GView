@@ -2800,6 +2800,201 @@ bool Instance::RunAINamingStep()
     return true;
 }
 
+// The canvas of the graph: scrolled (arrows, Shift+arrows, PageUp / PageDown, the wheel, a drag), a block selected (Tab / Shift+Tab,
+// Home: the entry, a click); Enter or a double click jumps to the selected block in the listing
+class FunctionGraphCanvas : public AppCUI::Controls::UserControl
+{
+  public:
+    struct Rect {
+        int x = 0, y = 0, width = 0, height = 0;
+    };
+
+    FunctionGraphCanvas(
+          std::vector<Rect> blockRects, size_t selectedBlock, std::function<void()> activate, ColorPair normalColor, ColorPair selectionColor)
+        : UserControl(
+                "l:0,t:0,r:0,b:0",
+                UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ShowHorizontalScrollBar | UserControlFlags::ScrollBarOutsideControl),
+          rects(std::move(blockRects)), selected(selectedBlock), onActivate(std::move(activate)), normal(normalColor), selection(selectionColor)
+    {
+    }
+
+    Graphics::Canvas canvas;
+
+    size_t GetSelectedBlock() const
+    {
+        return selected;
+    }
+
+    void Paint(Graphics::Renderer& renderer) override
+    {
+        if (revealPending && GetWidth() > 0 && GetHeight() > 0) {
+            revealPending = false; // the size of the control is known at the first paint
+            Reveal(selected);
+        }
+        renderer.Clear(' ', normal);
+        renderer.DrawCanvas(-scrollX, -scrollY, canvas);
+        if (selected < rects.size()) {
+            const auto& rect = rects[selected];
+            renderer.DrawRect(
+                  rect.x - scrollX, rect.y - scrollY, rect.x + rect.width - 1 - scrollX, rect.y + rect.height - 1 - scrollY, selection, LineType::Double);
+        }
+    }
+
+    void OnUpdateScrollBars() override
+    {
+        UpdateHScrollBar(static_cast<uint64>(scrollX), static_cast<uint64>(MaxScrollX()));
+        UpdateVScrollBar(static_cast<uint64>(scrollY), static_cast<uint64>(MaxScrollY()));
+    }
+
+    bool OnKeyEvent(Input::Key keyCode, char16 unicodeChar) override
+    {
+        switch (keyCode) {
+        case Key::Up:
+            return ScrollTo(scrollX, scrollY - 1);
+        case Key::Down:
+            return ScrollTo(scrollX, scrollY + 1);
+        case Key::Left:
+            return ScrollTo(scrollX - 1, scrollY);
+        case Key::Right:
+            return ScrollTo(scrollX + 1, scrollY);
+        case Key::Shift | Key::Up:
+            return ScrollTo(scrollX, scrollY - 10);
+        case Key::Shift | Key::Down:
+            return ScrollTo(scrollX, scrollY + 10);
+        case Key::Shift | Key::Left:
+            return ScrollTo(scrollX - 20, scrollY);
+        case Key::Shift | Key::Right:
+            return ScrollTo(scrollX + 20, scrollY);
+        case Key::PageUp:
+            return ScrollTo(scrollX, scrollY - std::max(1, static_cast<int>(GetHeight()) - 2));
+        case Key::PageDown:
+            return ScrollTo(scrollX, scrollY + std::max(1, static_cast<int>(GetHeight()) - 2));
+        case Key::Tab:
+            return Select((selected + 1) % rects.size());
+        case Key::Shift | Key::Tab:
+            return Select((selected + rects.size() - 1) % rects.size());
+        case Key::Home:
+            return Select(0);
+        case Key::Enter:
+            onActivate();
+            return true;
+        default:
+            break;
+        }
+        return UserControl::OnKeyEvent(keyCode, unicodeChar);
+    }
+
+    bool OnMouseWheel(int, int, Input::MouseWheel direction, Input::Key) override
+    {
+        switch (direction) {
+        case Input::MouseWheel::Up:
+            return ScrollTo(scrollX, scrollY - 3);
+        case Input::MouseWheel::Down:
+            return ScrollTo(scrollX, scrollY + 3);
+        case Input::MouseWheel::Left:
+            return ScrollTo(scrollX - 6, scrollY);
+        case Input::MouseWheel::Right:
+            return ScrollTo(scrollX + 6, scrollY);
+        default:
+            return false;
+        }
+    }
+
+    void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override
+    {
+        dragging = false;
+        if (const auto block = BlockAt(x + scrollX, y + scrollY); block.has_value()) {
+            selected = block.value();
+            if ((button & Input::MouseButton::DoubleClicked) != Input::MouseButton::None)
+                onActivate();
+            return;
+        }
+        // outside the blocks: the graph is dragged
+        dragging = true;
+        dragX    = scrollX + x;
+        dragY    = scrollY + y;
+    }
+
+    bool OnMouseDrag(int x, int y, Input::MouseButton, Input::Key) override
+    {
+        if (!dragging)
+            return false;
+        return ScrollTo(dragX - x, dragY - y);
+    }
+
+    void OnMouseReleased(int x, int y, Input::MouseButton button, Input::Key keyCode) override
+    {
+        OnMouseDrag(x, y, button, keyCode);
+        dragging = false;
+    }
+
+    bool OnMouseEnter() override
+    {
+        return true;
+    }
+
+    bool OnMouseLeave() override
+    {
+        return true;
+    }
+
+  private:
+    std::vector<Rect> rects;
+    size_t selected;
+    std::function<void()> onActivate;
+    ColorPair normal, selection;
+    int scrollX = 0, scrollY = 0;
+    int dragX = 0, dragY = 0;
+    bool dragging      = false;
+    bool revealPending = true;
+
+    int MaxScrollX() const
+    {
+        return std::max(0, static_cast<int>(canvas.GetWidth()) - static_cast<int>(GetWidth()));
+    }
+    int MaxScrollY() const
+    {
+        return std::max(0, static_cast<int>(canvas.GetHeight()) - static_cast<int>(GetHeight()));
+    }
+    bool ScrollTo(int x, int y)
+    {
+        scrollX = std::clamp(x, 0, MaxScrollX());
+        scrollY = std::clamp(y, 0, MaxScrollY());
+        return true;
+    }
+    std::optional<size_t> BlockAt(int x, int y) const
+    {
+        for (size_t index = 0; index < rects.size(); index++) {
+            const auto& rect = rects[index];
+            if (x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height)
+                return index;
+        }
+        return std::nullopt;
+    }
+    // a block that is not entirely shown is centered (its top is shown when it is taller than the view)
+    void Reveal(size_t index)
+    {
+        if (index >= rects.size())
+            return;
+        const auto& rect = rects[index];
+        const int width = static_cast<int>(GetWidth()), height = static_cast<int>(GetHeight());
+        int x = scrollX, y = scrollY;
+        if (rect.x < scrollX || rect.x + rect.width > scrollX + width)
+            x = rect.width < width ? rect.x + rect.width / 2 - width / 2 : rect.x - 1;
+        if (rect.y < scrollY || rect.y + rect.height > scrollY + height)
+            y = rect.height < height ? rect.y + rect.height / 2 - height / 2 : rect.y - 1;
+        ScrollTo(x, y);
+    }
+    bool Select(size_t index)
+    {
+        if (index < rects.size()) {
+            selected = index;
+            Reveal(index);
+        }
+        return true;
+    }
+};
+
 // The graph of a function (Ctrl+B): its basic blocks as boxes in layers (the longest path from the entry), every block under its
 // predecessors; the branches are green (taken) / red (not taken), the jumps aqua, the switch cases yellow, the loops go around on the right
 class FunctionGraphWindow : public AppCUI::Controls::Window
@@ -2887,9 +3082,14 @@ class FunctionGraphWindow : public AppCUI::Controls::Window
         const int canvasWidth  = std::min(width + MARGIN * 2 + backEdges * 2 + 2, MAX_CANVAS_WIDTH);
         const int canvasHeight = std::min(top + MARGIN, MAX_CANVAS_HEIGHT);
 
-        viewer      = Factory::CanvasViewer::Create(this, "l:0,t:0,r:0,b:0", canvasWidth, canvasHeight, ViewerFlags::None);
-        auto canvas = viewer->GetCanvas();
-        canvas->Clear(' ', colors.Normal);
+        // the block of the cursor is selected, else the entry
+        std::vector<FunctionGraphCanvas::Rect> rects;
+        for (const auto& box : boxes)
+            rects.push_back({ box.x, box.y, box.width, box.height });
+        viewer = this->CreateChildControl<FunctionGraphCanvas>(
+              std::move(rects), currentBlock.value_or(0), [this]() { Exit(Dialogs::Result::Ok); }, colors.Normal, colors.Selection);
+        viewer->canvas.Create(canvasWidth, canvasHeight, ' ', colors.Normal);
+        auto canvas = &viewer->canvas;
 
         const ColorPair taken{ Color::Green, Color::Transparent }, notTaken{ Color::Red, Color::Transparent };
         const ColorPair jump{ Color::Aqua, Color::Transparent }, switchCase{ Color::Yellow, Color::Transparent }, loop{ Color::Blue, Color::Transparent };
@@ -2940,8 +3140,8 @@ class FunctionGraphWindow : public AppCUI::Controls::Window
         }
         for (size_t index = 0; index < count; index++) {
             const auto& box       = boxes[index];
-            const bool isCurrent  = currentBlock == index;
-            const ColorPair frame = isCurrent ? colors.Selection : colors.AsmTitleColumnColor;
+            const bool isCurrent  = currentBlock == index; // the block of the cursor; the selected one has a double frame
+            const ColorPair frame = isCurrent ? colors.AsmJumpInstruction : colors.AsmTitleColumnColor;
             canvas->FillRect(box.x, box.y, box.x + box.width - 1, box.y + box.height - 1, ' ', colors.Normal);
             canvas->DrawRect(box.x, box.y, box.x + box.width - 1, box.y + box.height - 1, frame, LineType::Single);
             const auto clip = [&box](const std::string& text) { return text.size() > static_cast<size_t>(box.width - 4) ? text.substr(0, box.width - 5) + "~" : text; };
@@ -2954,8 +3154,13 @@ class FunctionGraphWindow : public AppCUI::Controls::Window
         viewer->SetFocus();
     }
 
+    size_t GetSelectedBlock()
+    {
+        return viewer->GetSelectedBlock();
+    }
+
   private:
-    Reference<CanvasViewer> viewer;
+    Reference<FunctionGraphCanvas> viewer;
 };
 
 void Instance::ShowFunctionGraph()
@@ -3019,12 +3224,16 @@ void Instance::ShowFunctionGraph()
 
     LocalString<320> title;
     // the keys in the title: the scroll bars of the canvas use the bottom line
-    title.SetFormat("Graph of %s (%zu blocks%s) - arrows / Shift+arrows / mouse: scroll, Home: the entry, Esc: close",
+    title.SetFormat("Graph of %s (%zu blocks%s) - arrows / mouse: scroll, Tab / click: a block, Enter / double click: go to it, Esc: close",
                     titles.front().c_str(),
                     graph.blocks.size(),
                     graph.truncated ? ", too big: it stops at the limit" : "");
     FunctionGraphWindow window(title.GetText(), graph, titles, texts, currentBlock, ColorMan.Colors);
-    window.Show();
+    if (window.Show() != Dialogs::Result::Ok)
+        return;
+    const size_t selected = window.GetSelectedBlock();
+    if (selected < graph.blocks.size()) // the label of the block (a jump target) is shown above it
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + graph.blocks[selected].start, true);
 }
 
 constexpr uint32 BTN_CLOSE_ID   = 0;
