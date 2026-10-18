@@ -4661,3 +4661,86 @@ TEST_CASE("Arm64AdrpTrackerLimits", "[Dissasm]Arm64")
     REQUIRE(basedPair->address == 0x100001020 - 0x100000450);
     cs_close(&handle);
 }
+
+TEST_CASE("Arm64SwitchTable", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0x1F, 0x08, 0x00, 0x71, // 0x00: cmp w0, #2
+        0x68, 0x01, 0x00, 0x54, // 0x04: b.hi 0x30                (the default: 3 cases)
+        0xC9, 0x01, 0x00, 0x10, // 0x08: adr x9, 0x40             (the table)
+        0x8A, 0x00, 0x00, 0x10, // 0x0c: adr x10, 0x1c            (the anchor)
+        0x2B, 0x69, 0x60, 0x38, // 0x10: ldrb w11, [x9, x0]
+        0x4A, 0x09, 0x0B, 0x8B, // 0x14: add x10, x10, x11, lsl #2
+        0x40, 0x01, 0x1F, 0xD6, // 0x18: br x10
+        0x40, 0x01, 0x80, 0x52, // 0x1c: case 0: mov w0, #10
+        0xC0, 0x03, 0x5F, 0xD6, //       ret
+        0x60, 0x01, 0x80, 0x52, // 0x24: case 1: mov w0, #11
+        0xC0, 0x03, 0x5F, 0xD6, //       ret
+        0xC0, 0x03, 0x5F, 0xD6, // 0x2c: case 2: ret
+        0x00, 0x00, 0x80, 0x52, // 0x30: default: mov w0, #0
+        0xC0, 0x03, 0x5F, 0xD6, //       ret
+    };
+    const uint64 codeSize = file.size();
+    file.resize(0x40, 0x00);
+    file.insert(file.end(), { 0x00, 0x02, 0x04 }); // 0x40: the cases, in instructions from the anchor
+    file.resize(0x48, 0x00);
+
+    ZoneLayout layout;
+    layout.size                = codeSize;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::ARM64;
+    layout.addressToFileOffset = [](uint64 address) { return std::optional<uint64>(address); };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.switchJumps.at(0x18) == 3);
+    REQUIRE(zone.GetLabelNameAt(0x1C) == "loc_1C");
+    REQUIRE(zone.GetLabelNameAt(0x24) == "loc_24");
+    REQUIRE(zone.GetLabelNameAt(0x2C) == "loc_2C");
+    for (const uint64 target : { 0x1C, 0x24, 0x2C }) { // the anchor (case 0) is also the address taken by adr x10
+        const auto [first, last] = zone.xrefs.To(target);
+        const auto switchXref    = std::find_if(first, last, [](const auto& xref) { return xref.kind == DissasmXrefKind::Switch; });
+        REQUIRE(switchXref != last);
+        REQUIRE(switchXref->from == 0x18);
+        REQUIRE(std::count_if(first, last, [](const auto& xref) { return xref.kind == DissasmXrefKind::Switch; }) == 1);
+    }
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("switch: 3 cases") != std::string::npos);
+
+    // without the bound (no cmp / b.hi) the table is not read
+    file[0] = 0x1F;
+    file[1] = 0x20;
+    file[2] = 0x03;
+    file[3] = 0xD5; // nop
+    DissasmTestInstance unbounded(file.data(), file.size(), false, layout);
+    REQUIRE_FALSE(unbounded.zone->switchJumps.contains(0x18));
+}
+
+TEST_CASE("Arm64Prologues", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0x60, 0x00, 0x00, 0xB4, // 0x00: cbz x0, 0x0c
+        0x00, 0x00, 0x80, 0x52, // 0x04: mov w0, #0
+        0xC0, 0x03, 0x5F, 0xD6, // 0x08: ret
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x0c: stp x29, x30, [sp, #-0x10]!  (shrink wrapped: reached by the cbz, inside the function)
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x10: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x14: ret
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x18: stp x29, x30, [sp, #-0x10]!  (nothing reaches it: a function called indirectly)
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x1c: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x20: ret
+        0xFF, 0x03, 0x01, 0xD1, // 0x24: sub sp, sp, #0x40           (another one)
+        0xFF, 0x03, 0x01, 0x91, // 0x28: add sp, sp, #0x40
+        0xC0, 0x03, 0x5F, 0xD6, // 0x2c: ret
+    };
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& starts = dissasmInstance.zone->functionStarts;
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x18) != starts.end());
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x24) != starts.end());
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x0C) == starts.end());
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x0C) == "loc_C");
+}

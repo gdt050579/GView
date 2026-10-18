@@ -192,13 +192,38 @@ AppCUI::uint64 GView::View::DissasmViewer::GetArm64AdrpPage(const cs_insn& insn,
     return ((addressBase + insn.address) & PAGE_MASK) + delta - addressBase;
 }
 
+bool GView::View::DissasmViewer::IsArm64PrologueStart(const cs_insn& insn)
+{
+    if (!insn.detail)
+        return false;
+    const cs_arm64& arm64 = insn.detail->arm64;
+    switch (insn.id) {
+    case ARM64_INS_PACIBSP:
+    case ARM64_INS_PACIASP:
+        return true;
+    case ARM64_INS_BTI: // bti c: the target of an indirect call (bti j: of an indirect jump)
+        return insn.op_str[0] == 'c' || (insn.op_str[0] == 'j' && insn.op_str[1] == 'c');
+    case ARM64_INS_STP: // stp x29, x30, [sp, #-0x10]! / stp x20, x19, [sp, #-0x20]!: the registers saved by the prologue
+        return arm64.writeback && arm64.op_count >= 3 && arm64.operands[2].type == ARM64_OP_MEM && arm64.operands[2].mem.base == ARM64_REG_SP &&
+               arm64.operands[2].mem.disp < 0;
+    case ARM64_INS_SUB: // sub sp, sp, #0x40: the local variables
+        return arm64.op_count == 3 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg == ARM64_REG_SP &&
+               arm64.operands[1].type == ARM64_OP_REG && arm64.operands[1].reg == ARM64_REG_SP && arm64.operands[2].type == ARM64_OP_IMM;
+    default:
+        return false;
+    }
+}
+
 void Arm64AdrpTracker::Reset()
 {
     registers.fill({});
+    compared.reset();
+    bound.reset();
 }
 
 std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& insn, bool atBlockStart)
 {
+    jumpTable.reset();
     if (insn.id == ARM64_INS_INVALID || !insn.detail) {
         Reset(); // a data line: the code before it is another block
         return {};
@@ -207,50 +232,117 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
     std::optional<Result> result;
     int kept = -1; // the register this instruction sets to a known value
     const auto registerOf = [&arm64](uint8 index) { return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_REG ? Arm64RegisterIndex(arm64.operands[index].reg) : -1; };
+    const auto isImmediate = [&arm64](uint8 index) { return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_IMM; };
 
     bool isStore = false;
     if (insn.id == ARM64_INS_ADRP) {
         // adrp x0, page: the 4 KB page of an address, the next instructions add its offset
         const int target = registerOf(0);
-        if (target >= 0 && arm64.op_count >= 2 && arm64.operands[1].type == ARM64_OP_IMM) {
-            registers[target] = { GetArm64AdrpPage(insn, addressBase), {}, insn.address, atBlockStart };
+        if (target >= 0 && isImmediate(1)) {
+            registers[target] = { GetArm64AdrpPage(insn, addressBase), {}, {}, {}, {}, insn.address, atBlockStart };
             kept              = target;
         }
-    } else if (insn.id == ARM64_INS_ADD && arm64.op_count == 3 && arm64.operands[2].type == ARM64_OP_IMM) {
+    } else if (insn.id == ARM64_INS_ADR) {
+        // adr x10, label: the register holds the address (a jump table, the anchor of its cases)
+        const int target = registerOf(0);
+        if (target >= 0 && isImmediate(1)) {
+            registers[target]         = {};
+            registers[target].address = static_cast<uint64>(arm64.operands[1].imm);
+            kept                      = target;
+        }
+    } else if (insn.id == ARM64_INS_ADD && arm64.op_count == 3 && isImmediate(2)) {
         // add x1, x0, #off: the address itself (a string, a variable, a table)
-        const int base = registerOf(1);
+        const int base   = registerOf(1);
+        const int target = registerOf(0);
         if (base >= 0 && registers[base].page.has_value()) {
             const auto& offset = arm64.operands[2];
             const uint64 value = static_cast<uint64>(offset.imm) << (offset.shift.type == ARM64_SFT_LSL ? offset.shift.value : 0);
             result             = Result{ registers[base].page.value() + value, false, registers[base].start, registers[base].startAtBlock, 0 };
+            if (target >= 0) {
+                const Value from          = registers[base];
+                registers[target]         = {};
+                registers[target].address = result->address;
+                registers[target].start   = from.start;
+                registers[target].startAtBlock = from.startAtBlock;
+                kept                      = target;
+            }
+        }
+    } else if (insn.id == ARM64_INS_ADD && arm64.op_count == 3 && arm64.operands[2].type == ARM64_OP_REG) {
+        // add x10, x10, x11, lsl #2 / add x0, x1, w0, sxtb #2: an address (the anchor, or the table itself) plus a table entry
+        const int first  = registerOf(1);
+        const int second = registerOf(2);
+        const int target = registerOf(0);
+        if (first >= 0 && second >= 0 && target >= 0 && registers[first].address.has_value() && registers[second].entry.has_value()) {
+            const auto& operand    = arm64.operands[2];
+            const bool signExtends = operand.ext == ARM64_EXT_SXTB || operand.ext == ARM64_EXT_SXTH || operand.ext == ARM64_EXT_SXTW;
+            const auto entry       = registers[second].entry.value();
+            Arm64JumpTable table{ entry.table, entry.size, entry.isSigned || signExtends, registers[first].address.value(),
+                                  static_cast<uint8>(operand.shift.value), 0 };
+            registers[target]      = {};
+            registers[target].jump = table;
+            kept                   = target;
         }
     } else if (IsArm64LoadOrStore(insn.id, isStore)) {
-        // ldr x1, [x0, #off] / str w1, [x0, #off]: the address is read / written
         for (uint8 index = 0; index < arm64.op_count; index++) {
             const cs_arm64_op& op = arm64.operands[index];
-            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID)
+            if (op.type != ARM64_OP_MEM)
                 continue;
             const int base = Arm64RegisterIndex(op.mem.base);
-            if (base < 0 || !registers[base].page.has_value())
+            if (base < 0)
                 break;
+            if (op.mem.index != ARM64_REG_INVALID) {
+                // ldrb w11, [x9, x8]: an entry of the table that x9 points to
+                const int target = registerOf(0);
+                if (!isStore && target >= 0 && registers[base].address.has_value()) {
+                    const bool isWide = arm64.operands[0].reg >= ARM64_REG_X0 && arm64.operands[0].reg <= ARM64_REG_X28;
+                    uint8 size        = 4;
+                    if (insn.id == ARM64_INS_LDRB || insn.id == ARM64_INS_LDRSB)
+                        size = 1;
+                    else if (insn.id == ARM64_INS_LDRH || insn.id == ARM64_INS_LDRSH)
+                        size = 2;
+                    else if (insn.id == ARM64_INS_LDR && isWide)
+                        size = 8;
+                    const bool isSigned = insn.id == ARM64_INS_LDRSB || insn.id == ARM64_INS_LDRSH || insn.id == ARM64_INS_LDRSW;
+                    const uint64 table  = registers[base].address.value();
+                    registers[target]       = {};
+                    registers[target].entry = TableEntry{ table, size, isSigned };
+                    kept                    = target;
+                }
+                break;
+            }
+            if (!registers[base].page.has_value())
+                break;
+            // ldr x1, [x0, #off] / str w1, [x0, #off]: the address is read / written
             const auto& value = registers[base];
             result            = Result{ value.page.value() + static_cast<uint64>(static_cast<int64>(op.mem.disp)), false, value.start, value.startAtBlock,
-                                     static_cast<uint8>(isStore ? CS_AC_WRITE : CS_AC_READ) };
+                                        static_cast<uint8>(isStore ? CS_AC_WRITE : CS_AC_READ) };
             // ldr x16, [x16, #off]: the register holds the value of the slot (an import: the next br / blr goes through it)
             const int target = registerOf(0);
             if (insn.id == ARM64_INS_LDR && !isStore && target >= 0) {
-                const auto start  = value.start;
+                const auto start   = value.start;
                 const bool atBlock = value.startAtBlock;
-                registers[target] = { {}, result->address, start, atBlock };
-                kept              = target;
+                registers[target]  = { {}, result->address, {}, {}, {}, start, atBlock };
+                kept               = target;
             }
             break;
         }
     } else if (insn.id == ARM64_INS_BR || insn.id == ARM64_INS_BLR) {
-        // br x16 / blr x8: through the slot read before
+        // br x16 / blr x8: through the slot read before; br x10: the case of a switch
         const int target = registerOf(0);
         if (target >= 0 && registers[target].slot.has_value())
             result = Result{ registers[target].slot.value(), true, registers[target].start, registers[target].startAtBlock, CS_AC_READ };
+        if (target >= 0 && insn.id == ARM64_INS_BR && registers[target].jump.has_value() && bound.has_value()) {
+            jumpTable        = registers[target].jump;
+            jumpTable->count = bound.value();
+        }
+    } else if (insn.id == ARM64_INS_CMP && arm64.op_count == 2 && isImmediate(1)) {
+        compared = static_cast<uint64>(arm64.operands[1].imm); // cmp w0, #11
+    } else if (insn.id == ARM64_INS_B && compared.has_value() && (arm64.cc == ARM64_CC_HI || arm64.cc == ARM64_CC_HS)) {
+        // b.hi default: the cases are 0 .. N (b.hs: 0 .. N - 1)
+        constexpr uint64 MAX_CASES = 4096;
+        const uint64 count         = arm64.cc == ARM64_CC_HI ? compared.value() + 1 : compared.value();
+        if (count > 0 && count <= MAX_CASES)
+            bound = static_cast<uint32>(count);
     }
 
     // the registers written by the instruction do not hold the page / slot any more
@@ -271,6 +363,8 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
         for (size_t index = 0; index <= 18; index++)
             registers[index] = {};
         registers[30] = {};
+        compared.reset();
+        bound.reset();
     } else if (flow == X86Flow::Jump || flow == X86Flow::Return)
         Reset(); // the next instruction starts another block
     return result;

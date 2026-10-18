@@ -62,6 +62,22 @@ X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mne
 // right only when the zone starts at a 4 KB aligned VA; `addressBase` is the VA of the relative address 0 (labelAddressBase)
 AppCUI::uint64 GetArm64AdrpPage(const cs_insn& insn, AppCUI::uint64 addressBase);
 
+// The jump table of an ARM64 switch: br x10 after
+//   cmp w0, #N; b.hi default (the bound) / adr (or adrp + add) x9, table / ldrb w11, [x9, x8] / adr x10, anchor /
+//   add x10, x10, x11, lsl #2
+// the case i is at base + (entry i << shift); the entries are 1, 2, 4 or 8 bytes, signed or not
+struct Arm64JumpTable {
+    AppCUI::uint64 table; // relative addresses (the base of the decoded addresses)
+    AppCUI::uint8 entrySize;
+    bool isSigned;
+    AppCUI::uint64 base;
+    AppCUI::uint8 shift;
+    AppCUI::uint32 count;
+};
+
+// ARM64: a prologue at a block start (stp x29, x30, [sp, #-N]! / sub sp, sp, #N / pacibsp / paciasp / bti c): a function start
+bool IsArm64PrologueStart(const cs_insn& insn);
+
 class Arm64AdrpTracker
 {
   public:
@@ -76,17 +92,35 @@ class Arm64AdrpTracker
         AppCUI::uint8 memoryAccess; // CS_AC_READ (ldr, br, blr) / CS_AC_WRITE (str); 0: the address is taken (add)
     };
     std::optional<Result> Next(const cs_insn& insn, bool atBlockStart);
+    // the jump table of the br given to the last Next (once)
+    std::optional<Arm64JumpTable> TakeJumpTable()
+    {
+        auto table = jumpTable;
+        jumpTable.reset();
+        return table;
+    }
     void Reset();
 
   private:
+    struct TableEntry {
+        AppCUI::uint64 table;
+        AppCUI::uint8 size;
+        bool isSigned;
+    };
     struct Value {
-        std::optional<AppCUI::uint64> page; // adrp
-        std::optional<AppCUI::uint64> slot; // ldr from page + offset: the register holds the value of the slot
+        std::optional<AppCUI::uint64> page;    // adrp
+        std::optional<AppCUI::uint64> slot;    // ldr from page + offset: the register holds the value of the slot
+        std::optional<AppCUI::uint64> address; // adrp + add, adr: the register holds the address
+        std::optional<TableEntry> entry;       // ldrb w11, [x9, x8]: an entry of the table at x9
+        std::optional<Arm64JumpTable> jump;    // add x10, x10, x11, lsl #2: an anchor plus an entry
         AppCUI::uint64 start = 0;
         bool startAtBlock    = false;
     };
     std::array<Value, 31> registers{};
     AppCUI::uint64 addressBase;
+    std::optional<AppCUI::uint64> compared; // cmp w0, #N: N
+    std::optional<AppCUI::uint32> bound;    // b.hi after the cmp: the number of cases
+    std::optional<Arm64JumpTable> jumpTable;
 };
 
 inline X86Flow GetInstructionFlow(const cs_insn& insn, DissasmArch arch)

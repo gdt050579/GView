@@ -63,6 +63,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, uint32> switchJumps;
     std::unordered_map<uint64, uint64> resolvedAddresses; // ARM64: the addresses of the adrp pairs
     Arm64AdrpTracker adrpTracker;
+    std::vector<uint64> prologueCandidates;         // ARM64: file offsets of the prologues at a block start
+    std::unordered_set<uint64> conditionalTargets;  // ARM64: relative targets of the conditional branches
     std::vector<uint64> functionStarts;
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
@@ -133,7 +135,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return true;
     }
 
-    // a value of a jump table (1, 4 or 8 bytes) at an address of the labels
+    // a value of a jump table (1, 2, 4 or 8 bytes) at an address of the labels
     std::optional<uint64> ReadTableValue(uint64 address, uint8 size)
     {
         const auto offset = addressToFileOffset(address);
@@ -145,6 +147,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             uint8 value8 = 0;
             ok           = obj->GetData().Copy<uint8>(offset.value(), value8);
             value        = value8;
+        } else if (size == 2) {
+            uint16 value16 = 0;
+            ok             = obj->GetData().Copy<uint16>(offset.value(), value16);
+            value          = value16;
         } else if (size == 4) {
             uint32 value32 = 0;
             ok             = obj->GetData().Copy<uint32>(offset.value(), value32);
@@ -190,6 +196,35 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     }
                 }
             }
+            // the jump table of a switch (br x10): the cases are read from the table
+            if (const auto table = adrpTracker.TakeJumpTable(); table.has_value() && addressToFileOffset) {
+                std::vector<uint64> targets; // VA
+                for (uint32 index = 0; index < table->count; index++) {
+                    const auto value = ReadTableValue(labelBase + table->table + static_cast<uint64>(index) * table->entrySize, table->entrySize);
+                    if (!value.has_value()) {
+                        targets.clear();
+                        break;
+                    }
+                    uint64 entry = value.value();
+                    if (table->isSigned && table->entrySize < 8) {
+                        const uint32 unused = 64 - 8u * table->entrySize;
+                        entry               = static_cast<uint64>(static_cast<int64>(entry << unused) >> unused);
+                    }
+                    const uint64 target = table->base + (entry << table->shift);
+                    if (target >= codeSize) { // not a table of this code
+                        targets.clear();
+                        break;
+                    }
+                    targets.push_back(labelBase + target);
+                }
+                AddSwitchTargets(insn->address, from, targets);
+            }
+            // a prologue at a block start: a function (a candidate until the end of the sweep: a shrink wrapped prologue is reached by a
+            // conditional branch of its own function)
+            if (isBlockStart && IsArm64PrologueStart(*insn))
+                prologueCandidates.push_back(instructionOffset);
+            if (flow == X86Flow::ConditionalJump && operands.directTarget.has_value())
+                conditionalTargets.insert(operands.directTarget.value());
             const bool takesAddress = insn->id == ARM64_INS_ADR || (insn->id == ARM64_INS_ADD && pair.has_value());
             AnalyzeBranchesAndData(flow, pairOperands, from, takesAddress);
             atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == ARM64_INS_NOP ||
@@ -224,18 +259,24 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                   jumpTable.value(),
                   [this](uint64 address, uint8 size) { return ReadTableValue(address, size); },
                   [this](uint64 address) { return address >= labelBase && address - labelBase < codeSize; });
-            if (!targets.empty())
-                switchJumps[insn->address] = static_cast<uint32>(targets.size());
-            for (const uint64 target : targets) {
-                xrefs.Add(from, target, DissasmXrefKind::Switch);
-                const auto targetOffset = zone->GetFileOffsetOfAddress(target - labelBase);
-                if (targetOffset.has_value() && !callsMap.contains(targetOffset.value())) {
-                    callsFound.emplace_back(targetOffset.value(), zone->GetLabelName("loc_", target - labelBase));
-                    callsMap.insert({ targetOffset.value(), true });
-                }
-            }
+            AddSwitchTargets(insn->address, from, targets);
         }
         AnalyzeBranchesAndData(flow, operands, from, insn->id == X86_INS_LEA);
+    }
+
+    // the cases of a switch (VA): every case is a jump target (loc_) referenced by the indirect jump
+    void AddSwitchTargets(uint64 jumpAddress, uint64 from, const std::vector<uint64>& targets)
+    {
+        if (!targets.empty())
+            switchJumps[jumpAddress] = static_cast<uint32>(targets.size());
+        for (const uint64 target : targets) {
+            xrefs.Add(from, target, DissasmXrefKind::Switch);
+            const auto targetOffset = zone->GetFileOffsetOfAddress(target - labelBase);
+            if (targetOffset.has_value() && !callsMap.contains(targetOffset.value())) {
+                callsFound.emplace_back(targetOffset.value(), zone->GetLabelName("loc_", target - labelBase));
+                callsMap.insert({ targetOffset.value(), true });
+            }
+        }
     }
 
     // the cross references of the branches and of the data, the labels of the branch targets
@@ -274,6 +315,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the end of the sweep: the labels are sorted, the functions and their names are known
     void FinishSweep()
     {
+        // ARM64: the prologues that no conditional branch reaches are functions (the others are shrink wrapped, inside their function)
+        for (const uint64 candidate : prologueCandidates)
+            if (!conditionalTargets.contains(candidate - codeStart))
+                AddFunctionStart(candidate);
         // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
         callsFound.erase(
               std::remove_if(callsFound.begin(), callsFound.end(), [this](const auto& call) { return call.first == zone->zoneDetails.entryPoint; }),
