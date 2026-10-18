@@ -1,5 +1,7 @@
 #include "pe.hpp"
 
+#include <set>
+
 using namespace AppCUI;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
@@ -242,6 +244,162 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
     }
 }
 
+// a pointer of the image (4 or 8 bytes) at a file offset
+static bool ReadImagePointer(GView::Utils::DataCache& data, uint64 offset, bool is64, uint64& value)
+{
+    if (is64)
+        return data.Copy<uint64>(offset, value);
+    uint32 value32 = 0;
+    const bool ok  = data.Copy<uint32>(offset, value32);
+    value          = value32;
+    return ok;
+}
+
+// The delay loaded imports (IMAGE_DELAYLOAD_DESCRIPTOR): the code calls them through their own IAT (call [__imp_Name]), whose slots hold
+// the address of a load thunk until the first call (__imp_load_Name: lea rax, [__imp_Name]; jmp __tailMerge_dll). The slots are named
+// like the imports, the load thunks and the __tailMerge_ helpers of every DLL are functions (IDA names).
+void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+{
+    struct DelayLoadDescriptor {
+        uint32 Attributes; // bit 0: the fields are RVAs (VC 6 used VAs)
+        uint32 DllNameRVA;
+        uint32 ModuleHandleRVA;
+        uint32 ImportAddressTableRVA;
+        uint32 ImportNameTableRVA;
+        uint32 BoundImportAddressTableRVA;
+        uint32 UnloadInformationTableRVA;
+        uint32 TimeDateStamp;
+    };
+    constexpr uint32 MAX_DELAY_DLLS      = 1024;
+    constexpr uint32 MAX_DELAY_FUNCTIONS = 0x10000;
+    constexpr uint32 MAX_NAME_SIZE       = 512;
+    const auto& directory                = pe->GetDirectory(PE::DirectoryType::DelayImport);
+    if (directory.VirtualAddress == 0 || directory.Size < sizeof(DelayLoadDescriptor))
+        return;
+    const auto start = pe->RVAToFA(directory.VirtualAddress);
+    if (start == PE_INVALID_ADDRESS)
+        return;
+    const bool is64           = pe->hdr64;
+    const uint32 pointerSize  = is64 ? 8 : 4;
+    const uint64 ordinalFlag  = is64 ? 0x8000000000000000ull : 0x80000000ull;
+    const auto machine        = static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine);
+    const bool isX86          = machine != PE::MachineType::ARM64 && machine != PE::MachineType::ARMNT;
+    std::set<uint64> namedFunctions; // the file offsets of the thunks / helpers already named
+    LocalString<128> text;
+    String demangled;
+
+    for (uint32 dll = 0; dll < MAX_DELAY_DLLS; dll++) {
+        DelayLoadDescriptor descriptor{};
+        if (!data.Copy<DelayLoadDescriptor>(start + static_cast<uint64>(dll) * sizeof(DelayLoadDescriptor), descriptor) || descriptor.DllNameRVA == 0)
+            break;
+        // VC 6: the fields are VAs (32 bit images)
+        const uint64 fieldBase = (descriptor.Attributes & 1) ? 0 : pe->imageBase;
+        const auto toRVA       = [fieldBase](uint32 value) -> uint64 { return value >= fieldBase ? value - fieldBase : 0; };
+        const uint64 iat       = toRVA(descriptor.ImportAddressTableRVA);
+        const uint64 names     = toRVA(descriptor.ImportNameTableRVA);
+        const auto namesFa     = names != 0 ? pe->RVAToFA(names) : PE_INVALID_ADDRESS;
+        if (iat == 0 || namesFa == PE_INVALID_ADDRESS)
+            continue;
+        // __tailMerge_ + the name of the DLL ('.' and '-' become '_'): certenroll.dll -> __tailMerge_certenroll_dll
+        const auto dllName        = pe->ReadString(static_cast<uint32>(toRVA(descriptor.DllNameRVA)), MAX_NAME_SIZE);
+        std::string tailMergeName = "__tailMerge_";
+        for (const char c : dllName)
+            tailMergeName.push_back(c == '.' || c == '-' ? '_' : c);
+        // the thunks of the imports by ordinal: __imp_load_certenroll_Ordinal_42 (the ordinals of two DLLs are not the same functions)
+        std::string ordinalPrefix = "__imp_load_";
+        for (const char c : dllName.substr(0, std::min(dllName.size(), dllName.rfind('.'))))
+            ordinalPrefix.push_back(c == '-' ? '_' : c);
+        ordinalPrefix += "_Ordinal_";
+
+        for (uint32 index = 0; index < MAX_DELAY_FUNCTIONS; index++) {
+            uint64 nameEntry = 0;
+            if (!ReadImagePointer(data, namesFa + static_cast<uint64>(index) * pointerSize, is64, nameEntry) || nameEntry == 0)
+                break;
+            const uint64 slot = iat + static_cast<uint64>(index) * pointerSize;
+            std::string rawName;
+            if (nameEntry & ordinalFlag) {
+                text.SetFormat("Ordinal:%u", static_cast<uint32>(nameEntry & 0xFFFF));
+                rawName = text.GetText();
+            } else
+                rawName = std::string(pe->ReadString(static_cast<uint32>(toRVA(static_cast<uint32>(nameEntry)) + 2), MAX_NAME_SIZE)); // after the hint
+            if (rawName.empty())
+                continue;
+            // the slot, named like a regular import (demangled C++ names)
+            if (GView::Utils::Demangle(rawName.c_str(), demangled))
+                settings.AddMemoryMapping(slot, demangled.GetText(), DissasmViewer::MemoryMappingType::FunctionMapping);
+            else
+                settings.AddMemoryMapping(slot, rawName, DissasmViewer::MemoryMappingType::FunctionMapping);
+
+            // the load thunk: the first value of the slot
+            const auto slotFa = pe->RVAToFA(slot);
+            uint64 thunkVA    = 0;
+            if (slotFa == PE_INVALID_ADDRESS || !ReadImagePointer(data, slotFa, is64, thunkVA) || thunkVA < pe->imageBase)
+                continue;
+            const auto thunkFa = pe->RVAToFA(thunkVA - pe->imageBase);
+            if (thunkFa == PE_INVALID_ADDRESS || !namedFunctions.insert(thunkFa).second)
+                continue;
+            const std::string thunkName = (nameEntry & ordinalFlag) ? ordinalPrefix + std::to_string(nameEntry & 0xFFFF) : "__imp_load_" + rawName;
+            settings.AddFunctionEntry(thunkFa, thunkName, DissasmViewer::FunctionEntryType::Symbol);
+
+            // the helper the thunk jumps to: x64 lea rax, [rip + slot]; jmp rel32 - x86 mov eax, slot; jmp rel32
+            if (!isX86)
+                continue;
+            uint8 code[12]{};
+            const uint32 codeSize = is64 ? 12 : 10;
+            bool readCode         = true;
+            for (uint32 byte = 0; byte < codeSize && readCode; byte++)
+                readCode = data.Copy<uint8>(thunkFa + byte, code[byte]);
+            if (!readCode)
+                continue;
+            const auto dword = [&code](uint32 at) {
+                return static_cast<uint32>(code[at]) | (static_cast<uint32>(code[at + 1]) << 8) | (static_cast<uint32>(code[at + 2]) << 16) |
+                       (static_cast<uint32>(code[at + 3]) << 24);
+            };
+            uint64 tailMergeVA = 0;
+            if (is64 && code[0] == 0x48 && code[1] == 0x8D && code[2] == 0x05 && code[7] == 0xE9 &&
+                thunkVA + 7 + static_cast<int64>(static_cast<int32>(dword(3))) == pe->imageBase + slot)
+                tailMergeVA = thunkVA + 12 + static_cast<int64>(static_cast<int32>(dword(8)));
+            else if (!is64 && code[0] == 0xB8 && code[5] == 0xE9 && dword(1) == pe->imageBase + slot)
+                tailMergeVA = (thunkVA + 10 + static_cast<int64>(static_cast<int32>(dword(6)))) & 0xFFFFFFFFull;
+            if (tailMergeVA < pe->imageBase)
+                continue;
+            const auto tailMergeFa = pe->RVAToFA(tailMergeVA - pe->imageBase);
+            if (tailMergeFa != PE_INVALID_ADDRESS && namedFunctions.insert(tailMergeFa).second)
+                settings.AddFunctionEntry(tailMergeFa, tailMergeName, DissasmViewer::FunctionEntryType::Symbol);
+        }
+    }
+}
+
+// The pointers of the Control Flow Guard (load config directory): every indirect call of a CFG image goes through them
+// (call [__guard_dispatch_icall_fptr]), named like IDA
+void AddDissasmGuardPointers(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+{
+    const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
+    const auto start      = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
+    uint32 size           = 0; // the first field: the size of the structure (it grows with the Windows versions)
+    if (start == PE_INVALID_ADDRESS || !data.Copy<uint32>(start, size))
+        return;
+    const bool is64 = pe->hdr64;
+    struct GuardPointer {
+        uint32 offset32, offset64;
+        std::string_view name;
+    };
+    constexpr GuardPointer pointers[] = {
+        { 72, 112, "__guard_check_icall_fptr" },
+        { 76, 120, "__guard_dispatch_icall_fptr" },
+        { 172, 280, "__guard_xfg_check_icall_fptr" },
+        { 176, 288, "__guard_xfg_dispatch_icall_fptr" },
+        { 180, 296, "__guard_xfg_table_dispatch_icall_fptr" },
+    };
+    for (const auto& pointer : pointers) {
+        const uint32 offset = is64 ? pointer.offset64 : pointer.offset32;
+        uint64 va           = 0;
+        if (offset + (is64 ? 8u : 4u) > size || !ReadImagePointer(data, start + offset, is64, va) || va <= pe->imageBase)
+            continue;
+        settings.AddMemoryMapping(va - pe->imageBase, pointer.name, DissasmViewer::MemoryMappingType::FunctionMapping);
+    }
+}
+
 void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
 {
     DissasmViewer::Settings settings;
@@ -311,6 +469,8 @@ UInt16 e_res[4];)");
         settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
     }
     AddDissasmFunctionEntries(settings, pe, win->GetObject()->GetData());
+    AddDissasmDelayImports(settings, pe, win->GetObject()->GetData());
+    AddDissasmGuardPointers(settings, pe, win->GetObject()->GetData());
 
     win->CreateViewer(settings);
 }
