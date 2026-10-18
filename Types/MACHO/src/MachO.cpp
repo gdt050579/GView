@@ -372,6 +372,24 @@ GVIEW_PLUGIN_ENTRY_POINTS
         settings.AddDisassemblyZone(start, end - start, entryPoint, language);
         for (const uint64 sectionStart : sectionStarts)
             settings.AddInstructionBoundary(sectionStart);
+        // the data sections (__cstring, __const, __data, __got, __la_symbol_ptr, __objc_*, ...): a data zone each; the zero fill sections
+        // have no bytes, the unwind data is for the unwinder
+        const uint64 fileSize = win->GetObject()->GetData().GetSize();
+        for (const auto& segment : machO->segments)
+            for (const auto& section : segment.sections)
+            {
+                const uint32 type    = section.flags & MAC::SECTION_TYPE;
+                const bool zeroFill  = type == static_cast<uint32>(MAC::SectionType::ZEROFILL) || type == static_cast<uint32>(MAC::SectionType::GB_ZEROFILL) ||
+                                       type == static_cast<uint32>(MAC::SectionType::THREAD_LOCAL_ZEROFILL);
+                const std::string_view sectionName(section.sectname, strnlen(section.sectname, sizeof(section.sectname)));
+                const std::string_view segmentName(section.segname, strnlen(section.segname, sizeof(section.segname)));
+                const uint64 offset = section.offset;
+                if (IsInstructionsSection(section) || zeroFill || offset == 0 || section.size == 0 || offset >= fileSize || segmentName == "__LINKEDIT" ||
+                    sectionName == "__unwind_info" || sectionName == "__eh_frame" || sectionName == "__compact_unwind" || (offset < end && start < offset + section.size))
+                    continue;
+                const std::string name = std::string(segmentName) + "," + std::string(sectionName);
+                settings.AddDataZone(offset, std::min<uint64>(section.size, fileSize - offset), language, name);
+            }
         if (isArm) // armv7: the stubs (__picsymbolstub4, __symbol_stub4) are ARM code, the other sections Thumb until the symbols say otherwise
             for (const auto& segment : machO->segments)
                 for (const auto& section : segment.sections)

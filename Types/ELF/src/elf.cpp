@@ -312,6 +312,35 @@ GVIEW_PLUGIN_ENTRY_POINTS
         settings.AddDisassemblyZone(start, end - start, entryPoint, language);
         for (const uint64 sectionStart : sectionStarts)
             settings.AddInstructionBoundary(sectionStart);
+        // the data of the program (.rodata, .data, .data.rel.ro, .got, .init_array, ...): a data zone each; the metadata of the loader
+        // (.dynsym, .dynstr, .rela.*, .eh_frame, .note.*, .dynamic, ...) stays in its panels
+        const auto addDataSection = [&](size_t index, uint64 flags, uint32 type, uint64 offset, uint64 size) {
+            if ((flags & ELF::SHF_ALLOC) == 0 || (flags & ELF::SHF_EXECINSTR) != 0 || type == ELF::SHT_NOBITS || size == 0 || offset >= fileSize)
+                return;
+            const std::string name = index < elf->sectionNames.size() ? elf->sectionNames[index] : std::string();
+            const bool isProgramData = name.starts_with(".rodata") || name.starts_with(".data") || name.starts_with(".got") ||
+                                       name.starts_with(".init_array") || name.starts_with(".fini_array") || name.starts_with(".tdata") ||
+                                       name.starts_with(".ctors") || name.starts_with(".dtors") || name == ".sdata" || name == ".srodata";
+            if (!isProgramData || (offset < end && start < offset + size)) // never inside the code zone
+                return;
+            settings.AddDataZone(offset, std::min(size, fileSize - offset), language, name);
+        };
+        if (elf->is64)
+        {
+            for (size_t index = 0; index < elf->sections64.size(); index++)
+            {
+                const auto& section = elf->sections64[index];
+                addDataSection(index, section.sh_flags, section.sh_type, section.sh_offset, section.sh_size);
+            }
+        }
+        else
+        {
+            for (size_t index = 0; index < elf->sections32.size(); index++)
+            {
+                const auto& section = elf->sections32[index];
+                addDataSection(index, section.sh_flags, section.sh_type, section.sh_offset, section.sh_size);
+            }
+        }
         settings.SetOffsetTranslationList({ "RVA", "VA" }, &elf->dissasmTranslation);
         AddDissasmImports(settings, elf, win->GetObject());
         if (isArm)

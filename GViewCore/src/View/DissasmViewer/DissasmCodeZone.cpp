@@ -1185,11 +1185,12 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         const uint64 fileSize = initData.obj->GetData().GetSize();
         const uint64 dataSize = zoneDetails.startingZonePoint < fileSize ? std::min<uint64>({ zoneDetails.size, MAX_DATA_ZONE_SIZE, fileSize - zoneDetails.startingZonePoint }) : 0;
         const auto bytes      = initData.obj->GetData().CopyToBuffer(zoneDetails.startingZonePoint, static_cast<uint32>(dataSize), false);
-        // the pointers: only with the addresses of the plugin (the VAs), every small number is a file offset otherwise
+        // the pointers: only with the addresses of the plugin (the VAs), every small number is a file offset otherwise; and not the small
+        // values (a position independent image loaded at 0: its first VAs are counters and sizes too)
         const uint8 pointerSize = Is64BitCode() ? 8 : 4;
         std::function<bool(uint64)> isPointer;
         if (initData.labelAddressBase.has_value() && initData.isFileAddress)
-            isPointer = [isFileAddress = initData.isFileAddress](uint64 value) { return value != 0 && isFileAddress(value); };
+            isPointer = [isFileAddress = initData.isFileAddress](uint64 value) { return value >= 0x10000 && isFileAddress(value); };
         instructionSet.dataRanges = BuildDataZoneRanges(bytes.GetData(), bytes.GetLength(), targets, fixedRanges, pointerSize, isPointer);
         if (bytes.GetLength() < zoneDetails.size) // the bytes past the limit: rows
             instructionSet.dataRanges.push_back({ bytes.GetLength(), zoneDetails.size, DissasmInstructionSet::BYTES_ROW });

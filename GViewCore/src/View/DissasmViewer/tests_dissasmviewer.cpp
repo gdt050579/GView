@@ -6115,7 +6115,7 @@ TEST_CASE("DataZoneRanges", "[Dissasm]DataZone")
 
 TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
 {
-    // the code (VA 0x1000) refers to a string and to a table of pointers of the data zone (VA 0x1040)
+    // the code (VA 0x401000) refers to a string and to a table of pointers of the data zone (VA 0x401040)
     std::vector<unsigned char> file = {
         0x48, 0x8D, 0x0D, 0x39, 0x00, 0x00, 0x00, // 0x00: lea rcx, [rip + 0x39] (the string, 0x40)
         0x48, 0x8D, 0x15, 0x3A, 0x00, 0x00, 0x00, // 0x07: lea rdx, [rip + 0x3a] (the pointers, 0x48)
@@ -6127,8 +6127,8 @@ TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
         file.push_back(static_cast<unsigned char>(c)); // 0x40
     file.push_back(0);
     file.push_back(0);                                                // 0x47: padding
-    file.insert(file.end(), { 0x00, 0x10, 0, 0, 0, 0, 0, 0 });        // 0x48: 0x1000 (the code)
-    file.insert(file.end(), { 0x40, 0x10, 0, 0, 0, 0, 0, 0 });        // 0x50: 0x1040 (the string)
+    file.insert(file.end(), { 0x00, 0x10, 0x40, 0, 0, 0, 0, 0 });     // 0x48: 0x401000 (the code)
+    file.insert(file.end(), { 0x40, 0x10, 0x40, 0, 0, 0, 0, 0 });     // 0x50: 0x401040 (the string)
     for (uint8 value = 1; file.size() < 0x80; value++)
         file.push_back(value); // 0x58: other bytes
     const uint64 fileSize = file.size();
@@ -6137,19 +6137,19 @@ TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
     layout.size             = 0x20;
     layout.entryPoint       = 0;
     layout.language         = DisassemblyLanguage::x64;
-    layout.labelAddressBase = 0x1000;
-    layout.isFileAddress    = [fileSize](uint64 va) { return va >= 0x1000 && va - 0x1000 < fileSize; };
+    layout.labelAddressBase = 0x401000;
+    layout.isFileAddress    = [fileSize](uint64 va) { return va >= 0x401000 && va - 0x401000 < fileSize; };
     layout.addressToFileOffset = [fileSize](uint64 va) -> std::optional<uint64> {
-        return va >= 0x1000 && va - 0x1000 < fileSize ? std::optional<uint64>(va - 0x1000) : std::nullopt;
+        return va >= 0x401000 && va - 0x401000 < fileSize ? std::optional<uint64>(va - 0x401000) : std::nullopt;
     };
-    layout.imports = { { 0x1078, { "CreateFileW", MemoryMappingType::FunctionMapping } } }; // by the VA of the slot (no translation)
+    layout.imports = { { 0x401078, { "CreateFileW", MemoryMappingType::FunctionMapping } } }; // by the VA of the slot (no translation)
     DissasmTestInstance code(file.data(), file.size(), false, layout);
     auto& codeZone = *code.zone;
 
     layout.start            = 0x40;
     layout.size             = 0x40;
     layout.entryPoint       = NO_ENTRY_POINT;
-    layout.labelAddressBase = 0x1040;
+    layout.labelAddressBase = 0x401040;
     layout.isData           = true;
     layout.siblings         = { &codeZone };
     DissasmTestInstance data(file.data(), file.size(), false, layout);
@@ -6157,7 +6157,7 @@ TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
     codeZone.siblingZones   = { &dataZone };
 
     REQUIRE(dataZone.GetLabelNameAt(0x00) == "aHello");
-    REQUIRE(dataZone.GetLabelNameAt(0x08) == "off_1048");
+    REQUIRE(dataZone.GetLabelNameAt(0x08) == "off_401048");
     REQUIRE(dataZone.GetLabelNameAt(0x38) == "__imp_CreateFileW"); // the import slot used by the call
     REQUIRE(dataZone.functionStarts.empty());
     const std::string listing = data.GetListing();
@@ -6167,7 +6167,7 @@ TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
     REQUIRE(FindListingLine(listing, "dq     aHello").size() > 0);
     REQUIRE(FindListingLine(listing, "dq     CreateFileW").size() > 0);
     REQUIRE(FindListingLine(listing, "db     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08").size() > 0);
-    REQUIRE(FindListingLine(listing, "aHello:").ends_with("; xrefs: off_1048+0x8 (offset), EntryPoint (offset)")); // the table and the code
+    REQUIRE(FindListingLine(listing, "aHello:").ends_with("; xrefs: off_401048+0x8 (offset), EntryPoint (offset)")); // the table and the code
     // the pointers are references to what they point to: the entry point is referred to by the table
-    REQUIRE(codeZone.FormatXrefsSummary(0x00) == "xref: off_1048 (offset)");
+    REQUIRE(codeZone.FormatXrefsSummary(0x00) == "xref: off_401048 (offset)");
 }
