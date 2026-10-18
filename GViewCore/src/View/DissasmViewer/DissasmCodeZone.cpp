@@ -1084,6 +1084,10 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
 
     localVariables.functions.clear();
     tableEntries.clear();
+    // the data defined by the user: the lines are counted with them (a range that does not fit any more is dropped)
+    for (const auto& range : userDataRanges)
+        if (range.end <= zoneDetails.size)
+            instructionSet.AddDataRange(range);
     deepScan.reset();
     deepScanInitData.reset();
     lineCounter.reset();
@@ -1641,6 +1645,69 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallers(uint64 functionSta
         callers.push_back(std::move(caller));
     }
     return callers;
+}
+
+void DissasmCodeZone::SetUserDataRange(const DissasmInstructionSet::DataRange& range)
+{
+    userDataRanges.erase(std::remove_if(userDataRanges.begin(), userDataRanges.end(),
+                                        [&range](const auto& item) { return item.start < range.end && range.start < item.end; }),
+                         userDataRanges.end());
+    const auto next = std::upper_bound(
+          userDataRanges.begin(), userDataRanges.end(), range.start, [](uint64 value, const auto& item) { return value < item.start; });
+    userDataRanges.insert(next, range);
+}
+
+bool DissasmCodeZone::DefineUserData(uint64 address)
+{
+    const uint64 codeSize = GetCodeSize();
+    if (address >= codeSize)
+        return false;
+    uint64 start = address;
+    uint8 unit   = 1;
+    const auto found =
+          std::find_if(userDataRanges.begin(), userDataRanges.end(), [address](const auto& range) { return address >= range.start && address < range.end; });
+    if (found != userDataRanges.end()) {
+        start = found->start;
+        unit  = found->unit == 0 || found->unit >= 8 ? 1 : static_cast<uint8>(found->unit * 2); // db -> dw -> dd -> dq -> db; a string -> db
+    }
+    if (start + unit > codeSize)
+        unit = 1;
+    SetUserDataRange({ start, start + unit, unit });
+    return true;
+}
+
+bool DissasmCodeZone::DefineUserString(uint64 address)
+{
+    constexpr uint32 MAX_STRING_SIZE = 1024;
+    const uint64 codeSize            = GetCodeSize();
+    if (address >= codeSize || cachedCodeOffsets.empty() || !zoneObject.IsValid())
+        return false;
+    Reference<GView::Object> obj = zoneObject;
+    const auto view = obj->GetData().Get(cachedCodeOffsets[0].offset + address, static_cast<uint32>(std::min<uint64>(codeSize - address, MAX_STRING_SIZE)), false);
+    if (!view.IsValid())
+        return false;
+    size_t length = 0;
+    while (length < view.GetLength()) {
+        const uint8 value = view.GetData()[length];
+        if (!((value >= 0x20 && value < 0x7F) || value == '\t' || value == '\r' || value == '\n'))
+            break;
+        length++;
+    }
+    if (length == 0)
+        return false;
+    const bool endsWithZero = length < view.GetLength() && view.GetData()[length] == 0;
+    SetUserDataRange({ address, address + length + (endsWithZero ? 1u : 0u), 0 });
+    return true;
+}
+
+bool DissasmCodeZone::UndefineUserData(uint64 address)
+{
+    const auto found =
+          std::find_if(userDataRanges.begin(), userDataRanges.end(), [address](const auto& range) { return address >= range.start && address < range.end; });
+    if (found == userDataRanges.end())
+        return false;
+    userDataRanges.erase(found);
+    return true;
 }
 
 std::vector<DissasmZoneXref> DissasmCodeZone::GetXrefsTo(uint64 address) const

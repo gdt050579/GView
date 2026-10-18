@@ -303,6 +303,9 @@ void GView::View::DissasmViewer::ApplyKeyProfile(Config::KeyProfile profile)
         { &Config::ShowGraphCommand, Key::Space },
         { &Config::FindCommand, Key::Alt | Key::T },
         { &Config::FindNextCommand, Key::Ctrl | Key::T },
+        { &Config::DefineStringCommand, Key::A }, // IDA A: a string; the suggestions of the assistant move to Alt+A
+        { &Config::AcceptAISuggestionCommand, Key::Alt | Key::A },
+        { &Config::DismissAISuggestionCommand, Key::Alt | Key::Shift | Key::A },
     };
     // the GView keys are the declared ones, kept before the first change
     static std::vector<Key> gviewKeys;

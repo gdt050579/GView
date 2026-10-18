@@ -129,6 +129,12 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
                           { "language", zone.GetArchitectureName() },
                           { "addressBase", Hex(base) } };
 
+    json dataRanges = json::array();
+    for (const auto& range : zone.userDataRanges)
+        dataRanges.push_back({ { "address", Hex(base + range.start) }, { "size", range.end - range.start }, { "unit", range.unit } });
+    if (!dataRanges.empty())
+        result["dataRanges"] = std::move(dataRanges);
+
     json names = json::array();
     for (const auto& [address, name] : zone.GetUserLabelNames())
         names.push_back({ { "address", Hex(base + address) }, { "name", name } });
@@ -189,6 +195,30 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
 {
     const auto documentBase = zoneJson.contains("addressBase") ? ParseAddress(zoneJson["addressBase"]) : std::nullopt;
     const Rebase rebase{ documentBase.value_or(zone.labelAddressBase), zone.GetCodeSize() };
+
+    // the data defined by the user: the zone needs a new analysis when they change
+    if (zoneJson.contains("dataRanges")) {
+        auto ranges = zone.userDataRanges;
+        for (const auto& item : ArrayField(zoneJson, "dataRanges")) {
+            const auto start = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
+            const uint64 size = item.is_object() && item.contains("size") && item["size"].is_number_unsigned() ? item["size"].get<uint64>() : 0;
+            const uint64 unit = item.is_object() && item.contains("unit") && item["unit"].is_number_unsigned() ? item["unit"].get<uint64>() : 99;
+            const bool validUnit = unit == 0 || unit == 1 || unit == 2 || unit == 4 || unit == 8;
+            if (!start.has_value() || size == 0 || size > zone.GetCodeSize() - start.value() || !validUnit) {
+                result.skipped++;
+                continue;
+            }
+            const DissasmInstructionSet::DataRange range{ start.value(), start.value() + size, static_cast<uint8>(unit) };
+            ranges.erase(std::remove_if(ranges.begin(), ranges.end(), [&range](const auto& other) { return other.start < range.end && range.start < other.end; }),
+                         ranges.end());
+            ranges.insert(std::upper_bound(ranges.begin(), ranges.end(), range.start, [](uint64 value, const auto& other) { return value < other.start; }), range);
+            result.dataRanges++;
+        }
+        if (ranges != zone.userDataRanges) {
+            zone.userDataRanges = std::move(ranges);
+            result.zonesToReanalyze.push_back(&zone);
+        }
+    }
 
     for (const auto& item : ArrayField(zoneJson, "names")) {
         const auto address = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
@@ -272,6 +302,46 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
     zone.ClearEditHistory();
     zone.asmPreCacheData.Clear();
     result.zones++;
+}
+
+bool GView::View::DissasmViewer::ReanalyzeCodeZone(DissasmCodeZone& zone, DissasmCodeZoneInitData& initData, DissasmAnnotationsImport& imported)
+{
+    const auto annotations = ExportZoneAnnotations(zone); // the data of the user, by address
+    initData.deepScanBudget.reset();                       // at once: the annotations need the labels
+    initData.lineCountBudget.reset();
+    zone.dissasmType.annotations = {}; // the labels of the previous analysis (the deep scan gives new ones)
+    if (!zone.InitZone(initData))
+        return false;
+    ImportZoneAnnotations(zone, annotations, imported);
+    return true;
+}
+
+bool GView::View::DissasmViewer::ImportAnnotationsDocument(
+      const json& document,
+      const std::vector<DissasmCodeZone*>& zones,
+      DissasmAnnotationsImport& result,
+      std::string& error,
+      const std::function<bool(DissasmCodeZone&)>& reanalyze)
+{
+    if (!ImportAnnotationsDocument(document, zones, result, error))
+        return false;
+    if (result.zonesToReanalyze.empty() || !reanalyze)
+        return true;
+    // the zones with new data ranges: a new analysis, then the document again (its names apply to the new labels)
+    const auto zonesToReanalyze = result.zonesToReanalyze;
+    std::vector<DissasmCodeZone*> reanalyzed;
+    for (auto* zone : zonesToReanalyze)
+        if (reanalyze(*zone))
+            reanalyzed.push_back(zone);
+    const uint32 dataRanges = result.dataRanges;
+    result                  = {};
+    if (!ImportAnnotationsDocument(document, zones, result, error))
+        return false;
+    result.dataRanges = dataRanges;
+    for (auto* zone : reanalyzed)
+        if (std::find(result.zonesWithNewLines.begin(), result.zonesWithNewLines.end(), zone) == result.zonesWithNewLines.end())
+            result.zonesWithNewLines.push_back(zone); // its lines changed
+    return true;
 }
 
 bool GView::View::DissasmViewer::ImportAnnotationsDocument(

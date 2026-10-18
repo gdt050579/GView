@@ -32,11 +32,28 @@ struct DissasmAnnotationsImport {
     uint32 suggestedNames  = 0;
     uint32 skipped         = 0; // an address outside the code, a label that does not exist, a name already used, a bad entry
     uint32 zones           = 0; // the zones of the document applied to a zone of the file
+    uint32 dataRanges      = 0; // the data defined by the user (IDA D / A)
+    std::vector<DissasmCodeZone*> zonesToReanalyze; // their data ranges changed: a new analysis gives their lines
     std::vector<DissasmCodeZone*> zonesWithNewLines; // a collapsed zone was placed: the size of the zone changed
 };
 // Adds the annotations of a zone of the document to the zone: the ones of the document win, the other data of the zone stays (nothing is
 // deleted). The history of the edits is cleared (an import is not an edit that can be undone).
 void ImportZoneAnnotations(DissasmCodeZone& zone, const nlohmann::json& zoneJson, DissasmAnnotationsImport& result);
-// every zone of the document applied to the zone of the same file offset; false (and the reason) when it is not such a document
+// every zone of the document applied to the zone of the same file offset; false (and the reason) when it is not such a document. The zones
+// whose data ranges changed are listed (zonesToReanalyze): their ranges apply at their next analysis
 bool ImportAnnotationsDocument(const nlohmann::json& document, const std::vector<DissasmCodeZone*>& zones, DissasmAnnotationsImport& result, std::string& error);
+// the same, and the zones whose data ranges changed are analyzed again by `reanalyze`, then the document is imported into them again (the
+// names of the new labels)
+bool ImportAnnotationsDocument(
+      const nlohmann::json& document,
+      const std::vector<DissasmCodeZone*>& zones,
+      DissasmAnnotationsImport& result,
+      std::string& error,
+      const std::function<bool(DissasmCodeZone&)>& reanalyze);
+
+struct DissasmCodeZoneInitData;
+// The zone analyzed again (its user data ranges changed: D / A / U): the annotations of the user are exported, the zone is initialized again
+// (the line count and the deep scan run at once) and the annotations are imported into the new analysis. False when the zone can not be
+// initialized.
+bool ReanalyzeCodeZone(DissasmCodeZone& zone, DissasmCodeZoneInitData& initData, DissasmAnnotationsImport& imported);
 } // namespace GView::View::DissasmViewer

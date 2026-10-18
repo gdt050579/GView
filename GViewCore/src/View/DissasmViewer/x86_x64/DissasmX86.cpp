@@ -1225,9 +1225,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     return true;
 }
 
-bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
+void Instance::FillCodeZoneInitData(DissasmCodeZoneInitData& initData, DrawLineInfo* dli, DissasmCodeZone* zone)
 {
-    DissasmCodeZoneInitData initData{};
     // the local variables are recognized inside the functions found by the deep scan
     initData.enableDeepScanDissasmOnStart  = config.EnableDeepScanDissasmOnStart;
     initData.enableLocalVariablesDetection = config.EnableDeepScanDissasmOnStart;
@@ -1243,6 +1242,15 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
     constexpr auto LINE_COUNT_BUDGET_IN_INIT = std::chrono::milliseconds(100);
     initData.lineCountBudget                 = LINE_COUNT_BUDGET_IN_INIT;
     PrepareCodeZoneInitData(settings.get(), obj, zone, initData);
+}
+
+bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
+{
+    DissasmCodeZoneInitData initData{};
+    FillCodeZoneInitData(initData, dli, zone);
+    // the data defined by the user (D / A) are saved apart: the lines are counted with them
+    if (cacheData.hasCache)
+        zone->userDataRanges = ReadUserDataRanges(cacheData, *zone);
 
     if (!zone->InitZone(initData))
         return false;
@@ -1618,7 +1626,9 @@ void Instance::ImportAnnotations()
 
     DissasmAnnotationsImport result;
     std::string error;
-    if (!ImportAnnotationsDocument(document, zones, result, error)) {
+    FinishDeepScans(); // the labels of the analysis receive the names
+    // the zones whose data (D / A) changed are analyzed again
+    if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt); })) {
         Dialogs::MessageBox::ShowError("Error", error);
         return;
     }
@@ -2046,6 +2056,66 @@ const Instance::CursorLineNumber* Instance::GetCursorLineNumber()
     if (cursorLineNumbers.numbers.size() == 1)
         return &cursorLineNumbers.numbers[0];
     return nullptr;
+}
+
+void Instance::DefineUserData(UserDataEdit edit)
+{
+    FinishDeepScans(); // the labels (and the data of the cache) are there before the zone is analyzed again
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please expand the collapsed zone first!");
+        return;
+    }
+    const uint64 address = asmLine.address; // a label / a variable: the instruction they belong to
+    bool changed         = false;
+    if (edit == UserDataEdit::Data)
+        changed = zone->DefineUserData(address);
+    else if (edit == UserDataEdit::String) {
+        changed = zone->DefineUserString(address);
+        if (!changed)
+            Dialogs::MessageBox::ShowNotification("Info", "There is no text at this address!");
+    } else {
+        changed = zone->UndefineUserData(address);
+        if (!changed)
+            Dialogs::MessageBox::ShowNotification("Info", "This line is not data defined with D / string!");
+    }
+    if (changed)
+        ReanalyzeZone(zone, address);
+}
+
+bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress)
+{
+    if (zone->IsDeepScanPending()) {
+        zone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
+        EndDeepScan(zone, false);
+    }
+    DissasmCodeZoneInitData initData{};
+    FillCodeZoneInitData(initData, nullptr, zone);
+    DissasmAnnotationsImport imported;
+    if (!ReanalyzeCodeZone(*zone, initData, imported)) {
+        Dialogs::MessageBox::ShowError("Error", "The dissasm zone could not be analyzed again!");
+        return false;
+    }
+    AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+    zone->asmPreCacheData.Clear();
+    drawnLinesGeneration++;
+    if (keepAddress.has_value())
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + keepAddress.value(), false);
+    return true;
 }
 
 void Instance::ToggleNumberBase()

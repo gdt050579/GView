@@ -281,6 +281,15 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_TOGGLE_NUMBER_BASE:
         ToggleNumberBase();
         return true;
+    case COMMAND_DEFINE_DATA:
+        DefineUserData(UserDataEdit::Data);
+        return true;
+    case COMMAND_DEFINE_STRING:
+        DefineUserData(UserDataEdit::String);
+        return true;
+    case COMMAND_UNDEFINE:
+        DefineUserData(UserDataEdit::Undefine);
+        return true;
     }
     return false;
 }

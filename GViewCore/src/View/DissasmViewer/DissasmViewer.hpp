@@ -63,11 +63,13 @@ namespace View
                       modeChanges.begin(), modeChanges.end(), address, [](uint64 value, const std::pair<uint64, ArmCodeMode>& change) { return value < change.first; });
                 return next == modeChanges.begin() ? defaultMode : (next - 1)->second;
             }
-            // the data inside the code found by the analysis (the jump tables of the switches): data lines of `unit` bytes (1, 2, 4, 8)
+            // the data inside the code found by the analysis (the jump tables of the switches) or defined by the user (IDA D / A): data lines
+            // of `unit` bytes (1, 2, 4, 8), unit 0: an ASCII string
             struct DataRange {
                 uint64 start; // relative addresses [start, end)
                 uint64 end;
                 uint8 unit;
+                bool operator==(const DataRange&) const = default;
             };
             std::vector<DataRange> dataRanges; // sorted, not overlapping
             const DataRange* DataRangeAt(uint64 address) const
@@ -552,6 +554,8 @@ namespace View
         void MigrateLegacyCodeZoneRecords(DissasmCache& cache, const std::vector<std::unique_ptr<ParseZone>>& zones);
         // every code zone knows the other code zones of the file (DissasmCodeZone::siblingZones)
         void LinkCodeZones(const std::vector<std::unique_ptr<ParseZone>>& zones);
+        // the data defined by the user in a code zone, saved in the cache (read before the zone is analyzed)
+        std::vector<DissasmInstructionSet::DataRange> ReadUserDataRanges(const DissasmCache& cache, const DissasmCodeZone& zone);
 
         struct LayoutDissasm {
             uint32 visibleRows;
@@ -886,6 +890,12 @@ namespace View
             // the number under the cursor, or the only number of the cursor line
             const CursorLineNumber* GetCursorLineNumber();
             void ToggleNumberBase();
+            // IDA D / A / U on the cursor line: the data of the user changes, the zone is analyzed again (its annotations are kept)
+            enum class UserDataEdit : uint8 { Data, String, Undefine };
+            void DefineUserData(UserDataEdit edit);
+            // the zone analyzed again at once (ReanalyzeCodeZone); the cursor goes back to `keepAddress` (relative) when given
+            bool ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress);
+            void FillCodeZoneInitData(DissasmCodeZoneInitData& initData, DrawLineInfo* dli, DissasmCodeZone* zone);
             int PrintCursorValueInfo(int x, int y, Renderer& r);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);

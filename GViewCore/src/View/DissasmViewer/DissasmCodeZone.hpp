@@ -215,6 +215,16 @@ struct DissasmCodeZone : public ParseZone {
     // the other code zones of the file (the other executable sections, LinkCodeZones): their xrefs to this zone, their functions called
     // from it. A zone that is not analyzed yet (never shown) has none.
     std::vector<DissasmCodeZone*> siblingZones;
+    // the data defined by the user in the code (IDA D / A / U), relative addresses, sorted: InitZone counts the lines with them (a change
+    // needs a new analysis of the zone, ReanalyzeCodeZone); saved in the cache (read before the zone is analyzed) and in the annotations
+    std::vector<DissasmInstructionSet::DataRange> userDataRanges;
+    // D: the data line at the address gets the next size (db, dw, dd, dq, then db again); an instruction becomes a db line. A: the ASCII text
+    // that starts at the address (up to its zero) becomes a string; false when there is no text. U: the data / string of the address is
+    // removed (decoded as code again); false when the address has none.
+    bool DefineUserData(uint64 address);
+    bool DefineUserString(uint64 address);
+    bool UndefineUserData(uint64 address);
+    void SetUserDataRange(const DissasmInstructionSet::DataRange& range); // the ranges it overlaps are removed
     // the references to an address (VA) from this zone, then from the other code zones of the file
     std::vector<DissasmZoneXref> GetXrefsTo(uint64 address) const;
     // this zone or another analyzed code zone of the file that has the address (VA) in its code; none outside of them

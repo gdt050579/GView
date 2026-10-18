@@ -363,6 +363,63 @@ void Instance::LoadCacheData()
     MigrateLegacyCodeZoneRecords(cacheData, settings->parseZones);
 }
 
+// The data defined by the user in a code zone (IDA D / A): [magic][version][count] then count x [start][end][unit], relative addresses.
+// A record of its own: it is read before the zone is analyzed (the lines are counted with the ranges), the zone record after.
+constexpr uint32 DISSASM_USER_DATA_MAGIC   = 0x44554447; // "GDUD"
+constexpr uint32 DISSASM_USER_DATA_VERSION = 1;
+constexpr uint32 DISSASM_MAX_USER_DATA     = 0x100000;
+
+static void FormatUserDataRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmUserData.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::ReadUserDataRanges(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::vector<DissasmInstructionSet::DataRange> ranges;
+    LocalString<64> name;
+    FormatUserDataRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return ranges;
+    const std::byte* data = entry->second.data.get();
+    const size_t size     = entry->second.size;
+    size_t position       = 0;
+    const auto read       = [&](void* value, size_t length) {
+        if (position + length > size)
+            return false;
+        memcpy(value, data + position, length);
+        position += length;
+        return true;
+    };
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read(&magic, sizeof(magic)) || magic != DISSASM_USER_DATA_MAGIC || !read(&version, sizeof(version)) || version != DISSASM_USER_DATA_VERSION ||
+        !read(&count, sizeof(count)) || count > DISSASM_MAX_USER_DATA)
+        return ranges;
+    for (uint32 index = 0; index < count; index++) {
+        DissasmInstructionSet::DataRange range{};
+        if (!read(&range.start, sizeof(range.start)) || !read(&range.end, sizeof(range.end)) || !read(&range.unit, sizeof(range.unit)))
+            return {};
+        const bool validUnit = range.unit == 0 || range.unit == 1 || range.unit == 2 || range.unit == 4 || range.unit == 8;
+        if (range.start < range.end && range.end <= zone.zoneDetails.size && validUnit && (ranges.empty() || ranges.back().end <= range.start))
+            ranges.push_back(range);
+    }
+    return ranges;
+}
+
+static void UserDataRangesToBuffer(const std::vector<DissasmInstructionSet::DataRange>& ranges, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_USER_DATA_MAGIC);
+    append_bytes(buffer, DISSASM_USER_DATA_VERSION);
+    append_bytes(buffer, static_cast<uint32>(ranges.size()));
+    for (const auto& range : ranges) {
+        append_bytes(buffer, range.start);
+        append_bytes(buffer, range.end);
+        append_bytes(buffer, range.unit);
+    }
+}
+
 void Instance::SaveCacheData()
 {
     if (!config.EnableDeepScanDissasmOnStart)
@@ -403,6 +460,14 @@ void Instance::SaveCacheData()
         FormatCodeZoneRecordName(zoneName, *dissasmZone);
         keptRecords.insert_or_assign(zoneName.GetText(), std::move(record->second));
     }
+    // the data defined by the user in the zones not analyzed in this session: kept as they are
+    for (auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || static_cast<DissasmCodeZone*>(zone.get())->CanReachAsmLines())
+            continue;
+        FormatUserDataRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+    }
     // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
     for (auto& [name, entry] : cacheData.zonesData) {
         if (claimedRecords.contains(name) || mergedRecords.contains(name) || !entry.data)
@@ -434,6 +499,12 @@ void Instance::SaveCacheData()
             return;
         if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
             return;
+        if (!dissasmZone->userDataRanges.empty()) {
+            UserDataRangesToBuffer(dissasmZone->userDataRanges, buffer);
+            FormatUserDataRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
     }
     // the records kept aside and the legacy records of no zone
     for (auto& [name, entry] : keptRecords)

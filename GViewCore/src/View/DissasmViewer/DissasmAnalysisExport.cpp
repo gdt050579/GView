@@ -158,6 +158,8 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
         initData.enableLocalVariablesDetection = true;
         initData.visibleRows                   = 1;
         PrepareCodeZoneInitData(settings.get(), obj, zone, initData);
+        if (cache.hasCache) // the data defined by the user (D / A): the lines are counted with them
+            zone->userDataRanges = ReadUserDataRanges(cache, *zone);
         if (!zone->InitZone(initData))
             continue;
         bool zoneLinesChanged = false;
@@ -169,7 +171,15 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
     std::string optionError;
     if (options.annotations) {
         DissasmAnnotationsImport result;
-        if (ImportAnnotationsDocument(*options.annotations, analyzedZones, result, optionError))
+        const auto reanalyze = [&](DissasmCodeZone& zone) { // the data ranges of the document: a new analysis of the zone
+            for (size_t index = 0; index < settings->parseZones.size(); index++)
+                if (settings->parseZones[index].get() == &zone) {
+                    DissasmAnnotationsImport imported;
+                    return ReanalyzeCodeZone(zone, initDatas[index], imported);
+                }
+            return false;
+        };
+        if (ImportAnnotationsDocument(*options.annotations, analyzedZones, result, optionError, reanalyze))
             root["annotationsImport"] = { { "zones", result.zones },
                                           { "names", result.names },
                                           { "comments", result.comments },
@@ -177,6 +187,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
                                           { "decimalOperands", result.decimalOperands },
                                           { "collapsibleZones", result.collapsibleZones },
                                           { "suggestions", result.suggestedNames + result.aiComments },
+                                          { "dataRanges", result.dataRanges },
                                           { "skipped", result.skipped } };
         else
             root["annotationsImport"] = { { "error", optionError } };

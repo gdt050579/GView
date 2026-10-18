@@ -202,6 +202,36 @@ bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_i
 {
     if (available == 0)
         return false;
+    if (unit == 0) {
+        // a string defined by the user: up to DISSASM_MAX_LINE_SIZE bytes per line, db "text", 0 (the bytes that are not printable as numbers)
+        const size_t width = std::min<size_t>(available, DISSASM_MAX_LINE_SIZE);
+        std::string text;
+        bool inQuotes = false;
+        for (size_t index = 0; index < width; index++) {
+            const uint8_t value = (*code)[index];
+            if (value >= 0x20 && value < 0x7F && value != '"') {
+                if (!inQuotes)
+                    text += text.empty() ? "\"" : ", \"";
+                inQuotes = true;
+                text.push_back(static_cast<char>(value));
+                continue;
+            }
+            if (inQuotes)
+                text.push_back('"');
+            inQuotes = false;
+            char number[8];
+            snprintf(number, sizeof(number), value == 0 ? "0" : "0x%02x", static_cast<unsigned int>(value));
+            text += text.empty() ? "" : ", ";
+            text += number;
+        }
+        if (inQuotes)
+            text.push_back('"');
+        SetDataLine(insn, *address, *code, width, isArm ? ".ascii" : "db", text.c_str());
+        *code += width;
+        *size -= width;
+        *address += width;
+        return true;
+    }
     const size_t width = available >= unit ? unit : 1;
     uint64_t value     = 0;
     for (size_t index = 0; index < width; index++)

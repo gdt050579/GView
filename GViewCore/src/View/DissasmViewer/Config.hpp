@@ -40,6 +40,9 @@ constexpr uint32 COMMAND_EXPORT_ANNOTATIONS    = 133;
 constexpr uint32 COMMAND_IMPORT_ANNOTATIONS    = 134;
 constexpr uint32 COMMAND_CREATE_SIGNATURES     = 135;
 constexpr uint32 COMMAND_APPLY_SIGNATURES      = 136;
+constexpr uint32 COMMAND_DEFINE_DATA           = 137;
+constexpr uint32 COMMAND_DEFINE_STRING         = 138;
+constexpr uint32 COMMAND_UNDEFINE              = 139;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -314,6 +317,15 @@ namespace View
             inline static KeyboardControl ToggleNumberBaseCommand = {
                 Input::Key::H, "ToggleNumberBase", "Show the number under the cursor in decimal / hexadecimal", COMMAND_TOGGLE_NUMBER_BASE
             };
+            inline static KeyboardControl DefineDataCommand = {
+                Input::Key::D, "DefineData", "Make the bytes of the line data (again: db, dw, dd, dq)", COMMAND_DEFINE_DATA
+            };
+            inline static KeyboardControl DefineStringCommand = {
+                Input::Key::Shift | Input::Key::D, "DefineString", "Make the line a string (the ASCII text up to its zero)", COMMAND_DEFINE_STRING
+            };
+            inline static KeyboardControl UndefineCommand = {
+                Input::Key::U, "Undefine", "Remove the data / string of the line (decoded as code again)", COMMAND_UNDEFINE
+            };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
                 AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand, RemoveLocalVariableCommand
@@ -347,7 +359,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 23> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 26> KeyEventCommands = {
                 &AcceptAISuggestionCommand,
                 &DismissAISuggestionCommand,
                 &MoveDownCommand,
@@ -371,6 +383,9 @@ namespace View
                 &RemoveLocalVariableCommand,
                 &SaveCacheCommand,
                 &ToggleNumberBaseCommand,
+                &DefineDataCommand,
+                &DefineStringCommand,
+                &UndefineCommand,
             };
             inline static Input::KeyMap Map;
 

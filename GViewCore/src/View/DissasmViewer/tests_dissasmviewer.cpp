@@ -311,6 +311,7 @@ class DissasmTestInstance
     ZoneLayout layout;
     SettingsData settingsData; // the imports of the layout
     TestIdentityTranslation translation;
+    DissasmCodeZoneInitData lastInitData{};
 
     DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false, ZoneLayout layout = {})
         : enableLocalVariables(enableLocalVariables), layout(layout)
@@ -381,6 +382,7 @@ class DissasmTestInstance
             initData.findImport = [settings, codeZone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, codeZone, operands); };
         }
         initData.obj                          = obj;
+        lastInitData                          = initData; // a new analysis of the zone (ReanalyzeCodeZone)
 
         if (!zone->InitZone(initData)) {
             FAIL("DissasmTestInstance: InitZone failed");
@@ -5859,4 +5861,114 @@ TEST_CASE("StringsAcrossZones", "[Dissasm]Zones")
     REQUIRE(strings[0].text == "\"Hello strings\"");
     REQUIRE(strings[0].xrefs == 2);
     REQUIRE(text.zone->GetXrefsTo(0x70).size() == 2);
+}
+
+// code, a string and a dword inside the code, then the function called
+static std::vector<unsigned char> UserDataSample()
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+        0xCC, 0xCC,                   // 0x0e
+    };
+    for (const char c : std::string_view("Hi there"))
+        file.push_back(static_cast<unsigned char>(c)); // 0x10: the string and its zero
+    file.push_back(0x00);
+    file.insert(file.end(), { 0x11, 0x22, 0x33, 0x44 }); // 0x19: a dword
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    return file;
+}
+
+TEST_CASE("UserDataRanges", "[Dissasm]UserData")
+{
+    const auto file = UserDataSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.ApplyUserLabelName(0x20, "helper"));
+    zone.userComments.Set({ DissasmCommentAnchor::Kind::Instruction, 0x09, 0 }, "after the call");
+
+    // A: the text up to its zero; D: db, then dw, then dd
+    REQUIRE(zone.DefineUserString(0x10));
+    REQUIRE_FALSE(zone.DefineUserString(0x0E)); // int3: no text
+    REQUIRE(zone.DefineUserData(0x19));
+    REQUIRE(zone.userDataRanges.back().unit == 1);
+    REQUIRE(zone.DefineUserData(0x19));
+    REQUIRE(zone.DefineUserData(0x19));
+    REQUIRE(zone.userDataRanges.size() == 2);
+    REQUIRE(zone.userDataRanges[0] == DissasmInstructionSet::DataRange{ 0x10, 0x19, 0 });
+    REQUIRE(zone.userDataRanges[1] == DissasmInstructionSet::DataRange{ 0x19, 0x1D, 4 });
+
+    // the zone analyzed again: the data lines, the annotations of the user kept
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "db     \"Hi there\", 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "dd     0x44332211").size() > 0);
+    REQUIRE(FindListingLine(listing, "call   helper").size() > 0);
+    REQUIRE(FindListingLine(listing, "add    rsp, 0x28").ends_with("; after the call"));
+    REQUIRE(zone.GetLabelNameAt(0x20) == "helper");
+
+    // the ranges in the annotations: a new analysis of the same file gets them (and its lines)
+    const auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["dataRanges"].size() == 2);
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    auto& freshZone = *fresh.zone;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { &freshZone }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.dataRanges == 2);
+    REQUIRE(freshZone.userDataRanges == zone.userDataRanges);
+    REQUIRE(freshZone.GetLabelNameAt(0x20) == "helper"); // the names after the new analysis
+    REQUIRE(FindListingLine(fresh.GetListing(), "dd     0x44332211").size() > 0);
+
+    // U: the string is code again
+    REQUIRE(zone.UndefineUserData(0x14));
+    REQUIRE_FALSE(zone.UndefineUserData(0x14));
+    REQUIRE(zone.userDataRanges.size() == 1);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(dissasmInstance.GetListing().find("Hi there") == std::string::npos);
+}
+
+TEST_CASE("UserDataRangesCache", "[Dissasm]UserData")
+{
+    const auto file = UserDataSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    // the record: magic, version, count, then start, end, unit
+    std::vector<std::byte> buffer;
+    const auto add = [&buffer](const auto& value) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    add(uint32{ 0x44554447 });
+    add(uint32{ 1 });
+    add(uint32{ 3 });
+    add(uint64{ 0x10 }), add(uint64{ 0x19 }), add(uint8{ 0 });
+    add(uint64{ 0x19 }), add(uint64{ 0x1D }), add(uint8{ 4 });
+    add(uint64{ 0x28 }), add(uint64{ 0x1000 }), add(uint8{ 1 }); // outside of the zone: dropped
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserData.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    const auto ranges = ReadUserDataRanges(cache, *dissasmInstance.zone);
+    REQUIRE(ranges.size() == 2);
+    REQUIRE(ranges[1] == DissasmInstructionSet::DataRange{ 0x19, 0x1D, 4 });
+    // another magic: nothing
+    buffer[0] = std::byte{ 0 };
+    DissasmCache wrong;
+    REQUIRE(wrong.AddRegion("DissasmUserData.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserDataRanges(wrong, *dissasmInstance.zone).empty());
 }
