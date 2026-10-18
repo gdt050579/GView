@@ -3909,3 +3909,33 @@ TEST_CASE("HeadlessAnalysisJson", "[Dissasm]Analyze")
     REQUIRE_FALSE(BuildAnalysisJson(&dissasmInstance.objects[0], empty, text, error));
     REQUIRE(error == "The file has no disassembly zone!");
 }
+
+TEST_CASE("ImportThunksWithEndbr", "[Dissasm]Thunks")
+{
+    // an ELF .plt.sec stub (CET): endbr64; bnd jmp [rip + ...]; nop - the calls go to the endbr
+    std::vector<unsigned char> file = {
+        0xE8, 0x1B, 0x00, 0x00, 0x00, // 0x00: call 0x20
+        0xC3,                         // 0x05: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xF3, 0x0F, 0x1E, 0xFA });                   // 0x20: endbr64
+    file.insert(file.end(), { 0xF2, 0xFF, 0x25, 0x15, 0x00, 0x00, 0x00 }); // 0x24: bnd jmp qword ptr [rip + 0x15] -> slot 0x40 (puts)
+    file.insert(file.end(), { 0x0F, 0x1F, 0x44, 0x00, 0x00 });             // 0x2b: nop
+    file.resize(0x48, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "puts", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.GetLabelNameAt(0x20) == "j_puts");
+    REQUIRE(zone.GetLabelNameAt(0x24).empty()); // the jmp is inside the thunk
+    REQUIRE(zone.thunkImports.contains(0x20));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("call   j_puts") != std::string::npos);
+}

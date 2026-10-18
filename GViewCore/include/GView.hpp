@@ -1778,7 +1778,7 @@ namespace View
         enum class VariableType : uint32 { UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, AsciiZ, Utf16Z, Utf32Z };
 
         enum class MemoryMappingType { FunctionMapping, TextMapping };
-        enum class FunctionEntryType : uint8 { Export, ExceptionData, TlsCallback };
+        enum class FunctionEntryType : uint8 { Export, ExceptionData, TlsCallback, Symbol }; // Symbol: a symbol table (an export name wins)
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 

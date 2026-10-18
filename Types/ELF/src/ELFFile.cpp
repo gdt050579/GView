@@ -361,6 +361,34 @@ bool ELFFile::ParseSymbols()
     return true;
 }
 
+uint64 DissasmAddressTranslation::TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex)
+{
+    const uint64 imageBase = elf->GetImageBase() == static_cast<uint64>(-1) ? 0 : elf->GetImageBase();
+    switch (fromTranslationIndex)
+    {
+    case 0: // file offset
+        return value;
+    case 1: // RVA
+        return elf->VAToFileOffset(value + imageBase);
+    case 2: // VA
+        return elf->VAToFileOffset(value);
+    }
+    return ELF_INVALID_ADDRESS;
+}
+
+uint64 DissasmAddressTranslation::TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex)
+{
+    if (toTranslationIndex == 0)
+        return value;
+    const uint64 va = elf->FileOffsetToVA(value);
+    if (va == ELF_INVALID_ADDRESS)
+        return ELF_INVALID_ADDRESS;
+    const uint64 imageBase = elf->GetImageBase() == static_cast<uint64>(-1) ? 0 : elf->GetImageBase();
+    if (toTranslationIndex == 1)
+        return va >= imageBase ? va - imageBase : ELF_INVALID_ADDRESS;
+    return toTranslationIndex == 2 ? va : ELF_INVALID_ADDRESS;
+}
+
 uint64 ELFFile::TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex)
 {
     return ConvertAddress(value, static_cast<AddressType>(fromTranslationIndex), AddressType::FileOffset);

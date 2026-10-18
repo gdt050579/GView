@@ -48,6 +48,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     X86PrologueDetector prologueDetector;
     X86SwitchDetector switchDetector;
     bool atBlockStart = true; // the previous instruction does not continue into the current one (ret, jmp, int3, nop padding)
+    std::optional<uint64> blockEndbr;  // the endbr64 / endbr32 that starts the current block (CET: the stubs start with it)
 
     std::vector<std::pair<uint64, std::string>> callsFound; // file offset of a label, its name
     std::unordered_map<uint64, bool> callsMap;              // true for loc, false for sub
@@ -162,15 +163,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto operands = GetX86OperandsInfo(*insn, is64);
         const uint64 from   = labelBase + insn->address;
 
-        // an import thunk (IDA j_Name): a jmp through an import slot that starts a block, reached by calls instead of the import itself
+        // an import thunk (IDA j_Name): a jmp through an import slot that starts a block, reached by calls instead of the import itself.
+        // An endbr at the start of a block keeps it a block start: the CET stubs (ELF .plt.sec: endbr64; bnd jmp [rip + ...]) start with
+        // it, the thunk (and the calls to it) is at the endbr
         const bool isBlockStart = atBlockStart;
-        atBlockStart            = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_NOP;
-        if (isBlockStart && flow == X86Flow::Jump && !operands.directTarget.has_value() && findImport) {
+        const bool isEndbr      = insn->id == X86_INS_ENDBR64 || insn->id == X86_INS_ENDBR32;
+        const uint64 thunkStart = blockEndbr.value_or(instructionOffset);
+        blockEndbr              = isBlockStart && isEndbr ? std::optional<uint64>(instructionOffset) : std::nullopt;
+        atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_NOP || (isBlockStart && isEndbr);
+        if (isBlockStart && !isEndbr && flow == X86Flow::Jump && !operands.directTarget.has_value() && findImport) {
             const auto import = findImport(operands);
             if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
-                thunks.emplace_back(instructionOffset, import->name);
-                thunkImports[insn->address] = import->name;
-                AddFunctionStart(instructionOffset);
+                thunks.emplace_back(thunkStart, import->name);
+                thunkImports[thunkStart - codeStart] = import->name;
+                AddFunctionStart(thunkStart);
             }
         }
 

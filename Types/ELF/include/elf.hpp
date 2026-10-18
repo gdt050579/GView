@@ -35,6 +35,21 @@ namespace Panels
     };
 };
 
+class ELFFile;
+// The addresses of the disassembly viewer: its translation indexes are 0 (file offset), 1 (RVA) and 2 (VA). An ELF has no RVA: it is the
+// VA minus the image base (the address of the first loaded segment)
+class DissasmAddressTranslation : public GView::View::BufferViewer::OffsetTranslateInterface
+{
+    ELFFile* elf;
+
+  public:
+    explicit DissasmAddressTranslation(ELFFile* elf) : elf(elf)
+    {
+    }
+    uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
+    uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
+};
+
 class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface, public GView::View::BufferViewer::PositionToColorInterface
 {
   public:
@@ -72,6 +87,7 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
 
     uint32 showOpcodesMask{ 0 };
     std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+    DissasmAddressTranslation dissasmTranslation{ this }; // the addresses of the disassembly view
 
   public:
     ELFFile();
