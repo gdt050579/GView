@@ -3584,3 +3584,110 @@ TEST_CASE("TokenHighlight", "[Dissasm]Arrows")
     REQUIRE_FALSE(IsTokenCharacter(u'['));
     REQUIRE_FALSE(IsTokenCharacter(u' '));
 }
+
+TEST_CASE("UndoRedoEdits", "[Dissasm]Undo")
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x10,       // 0x04: sub rsp, 0x10
+        0x48, 0x89, 0x45, 0xF8,       // 0x08: mov qword ptr [rbp - 8], rax
+        0x8B, 0x45, 0xF4,             // 0x0c: mov eax, dword ptr [rbp - 0xc]
+        0xE8, 0x0C, 0x00, 0x00, 0x00, // 0x0f: call 0x20
+        0xC9,                         // 0x14: leave
+        0xC3,                         // 0x15: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE_FALSE(zone.CanUndoEdit());
+
+    const auto findLine = [&zone](std::string_view text) {
+        const auto line = zone.FindText(text, true, 0, UINT32_MAX, nullptr);
+        REQUIRE(line.has_value());
+        return line.value();
+    };
+    const auto commentOf = [&zone](uint32 line) {
+        std::string comment;
+        return zone.GetComment(line, comment) ? comment : std::string("<none>");
+    };
+
+    // comments: added, edited, removed, then undone and redone
+    const uint32 subLine = findLine("sub rsp, 0x10");
+    REQUIRE(dissasmInstance.AddOrUpdateComment(subLine, "frame"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(subLine, "frame of 16"));
+    REQUIRE(zone.RemoveComment(subLine, false));
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->address == 0x04ull);
+    REQUIRE(commentOf(subLine) == "frame of 16");
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(commentOf(subLine) == "frame");
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(commentOf(subLine) == "<none>");
+    REQUIRE_FALSE(zone.CanUndoEdit());
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(commentOf(subLine) == "frame");
+    REQUIRE(zone.CanRedoEdit());
+    // a new edit: the undone ones can not be redone any more
+    REQUIRE(dissasmInstance.AddOrUpdateComment(findLine("leave"), "end"));
+    REQUIRE_FALSE(zone.CanRedoEdit());
+
+    // a label rename (the calls show the name of the label)
+    std::string_view name = "helper";
+    REQUIRE(zone.TryRenameLine(findLine("sub_20"), &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "helper");
+    place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->address == 0x20ull);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_20");
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(zone.GetLabelNameAt(0x20) == "helper");
+
+    // a local variable rename
+    REQUIRE_FALSE(zone.localVariables.functions.empty());
+    const auto& function      = zone.localVariables.functions[0];
+    const int32 frameOffset   = function.variables[0].frameOffset;
+    const std::string initial = function.variables[0].name;
+    REQUIRE(zone.RenameLocalVariable(function.startAddress, frameOffset, "count").ok);
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.localVariables.functions[0].FindVariable(frameOffset)->name == initial);
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(zone.localVariables.functions[0].FindVariable(frameOffset)->name == "count");
+
+    // the base of a number (H)
+    zone.ToggleDecimalOperand(0x04, 0);
+    REQUIRE(zone.GetDecimalOperandsMask(0x04) == 1u);
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.GetDecimalOperandsMask(0x04) == 0u);
+
+    // a collapsible zone added and removed
+    const uint32 movLine = findLine("mov rbp, rsp");
+    REQUIRE(zone.AddCollapsibleZone(movLine, movLine + 3));
+    REQUIRE(zone.collapsibleZones.size() == 1);
+    const uint32 zoneStart = zone.collapsibleZones[0].start;
+    place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->expandedLine == zoneStart);
+    REQUIRE(zone.collapsibleZones.empty());
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(zone.collapsibleZones.size() == 1);
+    REQUIRE(zone.RemoveCollapsibleZone(movLine));
+    REQUIRE(zone.collapsibleZones.empty());
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.collapsibleZones.size() == 1);
+
+    // a removed variable moves the lines: the history is cleared
+    REQUIRE(zone.CanUndoEdit());
+    bool lineRemoved = false;
+    REQUIRE(zone.RemoveLocalVariable(function.startAddress, frameOffset, lineRemoved).ok);
+    REQUIRE(lineRemoved);
+    REQUIRE_FALSE(zone.CanUndoEdit());
+    REQUIRE_FALSE(zone.CanRedoEdit());
+}

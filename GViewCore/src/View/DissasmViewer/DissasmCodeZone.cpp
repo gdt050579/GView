@@ -558,18 +558,35 @@ bool DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment
             Dialogs::MessageBox::ShowError("Error at processing comments", "Failed to find the required line!");
         return false;
     }
+    DissasmEdit edit;
+    edit.kind   = DissasmEdit::Kind::Comment;
+    edit.anchor = anchor.value();
+    std::string previous;
+    if (userComments.Get(anchor.value(), previous)) {
+        if (previous == comment)
+            return true;
+        edit.before = std::move(previous);
+    }
+    edit.after = comment;
     userComments.Set(anchor.value(), comment);
+    RecordEdit(std::move(edit));
     return true;
 }
 
 bool DissasmCodeZone::RemoveComment(uint32 line, bool showErr)
 {
     const auto anchor = GetAnchorOfLine(line);
-    if (!anchor.has_value() || !userComments.Remove(anchor.value())) {
+    std::string previous;
+    if (!anchor.has_value() || !userComments.Get(anchor.value(), previous) || !userComments.Remove(anchor.value())) {
         if (showErr)
             Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
         return false;
     }
+    DissasmEdit edit;
+    edit.kind   = DissasmEdit::Kind::Comment;
+    edit.anchor = anchor.value();
+    edit.before = std::move(previous);
+    RecordEdit(std::move(edit));
     return true;
 }
 
@@ -1266,6 +1283,138 @@ void DissasmCodeZone::ResetZoneCaching()
     asmPreCacheData.Clear();
 }
 
+void DissasmCodeZone::RecordEdit(DissasmEdit edit)
+{
+    constexpr size_t MAX_EDITS = 256;
+    if (undoEdits.size() == MAX_EDITS)
+        undoEdits.erase(undoEdits.begin());
+    undoEdits.push_back(std::move(edit));
+    redoEdits.clear(); // a new edit: the undone ones can not be redone any more
+}
+
+void DissasmCodeZone::ClearEditHistory()
+{
+    undoEdits.clear();
+    redoEdits.clear();
+}
+
+bool DissasmCodeZone::RenameLabel(uint32 expandedLine, const std::string& currentName, const std::string& newName)
+{
+    auto& annotations = dissasmType.annotations;
+    const auto label  = annotations.find(expandedLine);
+    if (label == annotations.end() || IsLocalVariableAnnotation(label->second) || newName.empty())
+        return false;
+    const uint64 address = label->second.second;
+    if (!annotations.add_name_change(currentName, newName, expandedLine))
+        return false;
+    DissasmEdit edit;
+    edit.kind    = DissasmEdit::Kind::LabelName;
+    edit.address = address;
+    edit.before  = currentName;
+    edit.after   = newName;
+    RecordEdit(std::move(edit));
+    return true;
+}
+
+bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
+{
+    const auto& value = forward ? edit.after : edit.before;
+    switch (edit.kind) {
+    case DissasmEdit::Kind::Comment:
+        if (value.has_value())
+            userComments.Set(edit.anchor, value.value());
+        else
+            userComments.Remove(edit.anchor);
+        break;
+    case DissasmEdit::Kind::LabelName: {
+        const auto line = labelLineOfAddress.find(edit.address);
+        if (line == labelLineOfAddress.end() || !value.has_value())
+            return false;
+        const std::string currentName = dissasmType.annotations.find(line->second)->second.first;
+        if (currentName != value.value() && !dissasmType.annotations.add_name_change(currentName, value.value(), line->second))
+            return false; // another label has this name now
+        break;
+    }
+    case DissasmEdit::Kind::VariableName: {
+        const auto function = localVariables.FindFunctionByStart(edit.address);
+        const auto variable = function ? function->FindVariable(edit.frameOffset) : nullptr;
+        if (!variable || !value.has_value())
+            return false;
+        if (variable->name != value.value() && function->HasVariableNamed(value.value()))
+            return false;
+        variable->name = value.value();
+        break;
+    }
+    case DissasmEdit::Kind::DecimalOperand: {
+        const uint32 mask = GetDecimalOperandsMask(edit.address) ^ (1u << edit.numberIndex); // a switch: the same in both directions
+        if (mask == 0)
+            decimalOperands.erase(edit.address);
+        else
+            decimalOperands[edit.address] = mask;
+        break;
+    }
+    case DissasmEdit::Kind::AddZone:
+    case DissasmEdit::Kind::RemoveZone: {
+        const bool add = (edit.kind == DissasmEdit::Kind::AddZone) == forward;
+        if (add) {
+            if (!CanPlaceZone(edit.zone))
+                return false;
+            InsertZone(edit.zone);
+        } else {
+            const auto zone = std::find_if(collapsibleZones.begin(), collapsibleZones.end(), [&edit](const DissasmCollapsibleZone& item) {
+                return item.start == edit.zone.start && item.end == edit.zone.end;
+            });
+            if (zone == collapsibleZones.end())
+                return false;
+            collapsibleZones.erase(zone);
+        }
+        break;
+    }
+    }
+    ResetZoneCaching();
+    return true;
+}
+
+static DissasmEditPlace GetEditPlace(const DissasmEdit& edit)
+{
+    DissasmEditPlace place;
+    if (edit.kind == DissasmEdit::Kind::AddZone || edit.kind == DissasmEdit::Kind::RemoveZone)
+        place.expandedLine = edit.zone.start;
+    else if (edit.kind == DissasmEdit::Kind::Comment)
+        place.address = edit.anchor.address;
+    else
+        place.address = edit.address;
+    place.onLabel = edit.kind == DissasmEdit::Kind::LabelName || edit.kind == DissasmEdit::Kind::VariableName ||
+                    (edit.kind == DissasmEdit::Kind::Comment && edit.anchor.kind != DissasmCommentAnchor::Kind::Instruction);
+    return place;
+}
+
+std::optional<DissasmEditPlace> DissasmCodeZone::UndoEdit()
+{
+    if (undoEdits.empty())
+        return {};
+    DissasmEdit edit = std::move(undoEdits.back());
+    undoEdits.pop_back();
+    if (!ApplyEdit(edit, false))
+        return {}; // its place has changed: it is dropped
+    const auto place = GetEditPlace(edit);
+    redoEdits.push_back(std::move(edit));
+    return place;
+}
+
+std::optional<DissasmEditPlace> DissasmCodeZone::RedoEdit()
+{
+    if (redoEdits.empty())
+        return {};
+    DissasmEdit edit = std::move(redoEdits.back());
+    redoEdits.pop_back();
+    if (!ApplyEdit(edit, true))
+        return {};
+    const auto place = GetEditPlace(edit);
+    undoEdits.push_back(std::move(edit));
+    return place;
+}
+
 bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd)
 {
     if (zoneLineStart >= zoneLineEnd)
@@ -1282,7 +1431,11 @@ bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEn
     zone.name = zoneName.GetText();
     if (!CanPlaceZone(zone))
         return false;
+    DissasmEdit edit;
+    edit.kind = DissasmEdit::Kind::AddZone;
+    edit.zone = zone;
     InsertZone(std::move(zone));
+    RecordEdit(std::move(edit));
     ResetZoneCaching();
     return true;
 }
@@ -1325,7 +1478,11 @@ bool DissasmCodeZone::RemoveCollapsibleZone(uint32 zoneLine)
     const auto zone = FindInnermostZone(place->expandedLine);
     if (!zone)
         return false;
+    DissasmEdit edit;
+    edit.kind = DissasmEdit::Kind::RemoveZone;
+    edit.zone = *zone;
     collapsibleZones.erase(collapsibleZones.begin() + (zone - collapsibleZones.data()));
+    RecordEdit(std::move(edit));
     ResetZoneCaching();
     return true;
 }
@@ -1539,7 +1696,14 @@ GStatus DissasmCodeZone::RenameLocalVariable(uint64 functionStart, int32 frameOf
         return GStatus::Ok();
     if (function->HasVariableNamed(newName))
         return GStatus::Error("This function already has a variable with this name!");
-    variable->name = newName;
+    DissasmEdit edit;
+    edit.kind        = DissasmEdit::Kind::VariableName;
+    edit.address     = functionStart;
+    edit.frameOffset = frameOffset;
+    edit.before      = variable->name;
+    edit.after       = std::string(newName);
+    variable->name   = newName;
+    RecordEdit(std::move(edit));
     return GStatus::Ok();
 }
 
@@ -1566,6 +1730,7 @@ GStatus DissasmCodeZone::RemoveLocalVariable(uint64 functionStart, int32 frameOf
     if (variableLine != UINT32_MAX) {
         RemoveRootAnnotationLines({ variableLine });
         lineRemoved = true;
+        ClearEditHistory(); // the lines of the zones of the recorded edits moved: they can not be undone any more
     }
     return GStatus::Ok();
 }
@@ -1625,4 +1790,9 @@ void DissasmCodeZone::ToggleDecimalOperand(uint64 address, uint32 numberIndex)
         decimalOperands.erase(address);
     else
         decimalOperands[address] = mask;
+    DissasmEdit edit;
+    edit.kind        = DissasmEdit::Kind::DecimalOperand;
+    edit.address     = address;
+    edit.numberIndex = numberIndex;
+    RecordEdit(std::move(edit));
 }

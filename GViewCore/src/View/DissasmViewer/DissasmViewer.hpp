@@ -756,6 +756,9 @@ namespace View
             // the instructions that use `target` (address space of the labels); the selected one gets the cursor
             void ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::string& targetName);
             void ShowStrings();
+            DissasmCodeZone* GetCursorOrFirstCodeZone();
+            void UndoOrRedo(bool redo); // Ctrl+Z / Ctrl+Y: the edits of the zone of the cursor
+            void ShowCommandPalette();
             void FindNext(); // the next match of the last search (F6)
             std::optional<DissasmSearch> lastSearch;
             bool RunSearch(const DissasmSearch& search, bool showErrors);

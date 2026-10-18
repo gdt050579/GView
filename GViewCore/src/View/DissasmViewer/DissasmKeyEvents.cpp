@@ -338,6 +338,15 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_FIND_NEXT:
             FindNext();
             return true;
+        case COMMAND_UNDO:
+            UndoOrRedo(false);
+            return true;
+        case COMMAND_REDO:
+            UndoOrRedo(true);
+            return true;
+        case COMMAND_COMMAND_PALETTE:
+            ShowCommandPalette();
+            return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
             RefreshDrawnLines();

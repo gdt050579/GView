@@ -27,6 +27,24 @@ struct DissasmGoToRequest {
 };
 std::optional<DissasmGoToRequest> ParseDissasmGoToText(std::string_view text, DissasmPEConversionType shownAddressType);
 
+// An edit of the user with what it replaced: it can be undone and redone (Ctrl+Z / Ctrl+Y)
+struct DissasmEdit {
+    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone };
+    Kind kind = Kind::Comment;
+    DissasmCommentAnchor anchor;              // Comment
+    uint64 address     = 0;                   // LabelName: the label; VariableName: the function; DecimalOperand: the instruction
+    int32 frameOffset  = 0;                   // VariableName
+    uint32 numberIndex = 0;                   // DecimalOperand
+    std::optional<std::string> before, after; // Comment (none: no comment), LabelName, VariableName
+    DissasmCollapsibleZone zone;              // AddZone / RemoveZone
+};
+// where an undone / redone edit is (relative address of a line, or a line of the expanded layout): the cursor goes there
+struct DissasmEditPlace {
+    std::optional<uint64> address;
+    std::optional<uint32> expandedLine;
+    bool onLabel = false; // the edit is on the label (or a local variable) of the address, not on its instruction
+};
+
 // a string used by the code (DissasmCodeZone::GetReferencedStrings)
 struct DissasmStringReference {
     uint64 address = 0; // in the address space of the labels (VA)
@@ -135,6 +153,22 @@ struct DissasmCodeZone : public ParseZone {
     bool CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference);
     // removes the innermost expanded zone of the shown line `zoneLine`
     bool RemoveCollapsibleZone(uint32 zoneLine);
+
+    // the edits of the user (comments, renames, numbers base, collapsible zones) can be undone / redone; none when there is no edit
+    // or it can not be applied any more (its place has changed)
+    std::optional<DissasmEditPlace> UndoEdit();
+    std::optional<DissasmEditPlace> RedoEdit();
+    bool CanUndoEdit() const
+    {
+        return !undoEdits.empty();
+    }
+    bool CanRedoEdit() const
+    {
+        return !redoEdits.empty();
+    }
+    void ClearEditHistory();
+    // renames the label of a line of the expanded layout (an edit of the user: it can be undone)
+    bool RenameLabel(uint32 expandedLine, const std::string& currentName, const std::string& newName);
 
     bool InitZone(DissasmCodeZoneInitData& initData);
     // the deep scan that did not end in InitZone (its budget): the zone shows the instructions without labels until it ends
@@ -261,6 +295,9 @@ struct DissasmCodeZone : public ParseZone {
     void InsertZone(DissasmCollapsibleZone zone);
 
     csh decodeHandle = 0;
+    std::vector<DissasmEdit> undoEdits, redoEdits;
+    void RecordEdit(DissasmEdit edit);
+    bool ApplyEdit(const DissasmEdit& edit, bool forward);
     std::unique_ptr<DissasmDeepScan> deepScan;
     bool linesReady  = false;
     std::vector<uint32> annotationLines;                // the sorted lines of dissasmType.annotations

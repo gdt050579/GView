@@ -1808,7 +1808,7 @@ GStatus DissasmCodeZone::TryRenameLine(
             if (newNameText.empty() || newNameText == label->second.first)
                 return GStatus::Ok();
             const std::string labelName = label->second.first;
-            if (!annotations.add_name_change(labelName, newNameText, labelLine))
+            if (!RenameLabel(labelLine, labelName, newNameText))
                 return GStatus::Error("Name already exists!");
             return GStatus{ .ok = true, .message = "renamed" };
         }
@@ -1833,7 +1833,7 @@ GStatus DissasmCodeZone::TryRenameLine(
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
             if (!res.empty()) {
-                if (!annotations.add_name_change(currentName, res, labelLine)) {
+                if (!RenameLabel(labelLine, currentName, res)) {
                     // TODO: do this check inside the SingleLineEditWindow
                     return GStatus::Error("Name already exists!");
                 }
@@ -2330,6 +2330,150 @@ void Instance::ShowStrings()
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + (first->from - zone->labelAddressBase), false);
     else
         ShowXrefsTo(zone, selected.address, selected.text);
+}
+
+DissasmCodeZone* Instance::GetCursorOrFirstCodeZone()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+        return static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            return static_cast<DissasmCodeZone*>(zone.get());
+    return nullptr;
+}
+
+void Instance::UndoOrRedo(bool redo)
+{
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines())
+        return;
+    if (redo ? !zone->CanRedoEdit() : !zone->CanUndoEdit()) {
+        Dialogs::MessageBox::ShowNotification(redo ? "Redo" : "Undo", redo ? "There is nothing to redo!" : "There is nothing to undo!");
+        return;
+    }
+    const auto place = redo ? zone->RedoEdit() : zone->UndoEdit();
+    if (!place.has_value()) {
+        Dialogs::MessageBox::ShowNotification(redo ? "Redo" : "Undo", "The edit can not be applied any more (its line changed)!");
+        return;
+    }
+    AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title: a zone added / removed changes the lines
+    zone->asmPreCacheData.Clear();
+
+    // the cursor goes to the edit
+    if (place->address.has_value()) {
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + place->address.value(), place->onLabel);
+    } else if (place->expandedLine.has_value()) {
+        const uint32 zoneLine = zone->ExpandedToDisplay(place->expandedLine.value()) + 2u; // +1 for the title, +1 for the columns header
+        const auto from       = SaveCursorState();
+        Cursor.lineInView     = std::min<uint32>(5, zoneLine);
+        Cursor.startViewLine  = zoneLine + zone->startLineIndex - Cursor.lineInView;
+        Cursor.hasMovedView   = true;
+        RecordJump(from);
+    }
+}
+
+// Every action of the view with its key (Ctrl+P): the search bar filters them, Enter runs the selected one
+class CommandPaletteWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_RUN   = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    struct Row {
+        std::string key, caption, explanation;
+    };
+
+    CommandPaletteWindow(const std::vector<Row>& rows) : Window("Commands", "d:c,w:90%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:Key,w:16", "n:Command,w:28", "n:Description,w:100" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        for (size_t index = 0; index < rows.size(); index++) {
+            auto item = list->AddItem({ std::string_view(rows[index].key), std::string_view(rows[index].caption), std::string_view(rows[index].explanation) });
+            item.SetData(static_cast<uint64>(index));
+        }
+        Factory::Button::Create(this, "&Run", "l:1,b:0,w:10", BTN_RUN);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_RUN)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowCommandPalette()
+{
+    // the commands of the command bar, the keys of the view (comments, rename, zones) and the GoTo / Find of the window
+    enum class Target : uint8 { Command, KeyCommand, GoTo, Find };
+    struct Action {
+        Target target;
+        uint32 commandId;
+    };
+    std::vector<CommandPaletteWindow::Row> rows;
+    std::vector<Action> actions;
+    LocalString<64> keyName;
+    auto add = [&](const KeyboardControl& control, Target target) {
+        if (!KeyUtils::ToString(control.Key, keyName))
+            keyName.Clear();
+        rows.push_back({ keyName.GetText(), control.Caption ? control.Caption : "", control.Explanation ? control.Explanation : "" });
+        actions.push_back({ target, control.CommandId });
+    };
+    for (const auto& control : config.AllKeyboardCommands)
+        add(control.get(), Target::Command);
+    for (const auto* control : config.KeyEventCommands) {
+        const bool isMove = control->CommandId >= COMMAND_NAV_DOWN && control->CommandId <= COMMAND_NAV_SCROLL_RIGHT;
+        const bool listed = std::any_of(config.AllKeyboardCommands.begin(), config.AllKeyboardCommands.end(), [control](const auto& other) {
+            return other.get().CommandId == control->CommandId;
+        });
+        if (!isMove && !listed) // the moves are not actions; a key of both lists is listed once
+            add(*control, Target::KeyCommand);
+    }
+    rows.push_back({ "F5", "GoTo", "Go to an address (VA / RVA / file offset) or a label name" });
+    actions.push_back({ Target::GoTo, 0 });
+    rows.push_back({ "Ctrl+F", "Find", "Find a text, a byte pattern or an immediate value" });
+    actions.push_back({ Target::Find, 0 });
+
+    CommandPaletteWindow window(rows);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
+        return;
+    const auto& action = actions[window.GetSelectedRow().value()];
+    switch (action.target) {
+    case Target::Command:
+        OnEvent(nullptr, Event::Command, static_cast<int>(action.commandId));
+        break;
+    case Target::KeyCommand:
+        FinishDeepScans();
+        ExecuteNavigationCommand(action.commandId, false);
+        break;
+    case Target::GoTo:
+        ShowGoToDialog();
+        break;
+    case Target::Find:
+        ShowFindDialog();
+        break;
+    }
 }
 
 constexpr uint32 BTN_CLOSE_ID   = 0;
