@@ -222,6 +222,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     };
     asmData.instructionToColor = {
         { key("int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
+        { key("alig"), ColorMan.Colors.AsmIrrelevantInstructionColor }, // align 0x10: the padding between the functions
         { key("ret"), ColorMan.Colors.AsmFunctionColor },
         { key("call"), ColorMan.Colors.AsmFunctionColor },
         { key("cmp"), ColorMan.Colors.AsmCompareInstructionColor },

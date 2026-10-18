@@ -278,6 +278,7 @@ struct ZoneLayout {
     std::optional<uint64> imageBase;
     std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
     std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
+    bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -363,6 +364,7 @@ class DissasmTestInstance
         initData.addressToFileOffset = layout.addressToFileOffset;
         initData.imageBase           = layout.imageBase;
         initData.deepScanBudget      = layout.deepScanBudget;
+        initData.alignPadding        = layout.alignPadding;
         initData.instructionBoundaries = &layout.instructionBoundaries;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
@@ -4078,4 +4080,110 @@ TEST_CASE("KeyProfileIDA", "[Dissasm]Keys")
     REQUIRE(Config::JumpBackCommand.Key == gviewBack);
     REQUIRE(Config::SpaceCommand.Key == gviewSpace);
     REQUIRE(Config::ShowXrefsCommand.Key == (Key::Ctrl | Key::X));
+}
+
+namespace
+{
+size_t CountOccurrences(const std::string& text, std::string_view token)
+{
+    size_t count = 0;
+    for (size_t position = text.find(token); position != std::string::npos; position = text.find(token, position + token.size()))
+        count++;
+    return count;
+}
+} // namespace
+
+TEST_CASE("AlignPadding", "[Dissasm]Align")
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00,                   // 0x00: call 0x10
+        0xE8, 0x16, 0x00, 0x00, 0x00,                   // 0x05: call 0x20
+        0xC3,                                           // 0x0a: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC,                   // 0x0b: align 0x10
+        0x31, 0xC0,                                     // 0x10: xor eax, eax
+        0xC3,                                           // 0x12: ret
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00,             // 0x13: nop word ptr [rax + rax] \ align 0x10
+        0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00,       // 0x19: nop dword ptr [rax]      /
+        0xC3,                                           // 0x20: ret
+        0xCC,                                           // 0x21: int3 (a single byte: an instruction)
+        0xC3, 0xC3,                                     // 0x22: ret, ret
+        0x90, 0x90,                                     // 0x24: align 0x2 (the next instruction is 2 bytes aligned)
+        0xC3,                                           // 0x26: ret
+        0xCC, 0xCC,                                     // 0x27: int3, int3 (they end at an odd address)
+        0xC3,                                           // 0x29: ret
+    };
+    file.insert(file.end(), 38, 0xCC); // 0x2a: align 0x10 (to 0x30), align 0x10 (0x30), align 0x10 (0x40)
+    file.push_back(0xC3);              // 0x50: ret
+    file.resize(0x60, 0xC3);
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    {
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(CountOccurrences(listing, "align  0x10") == 5);
+        REQUIRE(CountOccurrences(listing, "align  0x2") == 1);
+        REQUIRE(CountOccurrences(listing, "int3") == 3);
+        REQUIRE(CountOccurrences(listing, "nop") == 0);
+        // the functions after the padding keep their labels
+        REQUIRE(!dissasmInstance.zone->GetLabelNameAt(0x10).empty());
+        REQUIRE(!dissasmInstance.zone->GetLabelNameAt(0x20).empty());
+        // 2 calls, 8 ret, xor, 6 align lines, 3 int3, the ret lines after the code
+        REQUIRE(dissasmInstance.zone->asmLinesCount == 2 + 8 + 1 + 6 + 3 + (0x60 - 0x51));
+    }
+    {
+        // the alignment is the one of the addresses of the listing (the VA): 0x140001013 -> 0x140001018 is align 0x8
+        layout.labelAddressBase = 0x140001008;
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(CountOccurrences(listing, "align  0x8") >= 1);
+    }
+    {
+        // the setting is off: every padding instruction is a line
+        layout.labelAddressBase.reset();
+        layout.alignPadding = false;
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        REQUIRE(CountOccurrences(listing, "align") == 0);
+        REQUIRE(CountOccurrences(listing, "int3") == 5 + 1 + 2 + 38);
+    }
+}
+
+TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
+{
+    // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes
+    // apart) and from the code windows of the drawn lines
+    std::vector<unsigned char> file;
+    uint32 expectedLines = 0, expectedAligns = 0, expectedInt3 = 0;
+    for (uint32 function = 0; file.size() < 6000; function++) {
+        for (uint32 i = 0; i < function % 7; i++, expectedLines++)
+            file.insert(file.end(), { 0x48, 0x89, 0xC0 }); // mov rax, rax
+        file.push_back(0xC3);                               // ret
+        expectedLines++;
+        const size_t padding = (16 - file.size() % 16) % 16;
+        if (padding == 1)
+            expectedInt3++;
+        else if (padding > 1)
+            expectedAligns++;
+        expectedLines += padding > 0 ? 1 : 0;
+        file.insert(file.end(), padding, 0xCC);
+    }
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    layout.cacheSize    = 1024; // smaller than the code: the code is read window after window
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    REQUIRE(dissasmInstance.zone->asmLinesCount == expectedLines);
+    const std::string listing = dissasmInstance.GetListing();
+    REQUIRE(CountOccurrences(listing, "align  0x10") == expectedAligns);
+    REQUIRE(CountOccurrences(listing, "int3") == expectedInt3);
+    REQUIRE(CountOccurrences(listing, "db ") == 0);
 }

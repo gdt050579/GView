@@ -127,6 +127,8 @@ struct DissasmCodeZone : public ParseZone {
     // x86/x64: the address of the first decoded instruction in the address space of the labels, the VA (offset translation of the plugin)
     // or the file offset when the plugin has no translation. The label of the relative address r is named after labelAddressBase + r.
     uint64 labelAddressBase = 0;
+    // DecodeX86Line: labelAddressBase when the padding between the functions is shown as align lines (Config.AlignPadding)
+    uint64 paddingAlignmentBase = DISSASM_NO_PADDING_ALIGNMENT;
     // x86/x64: the comments of the user, by anchor (they follow their instruction / label / variable whatever the lines become)
     DissasmUserComments userComments;
     // the names the user gave to labels that the analysis does not find (a cache of another version): saved again, applied when the

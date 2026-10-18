@@ -394,6 +394,7 @@ namespace View
             uint8 AddressMode = 2;
             bool EnableDeepScanDissasmOnStart;
             bool CacheSameLocationAsAnalyzedFile;
+            bool AlignPadding = true; // the padding between the functions (int3, nop) is one line: align 0x10
             static void Update(AppCUI::Utils::IniSection sect);
             void UpdateColors(const AppCUI::Application::Config& config);
             void Initialize(const AppCUI::Application::Config& config);

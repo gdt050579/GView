@@ -72,6 +72,7 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     sect.UpdateValue("Config.ShowFileContent", true, true);
     sect.UpdateValue("Config.ShowOnlyDissasm", false, true);
     sect.UpdateValue("Config.DeepScanDissasmOnStart", true, true);
+    sect.UpdateValue("Config.AlignPadding", true, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
     sect.UpdateValue("Config.KeyProfile", "default", true); // default | ida
 }
@@ -146,6 +147,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
             this->ShowOnlyDissasm                 = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
             this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(true);
             this->CacheSameLocationAsAnalyzedFile = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
+            this->AlignPadding                    = sect.GetValue("Config.AlignPadding").ToBool(true);
             foundSettings                         = true;
         }
     }
@@ -154,6 +156,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
         this->ShowOnlyDissasm                 = false;
         this->EnableDeepScanDissasmOnStart    = true;
         this->CacheSameLocationAsAnalyzedFile = true;
+        this->AlignPadding                    = true;
     }
 
     Application::Config::CustomColorNameStorage dissamColors = {

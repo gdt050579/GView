@@ -118,7 +118,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
             return false;
         insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries);
+        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase);
         callsFound.reserve(16);
 
         // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
@@ -405,7 +405,8 @@ inline bool populateOffsetsVector(
       Reference<GView::Object> obj,
       int internalArchitecture,
       uint32& totalLines,
-      const std::vector<uint64>* boundaries)
+      const std::vector<uint64>* boundaries,
+      uint64 alignmentBase)
 {
     if (zoneDetails.size == 0 || zoneDetails.size > UINT64_MAX - zoneDetails.startingZonePoint)
         return false;
@@ -430,7 +431,7 @@ inline bool populateOffsetsVector(
     // the cached zones (labels, comments) are keyed on these lines.
     // An undecodable byte is a data line (db) and the decoding continues after it (inline data, jump tables); a zone bigger than the
     // data cache window is decoded window after window.
-    DissasmCodeLinesWalker walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, handle, 0, boundaries);
+    DissasmCodeLinesWalker walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, handle, 0, boundaries, alignmentBase);
 
     // The zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is
     // not shown. A run inside the code (between functions, data) is decoded as it is: stopping at the first long run of zeros hid the
@@ -659,6 +660,7 @@ bool DissasmCodeZone::ApplyUserLabelName(uint64 address, const std::string& name
 bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 {
     labelAddressBase = initData.labelAddressBase.value_or(zoneDetails.startingZonePoint); // the first decoded instruction is the zone start
+    paddingAlignmentBase = initData.alignPadding ? labelAddressBase : DISSASM_NO_PADDING_ALIGNMENT;
     zoneObject       = initData.obj;
 
     // TODO: move this on init
@@ -702,7 +704,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     instructionBoundaries.erase(std::unique(instructionBoundaries.begin(), instructionBoundaries.end()), instructionBoundaries.end());
 
     uint32 totalLines = 0;
-    if (!populateOffsetsVector(cachedCodeOffsets, zoneDetails, initData.obj, internalArchitecture, totalLines, &instructionBoundaries)) {
+    if (!populateOffsetsVector(cachedCodeOffsets, zoneDetails, initData.obj, internalArchitecture, totalLines, &instructionBoundaries, paddingAlignmentBase)) {
         if (initData.dli.IsValid())
             if (initData.dli.IsValid())
                 initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
@@ -738,7 +740,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     lastClosestLine        = closestData.line;
     isInit                 = true;
 
-    if (!FetchCodeWindow(initData.obj, 0, DISSASM_INSTRUCTION_OFFSET_MARGIN + DISSASM_MAX_INSTRUCTION_SIZE)) {
+    if (!FetchCodeWindow(initData.obj, 0, DISSASM_INSTRUCTION_OFFSET_MARGIN + DISSASM_MAX_LINE_SIZE)) {
         if (initData.dli.IsValid())
             if (initData.dli.IsValid())
                 initData.dli->WriteErrorToScreen("ERROR: extract valid data from file!");
@@ -1059,7 +1061,7 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase);
         while (walker.Next(insn) && insn->address < end) {
             if (instructions.size() == MAX_INSTRUCTIONS) {
                 graph.truncated = true;
@@ -1236,7 +1238,7 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase);
         while (walker.Next(insn) && insn->address < end) {
             const auto flow = GetX86Flow(*insn);
             if (flow != X86Flow::Call && flow != X86Flow::Jump)
@@ -1346,7 +1348,7 @@ std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, 
         const uint64 mask       = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
         const uint64 wanted     = value & mask;
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from, &instructionBoundaries);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from, &instructionBoundaries, paddingAlignmentBase);
         while (!result.has_value() && walker.Next(insn) && insn->address < to) {
             if (insn->id == X86_INS_INVALID || !insn->detail)
                 continue; // a data line (db)

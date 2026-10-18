@@ -123,12 +123,69 @@ uint64 GetCachedOffsetWindowEnd(const DissasmCodeZone* zone, uint32 cachedOffset
 {
     const auto& offsets = zone->cachedCodeOffsets;
     if (static_cast<size_t>(cachedOffsetIndex) + 1u < offsets.size())
-        return offsets[cachedOffsetIndex + 1u].offset - offsets[0].offset + DISSASM_MAX_INSTRUCTION_SIZE;
+        return offsets[cachedOffsetIndex + 1u].offset - offsets[0].offset + DISSASM_MAX_LINE_SIZE;
     // after the last cached offset there are less than DISSASM_INSTRUCTION_OFFSET_MARGIN bytes of decoded instructions
-    return offsets[cachedOffsetIndex].offset - offsets[0].offset + DISSASM_INSTRUCTION_OFFSET_MARGIN + 2 * DISSASM_MAX_INSTRUCTION_SIZE;
+    return offsets[cachedOffsetIndex].offset - offsets[0].offset + DISSASM_INSTRUCTION_OFFSET_MARGIN + 2 * DISSASM_MAX_LINE_SIZE;
 }
 
-bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, const std::vector<AppCUI::uint64>* boundaries)
+namespace
+{
+// int3, nop (90, 66 90) or a long nop (0f 1f .., 66 0f 1f .., 66 2e 0f 1f .., 66 66 2e ..)
+bool IsPaddingStart(const uint8_t* code, size_t size)
+{
+    if (code[0] == 0xCC || code[0] == 0x90)
+        return true;
+    if (size < 2)
+        return false;
+    if (code[0] == 0x0F)
+        return code[1] == 0x1F;
+    return code[0] == 0x66 && (code[1] == 0x90 || code[1] == 0x0F || code[1] == 0x2E || code[1] == 0x66);
+}
+
+// The padding from the address up to the next 16 bytes aligned address (or up to the first byte that is not padding): one line,
+// "align N" (N: the alignment of its end, at most 0x10). Only a run of at least 2 bytes that is not longer than N: a lone nop or int3
+// stays an instruction. The run never needs more than DISSASM_MAX_LINE_SIZE bytes: the same line from any decoding window.
+bool DecodeX86Padding(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, AppCUI::uint64 alignmentBase)
+{
+    const AppCUI::uint64 start    = *address + alignmentBase;
+    const AppCUI::uint64 chunkEnd = (start | 0xF) + 1;
+    const size_t limit            = static_cast<size_t>(std::min<AppCUI::uint64>(chunkEnd - start, available));
+    size_t length                 = 0;
+    while (length < limit) {
+        if ((*code)[length] == 0xCC) {
+            length++;
+            continue;
+        }
+        const uint8_t* data = *code + length;
+        size_t left         = limit - length;
+        uint64_t at         = *address + length;
+        if (!IsPaddingStart(data, left) || !cs_disasm_iter(handle, &data, &left, &at, insn) || insn->id != X86_INS_NOP)
+            break;
+        length += insn->size;
+    }
+    const AppCUI::uint64 end       = start + length;
+    const AppCUI::uint64 alignment = std::min<AppCUI::uint64>(end & (~end + 1), 0x10); // the lowest set bit
+    if (length < 2 || alignment < 2 || length > alignment)
+        return false;
+
+    insn->id = 0; // X86_INS_INVALID: a data line, no flow
+    if (insn->detail)
+        memset(insn->detail, 0, sizeof(cs_detail));
+    insn->address = *address;
+    insn->size    = static_cast<uint16_t>(length);
+    memset(insn->bytes, 0, sizeof(insn->bytes));
+    memcpy(insn->bytes, *code, std::min(length, sizeof(insn->bytes)));
+    snprintf(insn->mnemonic, sizeof(insn->mnemonic), "align");
+    snprintf(insn->op_str, sizeof(insn->op_str), "0x%x", static_cast<unsigned int>(alignment));
+    *code += length;
+    *size -= length;
+    *address += length;
+    return true;
+}
+} // namespace
+
+bool DecodeX86Line(
+      csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, const std::vector<AppCUI::uint64>* boundaries, AppCUI::uint64 alignmentBase)
 {
     if (*size == 0)
         return false;
@@ -139,6 +196,9 @@ bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* add
         if (next != boundaries->end() && *next - *address < available)
             available = static_cast<size_t>(*next - *address);
     }
+    if (alignmentBase != DISSASM_NO_PADDING_ALIGNMENT && IsPaddingStart(*code, available) &&
+        DecodeX86Padding(handle, code, size, address, insn, available, alignmentBase))
+        return true;
     size_t left = available;
     if (cs_disasm_iter(handle, code, &left, address, insn)) {
         *size -= available - left;
@@ -291,14 +351,14 @@ bool DissasmCodeLinesWalker::Next(cs_insn* insn)
         return false;
     // a whole instruction (or the end of the code): the same bytes as the code windows of the drawn lines, so the same lines are decoded.
     // The view is taken again for every line, nothing else can refill the data cache under it.
-    const uint32 requested = static_cast<uint32>(std::min<uint64>(codeSize - address, DISSASM_MAX_INSTRUCTION_SIZE));
+    const uint32 requested = static_cast<uint32>(std::min<uint64>(codeSize - address, DISSASM_MAX_LINE_SIZE));
     const auto view        = obj->GetData().Get(codeStart + address, requested, false);
     if (!view.IsValid() || view.GetLength() == 0)
         return false;
     const uint8_t* data = view.GetData();
     size_t size         = static_cast<size_t>(std::min<uint64>(view.GetLength(), requested));
     uint64_t current    = address;
-    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries))
+    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries, alignmentBase))
         return false;
     address = current;
     return true;
@@ -341,7 +401,8 @@ cs_insn* GetCurrentInstructionByOffset(
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (zone->asmAddress <= offsetToReach) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
-        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries);
+        const bool decoded =
+              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the offset is after the decoded code
             if (dli)

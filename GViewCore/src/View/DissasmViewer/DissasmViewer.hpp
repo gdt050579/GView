@@ -46,6 +46,9 @@ namespace View
         // any line never needs more than the bytes between two cached offsets
         static constexpr uint64 DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
         static constexpr uint64 DISSASM_MAX_INSTRUCTION_SIZE      = 15;
+        // a line: an instruction, or the padding up to the next 16 bytes aligned address (align 0x10, DecodeX86Line)
+        static constexpr uint64 DISSASM_MAX_LINE_SIZE             = 16;
+        static constexpr uint64 DISSASM_NO_PADDING_ALIGNMENT      = UINT64_MAX; // DecodeX86Line: every padding instruction is a line
         static constexpr uint64 DISSASM_MAX_CODE_WINDOW_SIZE      = 4096;
 
         static constexpr uint32 DISSASM_ASSISTANT_FUNCTION_NAMES_TO_REQUEST = 5;
@@ -404,6 +407,7 @@ namespace View
             bool hasAdjustedSize;
             bool enableDeepScanDissasmOnStart;
             bool enableLocalVariablesDetection; // requires enableDeepScanDissasmOnStart
+            bool alignPadding = true;           // the padding between the functions (int3, nop) is one line: align 0x10
             Reference<GView::Object> obj;
             uint32 visibleRows;
             // the VA of the start of the zone (DissasmCodeZone::labelAddressBase); none: the labels are named after the file offsets

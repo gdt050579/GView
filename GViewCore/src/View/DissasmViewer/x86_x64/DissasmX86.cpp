@@ -366,7 +366,8 @@ inline cs_insn* GetCurrentInstructionByLine(
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (lineDifferences > 0) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
-        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries);
+        const bool decoded =
+              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the line is after the decoded code
             zone->offsetCacheMaxLine = 0;
@@ -1090,6 +1091,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     // the local variables are recognized inside the functions found by the deep scan
     initData.enableDeepScanDissasmOnStart  = config.EnableDeepScanDissasmOnStart;
     initData.enableLocalVariablesDetection = config.EnableDeepScanDissasmOnStart;
+    initData.alignPadding                  = config.AlignPadding;
     initData.obj                           = obj;
     initData.dli                           = &dli;
     initData.visibleRows                   = Layout.visibleRows;
