@@ -26,6 +26,8 @@ struct DissasmGoToRequest {
     std::optional<uint32> line;
 };
 std::optional<DissasmGoToRequest> ParseDissasmGoToText(std::string_view text, DissasmPEConversionType shownAddressType);
+// the first name of an answer of the assistant (names separated by commas / new lines, numbered or quoted); empty when there is none
+std::string ParseAssistantSuggestedName(std::string_view answer);
 
 // An edit of the user with what it replaced: it can be undone and redone (Ctrl+Z / Ctrl+Y)
 struct DissasmEdit {
@@ -97,6 +99,9 @@ struct DissasmCodeZone : public ParseZone {
     // x86/x64: instruction address (relative, as DissasmAsmPreCacheLine::address) -> bit mask of the operand numbers
     // (FindOperandNumbers order) that are shown as decimal numbers instead of hexadecimal
     std::map<uint64, uint32> decimalOperands;
+    // the suggestions of the assistant, kept apart from the data of the user until they are accepted (A) or dismissed (Shift+A)
+    DissasmUserComments aiComments;              // by anchor
+    std::map<uint64, std::string> suggestedNames; // relative address of a label -> the name suggested for it
     // the cache had a record for this zone that could not be applied to the analysis: it is kept aside on save (not overwritten)
     bool cacheRecordRejected = false;
     // x86/x64: the address of the first decoded instruction in the address space of the labels, the VA (offset translation of the plugin)
@@ -181,6 +186,19 @@ struct DissasmCodeZone : public ParseZone {
         return !redoEdits.empty();
     }
     void ClearEditHistory();
+
+    // the suggestions of the assistant on a shown line: the comment of the line, the name suggested for its label
+    bool GetAIComment(const DissasmAsmPreCacheLine& line, std::string& comment) const;
+    bool SetAIComment(uint32 line, std::string comment);
+    std::optional<std::string> GetSuggestedName(const DissasmAsmPreCacheLine& line) const;
+    // the suggestion of the line becomes data of the user (a rename / a comment, they can be undone); Dismiss removes it
+    Utils::GStatus AcceptAISuggestion(uint32 line);
+    bool DismissAISuggestion(uint32 line);
+    // the display line of the label of a relative address (none when it has no label or it is hidden by a collapsed zone)
+    std::optional<uint32> GetLabelDisplayLine(uint64 relativeAddress) const;
+    // the code of a function as it is sent to the assistant: its lines (labels, variables, instructions with the names of their targets and
+    // their generated comments) until its ret, the next function or the limits; the calls after the limits are listed
+    std::string BuildAssistantFunctionText(uint64 functionStart, DissasmInsnExtractLineParams* params);
     // renames the label of a line of the expanded layout (an edit of the user: it can be undone)
     bool RenameLabel(uint32 expandedLine, const std::string& currentName, const std::string& newName);
 

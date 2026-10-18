@@ -760,6 +760,18 @@ namespace View
             void UndoOrRedo(bool redo); // Ctrl+Z / Ctrl+Y: the edits of the zone of the cursor
             void ShowCommandPalette();
             void ShowCallTree(); // Ctrl+R: the callers and the callees of the function of the cursor
+            // the suggestions of the assistant: shown (Ctrl+Shift+A), accepted (A) / dismissed (Shift+A) on the line of the cursor
+            bool showAISuggestions = true;
+            void AcceptOrDismissAISuggestion(bool accept);
+            // names suggested for the current function and the functions it calls (Ctrl+Shift+K): one request in every frame update,
+            // the UI stays responsive between them, Esc stops them
+            struct {
+                DissasmCodeZone* zone = nullptr;
+                std::deque<uint64> functions; // relative addresses
+                uint32 total = 0;
+            } aiNaming;
+            void StartAINaming();
+            bool RunAINamingStep(); // false when there is nothing left
             void FindNext(); // the next match of the last search (F6)
             std::optional<DissasmSearch> lastSearch;
             bool RunSearch(const DissasmSearch& search, bool showErrors);

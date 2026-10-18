@@ -494,7 +494,7 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
 // The records saved before the local variables existed start directly with the comments count (a count equal to the magic is not a
 // realistic value) and their lines do not contain the variable lines.
 constexpr uint32 DISSASM_CODE_ZONE_CACHE_MAGIC   = 0x5A434447; // "GDCZ"
-constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 4;
+constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 5; // 5: the suggestions of the assistant (comments, names)
 constexpr uint32 DISSASM_MAX_LABEL_NAME_SIZE     = 1024;
 
 // decimal operands: [count] then count x [instruction address (uint64)][numbers mask (uint32)]
@@ -617,6 +617,8 @@ bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer)
     localVariables.ToBuffer(buffer);
     DecimalOperandsToBuffer(decimalOperands, buffer);
     CollapsibleZonesToBuffer(GetCollapsibleZoneAnchors(), buffer);
+    aiComments.ToBuffer(buffer);
+    LabelNamesToBuffer(std::vector<std::pair<uint64, std::string>>(suggestedNames.begin(), suggestedNames.end()), buffer);
     return true;
 }
 
@@ -659,18 +661,22 @@ static void ApplyAddressKeyedVariables(DissasmCodeZone& zone, const DissasmLocal
     zoneLinesChanged = true;
 }
 
-// a version 3 / 4 record: [comments][label names][local variables][decimal operands] and, from version 4, [collapsible zones]
+// a version 3 / 4 / 5 record: [comments][label names][local variables][decimal operands], from version 4 [collapsible zones], from
+// version 5 [comments of the assistant][names suggested by the assistant]
 struct AddressKeyedZoneRecord {
     DissasmUserComments comments;
     std::vector<std::pair<uint64, std::string>> labelNames;
     DissasmLocalVariables variables;
     std::map<uint64, uint32> decimalOperands;
     std::vector<DissasmCodeZone::CollapsibleZoneAnchors> collapsibleZones;
+    DissasmUserComments aiComments;
+    std::vector<std::pair<uint64, std::string>> suggestedNames;
 
     bool LoadFromBuffer(const std::byte*& start, const std::byte* end, uint32 version)
     {
         return comments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, labelNames) && variables.LoadFromBuffer(start, end) &&
-               DecimalOperandsFromBuffer(start, end, decimalOperands) && (version < 4 || CollapsibleZonesFromBuffer(start, end, collapsibleZones));
+               DecimalOperandsFromBuffer(start, end, decimalOperands) && (version < 4 || CollapsibleZonesFromBuffer(start, end, collapsibleZones)) &&
+               (version < 5 || (aiComments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, suggestedNames)));
     }
 };
 
@@ -978,10 +984,14 @@ bool DissasmCodeZone::TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLines
         for (const auto& [address, name] : record->labelNames)
             ApplyUserLabelName(address, name);
         userComments = std::move(record->comments);
+        aiComments   = std::move(record->aiComments);
         const uint64 codeSize = GetCodeSize();
         for (const auto& [address, mask] : record->decimalOperands)
             if (codeSize == 0 || address < codeSize)
                 decimalOperands[address] = mask;
+        for (auto& [address, name] : record->suggestedNames)
+            if (codeSize == 0 || address < codeSize)
+                suggestedNames[address] = std::move(name);
         RebuildLineIndex(); // the removed variables lines
         if (ApplyCollapsibleZoneAnchors(record->collapsibleZones))
             zoneLinesChanged = true; // collapsed zones: less lines are shown
@@ -1063,6 +1073,10 @@ bool DissasmCodeZone::MergeUnappliedRecord(DissasmCache& cache)
     }
     for (const auto& [address, mask] : record->decimalOperands)
         decimalOperands.try_emplace(address, mask);
+    for (auto& [anchor, text] : record->aiComments.comments)
+        aiComments.comments.try_emplace(anchor, std::move(text));
+    for (auto& [address, name] : record->suggestedNames)
+        suggestedNames.try_emplace(address, std::move(name));
     mergedUnappliedRecord = true;
     // the zones only when the zone has none (zones of two records may overlap)
     if (!collapsibleZones.empty() || record->collapsibleZones.empty())

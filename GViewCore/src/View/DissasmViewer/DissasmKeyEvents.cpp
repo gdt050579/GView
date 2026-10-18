@@ -263,6 +263,12 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_REMOVE_COMMENT:
         RemoveComment();
         return true;
+    case COMMAND_ACCEPT_AI_SUGGESTION:
+        AcceptOrDismissAISuggestion(true);
+        return true;
+    case COMMAND_DISMISS_AI_SUGGESTION:
+        AcceptOrDismissAISuggestion(false);
+        return true;
     case COMMAND_RENAME_LABEL:
         RenameLabel();
         return true;
@@ -282,6 +288,11 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     const auto action = Config::Map.Resolve(keyCode);
+    if (keyCode == Key::Escape && aiNaming.zone) {
+        aiNaming = {}; // the names received so far stay
+        RefreshDrawnLines();
+        return true;
+    }
     if (HasPendingDeepScans()) {
         if (keyCode == Key::Escape) {
             CancelDeepScans(); // the zones keep their instructions without labels
@@ -349,6 +360,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case COMMAND_SHOW_CALL_TREE:
             ShowCallTree();
+            return true;
+        case COMMAND_TOGGLE_AI_SUGGESTIONS:
+            showAISuggestions = !showAISuggestions;
+            RefreshDrawnLines();
+            return true;
+        case COMMAND_SUGGEST_NAMES:
+            StartAINaming();
             return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;

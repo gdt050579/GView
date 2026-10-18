@@ -867,6 +867,12 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
             chars.Add(warning.data(), ColorMan.Colors.AsmComment);
             titleSize += static_cast<uint32>(warning.size());
         }
+        if (aiNaming.zone == zone) {
+            LocalString<64> progress;
+            progress.SetFormat(" - assistant naming %u/%u (Esc stops it)", aiNaming.total - static_cast<uint32>(aiNaming.functions.size()), aiNaming.total);
+            chars.Add(progress, ColorMan.Colors.AsmComment);
+            titleSize += progress.Len();
+        }
         if (zone->IsDeepScanPending()) {
             LocalString<64> progress;
             progress.SetFormat(" - analyzing %u%% (Esc stops it)", static_cast<uint32>(zone->GetDeepScanProgress() * 100.0f));
@@ -981,11 +987,20 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     }
     uint32 arrowsColumn = UINT32_MAX;
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone), nullptr, &arrowsColumn);
-    std::string comment;
+    std::string comment, aiComment;
     const bool showComments   = !asmCacheLine->isCollapsedLine;
     const bool hasUserComment = showComments && zone->GetComment(*asmCacheLine, comment);
     const bool hasAutoComment = showComments && !asmCacheLine->autoComment.empty();
-    if (hasUserComment || hasAutoComment) {
+    // the suggestions of the assistant (Ctrl+Shift+A hides them): a comment, a name for a label
+    const auto suggestedName = showAISuggestions ? zone->GetSuggestedName(*asmCacheLine) : std::nullopt;
+    if (showAISuggestions && zone->GetAIComment(*asmCacheLine, aiComment))
+        aiComment = "AI: " + aiComment;
+    else
+        aiComment.clear();
+    if (suggestedName.has_value())
+        aiComment = "AI name: " + suggestedName.value() + " (A accepts)" + (aiComment.empty() ? "" : " ; " + aiComment);
+    const bool hasAIComment = !aiComment.empty();
+    if (hasUserComment || hasAutoComment || hasAIComment) {
         // the comments are aligned after the longest line, up to a limit: a long operand (a demangled import name) would push the comments
         // of all the drawn lines out of the screen; a longer line has its comment right after it
         constexpr uint32 MAX_ALIGNED_LINE_SIZE = 64;
@@ -1002,9 +1017,16 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         chars.Add(spaces, ColorMan.Colors.AsmComment);
         if (hasUserComment)
             chars.Add(comment, ColorMan.Colors.AsmComment);
+        if (hasAIComment) {
+            // the suggestion of the assistant after the comment of the user, in the color of the local variables (not the user's text)
+            if (hasUserComment)
+                chars.Add(" ;", ColorMan.Colors.AsmComment);
+            chars.Add(" ", ColorMan.Colors.AsmComment);
+            chars.Add(aiComment, ColorMan.Colors.AsmLocalVariableColor);
+        }
         if (hasAutoComment) {
             // the generated text after the comment of the user, in the color of the referenced locations
-            if (hasUserComment)
+            if (hasUserComment || hasAIComment)
                 chars.Add(" ;", ColorMan.Colors.AsmComment);
             chars.Add(" ", ColorMan.Colors.AsmComment);
             chars.Add(asmCacheLine->autoComment, ColorMan.Colors.AsmLocationInstruction);
@@ -1184,8 +1206,13 @@ void Instance::CancelDeepScans()
 bool Instance::OnFrameUpdate()
 {
     frameUpdatesSeen   = true;
-    const bool repaintAsked = repaintRequested;
+    bool repaintAsked  = repaintRequested;
     repaintRequested   = false;
+    if (aiNaming.zone && !HasPendingDeepScans()) { // one request of the assistant (the labels must be known)
+        RunAINamingStep();
+        RefreshDrawnLines();
+        repaintAsked = true;
+    }
     if (!HasPendingDeepScans())
         return repaintAsked;
     // a slice of every frame (~30 per second): the UI stays responsive while the scan runs
@@ -1261,7 +1288,17 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
             listing.append(text.GetText(), text.Len()).append(operands);
         }
 
-        const bool hasComment = !asmLine.isCollapsedLine && zone.GetComment(asmLine, comment);
+        bool hasComment = !asmLine.isCollapsedLine && zone.GetComment(asmLine, comment);
+        // the suggestions of the assistant, marked, after the comment of the user
+        std::string aiComment;
+        if (zone.GetAIComment(asmLine, aiComment))
+            aiComment = "AI: " + aiComment;
+        if (const auto name = zone.GetSuggestedName(asmLine); name.has_value())
+            aiComment = "AI name: " + name.value() + (aiComment.empty() ? "" : " ; " + aiComment);
+        if (!aiComment.empty()) {
+            comment    = hasComment ? comment + " ; " + aiComment : aiComment;
+            hasComment = true;
+        }
         if (hasComment || !asmLine.autoComment.empty()) {
             const size_t written = listing.size() - lineStart;
             listing.append(written < commentsColumn ? commentsColumn - written : 1, ' ').append(";");
@@ -2644,6 +2681,118 @@ void Instance::ShowCallTree()
     MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + window.GetResult().value(), !window.IsCallSite());
 }
 
+void Instance::AcceptOrDismissAISuggestion(bool accept)
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    const uint32 line = zonesFound[0].startingLine - 2u; // the title and the columns header
+    if (accept) {
+        const auto status = zone->AcceptAISuggestion(line);
+        if (!status.ok)
+            Dialogs::MessageBox::ShowNotification("Warning", status.message);
+    } else if (!zone->DismissAISuggestion(line)) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There is no suggestion of the assistant on this line!");
+    }
+    zone->asmPreCacheData.Clear();
+}
+
+void Instance::StartAINaming()
+{
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines() || zone->functionStarts.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan of a shown disassembly zone!");
+        return;
+    }
+    if (!queryInterface || !queryInterface->GetSmartAssistantInterface()) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There is no digital assistant available!");
+        return;
+    }
+    // the function of the cursor and the functions it calls; only the ones with an automatic name and no suggestion yet
+    uint64 functionStart  = zone->functionStarts.front();
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex].get() == zone && zonesFound[0].startingLine >= 2) {
+        AsmData withoutKnownFunctions;
+        DissasmInsnExtractLineParams params{};
+        params.obj      = obj;
+        params.zone     = zone;
+        params.settings = settings.get();
+        params.asmData  = &withoutKnownFunctions;
+        const auto start = zone->GetFunctionContaining(zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params).address);
+        if (start.has_value())
+            functionStart = start.value();
+    }
+    auto* settingsData = settings.get();
+    std::vector<uint64> candidates{ functionStart };
+    for (const auto& callee : zone->GetCallees(
+               functionStart, [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); }))
+        if (callee.functionStart.has_value())
+            candidates.push_back(callee.functionStart.value());
+    zone->asmPreCacheData.Clear();
+
+    constexpr size_t MAX_FUNCTIONS = 50;
+    aiNaming      = {};
+    aiNaming.zone = zone;
+    for (const uint64 candidate : candidates) {
+        const bool hasAutomaticName = zone->GetLabelNameAt(candidate).starts_with("sub_");
+        const bool listed = std::find(aiNaming.functions.begin(), aiNaming.functions.end(), candidate) != aiNaming.functions.end();
+        if (hasAutomaticName && !listed && !zone->suggestedNames.contains(candidate) && aiNaming.functions.size() < MAX_FUNCTIONS)
+            aiNaming.functions.push_back(candidate);
+    }
+    aiNaming.total = static_cast<uint32>(aiNaming.functions.size());
+    if (aiNaming.functions.empty()) {
+        aiNaming = {};
+        Dialogs::MessageBox::ShowNotification("Info", "The function and the functions it calls already have names!");
+        return;
+    }
+    // a frontend without frame updates (no FPS mode): every request now
+    if (!frameUpdatesSeen)
+        while (RunAINamingStep()) {
+        }
+}
+
+bool Instance::RunAINamingStep()
+{
+    const auto zone = aiNaming.zone;
+    if (!zone || aiNaming.functions.empty()) {
+        aiNaming = {};
+        return false;
+    }
+    const uint64 functionStart = aiNaming.functions.front();
+    aiNaming.functions.pop_front();
+    const auto assistantInterface = queryInterface ? queryInterface->GetSmartAssistantInterface() : nullptr;
+    if (!assistantInterface) {
+        aiNaming = {};
+        return false;
+    }
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.zone     = zone;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    const std::string code = zone->BuildAssistantFunctionText(functionStart, &params);
+    zone->asmPreCacheData.Clear(); // the lines were built for the request
+    if (!code.empty()) {
+        const std::string prompt =
+              "Suggest one name for this function based on what it does. Write only the name, in CamelCase, without any other text or symbols. " + code;
+        const std::string displayPrompt = "Give me a name for the function " + zone->GetLabelNameAt(functionStart);
+        bool isSuccess                  = false;
+        const auto answer               = assistantInterface->AskSmartAssistant(prompt, displayPrompt, isSuccess);
+        const auto name                 = isSuccess ? ParseAssistantSuggestedName(answer) : std::string();
+        if (!name.empty())
+            zone->suggestedNames[functionStart] = name;
+    }
+    if (aiNaming.functions.empty()) {
+        aiNaming = {};
+        return false;
+    }
+    return true;
+}
+
 constexpr uint32 BTN_CLOSE_ID   = 0;
 constexpr uint32 BTN_APPLY_ID   = 1;
 constexpr uint32 RADIO_GROUP_ID = 2;
@@ -3189,14 +3338,8 @@ void Instance::QuerySmartAssistantX86X64(
                 if (reachedZoneEnd)
                     break;
 
-                std::string initialComment;
-                if (codeZone->GetComment(currentDissasmLine, initialComment)) {
-                    bufferToSendToAssistant.SetFormat("%s; %s", comment.data(), initialComment.data());
-                    initialComment = bufferToSendToAssistant.GetText();
-                } else {
-                    initialComment = comment;
-                }
-                codeZone->AddOrUpdateComment(currentDissasmLine, initialComment, false);
+                // kept apart from the comments of the user: A accepts it, Shift+A dismisses it
+                codeZone->SetAIComment(currentDissasmLine, comment);
                 currentDissasmLine++;
             }
             selection.Clear();

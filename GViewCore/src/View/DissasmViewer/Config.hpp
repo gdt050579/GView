@@ -28,6 +28,10 @@ constexpr uint32 COMMAND_UNDO                  = 121;
 constexpr uint32 COMMAND_REDO                  = 122;
 constexpr uint32 COMMAND_COMMAND_PALETTE       = 123;
 constexpr uint32 COMMAND_SHOW_CALL_TREE        = 124;
+constexpr uint32 COMMAND_ACCEPT_AI_SUGGESTION  = 125;
+constexpr uint32 COMMAND_DISMISS_AI_SUGGESTION = 126;
+constexpr uint32 COMMAND_TOGGLE_AI_SUGGESTIONS = 127;
+constexpr uint32 COMMAND_SUGGEST_NAMES         = 128;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -189,6 +193,14 @@ namespace View
                 Input::Key::Ctrl | Input::Key::P, "CommandPalette", "Show every command of the view with its key", COMMAND_COMMAND_PALETTE
             };
 
+            inline static KeyboardControl ToggleAISuggestionsCommand = {
+                Input::Key::Ctrl | Input::Key::Shift | Input::Key::A, "ToggleAISuggestions", "Show or hide the suggestions of the assistant (comments, names)", COMMAND_TOGGLE_AI_SUGGESTIONS
+            };
+            inline static KeyboardControl SuggestNamesCommand = { Input::Key::Ctrl | Input::Key::Shift | Input::Key::K,
+                                                                  "SuggestFunctionNames",
+                                                                  "Ask the assistant names for the current function and the functions it calls",
+                                                                  COMMAND_SUGGEST_NAMES };
+
             inline static KeyboardControl ShowCallTreeCommand = {
                 Input::Key::Ctrl | Input::Key::R, "ShowCallTree", "Show the callers and the callees of the current function", COMMAND_SHOW_CALL_TREE
             };
@@ -214,8 +226,10 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 16> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 18> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ToggleAISuggestionsCommand,
+                SuggestNamesCommand,
                 ShowCallTreeCommand,
                 UndoCommand,
                 RedoCommand,
@@ -234,6 +248,12 @@ namespace View
             };
 
             // Other keys
+            inline static KeyboardControl AcceptAISuggestionCommand = {
+                Input::Key::A, "AcceptAISuggestion", "Accept the suggestion of the assistant on the line (name / comment)", COMMAND_ACCEPT_AI_SUGGESTION
+            };
+            inline static KeyboardControl DismissAISuggestionCommand = {
+                Input::Key::Shift | Input::Key::A, "DismissAISuggestion", "Dismiss the suggestion of the assistant on the line", COMMAND_DISMISS_AI_SUGGESTION
+            };
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
             inline static KeyboardControl RenameLabelCommand      = {
@@ -282,7 +302,9 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 21> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 23> KeyEventCommands = {
+                &AcceptAISuggestionCommand,
+                &DismissAISuggestionCommand,
                 &MoveDownCommand,
                 &MoveUpCommand,
                 &MoveLeftCommand,
@@ -307,8 +329,10 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 22> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 24> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ToggleAISuggestionsCommand,
+                SuggestNamesCommand,
                 ShowCallTreeCommand,
                 UndoCommand,
                 RedoCommand,

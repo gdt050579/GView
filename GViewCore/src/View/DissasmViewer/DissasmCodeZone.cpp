@@ -1376,6 +1376,175 @@ void DissasmCodeZone::ResetZoneCaching()
     asmPreCacheData.Clear();
 }
 
+bool DissasmCodeZone::GetAIComment(const DissasmAsmPreCacheLine& line, std::string& comment) const
+{
+    return !line.isCollapsedLine && aiComments.Get(GetLineAnchor(line), comment);
+}
+
+bool DissasmCodeZone::SetAIComment(uint32 line, std::string comment)
+{
+    const auto anchor = GetAnchorOfLine(line);
+    if (!anchor.has_value() || comment.empty())
+        return false;
+    aiComments.Set(anchor.value(), std::move(comment));
+    ResetZoneCaching();
+    return true;
+}
+
+std::optional<std::string> DissasmCodeZone::GetSuggestedName(const DissasmAsmPreCacheLine& line) const
+{
+    // the label lines only (not the variables, not a collapsed zone)
+    if (line.size != 0 || line.isCollapsedLine || line.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
+        return {};
+    const auto name = suggestedNames.find(line.address);
+    if (name == suggestedNames.end())
+        return {};
+    return name->second;
+}
+
+GStatus DissasmCodeZone::AcceptAISuggestion(uint32 line)
+{
+    if (!CanReachAsmLines() || !zoneObject.IsValid() || line >= GetDisplayLinesCount())
+        return GStatus::Error("Please select a line of the disassembly!");
+    const auto asmLine = GetCurrentAsmLine(line, zoneObject, nullptr);
+
+    // a label with a suggested name: its new name
+    if (const auto name = GetSuggestedName(asmLine); name.has_value()) {
+        const auto labelLine = labelLineOfAddress.find(asmLine.address);
+        if (labelLine == labelLineOfAddress.end())
+            return GStatus::Error("The label of the suggestion was not found!");
+        const std::string currentName = GetLabelNameAt(asmLine.address);
+        if (currentName != name.value() && !RenameLabel(labelLine->second, currentName, name.value()))
+            return GStatus::Error("Another label already has this name!");
+        suggestedNames.erase(asmLine.address);
+        ResetZoneCaching();
+        return GStatus{ .ok = true, .message = "renamed" };
+    }
+
+    // the comment of the assistant: the comment of the user (after the one the user wrote)
+    std::string aiComment;
+    if (!GetAIComment(asmLine, aiComment))
+        return GStatus::Error("There is no suggestion of the assistant on this line!");
+    const auto anchor = GetLineAnchor(asmLine);
+    std::string userComment;
+    const std::string text = userComments.Get(anchor, userComment) ? userComment + "; " + aiComment : aiComment;
+    if (!AddOrUpdateComment(line, text, false))
+        return GStatus::Error("Failed to add the comment!");
+    aiComments.Remove(anchor);
+    ResetZoneCaching();
+    return GStatus{ .ok = true, .message = "commented" };
+}
+
+bool DissasmCodeZone::DismissAISuggestion(uint32 line)
+{
+    if (!CanReachAsmLines() || !zoneObject.IsValid() || line >= GetDisplayLinesCount())
+        return false;
+    const auto asmLine = GetCurrentAsmLine(line, zoneObject, nullptr);
+    bool removed       = false;
+    if (GetSuggestedName(asmLine).has_value())
+        removed = suggestedNames.erase(asmLine.address) > 0;
+    if (!asmLine.isCollapsedLine)
+        removed = aiComments.Remove(GetLineAnchor(asmLine)) || removed;
+    if (removed)
+        ResetZoneCaching();
+    return removed;
+}
+
+std::optional<uint32> DissasmCodeZone::GetLabelDisplayLine(uint64 relativeAddress) const
+{
+    const auto line = labelLineOfAddress.find(relativeAddress);
+    if (line == labelLineOfAddress.end())
+        return {};
+    return ExpandedToDisplay(line->second);
+}
+
+std::string DissasmCodeZone::BuildAssistantFunctionText(uint64 functionStart, DissasmInsnExtractLineParams* params)
+{
+    constexpr uint32 MAX_LINES_ANALYSED = 150; // the lines read, the instructions sent and the calls listed after them
+    constexpr uint32 MAX_LINES_SENT     = 100;
+    constexpr uint32 MAX_API_CALLS      = 10;
+    const auto labelLine                = GetLabelDisplayLine(functionStart);
+    if (!labelLine.has_value() || !zoneObject.IsValid())
+        return {};
+    std::string text = std::string("Here is ") + (Is64BitCode() ? "x64" : "x86") + " assembly code:\n";
+    std::vector<std::string> calls;
+    uint32 sentLines        = 0;
+    const uint32 linesCount = GetDisplayLinesCount();
+    for (uint32 line = labelLine.value() + 1u, read = 0; line < linesCount && read < MAX_LINES_ANALYSED; line++, read++) {
+        const auto asmLine = GetCurrentAsmLine(line, zoneObject, params);
+        if (asmLine.isCollapsedLine)
+            continue;
+        if (asmLine.size == 0) {
+            if (asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition) {
+                if (asmLine.op_str && sentLines < MAX_LINES_SENT) {
+                    text.append(asmLine.op_str, asmLine.op_str_size).append("\n");
+                    sentLines++;
+                }
+                continue;
+            }
+            // the label of the next function ends this one
+            if (asmLine.address != functionStart && std::binary_search(functionStarts.begin(), functionStarts.end(), asmLine.address))
+                break;
+            if (sentLines < MAX_LINES_SENT) {
+                text.append(asmLine.GetMnemonicText()).append(":\n");
+                sentLines++;
+            }
+            continue;
+        }
+        // the instruction with the names of its targets / imports and the generated comment (string, import, argument)
+        std::string instruction = std::string("   ") + asmLine.mnemonic;
+        if (asmLine.op_str)
+            instruction.append(" ").append(asmLine.op_str, asmLine.op_str_size);
+        else if (asmLine.mapping)
+            instruction.append(" ").append(static_cast<const MemoryMappingEntry*>(asmLine.mapping)->name);
+        if (!asmLine.autoComment.empty())
+            instruction.append(" ; ").append(asmLine.autoComment);
+        if (sentLines < MAX_LINES_SENT) {
+            text.append(instruction).append("\n");
+            sentLines++;
+        } else if (strcmp(asmLine.mnemonic, "call") == 0 && calls.size() < MAX_API_CALLS) {
+            calls.push_back(std::move(instruction));
+        }
+        if (strcmp(asmLine.mnemonic, "ret") == 0)
+            break;
+    }
+    if (!calls.empty()) {
+        text.append("The function also makes these calls:\n");
+        for (const auto& call : calls)
+            text.append(call).append("\n");
+    }
+    return text;
+}
+
+std::string GView::View::DissasmViewer::ParseAssistantSuggestedName(std::string_view answer)
+{
+    // the first name of the answer: names separated by commas / new lines, maybe numbered (1. ParseHeader) or quoted (`ParseHeader`)
+    size_t start = 0;
+    while (start < answer.size()) {
+        size_t end = answer.find_first_of(",\n", start);
+        if (end == std::string_view::npos)
+            end = answer.size();
+        auto token = answer.substr(start, end - start);
+        start      = end + 1;
+        while (!token.empty() && (token.front() == ' ' || token.front() == '\t' || token.front() == '-' || token.front() == '*' ||
+                                  (token.front() >= '0' && token.front() <= '9') || token.front() == '.' || token.front() == ')'))
+            token.remove_prefix(1);
+        std::string name;
+        for (const char c : token) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')
+                name += c;
+            else if (c == ' ' || c == '\t' || c == '`' || c == '"' || c == '\'' || c == '(' || c == ')' || c == '\r')
+                continue; // spaces and quotes around the name
+            else
+                break;
+        }
+        constexpr size_t MAX_NAME_SIZE = 64;
+        if (!name.empty() && !(name.front() >= '0' && name.front() <= '9') && name.size() <= MAX_NAME_SIZE)
+            return name;
+    }
+    return {};
+}
+
 void DissasmCodeZone::RecordEdit(DissasmEdit edit)
 {
     constexpr size_t MAX_EDITS = 256;

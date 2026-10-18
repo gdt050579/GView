@@ -3754,3 +3754,108 @@ TEST_CASE("CallersAndCallees", "[Dissasm]CallTree")
     REQUIRE(tailCallers[0].isTailJump);
     REQUIRE(tailCallers[0].function == "EntryPoint");
 }
+
+TEST_CASE("AssistantSuggestions", "[Dissasm]AI")
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x10,       // 0x04: sub rsp, 0x10
+        0xE8, 0x13, 0x00, 0x00, 0x00, // 0x08: call 0x20
+        0xC9,                         // 0x0d: leave
+        0xC3,                         // 0x0e: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    const auto findLine = [&zone](std::string_view text) {
+        const auto line = zone.FindText(text, true, 0, UINT32_MAX, nullptr);
+        REQUIRE(line.has_value());
+        return line.value();
+    };
+
+    // the code sent to the assistant: the function until its ret, with the names of the targets
+    AsmData asmData;
+    DissasmInsnExtractLineParams params{};
+    params.obj      = &dissasmInstance.objects[0];
+    params.zone     = &zone;
+    params.settings = &dissasmInstance.settingsData;
+    params.asmData  = &asmData;
+    const std::string code = zone.BuildAssistantFunctionText(0x0, &params);
+    REQUIRE(code.starts_with("Here is x64 assembly code:"));
+    REQUIRE(code.find("sub rsp, 0x10") != std::string::npos);
+    REQUIRE(code.find("call sub_20") != std::string::npos);
+    REQUIRE(code.find("xor") == std::string::npos); // the next function
+
+    // the suggestions are kept apart from the data of the user
+    const uint32 subLine = findLine("sub rsp, 0x10");
+    REQUIRE(dissasmInstance.AddOrUpdateComment(subLine, "frame"));
+    REQUIRE(zone.SetAIComment(subLine, "allocates the locals"));
+    zone.suggestedNames[0x20] = "ComputeValue";
+    std::string text;
+    REQUIRE(zone.GetComment(subLine, text));
+    REQUIRE(text == "frame");
+    REQUIRE(zone.GetAIComment(dissasmInstance.GetCurrentAsmLine(subLine), text));
+    REQUIRE(text == "allocates the locals");
+    const uint32 labelLine = findLine("sub_20");
+    REQUIRE(zone.GetSuggestedName(dissasmInstance.GetCurrentAsmLine(labelLine)) == std::optional<std::string>("ComputeValue"));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("; frame ; AI: allocates the locals") != std::string::npos);
+    REQUIRE(listing.find("; AI name: ComputeValue") != std::string::npos);
+
+    // saved in the cache (record version 5)
+    {
+        std::vector<std::byte> buffer;
+        REQUIRE(zone.ToBuffer(buffer));
+        DissasmTestInstance restored(file.data(), file.size(), false, layout);
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.zone->GetAIComment(restored.GetCurrentAsmLine(subLine), text));
+        REQUIRE(text == "allocates the locals");
+        REQUIRE(restored.zone->suggestedNames.at(0x20) == "ComputeValue");
+        REQUIRE(restored.zone->GetComment(subLine, text));
+        REQUIRE(text == "frame");
+    }
+
+    // accepted: the comment of the user (it can be undone), the name of the label
+    REQUIRE(zone.AcceptAISuggestion(subLine).ok);
+    REQUIRE(zone.GetComment(subLine, text));
+    REQUIRE(text == "frame; allocates the locals");
+    REQUIRE_FALSE(zone.GetAIComment(dissasmInstance.GetCurrentAsmLine(subLine), text));
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.GetComment(subLine, text));
+    REQUIRE(text == "frame");
+    REQUIRE(zone.AcceptAISuggestion(labelLine).ok);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "ComputeValue");
+    REQUIRE(zone.suggestedNames.empty());
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_20");
+
+    // dismissed
+    const uint32 leaveLine = findLine("leave");
+    REQUIRE(zone.SetAIComment(leaveLine, "restores the frame"));
+    REQUIRE(zone.DismissAISuggestion(leaveLine));
+    REQUIRE_FALSE(zone.DismissAISuggestion(leaveLine));
+    REQUIRE_FALSE(zone.AcceptAISuggestion(leaveLine).ok);
+}
+
+TEST_CASE("AssistantNameAnswers", "[Dissasm]AI")
+{
+    REQUIRE(ParseAssistantSuggestedName("ParseHeader, ReadHeader, LoadHeader") == "ParseHeader");
+    REQUIRE(ParseAssistantSuggestedName("1. `ReadConfig`\n2. LoadConfig") == "ReadConfig");
+    REQUIRE(ParseAssistantSuggestedName("\"compute_checksum\"") == "compute_checksum");
+    REQUIRE(ParseAssistantSuggestedName("- InitTable") == "InitTable");
+    REQUIRE(ParseAssistantSuggestedName("  ,  ,  ") == "");
+    REQUIRE(ParseAssistantSuggestedName("") == "");
+    REQUIRE(ParseAssistantSuggestedName("Sure! Here: x") == "Sure"); // the first name of the text
+}
