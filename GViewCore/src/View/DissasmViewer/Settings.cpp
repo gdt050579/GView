@@ -68,6 +68,11 @@ void Settings::SetGlobalOffsetTable(uint64 address)
     INTERNAL_SETTINGS->globalOffsetTable = address;
 }
 
+void Settings::AddRelocatedPointer(uint64 fileOffset, uint64 value)
+{
+    INTERNAL_SETTINGS->relocatedPointers[fileOffset] = value;
+}
+
 void Settings::AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode)
 {
     INTERNAL_SETTINGS->armCodeModes[fileOffset] = mode;

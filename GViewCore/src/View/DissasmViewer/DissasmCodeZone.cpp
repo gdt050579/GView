@@ -452,6 +452,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto offset = addressToFileOffset(address);
         if (!offset.has_value())
             return {};
+        if (size == (is64 ? 8 : 4) && zone->relocatedPointers) { // a pointer the loader writes (PIE): its bytes in the file are 0
+            if (const auto relocated = zone->relocatedPointers->find(offset.value()); relocated != zone->relocatedPointers->end())
+                return relocated->second;
+        }
         uint64 value = 0;
         bool ok      = false;
         if (size == 1) {
@@ -870,7 +874,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!details.isData || details.startingZonePoint >= obj->GetData().GetSize())
                 continue;
             const uint64 size  = std::min<uint64>({ details.size, MAX_DATA_ZONE_SIZE, obj->GetData().GetSize() - details.startingZonePoint });
-            const auto bytes   = obj->GetData().CopyToBuffer(details.startingZonePoint, static_cast<uint32>(size), false);
+            auto bytes         = obj->GetData().CopyToBuffer(details.startingZonePoint, static_cast<uint32>(size), false);
+            ApplyRelocatedPointers(zone->relocatedPointers, details.startingZonePoint, bytes.GetData(), bytes.GetLength(), pointerSize);
             const uint8* data  = bytes.GetData();
             const auto readValue = [data, pointerSize](uint64 position) {
                 uint64 value = 0;
@@ -1354,6 +1359,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     labelAddressBase = initData.labelAddressBase.value_or(zoneDetails.startingZonePoint); // the first decoded instruction is the zone start
     paddingAlignmentBase = initData.alignPadding ? labelAddressBase : DISSASM_NO_PADDING_ALIGNMENT;
     zoneObject       = initData.obj;
+    relocatedPointers = initData.relocatedPointers;
 
     // TODO: move this on init
     if (!cs_support(CS_ARCH_X86)) {
@@ -1461,9 +1467,33 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
             fixedRanges.insert(fixedRanges.end(), slots.begin(), slots.end());
             std::sort(fixedRanges.begin(), fixedRanges.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
         }
+        // the pointers the loader writes: pointers for sure (isPointer rejects the small addresses of an image linked at 0), a run of
+        // them is a range of pointers
+        if (relocatedPointers && !relocatedPointers->empty()) {
+            std::vector<DissasmInstructionSet::DataRange> relocated;
+            const auto overlapsFixed = [&fixedRanges](uint64 start, uint64 end) {
+                const auto next = std::upper_bound(
+                      fixedRanges.begin(), fixedRanges.end(), start, [](uint64 value, const auto& range) { return value < range.start; });
+                return (next != fixedRanges.end() && next->start < end) || (next != fixedRanges.begin() && (next - 1)->end > start);
+            };
+            for (auto it = relocatedPointers->lower_bound(zoneDetails.startingZonePoint);
+                 it != relocatedPointers->end() && it->first - zoneDetails.startingZonePoint + slotSize <= zoneDetails.size;
+                 ++it) {
+                const uint64 position = it->first - zoneDetails.startingZonePoint;
+                if (overlapsFixed(position, position + slotSize) || (!relocated.empty() && relocated.back().end > position))
+                    continue;
+                if (!relocated.empty() && relocated.back().end == position)
+                    relocated.back().end += slotSize;
+                else
+                    relocated.push_back({ position, position + slotSize, slotSize, true });
+            }
+            fixedRanges.insert(fixedRanges.end(), relocated.begin(), relocated.end());
+            std::sort(fixedRanges.begin(), fixedRanges.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
+        }
         const uint64 fileSize = initData.obj->GetData().GetSize();
         const uint64 dataSize = zoneDetails.startingZonePoint < fileSize ? std::min<uint64>({ zoneDetails.size, MAX_DATA_ZONE_SIZE, fileSize - zoneDetails.startingZonePoint }) : 0;
-        const auto bytes      = initData.obj->GetData().CopyToBuffer(zoneDetails.startingZonePoint, static_cast<uint32>(dataSize), false);
+        auto bytes            = initData.obj->GetData().CopyToBuffer(zoneDetails.startingZonePoint, static_cast<uint32>(dataSize), false);
+        ApplyRelocatedPointers(relocatedPointers, zoneDetails.startingZonePoint, bytes.GetData(), bytes.GetLength(), Is64BitCode() ? 8 : 4);
         // the pointers: only with the addresses of the plugin (the VAs), every small number is a file offset otherwise; and not the small
         // values (a position independent image loaded at 0: its first VAs are counters and sizes too)
         const uint8 pointerSize = Is64BitCode() ? 8 : 4;
@@ -2227,6 +2257,16 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallers(uint64 functionSta
         callers.push_back(std::move(caller));
     }
     return callers;
+}
+
+void GView::View::DissasmViewer::ApplyRelocatedPointers(
+      const std::map<uint64, uint64>* relocations, uint64 fileOffset, uint8* bytes, uint64 size, uint8 pointerSize)
+{
+    if (!relocations || !bytes || size < pointerSize)
+        return;
+    for (auto it = relocations->lower_bound(fileOffset); it != relocations->end() && it->first - fileOffset <= size - pointerSize; ++it)
+        for (uint8 index = 0; index < pointerSize; index++)
+            bytes[it->first - fileOffset + index] = static_cast<uint8>(it->second >> (8 * index));
 }
 
 std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::BuildDataZoneRanges(

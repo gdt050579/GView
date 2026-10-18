@@ -289,6 +289,7 @@ struct ZoneLayout {
     bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
     std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
     std::map<uint64, ArmCodeMode> armCodeModes;               // 32 bit ARM: the mode changes, by file offset
+    std::map<uint64, uint64> relocatedPointers;               // the pointers the loader writes (file offset -> VA)
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -380,6 +381,7 @@ class DissasmTestInstance
         initData.alignPadding        = layout.alignPadding;
         initData.lineCountBudget     = layout.lineCountBudget;
         initData.armCodeModes        = &layout.armCodeModes;
+        initData.relocatedPointers   = &layout.relocatedPointers;
         initData.instructionBoundaries = &layout.instructionBoundaries;
         initData.globalOffsetTable     = layout.globalOffsetTable;
         if (!layout.imports.empty()) {
@@ -6599,4 +6601,78 @@ TEST_CASE("ArmDataZonePointerFunctions", "[Dissasm]Arm32")
     DissasmTestInstance code(file.data(), file.size(), false, layout);
     INFO(code.GetListing());
     REQUIRE(code.zone->GetLabelNameAt(0x04) == "sub_10004");
+}
+
+TEST_CASE("ApplyRelocatedPointers", "[Dissasm]DataZone")
+{
+    std::vector<uint8> bytes(16, 0);
+    const std::map<uint64, uint64> relocations = { { 0xF8, 0x1 }, { 0x100, 0x1122334455667788ull }, { 0x10C, 0xAABBCCDD } };
+    ApplyRelocatedPointers(&relocations, 0x100, bytes.data(), bytes.size(), 8);
+    REQUIRE(bytes[0] == 0x88);
+    REQUIRE(bytes[7] == 0x11);
+    REQUIRE(std::all_of(bytes.begin() + 8, bytes.end(), [](uint8 value) { return value == 0; })); // 0x10c: 8 bytes do not fit, 0xf8: before
+    ApplyRelocatedPointers(nullptr, 0x100, bytes.data(), bytes.size(), 8); // no relocations: nothing
+}
+
+TEST_CASE("RelocatedPointerTables", "[Dissasm]DataZone")
+{
+    // a shared object linked at 0 (small VAs): a table of two function pointers in its data, 0 in the file, written by the loader
+    // (R_X86_64_RELATIVE). The table is a run of pointers to the functions, and the functions reached only through it are functions
+    std::vector<unsigned char> file = {
+        0x48, 0x8D, 0x0D, 0x39, 0x00, 0x00, 0x00, // 0x00: lea rcx, [rip + 0x39] (the table, 0x1040)
+        0xFF, 0x14, 0xC1,                         // 0x07: call qword ptr [rcx + rax*8]
+        0xC3,                                     // 0x0a: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC,             // 0x0b: padding
+        0x8D, 0x04, 0x37,                         // 0x10: lea eax, [rdi + rsi]      (op_add)
+        0xC3,                                     // 0x13: ret
+        0xCC, 0xCC, 0xCC, 0xCC,                   // 0x14: padding
+        0x89, 0xF8,                               // 0x18: mov eax, edi            (op_sub)
+        0x29, 0xF0,                               // 0x1a: sub eax, esi
+        0xC3,                                     // 0x1c: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.resize(0x50, 0x00); // 0x40: the table (0x1040), zeros in the file
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        return address >= 0x1000 && address < 0x1050 ? std::optional<uint64>(address - 0x1000) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start               = 0x40;
+    layout.size                = 0x10;
+    layout.entryPoint          = NO_ENTRY_POINT;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.labelAddressBase    = 0x1040;
+    layout.isData              = true;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    layout.relocatedPointers   = { { 0x40, 0x1010 }, { 0x48, 0x1018 } };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    // pointers for sure, although their addresses are below 0x10000 (a pointer of a PIE loaded at 0 is a small number otherwise)
+    const auto* range = data.zone->instructionSet.DataRangeAt(0x00);
+    REQUIRE(range != nullptr);
+    REQUIRE(range->isOffset);
+    REQUIRE(range->unit == 8);
+    REQUIRE(range->end == 0x10);
+    REQUIRE(data.zone->GetRelocatedPointer(0x08) == std::optional<uint64>(0x1018));
+    REQUIRE_FALSE(data.zone->GetRelocatedPointer(0x04).has_value());
+
+    layout.start            = 0;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x1000;
+    layout.isData           = false;
+    layout.siblings         = { data.zone.get() };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    INFO(code.GetListing());
+    REQUIRE(code.zone->GetLabelNameAt(0x10) == "sub_1010");
+    REQUIRE(code.zone->GetLabelNameAt(0x18) == "sub_1018");
+
+    // the data zone analyzed again with the code: the table is named after the pointers (off_) and shows the functions
+    layout.start            = 0x40;
+    layout.size             = 0x10;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x1040;
+    layout.isData           = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance named(file.data(), file.size(), false, layout);
+    REQUIRE(named.zone->GetLabelNameAt(0x00) == "off_1040");
 }

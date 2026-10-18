@@ -754,6 +754,17 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         return true;
     }
 
+    // an import slot of a data zone: the name of the import (its bytes are the RVA of the name until the loader writes the address; a
+    // pointer to an import that the loader writes is 0 in the file)
+    if (insn->id == 0 && params.zone->zoneDetails.isData && insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
+        X86OperandsInfo slot;
+        slot.absoluteMemory = params.zone->labelAddressBase + insn->address;
+        if (const auto* import = FindX86OperandsImport(params.settings, params.zone, slot); import && !import->name.empty()) {
+            SetOperands(import->name.c_str(), params.zone);
+            return true;
+        }
+    }
+
     // a pointer of a data zone: the name of what it points to (a label of any zone), else its value
     if (insn->id == 0) {
         const auto* range = params.zone->instructionSet.DataRangeAt(insn->address);
@@ -761,19 +772,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             uint64 value = 0;
             for (uint32 index = 0; index < range->unit; index++)
                 value |= static_cast<uint64>(insn->bytes[index]) << (8 * index);
+            value             = params.zone->GetRelocatedPointer(insn->address).value_or(value); // written by the loader (PIE)
             const auto target = params.zone->FindCodeZoneOfAddress(value);
             const std::string name = target ? target->FormatCodeAddress(value - target->labelAddressBase) : FormatAddress(value);
             SetOperands(name.c_str(), params.zone);
-            return true;
-        }
-    }
-
-    // an import slot of a data zone: the name of the import (its bytes are the RVA of the name until the loader writes the address)
-    if (insn->id == 0 && params.zone->zoneDetails.isData && insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
-        X86OperandsInfo slot;
-        slot.absoluteMemory = params.zone->labelAddressBase + insn->address;
-        if (const auto* import = FindX86OperandsImport(params.settings, params.zone, slot); import && !import->name.empty()) {
-            SetOperands(import->name.c_str(), params.zone);
             return true;
         }
     }
@@ -1372,6 +1374,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.instructionBoundaries = &settings->instructionBoundaries;
     initData.globalOffsetTable     = settings->globalOffsetTable;
     initData.armCodeModes          = &settings->armCodeModes;
+    initData.relocatedPointers     = &settings->relocatedPointers;
     if (!settings->memoryMappings.empty()) {
         auto* settingsData  = settings;
         initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };
@@ -1914,6 +1917,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             const bool isPointer = range && range->isOffset && insn->size == range->unit && range->unit <= 8;
             for (uint32 index = 0; isPointer && index < range->unit; index++)
                 value |= static_cast<uint64>(insn->bytes[index]) << (8 * index);
+            if (isPointer)
+                value = zone->GetRelocatedPointer(insn->address).value_or(value);
             cs_free(insn, 1);
             const auto fileOffset = isPointer ? TranslateOperandAddressToFileOffset(settings.get(), value, true) : std::nullopt;
             if (fileOffset.has_value() && !GoToFileOffset(fileOffset.value()))

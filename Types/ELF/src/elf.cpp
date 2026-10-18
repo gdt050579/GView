@@ -147,6 +147,45 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 return;
             settings.AddMemoryMapping(slot - imageBase, elf->dynamicSymbolsNames[symbolIndex], DissasmViewer::MemoryMappingType::FunctionMapping);
         };
+        // the pointers the loader writes (RELA: the bytes in the file are 0): R_*_RELATIVE / R_*_IRELATIVE (the image base, 0 here, plus the
+        // addend; the resolver of an ifunc), a 64 bit pointer to a symbol of the file (its value plus the addend); a pointer to an import
+        // (a vtable entry, a callback of another library) is named after it. REL (32 bit x86 / ARM) keeps the value in the file
+        constexpr unsigned R_AARCH64_IRELATIVE = 1032;
+        auto addPointer                        = [&](uint64 slot, uint64 symbolIndex, uint64 type, int64 addend) {
+            bool isRelative = false, isAbsolute = false;
+            if (machine == ELF::EM_X86_64)
+            {
+                isRelative = type == ELF::R_X86_64_RELATIVE || type == ELF::R_X86_64_IRELATIVE;
+                isAbsolute = type == ELF::R_X86_64_64;
+            }
+            else if (machine == ELF::EM_AARCH64)
+            {
+                isRelative = type == ELF::R_AARCH64_RELATIVE || type == R_AARCH64_IRELATIVE;
+                isAbsolute = type == ELF::R_AARCH64_ABS64;
+            }
+            if (!isRelative && !isAbsolute)
+                return;
+            uint64 value = static_cast<uint64>(addend);
+            if (isAbsolute)
+            {
+                if (symbolIndex == 0 || symbolIndex >= elf->dynamicSymbols64.size())
+                    return;
+                const auto& symbol = elf->dynamicSymbols64[symbolIndex];
+                if (symbol.st_shndx == ELF::SHN_UNDEF)
+                {
+                    // a pointer to an import: named after it; its value (0) is not known
+                    if (symbolIndex >= elf->dynamicSymbolsNames.size() || elf->dynamicSymbolsNames[symbolIndex].empty() || slot < imageBase)
+                        return;
+                    settings.AddMemoryMapping(slot - imageBase, elf->dynamicSymbolsNames[symbolIndex], DissasmViewer::MemoryMappingType::FunctionMapping);
+                    value = 0;
+                }
+                else
+                    value += symbol.st_value;
+            }
+            const uint64 offset = elf->VAToFileOffset(slot);
+            if (offset != ELF::ELF_INVALID_ADDRESS)
+                settings.AddRelocatedPointer(offset, value);
+        };
         constexpr uint64 MAX_RELOCATIONS_SIZE = 0x1000000; // 16 MB of relocations
         auto readRelocations                  = [&](uint64 offset, uint64 size, uint32 type) {
             if (size == 0 || size > MAX_RELOCATIONS_SIZE || offset >= obj->GetData().GetSize())
@@ -159,9 +198,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 const size_t entrySize = type == ELF::SHT_RELA ? sizeof(ELF::Elf64_Rela) : sizeof(ELF::Elf64_Rel);
                 for (size_t position = 0; position + entrySize <= length; position += entrySize)
                 {
-                    ELF::Elf64_Rel relocation;
-                    memcpy(&relocation, data + position, sizeof(relocation)); // r_offset and r_info start both layouts
+                    ELF::Elf64_Rela relocation{};
+                    memcpy(&relocation, data + position, entrySize); // r_offset and r_info start both layouts (REL: no addend)
                     addSlot(relocation.r_offset, ELF64_R_SYM(relocation.r_info), ELF64_R_TYPE(relocation.r_info));
+                    if (type == ELF::SHT_RELA)
+                        addPointer(relocation.r_offset, ELF64_R_SYM(relocation.r_info), ELF64_R_TYPE(relocation.r_info), relocation.r_addend);
                 }
             }
             else

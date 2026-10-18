@@ -1823,6 +1823,12 @@ namespace View
             // in the PLT stubs (jmp dword ptr [ebx + 0xc])
             void SetGlobalOffsetTable(uint64 address);
             /**
+             * \brief The value (a VA) of a pointer that the loader writes at a file offset: the relocations of a position independent
+             * image (ELF R_X86_64_RELATIVE / R_AARCH64_RELATIVE, a 64 bit pointer to a symbol of the file) whose bytes in the file are 0 or
+             * the addend. The pointer tables (.data.rel.ro, .init_array, the vtables) are read with these values.
+             */
+            void AddRelocatedPointer(uint64 fileOffset, uint64 value);
+            /**
              * \brief 32 bit ARM: the code from the file offset is decoded in `mode` (until the next mode change); the ELF mapping symbols
              * ($a, $t, $d), the Thumb bit of the function symbols, the ARM .plt of a Thumb file. A later call for the same offset wins.
              */

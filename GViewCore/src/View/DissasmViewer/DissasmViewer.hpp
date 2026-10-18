@@ -488,6 +488,8 @@ namespace View
             std::optional<uint64> globalOffsetTable; // 32 bit x86 PIC: ebx in the PLT stubs (SettingsData::globalOffsetTable)
             // 32 bit ARM: the mode from a file offset on (ARM, Thumb, data); can be null
             const std::map<uint64, ArmCodeMode>* armCodeModes = nullptr;
+            // the pointers the loader writes, by file offset (SettingsData::relocatedPointers); can be null
+            const std::map<uint64, uint64>* relocatedPointers = nullptr;
             // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
             std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
             // the file offset of an address (address space of the labels): the jump tables of the switches are read there
@@ -530,6 +532,7 @@ namespace View
             std::vector<uint64> instructionBoundaries;                      // the file offsets where an instruction starts (sections)
             std::optional<uint64> globalOffsetTable;                         // 32 bit x86 PIC: the value of ebx in the PLT stubs
             std::map<uint64, ArmCodeMode> armCodeModes;                     // 32 bit ARM: the mode from a file offset on
+            std::map<uint64, uint64> relocatedPointers;                     // the pointers the loader writes (file offset -> VA)
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmStructureType> dissasmTypeMapped; // mapped types against the offset of the file

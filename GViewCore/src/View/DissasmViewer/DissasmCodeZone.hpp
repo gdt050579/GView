@@ -190,6 +190,16 @@ struct DissasmCodeZone : public ParseZone {
     std::unordered_map<uint64, uint32> switchJumps;        // relative address of the indirect jmp of a switch -> its cases count
     // the jump tables inside the code shown as data lines (instructionSet.dataRanges): relative address of an entry -> its case (relative)
     std::map<uint64, uint64> tableEntries;
+    // the pointers the loader writes (the relocations of a PIE / shared object), by file offset; can be null
+    const std::map<uint64, uint64>* relocatedPointers = nullptr;
+    // the value of the pointer at a relative address that the loader writes (its bytes in the file are 0 or the addend)
+    std::optional<uint64> GetRelocatedPointer(uint64 relativeAddress) const
+    {
+        if (!relocatedPointers || relocatedPointers->empty())
+            return {};
+        const auto it = relocatedPointers->find(zoneDetails.startingZonePoint + relativeAddress);
+        return it != relocatedPointers->end() ? std::optional<uint64>(it->second) : std::nullopt;
+    }
     // ARM64 (deep scan): relative address of an instruction of an adrp pair (add / ldr / str [page + offset], br / blr through the slot read
     // before) -> the relative address it uses; the lines are decoded alone, the pair is known only by the sweep
     std::unordered_map<uint64, uint64> resolvedAddresses;
@@ -553,6 +563,8 @@ void PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> ob
 // isPointer accepts, `pointerSize` bytes) and rows of the other bytes. An item never crosses a target (a place the code refers to: a label
 // starts its line) or a fixed range (the data defined by the user, kept as they are). Relative addresses, sorted.
 // targetSizes (empty, or one per target): the bytes the code reads / writes there (mov eax, dword ptr [X]: a dd line at X), 0 unknown
+// the pointers the loader writes (relocations: file offset -> value) into `bytes`, the copy of the file from `fileOffset`
+void ApplyRelocatedPointers(const std::map<uint64, uint64>* relocations, uint64 fileOffset, uint8* bytes, uint64 size, uint8 pointerSize);
 std::vector<DissasmInstructionSet::DataRange> BuildDataZoneRanges(
       const uint8* bytes,
       uint64 size,
