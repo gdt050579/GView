@@ -6332,3 +6332,62 @@ TEST_CASE("X86PicGlobalOffsetTable", "[Dissasm]Pic")
     REQUIRE(FindListingLine(listing, "call   $+5").size() > 0);
     REQUIRE(FindListingLine(listing, "call   j_puts").size() > 0);
 }
+
+TEST_CASE("SelectionResizedLines", "[Dissasm]Selection")
+{
+    AdvancedSelection selection;
+    // three selections: above, inside and below the lines [100, 200) of a zone that grows by 50 lines
+    const int above  = selection.BeginSelection({ 10, 0 }, true, false);
+    selection.UpdateSelection(above, { 20, 5 }, true, false);
+    const int inside = selection.BeginSelection({ 150, 0 }, true, false);
+    selection.UpdateSelection(inside, { 160, 0 }, true, false);
+    const int below  = selection.BeginSelection({ 300, 2 }, true, false);
+    selection.UpdateSelection(below, { 310, 4 }, true, false);
+    REQUIRE(above >= 0);
+    REQUIRE(inside >= 0);
+    REQUIRE(below >= 0);
+
+    selection.AdjustToResizedLines(100, 200, 50);
+    REQUIRE(selection.GetSelectionStart(above).line == 10); // above: as it is
+    REQUIRE(selection.GetSelectionEnd(above).line == 20);
+    REQUIRE_FALSE(selection.HasSelection(inside));          // its lines changed
+    REQUIRE(selection.GetSelectionStart(below).line == 350); // below: with its lines
+    REQUIRE(selection.GetSelectionEnd(below).line == 360);
+    REQUIRE(selection.GetSelectionEnd(below).offset == 4);
+
+    // the zone shrinks: the selection below moves up
+    selection.AdjustToResizedLines(100, 250, -30);
+    REQUIRE(selection.GetSelectionStart(below).line == 320);
+}
+
+TEST_CASE("DataZoneReanalysis", "[Dissasm]DataZone")
+{
+    // a data zone analyzed before the code that refers to it has no labels; analyzed again, it gets them
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0x3A, 0x00, 0x00, 0x00, // 0x00: mov eax, dword ptr [rip + 0x3a] (0x40)
+        0xC3,                               // 0x06: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x07, 0x00, 0x00, 0x00 });
+    file.resize(0x60, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start            = 0x40;
+    layout.size             = 0x20;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x401040;
+    layout.isData           = true;
+    DissasmTestInstance data(file.data(), file.size(), false, layout); // no siblings yet
+    auto& dataZone = *data.zone;
+    REQUIRE(dataZone.GetLabelNameAt(0x00).empty());
+    dataZone.siblingZones = { code.zone.get() };
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(dataZone, data.lastInitData, imported));
+    REQUIRE(dataZone.GetLabelNameAt(0x00) == "dword_401040");
+    REQUIRE(FindListingLine(data.GetListing(), "dd     0x00000007").size() > 0);
+}

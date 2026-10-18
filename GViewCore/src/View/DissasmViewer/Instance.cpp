@@ -1449,9 +1449,10 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
     }
     if (zone->extendedSize == newExtendedSize)
         return;
-    selection.Clear();
 
     const int32 sizeToAdjust = static_cast<int32>(newExtendedSize) - zone->extendedSize;
+    // a selection of the zone is cleared (its lines changed), a selection below it moves with its lines
+    selection.AdjustToResizedLines(zone->startLineIndex, zone->endingLineIndex, sizeToAdjust);
     // the view stays on the same lines when a zone above the cursor changes its size (a zone above analyzed in the background, its lines
     // counted): the lines below the zone move, the cursor moves with them
     if (Cursor.startViewLine + Cursor.lineInView >= zone->endingLineIndex) {

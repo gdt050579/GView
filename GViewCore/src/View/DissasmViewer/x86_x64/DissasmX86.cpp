@@ -1368,6 +1368,8 @@ void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
         zone->asmPreCacheData.Clear();
         if (address.has_value())
             MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
+        if (!zone->zoneDetails.isData)
+            RefreshDataZones(); // their labels are the places this code refers to
         return;
     }
     // until the scan ends the lines of the zone are its instructions: the cursor stays on the same instruction (the view moves with it)
@@ -2239,10 +2241,23 @@ bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAd
         DissasmAnnotationsImport imported;
         FinishCodeZoneReanalysis(*zone, *state, imported);
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // a collapsed zone placed again
+        if (!zone->zoneDetails.isData)
+            RefreshDataZones(); // their labels are the places this code refers to
     }
     if (keepAddress.has_value())
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + keepAddress.value(), false);
     return true;
+}
+
+void Instance::RefreshDataZones()
+{
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto dataZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        if (dataZone->zoneDetails.isData && dataZone->CanReachAsmLines() && !dataZone->IsDeepScanPending())
+            ReanalyzeZone(dataZone, std::nullopt, false); // quick: no instructions; its annotations are kept
+    }
 }
 
 void Instance::ToggleNumberBase()
