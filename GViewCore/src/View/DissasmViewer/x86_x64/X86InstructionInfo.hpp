@@ -21,6 +21,9 @@ struct X86OperandsInfo {
     std::optional<AppCUI::uint64> directTarget;   // call / jmp / jcc / loop 0x...: the target of the branch
     std::optional<AppCUI::uint64> ripTarget;      // [rip + 0x...]: the address that is read / written / taken (x64)
     std::optional<AppCUI::uint64> absoluteMemory; // [0x402010]: a memory operand without base and index registers (x86 globals, imports)
+    // [eax*4 + 0x403000] / [ebx + ecx*4 + 0x403000]: the displacement of a memory operand with registers (not rip), the address of a table
+    // when it is one of the file (the caller checks it: [ebp - 8] is not)
+    std::optional<AppCUI::uint64> tableMemory;
     std::vector<AppCUI::uint64> immediates;       // the immediate operands that are not branch targets (push 0x403000, mov ecx, 0x10)
     AppCUI::uint8 memoryAccess = 0;               // CS_AC_READ / CS_AC_WRITE of the memory operand of ripTarget / absoluteMemory
 };

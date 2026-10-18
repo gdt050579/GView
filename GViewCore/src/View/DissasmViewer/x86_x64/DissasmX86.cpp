@@ -296,7 +296,9 @@ inline void DissasmAddColorsToInstruction(
                 }
                 if (c != ' ') {
                     const char tmp[3] = { ' ', c, '\0' };
-                    const char* start = (c == '[') ? tmp : tmp + 1;
+                    // ds:dword_403000[eax*4]: the index of a named table follows the name
+                    const bool afterName = c == '[' && i > 0 && op_str[i - 1] != ' ' && op_str[i - 1] != ',' && op_str[i - 1] != ':';
+                    const char* start    = (c == '[' && !afterName) ? tmp : tmp + 1;
                     cb.Add(start, colors.AsmCompareInstructionColor);
                 }
                 lastOp = c;
@@ -594,14 +596,26 @@ static std::string FormatDataAddress(const DissasmCodeZone* zone, uint64 address
 }
 
 // the name of the place (VA) that an operand refers to: an import slot (__imp_Name), a label of a data zone (dword_, off_+0x8, aText),
-// a label of code (a callback), the image base (__ImageBase: the PE header); empty when the place has no name
-static std::string GetDataOperandName(DissasmInsnExtractLineParams& params, const X86OperandsInfo& operands, uint64 address)
+// a label of code (a callback), data inside a code zone read / written with a size (IDA: dword_40118C, a table after the IAT of .text),
+// the image base (__ImageBase: the PE header); empty when the place has no name
+static std::string GetDataOperandName(DissasmInsnExtractLineParams& params, const X86OperandsInfo& operands, uint64 address, uint8 accessSize = 0)
 {
     if (const auto* import = FindX86OperandsImport(params.settings, params.zone, operands); import && !import->name.empty())
         return "__imp_" + import->name;
     std::string name = FormatDataAddress(params.zone, address);
     if (!name.starts_with("0x"))
         return name;
+    const char* sizePrefix = accessSize == 1    ? "byte_"
+                             : accessSize == 2  ? "word_"
+                             : accessSize == 4  ? "dword_"
+                             : accessSize == 8  ? "qword_"
+                             : accessSize == 16 ? "xmmword_"
+                                                : nullptr;
+    if (const auto zone = params.zone->FindCodeZoneOfAddress(address); sizePrefix && zone && !zone->zoneDetails.isData) {
+        LocalString<48> text;
+        text.SetFormat("%s%llX", sizePrefix, static_cast<unsigned long long>(address));
+        return text.GetText();
+    }
     // the header of the image (the page before the first section): __ImageBase, __ImageBase+0x3C (e_lfanew)
     const uint64 codeStartRVA = GetCodeStartRVA(params.settings, params.zone);
     if (params.zone->labelAddressBase <= codeStartRVA)
@@ -624,14 +638,30 @@ static std::optional<std::string> GetX86SymbolicOperands(const cs_insn& insn, co
     if (zone->IsArmCode() || !params.settings || !params.settings->offsetTranslateCallback.IsValid() || zone->cachedCodeOffsets.empty())
         return {};
     const bool is64 = zone->Is64BitCode();
+    // the size of the memory operand (the name of data without a label: dword_ / qword_ ...)
+    uint8 accessSize = 0;
+    if (insn.detail && insn.id != X86_INS_LEA)
+        for (uint8 index = 0; index < insn.detail->x86.op_count; index++)
+            if (insn.detail->x86.operands[index].type == X86_OP_MEM)
+                accessSize = insn.detail->x86.operands[index].size;
     std::optional<uint64> address;
     if (is64 && operands.ripTarget.has_value())
         address = zone->labelAddressBase + operands.ripTarget.value();
     else if (!is64 && operands.absoluteMemory.has_value())
         address = operands.absoluteMemory.value();
     if (address.has_value()) {
-        const std::string name = GetDataOperandName(params, operands, address.value());
+        const std::string name = GetDataOperandName(params, operands, address.value(), accessSize);
         return name.empty() ? std::nullopt : SubstituteX86MemoryOperand(insn.op_str, name, insn.id == X86_INS_LEA, is64);
+    }
+    // a table at a fixed address indexed by registers: ds:dword_403000[eax*4] (the start of the table, the registers choose the entry)
+    if (operands.tableMemory.has_value() && operands.tableMemory.value() >= 0x10000 &&
+        TranslateOperandAddressToFileOffset(params.settings, operands.tableMemory.value(), true).has_value()) {
+        X86OperandsInfo table;
+        table.absoluteMemory   = operands.tableMemory;
+        const std::string name = GetDataOperandName(params, table, operands.tableMemory.value(), accessSize);
+        if (!name.empty())
+            if (auto replaced = SubstituteX86TableOperand(insn.op_str, operands.tableMemory.value(), name, insn.id == X86_INS_LEA, is64))
+                return replaced;
     }
     if (is64)
         return {};

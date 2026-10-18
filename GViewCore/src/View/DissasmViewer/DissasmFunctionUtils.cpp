@@ -179,6 +179,48 @@ std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands,
     return result;
 }
 
+std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, uint64 displacement, std::string_view name, bool isLea, bool is64)
+{
+    if (name.empty())
+        return {};
+    char text[32];
+    const int length = snprintf(text, sizeof(text), " + 0x%llx]", static_cast<unsigned long long>(displacement));
+    const auto suffix = operands.find(std::string_view(text, static_cast<size_t>(length)));
+    if (suffix == std::string_view::npos)
+        return {};
+    const size_t open = operands.rfind('[', suffix);
+    if (open == std::string_view::npos)
+        return {};
+    const auto registers = operands.substr(open + 1, suffix - open - 1); // eax*4 / ebx + eax*4
+    if (registers.empty() || registers.find("rip") != std::string_view::npos)
+        return {};
+    size_t start = open;
+    if (start >= 3 && operands[start - 1] == ':') {
+        if (operands.substr(start - 3, 2) != "ds")
+            return {}; // fs: / gs:
+        start -= 3;
+    }
+    std::string_view size;
+    size_t sizeStart = start;
+    if (start >= 5 && operands.substr(start - 5, 5) == " ptr ") {
+        sizeStart = operands.rfind(' ', start - 6);
+        sizeStart = sizeStart == std::string_view::npos ? 0 : sizeStart + 1;
+        size      = operands.substr(sizeStart, start - 5 - sizeStart);
+    }
+    std::string result(operands.substr(0, isLea ? start : sizeStart));
+    if (!isLea) {
+        const std::string_view pointerSize = is64 ? "qword" : "dword";
+        const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
+                                                  (size == pointerSize && (name.starts_with("off_") || name.starts_with("__imp_"))));
+        if (!size.empty() && !sizeInName)
+            result.append(size).append(" ptr ");
+        result.append("ds:");
+    }
+    result.append(name).append("[").append(registers).append("]");
+    result.append(operands.substr(suffix + static_cast<size_t>(length)));
+    return result;
+}
+
 std::optional<std::string> SubstituteX86Immediate(std::string_view operands, uint64 value, std::string_view name)
 {
     if (name.empty() || operands.find('[') != std::string_view::npos)

@@ -700,6 +700,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         if (operands.absoluteMemory.has_value() && isFileAddress && isFileAddress(operands.absoluteMemory.value()))
             xrefs.Add(from, operands.absoluteMemory.value(), dataKind, accessSize);
+        // a table at a fixed address indexed by registers (mov eax, [ecx*4 + 0x403000]); the jump table of a switch has its own reference
+        if (operands.tableMemory.has_value() && operands.tableMemory.value() >= 0x10000 && flow != X86Flow::Jump && isFileAddress &&
+            isFileAddress(operands.tableMemory.value()))
+            xrefs.Add(from, operands.tableMemory.value(), dataKind, accessSize);
         if (!is64 && arch == DissasmArch::X86 && isFileAddress) { // push offset aText / mov ecx, offset aText (x64 uses lea [rip + ...])
             for (const uint64 value : operands.immediates)
                 if (value >= 0x10000 && isFileAddress(value))

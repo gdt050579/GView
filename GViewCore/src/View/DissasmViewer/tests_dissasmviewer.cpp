@@ -6897,3 +6897,62 @@ TEST_CASE("DataZoneKeepsTrailingZeros", "[Dissasm]DataZone")
     DissasmTestInstance data(file.data(), file.size(), false, layout);
     REQUIRE(data.zone->GetDisplayLinesCount() == 0x100 / 16);
 }
+
+TEST_CASE("TableOperandText", "[Dissasm]Operands")
+{
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [eax*4 + 0x403000]", 0x403000, "dword_403000", false, false) ==
+          std::optional<std::string>("eax, ds:dword_403000[eax*4]"));
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [ebx + ecx*4 + 0x403000]", 0x403000, "off_403000", false, false) ==
+          std::optional<std::string>("eax, ds:off_403000[ebx + ecx*4]"));
+    CHECK(SubstituteX86TableOperand("byte ptr [esi + 0x403000], 1", 0x403000, "dword_403000", false, false) ==
+          std::optional<std::string>("byte ptr ds:dword_403000[esi], 1"));
+    CHECK(SubstituteX86TableOperand("edx, [ecx*4 + 0x403000]", 0x403000, "unk_403000", true, false) == std::optional<std::string>("edx, unk_403000[ecx*4]"));
+    CHECK(SubstituteX86TableOperand("qword ptr [rcx*8 + 0x202250], rax", 0x202250, "qword_202250", false, true) ==
+          std::optional<std::string>("ds:qword_202250[rcx*8], rax"));
+    CHECK(SubstituteX86TableOperand("eax, dword ptr fs:[ecx*4 + 0x403000]", 0x403000, "dword_403000", false, false) == std::nullopt);
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [ecx*4 + 0x4030000]", 0x403000, "dword_403000", false, false) == std::nullopt);
+}
+
+TEST_CASE("TableOperands", "[Dissasm]Operands")
+{
+    // 32 bit code reads two entries of tables of a data zone through index registers, and a value placed inside the code (the tables of
+    // .text after the IAT): the tables get labels (xrefs), the operands name them as IDA does
+    std::vector<unsigned char> file(0x10000, 0x00);
+    file.insert(file.end(), {
+                                  0x8B, 0x04, 0x8D, 0x40, 0x00, 0x01, 0x00, // 0x10000: mov eax, dword ptr [ecx*4 + 0x10040]
+                                  0x8B, 0x84, 0x8B, 0x48, 0x00, 0x01, 0x00, // 0x10007: mov eax, dword ptr [ebx + ecx*4 + 0x10048]
+                                  0xA1, 0x20, 0x00, 0x01, 0x00,             // 0x1000e: mov eax, dword ptr [0x10020] (inside the code)
+                                  0xC3,                                     // 0x10013: ret
+                              });
+    file.resize(0x10040, 0xCC);
+    file.resize(0x10080, 0x00); // 0x10040: the tables
+    const auto toFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start               = 0x10000;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0x10000;
+    layout.language            = DisassemblyLanguage::x86;
+    layout.translateOffsets    = true; // the VA is the file offset
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start      = 0x10040;
+    layout.size       = 0x40;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "dword_10040");
+    REQUIRE(data.zone->GetLabelNameAt(0x08) == "dword_10048");
+
+    code.zone->siblingZones = { data.zone.get() };
+    code.zone->asmPreCacheData.Clear();
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10040[ecx*4]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10048[ebx + ecx*4]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10020").size() > 0); // no label inside the code: the name of its access
+}

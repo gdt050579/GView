@@ -71,6 +71,9 @@ X86OperandsInfo GView::View::DissasmViewer::GetX86OperandsInfo(const cs_insn& in
                 // fs: / gs: point to thread data (TEB / TLS), not to a location of the file
                 info.absoluteMemory = static_cast<uint64>(mem.disp) & addressMask;
                 info.memoryAccess   = op.access;
+            } else if (mem.base != X86_REG_RIP && mem.disp != 0 && (mem.segment == X86_REG_INVALID || mem.segment == X86_REG_DS)) {
+                info.tableMemory  = static_cast<uint64>(mem.disp) & addressMask;
+                info.memoryAccess = op.access;
             }
         }
     }

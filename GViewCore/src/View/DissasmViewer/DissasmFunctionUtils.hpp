@@ -27,6 +27,8 @@ AppCUI::Utils::BufferView GetZoneBytes(Reference<GView::Object> obj, AppCUI::uin
 // - x86 / x64: the memory operand at a fixed address ([rip + 0x...] on x64, [0x403000] on x86) becomes cs:name / ds:name, the size
 //   ("dword ptr ") is dropped when the name says it (dword_, off_ / __imp_ of a pointer size); lea takes the name itself (lea rcx, aText)
 std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands, std::string_view name, bool isLea, bool is64);
+// - x86 / x64: a table at a fixed address indexed by registers ([ebx + eax*4 + 0x403000]) becomes ds:name[ebx + eax*4] (lea: name[eax*4])
+std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, AppCUI::uint64 displacement, std::string_view name, bool isLea, bool is64);
 // - x86: an immediate (push 0x403000 / mov ecx, 0x403000) becomes "offset name"
 std::optional<std::string> SubstituteX86Immediate(std::string_view operands, AppCUI::uint64 value, std::string_view name);
 // - 32 bit ARM: the literal load ldr r0, [pc, #0x28] becomes ldr r0, =literal
