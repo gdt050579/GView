@@ -4187,3 +4187,116 @@ TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
     REQUIRE(CountOccurrences(listing, "int3") == expectedInt3);
     REQUIRE(CountOccurrences(listing, "db ") == 0);
 }
+
+TEST_CASE("InstructionKinds", "[Dissasm]Colors")
+{
+    csh handle = 0;
+    REQUIRE(cs_open(CS_ARCH_X86, CS_MODE_64, &handle) == CS_ERR_OK); // no details: the kind comes from the instruction id
+    const auto kindOf = [handle](std::initializer_list<uint8_t> bytes) {
+        const std::vector<uint8_t> code(bytes);
+        cs_insn* insn      = nullptr;
+        const size_t count = cs_disasm(handle, code.data(), code.size(), 0, 1, &insn);
+        REQUIRE(count == 1);
+        const auto kind = GetX86InstructionKind(insn->id, insn->mnemonic);
+        cs_free(insn, count);
+        return kind;
+    };
+    using Kind = X86InstructionKind;
+    REQUIRE(kindOf({ 0xE8, 0x00, 0x00, 0x00, 0x00 }) == Kind::Call);       // call
+    REQUIRE(kindOf({ 0xFF, 0x15, 0x00, 0x00, 0x00, 0x00 }) == Kind::Call); // call qword ptr [rip]
+    REQUIRE(kindOf({ 0xEB, 0x00 }) == Kind::Jump);                         // jmp
+    REQUIRE(kindOf({ 0x74, 0x00 }) == Kind::ConditionalJump);              // je
+    REQUIRE(kindOf({ 0x0F, 0x8F, 0x00, 0x00, 0x00, 0x00 }) == Kind::ConditionalJump); // jg near
+    REQUIRE(kindOf({ 0xE2, 0x00 }) == Kind::ConditionalJump);              // loop
+    REQUIRE(kindOf({ 0xC3 }) == Kind::Return);                             // ret
+    REQUIRE(kindOf({ 0x48, 0x39, 0xC8 }) == Kind::Compare);                // cmp rax, rcx
+    REQUIRE(kindOf({ 0x85, 0xC0 }) == Kind::Compare);                      // test eax, eax
+    REQUIRE(kindOf({ 0x55 }) == Kind::Stack);                              // push rbp
+    REQUIRE(kindOf({ 0x5D }) == Kind::Stack);                              // pop rbp
+    REQUIRE(kindOf({ 0xC9 }) == Kind::Stack);                              // leave
+    REQUIRE(kindOf({ 0x90 }) == Kind::Padding);                            // nop
+    REQUIRE(kindOf({ 0xCC }) == Kind::Padding);                            // int3
+    REQUIRE(kindOf({ 0xF3, 0x0F, 0x1E, 0xFA }) == Kind::Padding);          // endbr64
+    REQUIRE(kindOf({ 0x0F, 0xA2 }) == Kind::System);                       // cpuid
+    REQUIRE(kindOf({ 0x0F, 0x31 }) == Kind::System);                       // rdtsc
+    REQUIRE(kindOf({ 0x0F, 0x05 }) == Kind::System);                       // syscall
+    REQUIRE(kindOf({ 0xCD, 0x2D }) == Kind::System);                       // int 0x2d
+    REQUIRE(kindOf({ 0x0F, 0x01, 0x08 }) == Kind::System);                 // sidt [rax]
+    REQUIRE(kindOf({ 0x48, 0x89, 0xC8 }) == Kind::Other);                  // mov rax, rcx
+    REQUIRE(kindOf({ 0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00 }) == Kind::Other); // lea
+    cs_close(&handle);
+    // the data lines of DecodeX86Line
+    REQUIRE(GetX86InstructionKind(X86_INS_INVALID, "db") == Kind::Data);
+    REQUIRE(GetX86InstructionKind(X86_INS_INVALID, "align") == Kind::Padding);
+}
+
+TEST_CASE("RegisterAndTokenColors", "[Dissasm]Colors")
+{
+    using Register = X86RegisterKind;
+    for (const auto name : { "rax", "eax", "ax", "al", "ah", "r8", "r8d", "r9w", "r10b", "r15", "cs", "fs", "xmm0", "xmm15", "ymm31", "mm7", "k1", "cr0", "dr7" })
+        CHECK(GetX86RegisterKind(name) == Register::General);
+    for (const auto name : { "rsp", "esp", "sp", "spl", "rbp", "ebp", "rsi", "sil", "rdi", "dil", "rip" })
+        CHECK(GetX86RegisterKind(name) == Register::Pointer);
+    // the last letter does not make a register any more (the old rule colored them)
+    for (const auto name : { "r7", "r16", "r08", "xmm32", "mm8", "rx", "box", "dword", "ptr", "sub_401000", "j_puts", "0x10", "loc_1", "eaxx" })
+        CHECK(GetX86RegisterKind(name) == Register::None);
+
+    DissasmColors colors{};
+    colors.AsmDefaultColor               = ColorPair{ Color::Green, Color::Black };
+    colors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, Color::Black };
+    colors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, Color::Black };
+    colors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::Black };
+    colors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::Black };
+    colors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::Black };
+    colors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, Color::Black };
+    colors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, Color::Black };
+    colors.AsmSystemInstructionColor     = ColorPair{ Color::Red, Color::Black };
+    const auto same = [](ColorPair left, ColorPair right) { return left.Foreground == right.Foreground && left.Background == right.Background; };
+
+    REQUIRE(same(GetX86TokenColor("r12d", colors), colors.AsmWorkRegisterColor));
+    REQUIRE(same(GetX86TokenColor("rbp", colors), colors.AsmStackRegisterColor));
+    REQUIRE(same(GetX86TokenColor("byte", colors), colors.AsmLocationInstruction));
+    REQUIRE(same(GetX86TokenColor("xmmword", colors), colors.AsmLocationInstruction));
+    REQUIRE(same(GetX86TokenColor("j_CreateFileW", colors), colors.AsmJumpInstruction));
+    // names that start like a mnemonic or a register are names: the old 4 letters match colored them
+    REQUIRE(same(GetX86TokenColor("callback", colors), colors.AsmDefaultColor));
+    REQUIRE(same(GetX86TokenColor("testFunction", colors), colors.AsmDefaultColor));
+    REQUIRE(same(GetX86TokenColor("jump_table", colors), colors.AsmDefaultColor));
+
+    using Kind = X86InstructionKind;
+    REQUIRE(same(GetX86MnemonicColor(Kind::Call, colors), colors.AsmFunctionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Return, colors), colors.AsmFunctionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::ConditionalJump, colors), colors.AsmJumpInstruction));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Compare, colors), colors.AsmCompareInstructionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Stack, colors), colors.AsmStackRegisterColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Padding, colors), colors.AsmIrrelevantInstructionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::System, colors), colors.AsmSystemInstructionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Other, colors), colors.AsmDefaultColor));
+}
+
+TEST_CASE("InstructionKindOfTheLines", "[Dissasm]Colors")
+{
+    std::vector<unsigned char> file = {
+        0x55,             // 0x00: push rbp
+        0x0F, 0xA2,       // 0x01: cpuid
+        0x74, 0x01,       // 0x03: je 0x6
+        0xC3,             // 0x05: ret
+        0x5D,             // 0x06: pop rbp
+        0xC3,             // 0x07: ret
+    };
+    file.resize(0x10, 0xCC);
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    using Kind = X86InstructionKind;
+    std::vector<Kind> kinds;
+    for (uint32 line = 0; line < dissasmInstance.zone->GetDisplayLinesCount(); line++) {
+        const auto asmLine = dissasmInstance.GetCurrentAsmLine(line);
+        if (asmLine.label.empty() && asmLine.size > 0)
+            kinds.push_back(static_cast<Kind>(asmLine.instructionKind));
+    }
+    REQUIRE(kinds == std::vector<Kind>{ Kind::Stack, Kind::System, Kind::ConditionalJump, Kind::Return, Kind::Stack, Kind::Return, Kind::Padding });
+}

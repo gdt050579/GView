@@ -4,6 +4,7 @@
 #include <capstone/capstone.h>
 
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace GView::View::DissasmViewer
@@ -28,6 +29,17 @@ X86OperandsInfo GetX86OperandsInfo(const cs_insn& insn, bool is64);
 // The argument of the Windows x64 calling convention written by the instruction (its first operand): 0-3 for rcx / rdx / r8 / r9 (any size)
 // or xmm0-3, 4 and more for the stack slots [rsp + 0x20 + 8 * n]; none when it writes no argument.
 std::optional<AppCUI::uint8> GetX64ArgumentSlot(const cs_insn& insn);
+
+// What an instruction is, for its color: from its id (no CS_OPT_DETAIL needed); the data lines of DecodeX86Line (X86_INS_INVALID) by their
+// mnemonic: db is Data, align is Padding. System: the system calls, interrupts, privileged and anti debug / anti VM instructions (cpuid, rdtsc,
+// sidt, in, ...)
+enum class X86InstructionKind : AppCUI::uint8 { Other, Call, Jump, ConditionalJump, Return, Compare, Stack, Padding, Data, System };
+X86InstructionKind GetX86InstructionKind(unsigned int id, std::string_view mnemonic);
+
+// A register name of the operands text: Pointer for the stack / frame / index / instruction pointers (rsp, ebp, si, rip, ...), General for
+// the others (rax, r8d, cl, cs, xmm0, ...); None for anything else (a name, a number, dword, ptr)
+enum class X86RegisterKind : AppCUI::uint8 { None, General, Pointer };
+X86RegisterKind GetX86RegisterKind(std::string_view token);
 
 inline bool IsX86Branch(X86Flow flow)
 {

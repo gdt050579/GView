@@ -213,25 +213,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     }
     // rightClickOffset = 0;
 
-    // TODO: to be moved inside plugin for some sort of API for token<->color
-    // keys are the first 4 bytes of the mnemonic, read in host byte order (must match GetASMColorPairByKeyword)
-    const auto key = [](const char* text) {
-        uint32 value;
-        memcpy(&value, text, sizeof(value));
-        return value;
-    };
-    asmData.instructionToColor = {
-        { key("int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
-        { key("alig"), ColorMan.Colors.AsmIrrelevantInstructionColor }, // align 0x10: the padding between the functions
-        { key("ret"), ColorMan.Colors.AsmFunctionColor },
-        { key("call"), ColorMan.Colors.AsmFunctionColor },
-        { key("cmp"), ColorMan.Colors.AsmCompareInstructionColor },
-        { key("test"), ColorMan.Colors.AsmCompareInstructionColor },
-        { key("word"), ColorMan.Colors.AsmLocationInstruction },
-        { key("dwor"), ColorMan.Colors.AsmLocationInstruction },
-        { key("qwor"), ColorMan.Colors.AsmLocationInstruction },
-        { key("ptr"), ColorMan.Colors.AsmLocationInstruction },
-    };
+    // the colors of the instructions: GetX86MnemonicColor / GetX86TokenColor (x86_x64/DissasmX86.cpp)
 }
 
 inline uint64 LinePositionToOffset(LinePosition&& linePosition, uint32 textSize)

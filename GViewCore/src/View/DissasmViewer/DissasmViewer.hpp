@@ -199,6 +199,7 @@ namespace View
             uint32 op_str_size = 0;
             std::optional<uint64> branchTarget; // target of a direct jump / call, same base as `address`
             uint8 flags                           = 0;
+            uint8 instructionKind                 = 0; // X86InstructionKind (x86_x64/X86InstructionInfo.hpp): the color of the mnemonic
             uint8 arrowCells[ARROW_COLUMNS]       = {}; // ArrowCellFlag for every arrow column
             const void* mapping                   = nullptr;
             bool isCollapsedLine                  = false; // the line of a collapsed zone (it hides the other lines of the zone)
@@ -271,6 +272,7 @@ namespace View
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
                 branchTarget           = other.branchTarget;
                 flags                  = other.flags;
+                instructionKind        = other.instructionKind;
                 memcpy(arrowCells, other.arrowCells, sizeof(arrowCells));
                 mapping                = other.mapping;
                 isCollapsedLine        = other.isCollapsedLine;
@@ -501,7 +503,6 @@ namespace View
         };
 
         struct AsmData {
-            std::map<uint32, std::reference_wrapper<ColorPair>> instructionToColor;
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
             std::deque<DissasmCodeZone*> zonesToClear;
         };

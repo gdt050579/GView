@@ -143,6 +143,7 @@ namespace View
             Graphics::ColorPair AsmFunctionColor;              // ret call
             Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
             Graphics::ColorPair AsmJumpInstruction;            // jmp
+            Graphics::ColorPair AsmSystemInstructionColor;     // syscall, int, cpuid, rdtsc, sidt: system / anti debug instructions
             Graphics::ColorPair AsmComment;                    // comments added by user
             Graphics::ColorPair AsmLocalVariableColor;         // var_8, arg_0
             Graphics::ColorPair AsmDefaultColor;               // rest of things

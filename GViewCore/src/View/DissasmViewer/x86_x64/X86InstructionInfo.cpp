@@ -122,3 +122,157 @@ std::optional<uint8> GView::View::DissasmViewer::GetX64ArgumentSlot(const cs_ins
         return static_cast<uint8>(4 + (op.mem.disp - HOME_SPACE) / 8);
     return {};
 }
+
+X86InstructionKind GView::View::DissasmViewer::GetX86InstructionKind(unsigned int id, std::string_view mnemonic)
+{
+    switch (id) {
+    case X86_INS_INVALID: // the lines of DecodeX86Line: db 0x.. / align 0x10
+        return mnemonic == "align" ? X86InstructionKind::Padding : X86InstructionKind::Data;
+    case X86_INS_CALL:
+    case X86_INS_LCALL:
+        return X86InstructionKind::Call;
+    case X86_INS_JMP:
+    case X86_INS_LJMP:
+        return X86InstructionKind::Jump;
+    case X86_INS_JAE:
+    case X86_INS_JA:
+    case X86_INS_JBE:
+    case X86_INS_JB:
+    case X86_INS_JCXZ:
+    case X86_INS_JECXZ:
+    case X86_INS_JRCXZ:
+    case X86_INS_JE:
+    case X86_INS_JGE:
+    case X86_INS_JG:
+    case X86_INS_JLE:
+    case X86_INS_JL:
+    case X86_INS_JNE:
+    case X86_INS_JNO:
+    case X86_INS_JNP:
+    case X86_INS_JNS:
+    case X86_INS_JO:
+    case X86_INS_JP:
+    case X86_INS_JS:
+    case X86_INS_LOOP:
+    case X86_INS_LOOPE:
+    case X86_INS_LOOPNE:
+        return X86InstructionKind::ConditionalJump;
+    case X86_INS_RET:
+    case X86_INS_RETF:
+    case X86_INS_RETFQ:
+    case X86_INS_IRET:
+    case X86_INS_IRETD:
+    case X86_INS_IRETQ:
+        return X86InstructionKind::Return;
+    case X86_INS_CMP:
+    case X86_INS_TEST:
+    case X86_INS_BT:
+    case X86_INS_COMISS:
+    case X86_INS_COMISD:
+    case X86_INS_UCOMISS:
+    case X86_INS_UCOMISD:
+        return X86InstructionKind::Compare;
+    case X86_INS_PUSH:
+    case X86_INS_POP:
+    case X86_INS_PUSHAL:
+    case X86_INS_POPAL:
+    case X86_INS_PUSHAW:
+    case X86_INS_POPAW:
+    case X86_INS_PUSHF:
+    case X86_INS_POPF:
+    case X86_INS_PUSHFD:
+    case X86_INS_POPFD:
+    case X86_INS_PUSHFQ:
+    case X86_INS_POPFQ:
+    case X86_INS_ENTER:
+    case X86_INS_LEAVE:
+        return X86InstructionKind::Stack;
+    case X86_INS_NOP:
+    case X86_INS_INT3:
+    case X86_INS_ENDBR32:
+    case X86_INS_ENDBR64:
+        return X86InstructionKind::Padding;
+    // the instructions an analyst looks for: system calls, interrupts, privileged instructions, the anti debug / anti VM checks
+    case X86_INS_INT:
+    case X86_INS_INT1:
+    case X86_INS_INTO:
+    case X86_INS_SYSCALL:
+    case X86_INS_SYSENTER:
+    case X86_INS_SYSEXIT:
+    case X86_INS_SYSRET:
+    case X86_INS_HLT:
+    case X86_INS_UD0:
+    case X86_INS_UD1:
+    case X86_INS_UD2:
+    case X86_INS_CPUID:
+    case X86_INS_RDTSC:
+    case X86_INS_RDTSCP:
+    case X86_INS_RDPMC:
+    case X86_INS_RDMSR:
+    case X86_INS_WRMSR:
+    case X86_INS_IN:
+    case X86_INS_OUT:
+    case X86_INS_INSB:
+    case X86_INS_INSW:
+    case X86_INS_INSD:
+    case X86_INS_OUTSB:
+    case X86_INS_OUTSW:
+    case X86_INS_OUTSD:
+    case X86_INS_CLI:
+    case X86_INS_STI:
+    case X86_INS_LGDT:
+    case X86_INS_SGDT:
+    case X86_INS_LIDT:
+    case X86_INS_SIDT:
+    case X86_INS_LLDT:
+    case X86_INS_SLDT:
+    case X86_INS_LTR:
+    case X86_INS_STR:
+    case X86_INS_LMSW:
+    case X86_INS_SMSW:
+    case X86_INS_INVD:
+    case X86_INS_WBINVD:
+    case X86_INS_VMCALL:
+    case X86_INS_VMMCALL:
+        return X86InstructionKind::System;
+    default:
+        return X86InstructionKind::Other;
+    }
+}
+
+X86RegisterKind GView::View::DissasmViewer::GetX86RegisterKind(std::string_view token)
+{
+    // the stack, frame, index and instruction pointers (all sizes)
+    static constexpr std::string_view pointers[] = { "rsp", "esp", "sp", "spl", "rbp", "ebp", "bp", "bpl", "rsi", "esi", "si",
+                                                     "sil", "rdi", "edi", "di",  "dil", "rip", "eip", "ip" };
+    static constexpr std::string_view general[]  = { "rax", "eax", "ax", "al", "ah", "rbx", "ebx", "bx", "bl", "bh", "rcx", "ecx", "cx", "cl",
+                                                     "ch",  "rdx", "edx", "dx", "dl", "dh", "cs", "ds", "es", "fs", "gs", "ss" };
+    for (const auto name : pointers)
+        if (token == name)
+            return X86RegisterKind::Pointer;
+    for (const auto name : general)
+        if (token == name)
+            return X86RegisterKind::General;
+
+    // a prefix followed by a number: r8 .. r15 (b / w / d), xmm / ymm / zmm 0 .. 31, mm0 .. 7, k0 .. 7, cr0 .. 15, dr0 .. 15
+    const auto numbered = [token](std::string_view prefix, uint32 minNumber, uint32 maxNumber, std::string_view suffixes) {
+        if (token.size() <= prefix.size() || token.substr(0, prefix.size()) != prefix)
+            return false;
+        std::string_view rest = token.substr(prefix.size());
+        if (!suffixes.empty() && suffixes.find(rest.back()) != std::string_view::npos)
+            rest.remove_suffix(1);
+        if (rest.empty() || rest.size() > 2 || (rest.size() == 2 && rest[0] == '0'))
+            return false;
+        uint32 number = 0;
+        for (const char c : rest) {
+            if (c < '0' || c > '9')
+                return false;
+            number = number * 10 + static_cast<uint32>(c - '0');
+        }
+        return number >= minNumber && number <= maxNumber;
+    };
+    if (numbered("r", 8, 15, "bwd") || numbered("xmm", 0, 31, "") || numbered("ymm", 0, 31, "") || numbered("zmm", 0, 31, "") ||
+        numbered("mm", 0, 7, "") || numbered("k", 0, 7, "") || numbered("cr", 0, 15, "") || numbered("dr", 0, 15, ""))
+        return X86RegisterKind::General;
+    return X86RegisterKind::None;
+}

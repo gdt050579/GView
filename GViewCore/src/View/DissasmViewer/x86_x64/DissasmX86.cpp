@@ -45,44 +45,46 @@ constexpr uint32 textTotalColumnLength =
 constexpr uint32 commentPaddingLength   = 10;
 constexpr uint32 textPaddingLabelsSpace = 3;
 
-// TODO: to be moved inside plugin for some sort of API for token<->color
-inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, DissasmColors& colors, const AsmData& data)
+ColorPair GView::View::DissasmViewer::GetX86MnemonicColor(X86InstructionKind kind, const DissasmColors& colors)
 {
-    if (keyword.empty())
-        return colors.AsmDefaultColor;
-    if (keyword[0] == 'j')
+    switch (kind) {
+    case X86InstructionKind::Call:
+    case X86InstructionKind::Return:
+        return colors.AsmFunctionColor;
+    case X86InstructionKind::Jump:
+    case X86InstructionKind::ConditionalJump:
         return colors.AsmJumpInstruction;
-
-    LocalString<4> holder;
-    holder.Set(keyword);
-    uint32 val;
-    memcpy(&val, holder.GetText(), sizeof(val));
-
-    const auto it = data.instructionToColor.find(val);
-    if (it != data.instructionToColor.end()) {
-        return it->second;
+    case X86InstructionKind::Compare:
+        return colors.AsmCompareInstructionColor;
+    case X86InstructionKind::Stack:
+        return colors.AsmStackRegisterColor;
+    case X86InstructionKind::Padding:
+        return colors.AsmIrrelevantInstructionColor;
+    case X86InstructionKind::Data:
+        return colors.AsmLocationInstruction;
+    case X86InstructionKind::System:
+        return colors.AsmSystemInstructionColor;
+    default:
+        return colors.AsmDefaultColor;
     }
+}
 
-    if (keyword.size() < 4) {
-        // General registers: EAX EBX ECX EDX -> AsmWorkRegisterColor
-        // 16 bits: AX BX CX DX -> AsmWorkRegisterColor
-        // 8 bits: AH AL BH BL CH CL DH DL -> AsmWorkRegisterColor
-        // Segment registers: CS DS ES FS GS SS -> AsmWorkRegisterColor
-        // Index and pointers: ESI EDI EBP EIP ESP along with variations (ESI, SI) AsmStackRegisterColor
-        switch (keyword[keyword.size() - 1]) {
-        case 'x':
-        case 's':
-        case 'l':
-        case 'h':
-            return colors.AsmWorkRegisterColor;
-        case 'p':
-        case 'i':
-            return colors.AsmStackRegisterColor;
-        default:
-            break;
-        }
+ColorPair GView::View::DissasmViewer::GetX86TokenColor(std::string_view token, const DissasmColors& colors)
+{
+    switch (GetX86RegisterKind(token)) {
+    case X86RegisterKind::General:
+        return colors.AsmWorkRegisterColor;
+    case X86RegisterKind::Pointer:
+        return colors.AsmStackRegisterColor;
+    default:
+        break;
     }
-
+    static constexpr std::string_view SIZE_KEYWORDS[] = { "byte", "word", "dword", "fword", "qword", "tbyte", "xmmword", "ymmword", "zmmword", "ptr" };
+    for (const auto keyword : SIZE_KEYWORDS)
+        if (token == keyword)
+            return colors.AsmLocationInstruction;
+    if (token.size() > 2 && token[0] == 'j' && token[1] == '_') // j_CreateFileW: an import thunk
+        return colors.AsmJumpInstruction;
     return colors.AsmDefaultColor;
 }
 
@@ -224,7 +226,8 @@ inline void DissasmAddColorsToInstruction(
         cb.Add(string, colors.AsmDefaultColor);
     }
 
-    const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, colors, data);
+    const ColorPair color = insn.label.empty() ? GetX86MnemonicColor(static_cast<X86InstructionKind>(insn.instructionKind), colors)
+                                               : GetX86TokenColor(insn.label, colors);
     if (insn.label.empty()) {
         string.SetFormat("%-6s", insn.mnemonic);
         cb.Add(string, color);
@@ -248,7 +251,7 @@ inline void DissasmAddColorsToInstruction(
         };
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
-        auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer, &data](std::string_view token) {
+        auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer](std::string_view token) {
             lambdaBuffer.Clear();
             // numbers: hexadecimal (0x...) or decimal (small values, or switched to decimal with the H key)
             if (!token.empty() && token[0] >= '0' && token[0] <= '9') {
@@ -256,8 +259,7 @@ inline void DissasmAddColorsToInstruction(
                 return;
             }
             lambdaBuffer.Set(token.data());
-            const ColorPair color = GetASMColorPairByKeyword(token, colors, data);
-            cb.Add(token, color);
+            cb.Add(token, GetX86TokenColor(token, colors));
         };
 
         if (op_str.length() > 2 && op_str[0] == '0' && op_str[1] == 'x') {
@@ -615,6 +617,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     currentLine = params.actualLine;
 
     SetMnemonic(insn->mnemonic);
+    instructionKind = static_cast<uint8>(GetX86InstructionKind(insn->id, insn->mnemonic));
 
     if (!params.settings || !params.asmData) {
         SetOperands(insn->op_str, params.zone);
