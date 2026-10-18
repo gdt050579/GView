@@ -282,6 +282,17 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     const auto action = Config::Map.Resolve(keyCode);
+    if (HasPendingDeepScans()) {
+        if (keyCode == Key::Escape) {
+            CancelDeepScans(); // the zones keep their instructions without labels
+            return true;
+        }
+        // the moves do not need the labels; the other actions do (rename, comments, zones); a frontend without frame updates (no FPS
+        // mode) ends the scans at the first key
+        const bool isMove = action.commandId >= COMMAND_NAV_DOWN && action.commandId <= COMMAND_NAV_SCROLL_RIGHT;
+        if (!frameUpdatesSeen || (action.commandId != Input::KeyMap::NO_COMMAND && !isMove))
+            FinishDeepScans();
+    }
     if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
         return true;
 
@@ -303,6 +314,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::Command) {
+        FinishDeepScans(); // every command uses the analysis (labels, cross references, the cache, the export)
         switch (ID) {
         case COMMAND_ADD_NEW_TYPE:
             Dialogs::MessageBox::ShowNotification("Info", "OK!");

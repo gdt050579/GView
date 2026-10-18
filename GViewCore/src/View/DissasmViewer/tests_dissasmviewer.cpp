@@ -274,6 +274,7 @@ struct ZoneLayout {
     bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
     std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
     std::optional<uint64> imageBase;
+    std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -358,6 +359,7 @@ class DissasmTestInstance
         settingsData.memoryMappings = layout.imports;
         initData.addressToFileOffset = layout.addressToFileOffset;
         initData.imageBase           = layout.imageBase;
+        initData.deepScanBudget      = layout.deepScanBudget;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
             auto* codeZone      = zone.get();
@@ -3261,4 +3263,83 @@ TEST_CASE("SwitchTableMsvcX86", "[Dissasm]Switch")
     DissasmTestInstance wrongTable(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x86, 0x400000));
     REQUIRE(wrongTable.zone->switchJumps.empty());
     REQUIRE(wrongTable.zone->GetLabelNameAt(0x30).empty());
+}
+
+// many small functions, each one calls the next one: push rbp; mov rbp, rsp; call next; pop rbp; ret
+static std::vector<unsigned char> MakeManyFunctions(uint32 count)
+{
+    constexpr uint32 FUNCTION_SIZE = 11;
+    std::vector<unsigned char> file;
+    file.reserve(static_cast<size_t>(count) * FUNCTION_SIZE + 16);
+    for (uint32 index = 0; index < count; index++) {
+        file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });
+        file.insert(file.end(), { 0xE8, 0x02, 0x00, 0x00, 0x00 }); // call the next function (2 bytes after the call)
+        file.insert(file.end(), { 0x5D, 0xC3 });
+    }
+    file.resize(file.size() + 16, 0xCC);
+    return file;
+}
+
+TEST_CASE("DeepScanInSteps", "[Dissasm]DeepScan")
+{
+    const auto file = MakeManyFunctions(4000);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance oneShot(file.data(), file.size(), false, layout);
+    REQUIRE_FALSE(oneShot.zone->IsDeepScanPending());
+
+    // no time for the scan in InitZone: the instructions are shown without labels, the scan continues in steps
+    layout.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance inSteps(file.data(), file.size(), false, layout);
+    auto& zone = *inSteps.zone;
+    REQUIRE(zone.IsDeepScanPending());
+    REQUIRE(zone.GetDisplayLinesCount() == zone.asmLinesCount);
+    REQUIRE(zone.xrefs.byTarget.empty());
+
+    uint32 steps   = 0;
+    float progress = zone.GetDeepScanProgress();
+    while (!zone.ContinueDeepScan(std::chrono::steady_clock::now())) { // the deadline has passed: the smallest step every time
+        const float current = zone.GetDeepScanProgress();
+        REQUIRE(current >= progress);
+        progress = current;
+        REQUIRE(++steps < 100000);
+    }
+    REQUIRE(steps > 10);
+    REQUIRE(zone.IsDeepScanPending()); // ended, not committed yet
+    zone.CommitDeepScan();
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+
+    // the same analysis as the scan done at once
+    REQUIRE(zone.GetDisplayLinesCount() == oneShot.zone->GetDisplayLinesCount());
+    REQUIRE(zone.functionStarts == oneShot.zone->functionStarts);
+    REQUIRE(zone.xrefs.byTarget.size() == oneShot.zone->xrefs.byTarget.size());
+    REQUIRE(zone.dissasmType.annotations.mappings == oneShot.zone->dissasmType.annotations.mappings);
+    REQUIRE(inSteps.GetListing() == oneShot.GetListing());
+}
+
+TEST_CASE("DeepScanCancelled", "[Dissasm]DeepScan")
+{
+    const auto file = MakeManyFunctions(4000);
+    ZoneLayout layout;
+    layout.size           = file.size();
+    layout.entryPoint     = 0;
+    layout.language       = DisassemblyLanguage::x64;
+    layout.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.IsDeepScanPending());
+    REQUIRE_FALSE(zone.ContinueDeepScan(std::chrono::steady_clock::now()));
+
+    // the zone keeps its instructions, without labels
+    zone.CancelDeepScan();
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+    REQUIRE(zone.GetDisplayLinesCount() == zone.asmLinesCount);
+    REQUIRE(zone.dissasmType.annotations.mappings.empty());
+    REQUIRE(dissasmInstance.CheckLineText(0, "push rbp"));
+    const std::string listing = dissasmInstance.GetListing();
+    REQUIRE(listing.find("EntryPoint:") == std::string::npos); // no label lines (the call operands still name their targets)
+    REQUIRE(listing.find("sub_7:") == std::string::npos);
 }

@@ -12,70 +12,122 @@ using GView::Utils::GStatus;
 
 constexpr uint64 DISSASM_MAX_ANALYZED_FUNCTION_SIZE = 0x1000000; // 16 MB, larger functions are analyzed only partially
 
-inline bool ExtractCallsToInsertFunctionNames(
-      vector<AsmOffsetLine>& offsets,
-      DissasmCodeZone* zone,
-      Reference<GView::Object> obj,
-      int internalArchitecture,
-      uint32& totalLines,
-      bool detectLocalVariables,
-      const std::function<bool(uint64)>& isFileAddress,
-      const std::map<uint64, DissasmFunctionEntry>* functionEntries,
-      const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport,
-      const std::function<std::optional<uint64>(uint64)>& addressToFileOffset,
-      std::optional<uint64> imageBase)
-{
-    // the code is [offsets[0], end of the zone): the same lines as the ones counted by populateOffsetsVector
-    const uint64 codeSize = zone->GetCodeSize();
-    if (codeSize == 0)
-        return false;
+// The deep scan of a code zone: the labels (calls, jumps, functions, import thunks, switch cases), the cross references and the local
+// variables. It runs in steps, each one until a deadline: a big zone is analyzed while its linear listing is already shown. The results
+// stay here until the scan ends and are given to the zone at once (Commit): the drawn lines never see a partial analysis.
+struct GView::View::DissasmViewer::DissasmDeepScan {
+    enum class Phase : uint8 { Sweep, Labels, Done };
+    enum LabelType { SUB, OFFSET, OTHER };
 
-    // the instruction details give the branches and their targets (GetX86Flow / GetX86OperandsInfo)
-    csh handle;
-    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
-        return false;
-    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK) {
-        cs_close(&handle);
-        return false;
+    DissasmCodeZone* zone;
+    Reference<GView::Object> obj;
+    int internalArchitecture;
+    bool detectLocalVariables;
+    std::function<bool(uint64)> isFileAddress;
+    const std::map<uint64, DissasmFunctionEntry>* functionEntries;
+    std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
+    std::function<std::optional<uint64>(uint64)> addressToFileOffset;
+
+    Phase phase = Phase::Sweep;
+    // the code is [codeStart, codeStart + codeSize): the same lines as the ones counted by populateOffsetsVector
+    const uint64 codeStart;
+    const uint64 codeSize;
+    const uint32 asmLines;
+    uint32 linesToDecode;
+    const bool is64;
+    const uint64 addressMask; // the addresses of 32 bit code wrap around at 4 GB
+    const uint64 labelBase;
+
+    csh handle           = 0;
+    cs_insn* insn        = nullptr;
+    csh detailHandle     = 0;
+    bool hasDetailHandle = false;
+    // the same addresses as the drawn lines: 0 is the first decoded instruction; the undecodable bytes are data lines
+    DissasmCodeLinesWalker walker;
+    X86PrologueDetector prologueDetector;
+    X86SwitchDetector switchDetector;
+    bool atBlockStart = true; // the previous instruction does not continue into the current one (ret, jmp, int3, nop padding)
+
+    std::vector<std::pair<uint64, std::string>> callsFound; // file offset of a label, its name
+    std::unordered_map<uint64, bool> callsMap;              // true for loc, false for sub
+    std::vector<std::pair<uint64, std::string>> thunks;     // file offset of an import thunk, the import
+
+    // the results, given to the zone by Commit
+    DissasmXrefs xrefs;
+    std::unordered_map<uint64, std::string> thunkImports;
+    std::unordered_map<uint64, uint32> switchJumps;
+    std::vector<uint64> functionStarts;
+    AnnotationContainer annotations;
+    std::vector<DissasmFunctionFrame> frames;
+    size_t labelIndex = 0; // the next label placed on its line
+    uint32 extraLines = 0;
+
+    DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
+        : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture), detectLocalVariables(initData.enableLocalVariablesDetection),
+          isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), findImport(initData.findImport),
+          addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
+          asmLines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
+          labelBase(zone->labelAddressBase), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
+          switchDetector(is64, zone->labelAddressBase, initData.imageBase)
+    {
     }
 
-    cs_insn* insn = cs_malloc(handle);
+    ~DissasmDeepScan()
+    {
+        if (insn)
+            cs_free(insn, 1);
+        if (handle != 0)
+            cs_close(&handle);
+        if (hasDetailHandle)
+            cs_close(&detailHandle);
+    }
 
-    const uint32 asmLines = totalLines;
-    uint32 linesToDecode  = totalLines;
-    // the same addresses as the drawn lines: 0 is the first decoded instruction (offsets[0]); the undecodable bytes are data lines
-    DissasmCodeLinesWalker walker(obj, offsets[0].offset, codeSize, handle);
+    static LabelType GetLabelType(const std::string& name)
+    {
+        if (name.size() < 4)
+            return OTHER;
+        if (memcmp(name.c_str(), "sub_", 4) == 0)
+            return SUB;
+        if (memcmp(name.c_str(), "loc_", 4) == 0)
+            return OFFSET;
+        return OTHER;
+    }
 
-    std::vector<std::pair<uint64, std::string>> callsFound;
-    std::unordered_map<uint64, bool> callsMap; // true for offset, false for sub
-    callsFound.reserve(16);
-    auto addFunctionStart = [&](uint64 functionOffset) {
+    void AddFunctionStart(uint64 functionOffset)
+    {
         const auto it = callsMap.find(functionOffset);
         if (it != callsMap.end() && !it->second)
             return; // already a sub
-        callsFound.emplace_back(functionOffset, zone->GetLabelName("sub_", functionOffset - offsets[0].offset));
+        callsFound.emplace_back(functionOffset, zone->GetLabelName("sub_", functionOffset - codeStart));
         callsMap.insert({ functionOffset, false });
-    };
-
-    // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
-    const uint64 codeStart = offsets[0].offset;
-    if (functionEntries) {
-        for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
-            addFunctionStart(it->first);
     }
 
-    const bool is64          = zone->Is64BitCode();
-    const uint64 addressMask = is64 ? UINT64_MAX : 0xFFFFFFFFull; // the addresses of 32 bit code wrap around at 4 GB
-    const uint64 labelBase   = zone->labelAddressBase;
-    zone->xrefs.Clear();
-    zone->thunkImports.clear();
-    std::vector<std::pair<uint64, std::string>> thunks; // file offset of an import thunk, the import
-    bool atBlockStart = true; // the previous instruction does not continue into the current one (ret, jmp, int3, nop padding)
-    X86PrologueDetector prologueDetector(is64);
-    zone->switchJumps.clear();
-    X86SwitchDetector switchDetector(is64, labelBase, imageBase);
+    bool Start()
+    {
+        if (codeSize == 0)
+            return false;
+        // the instruction details give the branches and their targets (GetX86Flow / GetX86OperandsInfo)
+        if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
+            handle = 0;
+            return false;
+        }
+        if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
+            return false;
+        insn   = cs_malloc(handle);
+        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle);
+        callsFound.reserve(16);
+
+        // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
+        if (functionEntries) {
+            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+                AddFunctionStart(it->first);
+        }
+        return true;
+    }
+
     // a value of a jump table (1, 4 or 8 bytes) at an address of the labels
-    auto readTableValue = [&obj, &addressToFileOffset](uint64 address, uint8 size) -> std::optional<uint64> {
+    std::optional<uint64> ReadTableValue(uint64 address, uint8 size)
+    {
         const auto offset = addressToFileOffset(address);
         if (!offset.has_value())
             return {};
@@ -93,15 +145,16 @@ inline bool ExtractCallsToInsertFunctionNames(
             ok = obj->GetData().Copy<uint64>(offset.value(), value);
         }
         return ok ? std::optional<uint64>(value) : std::nullopt;
-    };
-    auto isCodeAddress = [labelBase, codeSize](uint64 address) { return address >= labelBase && address - labelBase < codeSize; };
-    while (linesToDecode > 0 && walker.Next(insn)) {
-        linesToDecode--;
+    }
+
+    // one decoded instruction of the sweep
+    void AnalyzeInstruction()
+    {
         // functions that are not called directly (callbacks, virtual methods, exports): recognized by their prologue
-        const uint64 instructionOffset = offsets[0].offset + insn->address; // decoded inside the code: can not overflow
+        const uint64 instructionOffset = codeStart + insn->address; // decoded inside the code: can not overflow
         const auto prologueStart       = prologueDetector.Next(*insn, instructionOffset);
         if (prologueStart.has_value())
-            addFunctionStart(prologueStart.value());
+            AddFunctionStart(prologueStart.value());
 
         // the cross references, in the address space of the labels (VA)
         const auto flow     = GetX86Flow(*insn);
@@ -110,24 +163,27 @@ inline bool ExtractCallsToInsertFunctionNames(
 
         // an import thunk (IDA j_Name): a jmp through an import slot that starts a block, reached by calls instead of the import itself
         const bool isBlockStart = atBlockStart;
-        atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_NOP;
+        atBlockStart            = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == X86_INS_NOP;
         if (isBlockStart && flow == X86Flow::Jump && !operands.directTarget.has_value() && findImport) {
             const auto import = findImport(operands);
             if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
                 thunks.emplace_back(instructionOffset, import->name);
-                zone->thunkImports[insn->address] = import->name;
-                addFunctionStart(instructionOffset);
+                thunkImports[insn->address] = import->name;
+                AddFunctionStart(instructionOffset);
             }
         }
 
         // the jump table of a switch: every case is a jump target (loc_) referenced by the jmp
         const auto jumpTable = switchDetector.Next(*insn);
         if (jumpTable.has_value() && addressToFileOffset) {
-            const auto targets = ReadX86JumpTableTargets(jumpTable.value(), readTableValue, isCodeAddress);
+            const auto targets = ReadX86JumpTableTargets(
+                  jumpTable.value(),
+                  [this](uint64 address, uint8 size) { return ReadTableValue(address, size); },
+                  [this](uint64 address) { return address >= labelBase && address - labelBase < codeSize; });
             if (!targets.empty())
-                zone->switchJumps[insn->address] = static_cast<uint32>(targets.size());
+                switchJumps[insn->address] = static_cast<uint32>(targets.size());
             for (const uint64 target : targets) {
-                zone->xrefs.Add(from, target, DissasmXrefKind::Switch);
+                xrefs.Add(from, target, DissasmXrefKind::Switch);
                 const auto targetOffset = zone->GetFileOffsetOfAddress(target - labelBase);
                 if (targetOffset.has_value() && !callsMap.contains(targetOffset.value())) {
                     callsFound.emplace_back(targetOffset.value(), zone->GetLabelName("loc_", target - labelBase));
@@ -137,18 +193,18 @@ inline bool ExtractCallsToInsertFunctionNames(
         }
         if (IsX86Branch(flow) && operands.directTarget.has_value()) {
             const auto kind = flow == X86Flow::Call ? DissasmXrefKind::Call : (flow == X86Flow::Jump ? DissasmXrefKind::Jump : DissasmXrefKind::ConditionalJump);
-            zone->xrefs.Add(from, (labelBase + operands.directTarget.value()) & addressMask, kind);
+            xrefs.Add(from, (labelBase + operands.directTarget.value()) & addressMask, kind);
         }
-        const auto dataKind = insn->id == X86_INS_LEA ? DissasmXrefKind::Offset
-                                                      : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
+        const auto dataKind =
+              insn->id == X86_INS_LEA ? DissasmXrefKind::Offset : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
         if (operands.ripTarget.has_value())
-            zone->xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind);
+            xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind);
         if (operands.absoluteMemory.has_value() && isFileAddress && isFileAddress(operands.absoluteMemory.value()))
-            zone->xrefs.Add(from, operands.absoluteMemory.value(), dataKind);
+            xrefs.Add(from, operands.absoluteMemory.value(), dataKind);
         if (!is64 && isFileAddress) { // push offset aText / mov ecx, offset aText (x64 uses lea [rip + ...])
             for (const uint64 value : operands.immediates)
                 if (value >= 0x10000 && isFileAddress(value))
-                    zone->xrefs.Add(from, value, DissasmXrefKind::Offset);
+                    xrefs.Add(from, value, DissasmXrefKind::Offset);
         }
 
         if (IsX86Branch(flow)) {
@@ -157,127 +213,94 @@ inline bool ExtractCallsToInsertFunctionNames(
             const auto offsetOpt = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
             if (offsetOpt.has_value()) {
                 const uint64 value = offsetOpt.value();
-                const auto it = callsMap.find(value);
-                if (it != callsMap.end()) {
-                    if (isJump == it->second)
-                        continue;
-                }
+                const auto it      = callsMap.find(value);
+                if (it != callsMap.end() && isJump == it->second)
+                    return;
                 callsFound.emplace_back(value, zone->GetLabelName(isJump ? "loc_" : "sub_", target.value()));
                 callsMap.insert({ value, isJump });
             }
         }
     }
 
-    // no calls / jumps / frames found is a valid result: the entry point label is still added below
-
-    enum labelType { SUB, OFFSET, OTHER };
-    auto getLabelType = [](const std::string& s) -> labelType {
-        assert(!s.empty());
-        if (s.size() < 4)
-            return OTHER;
-        if (memcmp(s.c_str(), "sub_", 4) == 0)
-            return SUB;
-        if (memcmp(s.c_str(), "loc_", 4) == 0)
-            return OFFSET;
-        return OTHER;
-    };
-
-    std::vector<uint32> indexesToErase;
-    for (int32 i = static_cast<int32>(callsFound.size()) - 1; i >= 0; i--) {
-        const auto& call = callsFound[i];
+    // the end of the sweep: the labels are sorted, the functions and their names are known
+    void FinishSweep()
+    {
         // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
-        if (call.first == zone->zoneDetails.entryPoint)
-            indexesToErase.push_back(i); // descending indexes: erased in this order
-    }
-    for (const auto indexToErase : indexesToErase)
-        callsFound.erase(callsFound.begin() + indexToErase);
+        callsFound.erase(
+              std::remove_if(callsFound.begin(), callsFound.end(), [this](const auto& call) { return call.first == zone->zoneDetails.entryPoint; }),
+              callsFound.end());
+        callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
+        std::stable_sort(callsFound.begin(), callsFound.end(), [](const auto& a, const auto& b) {
+            if (a.first != b.first)
+                return a.first < b.first;
+            return GetLabelType(a.second) < GetLabelType(b.second); // a function start wins over a jump target
+        });
+        callsFound.erase(
+              std::unique(callsFound.begin(), callsFound.end(), [](const auto& left, const auto& right) { return left.first == right.first; }),
+              callsFound.end());
+        xrefs.Finish();
 
-    callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
-    // TODO: this can be extracted for the user to add / delete its own operations
-    std::sort(callsFound.begin(), callsFound.end(), [getLabelType](const auto& a, const auto& b) {
-        if (a.first < b.first)
-            return true;
-        if (a.first > b.first)
-            return false;
-        return getLabelType(a.second) < getLabelType(b.second);
-
-        // return a.second.compare(b.second) > 0; // move sub instructions first
-    });
-
-    // TODO: if there are missing called improve predicate to delele only sub and offset
-    callsFound.erase(
-          std::unique(callsFound.begin(), callsFound.end(), [](const auto& left, const auto& right) { return left.first == right.first; }), callsFound.end());
-
-    cs_free(insn, 1);
-    cs_close(&handle);
-    zone->xrefs.Finish();
-
-    // relative addresses, every function is bounded by the next one (or by its size, when the plugin knows it)
-    zone->functionStarts.clear();
-    for (const auto& call : callsFound)
-        if (call.first >= codeStart && (getLabelType(call.second) == SUB || call.second == "EntryPoint"))
-            zone->functionStarts.push_back(call.first - codeStart); // sorted: callsFound is sorted by address
-    const auto& functionStarts = zone->functionStarts;
-    const auto isFunctionStart = [&functionStarts](uint64 relativeAddress) {
-        return std::binary_search(functionStarts.begin(), functionStarts.end(), relativeAddress);
-    };
-
-    // the names given by the plugin (exports, TLS callbacks), then the names of the import thunks; the entry point keeps its name, a name
-    // used twice is not applied again
-    const bool hasFunctionEntries = functionEntries && !functionEntries->empty();
-    if (hasFunctionEntries || !thunks.empty()) {
-        std::unordered_set<std::string> usedNames;
-        usedNames.reserve(callsFound.size());
+        // relative addresses, every function is bounded by the next one (or by its size, when the plugin knows it)
         for (const auto& call : callsFound)
-            usedNames.insert(call.second);
-        std::unordered_set<uint64> namedByPlugin;
-        for (auto& call : callsFound) {
-            if (!hasFunctionEntries || call.first == zone->zoneDetails.entryPoint)
-                continue;
-            const auto entry = functionEntries->find(call.first);
-            if (entry == functionEntries->end() || entry->second.name.empty())
-                continue;
-            if (usedNames.insert(entry->second.name).second) {
-                call.second = entry->second.name;
-                namedByPlugin.insert(call.first);
+            if (call.first >= codeStart && (GetLabelType(call.second) == SUB || call.second == "EntryPoint"))
+                functionStarts.push_back(call.first - codeStart); // sorted: callsFound is sorted by address
+
+        // the names given by the plugin (exports, TLS callbacks), then the names of the import thunks; the entry point keeps its name, a
+        // name used twice is not applied again
+        const bool hasFunctionEntries = functionEntries && !functionEntries->empty();
+        if (hasFunctionEntries || !thunks.empty()) {
+            std::unordered_set<std::string> usedNames;
+            usedNames.reserve(callsFound.size());
+            for (const auto& call : callsFound)
+                usedNames.insert(call.second);
+            std::unordered_set<uint64> namedByPlugin;
+            for (auto& call : callsFound) {
+                if (!hasFunctionEntries || call.first == zone->zoneDetails.entryPoint)
+                    continue;
+                const auto entry = functionEntries->find(call.first);
+                if (entry == functionEntries->end() || entry->second.name.empty())
+                    continue;
+                if (usedNames.insert(entry->second.name).second) {
+                    call.second = entry->second.name;
+                    namedByPlugin.insert(call.first);
+                }
+            }
+            for (const auto& [thunkOffset, importName] : thunks) {
+                const auto call = std::lower_bound(
+                      callsFound.begin(), callsFound.end(), thunkOffset, [](const auto& item, uint64 value) { return item.first < value; });
+                if (call == callsFound.end() || call->first != thunkOffset || call->first == zone->zoneDetails.entryPoint ||
+                    namedByPlugin.contains(thunkOffset))
+                    continue;
+                // a second thunk of the same import: j_Name_1, j_Name_2, ...
+                std::string name = "j_" + importName;
+                for (uint32 index = 1; usedNames.contains(name) && index < 1000; index++)
+                    name = "j_" + importName + "_" + std::to_string(index);
+                if (usedNames.insert(name).second)
+                    call->second = std::move(name);
             }
         }
-        for (const auto& [thunkOffset, importName] : thunks) {
-            const auto call = std::lower_bound(
-                  callsFound.begin(), callsFound.end(), thunkOffset, [](const auto& item, uint64 value) { return item.first < value; });
-            if (call == callsFound.end() || call->first != thunkOffset || call->first == zone->zoneDetails.entryPoint || namedByPlugin.contains(thunkOffset))
-                continue;
-            // a second thunk of the same import: j_Name_1, j_Name_2, ...
-            std::string name = "j_" + importName;
-            for (uint32 index = 1; usedNames.contains(name) && index < 1000; index++)
-                name = "j_" + importName + "_" + std::to_string(index);
-            if (usedNames.insert(name).second)
-                call->second = std::move(name);
+
+        // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
+        if (detectLocalVariables) {
+            hasDetailHandle = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &detailHandle) == CS_ERR_OK;
+            if (hasDetailHandle && cs_option(detailHandle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK) {
+                cs_close(&detailHandle);
+                hasDetailHandle = false;
+            }
         }
     }
 
-    // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
-    csh detailHandle     = 0;
-    bool hasDetailHandle = false;
-    if (detectLocalVariables && codeSize > 0) {
-        hasDetailHandle = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &detailHandle) == CS_ERR_OK;
-        if (hasDetailHandle && cs_option(detailHandle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK) {
-            cs_close(&detailHandle);
-            hasDetailHandle = false;
-        }
-    }
-
-    auto& annotations = zone->dissasmType.annotations;
-    uint32 extraLines = 0;
-    for (const auto& call : callsFound) {
+    // a label on the line of its instruction, the local variables of a function below its label
+    void PlaceLabel(const std::pair<uint64, std::string>& call)
+    {
         const uint64 callValue = call.first;
         uint32 diffLines       = 0;
         auto callInsn          = GetCurrentInstructionByOffset(callValue, zone, obj, diffLines);
         if (!callInsn)
-            continue;
+            return;
         cs_free(callInsn, 1);
         if (diffLines >= asmLines)
-            continue; // the target is after the last decoded instruction (trailing data), it has no line
+            return; // the target is after the last decoded instruction (trailing data), it has no line
 
         const uint64 relativeAddress = callValue - codeStart;
         annotations.insert({ diffLines + extraLines, { call.second, relativeAddress } });
@@ -285,8 +308,9 @@ inline bool ExtractCallsToInsertFunctionNames(
         extraLines++;
 
         // the variable annotations pack the function start on 32 bits (the zone sizes are 32 bits)
-        if (!hasDetailHandle || relativeAddress >= codeSize || relativeAddress > 0xFFFFFFFFull || !isFunctionStart(relativeAddress))
-            continue;
+        if (!hasDetailHandle || relativeAddress >= codeSize || relativeAddress > 0xFFFFFFFFull ||
+            !std::binary_search(functionStarts.begin(), functionStarts.end(), relativeAddress))
+            return;
         const auto nextFunction = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
         uint64 limit            = nextFunction != functionStarts.end() ? *nextFunction : codeSize;
         if (functionEntries) {
@@ -297,25 +321,71 @@ inline bool ExtractCallsToInsertFunctionNames(
         const uint64 bytesToRead = std::min<uint64>(limit - relativeAddress, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
         const auto functionData  = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
         if (!functionData.IsValid())
-            continue;
+            return;
 
         DissasmFunctionFrame frame{};
-        if (!AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, zone->Is64BitCode(), frame) ||
+        if (!AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame) ||
             frame.variables.empty())
-            continue;
+            return;
         // IDA like: the variables are listed right below the function label
         for (const auto& variable : frame.variables) {
             annotations.insert({ diffLines + extraLines, { std::string{}, PackLocalVariableAnnotation(relativeAddress, variable.frameOffset) } });
             extraLines++;
         }
-        zone->localVariables.functions.push_back(std::move(frame));
+        frames.push_back(std::move(frame));
     }
-    if (hasDetailHandle)
-        cs_close(&detailHandle);
 
-    totalLines += extraLines; // only the annotations that were really inserted are zone lines
-    return true;
-}
+    // runs until the scan ends (true) or the deadline is reached (false: Run continues later from the same point)
+    bool Run(std::chrono::steady_clock::time_point deadline)
+    {
+        constexpr uint32 INSTRUCTIONS_BETWEEN_CLOCK_CHECKS = 512;
+        constexpr uint32 LABELS_BETWEEN_CLOCK_CHECKS       = 16;
+        uint32 counter                                     = 0;
+        while (phase == Phase::Sweep) {
+            if (linesToDecode == 0 || !walker.Next(insn)) {
+                FinishSweep();
+                phase = Phase::Labels;
+                break;
+            }
+            linesToDecode--;
+            AnalyzeInstruction();
+            if (++counter % INSTRUCTIONS_BETWEEN_CLOCK_CHECKS == 0 && std::chrono::steady_clock::now() >= deadline)
+                return false;
+        }
+        while (phase == Phase::Labels) {
+            if (labelIndex >= callsFound.size()) {
+                phase = Phase::Done;
+                break;
+            }
+            PlaceLabel(callsFound[labelIndex++]);
+            if (++counter % LABELS_BETWEEN_CLOCK_CHECKS == 0 && std::chrono::steady_clock::now() >= deadline)
+                return false;
+        }
+        return true;
+    }
+
+    float GetProgress() const
+    {
+        // the sweep is most of the work
+        if (phase == Phase::Sweep)
+            return asmLines == 0 ? 0.0f : 0.8f * static_cast<float>(asmLines - linesToDecode) / static_cast<float>(asmLines);
+        if (phase == Phase::Labels)
+            return callsFound.empty() ? 1.0f : 0.8f + 0.2f * static_cast<float>(labelIndex) / static_cast<float>(callsFound.size());
+        return 1.0f;
+    }
+
+    // the results become the analysis of the zone; the number of lines added to the instructions (labels, local variables)
+    uint32 Commit()
+    {
+        zone->xrefs                     = std::move(xrefs);
+        zone->thunkImports              = std::move(thunkImports);
+        zone->switchJumps               = std::move(switchJumps);
+        zone->functionStarts            = std::move(functionStarts);
+        zone->dissasmType.annotations   = std::move(annotations);
+        zone->localVariables.functions  = std::move(frames);
+        return extraLines;
+    }
+};
 
 inline bool populateOffsetsVector(
       vector<AsmOffsetLine>& offsets, DisassemblyZone& zoneDetails, Reference<GView::Object> obj, int internalArchitecture, uint32& totalLines)
@@ -382,8 +452,11 @@ inline bool populateOffsetsVector(
     return true;
 }
 
+DissasmCodeZone::DissasmCodeZone() = default;
+
 DissasmCodeZone::~DissasmCodeZone()
 {
+    deepScan.reset(); // before the decode handle
     if (decodeHandle != 0)
         cs_close(&decodeHandle);
 }
@@ -582,22 +655,20 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     }
     asmLinesCount = totalLines;
     localVariables.functions.clear();
+    deepScan.reset();
     if (initData.enableDeepScanDissasmOnStart) {
-        const bool scanned = ExtractCallsToInsertFunctionNames(
-              cachedCodeOffsets,
-              this,
-              initData.obj,
-              internalArchitecture,
-              totalLines,
-              initData.enableLocalVariablesDetection,
-              initData.isFileAddress,
-              initData.functionEntries,
-              initData.findImport,
-              initData.addressToFileOffset,
-              initData.imageBase);
-        if (!scanned) {
+        // a big zone: the scan continues after its budget (ContinueDeepScan), the instructions are shown without labels until it ends
+        deepScan = std::make_unique<DissasmDeepScan>(this, initData, internalArchitecture, totalLines);
+        if (!deepScan->Start()) {
+            deepScan.reset();
             initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;
+        }
+        const auto deadline = initData.deepScanBudget.has_value() ? std::chrono::steady_clock::now() + initData.deepScanBudget.value()
+                                                                  : std::chrono::steady_clock::time_point::max();
+        if (deepScan->Run(deadline)) {
+            totalLines += deepScan->Commit();
+            deepScan.reset();
         }
     }
     totalLines++; //+1 for title
@@ -622,6 +693,30 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     RebuildLineIndex();
     linesReady = true;
     return true;
+}
+
+bool DissasmCodeZone::ContinueDeepScan(std::chrono::steady_clock::time_point deadline)
+{
+    return deepScan && deepScan->Run(deadline);
+}
+
+void DissasmCodeZone::CommitDeepScan()
+{
+    if (!deepScan || deepScan->phase != DissasmDeepScan::Phase::Done)
+        return;
+    deepScan->Commit();
+    deepScan.reset();
+    RebuildLineIndex();
+}
+
+void DissasmCodeZone::CancelDeepScan()
+{
+    deepScan.reset();
+}
+
+float DissasmCodeZone::GetDeepScanProgress() const
+{
+    return deepScan ? deepScan->GetProgress() : 1.0f;
 }
 
 void DissasmCodeZone::RebuildLineIndex()

@@ -6,6 +6,7 @@
 #include <utility>
 #include <deque>
 #include <optional>
+#include <chrono>
 #include <list>
 #include <cassert>
 #include <capstone/capstone.h>
@@ -418,6 +419,9 @@ namespace View
             std::function<std::optional<uint64>(uint64)> addressToFileOffset;
             // the VA of the RVA 0 (PE): the jump tables of MSVC x64 hold RVAs
             std::optional<uint64> imageBase;
+            // the time the deep scan may take in InitZone; it continues later (DissasmCodeZone::ContinueDeepScan) when it does not end. None: the
+            // deep scan ends in InitZone
+            std::optional<std::chrono::milliseconds> deepScanBudget;
         };
 
         struct MemoryMappingEntry {
@@ -738,6 +742,13 @@ namespace View
             void ShowXrefs();
             // moves the cursor to the instruction at the file offset (and to the labels above it); recorded in the jumps history
             bool MoveCursorToZoneFileOffset(DissasmCodeZone* zone, uint64 fileOffset, bool landOnLabels);
+            // the deep scans that did not end in InitZone continue in the frame updates; their end adds the labels (the lines change)
+            bool HasPendingDeepScans() const;
+            void EndDeepScan(DissasmCodeZone* zone, bool cancel);
+            void FinishDeepScans(); // the actions that need the labels (rename, comments, cache, export) end the pending scans first
+            void CancelDeepScans();
+            bool frameUpdatesSeen    = false; // the frontend delivers frame updates (FPS mode): the deep scans continue there
+            uint32 deepScanFrames    = 0;
             // the number under the cursor, or the only number of the cursor line
             const CursorLineNumber* GetCursorLineNumber();
             void ToggleNumberBase();
@@ -778,6 +789,7 @@ namespace View
 
             // Events
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
+            bool OnFrameUpdate() override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 

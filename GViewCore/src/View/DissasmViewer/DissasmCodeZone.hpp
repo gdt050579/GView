@@ -4,6 +4,7 @@
 
 namespace GView::View::DissasmViewer
 {
+struct DissasmDeepScan;
 struct DissasmCodeZone : public ParseZone {
     enum class CollapseExpandType : uint8 { Collapse, Expand, NegateCurrentState };
     uint32 lastDrawnLine      = 0; // optimization not to recompute buffer every time
@@ -68,7 +69,7 @@ struct DissasmCodeZone : public ParseZone {
     // the names of the analysis; the labels renamed by the user keep their names
     void MigrateLegacyLabelNames();
 
-    DissasmCodeZone() = default;
+    DissasmCodeZone(); // out of line: the deep scan is only declared here
     // owns the capstone handle
     DissasmCodeZone(const DissasmCodeZone&)            = delete;
     DissasmCodeZone& operator=(const DissasmCodeZone&) = delete;
@@ -89,6 +90,17 @@ struct DissasmCodeZone : public ParseZone {
     bool RemoveCollapsibleZone(uint32 zoneLine);
 
     bool InitZone(DissasmCodeZoneInitData& initData);
+    // the deep scan that did not end in InitZone (its budget): the zone shows the instructions without labels until it ends
+    bool IsDeepScanPending() const
+    {
+        return deepScan != nullptr;
+    }
+    // continues the deep scan until the deadline; true when it has ended (CommitDeepScan gives its results to the zone)
+    bool ContinueDeepScan(std::chrono::steady_clock::time_point deadline);
+    // the results of the ended deep scan become the labels, cross references and local variables of the zone: the lines change
+    void CommitDeepScan();
+    void CancelDeepScan(); // the zone keeps the instructions without labels
+    float GetDeepScanProgress() const; // 0..1
     // x86/x64 zone initialized successfully: only then the lines can be reached / decoded
     bool CanReachAsmLines() const
     {
@@ -202,6 +214,7 @@ struct DissasmCodeZone : public ParseZone {
     void InsertZone(DissasmCollapsibleZone zone);
 
     csh decodeHandle = 0;
+    std::unique_ptr<DissasmDeepScan> deepScan;
     bool linesReady  = false;
     std::vector<uint32> annotationLines;                // the sorted lines of dissasmType.annotations
     std::unordered_map<uint64, uint32> labelLineOfAddress; // relative address of a label -> its line (expanded layout)

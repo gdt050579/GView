@@ -821,6 +821,10 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     chars.Set(spaces);
 
     if (dli.textLineToDraw == 0) {
+        // the zone is prepared before its title is drawn: the title shows the progress of the deep scan from the first paint
+        if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
+            return false;
+
         constexpr std::string_view zoneName = "Dissasm zone";
         chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
         uint32 titleSize = static_cast<uint32>(zoneName.size());
@@ -830,6 +834,12 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
             chars.Add(warning.data(), ColorMan.Colors.AsmComment);
             titleSize += static_cast<uint32>(warning.size());
         }
+        if (zone->IsDeepScanPending()) {
+            LocalString<64> progress;
+            progress.SetFormat(" - analyzing %u%% (Esc stops it)", static_cast<uint32>(zone->GetDeepScanProgress() * 100.0f));
+            chars.Add(progress, ColorMan.Colors.AsmComment);
+            titleSize += progress.Len();
+        }
 
         updateLinePointers();
         HighlightSelectionAndDrawCursorText(dli, titleSize, titleSize + Layout.startingTextLineOffset);
@@ -837,10 +847,6 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
         RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
-
-        if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
-            return false;
-
         return true;
     }
 
@@ -1044,10 +1050,16 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };
     }
 
+    // a big zone is shown before its deep scan ends: the scan continues in the frame updates (OnFrameUpdate)
+    constexpr auto DEEP_SCAN_BUDGET_IN_INIT = std::chrono::milliseconds(150);
+    initData.deepScanBudget                 = DEEP_SCAN_BUDGET_IN_INIT;
+
     if (!zone->InitZone(initData))
         return false;
     if (initData.hasAdjustedSize)
         AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
+    if (zone->IsDeepScanPending())
+        return true; // the user data of the cache needs the labels: applied when the scan ends (EndDeepScan)
 
     bool zoneLinesChanged = false;
     if (!zone->TryLoadDataFromCache(cacheData, zoneLinesChanged)) {
@@ -1058,6 +1070,85 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (zoneLinesChanged)                                                 // local variables removed by the user in a previous session
         AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
     return true;
+}
+
+bool Instance::HasPendingDeepScans() const
+{
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<const DissasmCodeZone*>(zone.get())->IsDeepScanPending())
+            return true;
+    return false;
+}
+
+void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
+{
+    // until the scan ends the lines of the zone are its instructions: the cursor stays on the same instruction (the view moves with it)
+    const uint32 cursorLine = Cursor.startViewLine + Cursor.lineInView;
+    const uint32 firstLine  = zone->startLineIndex + 2u; // +1 for the title, +1 for the columns header
+    std::optional<uint32> cursorInstruction;
+    if (cursorLine >= firstLine && cursorLine - firstLine < zone->asmLinesCount)
+        cursorInstruction = cursorLine - firstLine;
+
+    if (cancel)
+        zone->CancelDeepScan();
+    else
+        zone->CommitDeepScan();
+    AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+    bool zoneLinesChanged = false;
+    zone->TryLoadDataFromCache(cacheData, zoneLinesChanged); // the user data was waiting for the labels
+    if (zoneLinesChanged)
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
+
+    if (cursorInstruction.has_value()) {
+        const uint32 newLine = firstLine + zone->ExpandedToDisplay(zone->InstructionIndexToExpanded(cursorInstruction.value()));
+        if (newLine >= cursorLine)
+            Cursor.startViewLine += newLine - cursorLine;
+        else
+            Cursor.startViewLine -= std::min(Cursor.startViewLine, cursorLine - newLine);
+        Cursor.hasMovedView = true;
+    }
+    zone->asmPreCacheData.Clear();
+}
+
+void Instance::FinishDeepScans()
+{
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        if (!codeZone->IsDeepScanPending())
+            continue;
+        codeZone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
+        EndDeepScan(codeZone, false);
+    }
+}
+
+void Instance::CancelDeepScans()
+{
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(zone.get())->IsDeepScanPending())
+            EndDeepScan(static_cast<DissasmCodeZone*>(zone.get()), true);
+}
+
+bool Instance::OnFrameUpdate()
+{
+    frameUpdatesSeen = true;
+    if (!HasPendingDeepScans())
+        return false;
+    // a slice of every frame (~30 per second): the UI stays responsive while the scan runs
+    constexpr auto DEEP_SCAN_SLICE = std::chrono::milliseconds(12);
+    constexpr uint32 PROGRESS_REPAINT_FRAMES = 8; // the progress in the title of the zone
+    bool repaint = ++deepScanFrames % PROGRESS_REPAINT_FRAMES == 0;
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        if (codeZone->IsDeepScanPending() && codeZone->ContinueDeepScan(std::chrono::steady_clock::now() + DEEP_SCAN_SLICE)) {
+            EndDeepScan(codeZone, false);
+            repaint = true;
+        }
+    }
+    return repaint;
 }
 
 uint32 GView::View::DissasmViewer::GetCodeZoneLinesCount(const DissasmCodeZone& zone)
