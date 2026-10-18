@@ -94,6 +94,27 @@ struct DissasmFunctionGraph {
     bool truncated = false; // too many blocks / instructions: the graph stops there
 };
 
+// The places of the blocks of a graph (the graph window): layers by the longest path from the entry over the forward edges (a forward edge
+// goes to a block of a bigger index); an edge that crosses several layers passes through a dummy node in each of them (a column between
+// the boxes, never behind one); the order of every layer reduces the crossings (barycenter sweeps, the best order kept); every node is
+// placed under the middle of the nodes above it, the order kept, the nodes of a layer never overlap.
+struct DissasmGraphLayout {
+    struct Node {
+        int x = 0, y = 0, width = 0, height = 0;
+        int layer   = 0;
+        bool isDummy = false;
+    };
+    std::vector<Node> nodes; // the blocks (the same index), then the dummies
+    // a forward edge (its source block, the index of the edge in its successors): the dummy nodes it passes through, from the top
+    std::map<std::pair<size_t, size_t>, std::vector<size_t>> edgeDummies;
+    std::vector<int> layerTop, layerHeight;
+    int width = 0, height = 0; // the space the nodes use (from 0, the margins included)
+};
+// blockSizes: the width and the height of every block
+DissasmGraphLayout LayoutFunctionGraph(const DissasmFunctionGraph& graph, const std::vector<std::pair<int, int>>& blockSizes);
+// the crossings of the segments of the forward edges between the consecutive layers of a layout (the order of the nodes: their x)
+size_t CountGraphCrossings(const DissasmGraphLayout& layout, const DissasmFunctionGraph& graph);
+
 // a string used by the code (DissasmCodeZone::GetReferencedStrings)
 struct DissasmStringReference {
     uint64 address = 0; // in the address space of the labels (VA)

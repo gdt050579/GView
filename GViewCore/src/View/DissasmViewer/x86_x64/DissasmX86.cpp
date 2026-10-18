@@ -3625,7 +3625,7 @@ class FunctionGraphWindow : public AppCUI::Controls::Window
           const DissasmColors& colors)
         : Window(title, "d:c,w:95%,h:90%", WindowFlags::Sizeable)
     {
-        constexpr int MIN_BOX_WIDTH = 16, MAX_BOX_WIDTH = 64, GAP_X = 6, GAP_Y = 5, MARGIN = 2;
+        constexpr int MIN_BOX_WIDTH = 16, MAX_BOX_WIDTH = 64, MARGIN = 2;
         const size_t count = graph.blocks.size();
         std::vector<Box> boxes(count);
         for (size_t index = 0; index < count; index++) {
@@ -3638,49 +3638,20 @@ class FunctionGraphWindow : public AppCUI::Controls::Window
             box.width  = std::clamp(longest + 4, MIN_BOX_WIDTH, MAX_BOX_WIDTH);
             box.height = static_cast<int>(box.lines.size()) + 3; // the borders and the title
         }
-        // the layers: the longest path from the entry over the forward edges (the blocks are sorted by address: a forward edge goes to a
-        // block of a bigger index)
-        int layersCount = 1;
-        for (size_t index = 0; index < count; index++)
-            for (const auto& edge : graph.blocks[index].successors)
-                if (edge.target > index) {
-                    boxes[edge.target].layer = std::max(boxes[edge.target].layer, boxes[index].layer + 1);
-                    layersCount              = std::max(layersCount, boxes[edge.target].layer + 1);
-                }
-        std::vector<std::vector<std::pair<double, size_t>>> layers(layersCount);
-        std::vector<std::vector<size_t>> forwardPredecessors(count);
-        for (size_t index = 0; index < count; index++)
-            for (const auto& edge : graph.blocks[index].successors)
-                if (edge.target > index)
-                    forwardPredecessors[edge.target].push_back(index);
-        // the places: a block under the middle of its predecessors, the blocks of a layer never overlap
-        std::vector<int> layerTop(layersCount, MARGIN), layerHeight(layersCount, 0);
-        for (size_t index = 0; index < count; index++)
-            layers[boxes[index].layer].push_back({ 0.0, index });
-        int top = MARGIN, width = 0;
-        for (int layer = 0; layer < layersCount; layer++) {
-            for (auto& [desired, index] : layers[layer]) {
-                desired = MARGIN + boxes[index].width / 2.0;
-                if (!forwardPredecessors[index].empty()) {
-                    double sum = 0;
-                    for (const size_t predecessor : forwardPredecessors[index])
-                        sum += boxes[predecessor].x + boxes[predecessor].width / 2.0;
-                    desired = sum / forwardPredecessors[index].size();
-                }
-            }
-            std::stable_sort(layers[layer].begin(), layers[layer].end());
-            int right = MARGIN - GAP_X;
-            for (const auto& [desired, index] : layers[layer]) {
-                auto& box  = boxes[index];
-                box.x      = std::max({ static_cast<int>(desired) - box.width / 2, right + GAP_X, MARGIN });
-                box.y      = top;
-                right      = box.x + box.width;
-                width      = std::max(width, right);
-                layerHeight[layer] = std::max(layerHeight[layer], box.height);
-            }
-            layerTop[layer] = top;
-            top += layerHeight[layer] + GAP_Y;
+        // the places: the layered layout (LayoutFunctionGraph: the long edges through columns between the boxes, the crossings reduced)
+        std::vector<std::pair<int, int>> sizes;
+        for (const auto& box : boxes)
+            sizes.emplace_back(box.width, box.height);
+        const auto layout = LayoutFunctionGraph(graph, sizes);
+        for (size_t index = 0; index < count; index++) {
+            boxes[index].x     = layout.nodes[index].x;
+            boxes[index].y     = layout.nodes[index].y;
+            boxes[index].layer = layout.nodes[index].layer;
         }
+        const auto& layerTop    = layout.layerTop;
+        const auto& layerHeight = layout.layerHeight;
+        const int top           = layout.height - MARGIN;
+        const int width         = layout.width - MARGIN;
         // the loops (back edges) go up on the right of the graph, one column each
         int backEdges = 0;
         for (size_t index = 0; index < count; index++)
@@ -3723,18 +3694,31 @@ class FunctionGraphWindow : public AppCUI::Controls::Window
                 const auto& edge   = successors[edgeIndex];
                 const auto& target = boxes[edge.target];
                 if (edge.target > index) {
-                    // down from the bottom of the source to the gap below its layer, across, then down to the top of the target
-                    const int spread  = successors.size() > 1 ? static_cast<int>(edgeIndex * 4) - static_cast<int>((successors.size() - 1) * 2) : 0;
-                    const int fromX   = std::clamp(source.x + source.width / 2 + spread, source.x + 1, source.x + source.width - 2);
-                    const int fromY   = source.y + source.height;
-                    const int channel = layerTop[source.layer] + layerHeight[source.layer] + 1 + static_cast<int>(edgeIndex % 3);
-                    const int toX     = target.x + target.width / 2;
-                    const int toY     = target.y - 1;
-                    const auto color  = edgeColor(edge.kind);
-                    canvas->DrawVerticalLine(fromX, fromY, channel, color);
-                    canvas->DrawHorizontalLine(std::min(fromX, toX), channel, std::max(fromX, toX), color);
-                    canvas->DrawVerticalLine(toX, channel, toY, color);
-                    canvas->WriteSpecialCharacter(toX, toY, SpecialChars::TriangleDown, color);
+                    // down from the bottom of the source to the gap below its layer, across to the column of the next layer (a dummy
+                    // between the boxes of a layer the edge crosses, else the target), down, ... then down to the top of the target
+                    const int spread = successors.size() > 1 ? static_cast<int>(edgeIndex * 4) - static_cast<int>((successors.size() - 1) * 2) : 0;
+                    const auto color = edgeColor(edge.kind);
+                    int x            = std::clamp(source.x + source.width / 2 + spread, source.x + 1, source.x + source.width - 2);
+                    int y            = source.y + source.height;
+                    int layer        = source.layer;
+                    const auto dummies = layout.edgeDummies.find({ index, edgeIndex });
+                    std::vector<size_t> path;
+                    if (dummies != layout.edgeDummies.end())
+                        path = dummies->second;
+                    path.push_back(edge.target);
+                    for (const size_t node : path) {
+                        const auto& next  = layout.nodes[node];
+                        const int channel = layerTop[layer] + layerHeight[layer] + 1 + static_cast<int>(edgeIndex % 3);
+                        const int nextX   = next.isDummy ? next.x : next.x + next.width / 2;
+                        canvas->DrawVerticalLine(x, y, channel, color);
+                        canvas->DrawHorizontalLine(std::min(x, nextX), channel, std::max(x, nextX), color);
+                        x     = nextX;
+                        y     = channel;
+                        layer = next.layer;
+                    }
+                    const int toY = target.y - 1;
+                    canvas->DrawVerticalLine(x, y, toY, color);
+                    canvas->WriteSpecialCharacter(x, toY, SpecialChars::TriangleDown, color);
                 } else {
                     // a loop: right from the source, up on its own column, left into the target
                     const int fromY = source.y + source.height / 2;

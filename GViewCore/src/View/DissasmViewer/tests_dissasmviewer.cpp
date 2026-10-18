@@ -6391,3 +6391,54 @@ TEST_CASE("DataZoneReanalysis", "[Dissasm]DataZone")
     REQUIRE(dataZone.GetLabelNameAt(0x00) == "dword_401040");
     REQUIRE(FindListingLine(data.GetListing(), "dd     0x00000007").size() > 0);
 }
+
+// a graph of `count` blocks with the given forward edges (source, target)
+static DissasmFunctionGraph MakeLayoutGraph(size_t count, std::initializer_list<std::pair<size_t, size_t>> edges)
+{
+    DissasmFunctionGraph graph;
+    graph.blocks.resize(count);
+    for (size_t index = 0; index < count; index++)
+        graph.blocks[index].start = index * 0x10;
+    for (const auto& [from, to] : edges)
+        graph.blocks[from].successors.push_back({ to, DissasmGraphBlock::EdgeKind::Jump });
+    return graph;
+}
+
+TEST_CASE("FunctionGraphLayout", "[Dissasm]Graph")
+{
+    // 0 -> 1, 2; 1 -> 4; 2 -> 3: in the order of the addresses the edges 1 -> 4 and 2 -> 3 cross, the layout swaps 3 and 4
+    {
+        const auto graph  = MakeLayoutGraph(5, { { 0, 1 }, { 0, 2 }, { 1, 4 }, { 2, 3 } });
+        const auto layout = LayoutFunctionGraph(graph, std::vector<std::pair<int, int>>(5, { 20, 5 }));
+        REQUIRE(layout.nodes[3].layer == 2);
+        REQUIRE(layout.nodes[4].layer == 2);
+        REQUIRE(CountGraphCrossings(layout, graph) == 0);
+        REQUIRE(layout.nodes[4].x < layout.nodes[3].x);
+        for (int layer = 0; layer < 3; layer++) // no overlap in a layer
+            for (size_t first = 0; first < layout.nodes.size(); first++)
+                for (size_t second = first + 1; second < layout.nodes.size(); second++) {
+                    const auto& a = layout.nodes[first];
+                    const auto& b = layout.nodes[second];
+                    if (a.layer == layer && b.layer == layer)
+                        REQUIRE((a.x + a.width <= b.x || b.x + b.width <= a.x));
+                }
+    }
+    // a long edge 0 -> 3 next to the chain 0 -> 1 -> 2 -> 3: it passes through a dummy in the layers of 1 and 2, beside their boxes
+    {
+        const auto graph  = MakeLayoutGraph(4, { { 0, 1 }, { 0, 3 }, { 1, 2 }, { 2, 3 } });
+        const auto layout = LayoutFunctionGraph(graph, std::vector<std::pair<int, int>>(4, { 20, 5 }));
+        REQUIRE(layout.nodes[3].layer == 3);
+        const auto dummies = layout.edgeDummies.find({ 0, 1 });
+        REQUIRE(dummies != layout.edgeDummies.end());
+        REQUIRE(dummies->second.size() == 2);
+        for (const size_t dummy : dummies->second) {
+            const auto& column = layout.nodes[dummy];
+            REQUIRE(column.isDummy);
+            const auto& box = layout.nodes[column.layer]; // block 1 is in layer 1, block 2 in layer 2
+            REQUIRE((column.x < box.x || column.x >= box.x + box.width)); // never behind the box
+            REQUIRE(column.height == layout.layerHeight[column.layer]);
+        }
+        REQUIRE(layout.nodes[0].x >= 0);
+        REQUIRE(layout.width >= layout.nodes[1].x + layout.nodes[1].width);
+    }
+}

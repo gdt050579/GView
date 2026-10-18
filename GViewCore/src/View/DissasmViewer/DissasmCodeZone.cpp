@@ -1802,6 +1802,192 @@ std::optional<uint64> DissasmCodeZone::GetFunctionContaining(uint64 relativeAddr
     return *(next - 1);
 }
 
+namespace
+{
+// the segments of the forward edges between two consecutive layers: (upper node, lower node), the dummies included
+std::vector<std::pair<size_t, size_t>> GraphSegments(const DissasmGraphLayout& layout, const DissasmFunctionGraph& graph)
+{
+    std::vector<std::pair<size_t, size_t>> segments;
+    for (size_t index = 0; index < graph.blocks.size(); index++) {
+        const auto& successors = graph.blocks[index].successors;
+        for (size_t edgeIndex = 0; edgeIndex < successors.size(); edgeIndex++) {
+            if (successors[edgeIndex].target <= index)
+                continue;
+            size_t previous     = index;
+            const auto dummies  = layout.edgeDummies.find({ index, edgeIndex });
+            if (dummies != layout.edgeDummies.end())
+                for (const size_t dummy : dummies->second) {
+                    segments.emplace_back(previous, dummy);
+                    previous = dummy;
+                }
+            segments.emplace_back(previous, successors[edgeIndex].target);
+        }
+    }
+    return segments;
+}
+
+// the crossings of the segments for the positions of the nodes in their layers
+size_t CountCrossings(const std::vector<std::pair<size_t, size_t>>& segments, const std::vector<double>& position, const std::vector<int>& layerOf)
+{
+    // the segments of the same pair of layers only (grouped by the layer of their upper node)
+    std::map<int, std::vector<std::pair<size_t, size_t>>> byLayer;
+    for (const auto& segment : segments)
+        byLayer[layerOf[segment.first]].push_back(segment);
+    size_t crossings = 0;
+    for (const auto& [layer, group] : byLayer)
+        for (size_t first = 0; first < group.size(); first++)
+            for (size_t second = first + 1; second < group.size(); second++) {
+                const auto [a1, b1] = group[first];
+                const auto [a2, b2] = group[second];
+                if (a1 == a2 || b1 == b2)
+                    continue; // a shared end
+                if ((position[a1] < position[a2]) != (position[b1] < position[b2]))
+                    crossings++;
+            }
+    return crossings;
+}
+} // namespace
+
+DissasmGraphLayout GView::View::DissasmViewer::LayoutFunctionGraph(const DissasmFunctionGraph& graph, const std::vector<std::pair<int, int>>& blockSizes)
+{
+    constexpr int GAP_X = 6, GAP_DUMMY = 2, GAP_Y = 5, MARGIN = 2;
+    constexpr uint32 SWEEPS           = 8;
+    constexpr size_t MAX_ORDERED_NODES = 6000; // a bigger graph keeps the order of the addresses (the crossings are counted at each sweep)
+    DissasmGraphLayout layout;
+    const size_t count = graph.blocks.size();
+    layout.nodes.resize(count);
+    for (size_t index = 0; index < count && index < blockSizes.size(); index++) {
+        layout.nodes[index].width  = blockSizes[index].first;
+        layout.nodes[index].height = blockSizes[index].second;
+    }
+    // the layers: the longest path from the entry
+    int layersCount = count > 0 ? 1 : 0;
+    for (size_t index = 0; index < count; index++)
+        for (const auto& edge : graph.blocks[index].successors)
+            if (edge.target > index && edge.target < count) {
+                layout.nodes[edge.target].layer = std::max(layout.nodes[edge.target].layer, layout.nodes[index].layer + 1);
+                layersCount                     = std::max(layersCount, layout.nodes[edge.target].layer + 1);
+            }
+    // the dummies of the long edges
+    for (size_t index = 0; index < count; index++) {
+        const auto& successors = graph.blocks[index].successors;
+        for (size_t edgeIndex = 0; edgeIndex < successors.size(); edgeIndex++) {
+            const size_t target = successors[edgeIndex].target;
+            if (target <= index || target >= count)
+                continue;
+            for (int layer = layout.nodes[index].layer + 1; layer < layout.nodes[target].layer; layer++) {
+                DissasmGraphLayout::Node dummy;
+                dummy.layer   = layer;
+                dummy.isDummy = true;
+                dummy.width   = 1;
+                layout.edgeDummies[{ index, edgeIndex }].push_back(layout.nodes.size());
+                layout.nodes.push_back(dummy);
+            }
+        }
+    }
+    const size_t nodesCount = layout.nodes.size();
+    std::vector<std::vector<size_t>> layers(layersCount);
+    std::vector<int> layerOf(nodesCount);
+    for (size_t node = 0; node < nodesCount; node++) {
+        layerOf[node] = layout.nodes[node].layer;
+        layers[layout.nodes[node].layer].push_back(node); // the blocks by address, then the dummies
+    }
+    const auto segments = GraphSegments(layout, graph);
+    std::vector<std::vector<size_t>> upper(nodesCount), lower(nodesCount);
+    for (const auto& [from, to] : segments) {
+        lower[from].push_back(to);
+        upper[to].push_back(from);
+    }
+    std::vector<double> position(nodesCount);
+    const auto updatePositions = [&]() {
+        for (const auto& layer : layers)
+            for (size_t index = 0; index < layer.size(); index++)
+                position[layer[index]] = static_cast<double>(index);
+    };
+    updatePositions();
+    // the order of the layers: barycenter sweeps down and up, the order with the fewest crossings kept
+    auto bestLayers       = layers;
+    size_t bestCrossings  = nodesCount <= MAX_ORDERED_NODES ? CountCrossings(segments, position, layerOf) : 0;
+    for (uint32 sweep = 0; sweep < SWEEPS && bestCrossings > 0 && nodesCount <= MAX_ORDERED_NODES; sweep++) {
+        const bool down = sweep % 2 == 0;
+        for (int step = 1; step < layersCount; step++) {
+            auto& layer = layers[down ? step : layersCount - 1 - step];
+            std::vector<std::pair<double, size_t>> keyed;
+            for (const size_t node : layer) {
+                const auto& neighbors = down ? upper[node] : lower[node];
+                double key            = position[node];
+                if (!neighbors.empty()) {
+                    double sum = 0;
+                    for (const size_t neighbor : neighbors)
+                        sum += position[neighbor];
+                    key = sum / static_cast<double>(neighbors.size());
+                }
+                keyed.emplace_back(key, node);
+            }
+            std::stable_sort(keyed.begin(), keyed.end(), [](const auto& left, const auto& right) { return left.first < right.first; });
+            for (size_t index = 0; index < keyed.size(); index++) {
+                layer[index]                = keyed[index].second;
+                position[keyed[index].second] = static_cast<double>(index);
+            }
+        }
+        const size_t crossings = CountCrossings(segments, position, layerOf);
+        if (crossings < bestCrossings) {
+            bestCrossings = crossings;
+            bestLayers    = layers;
+        }
+    }
+    layers = std::move(bestLayers);
+
+    // the places: the order kept, each node under the middle of the nodes above it
+    layout.layerTop.assign(layersCount, MARGIN);
+    layout.layerHeight.assign(layersCount, 0);
+    int top = MARGIN;
+    for (int layer = 0; layer < layersCount; layer++) {
+        int right            = MARGIN;
+        bool first           = true;
+        bool previousIsDummy = false;
+        for (const size_t node : layers[layer]) {
+            auto& item     = layout.nodes[node];
+            double desired = MARGIN + item.width / 2.0;
+            if (!upper[node].empty()) {
+                double sum = 0;
+                for (const size_t neighbor : upper[node])
+                    sum += layout.nodes[neighbor].x + layout.nodes[neighbor].width / 2.0;
+                desired = sum / static_cast<double>(upper[node].size());
+            }
+            const int gap = first ? 0 : (item.isDummy || previousIsDummy ? GAP_DUMMY : GAP_X);
+            item.x        = std::max({ static_cast<int>(desired) - item.width / 2, right + gap, MARGIN });
+            item.y        = top;
+            right         = item.x + item.width;
+            layout.width  = std::max(layout.width, right);
+            if (!item.isDummy)
+                layout.layerHeight[layer] = std::max(layout.layerHeight[layer], item.height);
+            first           = false;
+            previousIsDummy = item.isDummy;
+        }
+        layout.layerHeight[layer] = std::max(layout.layerHeight[layer], 1);
+        layout.layerTop[layer]    = top;
+        top += layout.layerHeight[layer] + GAP_Y;
+    }
+    for (auto& node : layout.nodes)
+        if (node.isDummy)
+            node.height = layout.layerHeight[node.layer]; // a column through the whole layer
+    layout.width += MARGIN;
+    layout.height = top + MARGIN;
+    return layout;
+}
+
+size_t GView::View::DissasmViewer::CountGraphCrossings(const DissasmGraphLayout& layout, const DissasmFunctionGraph& graph)
+{
+    std::vector<double> position(layout.nodes.size());
+    std::vector<int> layerOf(layout.nodes.size());
+    for (size_t node = 0; node < layout.nodes.size(); node++) {
+        position[node] = layout.nodes[node].x;
+        layerOf[node]  = layout.nodes[node].layer;
+    }
+    return CountCrossings(GraphSegments(layout, graph), position, layerOf);
+}
+
 DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) const
 {
     DissasmFunctionGraph graph;
