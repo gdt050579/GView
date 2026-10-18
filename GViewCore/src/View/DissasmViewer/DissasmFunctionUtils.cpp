@@ -202,6 +202,21 @@ bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_i
 {
     if (available == 0)
         return false;
+    if (unit == DissasmInstructionSet::BYTES_ROW) {
+        // a row of a data zone: up to the next 16 bytes aligned address (the zones start at aligned addresses)
+        const size_t width = std::min<size_t>(available, 16 - static_cast<size_t>(*address % 16));
+        std::string text;
+        char number[8];
+        for (size_t index = 0; index < width; index++) {
+            snprintf(number, sizeof(number), index == 0 ? "0x%02x" : ", 0x%02x", static_cast<unsigned int>((*code)[index]));
+            text += number;
+        }
+        SetDataLine(insn, *address, *code, width, "db", text.c_str());
+        *code += width;
+        *size -= width;
+        *address += width;
+        return true;
+    }
     const bool isUtf16 = unit == DissasmInstructionSet::UTF16_STRING && available >= 2;
     if (unit == DissasmInstructionSet::ASCII_STRING || isUtf16) {
         // a string defined by the user: up to DISSASM_MAX_LINE_SIZE bytes per line, db "text", 0 / du "text", 0 (UTF-16: 2 bytes per

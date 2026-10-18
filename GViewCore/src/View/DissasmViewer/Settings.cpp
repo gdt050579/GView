@@ -23,7 +23,13 @@ void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zone
 {
     if (lang == DisassemblyLanguage::Default || lang == DisassemblyLanguage::Count)
         lang = INTERNAL_SETTINGS->defaultLanguage;
-    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang, {} };
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang, {}, false };
+}
+
+void Settings::AddDataZone(uint64 zoneStart, uint64 zoneSize, DisassemblyLanguage lang, std::string_view name)
+{
+    AddDisassemblyZone(zoneStart, zoneSize, NO_ENTRY_POINT, lang, name);
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart].isData = true;
 }
 
 void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang, std::string_view name)

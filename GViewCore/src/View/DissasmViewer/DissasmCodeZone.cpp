@@ -253,8 +253,74 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         insn   = cs_malloc(handle);
         walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
         callsFound.reserve(16);
+        if (zone->zoneDetails.isData) {
+            StartDataZone();
+            return true;
+        }
         AddPluginFunctions();
         return true;
+    }
+
+    // a data zone: no instructions to sweep; its labels are the places the code of the other zones refers to (named after what is there:
+    // aText for a string, off_ for pointers, unk_ for the other bytes), its pointers are references to what they point to
+    void StartDataZone()
+    {
+        for (const auto& range : instructionSet.dataRanges) {
+            if (!range.isOffset || range.unit == 0)
+                continue;
+            for (uint64 entry = range.start; entry + range.unit <= range.end; entry += range.unit) {
+                const auto value = ReadTableValue(labelBase + entry, range.unit);
+                if (value.has_value() && isFileAddress && isFileAddress(value.value()))
+                    xrefs.Add(labelBase + entry, value.value(), DissasmXrefKind::Offset);
+            }
+        }
+        xrefs.Finish();
+        std::unordered_set<std::string> usedNames;
+        std::vector<uint64> targets;
+        for (const auto* sibling : zone->siblingZones)
+            for (const auto& xref : sibling->xrefs.byTarget)
+                if (xref.to >= labelBase && xref.to - labelBase < codeSize)
+                    targets.push_back(xref.to - labelBase);
+        std::sort(targets.begin(), targets.end());
+        targets.erase(std::unique(targets.begin(), targets.end()), targets.end());
+        LocalString<64> text;
+        for (const uint64 target : targets) {
+            std::string name;
+            const auto* range = instructionSet.DataRangeAt(target);
+            if (range && range->start == target && (range->unit == DissasmInstructionSet::ASCII_STRING || range->unit == DissasmInstructionSet::UTF16_STRING)) {
+                // the text of the string (UTF-16: the low bytes)
+                const bool wide    = range->unit == DissasmInstructionSet::UTF16_STRING;
+                const auto view    = obj->GetData().Get(codeStart + target, static_cast<uint32>(std::min<uint64>(range->end - target, 64)), false);
+                std::string value;
+                for (size_t index = 0; view.IsValid() && index < view.GetLength(); index += wide ? 2 : 1)
+                    value.push_back(static_cast<char>(view.GetData()[index]));
+                name = MakeStringLabelName(value, labelBase + target);
+            } else {
+                X86OperandsInfo operands;
+                operands.absoluteMemory = labelBase + target;
+                const auto* import      = findImport ? findImport(operands) : nullptr;
+                if (import && !import->name.empty()) {
+                    // an import slot: __imp_ and the name of the import (a demangled C++ name keeps its letters and digits)
+                    name = "__imp_";
+                    for (const char c : import->name)
+                        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
+                            name.push_back(c);
+                        else if (name.back() != '_')
+                            name.push_back('_');
+                } else {
+                    text.SetFormat(range && range->isOffset ? "off_%llX" : "unk_%llX", static_cast<unsigned long long>(labelBase + target));
+                    name = text.GetText();
+                }
+            }
+            // a name used twice: aText_1, aText_2, ...
+            std::string unique = name;
+            for (uint32 index = 1; usedNames.contains(unique) && index < 1000; index++)
+                unique = name + "_" + std::to_string(index);
+            usedNames.insert(unique);
+            callsFound.emplace_back(codeStart + target, std::move(unique));
+            callsMap.insert({ codeStart + target, true });
+        }
+        phase = Phase::Labels; // sorted: the targets are
     }
 
     // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
@@ -1085,10 +1151,54 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
 
     localVariables.functions.clear();
     tableEntries.clear();
-    // the data defined by the user: the lines are counted with them (a range that does not fit any more is dropped)
-    for (const auto& range : userDataRanges)
-        if (range.end <= zoneDetails.size)
-            instructionSet.AddDataRange(range);
+    if (zoneDetails.isData) {
+        // a data zone: every byte is a data line; the places the code refers to (the xrefs of the other zones) start their lines
+        constexpr uint64 MAX_DATA_ZONE_SIZE = 64ull * 1024 * 1024;
+        std::vector<uint64> targets;
+        for (const auto* sibling : siblingZones)
+            for (const auto& xref : sibling->xrefs.byTarget)
+                if (xref.to >= labelAddressBase && xref.to - labelAddressBase < zoneDetails.size)
+                    targets.push_back(xref.to - labelAddressBase);
+        std::sort(targets.begin(), targets.end());
+        targets.erase(std::unique(targets.begin(), targets.end()), targets.end());
+        std::vector<DissasmInstructionSet::DataRange> fixedRanges;
+        for (const auto& range : userDataRanges)
+            if (range.end <= zoneDetails.size)
+                fixedRanges.push_back(range);
+        // the import slots the code uses (call [__imp_CreateFileW]): a pointer each, named after the import
+        const uint8 slotSize = Is64BitCode() ? 8 : 4;
+        if (initData.findImport) {
+            std::vector<DissasmInstructionSet::DataRange> slots;
+            for (const uint64 target : targets) {
+                X86OperandsInfo operands;
+                operands.absoluteMemory = labelAddressBase + target;
+                const bool overlapsUser = std::any_of(fixedRanges.begin(), fixedRanges.end(), [target, slotSize](const auto& range) {
+                    return range.start < target + slotSize && target < range.end;
+                });
+                const bool overlapsSlot = !slots.empty() && slots.back().end > target;
+                if (!overlapsUser && !overlapsSlot && target + slotSize <= zoneDetails.size && initData.findImport(operands))
+                    slots.push_back({ target, target + slotSize, slotSize });
+            }
+            fixedRanges.insert(fixedRanges.end(), slots.begin(), slots.end());
+            std::sort(fixedRanges.begin(), fixedRanges.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
+        }
+        const uint64 fileSize = initData.obj->GetData().GetSize();
+        const uint64 dataSize = zoneDetails.startingZonePoint < fileSize ? std::min<uint64>({ zoneDetails.size, MAX_DATA_ZONE_SIZE, fileSize - zoneDetails.startingZonePoint }) : 0;
+        const auto bytes      = initData.obj->GetData().CopyToBuffer(zoneDetails.startingZonePoint, static_cast<uint32>(dataSize), false);
+        // the pointers: only with the addresses of the plugin (the VAs), every small number is a file offset otherwise
+        const uint8 pointerSize = Is64BitCode() ? 8 : 4;
+        std::function<bool(uint64)> isPointer;
+        if (initData.labelAddressBase.has_value() && initData.isFileAddress)
+            isPointer = [isFileAddress = initData.isFileAddress](uint64 value) { return value != 0 && isFileAddress(value); };
+        instructionSet.dataRanges = BuildDataZoneRanges(bytes.GetData(), bytes.GetLength(), targets, fixedRanges, pointerSize, isPointer);
+        if (bytes.GetLength() < zoneDetails.size) // the bytes past the limit: rows
+            instructionSet.dataRanges.push_back({ bytes.GetLength(), zoneDetails.size, DissasmInstructionSet::BYTES_ROW });
+    } else {
+        // the data defined by the user: the lines are counted with them (a range that does not fit any more is dropped)
+        for (const auto& range : userDataRanges)
+            if (range.end <= zoneDetails.size)
+                instructionSet.AddDataRange(range);
+    }
     deepScan.reset();
     deepScanInitData.reset();
     lineCounter.reset();
@@ -1220,6 +1330,11 @@ void DissasmCodeZone::RebuildLineIndex()
         if (!IsLocalVariableAnnotation(details))
             labelLineOfAddress.try_emplace(details.second, line);
     }
+    sortedLabelAddresses.clear();
+    sortedLabelAddresses.reserve(labelLineOfAddress.size());
+    for (const auto& [address, line] : labelLineOfAddress)
+        sortedLabelAddresses.push_back(address);
+    std::sort(sortedLabelAddresses.begin(), sortedLabelAddresses.end());
     offsetCacheMaxLine = 0; // the next decoded line searches its closest cached offset
     ResetZoneCaching();
 }
@@ -1648,6 +1763,118 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallers(uint64 functionSta
     return callers;
 }
 
+std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::BuildDataZoneRanges(
+      const uint8* bytes,
+      uint64 size,
+      const std::vector<uint64>& targets,
+      const std::vector<DissasmInstructionSet::DataRange>& fixedRanges,
+      uint8 pointerSize,
+      const std::function<bool(uint64)>& isPointer)
+{
+    using DataRange                   = DissasmInstructionSet::DataRange;
+    constexpr uint64 MIN_STRING_CHARS = 4;
+    std::vector<DataRange> ranges;
+    if (!bytes)
+        return ranges;
+    const auto isText = [](uint8 value) { return (value >= 0x20 && value < 0x7F) || value == '\t' || value == '\r' || value == '\n'; };
+    const auto readPointer = [bytes, pointerSize](uint64 position) {
+        uint64 value = 0;
+        for (uint8 index = 0; index < pointerSize; index++)
+            value |= static_cast<uint64>(bytes[position + index]) << (8 * index);
+        return value;
+    };
+    size_t nextTarget = 0, nextFixed = 0;
+    uint64 rowStart   = UINT64_MAX;
+    const auto closeRow = [&](uint64 end) {
+        if (rowStart != UINT64_MAX && end > rowStart)
+            ranges.push_back({ rowStart, end, DissasmInstructionSet::BYTES_ROW });
+        rowStart = UINT64_MAX;
+    };
+    uint64 position = 0;
+    while (position < size) {
+        // a range of the user: as it is
+        if (nextFixed < fixedRanges.size() && fixedRanges[nextFixed].start <= position) {
+            closeRow(position);
+            DataRange range = fixedRanges[nextFixed++];
+            if (range.end > position) {
+                range.start = position;
+                ranges.push_back(range);
+                position = range.end;
+            }
+            continue;
+        }
+        while (nextTarget < targets.size() && targets[nextTarget] < position)
+            nextTarget++;
+        const bool isTarget = nextTarget < targets.size() && targets[nextTarget] == position;
+        if (isTarget)
+            closeRow(position); // a label starts its line
+        // the end of the item: the next target, the next range of the user, the end of the zone
+        uint64 limit = nextTarget + (isTarget ? 1 : 0) < targets.size() ? targets[nextTarget + (isTarget ? 1 : 0)] : size;
+        if (nextFixed < fixedRanges.size())
+            limit = std::min(limit, fixedRanges[nextFixed].start);
+        limit = std::min(limit, size);
+
+        // a string ended by its zero: UTF-16 (the text of the Windows APIs), then ASCII. A place the code refers to is a string from its
+        // first character (L":"), the other ones from 4 characters
+        const uint64 minimumChars = isTarget ? 1 : MIN_STRING_CHARS;
+        uint64 characters         = 0;
+        while (position + 2 * characters + 1 < limit && isText(bytes[position + 2 * characters]) && bytes[position + 2 * characters + 1] == 0)
+            characters++;
+        if (characters >= minimumChars && position + 2 * characters + 1 < limit && bytes[position + 2 * characters] == 0 &&
+            bytes[position + 2 * characters + 1] == 0) {
+            closeRow(position);
+            ranges.push_back({ position, position + 2 * characters + 2, DissasmInstructionSet::UTF16_STRING });
+            position += 2 * characters + 2;
+            continue;
+        }
+        uint64 length = 0;
+        while (position + length < limit && isText(bytes[position + length]))
+            length++;
+        if (length >= minimumChars && position + length < limit && bytes[position + length] == 0) {
+            closeRow(position);
+            ranges.push_back({ position, position + length + 1, DissasmInstructionSet::ASCII_STRING });
+            position += length + 1;
+            continue;
+        }
+        // a run of pointers
+        if (isPointer && position % pointerSize == 0 && position + pointerSize <= limit && isPointer(readPointer(position))) {
+            closeRow(position);
+            const uint64 start = position;
+            while (position + pointerSize <= limit && isPointer(readPointer(position)))
+                position += pointerSize;
+            ranges.push_back({ start, position, pointerSize, true });
+            continue;
+        }
+        // a byte of a row; a text that is not a string stays in the row (it is not read again from every byte)
+        if (rowStart == UINT64_MAX)
+            rowStart = position;
+        position += length >= MIN_STRING_CHARS ? length : 1;
+    }
+    closeRow(size);
+    return ranges;
+}
+
+std::string GView::View::DissasmViewer::MakeStringLabelName(std::string_view text, uint64 address)
+{
+    constexpr size_t MAX_NAME_CHARS = 24;
+    std::string name = "a";
+    bool newWord     = true;
+    for (const char c : text) {
+        if (name.size() > MAX_NAME_CHARS)
+            break;
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            name.push_back(newWord ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c);
+            newWord = false;
+        } else
+            newWord = true;
+    }
+    if (name.size() > 1)
+        return name;
+    LocalString<32> fallback;
+    fallback.SetFormat("asc_%llX", static_cast<unsigned long long>(address));
+    return fallback.GetText();
+}
+
 void DissasmCodeZone::SetUserDataRange(const DissasmInstructionSet::DataRange& range)
 {
     userDataRanges.erase(std::remove_if(userDataRanges.begin(), userDataRanges.end(),
@@ -2055,6 +2282,20 @@ std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
         if (const auto other = FindCodeZoneOfAddress(address); other && other != this)
             return other->FormatCodeAddress(address - other->labelAddressBase);
         text.SetFormat("0x%llx", static_cast<unsigned long long>(address));
+        return text.GetText();
+    }
+    // a data zone: the label placed before the address (off_1048+0x8)
+    if (zoneDetails.isData) {
+        const auto label = std::upper_bound(sortedLabelAddresses.begin(), sortedLabelAddresses.end(), relativeAddress);
+        if (label != sortedLabelAddresses.begin()) {
+            const uint64 labelAddress = *(label - 1);
+            std::string name          = GetLabelNameAt(labelAddress);
+            if (relativeAddress == labelAddress)
+                return name;
+            text.SetFormat("+0x%llX", static_cast<unsigned long long>(relativeAddress - labelAddress));
+            return name + text.GetText();
+        }
+        text.SetFormat("0x%llx", static_cast<unsigned long long>(labelAddressBase + relativeAddress));
         return text.GetText();
     }
     // the function that contains the address: the last function start placed before it

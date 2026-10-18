@@ -66,6 +66,7 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
     const auto findImport   = [settings, &zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, &zone, operands); };
     json result             = { { "language", zone.GetArchitectureName() },
                                 { "name", details.name },
+                                { "kind", details.isData ? "data" : "code" },
                                 { "fileOffset", Hex(details.startingZonePoint) },
                                 { "size", Hex(details.size) },
                                 { "entryPoint", details.HasEntryPoint() ? json(Hex(base + (details.entryPoint - details.startingZonePoint))) : json(nullptr) },
@@ -148,10 +149,16 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
 
     const auto pathText = std::filesystem::path(obj->GetPath()).u8string();
     nlohmann::json root = { { "file", std::string(reinterpret_cast<const char*>(pathText.data()), pathText.size()) } };
-    // every zone is analyzed first: the annotations and the signatures apply to all of them
+    // every zone is analyzed first: the annotations and the signatures apply to all of them; the code zones before the data zones (their
+    // labels are the places the code refers to)
     std::vector<DissasmCodeZoneInitData> initDatas(settings->parseZones.size());
     std::vector<DissasmCodeZone*> analyzedZones;
-    for (size_t index = 0; index < settings->parseZones.size(); index++) {
+    std::vector<size_t> order;
+    for (const bool data : { false, true })
+        for (size_t index = 0; index < settings->parseZones.size(); index++)
+            if (static_cast<DissasmCodeZone*>(settings->parseZones[index].get())->zoneDetails.isData == data)
+                order.push_back(index);
+    for (const size_t index : order) {
         const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
         auto& initData  = initDatas[index];
         initData.enableDeepScanDissasmOnStart  = true; // at once: there is no window to show a partial analysis

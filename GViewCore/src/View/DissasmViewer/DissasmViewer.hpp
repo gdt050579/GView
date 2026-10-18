@@ -67,6 +67,7 @@ namespace View
             // of `unit` bytes (1, 2, 4, 8), or a string (ASCII_STRING, UTF16_STRING)
             static constexpr uint8 ASCII_STRING = 0;
             static constexpr uint8 UTF16_STRING = 0x10;
+            static constexpr uint8 BYTES_ROW    = 0x20; // the bytes of a data zone that are not a string / a pointer: rows of up to 16 bytes
             static bool IsValidDataUnit(uint64 unit)
             {
                 return unit == ASCII_STRING || unit == UTF16_STRING || unit == 1 || unit == 2 || unit == 4 || unit == 8;
@@ -75,6 +76,7 @@ namespace View
                 uint64 start; // relative addresses [start, end)
                 uint64 end;
                 uint8 unit;
+                bool isOffset = false; // the values (4 / 8 bytes) are addresses: shown with the name of what they point to
                 bool operator==(const DataRange&) const = default;
             };
             std::vector<DataRange> dataRanges; // sorted, not overlapping
@@ -129,6 +131,7 @@ namespace View
             uint64 entryPoint; // NO_ENTRY_POINT: the zone has none
             DisassemblyLanguage language;
             std::string name; // shown in the title of the zone (a section name), not saved in the cache
+            bool isData = false; // a data zone (AddDataZone): no instructions, its bytes are data lines
 
             bool HasEntryPoint() const
             {
@@ -819,6 +822,7 @@ namespace View
             // every zone is prepared
             bool PrepareNextCodeZone();
             void PrepareCodeZones();
+            void PrepareCodeOnlyZones(); // the zones of instructions (not the data zones), their analysis ended
             void CommandExportAsmFile();
             // the annotations of the user as a plain text (JSON) file keyed by the addresses: written / added to the analysed zones
             void ExportAnnotations();

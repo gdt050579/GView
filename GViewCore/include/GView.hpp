@@ -1800,6 +1800,9 @@ namespace View
             // a code zone with a name shown in its title (a section: .text, PAGE, UPX1); zoneDissasmStartPoint: the entry point when it is
             // inside the zone, NO_ENTRY_POINT otherwise
             void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang, std::string_view name);
+            // a data zone (a section of initialized data: .rdata, .data): its bytes are shown as strings, pointers (the size of the pointers
+            // of `lang`, the language of the code) and rows of bytes, with labels where the code refers to them
+            void AddDataZone(uint64 zoneStart, uint64 zoneSize, DisassemblyLanguage lang, std::string_view name);
 
             void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
             /**

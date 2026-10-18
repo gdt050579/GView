@@ -283,6 +283,8 @@ struct ZoneLayout {
     std::optional<uint64> imageBase;
     std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
     std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
+    bool isData = false;                                     // a data zone (AddDataZone)
+    std::vector<DissasmCodeZone*> siblings;                  // the other zones of the file (their xrefs name the labels of a data zone)
     bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
     std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
     std::map<uint64, ArmCodeMode> armCodeModes;               // 32 bit ARM: the mode changes, by file offset
@@ -358,6 +360,8 @@ class DissasmTestInstance
         zone->zoneDetails.startingZonePoint = layout.start;
         zone->zoneDetails.size              = layout.size;
         zone->zoneDetails.entryPoint        = layout.entryPoint;
+        zone->zoneDetails.isData            = layout.isData;
+        zone->siblingZones                  = layout.siblings;
 
         DissasmCodeZoneInitData initData      = {};
         initData.enableDeepScanDissasmOnStart  = true;
@@ -6074,4 +6078,96 @@ TEST_CASE("UserDataUtf16String", "[Dissasm]UserData")
     REQUIRE(FindListingLine(listing, "du     \"Hi there\"").size() > 0); // 8 characters per line
     REQUIRE(FindListingLine(listing, "du     \"!\", 0").size() > 0);
     REQUIRE(FindListingLine(listing, "int3").size() > 0);
+}
+
+TEST_CASE("DataZoneRanges", "[Dissasm]DataZone")
+{
+    using DataRange = DissasmInstructionSet::DataRange;
+    std::vector<uint8> bytes(0x60, 0x11);
+    const auto put = [&bytes](size_t at, std::string_view text) { std::copy(text.begin(), text.end(), bytes.begin() + at); };
+    put(0x00, std::string_view("Hello world\0", 12));        // a string
+    put(0x0C, std::string_view("ab\0", 3));                  // too short (not referred to): a row
+    put(0x10, std::string_view("W\0i\0d\0e\0\0\0", 10));     // UTF-16
+    for (size_t index = 0; index < 16; index++)              // 0x20: two pointers
+        bytes[0x20 + index] = index == 1 ? 0x10 : (index == 9 ? 0x10 : 0x00);
+    put(0x40, std::string_view(":\0", 2));                   // a short string referred to by the code
+    const auto isPointer = [](uint64 value) { return value >= 0x1000 && value < 0x2000; };
+    const auto ranges    = BuildDataZoneRanges(bytes.data(), bytes.size(), { 0x40 }, {}, 8, isPointer);
+    INFO(ranges.size());
+    REQUIRE(ranges.size() >= 6);
+    REQUIRE(ranges[0] == DataRange{ 0x00, 0x0C, DissasmInstructionSet::ASCII_STRING });
+    REQUIRE(ranges[1] == DataRange{ 0x0C, 0x10, DissasmInstructionSet::BYTES_ROW });
+    REQUIRE(ranges[2] == DataRange{ 0x10, 0x1A, DissasmInstructionSet::UTF16_STRING });
+    REQUIRE(ranges[3] == DataRange{ 0x1A, 0x20, DissasmInstructionSet::BYTES_ROW });
+    REQUIRE(ranges[4] == DataRange{ 0x20, 0x30, 8, true });
+    REQUIRE(ranges[5] == DataRange{ 0x30, 0x40, DissasmInstructionSet::BYTES_ROW }); // ends at the target
+    REQUIRE(ranges[6] == DataRange{ 0x40, 0x42, DissasmInstructionSet::ASCII_STRING });
+    REQUIRE(ranges.back().end == 0x60);
+    // a range of the user is kept as it is, the items around it end at it
+    const auto withUser = BuildDataZoneRanges(bytes.data(), bytes.size(), {}, { DataRange{ 0x04, 0x08, 4 } }, 8, isPointer);
+    REQUIRE(withUser[0] == DataRange{ 0x00, 0x04, DissasmInstructionSet::BYTES_ROW }); // "Hell" is not a string any more (no zero)
+    REQUIRE(withUser[1] == DataRange{ 0x04, 0x08, 4 });
+
+    REQUIRE(MakeStringLabelName("Hello world", 0x1000) == "aHelloWorld");
+    REQUIRE(MakeStringLabelName("%s\\%s", 0x1000) == "aSS");
+    REQUIRE(MakeStringLabelName(":", 0x1234) == "asc_1234");
+}
+
+TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
+{
+    // the code (VA 0x1000) refers to a string and to a table of pointers of the data zone (VA 0x1040)
+    std::vector<unsigned char> file = {
+        0x48, 0x8D, 0x0D, 0x39, 0x00, 0x00, 0x00, // 0x00: lea rcx, [rip + 0x39] (the string, 0x40)
+        0x48, 0x8D, 0x15, 0x3A, 0x00, 0x00, 0x00, // 0x07: lea rdx, [rip + 0x3a] (the pointers, 0x48)
+        0xFF, 0x15, 0x64, 0x00, 0x00, 0x00,       // 0x0e: call qword ptr [rip + 0x64] (an import slot, 0x78)
+        0xC3,                                     // 0x14: ret
+    };
+    file.resize(0x40, 0xCC);
+    for (const char c : std::string_view("Hello!"))
+        file.push_back(static_cast<unsigned char>(c)); // 0x40
+    file.push_back(0);
+    file.push_back(0);                                                // 0x47: padding
+    file.insert(file.end(), { 0x00, 0x10, 0, 0, 0, 0, 0, 0 });        // 0x48: 0x1000 (the code)
+    file.insert(file.end(), { 0x40, 0x10, 0, 0, 0, 0, 0, 0 });        // 0x50: 0x1040 (the string)
+    for (uint8 value = 1; file.size() < 0x80; value++)
+        file.push_back(value); // 0x58: other bytes
+    const uint64 fileSize = file.size();
+
+    ZoneLayout layout;
+    layout.size             = 0x20;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x1000;
+    layout.isFileAddress    = [fileSize](uint64 va) { return va >= 0x1000 && va - 0x1000 < fileSize; };
+    layout.addressToFileOffset = [fileSize](uint64 va) -> std::optional<uint64> {
+        return va >= 0x1000 && va - 0x1000 < fileSize ? std::optional<uint64>(va - 0x1000) : std::nullopt;
+    };
+    layout.imports = { { 0x1078, { "CreateFileW", MemoryMappingType::FunctionMapping } } }; // by the VA of the slot (no translation)
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    auto& codeZone = *code.zone;
+
+    layout.start            = 0x40;
+    layout.size             = 0x40;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x1040;
+    layout.isData           = true;
+    layout.siblings         = { &codeZone };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    auto& dataZone          = *data.zone;
+    codeZone.siblingZones   = { &dataZone };
+
+    REQUIRE(dataZone.GetLabelNameAt(0x00) == "aHello");
+    REQUIRE(dataZone.GetLabelNameAt(0x08) == "off_1048");
+    REQUIRE(dataZone.GetLabelNameAt(0x38) == "__imp_CreateFileW"); // the import slot used by the call
+    REQUIRE(dataZone.functionStarts.empty());
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "db     \"Hello!\", 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     EntryPoint").size() > 0); // the pointers with the names of what they point to
+    REQUIRE(FindListingLine(listing, "dq     aHello").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     CreateFileW").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08").size() > 0);
+    REQUIRE(FindListingLine(listing, "aHello:").ends_with("; xrefs: off_1048+0x8 (offset), EntryPoint (offset)")); // the table and the code
+    // the pointers are references to what they point to: the entry point is referred to by the table
+    REQUIRE(codeZone.FormatXrefsSummary(0x00) == "xref: off_1048 (offset)");
 }

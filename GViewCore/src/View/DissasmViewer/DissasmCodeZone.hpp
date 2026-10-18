@@ -500,6 +500,7 @@ struct DissasmCodeZone : public ParseZone {
     bool linesReady  = false;
     std::vector<uint32> annotationLines;                // the sorted lines of dissasmType.annotations
     std::unordered_map<uint64, uint32> labelLineOfAddress; // relative address of a label -> its line (expanded layout)
+    std::vector<uint64> sortedLabelAddresses;               // the same addresses, sorted (a data zone names an address after its label)
 };
 
 // the lines of the zone as they are shown (without the title), the collapsed zones count as one line
@@ -515,6 +516,19 @@ void PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> ob
 // A search (Ctrl+F / F6) in the code zones of the file (the executable sections), in their order: zones[startZone] after `from`, the next
 // zones, the zones before it, then zones[startZone] up to `from`. `from` and the position found are a line of the zone for a text, a
 // relative address for bytes / an immediate. makeParams gives the line parameters of a zone (the text search draws the lines), may be empty.
+// The lines of a data zone: strings (ASCII of at least 4 characters with their zero, UTF-16), runs of pointers (aligned values that
+// isPointer accepts, `pointerSize` bytes) and rows of the other bytes. An item never crosses a target (a place the code refers to: a label
+// starts its line) or a fixed range (the data defined by the user, kept as they are). Relative addresses, sorted.
+std::vector<DissasmInstructionSet::DataRange> BuildDataZoneRanges(
+      const uint8* bytes,
+      uint64 size,
+      const std::vector<uint64>& targets,
+      const std::vector<DissasmInstructionSet::DataRange>& fixedRanges,
+      uint8 pointerSize,
+      const std::function<bool(uint64)>& isPointer);
+// the name of the label of a string (IDA): "a" and the words of the text (aHelloWorld), asc_<address> when it has no letter or digit
+std::string MakeStringLabelName(std::string_view text, uint64 address);
+
 struct DissasmSearchHit {
     DissasmCodeZone* zone;
     uint64 position;

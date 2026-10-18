@@ -405,7 +405,7 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
 {
     DissasmViewer::Settings settings;
 
-    // one code zone for every executable section (.text, PAGE / INIT of the drivers, CODE of Delphi, UPX1 of the packed files) and for the
+    // one code zone for every executable section (and a data zone for every section of initialized data) (.text, PAGE / INIT of the drivers, CODE of Delphi, UPX1 of the packed files) and for the
     // section of the entry point: the sections are not contiguous in the file and in memory in the same way, a zone keeps the addresses of
     // one section. Only the zone of the entry point has an entry point.
     if (pe->HasPanel(PE::Panels::IDs::Sections)) {
@@ -430,17 +430,24 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
                 continue;
             const bool hasEntryPoint = entryPoint != PE_INVALID_ADDRESS && entryPoint >= start && entryPoint - start < size;
             const bool isCode        = (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) != 0;
-            if (!isCode && !hasEntryPoint)
+            pe->CopySectionName(tr, sectionName);
+            auto name = sectionName.ToStringView();
+            name      = name.substr(0, name.find('\0')); // the 8 bytes of the name are padded with zeros
+            // the initialized data (.rdata, .data, .idata, ...) is a data zone: the strings, the pointers and the labels the code refers to;
+            // the resources, the relocations and the exception data are shown by their panels
+            const bool isData = !isCode && !hasEntryPoint && (section.Characteristics & __IMAGE_SCN_CNT_INITIALIZED_DATA) != 0 && name != ".rsrc" &&
+                                name != ".reloc" && name != ".pdata";
+            if (!isCode && !hasEntryPoint && !isData)
                 continue;
             const bool overlaps =
                   std::any_of(zones.begin(), zones.end(), [start, size](const auto& zone) { return start < zone.second && zone.first < start + size; });
             if (overlaps)
                 continue;
             zones.emplace_back(start, start + size);
-            pe->CopySectionName(tr, sectionName);
-            auto name = sectionName.ToStringView();
-            name      = name.substr(0, name.find('\0')); // the 8 bytes of the name are padded with zeros
-            settings.AddDisassemblyZone(start, size, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
+            if (isData)
+                settings.AddDataZone(start, size, language, name);
+            else
+                settings.AddDisassemblyZone(start, size, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
         }
     }
 

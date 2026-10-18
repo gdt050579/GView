@@ -544,7 +544,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
 
 const MemoryMappingEntry* GView::View::DissasmViewer::FindX86OperandsImport(SettingsData* settings, const DissasmCodeZone* zone, const X86OperandsInfo& operands)
 {
-    if (!settings || zone->cachedCodeOffsets.empty())
+    if (!settings)
         return nullptr;
     const auto& mappings = settings->memoryMappings;
     if (mappings.empty())
@@ -559,7 +559,7 @@ const MemoryMappingEntry* GView::View::DissasmViewer::FindX86OperandsImport(Sett
         return operands.absoluteMemory.has_value() ? find(operands.absoluteMemory.value()) : nullptr;
 
     if (operands.ripTarget.has_value()) // the decoded addresses are relative to the first decoded instruction
-        return find(GetCodeStartRVA(settings, zone) + operands.ripTarget.value());
+        return zone->cachedCodeOffsets.empty() ? nullptr : find(GetCodeStartRVA(settings, zone) + operands.ripTarget.value());
     if (operands.absoluteMemory.has_value()) {
         const auto offset = TranslateOperandAddressToFileOffset(settings, operands.absoluteMemory.value(), true);
         if (!offset.has_value())
@@ -723,6 +723,30 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     if (!params.settings || !params.asmData) {
         SetOperands(insn->op_str, params.zone);
         return true;
+    }
+
+    // a pointer of a data zone: the name of what it points to (a label of any zone), else its value
+    if (insn->id == 0) {
+        const auto* range = params.zone->instructionSet.DataRangeAt(insn->address);
+        if (range && range->isOffset && insn->size == range->unit && range->unit <= 8) {
+            uint64 value = 0;
+            for (uint32 index = 0; index < range->unit; index++)
+                value |= static_cast<uint64>(insn->bytes[index]) << (8 * index);
+            const auto target = params.zone->FindCodeZoneOfAddress(value);
+            const std::string name = target ? target->FormatCodeAddress(value - target->labelAddressBase) : FormatAddress(value);
+            SetOperands(name.c_str(), params.zone);
+            return true;
+        }
+    }
+
+    // an import slot of a data zone: the name of the import (its bytes are the RVA of the name until the loader writes the address)
+    if (insn->id == 0 && params.zone->zoneDetails.isData && insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
+        X86OperandsInfo slot;
+        slot.absoluteMemory = params.zone->labelAddressBase + insn->address;
+        if (const auto* import = FindX86OperandsImport(params.settings, params.zone, slot); import && !import->name.empty()) {
+            SetOperands(import->name.c_str(), params.zone);
+            return true;
+        }
     }
 
     // an entry of a jump table: the name of its case (IDA: dd offset loc_...)
@@ -993,8 +1017,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
             repaintRequested        = true;
         }
 
-        constexpr std::string_view zoneName = "Dissasm zone";
-        chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
+        const std::string_view zoneName = zone->zoneDetails.isData ? std::string_view("Data zone") : std::string_view("Dissasm zone");
+        chars.Add(zoneName, ColorMan.Colors.StructureColor);
         uint32 titleSize = static_cast<uint32>(zoneName.size());
         if (!zone->zoneDetails.name.empty()) { // the section of the zone (a file with several executable sections)
             const std::string sectionName = " " + zone->zoneDetails.name;
@@ -1246,6 +1270,9 @@ void Instance::FillCodeZoneInitData(DissasmCodeZoneInitData& initData, DrawLineI
 
 bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
 {
+    // a data zone: its labels are the places the code refers to, the code zones are analyzed first
+    if (zone->zoneDetails.isData)
+        PrepareCodeOnlyZones();
     DissasmCodeZoneInitData initData{};
     FillCodeZoneInitData(initData, dli, zone);
     // the data defined by the user (D / A) are saved apart: the lines are counted with them
@@ -1366,16 +1393,39 @@ bool Instance::PrepareNextCodeZone()
 {
     if (!config.EnableDeepScanDissasmOnStart)
         return false; // without the analysis there are no references between the zones: a zone is prepared when it is shown
+    // the code zones first: the labels of the data zones are the places the code refers to
+    for (const bool data : { false, true }) {
+        for (const auto& zone : settings->parseZones) {
+            if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+                continue;
+            const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+            if (codeZone->zoneDetails.isData != data || codeZone->isInit || codeZone->initTried ||
+                !DissasmCodeZone::IsNativeCodeLanguage(codeZone->zoneDetails.language))
+                continue;
+            if (data && HasPendingDeepScans())
+                return false; // the data zones wait for the analysis of the code
+            InitDissasmCodeZone(nullptr, codeZone);
+            return true;
+        }
+    }
+    return false;
+}
+
+void Instance::PrepareCodeOnlyZones()
+{
     for (const auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
         const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
-        if (codeZone->isInit || codeZone->initTried || !DissasmCodeZone::IsNativeCodeLanguage(codeZone->zoneDetails.language))
+        if (codeZone->zoneDetails.isData || !DissasmCodeZone::IsNativeCodeLanguage(codeZone->zoneDetails.language))
             continue;
-        InitDissasmCodeZone(nullptr, codeZone);
-        return true;
+        if (!codeZone->isInit && !codeZone->initTried && config.EnableDeepScanDissasmOnStart)
+            InitDissasmCodeZone(nullptr, codeZone);
+        if (codeZone->IsDeepScanPending()) {
+            codeZone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
+            EndDeepScan(codeZone, false);
+        }
     }
-    return false;
 }
 
 void Instance::PrepareCodeZones()
@@ -1386,15 +1436,19 @@ void Instance::PrepareCodeZones()
 
 void Instance::FinishDeepScans()
 {
-    PrepareCodeZones(); // the actions that need the labels also need the references from the zones never shown
-    for (const auto& zone : settings->parseZones) {
-        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
-            continue;
-        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
-        if (!codeZone->IsDeepScanPending())
-            continue;
-        codeZone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
-        EndDeepScan(codeZone, false);
+    // the actions that need the labels also need the references from the zones never shown: the code zones, then the data zones (they
+    // wait for the analysis of the code)
+    for (uint32 round = 0; round < 2; round++) {
+        PrepareCodeZones();
+        for (const auto& zone : settings->parseZones) {
+            if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+                continue;
+            const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+            if (!codeZone->IsDeepScanPending())
+                continue;
+            codeZone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
+            EndDeepScan(codeZone, false);
+        }
     }
 }
 
@@ -1804,17 +1858,48 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (!IsX86Branch(GetInstructionFlow(*insn, zone->GetArch()))) {
+        // a pointer of a data zone: what it points to
+        if (insn->id == 0) {
+            const auto* range = zone->instructionSet.DataRangeAt(insn->address);
+            uint64 value      = 0;
+            const bool isPointer = range && range->isOffset && insn->size == range->unit && range->unit <= 8;
+            for (uint32 index = 0; isPointer && index < range->unit; index++)
+                value |= static_cast<uint64>(insn->bytes[index]) << (8 * index);
             cs_free(insn, 1);
+            const auto fileOffset = isPointer ? TranslateOperandAddressToFileOffset(settings.get(), value, true) : std::nullopt;
+            if (fileOffset.has_value() && !GoToFileOffset(fileOffset.value()))
+                Dialogs::MessageBox::ShowNotification("Warning", "The address is outside of the zones of the view!");
             return;
         }
         // file offsets, like the displayed operand (TryGetDataFromInsn): the decoded addresses start at the first decoded instruction
         jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
         for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
             jumpMnemonic[i] = insn->mnemonic[i];
-        const auto target       = GetInstructionOperands(*insn, zone->GetArch()).directTarget;
+        const auto operands     = zone->GetOperandsInfo(*insn);
+        const auto target       = operands.directTarget;
         const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
         cs_free(insn, 1);
+        if (!target.has_value()) {
+            // the data the instruction refers to (lea rcx, [rip + ...], mov eax, [0x403000], push offset aText): its zone, when it has one
+            const uint64 addressMask = zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+            std::optional<uint64> address;
+            if (operands.ripTarget.has_value())
+                address = (zone->labelAddressBase + operands.ripTarget.value()) & addressMask;
+            else if (operands.absoluteMemory.has_value())
+                address = operands.absoluteMemory.value();
+            else
+                for (const uint64 value : operands.immediates)
+                    if (value >= 0x10000 && zone->FindCodeZoneOfAddress(value)) {
+                        address = value;
+                        break;
+                    }
+            const auto fileOffset = address.has_value() ? TranslateOperandAddressToFileOffset(settings.get(), address.value(), true) : std::nullopt;
+            if (fileOffset.has_value() && GoToFileOffset(fileOffset.value()))
+                return;
+            if (address.has_value())
+                Dialogs::MessageBox::ShowNotification("Warning", "The address is outside of the zones of the view!");
+            return;
+        }
         if (!targetOffset.has_value()) {
             if (!target.has_value())
                 return; // indirect jump / call: nothing to follow
