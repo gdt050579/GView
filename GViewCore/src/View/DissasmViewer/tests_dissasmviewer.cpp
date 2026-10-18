@@ -4635,6 +4635,16 @@ TEST_CASE("Arm64AdrpTrackerLimits", "[Dissasm]Arm64")
     REQUIRE(shifted->address == 0x2000);
     REQUIRE(shifted->memoryAccess == 0);
 
+    // ldr x19, [sp], #0x10 (post index): the immediate is not a literal address
+    {
+        const uint32 word      = 0xF84107F3;
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn          = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, 0x100, 1, &insn) == 1);
+        REQUIRE_FALSE(GetArm64OperandsInfo(*insn).ripTarget.has_value());
+        cs_free(insn, 1);
+    }
+
     // a zone that starts inside a page (VA 0x100000450): adrp gives the page of the VA (capstone decoded from the zone start, address 0)
     Arm64AdrpTracker based(0x100000450);
     const auto nextBased = [&](uint32 word, uint64 address) {

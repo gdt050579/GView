@@ -72,10 +72,13 @@ X86OperandsInfo GView::View::DissasmViewer::GetArm64OperandsInfo(const cs_insn& 
         case ARM64_INS_ADR: // adr x0, label: the address is taken
             info.ripTarget = value;
             break;
-        case ARM64_INS_LDR: // ldr x0, label (a literal): the address is read
+        case ARM64_INS_LDR: // ldr x0, label (a literal): the address is read; ldr x0, [sp], #0x10 (post index) is not one
         case ARM64_INS_LDRSW:
-            info.ripTarget    = value;
-            info.memoryAccess = CS_AC_READ;
+            if (arm64.op_count == 2) {
+                info.ripTarget    = value;
+                info.memoryAccess = CS_AC_READ;
+            } else
+                info.immediates.push_back(value);
             break;
         case ARM64_INS_ADRP: // the page of an address: its offset is added by the next instruction (not known here)
             break;

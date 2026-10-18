@@ -131,9 +131,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
     void AddDissasmImports(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf, Reference<GView::Object> obj)
     {
         const uint64 imageBase = elf->GetImageBase() == static_cast<uint64>(-1) ? 0 : elf->GetImageBase();
+        const bool isAarch64   = (elf->is64 ? elf->header64.e_machine : elf->header32.e_machine) == ELF::EM_AARCH64;
         auto addSlot           = [&](uint64 slot, uint64 symbolIndex, uint64 type) {
-            // jump slots (PLT) and global data (GOT) of the same numbers in x86 and x64
-            if (type != ELF::R_X86_64_JUMP_SLOT && type != ELF::R_X86_64_GLOB_DAT)
+            // jump slots (PLT) and global data (GOT): the same numbers in x86 and x64, their own in AArch64
+            if (isAarch64 ? (type != ELF::R_AARCH64_JUMP_SLOT && type != ELF::R_AARCH64_GLOB_DAT)
+                          : (type != ELF::R_X86_64_JUMP_SLOT && type != ELF::R_X86_64_GLOB_DAT))
                 return;
             if (symbolIndex == 0 || symbolIndex >= elf->dynamicSymbolsNames.size() || elf->dynamicSymbolsNames[symbolIndex].empty() || slot < imageBase)
                 return;
@@ -208,8 +210,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
         }
     }
 
-    // The disassembly of the x86 / x64 code: one zone from the first to the last executable section (.init, .plt, .text, .fini), so the
-    // calls to the PLT stubs stay inside the zone
+    // The disassembly of the x86 / x64 / AArch64 code: one zone from the first to the last executable section (.init, .plt, .text, .fini),
+    // so the calls to the PLT stubs stay inside the zone
     void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<ELF::ELFFile> elf)
     {
         const auto machine = elf->is64 ? elf->header64.e_machine : elf->header32.e_machine;
@@ -218,8 +220,10 @@ GVIEW_PLUGIN_ENTRY_POINTS
             language = DissasmViewer::DisassemblyLanguage::x64;
         else if (machine == ELF::EM_386)
             language = DissasmViewer::DisassemblyLanguage::x86;
+        else if (machine == ELF::EM_AARCH64 && elf->is64)
+            language = DissasmViewer::DisassemblyLanguage::ARM64;
         else
-            return; // the disassembly view decodes only x86 / x64
+            return; // the disassembly view decodes x86 / x64 / AArch64
 
         uint64 start = UINT64_MAX, end = 0;
         std::vector<uint64> sectionStarts; // the padding between two sections never hides the start of the next one

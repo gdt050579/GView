@@ -304,7 +304,9 @@ inline void DissasmAddColorsToInstruction(
             buffer.AddChar(c);
         }
         if (buffer.Len() > 0) {
-            cb.Add(" ");
+            const bool isWriteback = lastOp == ']' && buffer.Len() == 1 && buffer.GetText()[0] == '!'; // ARM64: [sp, #-0x10]!
+            if (!isWriteback)
+                cb.Add(" ");
             addToken();
         }
     } else {

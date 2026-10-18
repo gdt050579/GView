@@ -143,8 +143,41 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             settings.AddFunctionEntry(fa, item.Name, DissasmViewer::FunctionEntryType::Export);
     }
 
+    // ARM64 exception data (.pdata): 8 bytes entries, the start of a function and its unwind data: packed (the function length in its bits
+    // 2..12, in instructions) or the RVA of its .xdata record (the function length in the bits 0..17 of its first word)
+    if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARM64) {
+        struct Arm64RuntimeFunction {
+            uint32 BeginAddress;
+            uint32 UnwindData;
+        };
+        constexpr uint32 MAX_RUNTIME_FUNCTIONS = 0x100000;
+        const auto& exceptionDir               = pe->GetDirectory(PE::DirectoryType::Exception);
+        const auto start                       = exceptionDir.VirtualAddress != 0 ? pe->RVAToFA(exceptionDir.VirtualAddress) : PE_INVALID_ADDRESS;
+        const uint32 count = start != PE_INVALID_ADDRESS ? std::min<uint32>(exceptionDir.Size / sizeof(Arm64RuntimeFunction), MAX_RUNTIME_FUNCTIONS) : 0;
+        for (uint32 index = 0; index < count; index++) {
+            Arm64RuntimeFunction function;
+            if (!data.Copy<Arm64RuntimeFunction>(start + static_cast<uint64>(index) * sizeof(Arm64RuntimeFunction), function))
+                break;
+            if (function.BeginAddress == 0)
+                continue;
+            uint64 length    = 0;
+            const uint32 flag = function.UnwindData & 3;
+            if (flag == 1 || flag == 2) // packed unwind data
+                length = static_cast<uint64>((function.UnwindData >> 2) & 0x7FF) * 4;
+            else if (flag == 0) {
+                uint32 header       = 0;
+                const auto xdataFa = pe->RVAToFA(function.UnwindData);
+                if (xdataFa != PE_INVALID_ADDRESS && data.Copy<uint32>(xdataFa, header))
+                    length = static_cast<uint64>(header & 0x3FFFF) * 4;
+            } else
+                continue; // 3: a reserved form
+            const auto fa = pe->RVAToFA(function.BeginAddress);
+            if (fa != PE_INVALID_ADDRESS)
+                settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, length);
+        }
+    }
     // x64 exception data (.pdata): a RUNTIME_FUNCTION for nearly every function that is not a leaf, with its size
-    if (pe->hdr64) {
+    else if (pe->hdr64) {
         struct RuntimeFunction {
             uint32 BeginAddress;
             uint32 EndAddress;
@@ -220,6 +253,8 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
                 entryPoint        = pe->RVAToFA(entryPoint);
 
                 DissasmViewer::DisassemblyLanguage language = pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
+                if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARM64)
+                    language = DissasmViewer::DisassemblyLanguage::ARM64;
 
                 settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, language);
                 break;

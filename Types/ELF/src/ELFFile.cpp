@@ -426,64 +426,42 @@ uint64 ELFFile::ConvertAddress(uint64 address, AddressType fromAddressType, Addr
     return ELF_INVALID_ADDRESS;
 }
 
+namespace
+{
+// A section that contains the address wins: the end of a section is the start of the next one (lld places .text right after .rodata, at
+// another VA). The end of a section matches only when no section contains the address (an address right after the last byte)
+template <typename Section>
+uint64 TranslateBySections(const std::vector<Section>& sections, uint64 value, bool fromFileOffset)
+{
+    for (int pass = 0; pass < 2; pass++)
+    {
+        for (const auto& section : sections)
+        {
+            if (section.sh_type == SHT_NOBITS && pass == 0)
+                continue; // no bytes in the file
+            const uint64 from = fromFileOffset ? static_cast<uint64>(section.sh_offset) : static_cast<uint64>(section.sh_addr);
+            const uint64 to   = fromFileOffset ? static_cast<uint64>(section.sh_addr) : static_cast<uint64>(section.sh_offset);
+            if (!fromFileOffset && section.sh_addr == 0)
+                continue; // not loaded
+            if (fromFileOffset && pass == 0 && (section.sh_flags & SHF_ALLOC) == 0)
+                continue; // not loaded: no VA
+            const uint64 end = from + section.sh_size;
+            if (value >= from && (pass == 0 ? value < end : value <= end))
+                return to + (value - from);
+        }
+    }
+    return ELF_INVALID_ADDRESS;
+}
+} // namespace
+
 uint64 ELFFile::FileOffsetToVA(uint64 fileOffset)
 {
-    if (is64)
-    {
-        for (const auto& section : sections64)
-        {
-            if (section.sh_offset <= fileOffset && fileOffset <= section.sh_offset + section.sh_size)
-            {
-                const auto diff = fileOffset - section.sh_offset;
-                const auto fa   = section.sh_addr + diff;
-                return fa;
-            }
-        }
-    }
-    else
-    {
-        for (const auto& section : sections32)
-        {
-            if (section.sh_offset <= fileOffset && fileOffset <= (static_cast<uint64>(section.sh_offset) + section.sh_size))
-            {
-                const auto diff = fileOffset - section.sh_offset;
-                const auto fa   = section.sh_addr + diff;
-                return fa;
-            }
-        }
-    }
-
-    return ELF_INVALID_ADDRESS;
+    return is64 ? TranslateBySections(sections64, fileOffset, true) : TranslateBySections(sections32, fileOffset, true);
 }
 
 uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
 {
-    if (is64)
-    {
-        for (const auto& section : sections64)
-        {
-            if (section.sh_addr != 0 && section.sh_addr <= virtualAddress && virtualAddress <= section.sh_addr + section.sh_size)
-            {
-                auto diff     = virtualAddress - section.sh_addr;
-                const auto fa = section.sh_offset + diff;
-                return fa;
-            }
-        }
-    }
-    else
-    {
-        for (const auto& section : sections32)
-        {
-            if (section.sh_addr != 0 && section.sh_addr <= virtualAddress && virtualAddress <= (uint64) section.sh_addr + section.sh_size)
-            {
-                auto diff     = virtualAddress - section.sh_addr;
-                const auto fa = section.sh_offset + diff;
-                return fa;
-            }
-        }
-    }
-
-    return ELF_INVALID_ADDRESS;
+    return is64 ? TranslateBySections(sections64, virtualAddress, false) : TranslateBySections(sections32, virtualAddress, false);
 }
 
 uint64 ELFFile::GetImageBase() const
