@@ -361,12 +361,12 @@ GVIEW_PLUGIN_ENTRY_POINTS
         end = std::min<uint64>(end, win->GetObject()->GetData().GetSize());
         if (start >= end)
             return;
-        // LC_MAIN: the offset of the entry point from the start of the __TEXT segment (its file offset); a library starts at the code
-        uint64 entryPoint = machO->main.has_value() ? machO->main->entryoff : start;
-        if (isArm)
+        // LC_MAIN: the offset of the entry point from the start of the __TEXT segment (its file offset)
+        uint64 entryPoint = machO->main.has_value() ? machO->main->entryoff : DissasmViewer::NO_ENTRY_POINT; // a library has none
+        if (isArm && entryPoint != DissasmViewer::NO_ENTRY_POINT)
             entryPoint &= ~static_cast<uint64>(1); // the Thumb bit
         if (entryPoint < start || entryPoint >= end)
-            entryPoint = start;
+            entryPoint = DissasmViewer::NO_ENTRY_POINT;
 
         DissasmViewer::Settings settings;
         settings.AddDisassemblyZone(start, end - start, entryPoint, language);

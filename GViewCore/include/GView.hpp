@@ -1819,6 +1819,9 @@ namespace View
              * boundaries as well.
              */
             void AddInstructionBoundary(uint64 fileOffset);
+            // 32 bit x86 position independent code (an ELF shared object / PIE): the address of the global offset table, the value of ebx
+            // in the PLT stubs (jmp dword ptr [ebx + 0xc])
+            void SetGlobalOffsetTable(uint64 address);
             /**
              * \brief 32 bit ARM: the code from the file offset is decoded in `mode` (until the next mode change); the ELF mapping symbols
              * ($a, $t, $d), the Thumb bit of the function symbols, the ARM .plt of a Thumb file. A later call for the same offset wins.

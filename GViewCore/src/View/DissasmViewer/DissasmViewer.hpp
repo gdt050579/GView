@@ -485,6 +485,7 @@ namespace View
             const std::map<uint64, DissasmFunctionEntry>* functionEntries = nullptr;
             // the file offsets where an instruction starts (the section starts of the plugin); the function entries are ones as well
             const std::vector<uint64>* instructionBoundaries = nullptr;
+            std::optional<uint64> globalOffsetTable; // 32 bit x86 PIC: ebx in the PLT stubs (SettingsData::globalOffsetTable)
             // 32 bit ARM: the mode from a file offset on (ARM, Thumb, data); can be null
             const std::map<uint64, ArmCodeMode>* armCodeModes = nullptr;
             // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
@@ -527,6 +528,7 @@ namespace View
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::map<uint64, DissasmFunctionEntry> functionEntries;         // the known function starts, by file offset
             std::vector<uint64> instructionBoundaries;                      // the file offsets where an instruction starts (sections)
+            std::optional<uint64> globalOffsetTable;                         // 32 bit x86 PIC: the value of ebx in the PLT stubs
             std::map<uint64, ArmCodeMode> armCodeModes;                     // 32 bit ARM: the mode from a file offset on
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;

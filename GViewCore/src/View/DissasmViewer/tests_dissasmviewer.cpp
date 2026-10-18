@@ -284,6 +284,7 @@ struct ZoneLayout {
     std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
     std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
     bool isData = false;                                     // a data zone (AddDataZone)
+    std::optional<uint64> globalOffsetTable;                 // 32 bit x86 PIC: ebx in the PLT stubs
     std::vector<DissasmCodeZone*> siblings;                  // the other zones of the file (their xrefs name the labels of a data zone)
     bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
     std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
@@ -380,6 +381,7 @@ class DissasmTestInstance
         initData.lineCountBudget     = layout.lineCountBudget;
         initData.armCodeModes        = &layout.armCodeModes;
         initData.instructionBoundaries = &layout.instructionBoundaries;
+        initData.globalOffsetTable     = layout.globalOffsetTable;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
             auto* codeZone      = zone.get();
@@ -6282,4 +6284,51 @@ TEST_CASE("DataZoneTypedVariables", "[Dissasm]DataZone")
     REQUIRE(FindListingLine(listing, "dd     0x00000041").size() > 0);
     REQUIRE(FindListingLine(listing, "dq     0x1122334455667788").size() > 0);
     REQUIRE(listing.find("\"A\"") == std::string::npos);
+}
+
+TEST_CASE("X86PicGlobalOffsetTable", "[Dissasm]Pic")
+{
+    // 32 bit PIC at VA 0x1000 (file offset = VA - 0x1000), the global offset table at 0x2000
+    std::vector<unsigned char> file = {
+        0xE8, 0x00, 0x00, 0x00, 0x00,       // 0x00: call $+5
+        0x5B,                               // 0x05: pop ebx (0x1005)
+        0x81, 0xC3, 0xFB, 0x0F, 0x00, 0x00, // 0x06: add ebx, 0xffb (0x2000: the table)
+        0x8D, 0x83, 0x40, 0xF0, 0xFF, 0xFF, // 0x0c: lea eax, [ebx - 0xfc0] (0x1040: the string)
+        0xE8, 0x09, 0x00, 0x00, 0x00,       // 0x12: call 0x20 (the stub)
+        0xC3,                               // 0x17: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0xA3, 0x0C, 0x00, 0x00, 0x00 }); // 0x20: jmp dword ptr [ebx + 0xc] (the PLT stub of puts)
+    file.resize(0x40, 0xCC);
+    for (const char c : std::string_view("Hello"))
+        file.push_back(static_cast<unsigned char>(c)); // 0x40
+    file.resize(0x1010, 0x00);                         // 0x1000: the table, 0x100c the slot of puts
+    const uint64 fileSize = file.size();
+
+    ZoneLayout layout;
+    layout.size              = 0x30;
+    layout.entryPoint        = 0;
+    layout.language          = DisassemblyLanguage::x86;
+    layout.labelAddressBase  = 0x1000;
+    layout.globalOffsetTable = 0x2000;
+    layout.translateOffsets  = true; // the RVA of an address: the file offset (VA - 0x1000)
+    layout.isFileAddress     = [fileSize](uint64 va) { return va >= 0x1000 && va - 0x1000 < fileSize; };
+    layout.imports           = { { 0x100C, { "puts", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // the stub: an import thunk through the table of the plugin (ebx of the caller)
+    REQUIRE(zone.GetLabelNameAt(0x20) == "j_puts");
+    // the function: ebx set by call $+5; pop ebx; add ebx, imm gives the string of lea eax, [ebx - 0xfc0]
+    REQUIRE(zone.resolvedAddresses.at(0x0C) == 0x40);
+    const auto [first, last] = zone.xrefs.To(0x1040);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Offset);
+    // call $+5 takes the address of the code: no function at the pop
+    REQUIRE(std::find(zone.functionStarts.begin(), zone.functionStarts.end(), 0x05) == zone.functionStarts.end());
+    REQUIRE(zone.GetLabelNameAt(0x05).empty());
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "call   $+5").size() > 0);
+    REQUIRE(FindListingLine(listing, "call   j_puts").size() > 0);
 }

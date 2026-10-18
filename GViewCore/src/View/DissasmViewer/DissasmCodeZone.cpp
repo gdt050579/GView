@@ -183,6 +183,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<uint64> addressTakenTargets;
     std::vector<bool> blockStarts; // the instructions that start a block, by relative address
     std::optional<uint64> returnedAddress; // mov eax, offset X: an address taken only when the next instruction is not a ret
+    // 32 bit x86 PIC: the value of ebx (the global offset table, VA) set by call $+5; pop ebx / call __x86.get_pc_thunk.bx, then add ebx, imm;
+    // functionEbx: the value of the function (ebx comes back after an epilogue path), until the next function
+    std::optional<uint64> ebxValue, functionEbx, pendingPopEbx;
+    std::optional<uint64> globalOffsetTable; // set by the constructor
     std::unordered_set<uint64> conditionalTargets;  // ARM64: relative targets of the conditional branches
     std::vector<uint64> functionStarts;
     AnnotationContainer annotations;
@@ -201,6 +205,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
           switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase),
           arm32Tracker(zone->labelAddressBase, LiteralReader())
     {
+        globalOffsetTable = initData.globalOffsetTable;
     }
 
     // a word of a literal pool (32 bit ARM)
@@ -366,6 +371,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         conditionalTargets.clear();
         addressTakenTargets.clear();
         returnedAddress.reset();
+        ebxValue.reset();
+        functionEbx.reset();
+        pendingPopEbx.reset();
         blockStarts.assign(blockStarts.size(), false);
         tableEntries.clear();
         pendingRanges.clear();
@@ -480,7 +488,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
         // the cross references, in the address space of the labels (VA)
         const auto flow     = GetInstructionFlow(*insn, insnArch);
-        const auto operands = GetInstructionOperands(*insn, insnArch, labelBase);
+        auto operands       = GetInstructionOperands(*insn, insnArch, labelBase);
         const uint64 from   = labelBase + insn->address;
         if (isArm64 || isArm32) {
             // the addresses built in the registers (ARM64: the adrp pairs; ARM: movw / movt, add pc, the literal pools): the data of add /
@@ -567,6 +575,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // a boundary (a section start of the plugin, a function entry) starts a block
         const bool isBlockStart = atBlockStart || std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
         const bool isEndbr      = insn->id == X86_INS_ENDBR64 || insn->id == X86_INS_ENDBR32;
+        if (!is64)
+            TrackGlobalOffsetTable(isBlockStart, instructionOffset, flow, operands);
         if (isBlockStart && insn->address < blockStarts.size() && insn->id != X86_INS_INVALID && insn->id != X86_INS_INT3 && insn->id != X86_INS_NOP)
             blockStarts[insn->address] = true; // not the padding (int3, nop, align, db)
         const uint64 thunkStart = blockEndbr.value_or(instructionOffset);
@@ -630,7 +640,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the cross references of the branches and of the data, the labels of the branch targets
     void AnalyzeBranchesAndData(X86Flow flow, const X86OperandsInfo& operands, uint64 from, bool takesAddress)
     {
-        if (IsX86Branch(flow) && operands.directTarget.has_value()) {
+        // call $+5 (call next; pop ebx: the address of the code, 32 bit PIC): not a call of a function
+        const bool callsNext = flow == X86Flow::Call && operands.directTarget == std::optional<uint64>(insn->address + insn->size);
+        if (IsX86Branch(flow) && operands.directTarget.has_value() && !callsNext) {
             const auto kind = flow == X86Flow::Call ? DissasmXrefKind::Call : (flow == X86Flow::Jump ? DissasmXrefKind::Jump : DissasmXrefKind::ConditionalJump);
             xrefs.Add(from, (labelBase + operands.directTarget.value()) & addressMask, kind);
         }
@@ -666,7 +678,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     xrefs.Add(from, value, DissasmXrefKind::Offset);
         }
 
-        if (IsX86Branch(flow)) {
+        if (IsX86Branch(flow) && !callsNext) {
             const bool isJump    = flow != X86Flow::Call;
             const auto target    = operands.directTarget;
             const auto offsetOpt = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
@@ -679,6 +691,82 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 callsMap.insert({ value, isJump });
             }
         }
+    }
+
+    // 32 bit x86 PIC: ebx holds the global offset table in the functions that set it (call $+5; pop ebx / call __x86.get_pc_thunk.bx, then
+    // add ebx, imm) and in the PLT stubs (the table of the plugin). An operand [ebx + disp] is then an address of the file: the instruction
+    // gets it (resolvedAddresses: the import of a call / jmp [ebx + 0x10], the string of lea eax, [ebx - 0x31c0]) and so do the xrefs
+    void TrackGlobalOffsetTable(bool isBlockStart, uint64 instructionOffset, X86Flow flow, X86OperandsInfo& operands)
+    {
+        if (isBlockStart) {
+            const auto called = callsMap.find(instructionOffset);
+            if ((called != callsMap.end() && !called->second) || (functionEntries && functionEntries->contains(instructionOffset)))
+                functionEbx.reset(); // another function
+            ebxValue = functionEbx;  // an epilogue (pop ebx; ret) ended the previous block, not the function
+        }
+        const cs_x86* x86 = insn->detail ? &insn->detail->x86 : nullptr;
+        // the value of ebx used by this instruction (before its own write)
+        std::optional<uint64> ebx = ebxValue;
+        if (!ebx.has_value() && isBlockStart && flow == X86Flow::Jump && globalOffsetTable.has_value())
+            ebx = globalOffsetTable; // a PLT stub: jmp dword ptr [ebx + 0xc]
+        if (ebx.has_value() && x86) {
+            for (uint8 index = 0; index < x86->op_count; index++) {
+                const auto& op = x86->operands[index];
+                if (op.type != X86_OP_MEM || op.mem.base != X86_REG_EBX || op.mem.index != X86_REG_INVALID || op.mem.segment != X86_REG_INVALID)
+                    continue;
+                const uint64 address = (ebx.value() + static_cast<uint64>(op.mem.disp)) & addressMask;
+                if (!isFileAddress || !isFileAddress(address))
+                    break;
+                const uint64 relative          = (address - labelBase) & addressMask;
+                resolvedAddresses[insn->address] = relative;
+                operands.ripTarget               = relative; // the import of a stub / call, the data xref (AnalyzeBranchesAndData)
+                operands.memoryAccess            = insn->id == X86_INS_LEA ? 0 : op.access;
+                break;
+            }
+        }
+        // the writes of ebx: the setup (pop ebx after call $+5, add / sub ebx, imm, lea ebx, [ebx + disp]), anything else forgets it
+        const bool popsEbx = insn->id == X86_INS_POP && x86 && x86->op_count == 1 && x86->operands[0].type == X86_OP_REG && x86->operands[0].reg == X86_REG_EBX;
+        if (popsEbx && pendingPopEbx.has_value()) {
+            ebxValue = pendingPopEbx; // the address of the pop
+            pendingPopEbx.reset();
+            return;
+        }
+        pendingPopEbx.reset();
+        if (flow == X86Flow::Call && operands.directTarget.has_value()) {
+            const uint64 target = operands.directTarget.value();
+            if (target == insn->address + insn->size)
+                pendingPopEbx = labelBase + target; // call $+5: the next instruction pops its own address
+            else if (target < codeSize) {
+                uint32 thunk = 0; // __x86.get_pc_thunk.bx: mov ebx, dword ptr [esp]; ret
+                if (obj->GetData().Copy<uint32>(codeStart + target, thunk) && thunk == 0xC3241C8Bu)
+                    ebxValue = labelBase + insn->address + insn->size;
+            }
+            return;
+        }
+        if (!x86)
+            return;
+        bool writesEbx = false;
+        for (uint8 index = 0; index < x86->op_count; index++)
+            if (x86->operands[index].type == X86_OP_REG && (x86->operands[index].access & CS_AC_WRITE) &&
+                (x86->operands[index].reg == X86_REG_EBX || x86->operands[index].reg == X86_REG_BX || x86->operands[index].reg == X86_REG_BL ||
+                 x86->operands[index].reg == X86_REG_BH))
+                writesEbx = true;
+        for (uint8 index = 0; index < insn->detail->regs_write_count; index++)
+            if (insn->detail->regs_write[index] == X86_REG_EBX)
+                writesEbx = true;
+        if (!writesEbx)
+            return;
+        const bool toEbx = x86->op_count == 2 && x86->operands[0].type == X86_OP_REG && x86->operands[0].reg == X86_REG_EBX;
+        if (ebxValue.has_value() && toEbx && (insn->id == X86_INS_ADD || insn->id == X86_INS_SUB) && x86->operands[1].type == X86_OP_IMM) {
+            const uint64 imm = static_cast<uint64>(x86->operands[1].imm);
+            ebxValue         = (insn->id == X86_INS_ADD ? ebxValue.value() + imm : ebxValue.value() - imm) & addressMask;
+            functionEbx      = ebxValue;
+        } else if (ebxValue.has_value() && toEbx && insn->id == X86_INS_LEA && x86->operands[1].mem.base == X86_REG_EBX &&
+                   x86->operands[1].mem.index == X86_REG_INVALID) {
+            ebxValue    = (ebxValue.value() + static_cast<uint64>(x86->operands[1].mem.disp)) & addressMask;
+            functionEbx = ebxValue;
+        } else
+            ebxValue.reset();
     }
 
     // the first instructions at `target` look like code, not like the data that the code refers to (a string, a GUID kept in .text): no
@@ -2184,8 +2272,8 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
             callee.site = insn->address;
             if (operands.directTarget.has_value()) {
                 const uint64 target = operands.directTarget.value();
-                // a jmp inside the function is not a call; a jmp to another function is a tail call
-                if (flow == X86Flow::Jump && target >= functionStart && target < end)
+                // a jmp inside the function is not a call; a jmp to another function is a tail call; call $+5 takes the address of the code
+                if ((flow == X86Flow::Jump && target >= functionStart && target < end) || (flow == X86Flow::Call && target == insn->address + insn->size))
                     continue;
                 callee.isTailJump = flow == X86Flow::Jump;
                 // a function of another code zone of the file (.text calls PAGE): its address and its name there

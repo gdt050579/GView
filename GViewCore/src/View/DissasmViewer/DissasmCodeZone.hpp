@@ -172,6 +172,14 @@ struct DissasmCodeZone : public ParseZone {
     // ARM64 (deep scan): relative address of an instruction of an adrp pair (add / ldr / str [page + offset], br / blr through the slot read
     // before) -> the relative address it uses; the lines are decoded alone, the pair is known only by the sweep
     std::unordered_map<uint64, uint64> resolvedAddresses;
+    static uint8 MemoryOperandAccess(const cs_insn& insn)
+    {
+        if (insn.detail)
+            for (uint8 index = 0; index < insn.detail->x86.op_count; index++)
+                if (insn.detail->x86.operands[index].type == X86_OP_MEM)
+                    return insn.detail->x86.operands[index].access;
+        return CS_AC_READ;
+    }
     // the operands of an instruction (GetInstructionOperands) with the address of its adrp pair (ARM64)
     X86OperandsInfo GetOperandsInfo(const cs_insn& insn) const
     {
@@ -184,8 +192,10 @@ struct DissasmCodeZone : public ParseZone {
                     const bool isRead     = insn.id == ARM_INS_LDR || insn.id == ARM_INS_LDRB || insn.id == ARM_INS_LDRH || insn.id == ARM_INS_BX || insn.id == ARM_INS_BLX;
                     const bool isWritten  = insn.id == ARM_INS_STR || insn.id == ARM_INS_STRB || insn.id == ARM_INS_STRH;
                     operands.memoryAccess = static_cast<uint8>(isRead ? CS_AC_READ : (isWritten ? CS_AC_WRITE : 0));
-                } else
+                } else if (IsArm64Code())
                     operands.memoryAccess = insn.id == ARM64_INS_ADD ? 0 : static_cast<uint8>(insn.id == ARM64_INS_STR || insn.id == ARM64_INS_STRB || insn.id == ARM64_INS_STRH ? CS_AC_WRITE : CS_AC_READ);
+                else // 32 bit x86 PIC: [ebx + disp] with ebx known; lea takes the address
+                    operands.memoryAccess = insn.id == X86_INS_LEA ? 0 : MemoryOperandAccess(insn);
             }
         }
         return operands;

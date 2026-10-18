@@ -559,7 +559,8 @@ const MemoryMappingEntry* GView::View::DissasmViewer::FindX86OperandsImport(Sett
         return operands.absoluteMemory.has_value() ? find(operands.absoluteMemory.value()) : nullptr;
 
     if (operands.ripTarget.has_value()) // the decoded addresses are relative to the first decoded instruction
-        return zone->cachedCodeOffsets.empty() ? nullptr : find(GetCodeStartRVA(settings, zone) + operands.ripTarget.value());
+        return zone->cachedCodeOffsets.empty() ? nullptr
+                                               : find((GetCodeStartRVA(settings, zone) + operands.ripTarget.value()) & (zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull));
     if (operands.absoluteMemory.has_value()) {
         const auto offset = TranslateOperandAddressToFileOffset(settings, operands.absoluteMemory.value(), true);
         if (!offset.has_value())
@@ -633,10 +634,12 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
     }
 
     std::optional<uint64> fileOffset;
-    if (params.zone->Is64BitCode()) {
+    // x64: [rip + ...]; 32 bit PIC: [ebx + ...] with the value of ebx known (the global offset table, resolvedAddresses)
+    if (params.zone->Is64BitCode() || operands.ripTarget.has_value()) {
         if (!operands.ripTarget.has_value())
             return;
-        const uint64 rva   = GetCodeStartRVA(settings, params.zone) + operands.ripTarget.value();
+        // 32 bit code: an address below the code ([ebx - 0x31c0]) is a relative address that wraps around at 4 GB
+        const uint64 rva   = (GetCodeStartRVA(settings, params.zone) + operands.ripTarget.value()) & (params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull);
         const auto mapping = settings->memoryMappings.find(rva);
         if (mapping != settings->memoryMappings.end()) {
             line.autoComment = mapping->second.name;
@@ -792,6 +795,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
     // direct jump / call: the target has the same base as `address`; only a target inside the decoded code has a file offset
     std::optional<uint64> targetFileOffset;
+    // call $+5 (call next; pop ebx: the address of the code, 32 bit PIC): no call, no arrow
+    if (flow == X86Flow::Call && operands.directTarget == std::optional<uint64>(insn->address + insn->size)) {
+        SetOperands("$+5", params.zone);
+        return true;
+    }
     if (operands.directTarget.has_value() && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
         targetFileOffset = params.zone->GetFileOffsetOfAddress(operands.directTarget.value());
         if (targetFileOffset.has_value())
@@ -1326,6 +1334,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.isFileAddress = [toFileOffset = initData.addressToFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
     initData.functionEntries       = &settings->functionEntries;
     initData.instructionBoundaries = &settings->instructionBoundaries;
+    initData.globalOffsetTable     = settings->globalOffsetTable;
     initData.armCodeModes          = &settings->armCodeModes;
     if (!settings->memoryMappings.empty()) {
         auto* settingsData  = settings;

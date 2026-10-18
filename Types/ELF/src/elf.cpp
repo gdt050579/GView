@@ -303,10 +303,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
         end                   = std::min(end, fileSize);
         if (start >= end)
             return;
-        // the entry point; a library (no entry point) starts at the code
-        uint64 entryPoint = elf->VAToFileOffset(elf->is64 ? elf->header64.e_entry : (isArm ? elf->header32.e_entry & ~1u : elf->header32.e_entry));
+        // the entry point; a library has none (its functions keep the names of their symbols)
+        const uint64 entryVA = elf->is64 ? elf->header64.e_entry : (isArm ? elf->header32.e_entry & ~1u : elf->header32.e_entry);
+        uint64 entryPoint    = entryVA != 0 ? elf->VAToFileOffset(entryVA) : ELF::ELF_INVALID_ADDRESS;
         if (entryPoint == ELF::ELF_INVALID_ADDRESS || entryPoint < start || entryPoint >= end)
-            entryPoint = start;
+            entryPoint = DissasmViewer::NO_ENTRY_POINT;
 
         DissasmViewer::Settings settings;
         settings.AddDisassemblyZone(start, end - start, entryPoint, language);
@@ -340,6 +341,20 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 const auto& section = elf->sections32[index];
                 addDataSection(index, section.sh_flags, section.sh_type, section.sh_offset, section.sh_size);
             }
+        }
+        // 32 bit x86 position independent code: ebx is the global offset table in the PLT stubs (jmp dword ptr [ebx + 0xc])
+        if (machine == ELF::EM_386 && !elf->is64 && elf->header32.e_type == ELF::ET_DYN)
+        {
+            uint64 gotPlt = 0, got = 0;
+            for (size_t index = 0; index < elf->sections32.size() && index < elf->sectionNames.size(); index++)
+            {
+                if (elf->sectionNames[index] == ".got.plt")
+                    gotPlt = elf->sections32[index].sh_addr;
+                else if (elf->sectionNames[index] == ".got")
+                    got = elf->sections32[index].sh_addr;
+            }
+            if (gotPlt != 0 || got != 0)
+                settings.SetGlobalOffsetTable(gotPlt != 0 ? gotPlt : got);
         }
         settings.SetOffsetTranslationList({ "RVA", "VA" }, &elf->dissasmTranslation);
         AddDissasmImports(settings, elf, win->GetObject());

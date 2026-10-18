@@ -63,6 +63,11 @@ void Settings::AddInstructionBoundary(uint64 fileOffset)
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);
 }
 
+void Settings::SetGlobalOffsetTable(uint64 address)
+{
+    INTERNAL_SETTINGS->globalOffsetTable = address;
+}
+
 void Settings::AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode)
 {
     INTERNAL_SETTINGS->armCodeModes[fileOffset] = mode;
