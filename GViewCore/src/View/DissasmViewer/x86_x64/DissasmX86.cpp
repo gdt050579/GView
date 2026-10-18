@@ -879,7 +879,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         }
         if (zone->IsDeepScanPending()) {
             LocalString<64> progress;
-            progress.SetFormat(" - analyzing %u%% (Esc stops it)", static_cast<uint32>(zone->GetDeepScanProgress() * 100.0f));
+            progress.SetFormat(zone->IsCountingLines() ? " - reading the code %u%% (Esc: no analysis)" : " - analyzing %u%% (Esc stops it)",
+                               static_cast<uint32>(zone->GetDeepScanProgress() * 100.0f));
             chars.Add(progress, ColorMan.Colors.AsmComment);
             titleSize += progress.Len();
         }
@@ -1101,6 +1102,10 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     // a big zone is shown before its deep scan ends: the scan continues in the frame updates (OnFrameUpdate)
     constexpr auto DEEP_SCAN_BUDGET_IN_INIT = std::chrono::milliseconds(150);
     initData.deepScanBudget                 = DEEP_SCAN_BUDGET_IN_INIT;
+    // a big zone shows its first lines before the end of its code is read: the count continues in the frame updates (a frontend without
+    // frame updates ends it at the first key, as the deep scan)
+    constexpr auto LINE_COUNT_BUDGET_IN_INIT = std::chrono::milliseconds(100);
+    initData.lineCountBudget                 = LINE_COUNT_BUDGET_IN_INIT;
     PrepareCodeZoneInitData(settings.get(), obj, zone, initData);
 
     if (!zone->InitZone(initData))
@@ -1237,8 +1242,15 @@ bool Instance::OnFrameUpdate()
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
         const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
-        if (codeZone->IsDeepScanPending() && codeZone->ContinueDeepScan(std::chrono::steady_clock::now() + DEEP_SCAN_SLICE)) {
+        if (!codeZone->IsDeepScanPending())
+            continue;
+        const bool counting = codeZone->IsCountingLines();
+        const bool ended    = codeZone->ContinueDeepScan(std::chrono::steady_clock::now() + DEEP_SCAN_SLICE);
+        if (ended) {
             EndDeepScan(codeZone, false);
+            repaint = true;
+        } else if (counting) {
+            AdjustZoneExtendedSize(codeZone, codeZone->GetDisplayLinesCount() + 1u); // the lines read in this frame (+1 for the title)
             repaint = true;
         }
     }

@@ -32,7 +32,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::function<std::optional<uint64>(uint64)> addressToFileOffset;
 
     Phase phase = Phase::Sweep;
-    // the code is [codeStart, codeStart + codeSize): the same lines as the ones counted by populateOffsetsVector
+    // the code is [codeStart, codeStart + codeSize): the same lines as the ones counted by DissasmLineCounter
     const uint64 codeStart;
     const uint64 codeSize;
     const uint32 asmLines;
@@ -399,76 +399,115 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     }
 };
 
-inline bool populateOffsetsVector(
-      vector<AsmOffsetLine>& offsets,
-      DisassemblyZone& zoneDetails,
-      Reference<GView::Object> obj,
-      int internalArchitecture,
-      uint32& totalLines,
-      const std::vector<uint64>* boundaries,
-      uint64 alignmentBase)
+// The zone must have bytes in the file and its entry point inside it
+inline bool IsValidCodeZone(const DisassemblyZone& zoneDetails, Reference<GView::Object> obj)
 {
     if (zoneDetails.size == 0 || zoneDetails.size > UINT64_MAX - zoneDetails.startingZonePoint)
         return false;
-    // the zone must have bytes in the file; the lines end with the file when the zone goes past it
+    // the lines end with the file when the zone goes past it
     if (zoneDetails.startingZonePoint >= obj->GetData().GetSize())
         return false;
-    // the entry point must be inside the zone; it may be after the end of the file (a truncated file): the lines are counted until
-    // there, the entry point simply has no line (the init must not fail on every paint)
-    if (zoneDetails.entryPoint < zoneDetails.startingZonePoint || zoneDetails.entryPoint - zoneDetails.startingZonePoint >= zoneDetails.size)
-        return false;
-
-    csh handle;
-    const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle);
-    if (resCode != CS_ERR_OK) {
-        // WriteErrorToScreen(dli, cs_strerror(resCode));
-        return false;
-    }
-
-    // The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it.
-    // The previous backward search for the lowest branch target below the entry point read any operand that is not a hex number
-    // (registers, memory) as the zone start, so the zone start was already the first decoded instruction for nearly every binary;
-    // the cached zones (labels, comments) are keyed on these lines.
-    // An undecodable byte is a data line (db) and the decoding continues after it (inline data, jump tables); a zone bigger than the
-    // data cache window is decoded window after window.
-    DissasmCodeLinesWalker walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, handle, 0, boundaries, alignmentBase);
-
-    // The zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is
-    // not shown. A run inside the code (between functions, data) is decoded as it is: stopping at the first long run of zeros hid the
-    // rest of the code.
-    constexpr uint32 trailingZerosMinimumLines = 4;
-    uint32 zeroRunLines                        = 0;
-    uint32 lineIndex                           = 0;
-    uint64 lastOffset                          = 0;
-    offsets.clear();
-    offsets.push_back({ zoneDetails.startingZonePoint, 0 });
-
-    cs_insn* insn = cs_malloc(handle);
-    while (walker.Next(insn)) {
-        lineIndex++;
-        const uint64 address = walker.GetAddress(); // the next line
-        if (address - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN) {
-            lastOffset = address;
-            offsets.push_back({ address + zoneDetails.startingZonePoint, lineIndex });
-        }
-
-        // 00 00 (add byte ptr [rax], al), or a last single 00 byte (a data line: db 0x00)
-        const bool isZeroPadding = (insn->id == X86_INS_ADD && insn->size == 2 && insn->bytes[0] == 0 && insn->bytes[1] == 0) ||
-                                   (insn->id == X86_INS_INVALID && insn->size == 1 && insn->bytes[0] == 0);
-        zeroRunLines             = isZeroPadding ? zeroRunLines + 1u : 0u;
-    }
-    if (zeroRunLines >= trailingZerosMinimumLines && zeroRunLines < lineIndex) {
-        lineIndex -= zeroRunLines;
-        // the cached offsets placed inside the removed lines point to lines that do not exist
-        while (offsets.size() > 1 && offsets.back().line >= lineIndex)
-            offsets.pop_back();
-    }
-
-    totalLines = lineIndex;
-    cs_free(insn, 1);
-    cs_close(&handle);
-    return true;
+    // the entry point may be after the end of the file (a truncated file): the lines are counted until there, the entry point simply has
+    // no line (the init must not fail on every paint)
+    return zoneDetails.entryPoint >= zoneDetails.startingZonePoint && zoneDetails.entryPoint - zoneDetails.startingZonePoint < zoneDetails.size;
 }
+
+// The lines of the zone, counted by a linear sweep (DecodeX86Line) that stops at a deadline and continues later: a big zone shows its first
+// lines before the end of its code is read. A cached offset (file offset, line) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes.
+// The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it. An undecodable byte
+// is a data line (db) and the decoding continues after it (inline data, jump tables); a zone bigger than the data cache window is decoded
+// window after window.
+struct GView::View::DissasmViewer::DissasmLineCounter {
+    // the zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is not
+    // shown. A run inside the code (between functions, data) is decoded as it is
+    static constexpr uint32 TRAILING_ZEROS_MINIMUM_LINES = 4;
+    static constexpr uint32 LINES_BETWEEN_DEADLINE_CHECKS = 4096;
+
+    vector<AsmOffsetLine>& offsets;
+    Reference<GView::Object> obj;
+    uint64 zoneStart;
+    uint64 zoneSize;
+    const std::vector<uint64>* boundaries;
+    uint64 alignmentBase;
+    csh handle    = 0;
+    cs_insn* insn = nullptr;
+    DissasmCodeLinesWalker walker;
+    uint32 lines        = 0;
+    uint32 zeroRunLines = 0;
+    uint64 lastOffset   = 0;
+    bool ended          = false;
+
+    DissasmLineCounter(
+          vector<AsmOffsetLine>& offsets,
+          const DisassemblyZone& zoneDetails,
+          Reference<GView::Object> obj,
+          const std::vector<uint64>* boundaries,
+          uint64 alignmentBase)
+        : offsets(offsets), obj(obj), zoneStart(zoneDetails.startingZonePoint), zoneSize(zoneDetails.size), boundaries(boundaries),
+          alignmentBase(alignmentBase), walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, 0, 0, boundaries, alignmentBase)
+    {
+    }
+
+    ~DissasmLineCounter()
+    {
+        if (insn)
+            cs_free(insn, 1);
+        if (handle != 0)
+            cs_close(&handle);
+    }
+
+    bool Start(int internalArchitecture)
+    {
+        if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
+            handle = 0;
+            return false;
+        }
+        insn   = cs_malloc(handle);
+        walker = DissasmCodeLinesWalker(obj, zoneStart, zoneSize, handle, 0, boundaries, alignmentBase);
+        offsets.clear();
+        offsets.push_back({ zoneStart, 0 });
+        return insn != nullptr;
+    }
+
+    // true when the whole code is counted
+    bool Run(std::chrono::steady_clock::time_point deadline)
+    {
+        if (ended)
+            return true;
+        uint32 linesUntilCheck = LINES_BETWEEN_DEADLINE_CHECKS;
+        while (walker.Next(insn)) {
+            lines++;
+            const uint64 address = walker.GetAddress(); // the next line
+            if (address - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN) {
+                lastOffset = address;
+                offsets.push_back({ address + zoneStart, lines });
+            }
+            // 00 00 (add byte ptr [rax], al), or a last single 00 byte (a data line: db 0x00)
+            const bool isZeroPadding = (insn->id == X86_INS_ADD && insn->size == 2 && insn->bytes[0] == 0 && insn->bytes[1] == 0) ||
+                                       (insn->id == X86_INS_INVALID && insn->size == 1 && insn->bytes[0] == 0);
+            zeroRunLines = isZeroPadding ? zeroRunLines + 1u : 0u;
+            if (--linesUntilCheck == 0) {
+                linesUntilCheck = LINES_BETWEEN_DEADLINE_CHECKS;
+                if (std::chrono::steady_clock::now() >= deadline)
+                    return false;
+            }
+        }
+        if (zeroRunLines >= TRAILING_ZEROS_MINIMUM_LINES && zeroRunLines < lines) {
+            lines -= zeroRunLines;
+            // the cached offsets placed inside the removed lines point to lines that do not exist
+            while (offsets.size() > 1 && offsets.back().line >= lines)
+                offsets.pop_back();
+        }
+        ended = true;
+        return true;
+    }
+
+    // the part of the code already counted: 0..1
+    float GetProgress() const
+    {
+        return zoneSize == 0 ? 1.0f : static_cast<float>(static_cast<double>(walker.GetAddress()) / static_cast<double>(zoneSize));
+    }
+};
 
 DissasmCodeZone::DissasmCodeZone() = default;
 
@@ -703,32 +742,45 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     std::sort(instructionBoundaries.begin(), instructionBoundaries.end());
     instructionBoundaries.erase(std::unique(instructionBoundaries.begin(), instructionBoundaries.end()), instructionBoundaries.end());
 
-    uint32 totalLines = 0;
-    if (!populateOffsetsVector(cachedCodeOffsets, zoneDetails, initData.obj, internalArchitecture, totalLines, &instructionBoundaries, paddingAlignmentBase)) {
-        if (initData.dli.IsValid())
-            if (initData.dli.IsValid())
-                initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
-        return false;
-    }
-    asmLinesCount = totalLines;
     localVariables.functions.clear();
     deepScan.reset();
+    deepScanInitData.reset();
+    lineCounter.reset();
+    if (IsValidCodeZone(zoneDetails, initData.obj)) {
+        lineCounter = std::make_unique<DissasmLineCounter>(cachedCodeOffsets, zoneDetails, initData.obj, &instructionBoundaries, paddingAlignmentBase);
+        if (!lineCounter->Start(internalArchitecture))
+            lineCounter.reset();
+    }
+    if (!lineCounter) {
+        if (initData.dli.IsValid())
+            initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+        return false;
+    }
     if (initData.enableDeepScanDissasmOnStart) {
-        // a big zone: the scan continues after its budget (ContinueDeepScan), the instructions are shown without labels until it ends
-        deepScan = std::make_unique<DissasmDeepScan>(this, initData, internalArchitecture, totalLines);
-        if (!deepScan->Start()) {
-            deepScan.reset();
-            if (initData.dli.IsValid())
+        deepScanInitData     = initData;
+        deepScanInitData->dli = nullptr; // the line of the paint that initializes the zone
+    }
+    // a big zone: its lines are counted after the budget (ContinueDeepScan), the lines counted so far are shown at once
+    const auto countDeadline = initData.lineCountBudget.has_value() ? std::chrono::steady_clock::now() + initData.lineCountBudget.value()
+                                                                    : std::chrono::steady_clock::time_point::max();
+    uint32 totalLines = 0;
+    if (lineCounter->Run(countDeadline)) {
+        if (!FinishLineCount()) {
             if (initData.dli.IsValid())
                 initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;
         }
+        totalLines = asmLinesCount;
+        // a big zone: the scan continues after its budget (ContinueDeepScan), the instructions are shown without labels until it ends
         const auto deadline = initData.deepScanBudget.has_value() ? std::chrono::steady_clock::now() + initData.deepScanBudget.value()
                                                                   : std::chrono::steady_clock::time_point::max();
-        if (deepScan->Run(deadline)) {
+        if (deepScan && deepScan->Run(deadline)) {
             totalLines += deepScan->Commit();
             deepScan.reset();
         }
+    } else {
+        asmLinesCount = lineCounter->lines;
+        totalLines    = asmLinesCount;
     }
     totalLines++; //+1 for title
     initData.adjustedZoneSize = totalLines;
@@ -756,8 +808,32 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     return true;
 }
 
+bool DissasmCodeZone::FinishLineCount()
+{
+    asmLinesCount = lineCounter->lines;
+    lineCounter.reset();
+    RebuildLineIndex(); // the trailing zeros are not lines: the drawn lines are prepared again
+    if (!deepScanInitData.has_value())
+        return true;
+    deepScan = std::make_unique<DissasmDeepScan>(this, deepScanInitData.value(), internalArchitecture, asmLinesCount);
+    deepScanInitData.reset();
+    if (!deepScan->Start()) {
+        deepScan.reset();
+        return false;
+    }
+    return true;
+}
+
 bool DissasmCodeZone::ContinueDeepScan(std::chrono::steady_clock::time_point deadline)
 {
+    if (lineCounter) {
+        const bool counted = lineCounter->Run(deadline);
+        asmLinesCount      = lineCounter->lines;
+        if (!counted)
+            return false;
+        if (!FinishLineCount() || !deepScan)
+            return true; // no deep scan: the zone has its instructions without labels
+    }
     return deepScan && deepScan->Run(deadline);
 }
 
@@ -772,11 +848,18 @@ void DissasmCodeZone::CommitDeepScan()
 
 void DissasmCodeZone::CancelDeepScan()
 {
+    deepScanInitData.reset(); // no deep scan after the line count
+    if (lineCounter) {        // the lines are needed: the count ends now
+        lineCounter->Run(std::chrono::steady_clock::time_point::max());
+        FinishLineCount();
+    }
     deepScan.reset();
 }
 
 float DissasmCodeZone::GetDeepScanProgress() const
 {
+    if (lineCounter)
+        return lineCounter->GetProgress();
     return deepScan ? deepScan->GetProgress() : 1.0f;
 }
 

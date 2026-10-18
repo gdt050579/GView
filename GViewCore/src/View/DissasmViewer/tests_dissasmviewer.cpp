@@ -282,6 +282,7 @@ struct ZoneLayout {
     std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
     std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
     bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
+    std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -368,6 +369,7 @@ class DissasmTestInstance
         initData.imageBase           = layout.imageBase;
         initData.deepScanBudget      = layout.deepScanBudget;
         initData.alignPadding        = layout.alignPadding;
+        initData.lineCountBudget     = layout.lineCountBudget;
         initData.instructionBoundaries = &layout.instructionBoundaries;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
@@ -4381,4 +4383,75 @@ TEST_CASE("AssistantRequestAbandoned", "[Dissasm]Assistant")
     next.Take();
     next.Abandon(abandoned); // nothing running: nothing added
     REQUIRE(abandoned.empty());
+}
+
+TEST_CASE("LineCountInSteps", "[Dissasm]LineCount")
+{
+    auto file = MakeManyFunctions(20000);
+    file.resize(file.size() + 64, 0x00); // the file alignment padding: not lines once the whole code is read
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance oneShot(file.data(), file.size(), false, layout);
+    REQUIRE_FALSE(oneShot.zone->IsDeepScanPending());
+
+    // no time for the line count in InitZone: the first lines are shown, the count continues in steps, then the deep scan
+    layout.lineCountBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance inSteps(file.data(), file.size(), false, layout);
+    auto& zone = *inSteps.zone;
+    REQUIRE(zone.IsCountingLines());
+    REQUIRE(zone.IsDeepScanPending());
+    REQUIRE(zone.asmLinesCount > 0);
+    REQUIRE(zone.asmLinesCount < oneShot.zone->asmLinesCount);
+    REQUIRE(zone.GetDisplayLinesCount() == zone.asmLinesCount); // no labels yet
+    REQUIRE(inSteps.CheckLineText(0, "push rbp"));
+    // the last counted line is decoded at its place: 5 lines in every function of 11 bytes
+    constexpr uint64 LINE_OFFSETS[5] = { 0, 1, 4, 9, 10 };
+    const uint32 lastLine            = zone.asmLinesCount - 1;
+    REQUIRE(inSteps.GetCurrentAsmLine(lastLine).address == (lastLine / 5) * 11 + LINE_OFFSETS[lastLine % 5]);
+
+    uint32 steps         = 0;
+    uint32 countingSteps = 0;
+    uint32 lines         = zone.asmLinesCount;
+    while (!zone.ContinueDeepScan(std::chrono::steady_clock::now())) {
+        if (zone.IsCountingLines()) {
+            REQUIRE(zone.asmLinesCount >= lines); // the zone grows
+            lines = zone.asmLinesCount;
+            countingSteps++;
+        }
+        REQUIRE(++steps < 100000);
+    }
+    REQUIRE(countingSteps > 3);
+    REQUIRE_FALSE(zone.IsCountingLines());
+    zone.CommitDeepScan();
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+
+    // the same lines and analysis as the zone counted at once
+    REQUIRE(zone.asmLinesCount == oneShot.zone->asmLinesCount);
+    REQUIRE(zone.cachedCodeOffsets.size() == oneShot.zone->cachedCodeOffsets.size());
+    REQUIRE(zone.GetDisplayLinesCount() == oneShot.zone->GetDisplayLinesCount());
+    REQUIRE(zone.functionStarts == oneShot.zone->functionStarts);
+    REQUIRE(inSteps.GetListing() == oneShot.GetListing());
+}
+
+TEST_CASE("LineCountCancelled", "[Dissasm]LineCount")
+{
+    const auto file = MakeManyFunctions(20000);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.lineCountBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.IsCountingLines());
+
+    // Esc: the lines are still needed (they are counted now), the deep scan does not start
+    zone.CancelDeepScan();
+    REQUIRE_FALSE(zone.IsCountingLines());
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+    REQUIRE(zone.asmLinesCount == 20000 * 5 + 16); // push, mov, call, pop, ret in every function, then 16 int3
+    REQUIRE(zone.dissasmType.annotations.mappings.empty());
 }

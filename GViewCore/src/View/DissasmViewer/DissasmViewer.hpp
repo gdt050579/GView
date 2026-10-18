@@ -431,6 +431,9 @@ namespace View
             // the time the deep scan may take in InitZone; it continues later (DissasmCodeZone::ContinueDeepScan) when it does not end. None: the
             // deep scan ends in InitZone
             std::optional<std::chrono::milliseconds> deepScanBudget;
+            // the time the line count (a linear sweep of the whole code) may take in InitZone; the zone shows the lines counted so far and
+            // the count continues later (ContinueDeepScan, before the deep scan). None: the lines are counted in InitZone
+            std::optional<std::chrono::milliseconds> lineCountBudget;
         };
 
         struct MemoryMappingEntry {

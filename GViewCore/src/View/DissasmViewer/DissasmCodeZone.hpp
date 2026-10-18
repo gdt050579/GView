@@ -5,6 +5,7 @@
 namespace GView::View::DissasmViewer
 {
 struct DissasmDeepScan;
+struct DissasmLineCounter;
 
 // a function found by the analysis (DissasmCodeZone::GetFunctions)
 struct DissasmFunctionInfo {
@@ -229,10 +230,15 @@ struct DissasmCodeZone : public ParseZone {
     bool RenameLabel(uint32 expandedLine, const std::string& currentName, const std::string& newName);
 
     bool InitZone(DissasmCodeZoneInitData& initData);
-    // the deep scan that did not end in InitZone (its budget): the zone shows the instructions without labels until it ends
+    // the deep scan that did not end in InitZone (its budget): the zone shows the instructions without labels until it ends. The line
+    // count that did not end in InitZone comes first: the zone shows the lines counted so far
     bool IsDeepScanPending() const
     {
-        return deepScan != nullptr;
+        return deepScan != nullptr || lineCounter != nullptr;
+    }
+    bool IsCountingLines() const
+    {
+        return lineCounter != nullptr;
     }
     // continues the deep scan until the deadline; true when it has ended (CommitDeepScan gives its results to the zone)
     bool ContinueDeepScan(std::chrono::steady_clock::time_point deadline);
@@ -357,6 +363,9 @@ struct DissasmCodeZone : public ParseZone {
     void RecordEdit(DissasmEdit edit);
     bool ApplyEdit(const DissasmEdit& edit, bool forward);
     std::unique_ptr<DissasmDeepScan> deepScan;
+    std::unique_ptr<DissasmLineCounter> lineCounter;
+    std::optional<DissasmCodeZoneInitData> deepScanInitData; // the deep scan starts once the lines are counted
+    bool FinishLineCount(); // the lines are counted: the deep scan starts; false when it could not start
     bool linesReady  = false;
     std::vector<uint32> annotationLines;                // the sorted lines of dissasmType.annotations
     std::unordered_map<uint64, uint32> labelLineOfAddress; // relative address of a label -> its line (expanded layout)
