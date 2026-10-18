@@ -1774,6 +1774,86 @@ std::vector<DissasmStringReference> DissasmCodeZone::GetReferencedStrings(const 
     return strings;
 }
 
+std::vector<DissasmStringReference> DissasmCodeZone::GetReferencedStringsOfFile(const std::function<std::optional<uint64>(uint64)>& addressToFileOffset) const
+{
+    auto strings = GetReferencedStrings(addressToFileOffset);
+    if (siblingZones.empty())
+        return strings;
+    std::map<uint64, DissasmStringReference> byAddress;
+    for (auto& string : strings)
+        byAddress.emplace(string.address, std::move(string));
+    for (const auto* sibling : siblingZones) {
+        if (!sibling->CanReachAsmLines())
+            continue;
+        for (auto& string : sibling->GetReferencedStrings(addressToFileOffset)) {
+            auto [item, added] = byAddress.try_emplace(string.address, string);
+            if (!added)
+                item->second.xrefs += string.xrefs; // the same string used by .text and PAGE
+        }
+    }
+    strings.clear();
+    strings.reserve(byAddress.size());
+    for (auto& [address, string] : byAddress)
+        strings.push_back(std::move(string));
+    return strings;
+}
+
+std::optional<DissasmSearchHit> GView::View::DissasmViewer::SearchCodeZones(
+      const std::vector<DissasmCodeZone*>& zones,
+      size_t startZone,
+      uint64 from,
+      const DissasmSearch& search,
+      const std::function<DissasmInsnExtractLineParams*(DissasmCodeZone*)>& makeParams)
+{
+    if (startZone >= zones.size())
+        return {};
+    std::vector<int16> pattern;
+    uint64 value = 0;
+    if (search.kind == DissasmSearchKind::Bytes) {
+        auto parsed = ParseDissasmBytePattern(search.text);
+        if (!parsed.has_value() || parsed->empty())
+            return {};
+        pattern = std::move(parsed.value());
+    } else if (search.kind == DissasmSearchKind::Immediate) {
+        const auto parsed = ParseDissasmSearchNumber(search.text);
+        if (!parsed.has_value())
+            return {};
+        value = parsed.value();
+    }
+    // [begin, end): lines of the zone (a text), relative addresses (bytes, an immediate)
+    const auto searchZone = [&](DissasmCodeZone* zone, uint64 begin, uint64 end) -> std::optional<uint64> {
+        switch (search.kind) {
+        case DissasmSearchKind::Text: {
+            end              = std::min<uint64>(end, zone->GetDisplayLinesCount());
+            const auto found = begin < end ? zone->FindText(search.text, search.matchCase, static_cast<uint32>(begin), static_cast<uint32>(end),
+                                                            makeParams ? makeParams(zone) : nullptr)
+                                           : std::nullopt;
+            return found.has_value() ? std::optional<uint64>(found.value()) : std::nullopt;
+        }
+        case DissasmSearchKind::Bytes:
+            return zone->FindBytes(pattern, begin, end);
+        default:
+            return zone->FindImmediate(value, begin, end);
+        }
+    };
+    const auto zoneEnd = [&search](const DissasmCodeZone* zone) -> uint64 {
+        return search.kind == DissasmSearchKind::Text ? zone->GetDisplayLinesCount() : zone->GetCodeSize();
+    };
+    for (size_t step = 0; step < zones.size(); step++) {
+        auto* zone = zones[(startZone + step) % zones.size()];
+        if (const auto found = searchZone(zone, step == 0 ? from : 0, zoneEnd(zone)); found.has_value())
+            return DissasmSearchHit{ zone, found.value() };
+    }
+    // the start of the first zone, up to `from` (a byte pattern that starts before it may end after it)
+    if (from > 0) {
+        auto* zone       = zones[startZone];
+        const uint64 end = search.kind == DissasmSearchKind::Bytes ? std::min<uint64>(zone->GetCodeSize(), from + pattern.size() - 1) : from;
+        if (const auto found = searchZone(zone, 0, end); found.has_value())
+            return DissasmSearchHit{ zone, found.value() };
+    }
+    return {};
+}
+
 std::optional<uint64> DissasmCodeZone::FindBytes(const std::vector<int16>& pattern, uint64 from, uint64 to) const
 {
     if (pattern.empty() || cachedCodeOffsets.empty() || !zoneObject.IsValid())

@@ -200,6 +200,8 @@ struct DissasmCodeZone : public ParseZone {
     std::vector<DissasmCallReference> GetCallees(uint64 functionStart, const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport) const;
     // the strings at the data addresses used by the instructions (lea rcx, [rip + ...] / push offset), by address
     std::vector<DissasmStringReference> GetReferencedStrings(const std::function<std::optional<uint64>(uint64)>& addressToFileOffset) const;
+    // the strings used by this zone and by the other code zones of the file: a string used by several zones once, with all its references
+    std::vector<DissasmStringReference> GetReferencedStringsOfFile(const std::function<std::optional<uint64>(uint64)>& addressToFileOffset) const;
     // the relative address of the first match in [from, to) of the code
     std::optional<uint64> FindBytes(const std::vector<int16>& pattern, uint64 from, uint64 to) const;
     // the first instruction in [from, to) (relative addresses, from is an instruction of the listing) with this immediate / displacement
@@ -483,5 +485,19 @@ bool BuildX86AsmListing(DissasmCodeZone& zone, Reference<GView::Object> obj, Set
 const MemoryMappingEntry* FindX86OperandsImport(SettingsData* settings, const DissasmCodeZone* zone, const X86OperandsInfo& operands);
 // the init data of a code zone of the viewer settings (the addresses of the labels, the file translation, the imports, the function entries)
 void PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> obj, DissasmCodeZone* zone, DissasmCodeZoneInitData& initData);
+
+// A search (Ctrl+F / F6) in the code zones of the file (the executable sections), in their order: zones[startZone] after `from`, the next
+// zones, the zones before it, then zones[startZone] up to `from`. `from` and the position found are a line of the zone for a text, a
+// relative address for bytes / an immediate. makeParams gives the line parameters of a zone (the text search draws the lines), may be empty.
+struct DissasmSearchHit {
+    DissasmCodeZone* zone;
+    uint64 position;
+};
+std::optional<DissasmSearchHit> SearchCodeZones(
+      const std::vector<DissasmCodeZone*>& zones,
+      size_t startZone,
+      uint64 from,
+      const DissasmSearch& search,
+      const std::function<DissasmInsnExtractLineParams*(DissasmCodeZone*)>& makeParams);
 
 } // namespace GView::View::DissasmViewer

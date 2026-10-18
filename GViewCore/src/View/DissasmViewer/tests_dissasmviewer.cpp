@@ -5772,3 +5772,91 @@ TEST_CASE("HeadlessAnalysisCrossSections", "[Dissasm]Zones")
     REQUIRE(callee["callers"][1]["function"] == "EntryPoint");
     REQUIRE(callee["callers"][1]["site"] == "0x4");
 }
+
+TEST_CASE("SearchAcrossZones", "[Dissasm]Zones")
+{
+    const auto file = CrossSectionsCode();
+    ZoneLayout layout;
+    layout.size       = 0x40;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance text(file.data(), file.size(), false, layout);
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    DissasmTestInstance page(file.data(), file.size(), false, layout);
+    auto* textZone = text.zone.get();
+    auto* pageZone = page.zone.get();
+    const std::vector<DissasmCodeZone*> zones{ textZone, pageZone };
+    const auto search = [&zones](DissasmSearchKind kind, std::string_view what, size_t startZone, uint64 from) {
+        DissasmSearch request;
+        request.kind = kind;
+        request.text = std::string(what);
+        return SearchCodeZones(zones, startZone, from, request, nullptr);
+    };
+
+    // .text has no xor: the search continues in PAGE
+    auto hit = search(DissasmSearchKind::Text, "xor eax, eax", 0, 1);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == pageZone);
+    // from PAGE, the search wraps to .text (the next zone after the last one)
+    hit = search(DissasmSearchKind::Text, "sub rsp, 0x28", 1, 0);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == textZone);
+    // bytes and immediates: relative addresses of the zone
+    hit = search(DissasmSearchKind::Bytes, "31 C0 C3", 0, 0);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == pageZone);
+    REQUIRE(hit->position == 0x10);
+    hit = search(DissasmSearchKind::Immediate, "0x28", 0, 0x04); // after sub rsp, 0x28: add rsp, 0x28
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == textZone);
+    REQUIRE(hit->position == 0x09);
+    // the start of the first zone is searched last: from the end of PAGE, the pattern of PAGE itself
+    hit = search(DissasmSearchKind::Bytes, "55 48 89 E5", 1, 0x01);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == pageZone);
+    REQUIRE(hit->position == 0x00);
+    REQUIRE_FALSE(search(DissasmSearchKind::Bytes, "12 34 56", 0, 0).has_value());
+    REQUIRE_FALSE(search(DissasmSearchKind::Immediate, "not a number", 0, 0).has_value());
+}
+
+TEST_CASE("StringsAcrossZones", "[Dissasm]Zones")
+{
+    // the same string used by .text and by PAGE
+    std::vector<unsigned char> file = {
+        0x48, 0x8D, 0x0D, 0x69, 0x00, 0x00, 0x00, // 0x00: lea rcx, [rip + 0x69] (0x70)
+        0xC3,                                     // 0x07: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8D, 0x15, 0x29, 0x00, 0x00, 0x00 }); // 0x40: lea rdx, [rip + 0x29] (0x70)
+    file.push_back(0xC3);                                                   // 0x47: ret
+    file.resize(0x70, 0xCC);
+    for (const char c : std::string_view("Hello strings"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x80, 0x00);
+
+    ZoneLayout layout;
+    layout.size       = 0x40;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance text(file.data(), file.size(), false, layout);
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    DissasmTestInstance page(file.data(), file.size(), false, layout);
+    text.zone->siblingZones = { page.zone.get() };
+    page.zone->siblingZones = { text.zone.get() };
+
+    const uint64 fileSize          = file.size();
+    const auto addressToFileOffset = [fileSize](uint64 address) -> std::optional<uint64> {
+        return address < fileSize ? std::optional<uint64>(address) : std::nullopt;
+    };
+    REQUIRE(text.zone->GetReferencedStrings(addressToFileOffset).size() == 1);
+    const auto strings = text.zone->GetReferencedStringsOfFile(addressToFileOffset);
+    REQUIRE(strings.size() == 1);
+    REQUIRE(strings[0].address == 0x70);
+    REQUIRE(strings[0].text == "\"Hello strings\"");
+    REQUIRE(strings[0].xrefs == 2);
+    REQUIRE(text.zone->GetXrefsTo(0x70).size() == 2);
+}

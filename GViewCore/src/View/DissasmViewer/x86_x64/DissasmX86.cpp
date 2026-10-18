@@ -2586,19 +2586,29 @@ bool Instance::RunSearch(const DissasmSearch& search, bool showErrors)
 {
     FinishDeepScans(); // the labels are searched too
 
-    // the code zone of the cursor (or the first one); the search starts after the cursor and continues from the start of the zone
-    DissasmCodeZone* zone = nullptr;
+    // every shown code zone (the executable sections), in their order; the search starts after the cursor, continues in the next zones and
+    // ends at the cursor
+    std::vector<DissasmCodeZone*> zones;
+    DissasmCodeZone* cursorZone = nullptr;
     std::optional<uint32> cursorZoneLine;
     const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
     if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex]->zoneType == DissasmParseZoneType::DissasmCodeParseZone) {
-        zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+        cursorZone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
         if (zonesFound[0].startingLine >= 2)
             cursorZoneLine = zonesFound[0].startingLine - 2u; // the title and the columns header
     }
-    for (size_t index = 0; !zone && index < settings->parseZones.size(); index++)
-        if (settings->parseZones[index]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
-            zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
-    if (!zone || !zone->isInit || !zone->CanReachAsmLines() || zone->isCollapsed) {
+    size_t startZone = 0;
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        if (!codeZone->isInit || !codeZone->CanReachAsmLines())
+            continue;
+        if (codeZone == cursorZone)
+            startZone = zones.size();
+        zones.push_back(codeZone);
+    }
+    if (zones.empty()) {
         if (showErrors)
             Dialogs::MessageBox::ShowNotification("Info", "The search needs a shown disassembly zone!");
         return false;
@@ -2606,54 +2616,37 @@ bool Instance::RunSearch(const DissasmSearch& search, bool showErrors)
 
     DissasmInsnExtractLineParams params{};
     params.obj      = obj;
-    params.zone     = zone;
     params.settings = settings.get();
     params.asmData  = &asmData;
-    const uint32 linesCount = zone->GetDisplayLinesCount();
-    bool found              = false;
-    if (search.kind == DissasmSearchKind::Text) {
-        const uint32 from = cursorZoneLine.has_value() ? cursorZoneLine.value() + 1u : 0u;
-        auto line         = zone->FindText(search.text, search.matchCase, from, linesCount, &params);
-        if (!line.has_value() && from > 0)
-            line = zone->FindText(search.text, search.matchCase, 0, from, &params);
-        if (line.has_value()) {
-            // the found line gets the cursor, a few lines below the top of the view
-            const uint32 zoneLine = line.value() + 2u;
-            const auto from       = SaveCursorState();
-            Cursor.lineInView     = std::min<uint32>(5, zoneLine);
-            Cursor.startViewLine  = zoneLine + zone->startLineIndex - Cursor.lineInView;
-            Cursor.hasMovedView   = true;
-            RecordJump(from);
-            found = true;
-        }
-    } else {
-        // the instruction of the cursor: the bytes are searched after its first byte, the immediates from the next instruction
-        uint64 from = 0;
-        if (cursorZoneLine.has_value() && cursorZoneLine.value() < linesCount) {
-            const auto cursorLine = zone->GetCurrentAsmLine(cursorZoneLine.value(), obj, &params);
+    // the line after the cursor (a text); the bytes are searched after the first byte of its instruction, the immediates from the next one
+    uint64 from = 0;
+    if (cursorZone && zones[startZone] == cursorZone && cursorZoneLine.has_value() && cursorZoneLine.value() < cursorZone->GetDisplayLinesCount()) {
+        if (search.kind == DissasmSearchKind::Text)
+            from = cursorZoneLine.value() + 1u;
+        else {
+            params.zone           = cursorZone;
+            const auto cursorLine = cursorZone->GetCurrentAsmLine(cursorZoneLine.value(), obj, &params);
             from                  = cursorLine.address + (cursorLine.size == 0 ? 0u : (search.kind == DissasmSearchKind::Bytes ? 1u : cursorLine.size));
         }
-        const uint64 codeSize = zone->GetCodeSize();
-        std::optional<uint64> address;
-        if (search.kind == DissasmSearchKind::Bytes) {
-            const auto pattern = ParseDissasmBytePattern(search.text);
-            if (pattern.has_value()) {
-                address = zone->FindBytes(pattern.value(), from, codeSize);
-                if (!address.has_value() && from > 0)
-                    address = zone->FindBytes(pattern.value(), 0, std::min<uint64>(codeSize, from + pattern->size() - 1));
-            }
-        } else {
-            const auto value = ParseDissasmSearchNumber(search.text);
-            if (value.has_value()) {
-                address = zone->FindImmediate(value.value(), from, codeSize);
-                if (!address.has_value() && from > 0)
-                    address = zone->FindImmediate(value.value(), 0, from);
-            }
-        }
-        if (address.has_value())
-            found = MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
     }
-    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+    const auto hit = SearchCodeZones(zones, startZone, from, search, [&params](DissasmCodeZone* zone) {
+        params.zone = zone;
+        return &params;
+    });
+    bool found = false;
+    if (hit.has_value() && search.kind == DissasmSearchKind::Text) {
+        // the found line gets the cursor, a few lines below the top of the view
+        const uint32 zoneLine = static_cast<uint32>(hit->position) + 2u;
+        const auto previous   = SaveCursorState();
+        Cursor.lineInView     = std::min<uint32>(5, zoneLine);
+        Cursor.startViewLine  = zoneLine + hit->zone->startLineIndex - Cursor.lineInView;
+        Cursor.hasMovedView   = true;
+        RecordJump(previous);
+        found = true;
+    } else if (hit.has_value())
+        found = MoveCursorToZoneFileOffset(hit->zone, hit->zone->cachedCodeOffsets[0].offset + hit->position, false);
+    for (auto* zone : zones)
+        zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
     if (!found && showErrors)
         Dialogs::MessageBox::ShowNotification("Find", "`" + search.text + "` was not found!");
     return found;
@@ -2728,7 +2721,8 @@ void Instance::ShowStrings()
                                : address;
         return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
     };
-    const auto strings = zone->GetReferencedStrings(addressToFileOffset);
+    FinishDeepScans(); // the strings of every code zone (the executable sections)
+    const auto strings = zone->GetReferencedStringsOfFile(addressToFileOffset);
     if (strings.empty()) {
         Dialogs::MessageBox::ShowNotification("Info", "No strings are used by the code (they are found by the deep scan)!");
         return;
@@ -2736,11 +2730,12 @@ void Instance::ShowStrings()
     StringsWindow window(strings);
     if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
         return;
-    const auto& selected     = strings[window.GetSelectedRow().value()];
-    const auto [first, last] = zone->xrefs.To(selected.address);
-    if (last - first == 1) // used once: the instruction that uses it
-        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + (first->from - zone->labelAddressBase), false);
-    else
+    const auto& selected  = strings[window.GetSelectedRow().value()];
+    const auto references = zone->GetXrefsTo(selected.address); // from any code zone
+    if (references.size() == 1) {                               // used once: the instruction that uses it
+        auto* source = references[0].zone;
+        MoveCursorToZoneFileOffset(source, source->cachedCodeOffsets[0].offset + (references[0].xref->from - source->labelAddressBase), false);
+    } else
         ShowXrefsTo(zone, selected.address, selected.text);
 }
 
