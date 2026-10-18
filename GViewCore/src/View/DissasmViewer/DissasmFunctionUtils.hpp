@@ -21,6 +21,17 @@ std::vector<OperandNumber> FindOperandNumbers(std::string_view operands);
 // `trackedPosition` (a position inside `operands`) is moved to the same character of the result
 std::string FormatOperandNumbers(std::string_view operands, AppCUI::uint32 decimalMask, AppCUI::uint32* trackedPosition = nullptr);
 
+// The operands with the name of the data they refer to, as IDA writes them; none when the operands have no such place:
+// - x86 / x64: the memory operand at a fixed address ([rip + 0x...] on x64, [0x403000] on x86) becomes cs:name / ds:name, the size
+//   ("dword ptr ") is dropped when the name says it (dword_, off_ / __imp_ of a pointer size); lea takes the name itself (lea rcx, aText)
+std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands, std::string_view name, bool isLea, bool is64);
+// - x86: an immediate (push 0x403000 / mov ecx, 0x403000) becomes "offset name"
+std::optional<std::string> SubstituteX86Immediate(std::string_view operands, AppCUI::uint64 value, std::string_view name);
+// - 32 bit ARM: the literal load ldr r0, [pc, #0x28] becomes ldr r0, =literal
+std::optional<std::string> SubstituteArmLiteral(std::string_view operands, std::string_view literal);
+// - ARM64: the offset in the page of an adrp pair (add x0, x0, #0x5a0 / ldr w8, [x8, #0x248]) becomes #name@PAGEOFF
+std::optional<std::string> SubstituteArm64PageOffset(std::string_view operands, AppCUI::uint64 pageOffset, std::string_view name);
+
 // Decodes the next x86/x64 line, as cs_disasm_iter does. A byte that can not be decoded is a 1 byte data line ("db 0xNN", as
 // disassemblers show it) and the decoding continues right after it: inline data (jump tables, padding) never ends the code. False only
 // when there are no bytes left. Every walk over the lines of a code zone (counting, cached offsets, navigation, drawing, export) decodes

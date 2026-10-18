@@ -591,6 +591,7 @@ void Instance::RenameLabel()
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::LabelRename);
     selection.Clear();
     convertedZone->asmPreCacheData.Clear();
+    ForgetLinesReferringTo(convertedZone); // the operands of the other zones show the name
 }
 
 void Instance::RemoveLocalVariable()

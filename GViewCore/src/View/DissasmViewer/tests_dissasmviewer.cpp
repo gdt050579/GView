@@ -6764,3 +6764,70 @@ TEST_CASE("ChainedFixups", "[Dissasm]MachO")
         REQUIRE(fixups.empty());
     }
 }
+
+TEST_CASE("SymbolicOperandText", "[Dissasm]Operands")
+{
+    // x64: cs:name, the size dropped when the name says it, lea takes the name; fs: / gs: are not places of the file
+    CHECK(SubstituteX86MemoryOperand("eax, dword ptr [rip + 0xafd6]", "dword_14000C0D0", false, true) == std::optional<std::string>("eax, cs:dword_14000C0D0"));
+    CHECK(SubstituteX86MemoryOperand("qword ptr [rip - 0x10], rax", "qword_140010000", false, true) == std::optional<std::string>("cs:qword_140010000, rax"));
+    CHECK(SubstituteX86MemoryOperand("byte ptr [rip + 0x10], 1", "dword_14000C000", false, true) ==
+          std::optional<std::string>("byte ptr cs:dword_14000C000, 1"));
+    CHECK(SubstituteX86MemoryOperand("rcx, qword ptr [rip + 0x93a8]", "__imp_CreateFileW", false, true) == std::optional<std::string>("rcx, cs:__imp_CreateFileW"));
+    CHECK(SubstituteX86MemoryOperand("rcx, [rip + 0x2f45]", "aHelloWorld", true, true) == std::optional<std::string>("rcx, aHelloWorld"));
+    CHECK(SubstituteX86MemoryOperand("rax, qword ptr gs:[0x30]", "unk_30", false, true) == std::nullopt);
+    CHECK(SubstituteX86MemoryOperand("rax, qword ptr [rbx + 8]", "unk_30", false, true) == std::nullopt);
+    // x86: the absolute address, ds:name; an off_ pointer of 4 bytes says the size
+    CHECK(SubstituteX86MemoryOperand("eax, dword ptr [0x403000]", "off_403000", false, false) == std::optional<std::string>("eax, ds:off_403000"));
+    CHECK(SubstituteX86MemoryOperand("eax, dword ptr [eax*4 + 0x403000]", "off_403000", false, false) == std::nullopt);
+    CHECK(SubstituteX86Immediate("0x403000", 0x403000, "aText") == std::optional<std::string>("offset aText"));
+    CHECK(SubstituteX86Immediate("ecx, 0x403000", 0x403000, "aText") == std::optional<std::string>("ecx, offset aText"));
+    CHECK(SubstituteX86Immediate("ecx, 0x4030001", 0x403000, "aText") == std::nullopt); // another number
+    // ARM: the literal of the pool, the offset in the page of an adrp pair
+    CHECK(SubstituteArmLiteral("r0, [pc, #0x28]", "dword_30168") == std::optional<std::string>("r0, =dword_30168"));
+    CHECK(SubstituteArmLiteral("r0, [r1]", "dword_30168") == std::nullopt);
+    CHECK(SubstituteArm64PageOffset("w8, [x8, #0x248]", 0x248, "dword_220248") == std::optional<std::string>("w8, [x8, #dword_220248@PAGEOFF]"));
+    CHECK(SubstituteArm64PageOffset("x0, x0, #0x5a0", 0x5a0, "aCase0") == std::optional<std::string>("x0, x0, #aCase0@PAGEOFF"));
+    CHECK(SubstituteArm64PageOffset("x8, [x8]", 0, "dword_220000") == std::nullopt);
+}
+
+TEST_CASE("SymbolicDataOperands", "[Dissasm]Operands")
+{
+    // x64 code reads a dword and takes the address of a string of a data zone: the operands name them (IDA: cs:dword_40, lea rcx, aHello)
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0x3A, 0x00, 0x00, 0x00,       // 0x00: mov eax, dword ptr [rip + 0x3a] (0x40)
+        0x48, 0x8D, 0x0D, 0x3B, 0x00, 0x00, 0x00, // 0x06: lea rcx, [rip + 0x3b] (0x48)
+        0xC3,                                     // 0x0d: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }); // 0x40: a dword
+    for (const char c : std::string_view("Hello"))                              // 0x48: a string
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x60, 0x00);
+    ZoneLayout layout;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true;
+    layout.addressToFileOffset = [](uint64 address) -> std::optional<uint64> { return address < 0x60 ? std::optional<uint64>(address) : std::nullopt; };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    REQUIRE(FindListingLine(code.GetListing(), "mov    eax, dword ptr [rip + 0x3a]").size() > 0); // no data zone yet: no name
+
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "dword_40");
+    REQUIRE(data.zone->GetLabelNameAt(0x08) == "aHello");
+
+    code.zone->siblingZones = { data.zone.get() };
+    code.zone->asmPreCacheData.Clear();
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "mov    eax, cs:dword_40").size() > 0);
+    REQUIRE(FindListingLine(listing, "lea    rcx, aHello").size() > 0);
+    // past the item of the last label: no name (a variable of the uninitialized part of the section)
+    REQUIRE(data.zone->FormatCodeAddress(0x02) == "dword_40+0x2");
+    REQUIRE(data.zone->FormatCodeAddress(0x1C).starts_with("0x"));
+}

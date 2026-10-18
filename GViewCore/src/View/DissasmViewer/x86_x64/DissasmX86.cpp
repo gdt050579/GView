@@ -592,6 +592,60 @@ static std::string FormatDataAddress(const DissasmCodeZone* zone, uint64 address
     return FormatAddress(address);
 }
 
+// the name of the place (VA) that an operand refers to: an import slot (__imp_Name), a label of a data zone (dword_, off_+0x8, aText),
+// a label of code (a callback), the image base (__ImageBase: the PE header); empty when the place has no name
+static std::string GetDataOperandName(DissasmInsnExtractLineParams& params, const X86OperandsInfo& operands, uint64 address)
+{
+    if (const auto* import = FindX86OperandsImport(params.settings, params.zone, operands); import && !import->name.empty())
+        return "__imp_" + import->name;
+    std::string name = FormatDataAddress(params.zone, address);
+    if (!name.starts_with("0x"))
+        return name;
+    // the header of the image (the page before the first section): __ImageBase, __ImageBase+0x3C (e_lfanew)
+    const uint64 codeStartRVA = GetCodeStartRVA(params.settings, params.zone);
+    if (params.zone->labelAddressBase <= codeStartRVA)
+        return {};
+    const uint64 imageBase = params.zone->labelAddressBase - codeStartRVA;
+    if (address < imageBase || address - imageBase >= std::min<uint64>(codeStartRVA, 0x1000))
+        return {};
+    if (address == imageBase)
+        return "__ImageBase";
+    LocalString<32> offset;
+    offset.SetFormat("__ImageBase+0x%llX", static_cast<unsigned long long>(address - imageBase));
+    return offset.GetText();
+}
+
+// x86 / x64: the operands with the names of the data at the fixed addresses (mov eax, cs:dword_14000C0D0 / lea rcx, aText / push offset
+// aText); none when they refer to no named place
+static std::optional<std::string> GetX86SymbolicOperands(const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    const auto zone = params.zone;
+    if (zone->IsArmCode() || !params.settings || !params.settings->offsetTranslateCallback.IsValid() || zone->cachedCodeOffsets.empty())
+        return {};
+    const bool is64 = zone->Is64BitCode();
+    std::optional<uint64> address;
+    if (is64 && operands.ripTarget.has_value())
+        address = zone->labelAddressBase + operands.ripTarget.value();
+    else if (!is64 && operands.absoluteMemory.has_value())
+        address = operands.absoluteMemory.value();
+    if (address.has_value()) {
+        const std::string name = GetDataOperandName(params, operands, address.value());
+        return name.empty() ? std::nullopt : SubstituteX86MemoryOperand(insn.op_str, name, insn.id == X86_INS_LEA, is64);
+    }
+    if (is64)
+        return {};
+    for (const uint64 value : operands.immediates) { // push 0x403000 / mov ecx, 0x403000: small values are counters, sizes, flags
+        if (value < 0x10000 || !TranslateOperandAddressToFileOffset(params.settings, value, true).has_value())
+            continue;
+        X86OperandsInfo slot;
+        slot.absoluteMemory    = value;
+        const std::string name = GetDataOperandName(params, slot, value);
+        if (!name.empty())
+            return SubstituteX86Immediate(insn.op_str, value, name);
+    }
+    return {};
+}
+
 // 32 bit ARM: the import of a slot; a literal load (ldr r0, [pc, #off]): the string its word points to (an absolute address) or the word
 // itself (=0x...: a PIC offset, a constant); an address taken (adr, add r0, pc, #imm, the PIC add pc of a literal): its string or the
 // address; a slot read / written through the registers: the address
@@ -623,28 +677,42 @@ static void AddArm32DataComment(DissasmAsmPreCacheLine& line, const cs_insn& ins
         if (!fileOffset.has_value() || !params.obj->GetData().Copy<uint32>(fileOffset.value(), word))
             return;
         const auto wordOffset = TranslateOperandAddressToFileOffset(settings, word, true);
-        if (!stringAt(wordOffset)) {
-            // ldr r0, =variable: the name of the variable or of the function (a Thumb function: bit 0 set); else the word (a PIC offset,
-            // a constant)
-            std::string name;
-            if (word >= 0x10000 && wordOffset.has_value()) {
-                name = FormatDataAddress(params.zone, word);
-                if (name.starts_with("0x") && (word & 1) != 0)
-                    name = FormatDataAddress(params.zone, word & ~1u);
-            }
-            if (name.empty() || name.starts_with("0x")) {
-                LocalString<24> text;
-                text.SetFormat("0x%x", word);
-                name = text.GetText();
-            }
-            line.autoComment = "=" + name;
+        // ldr r0, =variable (IDA): the name of the variable, the string or the function (a Thumb function: bit 0 set); else the word (a
+        // PIC offset, a constant). The string itself is the comment
+        std::string name;
+        if (word >= 0x10000 && wordOffset.has_value()) {
+            name = FormatDataAddress(params.zone, word);
+            if (name.starts_with("0x") && (word & 1) != 0)
+                name = FormatDataAddress(params.zone, word & ~1u);
         }
+        if (name.empty() || name.starts_with("0x")) {
+            LocalString<24> text;
+            text.SetFormat("0x%x", word);
+            name = text.GetText();
+        }
+        if (const auto replaced = SubstituteArmLiteral({ line.op_str ? line.op_str : "", line.op_str_size }, name); replaced.has_value())
+            line.SetOperands(replaced->c_str(), params.zone);
+        else
+            line.autoComment = "=" + name;
+        stringAt(wordOffset);
         return;
     }
     if (operands.memoryAccess == 0 && stringAt(fileOffset))
         return;
     if (operands.memoryAccess == 0 || isResolved)
         line.autoComment = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());
+}
+
+// ARM64: the offset in the page of an adrp pair as the name (IDA: ldr w8, [x8, #dword_220248@PAGEOFF]) and the comment; the address when the
+// place has no name
+static void NameArm64PageOffset(DissasmAsmPreCacheLine& line, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    const uint64 target    = params.zone->labelAddressBase + operands.ripTarget.value();
+    const std::string name = FormatDataAddress(params.zone, target);
+    if (!name.starts_with("0x"))
+        if (const auto replaced = SubstituteArm64PageOffset({ line.op_str ? line.op_str : "", line.op_str_size }, target & 0xFFF, name))
+            line.SetOperands(replaced->c_str(), params.zone);
+    line.autoComment = name;
 }
 
 // the data referenced by the operands, shown as an automatic comment (never saved): the import loaded by mov rax, [rip + 0x...] or the
@@ -676,7 +744,7 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
             // the other instructions read / write the data (a variable, a pointer), only lea / adr / add take the address of a string. The
             // address of an ARM64 adrp pair is not in the operands: it is shown
             if (params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address))
-                line.autoComment = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());
+                NameArm64PageOffset(line, operands, params);
             return;
         }
         fileOffset = TranslateOperandAddressToFileOffset(settings, rva, false);
@@ -692,7 +760,7 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
     }
     const bool isAdrpPair = params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address);
     if (isAdrpPair && operands.ripTarget.has_value())
-        line.autoComment = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value()); // add x0, x0, #off: the address, when it is not a string
+        NameArm64PageOffset(line, operands, params); // add x0, x0, #off: the address, when it is not a string
     if (!fileOffset.has_value() || fileOffset.value() >= params.obj->GetData().GetSize())
         return;
     auto text = TryExtractStringPreview(params.obj, fileOffset.value());
@@ -809,14 +877,14 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             const uint64 page = params.zone->labelAddressBase + GetArm64AdrpPage(*insn, params.zone->labelAddressBase);
             SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + FormatAddress(page)).c_str(), params.zone);
         } else if (params.zone->IsArm64Code() && GetArm64OperandsInfo(*insn).ripTarget.has_value()) {
-            // adr x0, label / ldr x0, label: capstone writes the address relative to the zone start, the listing shows the VA
-            LocalString<32> target;
-            target.SetFormat("0x%llx", static_cast<unsigned long long>(params.zone->labelAddressBase + operands.ripTarget.value()));
-            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + target.GetText()).c_str(), params.zone);
+            // adr x0, label / ldr x0, label: capstone writes the address relative to the zone start, the listing shows the VA (its name)
+            const std::string target = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());
+            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + target).c_str(), params.zone);
         } else
-            SetOperands(insn->op_str, params.zone);
+            SetSymbolicOperands(*insn, operands, params);
 #ifndef DISSASM_DISABLE_STRING_PREVIEW
         AddReferencedDataComment(*this, *insn, operands, params); // lea rcx, [rip + 0x...] / mov ecx, 0x403000
+        DropCommentShownInOperands();
 #endif
         return true;
     }
@@ -873,7 +941,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 const std::string otherLabel = FindLabelInOtherZones(params.settings, params.zone, targetVA);
                 SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (otherLabel.empty() ? std::string(target.GetText()) : otherLabel)).c_str(), params.zone);
             } else {
-                SetOperands(insn->op_str, params.zone); // indirect: the operands are shown as they are
+                SetSymbolicOperands(*insn, operands, params); // indirect: call cs:__guard_dispatch_icall_fptr, jmp [rax*8 + table]
                 const auto switchJump = params.zone->switchJumps.find(address);
                 if (switchJump != params.zone->switchJumps.end())
                     autoComment = "switch: " + std::to_string(switchJump->second) + " cases";
@@ -898,9 +966,27 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         op_str_size = static_cast<uint32>(labelName.size());
     }
 
-    if (!op_str && !mapping)
-        SetOperands(insn->op_str, params.zone);
+    if (!op_str && !mapping) {
+        SetSymbolicOperands(*insn, operands, params); // push offset aText
+        DropCommentShownInOperands();
+    }
     return true;
+}
+
+void DissasmAsmPreCacheLine::SetSymbolicOperands(const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    const auto symbolic = GetX86SymbolicOperands(insn, operands, params);
+    SetOperands(symbolic.has_value() ? symbolic->c_str() : insn.op_str, params.zone);
+}
+
+void DissasmAsmPreCacheLine::DropCommentShownInOperands()
+{
+    // the import / the label of the comment is in the operands now (cs:__imp_CreateFileW, =dword_30168): a string preview stays
+    if (!autoComment.empty() && op_str && std::string_view(op_str, op_str_size).find(autoComment) != std::string_view::npos)
+        autoComment.clear();
+    else if (autoComment.size() > 1 && autoComment[0] == '=' && op_str &&
+             std::string_view(op_str, op_str_size).find(std::string_view(autoComment).substr(1)) != std::string_view::npos)
+        autoComment.clear();
 }
 
 void DissasmAsmPreCacheData::PrepareLabelArrows()
@@ -1334,13 +1420,10 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
     return true;
 }
 
-void Instance::ForgetLinesReferringTo(DissasmCodeZone* dataZone)
+void Instance::ForgetLinesReferringTo(DissasmCodeZone* zone)
 {
-    if (!dataZone->zoneDetails.isData)
-        return;
-    for (auto* sibling : dataZone->siblingZones)
-        if (!sibling->zoneDetails.isData)
-            sibling->asmPreCacheData.Clear();
+    for (auto* sibling : zone->siblingZones)
+        sibling->asmPreCacheData.Clear();
 }
 
 void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> obj, DissasmCodeZone* zone, DissasmCodeZoneInitData& initData)

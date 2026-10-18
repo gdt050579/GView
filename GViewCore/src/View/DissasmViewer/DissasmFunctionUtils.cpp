@@ -107,6 +107,122 @@ std::string FormatOperandNumbers(std::string_view operands, uint32 decimalMask, 
     return result;
 }
 
+namespace
+{
+bool IsTokenCharacter(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '.';
+}
+
+// the position of the number `value` written in hexadecimal (0x...) as a whole token of the operands
+std::optional<size_t> FindHexToken(std::string_view operands, uint64 value, size_t from = 0)
+{
+    char text[24];
+    snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(value));
+    const std::string_view token(text);
+    for (size_t position = operands.find(token, from); position != std::string_view::npos; position = operands.find(token, position + 1)) {
+        const bool startsToken = position == 0 || !IsTokenCharacter(operands[position - 1]);
+        const bool endsToken   = position + token.size() == operands.size() || !IsTokenCharacter(operands[position + token.size()]);
+        if (startsToken && endsToken)
+            return position;
+    }
+    return {};
+}
+} // namespace
+
+std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands, std::string_view name, bool isLea, bool is64)
+{
+    if (name.empty())
+        return {};
+    // the bracket of the fixed address: [rip + 0x..] / [rip - 0x..] / [rip] on x64, [0x...] on x86
+    size_t open = std::string_view::npos;
+    for (size_t position = operands.find('['); position != std::string_view::npos; position = operands.find('[', position + 1)) {
+        const auto inside = operands.substr(position + 1);
+        if (is64 ? (inside.starts_with("rip ") || inside.starts_with("rip]")) : inside.starts_with("0x")) {
+            open = position;
+            break;
+        }
+    }
+    if (open == std::string_view::npos)
+        return {};
+    const size_t close = operands.find(']', open);
+    if (close == std::string_view::npos)
+        return {};
+    size_t start = open;
+    if (start >= 3 && operands[start - 1] == ':') {
+        const auto segment = operands.substr(start - 3, 2);
+        if (segment != "ds" && segment != "cs")
+            return {}; // fs:[0x30] / gs:[0x60]: the thread block, not a place of the file
+        start -= 3;
+    }
+    // the size before it: "dword ptr "
+    std::string_view size;
+    size_t sizeStart = start;
+    if (start >= 5 && operands.substr(start - 5, 5) == " ptr ") {
+        sizeStart = operands.rfind(' ', start - 6);
+        sizeStart = sizeStart == std::string_view::npos ? 0 : sizeStart + 1;
+        size      = operands.substr(sizeStart, start - 5 - sizeStart);
+    }
+    std::string result(operands.substr(0, isLea ? start : sizeStart));
+    if (isLea) {
+        result.append(name);
+    } else {
+        // the size is said by the name: byte_ / word_ / dword_ / qword_ / xmmword_, a pointer (off_, __imp_) of the size of the code
+        const std::string_view pointerSize = is64 ? "qword" : "dword";
+        const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
+                                                  (size == pointerSize && (name.starts_with("off_") || name.starts_with("__imp_"))));
+        if (!size.empty() && !sizeInName)
+            result.append(size).append(" ptr ");
+        result.append(is64 ? "cs:" : "ds:").append(name);
+    }
+    result.append(operands.substr(close + 1));
+    return result;
+}
+
+std::optional<std::string> SubstituteX86Immediate(std::string_view operands, uint64 value, std::string_view name)
+{
+    if (name.empty() || operands.find('[') != std::string_view::npos)
+        return {}; // [0x403000] is a memory operand (SubstituteX86MemoryOperand)
+    const auto position = FindHexToken(operands, value);
+    if (!position.has_value())
+        return {};
+    char text[24];
+    const int length = snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(value));
+    std::string result(operands.substr(0, position.value()));
+    result.append("offset ").append(name);
+    result.append(operands.substr(position.value() + static_cast<size_t>(length)));
+    return result;
+}
+
+std::optional<std::string> SubstituteArmLiteral(std::string_view operands, std::string_view literal)
+{
+    const size_t open = operands.find("[pc");
+    if (literal.empty() || open == std::string_view::npos)
+        return {};
+    const size_t close = operands.find(']', open);
+    if (close == std::string_view::npos)
+        return {};
+    std::string result(operands.substr(0, open));
+    result.append("=").append(literal);
+    result.append(operands.substr(close + 1));
+    return result;
+}
+
+std::optional<std::string> SubstituteArm64PageOffset(std::string_view operands, uint64 pageOffset, std::string_view name)
+{
+    if (name.empty() || pageOffset == 0)
+        return {}; // [x8]: no offset written
+    const auto position = FindHexToken(operands, pageOffset);
+    if (!position.has_value() || position.value() == 0 || operands[position.value() - 1] != '#')
+        return {};
+    char text[24];
+    const int length = snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(pageOffset));
+    std::string result(operands.substr(0, position.value()));
+    result.append(name).append("@PAGEOFF");
+    result.append(operands.substr(position.value() + static_cast<size_t>(length)));
+    return result;
+}
+
 AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetLine>& values, uint64 searchedOffset, uint32* index)
 {
     assert(!values.empty());

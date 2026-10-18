@@ -2816,10 +2816,12 @@ std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
         text.SetFormat("0x%llx", static_cast<unsigned long long>(address));
         return text.GetText();
     }
-    // a data zone: the label placed before the address (off_1048+0x8)
+    // a data zone: the label placed before the address, when the item at the label covers it (off_1048+0x8, aText+0x3); not past it (a
+    // variable of the uninitialized part of the section after the last label is not qword_X+0x40)
     if (zoneDetails.isData) {
         const auto label = std::upper_bound(sortedLabelAddresses.begin(), sortedLabelAddresses.end(), relativeAddress);
-        if (label != sortedLabelAddresses.begin()) {
+        const auto* item = label != sortedLabelAddresses.begin() ? instructionSet.DataRangeAt(*(label - 1)) : nullptr;
+        if (label != sortedLabelAddresses.begin() && (relativeAddress == *(label - 1) || (item && relativeAddress < item->end))) {
             const uint64 labelAddress = *(label - 1);
             std::string name          = GetLabelNameAt(labelAddress);
             if (relativeAddress == labelAddress)

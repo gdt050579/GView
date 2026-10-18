@@ -318,6 +318,10 @@ namespace View
             bool TryGetDataFromInsn(DissasmInsnExtractLineParams& params);
             void SetMnemonic(std::string_view text); // always NUL terminated, truncated to CS_MNEMONIC_SIZE - 1
             void SetOperands(const char* operands, const struct DissasmCodeZone* zone);
+            // x86 / x64: the operands with the names of the places at their fixed addresses (cs:dword_14000C0D0, lea rcx, aText, push offset
+            // aText), else as they are
+            void SetSymbolicOperands(const cs_insn& insn, const struct X86OperandsInfo& operands, DissasmInsnExtractLineParams& params);
+            void DropCommentShownInOperands(); // the automatic comment is in the operands already (an import, a label)
 
             ~DissasmAsmPreCacheLine()
             {
@@ -922,8 +926,9 @@ namespace View
             bool ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background);
             void FillCodeZoneInitData(DissasmCodeZoneInitData& initData, DrawLineInfo* dli, DissasmCodeZone* zone);
             void RefreshDataZones(); // the data zones analyzed again: a code zone changed its references (its labels there)
-            // a data zone got its labels: the lines of the code are prepared again (their comments name the data: ; dword_30168)
-            void ForgetLinesReferringTo(DissasmCodeZone* dataZone);
+            // the labels of a zone changed (analyzed, renamed): the lines of the other zones are prepared again (their operands and comments
+            // name its places: cs:dword_14000C0D0, dq sub_140001000)
+            void ForgetLinesReferringTo(DissasmCodeZone* zone);
             int PrintCursorValueInfo(int x, int y, Renderer& r);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
