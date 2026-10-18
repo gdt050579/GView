@@ -99,6 +99,7 @@ namespace View
             uint64 from;
             uint64 to;
             DissasmXrefKind kind;
+            uint8 size = 0; // the bytes a read / write accesses (mov eax, dword ptr [...]: 4); 0: unknown, not an access
         };
         struct DissasmXrefs {
             std::vector<DissasmXref> byTarget; // sorted by target, then by source (Finish)
@@ -107,9 +108,9 @@ namespace View
             {
                 byTarget.clear();
             }
-            void Add(uint64 from, uint64 to, DissasmXrefKind kind)
+            void Add(uint64 from, uint64 to, DissasmXrefKind kind, uint8 size = 0)
             {
-                byTarget.push_back({ from, to, kind });
+                byTarget.push_back({ from, to, kind, size });
             }
             // sorts the references (and removes the duplicates) once they are all added
             void Finish();

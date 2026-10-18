@@ -6092,7 +6092,7 @@ TEST_CASE("DataZoneRanges", "[Dissasm]DataZone")
         bytes[0x20 + index] = index == 1 ? 0x10 : (index == 9 ? 0x10 : 0x00);
     put(0x40, std::string_view(":\0", 2));                   // a short string referred to by the code
     const auto isPointer = [](uint64 value) { return value >= 0x1000 && value < 0x2000; };
-    const auto ranges    = BuildDataZoneRanges(bytes.data(), bytes.size(), { 0x40 }, {}, 8, isPointer);
+    const auto ranges    = BuildDataZoneRanges(bytes.data(), bytes.size(), { 0x40 }, {}, {}, 8, isPointer);
     INFO(ranges.size());
     REQUIRE(ranges.size() >= 6);
     REQUIRE(ranges[0] == DataRange{ 0x00, 0x0C, DissasmInstructionSet::ASCII_STRING });
@@ -6104,7 +6104,7 @@ TEST_CASE("DataZoneRanges", "[Dissasm]DataZone")
     REQUIRE(ranges[6] == DataRange{ 0x40, 0x42, DissasmInstructionSet::ASCII_STRING });
     REQUIRE(ranges.back().end == 0x60);
     // a range of the user is kept as it is, the items around it end at it
-    const auto withUser = BuildDataZoneRanges(bytes.data(), bytes.size(), {}, { DataRange{ 0x04, 0x08, 4 } }, 8, isPointer);
+    const auto withUser = BuildDataZoneRanges(bytes.data(), bytes.size(), {}, {}, { DataRange{ 0x04, 0x08, 4 } }, 8, isPointer);
     REQUIRE(withUser[0] == DataRange{ 0x00, 0x04, DissasmInstructionSet::BYTES_ROW }); // "Hell" is not a string any more (no zero)
     REQUIRE(withUser[1] == DataRange{ 0x04, 0x08, 4 });
 
@@ -6241,4 +6241,45 @@ TEST_CASE("FunctionsFromDataPointers", "[Dissasm]Functions")
     const auto& starts = dissasmInstance.zone->functionStarts;
     REQUIRE(std::find(starts.begin(), starts.end(), 0x10) != starts.end());
     REQUIRE(std::find(starts.begin(), starts.end(), 0x20) == starts.end());
+}
+
+TEST_CASE("DataZoneTypedVariables", "[Dissasm]DataZone")
+{
+    // the code reads a dword, writes a qword and reads an xmmword of the data zone
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0x3A, 0x00, 0x00, 0x00,       // 0x00: mov eax, dword ptr [rip + 0x3a] (0x40)
+        0x48, 0x89, 0x05, 0x3B, 0x00, 0x00, 0x00, // 0x06: mov qword ptr [rip + 0x3b], rax (0x48)
+        0x0F, 0x28, 0x05, 0x3C, 0x00, 0x00, 0x00, // 0x0d: movaps xmm0, xmmword ptr [rip + 0x3c] (0x50)
+        0xC3,                                     // 0x14: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }); // 0x40: 0x41 (a number, not the text "A")
+    file.insert(file.end(), { 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11 }); // 0x48
+    file.resize(0x60, 0x00);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    const auto [first, last] = code.zone->xrefs.To(0x401040);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->size == 4);
+
+    layout.start            = 0x40;
+    layout.size             = 0x20;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x401040;
+    layout.isData           = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "dword_401040");
+    REQUIRE(data.zone->GetLabelNameAt(0x08) == "qword_401048");
+    REQUIRE(data.zone->GetLabelNameAt(0x10) == "xmmword_401050");
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dd     0x00000041").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     0x1122334455667788").size() > 0);
+    REQUIRE(listing.find("\"A\"") == std::string::npos);
 }

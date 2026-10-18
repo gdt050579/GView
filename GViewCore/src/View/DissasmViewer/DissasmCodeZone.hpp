@@ -232,6 +232,8 @@ struct DissasmCodeZone : public ParseZone {
     bool DefineUserString(uint64 address);
     bool UndefineUserData(uint64 address);
     void SetUserDataRange(const DissasmInstructionSet::DataRange& range); // the ranges it overlaps are removed
+    // a data zone: the places the code of the other zones refers to (relative, sorted) and the largest access there (0: an address taken)
+    void CollectDataZoneTargets(std::vector<uint64>& targets, std::vector<uint8>& sizes) const;
     // the references to an address (VA) from this zone, then from the other code zones of the file
     std::vector<DissasmZoneXref> GetXrefsTo(uint64 address) const;
     // this zone or another analyzed code zone of the file that has the address (VA) in its code; none outside of them
@@ -519,10 +521,12 @@ void PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> ob
 // The lines of a data zone: strings (ASCII of at least 4 characters with their zero, UTF-16), runs of pointers (aligned values that
 // isPointer accepts, `pointerSize` bytes) and rows of the other bytes. An item never crosses a target (a place the code refers to: a label
 // starts its line) or a fixed range (the data defined by the user, kept as they are). Relative addresses, sorted.
+// targetSizes (empty, or one per target): the bytes the code reads / writes there (mov eax, dword ptr [X]: a dd line at X), 0 unknown
 std::vector<DissasmInstructionSet::DataRange> BuildDataZoneRanges(
       const uint8* bytes,
       uint64 size,
       const std::vector<uint64>& targets,
+      const std::vector<uint8>& targetSizes,
       const std::vector<DissasmInstructionSet::DataRange>& fixedRanges,
       uint8 pointerSize,
       const std::function<bool(uint64)>& isPointer);

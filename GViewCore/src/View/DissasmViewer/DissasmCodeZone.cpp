@@ -285,14 +285,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         xrefs.Finish();
         std::unordered_set<std::string> usedNames;
         std::vector<uint64> targets;
-        for (const auto* sibling : zone->siblingZones)
-            for (const auto& xref : sibling->xrefs.byTarget)
-                if (xref.to >= labelBase && xref.to - labelBase < codeSize)
-                    targets.push_back(xref.to - labelBase);
-        std::sort(targets.begin(), targets.end());
-        targets.erase(std::unique(targets.begin(), targets.end()), targets.end());
+        std::vector<uint8> targetSizes;
+        zone->CollectDataZoneTargets(targets, targetSizes);
         LocalString<64> text;
-        for (const uint64 target : targets) {
+        for (size_t targetIndex = 0; targetIndex < targets.size(); targetIndex++) {
+            const uint64 target = targets[targetIndex];
             std::string name;
             const auto* range = instructionSet.DataRangeAt(target);
             if (range && range->start == target && (range->unit == DissasmInstructionSet::ASCII_STRING || range->unit == DissasmInstructionSet::UTF16_STRING)) {
@@ -316,7 +313,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         else if (name.back() != '_')
                             name.push_back('_');
                 } else {
-                    text.SetFormat(range && range->isOffset ? "off_%llX" : "unk_%llX", static_cast<unsigned long long>(labelBase + target));
+                    // IDA: the type of what the code reads / writes there (byte_, word_, dword_, qword_, xmmword_), off_ for pointers
+                    const uint8 size   = targetSizes[targetIndex];
+                    const char* prefix = range && range->isOffset ? "off_"
+                                         : size == 1          ? "byte_"
+                                         : size == 2          ? "word_"
+                                         : size == 4          ? "dword_"
+                                         : size == 8          ? "qword_"
+                                         : size == 16         ? "xmmword_"
+                                                              : "unk_";
+                    text.SetFormat("%s%llX", prefix, static_cast<unsigned long long>(labelBase + target));
                     name = text.GetText();
                 }
             }
@@ -629,8 +635,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             xrefs.Add(from, (labelBase + operands.directTarget.value()) & addressMask, kind);
         }
         const auto dataKind = takesAddress ? DissasmXrefKind::Offset : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
+        // x86 / x64: the size of the memory operand (the type of the data: byte_ / word_ / dword_ / qword_ / xmmword_)
+        uint8 accessSize = 0;
+        if (dataKind != DissasmXrefKind::Offset && (arch == DissasmArch::X86 || arch == DissasmArch::X64) && insn->detail)
+            for (uint8 index = 0; index < insn->detail->x86.op_count; index++)
+                if (insn->detail->x86.operands[index].type == X86_OP_MEM)
+                    accessSize = insn->detail->x86.operands[index].size;
         if (operands.ripTarget.has_value())
-            xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind);
+            xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind, accessSize);
         // x86 / x64: the address of code taken by lea / push offset / mov reg, offset (a callback, a thread routine, a window procedure)
         if (arch == DissasmArch::X86 || arch == DissasmArch::X64) {
             if (takesAddress && operands.ripTarget.has_value() && operands.ripTarget.value() < codeSize)
@@ -647,7 +659,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 }
         }
         if (operands.absoluteMemory.has_value() && isFileAddress && isFileAddress(operands.absoluteMemory.value()))
-            xrefs.Add(from, operands.absoluteMemory.value(), dataKind);
+            xrefs.Add(from, operands.absoluteMemory.value(), dataKind, accessSize);
         if (!is64 && arch == DissasmArch::X86 && isFileAddress) { // push offset aText / mov ecx, offset aText (x64 uses lea [rip + ...])
             for (const uint64 value : operands.immediates)
                 if (value >= 0x10000 && isFileAddress(value))
@@ -1287,12 +1299,8 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         // a data zone: every byte is a data line; the places the code refers to (the xrefs of the other zones) start their lines
         constexpr uint64 MAX_DATA_ZONE_SIZE = 64ull * 1024 * 1024;
         std::vector<uint64> targets;
-        for (const auto* sibling : siblingZones)
-            for (const auto& xref : sibling->xrefs.byTarget)
-                if (xref.to >= labelAddressBase && xref.to - labelAddressBase < zoneDetails.size)
-                    targets.push_back(xref.to - labelAddressBase);
-        std::sort(targets.begin(), targets.end());
-        targets.erase(std::unique(targets.begin(), targets.end()), targets.end());
+        std::vector<uint8> targetSizes;
+        CollectDataZoneTargets(targets, targetSizes);
         std::vector<DissasmInstructionSet::DataRange> fixedRanges;
         for (const auto& range : userDataRanges)
             if (range.end <= zoneDetails.size)
@@ -1323,7 +1331,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         std::function<bool(uint64)> isPointer;
         if (initData.labelAddressBase.has_value() && initData.isFileAddress)
             isPointer = [isFileAddress = initData.isFileAddress](uint64 value) { return value >= 0x10000 && isFileAddress(value); };
-        instructionSet.dataRanges = BuildDataZoneRanges(bytes.GetData(), bytes.GetLength(), targets, fixedRanges, pointerSize, isPointer);
+        instructionSet.dataRanges = BuildDataZoneRanges(bytes.GetData(), bytes.GetLength(), targets, targetSizes, fixedRanges, pointerSize, isPointer);
         if (bytes.GetLength() < zoneDetails.size) // the bytes past the limit: rows
             instructionSet.dataRanges.push_back({ bytes.GetLength(), zoneDetails.size, DissasmInstructionSet::BYTES_ROW });
     } else {
@@ -1900,6 +1908,7 @@ std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::BuildD
       const uint8* bytes,
       uint64 size,
       const std::vector<uint64>& targets,
+      const std::vector<uint8>& targetSizes,
       const std::vector<DissasmInstructionSet::DataRange>& fixedRanges,
       uint8 pointerSize,
       const std::function<bool(uint64)>& isPointer)
@@ -1947,9 +1956,10 @@ std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::BuildD
             limit = std::min(limit, fixedRanges[nextFixed].start);
         limit = std::min(limit, size);
 
-        // a string ended by its zero: UTF-16 (the text of the Windows APIs), then ASCII. A place the code refers to is a string from its
-        // first character (L":"), the other ones from 4 characters
-        const uint64 minimumChars = isTarget ? 1 : MIN_STRING_CHARS;
+        // a string ended by its zero: UTF-16 (the text of the Windows APIs), then ASCII. A place whose address the code takes is a string
+        // from its first character (L":"), the other ones from 4 characters (a variable the code reads holds a number, even 0x41)
+        const uint8 accessSize    = isTarget && nextTarget < targetSizes.size() ? targetSizes[nextTarget] : 0;
+        const uint64 minimumChars = isTarget && accessSize == 0 ? 1 : MIN_STRING_CHARS;
         uint64 characters         = 0;
         while (position + 2 * characters + 1 < limit && isText(bytes[position + 2 * characters]) && bytes[position + 2 * characters + 1] == 0)
             characters++;
@@ -1976,6 +1986,13 @@ std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::BuildD
             while (position + pointerSize <= limit && isPointer(readPointer(position)))
                 position += pointerSize;
             ranges.push_back({ start, position, pointerSize, true });
+            continue;
+        }
+        // a variable the code reads / writes: a value of its size (dd for mov eax, dword ptr [X])
+        if ((accessSize == 1 || accessSize == 2 || accessSize == 4 || accessSize == 8) && position + accessSize <= limit) {
+            closeRow(position);
+            ranges.push_back({ position, position + accessSize, accessSize });
+            position += accessSize;
             continue;
         }
         // a byte of a row; a text that is not a string stays in the row (it is not read again from every byte)
@@ -2006,6 +2023,23 @@ std::string GView::View::DissasmViewer::MakeStringLabelName(std::string_view tex
     LocalString<32> fallback;
     fallback.SetFormat("asc_%llX", static_cast<unsigned long long>(address));
     return fallback.GetText();
+}
+
+void DissasmCodeZone::CollectDataZoneTargets(std::vector<uint64>& targets, std::vector<uint8>& sizes) const
+{
+    std::map<uint64, uint8> found; // relative address -> the largest access
+    for (const auto* sibling : siblingZones)
+        for (const auto& xref : sibling->xrefs.byTarget)
+            if (xref.to >= labelAddressBase && xref.to - labelAddressBase < zoneDetails.size) {
+                auto& size = found[xref.to - labelAddressBase];
+                size       = std::max(size, xref.size);
+            }
+    targets.clear();
+    sizes.clear();
+    for (const auto& [target, size] : found) {
+        targets.push_back(target);
+        sizes.push_back(size);
+    }
 }
 
 void DissasmCodeZone::SetUserDataRange(const DissasmInstructionSet::DataRange& range)
