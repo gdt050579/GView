@@ -697,6 +697,20 @@ static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std:
         params.zone->asmPreCacheData.AnnounceCallInstruction(it->second, params.zone->Is64BitCode());
 }
 
+// the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
+static std::string FindLabelInOtherZones(const SettingsData* settings, const DissasmCodeZone* zone, uint64 address)
+{
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone.get() == zone)
+            continue;
+        const auto other = static_cast<const DissasmCodeZone*>(parseZone.get());
+        if (!other->CanReachAsmLines() || address < other->labelAddressBase || address - other->labelAddressBase >= other->GetCodeSize())
+            continue;
+        return other->GetLabelNameAt(address - other->labelAddressBase);
+    }
+    return {};
+}
+
 bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& params)
 {
     uint32 diffLines = 0;
@@ -800,8 +814,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 // outside of the decoded code (another section): its address (VA), the decoded addresses are relative to the zone
                 LocalString<32> target;
                 const uint64 addressMask = params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull; // 32 bit addresses wrap around
-                target.SetFormat("0x%llx", static_cast<unsigned long long>((params.zone->labelAddressBase + operands.directTarget.value()) & addressMask));
-                SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + target.GetText()).c_str(), params.zone);
+                const uint64 targetVA = (params.zone->labelAddressBase + operands.directTarget.value()) & addressMask;
+                target.SetFormat("0x%llx", static_cast<unsigned long long>(targetVA));
+                // another code zone of the file (a call from .text to PAGE): the label there, once that zone is analyzed
+                const std::string otherLabel = FindLabelInOtherZones(params.settings, params.zone, targetVA);
+                SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (otherLabel.empty() ? std::string(target.GetText()) : otherLabel)).c_str(), params.zone);
             } else {
                 SetOperands(insn->op_str, params.zone); // indirect: the operands are shown as they are
                 const auto switchJump = params.zone->switchJumps.find(address);
@@ -979,13 +996,18 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
             pendingGoTo.value() - zone->zoneDetails.startingZonePoint < zone->zoneDetails.size) {
             const uint64 fileOffset = pendingGoTo.value();
             pendingGoTo.reset();
-            MoveCursorToZoneFileOffset(zone, fileOffset, true);
-            repaintRequested = true;
+            movedCursorWhileDrawing = MoveCursorToZoneFileOffset(zone, fileOffset, true);
+            repaintRequested        = true;
         }
 
         constexpr std::string_view zoneName = "Dissasm zone";
         chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
         uint32 titleSize = static_cast<uint32>(zoneName.size());
+        if (!zone->zoneDetails.name.empty()) { // the section of the zone (a file with several executable sections)
+            const std::string sectionName = " " + zone->zoneDetails.name;
+            chars.Add(sectionName, ColorMan.Colors.StructureColor);
+            titleSize += static_cast<uint32>(sectionName.size());
+        }
         if (zone->cacheRecordRejected) {
             // the saved annotations do not match this analysis: they are kept aside in the cache file, the user must know they are not shown
             constexpr std::string_view warning = " - the saved comments and labels could not be applied (kept in the cache file)";
@@ -1396,12 +1418,12 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
 
     LocalString<256> text;
     text.SetFormat(
-          "; GView disassembly listing (%s)\n; code: file offset 0x%" PRIx64 ", size 0x%" PRIx64 ", entry point 0x%" PRIx64 "\n"
+          "; GView disassembly listing (%s)\n; code: file offset 0x%" PRIx64 ", size 0x%" PRIx64 ", entry point %s\n"
           "; the addresses are %s\n",
           zone.GetArchitectureName(),
           zone.zoneDetails.startingZonePoint,
           zone.zoneDetails.size,
-          zone.zoneDetails.entryPoint,
+          zone.zoneDetails.HasEntryPoint() ? FormatAddress(zone.zoneDetails.entryPoint).c_str() : "none",
           zone.labelAddressBase != zone.zoneDetails.startingZonePoint ? "virtual addresses (VA)" : "file offsets");
     listing.append(text.GetText(), text.Len());
 
@@ -1751,9 +1773,14 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
         cs_free(insn, 1);
         if (!targetOffset.has_value()) {
-            if (target.has_value())
-                Dialogs::MessageBox::ShowNotification("Warning", "The target is outside of this dissasm zone!");
-            return; // indirect jump / call: nothing to follow
+            if (!target.has_value())
+                return; // indirect jump / call: nothing to follow
+            // another code zone of the file (another executable section): through its file offset
+            const uint64 addressMask = zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+            const auto fileOffset    = TranslateOperandAddressToFileOffset(settings.get(), (zone->labelAddressBase + target.value()) & addressMask, true);
+            if (!fileOffset.has_value() || !GoToFileOffset(fileOffset.value()))
+                Dialogs::MessageBox::ShowNotification("Warning", "The target is outside of the dissasm zones!");
+            return;
         }
         computedValue = targetOffset.value();
     } else {

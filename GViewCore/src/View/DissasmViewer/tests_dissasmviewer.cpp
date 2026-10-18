@@ -5594,3 +5594,90 @@ TEST_CASE("SwitchTableThumbTbb", "[Dissasm]Arm32")
     REQUIRE(FindListingLine(listing, "db     0x00").size() > 0);
     REQUIRE(FindListingLine(listing, "movs   r0, #1").size() > 0);
 }
+
+// two executable sections of a PE: .text (the entry point) calls into PAGE (no entry point)
+static std::vector<unsigned char> TwoSectionsCode()
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28, // 0x00: sub rsp, 0x28 (entry point)
+        0x48, 0x83, 0xC4, 0x28, // 0x04: add rsp, 0x28
+        0xC3,                   // 0x08: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });       // 0x40: push rbp; mov rbp, rsp (PAGE)
+    file.insert(file.end(), { 0xE8, 0x07, 0x00, 0x00, 0x00 }); // 0x44: call 0x50
+    file.insert(file.end(), { 0x5D, 0xC3 });                   // 0x49: pop rbp; ret
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: xor eax, eax; ret
+    file.resize(0x60, 0xCC);
+    return file;
+}
+
+TEST_CASE("CodeZoneWithoutEntryPoint", "[Dissasm]Zones")
+{
+    const auto file = TwoSectionsCode();
+    ZoneLayout layout;
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE_FALSE(zone.zoneDetails.HasEntryPoint());
+    REQUIRE(zone.CanReachAsmLines());
+    REQUIRE(zone.GetLabelNameAt(0x10) == "sub_50"); // the call target
+    REQUIRE(zone.GetLabelNameAt(0x00) == "sub_40"); // the prologue
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("EntryPoint") == std::string::npos);
+    REQUIRE(listing.find("entry point none") != std::string::npos);
+
+}
+
+TEST_CASE("HeadlessAnalysisSections", "[Dissasm]Zones")
+{
+    const auto file = TwoSectionsCode();
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Settings settings;
+    settings.AddDisassemblyZone(0, 0x40, 0, DisassemblyLanguage::x64, ".text");
+    settings.AddDisassemblyZone(0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE");
+    std::string text, error;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error));
+    const auto root = nlohmann::json::parse(text);
+    INFO(root.dump(2));
+    REQUIRE(root["zones"].size() == 2);
+    REQUIRE(root["zones"][0]["name"] == ".text");
+    REQUIRE(root["zones"][0]["entryPoint"] == "0x0");
+    REQUIRE(root["zones"][0]["functions"][0]["name"] == "EntryPoint");
+    REQUIRE(root["zones"][1]["name"] == "PAGE");
+    REQUIRE(root["zones"][1]["entryPoint"].is_null());
+    const auto& functions = root["zones"][1]["functions"];
+    REQUIRE(functions.size() == 2);
+    REQUIRE(functions[0]["name"] == "sub_40");
+    REQUIRE(functions[1]["name"] == "sub_50");
+}
+
+TEST_CASE("CacheValidationNewZones", "[Dissasm]Zones")
+{
+    // a cache saved when the plugin gave only .text still applies when it gives the other executable sections too
+    const auto file = TwoSectionsCode();
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Reference<GView::Object> obj = &dissasmInstance.objects[0];
+    SettingsData textOnly;
+    textOnly.disassemblyZones[0] = DisassemblyZone{ 0, 0x40, 0, DisassemblyLanguage::x64 };
+    DissasmCache cache;
+    REQUIRE(textOnly.SaveToCache(cache, obj));
+    cache.fileVersion = DISSASM_CACHE_VERSION;
+
+    SettingsData sections;
+    sections.disassemblyZones[0]    = DisassemblyZone{ 0, 0x40, 0, DisassemblyLanguage::x64, ".text" };
+    sections.disassemblyZones[0x40] = DisassemblyZone{ 0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE" };
+    REQUIRE(sections.ValidateCacheData(cache, obj));
+    // no zone of the cache: another file
+    SettingsData pageOnly;
+    pageOnly.disassemblyZones[0x40] = DisassemblyZone{ 0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE" };
+    REQUIRE_FALSE(pageOnly.ValidateCacheData(cache, obj));
+    // a zone of the cache that changed
+    cache.zonesData["DisassemblyZoneHash.0"].data[0] ^= std::byte{ 1 };
+    REQUIRE_FALSE(sections.ValidateCacheData(cache, obj));
+}

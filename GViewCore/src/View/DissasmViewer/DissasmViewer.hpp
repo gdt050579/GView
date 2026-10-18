@@ -118,8 +118,14 @@ namespace View
         struct DisassemblyZone {
             uint64 startingZonePoint;
             uint64 size;
-            uint64 entryPoint;
+            uint64 entryPoint; // NO_ENTRY_POINT: the zone has none
             DisassemblyLanguage language;
+            std::string name; // shown in the title of the zone (a section name), not saved in the cache
+
+            bool HasEntryPoint() const
+            {
+                return entryPoint >= startingZonePoint && entryPoint - startingZonePoint < size;
+            }
 
             // the validation record of the zone: the hash of its bytes (`hashWholeZone` false: only the first data cache window, as the
             // caches saved before did) and its fields
@@ -865,6 +871,7 @@ namespace View
             bool GoToFileOffset(uint64 fileOffset);
             void ShowFunctions();
             std::optional<uint64> pendingGoTo; // the file offset to reach once its zone is prepared (it is drawn)
+            bool movedCursorWhileDrawing = false; // pendingGoTo was reached during a paint: Paint draws the view again
             bool repaintRequested = false;      // asked during a paint: the next frame update repaints
             bool frameUpdatesSeen    = false; // the frontend delivers frame updates (FPS mode): the deep scans continue there
             uint32 deepScanFrames    = 0;

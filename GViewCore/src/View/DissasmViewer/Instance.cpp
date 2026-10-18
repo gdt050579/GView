@@ -1451,6 +1451,13 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
     selection.Clear();
 
     const int32 sizeToAdjust = static_cast<int32>(newExtendedSize) - zone->extendedSize;
+    // the view stays on the same lines when a zone above the cursor changes its size (a zone above analyzed in the background, its lines
+    // counted): the lines below the zone move, the cursor moves with them
+    if (Cursor.startViewLine + Cursor.lineInView >= zone->endingLineIndex) {
+        const int64 startViewLine = static_cast<int64>(Cursor.startViewLine) + sizeToAdjust;
+        Cursor.startViewLine      = static_cast<uint32>(std::max<int64>(startViewLine, 0));
+        Cursor.hasMovedView       = true;
+    }
     zone->endingLineIndex += sizeToAdjust;
     bool foundZone = false;
     for (const auto& availableZone : settings->parseZones) {
@@ -1538,14 +1545,27 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
             zone->asmPreCacheData.Reset();
     }
 
-    DrawLineInfo dli(renderer, Layout.startingTextLineOffset, ColorMan.Colors.Normal);
+    // a GoTo that waited for its zone moves the cursor while the zone is drawn (its title prepares it): the rows after it were drawn
+    // (and their lines cached) from the previous first line, the view is drawn again from the new one
+    for (uint32 pass = 0; pass < 2; pass++) {
+        DrawLineInfo dli(renderer, Layout.startingTextLineOffset, ColorMan.Colors.Normal);
 
-    // TODO: improve this!!
-    selection.ClearStorages();
-    for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++) {
-        dli.screenLineToDraw = tr;
-        if (!PrepareDrawLineInfo(dli))
+        // TODO: improve this!!
+        selection.ClearStorages();
+        movedCursorWhileDrawing = false;
+        for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++) {
+            dli.screenLineToDraw = tr;
+            if (!PrepareDrawLineInfo(dli))
+                break;
+        }
+        if (!movedCursorWhileDrawing)
             break;
+        movedCursorWhileDrawing = false;
+        for (const auto& zone : asmData.zonesToClear)
+            zone->asmPreCacheData.Clear();
+        MyLine.buttons.clear();
+        MyLine.bullets.clear();
+        renderer.Clear(' ', ColorMan.Colors.Normal);
     }
 
     if (!MyLine.buttons.empty()) {
@@ -1809,6 +1829,23 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
     const auto linePos = Cursor.ToLinePosition();
 
     const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
+    // F2 from anywhere: the zone of the entry point when the cursor is not in it (a structure, another executable section)
+    if (goToEntryPoint) {
+        const auto isEntryZone = [](const std::unique_ptr<ParseZone>& zone) {
+            return zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(zone.get())->zoneDetails.HasEntryPoint();
+        };
+        if (zonesFound.size() != 1 || !isEntryZone(settings->parseZones[zonesFound[0].zoneIndex])) {
+            for (const auto& other : settings->parseZones) {
+                if (!isEntryZone(other))
+                    continue;
+                if (GoToFileOffset(static_cast<DissasmCodeZone*>(other.get())->zoneDetails.entryPoint))
+                    GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
+                return;
+            }
+            Dialogs::MessageBox::ShowNotification("Warning", "The entry point is not in a dissasm zone!");
+            return;
+        }
+    }
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single zone!");
         return;

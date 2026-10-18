@@ -573,10 +573,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!conditionalTargets.contains(candidate - codeStart))
                 AddFunctionStart(candidate);
         // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
-        callsFound.erase(
-              std::remove_if(callsFound.begin(), callsFound.end(), [this](const auto& call) { return call.first == zone->zoneDetails.entryPoint; }),
-              callsFound.end());
-        callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
+        if (zone->zoneDetails.HasEntryPoint()) {
+            callsFound.erase(
+                  std::remove_if(callsFound.begin(), callsFound.end(), [this](const auto& call) { return call.first == zone->zoneDetails.entryPoint; }),
+                  callsFound.end());
+            callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
+        }
         std::stable_sort(callsFound.begin(), callsFound.end(), [](const auto& a, const auto& b) {
             if (a.first != b.first)
                 return a.first < b.first;
@@ -805,8 +807,8 @@ inline bool IsValidCodeZone(const DisassemblyZone& zoneDetails, Reference<GView:
     if (zoneDetails.startingZonePoint >= obj->GetData().GetSize())
         return false;
     // the entry point may be after the end of the file (a truncated file): the lines are counted until there, the entry point simply has
-    // no line (the init must not fail on every paint)
-    return zoneDetails.entryPoint >= zoneDetails.startingZonePoint && zoneDetails.entryPoint - zoneDetails.startingZonePoint < zoneDetails.size;
+    // no line (the init must not fail on every paint). A zone without an entry point (another executable section) is valid.
+    return zoneDetails.HasEntryPoint() || zoneDetails.entryPoint == NO_ENTRY_POINT;
 }
 
 DissasmCodeZone::DissasmCodeZone() = default;

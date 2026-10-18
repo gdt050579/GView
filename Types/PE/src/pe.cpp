@@ -1,5 +1,6 @@
 #include "pe.hpp"
 
+#include <algorithm>
 #include <set>
 
 using namespace AppCUI;
@@ -286,7 +287,6 @@ void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEF
     const bool isX86          = machine != PE::MachineType::ARM64 && machine != PE::MachineType::ARMNT;
     std::set<uint64> namedFunctions; // the file offsets of the thunks / helpers already named
     LocalString<128> text;
-    String demangled;
 
     for (uint32 dll = 0; dll < MAX_DELAY_DLLS; dll++) {
         DelayLoadDescriptor descriptor{};
@@ -324,7 +324,8 @@ void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEF
                 rawName = std::string(pe->ReadString(static_cast<uint32>(toRVA(static_cast<uint32>(nameEntry)) + 2), MAX_NAME_SIZE)); // after the hint
             if (rawName.empty())
                 continue;
-            // the slot, named like a regular import (demangled C++ names)
+            // the slot, named like a regular import (demangled C++ names); Demangle adds to its output: a new string for every name
+            String demangled;
             if (GView::Utils::Demangle(rawName.c_str(), demangled))
                 settings.AddMemoryMapping(slot, demangled.GetText(), DissasmViewer::MemoryMappingType::FunctionMapping);
             else
@@ -404,26 +405,42 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
 {
     DissasmViewer::Settings settings;
 
+    // one code zone for every executable section (.text, PAGE / INIT of the drivers, CODE of Delphi, UPX1 of the packed files) and for the
+    // section of the entry point: the sections are not contiguous in the file and in memory in the same way, a zone keeps the addresses of
+    // one section. Only the zone of the entry point has an entry point.
     if (pe->HasPanel(PE::Panels::IDs::Sections)) {
-        LocalString<128> temp;
+        uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+        entryPoint        = pe->RVAToFA(entryPoint);
+        DissasmViewer::DisassemblyLanguage language = pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
+        if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARM64)
+            language = DissasmViewer::DisassemblyLanguage::ARM64;
+        else if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARMNT) {
+            language   = DissasmViewer::DisassemblyLanguage::Thumb; // Windows on ARM 32: Thumb-2 only
+            entryPoint = pe->RVAToFA(pe->nth32.OptionalHeader.AddressOfEntryPoint & ~1u);
+        }
 
+        LocalString<128> sectionName;
+        const uint64 fileSize = win->GetObject()->GetData().GetSize();
+        std::vector<std::pair<uint64, uint64>> zones; // the raw data of the zones added: a malformed file can have sections that overlap
         for (auto tr = 0U; tr < pe->nrSections; tr++) {
-            pe->CopySectionName(tr, temp);
-            if (temp.CompareWith(".text") == 0) {
-                uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
-                entryPoint        = pe->RVAToFA(entryPoint);
-
-                DissasmViewer::DisassemblyLanguage language = pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
-                if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARM64)
-                    language = DissasmViewer::DisassemblyLanguage::ARM64;
-                else if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) == PE::MachineType::ARMNT) {
-                    language   = DissasmViewer::DisassemblyLanguage::Thumb; // Windows on ARM 32: Thumb-2 only
-                    entryPoint = pe->RVAToFA(pe->nth32.OptionalHeader.AddressOfEntryPoint & ~1u);
-                }
-
-                settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, language);
-                break;
-            }
+            const auto& section = pe->sect[tr];
+            const uint64 start  = section.PointerToRawData;
+            const uint64 size   = section.SizeOfRawData;
+            if (size == 0 || start >= fileSize) // UPX0: no bytes in the file
+                continue;
+            const bool hasEntryPoint = entryPoint != PE_INVALID_ADDRESS && entryPoint >= start && entryPoint - start < size;
+            const bool isCode        = (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) != 0;
+            if (!isCode && !hasEntryPoint)
+                continue;
+            const bool overlaps =
+                  std::any_of(zones.begin(), zones.end(), [start, size](const auto& zone) { return start < zone.second && zone.first < start + size; });
+            if (overlaps)
+                continue;
+            zones.emplace_back(start, start + size);
+            pe->CopySectionName(tr, sectionName);
+            auto name = sectionName.ToStringView();
+            name      = name.substr(0, name.find('\0')); // the 8 bytes of the name are padded with zeros
+            settings.AddDisassemblyZone(start, size, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
         }
     }
 

@@ -65,9 +65,10 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
     const auto& details     = zone.zoneDetails;
     const auto findImport   = [settings, &zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, &zone, operands); };
     json result             = { { "language", zone.GetArchitectureName() },
+                                { "name", details.name },
                                 { "fileOffset", Hex(details.startingZonePoint) },
                                 { "size", Hex(details.size) },
-                                { "entryPoint", Hex(base + (details.entryPoint - details.startingZonePoint)) },
+                                { "entryPoint", details.HasEntryPoint() ? json(Hex(base + (details.entryPoint - details.startingZonePoint))) : json(nullptr) },
                                 { "addresses", base != details.startingZonePoint ? "VA" : "file offset" } };
 
     json functions = json::array();

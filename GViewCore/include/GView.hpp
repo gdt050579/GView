@@ -1783,6 +1783,8 @@ namespace View
         enum class FunctionEntryType : uint8 { Export, ExceptionData, TlsCallback, Symbol }; // Symbol: a symbol table (an export name wins)
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
+        // the entry point of a code zone that has none (an executable section that is not the one of the entry point)
+        constexpr uint64 NO_ENTRY_POINT = static_cast<uint64>(-1);
 
         struct CORE_EXPORT Settings {
             void* data;
@@ -1795,6 +1797,9 @@ namespace View
              */
             void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
             void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
+            // a code zone with a name shown in its title (a section: .text, PAGE, UPX1); zoneDissasmStartPoint: the entry point when it is
+            // inside the zone, NO_ENTRY_POINT otherwise
+            void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang, std::string_view name);
 
             void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
             /**

@@ -221,7 +221,7 @@ bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::
         position += zoneData.GetLength();
     } while (hashWholeZone && position < end);
     const auto hashValue = hash.GetHexValue();
-    buffer.reserve(hashValue.size() + sizeof(DisassemblyZone));
+    buffer.reserve(hashValue.size() + 3 * sizeof(uint64) + sizeof(uint32));
     buffer.clear();
     buffer.insert(buffer.end(), (const std::byte*) hashValue.data(), (const std::byte*) hashValue.data() + hashValue.size());
     // field by field: the raw structure has padding bytes that are not initialized, they made the validation fail at random
@@ -232,17 +232,24 @@ bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::
     return true;
 }
 
-// caches saved before the field by field format contain the hash followed by the raw DisassemblyZone structure
+// caches saved before the field by field format contain the hash followed by the raw DisassemblyZone structure of that time (the fields
+// before the name)
+struct LegacyDisassemblyZone {
+    uint64 startingZonePoint;
+    uint64 size;
+    uint64 entryPoint;
+    DisassemblyLanguage language;
+};
 static bool IsSameLegacyDisassemblyZone(const DissasmCacheEntry& entry, const std::vector<std::byte>& buffer, const DisassemblyZone& zone)
 {
     constexpr size_t fieldsSize = 3 * sizeof(uint64) + sizeof(uint32);
-    if (buffer.size() < fieldsSize || entry.size != buffer.size() - fieldsSize + sizeof(DisassemblyZone))
+    if (buffer.size() < fieldsSize || entry.size != buffer.size() - fieldsSize + sizeof(LegacyDisassemblyZone))
         return false;
     const size_t hashSize = buffer.size() - fieldsSize;
     if (memcmp(entry.data.get(), buffer.data(), hashSize) != 0)
         return false;
-    DisassemblyZone cached{};
-    memcpy(&cached, entry.data.get() + hashSize, sizeof(DisassemblyZone));
+    LegacyDisassemblyZone cached{};
+    memcpy(&cached, entry.data.get() + hashSize, sizeof(LegacyDisassemblyZone));
     return cached.startingZonePoint == zone.startingZonePoint && cached.size == zone.size && cached.entryPoint == zone.entryPoint &&
            cached.language == zone.language;
 }
@@ -462,11 +469,15 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
 {
     std::vector<std::byte> buffer;
     LocalString<64> zoneName;
+    uint32 validatedZones = 0;
     for (auto& [start, zone] : disassemblyZones) {
-        // every version: the version 1 record (or the raw structure written before the field by field format)
+        // every version: the version 1 record (or the raw structure written before the field by field format). A zone without a record
+        // is a zone the plugin did not give when the cache was saved (the PE plugin gave only .text): the other zones validate the file
         zoneName.SetFormat("DisassemblyZone.%llu", start);
         const auto entry = cache.zonesData.find(zoneName.GetText());
-        if (entry == cache.zonesData.end() || !zone.ToBuffer(buffer, obj, false))
+        if (entry == cache.zonesData.end())
+            continue;
+        if (!zone.ToBuffer(buffer, obj, false))
             return false;
         const bool isSameZone = IsSameLegacyDisassemblyZone(entry->second, buffer, zone) ||
                                 (entry->second.size == buffer.size() && memcmp(entry->second.data.get(), buffer.data(), buffer.size()) == 0);
@@ -474,16 +485,19 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
             return false;
 
         // from version 2: the whole zone
-        if (cache.fileVersion < 2)
+        if (cache.fileVersion < 2) {
+            validatedZones++;
             continue;
+        }
         zoneName.SetFormat("DisassemblyZoneHash.%llu", start);
         const auto hashEntry = cache.zonesData.find(zoneName.GetText());
         if (hashEntry == cache.zonesData.end() || !zone.ToBuffer(buffer, obj, true))
             return false;
         if (hashEntry->second.size != buffer.size() || memcmp(hashEntry->second.data.get(), buffer.data(), buffer.size()) != 0)
             return false;
+        validatedZones++;
     }
-    return true;
+    return validatedZones > 0 || disassemblyZones.empty();
 }
 
 // Code zone records: [magic][version] then
