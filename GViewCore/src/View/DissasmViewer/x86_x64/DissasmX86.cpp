@@ -700,15 +700,8 @@ static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std:
 // the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
 static std::string FindLabelInOtherZones(const SettingsData* settings, const DissasmCodeZone* zone, uint64 address)
 {
-    for (const auto& parseZone : settings->parseZones) {
-        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone.get() == zone)
-            continue;
-        const auto other = static_cast<const DissasmCodeZone*>(parseZone.get());
-        if (!other->CanReachAsmLines() || address < other->labelAddressBase || address - other->labelAddressBase >= other->GetCodeSize())
-            continue;
-        return other->GetLabelNameAt(address - other->labelAddressBase);
-    }
-    return {};
+    const auto other = zone->FindCodeZoneOfAddress(address);
+    return other && other != zone ? other->GetLabelNameAt(address - other->labelAddressBase) : std::string();
 }
 
 bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& params)
@@ -989,7 +982,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
     if (dli.textLineToDraw == 0) {
         // the zone is prepared before its title is drawn: the title shows the progress of the deep scan from the first paint
-        if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
+        if (!zone->isInit && !InitDissasmCodeZone(&dli, zone))
             return false;
         // a GoTo that waited for the zone (GoToFileOffset): the cursor moves now, the lines are drawn again at the next frame
         if (pendingGoTo.has_value() && pendingGoTo.value() >= zone->zoneDetails.startingZonePoint &&
@@ -1090,7 +1083,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (firstLineToDraw)
         --currentLine;
 
-    if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
+    if (!zone->isInit && !InitDissasmCodeZone(&dli, zone))
         return false;
     if (!zone->CanReachAsmLines()) { // the initialization failed after the zone was marked as initialized
         dli.WriteErrorToScreen("ERROR: the dissasm zone could not be initialized!");
@@ -1232,7 +1225,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     return true;
 }
 
-bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
+bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
 {
     DissasmCodeZoneInitData initData{};
     // the local variables are recognized inside the functions found by the deep scan
@@ -1240,7 +1233,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     initData.enableLocalVariablesDetection = config.EnableDeepScanDissasmOnStart;
     initData.alignPadding                  = config.AlignPadding;
     initData.obj                           = obj;
-    initData.dli                           = &dli;
+    initData.dli                           = dli;
     initData.visibleRows                   = Layout.visibleRows;
     // a big zone is shown before its deep scan ends: the scan continues in the frame updates (OnFrameUpdate)
     constexpr auto DEEP_SCAN_BUDGET_IN_INIT = std::chrono::milliseconds(150);
@@ -1344,8 +1337,31 @@ void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
     zone->asmPreCacheData.Clear();
 }
 
+bool Instance::PrepareNextCodeZone()
+{
+    if (!config.EnableDeepScanDissasmOnStart)
+        return false; // without the analysis there are no references between the zones: a zone is prepared when it is shown
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        if (codeZone->isInit || codeZone->initTried || !DissasmCodeZone::IsNativeCodeLanguage(codeZone->zoneDetails.language))
+            continue;
+        InitDissasmCodeZone(nullptr, codeZone);
+        return true;
+    }
+    return false;
+}
+
+void Instance::PrepareCodeZones()
+{
+    while (PrepareNextCodeZone()) {
+    }
+}
+
 void Instance::FinishDeepScans()
 {
+    PrepareCodeZones(); // the actions that need the labels also need the references from the zones never shown
     for (const auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
@@ -1376,8 +1392,8 @@ bool Instance::OnFrameUpdate()
             repaintAsked = true;
         }
     }
-    if (!HasPendingDeepScans())
-        return repaintAsked;
+    if (!HasPendingDeepScans()) // the analysis of the shown zones ended: the next zone that was never shown (one per frame)
+        return PrepareNextCodeZone() || repaintAsked;
     // a slice of every frame (~30 per second): the UI stays responsive while the scan runs
     constexpr auto DEEP_SCAN_SLICE = std::chrono::milliseconds(12);
     constexpr uint32 PROGRESS_REPAINT_FRAMES = 8; // the progress in the title of the zone
@@ -2240,7 +2256,8 @@ class XrefsWindow : public AppCUI::Controls::Window
 {
   public:
     struct Row {
-        uint64 from; // relative address of the instruction
+        uint64 from; // relative address of the instruction (in `zone`)
+        DissasmCodeZone* zone;
         std::string address, kind, function, instruction;
     };
 
@@ -2328,51 +2345,57 @@ void Instance::ShowXrefs()
 
 void Instance::ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::string& targetName)
 {
-    const auto [first, last] = zone->xrefs.To(target);
-    if (first == last) {
+    // the references from this zone and from the other code zones of the file (the other executable sections)
+    const auto references = zone->GetXrefsTo(target);
+    if (references.empty()) {
         Dialogs::MessageBox::ShowNotification("Info", "There are no cross references to " + targetName);
         return;
     }
 
     constexpr size_t MAX_ROWS = 5000;
     std::vector<XrefsWindow::Row> rows;
-    rows.reserve(std::min<size_t>(static_cast<size_t>(last - first), MAX_ROWS));
+    rows.reserve(std::min<size_t>(references.size(), MAX_ROWS));
     LocalString<64> text;
-    for (auto it = first; it != last && rows.size() < MAX_ROWS; ++it) {
+    for (const auto& [xref, sourceZone] : references) {
+        if (rows.size() >= MAX_ROWS)
+            break;
         XrefsWindow::Row row;
-        row.from = it->from - zone->labelAddressBase;
-        text.SetFormat("0x%llx", static_cast<unsigned long long>(it->from));
+        row.zone = sourceZone;
+        row.from = xref->from - sourceZone->labelAddressBase;
+        text.SetFormat("0x%llx", static_cast<unsigned long long>(xref->from));
         row.address  = text.GetText();
-        row.kind     = std::string(GetXrefKindName(it->kind));
-        row.function = zone->FormatCodeAddress(row.from);
+        row.kind     = std::string(GetXrefKindName(xref->kind));
+        row.function = sourceZone->FormatCodeAddress(row.from);
         // the instruction as capstone writes it, a branch with the name of its target (capstone writes the zone relative address)
         uint32 instructionIndex = 0;
-        if (const auto fileOffset = zone->GetFileOffsetOfAddress(row.from); fileOffset.has_value()) {
-            if (cs_insn* insn = GetCurrentInstructionByOffset(fileOffset.value(), zone, obj, instructionIndex)) {
+        if (const auto fileOffset = sourceZone->GetFileOffsetOfAddress(row.from); fileOffset.has_value()) {
+            if (cs_insn* insn = GetCurrentInstructionByOffset(fileOffset.value(), sourceZone, obj, instructionIndex)) {
                 row.instruction = std::string(insn->mnemonic) + " ";
                 const auto operands =
-                      IsX86Branch(GetInstructionFlow(*insn, zone->GetArch())) ? GetInstructionOperands(*insn, zone->GetArch()) : X86OperandsInfo{};
+                      IsX86Branch(GetInstructionFlow(*insn, sourceZone->GetArch())) ? GetInstructionOperands(*insn, sourceZone->GetArch()) : X86OperandsInfo{};
                 if (operands.directTarget.has_value()) {
-                    std::string branchName = zone->GetLabelNameAt(operands.directTarget.value());
-                    row.instruction += branchName.empty() ? zone->FormatCodeAddress(operands.directTarget.value()) : branchName;
+                    std::string branchName = sourceZone->GetLabelNameAt(operands.directTarget.value());
+                    row.instruction += branchName.empty() ? sourceZone->FormatCodeAddress(operands.directTarget.value()) : branchName;
                 } else {
                     row.instruction += insn->op_str;
                 }
                 cs_free(insn, 1);
             }
         }
+        sourceZone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
         rows.push_back(std::move(row));
     }
-    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
 
     LocalString<256> title;
-    title.SetFormat("Cross references to %s (%zu)", targetName.c_str(), static_cast<size_t>(last - first));
+    title.SetFormat("Cross references to %s (%zu)", targetName.c_str(), references.size());
     XrefsWindow dlg(title.GetText(), rows);
     if (dlg.Show() != Dialogs::Result::Ok)
         return;
     const auto selected = dlg.GetSelectedRow();
-    if (selected.has_value() && selected.value() < rows.size())
-        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + rows[selected.value()].from, false);
+    if (selected.has_value() && selected.value() < rows.size()) {
+        const auto& row = rows[selected.value()];
+        MoveCursorToZoneFileOffset(row.zone, row.zone->cachedCodeOffsets[0].offset + row.from, false);
+    }
 }
 
 // The functions of the analysis (IDA Shift+F3): name, address, size, references; the search bar filters them, Enter / Go jumps to one
@@ -2874,37 +2897,46 @@ class CallTreeWindow : public AppCUI::Controls::Window
     static constexpr int BTN_BACK      = 3;
     static constexpr int BTN_CLOSE     = 4;
 
-    DissasmCodeZone* zone;
-    std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
+    // the function shown: its zone (the functions of every code zone of the file, the executable sections) and its relative address
+    struct Function {
+        DissasmCodeZone* zone;
+        uint64 start;
+    };
+    SettingsData* settings;
+    Function current{};
     Reference<Label> title;
     Reference<ListView> callersList, calleesList, lastList;
     std::vector<DissasmCallReference> callers, callees;
-    std::vector<uint64> history; // the functions shown before the current one
-    uint64 current = 0;
-    std::optional<uint64> result;
+    std::vector<Function> history; // the functions shown before the current one
+    std::optional<uint64> result;  // a file offset
     bool resultIsCallSite = false;
 
-    static void Fill(Reference<ListView> list, const std::vector<DissasmCallReference>& references, const DissasmCodeZone* zone)
+    void Fill(Reference<ListView> list, const std::vector<DissasmCallReference>& references, bool sitesInOtherZones)
     {
         list->DeleteAllItems();
         for (size_t index = 0; index < references.size(); index++) {
             const auto& reference  = references[index];
-            const std::string site = zone->FormatCodeAddress(reference.site) + (reference.isTailJump ? " (jmp)" : "");
+            // the call site of a caller is in its own zone, the call site of a callee in the current function
+            const auto* siteZone   = sitesInOtherZones && reference.zone ? reference.zone : current.zone;
+            const std::string site = siteZone->FormatCodeAddress(reference.site) + (reference.isTailJump ? " (jmp)" : "");
             auto item              = list->AddItem({ std::string_view(reference.function), std::string_view(site) });
             item.SetData(static_cast<uint64>(index));
         }
     }
 
-    void ShowFunction(uint64 functionStart)
+    void ShowFunction(Function function)
     {
-        current = functionStart;
-        callers = zone->GetCallers(functionStart);
-        callees = zone->GetCallees(functionStart, findImport);
-        Fill(callersList, callers, zone);
-        Fill(calleesList, callees, zone);
-        std::string name = zone->GetLabelNameAt(functionStart);
+        current          = function;
+        auto* zone       = function.zone;
+        auto* settingsData = settings;
+        callers          = zone->GetCallers(function.start);
+        callees = zone->GetCallees(function.start, [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); });
+        zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+        Fill(callersList, callers, true);
+        Fill(calleesList, callees, false);
+        std::string name = zone->GetLabelNameAt(function.start);
         if (name.empty())
-            name = zone->GetLabelName("sub_", functionStart);
+            name = zone->GetLabelName("sub_", function.start);
         LocalString<256> text;
         text.SetFormat("%s: called by %zu, calls %zu", name.c_str(), callers.size(), callees.size());
         title->SetText(text.GetText());
@@ -2923,8 +2955,8 @@ class CallTreeWindow : public AppCUI::Controls::Window
     }
 
   public:
-    CallTreeWindow(DissasmCodeZone* zone, std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport, uint64 functionStart)
-        : Window("Call tree", "d:c,w:90%,h:80%", WindowFlags::Sizeable), zone(zone), findImport(std::move(findImport))
+    CallTreeWindow(SettingsData* settings, DissasmCodeZone* zone, uint64 functionStart)
+        : Window("Call tree", "d:c,w:90%,h:80%", WindowFlags::Sizeable), settings(settings)
     {
         title = Factory::Label::Create(this, "", "l:1,t:0,r:1,h:1");
         Factory::Label::Create(this, "Called by", "l:1,t:1,w:20");
@@ -2935,7 +2967,7 @@ class CallTreeWindow : public AppCUI::Controls::Window
         Factory::Button::Create(this, "Call &site", "l:13,b:0,w:14", BTN_CALL_SITE);
         Factory::Button::Create(this, "&Back", "l:29,b:0,w:10", BTN_BACK);
         Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
-        ShowFunction(functionStart);
+        ShowFunction({ zone, functionStart });
         lastList = callees.empty() && !callers.empty() ? callersList : calleesList;
         lastList->SetFocus();
     }
@@ -2954,7 +2986,7 @@ class CallTreeWindow : public AppCUI::Controls::Window
             const auto selected = GetSelected();
             if (selected && selected->functionStart.has_value()) {
                 history.push_back(current);
-                ShowFunction(selected->functionStart.value());
+                ShowFunction({ selected->zone ? selected->zone : current.zone, selected->functionStart.value() });
             }
             return true;
         }
@@ -2966,15 +2998,19 @@ class CallTreeWindow : public AppCUI::Controls::Window
             const auto selected = GetSelected();
             if (!selected)
                 return true;
-            // an import (or an indirect call) is not in the code: its call site
-            resultIsCallSite = ID == BTN_CALL_SITE || !selected->functionStart.has_value();
-            result           = resultIsCallSite ? selected->site : selected->functionStart.value();
+            // an import (or an indirect call) is not in the code: its call site. The call site of a callee is in the current function, the
+            // other addresses are in the zone of the reference
+            resultIsCallSite      = ID == BTN_CALL_SITE || !selected->functionStart.has_value();
+            const bool isCallee   = lastList == calleesList;
+            const auto* zone      = resultIsCallSite && isCallee ? current.zone : (selected->zone ? selected->zone : current.zone);
+            const uint64 relative = resultIsCallSite ? selected->site : selected->functionStart.value();
+            result                = zone->cachedCodeOffsets[0].offset + relative;
             Exit(Dialogs::Result::Ok);
             return true;
         }
         case BTN_BACK:
             if (!history.empty()) {
-                const uint64 previous = history.back();
+                const auto previous = history.back();
                 history.pop_back();
                 ShowFunction(previous);
             }
@@ -3022,15 +3058,21 @@ void Instance::ShowCallTree()
         if (start.has_value())
             functionStart = start.value();
     }
-    auto* settingsData = settings.get();
-    CallTreeWindow window(
-          zone,
-          [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); },
-          functionStart);
-    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+    CallTreeWindow window(settings.get(), zone, functionStart);
     if (window.Show() != Dialogs::Result::Ok || !window.GetResult().has_value())
         return;
-    MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + window.GetResult().value(), !window.IsCallSite());
+    // a file offset of any code zone (a function of another section)
+    const uint64 fileOffset = window.GetResult().value();
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        const auto& details = codeZone->zoneDetails;
+        if (codeZone->CanReachAsmLines() && fileOffset >= details.startingZonePoint && fileOffset - details.startingZonePoint < details.size) {
+            MoveCursorToZoneFileOffset(codeZone, fileOffset, !window.IsCallSite());
+            return;
+        }
+    }
 }
 
 void Instance::AcceptOrDismissAISuggestion(bool accept)

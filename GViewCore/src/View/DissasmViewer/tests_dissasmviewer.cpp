@@ -5681,3 +5681,94 @@ TEST_CASE("CacheValidationNewZones", "[Dissasm]Zones")
     cache.zonesData["DisassemblyZoneHash.0"].data[0] ^= std::byte{ 1 };
     REQUIRE_FALSE(sections.ValidateCacheData(cache, obj));
 }
+
+// .text (the entry point) calls a function of PAGE, which PAGE calls too
+static std::vector<unsigned char> CrossSectionsCode()
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x47, 0x00, 0x00, 0x00, // 0x04: call 0x50 (PAGE)
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });       // 0x40: push rbp; mov rbp, rsp (PAGE)
+    file.insert(file.end(), { 0xE8, 0x07, 0x00, 0x00, 0x00 }); // 0x44: call 0x50
+    file.insert(file.end(), { 0x5D, 0xC3 });                   // 0x49: pop rbp; ret
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: xor eax, eax; ret
+    file.resize(0x60, 0xCC);
+    return file;
+}
+
+TEST_CASE("CrossZoneReferences", "[Dissasm]Zones")
+{
+    const auto file = CrossSectionsCode();
+    ZoneLayout layout;
+    layout.size       = 0x40;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance text(file.data(), file.size(), false, layout);
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    DissasmTestInstance page(file.data(), file.size(), false, layout);
+    auto& textZone = *text.zone;
+    auto& pageZone = *page.zone;
+
+    // not linked: each zone has only its own references
+    REQUIRE(pageZone.GetCallers(0x10).size() == 1);
+    textZone.siblingZones = { &pageZone };
+    pageZone.siblingZones = { &textZone };
+
+    // the callers of sub_50: sub_40 (PAGE) and the entry point (.text, in its own relative addresses)
+    const auto callers = pageZone.GetCallers(0x10);
+    REQUIRE(callers.size() == 2);
+    REQUIRE(callers[0].function == "sub_40");
+    REQUIRE(callers[0].zone == nullptr);
+    REQUIRE(callers[1].function == "EntryPoint");
+    REQUIRE(callers[1].zone == &textZone);
+    REQUIRE(callers[1].site == 0x04);
+    REQUIRE(pageZone.GetXrefsTo(0x50).size() == 2);
+    REQUIRE(pageZone.FormatXrefsSummary(0x10) == "xrefs: sub_40+0x4 (call), EntryPoint+0x4 (call)");
+    const auto functions = pageZone.GetFunctions(nullptr);
+    REQUIRE(functions.size() == 2);
+    REQUIRE(functions[1].xrefs == 2);
+
+    // the callee of the entry point is the function of PAGE (its relative address there, its name)
+    const auto callees = textZone.GetCallees(0x00, nullptr);
+    REQUIRE(callees.size() == 1);
+    REQUIRE(callees[0].function == "sub_50");
+    REQUIRE(callees[0].zone == &pageZone);
+    REQUIRE(callees[0].functionStart == std::optional<uint64>(0x10));
+    REQUIRE(textZone.FindCodeZoneOfAddress(0x50) == &pageZone);
+    REQUIRE(textZone.FindCodeZoneOfAddress(0x08) == &textZone);
+    REQUIRE(textZone.FindCodeZoneOfAddress(0x100) == nullptr);
+    // an address outside of the zone is named in the zone that has it
+    REQUIRE(textZone.FormatCodeAddress(0x52) == "sub_50+0x2");
+    REQUIRE(textZone.FormatCodeAddress(0x100) == "0x100");
+}
+
+TEST_CASE("HeadlessAnalysisCrossSections", "[Dissasm]Zones")
+{
+    const auto file = CrossSectionsCode();
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Settings settings;
+    settings.AddDisassemblyZone(0, 0x40, 0, DisassemblyLanguage::x64, ".text");
+    settings.AddDisassemblyZone(0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE");
+    std::string text, error;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error));
+    const auto root = nlohmann::json::parse(text);
+    INFO(root.dump(2));
+    const auto& entry = root["zones"][0]["functions"][0];
+    REQUIRE(entry["name"] == "EntryPoint");
+    REQUIRE(entry["callees"].size() == 1);
+    REQUIRE(entry["callees"][0]["function"] == "sub_50");
+    REQUIRE(entry["callees"][0]["address"] == "0x50");
+    const auto& callee = root["zones"][1]["functions"][1];
+    REQUIRE(callee["name"] == "sub_50");
+    REQUIRE(callee["xrefs"] == 2);
+    REQUIRE(callee["callers"].size() == 2);
+    REQUIRE(callee["callers"][1]["function"] == "EntryPoint");
+    REQUIRE(callee["callers"][1]["site"] == "0x4");
+}

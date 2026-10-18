@@ -550,6 +550,8 @@ namespace View
         // and on the zones placed before, so it rarely matches the current layout. When the cache is loaded they are moved (once) to the
         // file offset key of their zone ("DissasmCodeZone.<offset>"): the next save writes them under that key.
         void MigrateLegacyCodeZoneRecords(DissasmCache& cache, const std::vector<std::unique_ptr<ParseZone>>& zones);
+        // every code zone knows the other code zones of the file (DissasmCodeZone::siblingZones)
+        void LinkCodeZones(const std::vector<std::unique_ptr<ParseZone>>& zones);
 
         struct LayoutDissasm {
             uint32 visibleRows;
@@ -800,7 +802,13 @@ namespace View
             void RemoveComment();
             void RenameLabel();
             void RemoveLocalVariable();
-            bool InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
+            // dli: the line of the paint that prepares the zone (its errors are written there), none for a zone prepared in the background
+            bool InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone);
+            // the code zones never shown are prepared too: their references to the other zones (the calls from PAGE to .text) are known
+            // once they are analyzed. One zone (PrepareNextCodeZone, the frame updates) or all of them (PrepareCodeZones); false when
+            // every zone is prepared
+            bool PrepareNextCodeZone();
+            void PrepareCodeZones();
             void CommandExportAsmFile();
             // the annotations of the user as a plain text (JSON) file keyed by the addresses: written / added to the analysed zones
             void ExportAnnotations();

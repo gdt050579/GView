@@ -1000,6 +1000,7 @@ bool DissasmCodeZone::ApplyUserLabelName(uint64 address, const std::string& name
 
 bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 {
+    initTried = true;
     labelAddressBase = initData.labelAddressBase.value_or(zoneDetails.startingZonePoint); // the first decoded instruction is the zone start
     paddingAlignmentBase = initData.alignPadding ? labelAddressBase : DISSASM_NO_PADDING_ALIGNMENT;
     zoneObject       = initData.obj;
@@ -1264,8 +1265,7 @@ std::vector<DissasmFunctionInfo> DissasmCodeZone::GetFunctions(const std::map<ui
         function.name     = GetLabelNameAt(function.start);
         if (function.name.empty())
             function.name = GetLabelName("sub_", function.start);
-        const auto [first, last] = xrefs.To(labelAddressBase + function.start);
-        function.xrefs           = static_cast<uint32>(last - first);
+        function.xrefs           = static_cast<uint32>(GetXrefsTo(labelAddressBase + function.start).size());
         function.isThunk         = thunkImports.contains(function.start);
         function.isEntryPoint    = codeStart + function.start == zoneDetails.entryPoint;
         if (functionEntries) {
@@ -1617,29 +1617,71 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
 std::vector<DissasmCallReference> DissasmCodeZone::GetCallers(uint64 functionStart) const
 {
     std::vector<DissasmCallReference> callers;
-    const auto [first, last] = xrefs.To(labelAddressBase + functionStart);
-    for (auto it = first; it != last; ++it) {
-        if (it->kind != DissasmXrefKind::Call && it->kind != DissasmXrefKind::Jump)
+    // the calls from this zone, then from the other code zones of the file (a function of PAGE called from .text)
+    for (const auto& [xref, source] : GetXrefsTo(labelAddressBase + functionStart)) {
+        if (xref->kind != DissasmXrefKind::Call && xref->kind != DissasmXrefKind::Jump)
             continue;
         DissasmCallReference caller;
-        caller.site          = it->from - labelAddressBase;
-        caller.functionStart = GetFunctionContaining(caller.site);
-        if (it->kind == DissasmXrefKind::Jump) {
+        caller.zone          = source != this ? source : nullptr;
+        caller.site          = xref->from - source->labelAddressBase;
+        caller.functionStart = source->GetFunctionContaining(caller.site);
+        if (xref->kind == DissasmXrefKind::Jump) {
             // a jump from the same function is a loop, not a call
-            if (caller.functionStart == std::optional<uint64>(functionStart) || !caller.functionStart.has_value())
+            if ((source == this && caller.functionStart == std::optional<uint64>(functionStart)) || !caller.functionStart.has_value())
                 continue;
             caller.isTailJump = true;
         }
         if (caller.functionStart.has_value()) {
-            caller.function = GetLabelNameAt(caller.functionStart.value());
+            caller.function = source->GetLabelNameAt(caller.functionStart.value());
             if (caller.function.empty())
-                caller.function = GetLabelName("sub_", caller.functionStart.value());
+                caller.function = source->GetLabelName("sub_", caller.functionStart.value());
         } else {
-            caller.function = FormatCodeAddress(caller.site); // before the first function
+            caller.function = source->FormatCodeAddress(caller.site); // before the first function
         }
         callers.push_back(std::move(caller));
     }
     return callers;
+}
+
+std::vector<DissasmZoneXref> DissasmCodeZone::GetXrefsTo(uint64 address) const
+{
+    std::vector<DissasmZoneXref> references;
+    const auto addZone = [&references, address](DissasmCodeZone* zone) {
+        const auto [first, last] = zone->xrefs.To(address);
+        for (auto it = first; it != last; ++it)
+            references.push_back({ &*it, zone });
+    };
+    addZone(const_cast<DissasmCodeZone*>(this));
+    for (auto* sibling : siblingZones)
+        addZone(sibling);
+    return references;
+}
+
+DissasmCodeZone* DissasmCodeZone::FindCodeZoneOfAddress(uint64 address) const
+{
+    const auto contains = [address](const DissasmCodeZone* zone) {
+        return zone->CanReachAsmLines() && address >= zone->labelAddressBase && address - zone->labelAddressBase < zone->GetCodeSize();
+    };
+    if (contains(this))
+        return const_cast<DissasmCodeZone*>(this);
+    for (auto* sibling : siblingZones)
+        if (contains(sibling))
+            return sibling;
+    return nullptr;
+}
+
+void GView::View::DissasmViewer::LinkCodeZones(const std::vector<std::unique_ptr<ParseZone>>& zones)
+{
+    std::vector<DissasmCodeZone*> codeZones;
+    for (const auto& zone : zones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            codeZones.push_back(static_cast<DissasmCodeZone*>(zone.get()));
+    for (auto* zone : codeZones) {
+        zone->siblingZones.clear();
+        for (auto* other : codeZones)
+            if (other != zone)
+                zone->siblingZones.push_back(other);
+    }
 }
 
 std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
@@ -1675,11 +1717,18 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
                 // a jmp inside the function is not a call; a jmp to another function is a tail call
                 if (flow == X86Flow::Jump && target >= functionStart && target < end)
                     continue;
-                callee.isTailJump    = flow == X86Flow::Jump;
-                callee.functionStart = target;
-                callee.function      = GetLabelNameAt(target);
+                callee.isTailJump = flow == X86Flow::Jump;
+                // a function of another code zone of the file (.text calls PAGE): its address and its name there
+                const uint64 addressMask = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+                auto* targetZone         = target < codeSize ? const_cast<DissasmCodeZone*>(this) : FindCodeZoneOfAddress((labelAddressBase + target) & addressMask);
+                if (!targetZone)
+                    targetZone = const_cast<DissasmCodeZone*>(this); // outside of the code zones: as before (its name after its address)
+                const uint64 targetStart = targetZone == this ? target : ((labelAddressBase + target) & addressMask) - targetZone->labelAddressBase;
+                callee.zone              = targetZone != this ? targetZone : nullptr;
+                callee.functionStart     = targetStart;
+                callee.function          = targetZone->GetLabelNameAt(targetStart);
                 if (callee.function.empty())
-                    callee.function = GetLabelName("sub_", target);
+                    callee.function = targetZone->GetLabelName("sub_", targetStart);
             } else {
                 // through an import slot (call [rip + ...]), or an indirect call (call rax): a jmp rax is a switch, not a call
                 const auto import = findImport ? findImport(operands) : nullptr;
@@ -1842,9 +1891,18 @@ std::optional<uint32> DissasmCodeZone::FindText(std::string_view text, bool matc
 
 std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
 {
+    LocalString<64> text;
+    // outside of the code (a branch to another section): the name in the code zone that has it, else the address
+    if (!cachedCodeOffsets.empty() && relativeAddress >= GetCodeSize()) {
+        const uint64 addressMask = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull; // 32 bit addresses wrap around
+        const uint64 address     = (labelAddressBase + relativeAddress) & addressMask;
+        if (const auto other = FindCodeZoneOfAddress(address); other && other != this)
+            return other->FormatCodeAddress(address - other->labelAddressBase);
+        text.SetFormat("0x%llx", static_cast<unsigned long long>(address));
+        return text.GetText();
+    }
     // the function that contains the address: the last function start placed before it
     const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
-    LocalString<64> text;
     if (next == functionStarts.begin()) {
         const std::string label = GetLabelNameAt(relativeAddress);
         if (!label.empty())
@@ -1865,18 +1923,18 @@ std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
 std::string DissasmCodeZone::FormatXrefsSummary(uint64 relativeAddress) const
 {
     constexpr size_t SHOWN_XREFS = 2;
-    const auto [first, last]     = xrefs.To(labelAddressBase + relativeAddress);
-    const auto count             = static_cast<size_t>(last - first);
+    const auto references        = GetXrefsTo(labelAddressBase + relativeAddress); // the other sections of the file too
+    const auto count             = references.size();
     if (count == 0)
         return {};
     std::string text = count == 1 ? "xref: " : "xrefs: ";
-    size_t index     = 0;
-    for (auto it = first; it != last && index < SHOWN_XREFS; ++it, ++index) {
+    for (size_t index = 0; index < count && index < SHOWN_XREFS; index++) {
+        const auto& [xref, source] = references[index];
         if (index > 0)
             text += ", ";
-        text += FormatCodeAddress(it->from - labelAddressBase);
+        text += source->FormatCodeAddress(xref->from - source->labelAddressBase);
         text += " (";
-        text += GetXrefKindName(it->kind);
+        text += GetXrefKindName(xref->kind);
         text += ')';
     }
     if (count > SHOWN_XREFS) {

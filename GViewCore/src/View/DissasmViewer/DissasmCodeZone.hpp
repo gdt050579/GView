@@ -50,11 +50,21 @@ struct DissasmEditPlace {
 };
 
 // a call between two functions (DissasmCodeZone::GetCallers / GetCallees)
+struct DissasmCodeZone;
 struct DissasmCallReference {
     uint64 site = 0;                     // relative address of the call / jmp instruction
     std::string function;                // the caller / the callee (an import: its name, an indirect call: its operands)
     std::optional<uint64> functionStart; // relative address of the function when it is in the code
     bool isTailJump = false;             // a jmp to another function
+    // another code zone of the file (another executable section): the zone of `site` (a caller) / of `functionStart` (a callee), whose
+    // relative addresses they are; none: the zone that was asked
+    DissasmCodeZone* zone = nullptr;
+};
+
+// a cross reference and the code zone of its source (the xrefs of a zone are kept by the zone of their source)
+struct DissasmZoneXref {
+    const DissasmXref* xref;
+    DissasmCodeZone* zone;
 };
 
 // The basic blocks of a function (the graph view, DissasmCodeZone::BuildFunctionGraph): blocks[0] is the entry, only the blocks reached
@@ -115,6 +125,7 @@ struct DissasmCodeZone : public ParseZone {
     cs_arch capstoneArch     = CS_ARCH_X86; // CS_ARCH_X86 / CS_ARCH_ARM64
     bool hasDecoder          = false;       // the language is known: capstoneArch and internalArchitecture are set
     bool isInit              = false;
+    bool initTried           = false; // InitZone ran (it may have failed): the zones prepared in the background are not tried again
 
     // x86/x64: decoded instructions count (the zone lines are the instructions plus the annotations of the root type)
     uint32 asmLinesCount = 0;
@@ -199,6 +210,13 @@ struct DissasmCodeZone : public ParseZone {
     std::string FormatCodeAddress(uint64 relativeAddress) const;
     // the references to the label at the relative address, shown after the label: "xrefs: sub_140001010+0x84 (call), ... +3"
     std::string FormatXrefsSummary(uint64 relativeAddress) const;
+    // the other code zones of the file (the other executable sections, LinkCodeZones): their xrefs to this zone, their functions called
+    // from it. A zone that is not analyzed yet (never shown) has none.
+    std::vector<DissasmCodeZone*> siblingZones;
+    // the references to an address (VA) from this zone, then from the other code zones of the file
+    std::vector<DissasmZoneXref> GetXrefsTo(uint64 address) const;
+    // this zone or another analyzed code zone of the file that has the address (VA) in its code; none outside of them
+    DissasmCodeZone* FindCodeZoneOfAddress(uint64 address) const;
 
     // the name of the label placed at the relative address `address` (as IDA: sub_140001000, loc_140001020)
     std::string GetLabelName(std::string_view prefix, uint64 address) const;

@@ -1283,6 +1283,7 @@ void GView::View::DissasmViewer::BuildDissasmParseZones(SettingsData& settings, 
 
     if (zones.empty())
         return; // only text: the file is drawn as text lines, without zones
+    LinkCodeZones(zones);
 
     // the bytes after the last zone, until the end of the file
     if (params.showFileContent && shownBytesEnd < params.fileSize)

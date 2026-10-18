@@ -77,11 +77,14 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
         item["kind"] = function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : "function"));
         json callers = json::array();
         for (const auto& caller : zone.GetCallers(function.start))
-            callers.push_back({ { "function", caller.function }, { "site", Hex(base + caller.site) }, { "tailJump", caller.isTailJump } });
+            callers.push_back({ { "function", caller.function },
+                                { "site", Hex((caller.zone ? caller.zone->labelAddressBase : base) + caller.site) },
+                                { "tailJump", caller.isTailJump } });
         json callees = json::array();
         for (const auto& callee : zone.GetCallees(function.start, findImport)) {
             json entry = { { "function", callee.function }, { "site", Hex(base + callee.site) }, { "tailJump", callee.isTailJump } };
-            entry["address"] = callee.functionStart.has_value() ? json(Hex(base + callee.functionStart.value())) : json(nullptr); // an import
+            const uint64 calleeBase = callee.zone ? callee.zone->labelAddressBase : base; // a function of another section
+            entry["address"]        = callee.functionStart.has_value() ? json(Hex(calleeBase + callee.functionStart.value())) : json(nullptr); // an import
             callees.push_back(std::move(entry));
         }
         item["callers"] = std::move(callers);
@@ -139,6 +142,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
         zone->zoneDetails = details;
         settings->parseZones.push_back(std::move(zone));
     }
+    LinkCodeZones(settings->parseZones);
     DissasmCache cache;
     LoadAnalysisCache(cache, obj, settings.get());
 
