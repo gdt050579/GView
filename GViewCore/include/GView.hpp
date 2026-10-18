@@ -1773,7 +1773,7 @@ namespace View
     {
         using TypeID = uint32;
 
-        enum class DisassemblyLanguage : uint32 { Default, x86, x64, JavaByteCode, Count };
+        enum class DisassemblyLanguage : uint32 { Default, x86, x64, JavaByteCode, ARM64, Count };
 
         enum class VariableType : uint32 { UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, AsciiZ, Utf16Z, Utf32Z };
 

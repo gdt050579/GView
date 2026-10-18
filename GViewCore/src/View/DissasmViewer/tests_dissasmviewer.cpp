@@ -4455,3 +4455,92 @@ TEST_CASE("LineCountCancelled", "[Dissasm]LineCount")
     REQUIRE(zone.asmLinesCount == 20000 * 5 + 16); // push, mov, call, pop, ret in every function, then 16 int3
     REQUIRE(zone.dissasmType.annotations.mappings.empty());
 }
+
+TEST_CASE("Arm64Listing", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x00: stp x29, x30, [sp, #-0x10]!
+        0xFD, 0x03, 0x00, 0x91, // 0x04: mov x29, sp
+        0x06, 0x00, 0x00, 0x94, // 0x08: bl 0x20
+        0x60, 0x00, 0x00, 0xB4, // 0x0c: cbz x0, 0x18
+        0x81, 0x01, 0x00, 0x10, // 0x10: adr x1, 0x40
+        0x4B, 0x00, 0x00, 0x54, // 0x14: b.lt 0x1c
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x18: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x1c: ret
+        0x20, 0x00, 0x80, 0x52, // 0x20: mov w0, #1 (the function called by bl)
+        0xC0, 0x03, 0x5F, 0xD6, // 0x24: ret
+        0x1F, 0x20, 0x03, 0xD5, // 0x28: nop \ align 0x10
+        0x1F, 0x20, 0x03, 0xD5, // 0x2c: nop /
+        0xFF, 0xFF, 0xFF, 0xFF, // 0x30: an undecodable word
+        0xC0, 0x03, 0x5F, 0xD6, // 0x34: ret
+    };
+    file.resize(0x40, 0x00);
+    for (const char c : std::string_view("Hello ARM64"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x50, 0x00);
+    file.push_back(0xC0); // 3 bytes at the end of the code: db lines
+    file.push_back(0x03);
+    file.push_back(0x5F);
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::ARM64;
+    layout.alignPadding = true;
+    layout.translateOffsets = true; // the strings are read through the translation of the plugin (here: the RVA is the file offset)
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.IsArm64Code());
+    REQUIRE(zone.CanReachAsmLines());
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("stp    x29, x30, [sp, #-0x10]!") != std::string::npos);
+    REQUIRE(listing.find("bl     sub_20") != std::string::npos);    // the call names its target
+    REQUIRE(listing.find("cbz    x0, loc_18") != std::string::npos); // the register stays before the target
+    REQUIRE(listing.find("b.lt   loc_1C") != std::string::npos);
+    REQUIRE(listing.find("align  0x10") != std::string::npos);
+    REQUIRE(listing.find(".word  0xffffffff") != std::string::npos);
+    REQUIRE(listing.find("db     0xc0") != std::string::npos);
+    REQUIRE(listing.find("db     0x5f") != std::string::npos);
+    REQUIRE(listing.find("\"Hello ARM64\"") != std::string::npos); // adr: the string at the address
+    REQUIRE(listing.find("adr    x1, 0x40") != std::string::npos);   // the address of the listing, not the capstone #0x40
+
+    // the functions, the labels and the cross references of the branches and of the data
+    REQUIRE(std::find(zone.functionStarts.begin(), zone.functionStarts.end(), 0x20) != zone.functionStarts.end());
+    REQUIRE(zone.GetLabelNameAt(0x18) == "loc_18");
+    REQUIRE(zone.GetLabelNameAt(0x1C) == "loc_1C");
+    const auto [callFirst, callLast] = zone.xrefs.To(0x20);
+    REQUIRE(callLast - callFirst == 1);
+    REQUIRE(callFirst->from == 0x08);
+    REQUIRE(callFirst->kind == DissasmXrefKind::Call);
+    const auto [dataFirst, dataLast] = zone.xrefs.To(0x40);
+    REQUIRE(dataLast - dataFirst == 1);
+    REQUIRE(dataFirst->kind == DissasmXrefKind::Offset);
+    const auto [condFirst, condLast] = zone.xrefs.To(0x18);
+    REQUIRE(condLast - condFirst == 1);
+    REQUIRE(condFirst->kind == DissasmXrefKind::ConditionalJump);
+
+    // the kinds (colors) of the lines
+    using Kind = X86InstructionKind;
+    std::vector<Kind> kinds;
+    for (uint32 line = 0; line < zone.GetDisplayLinesCount() && kinds.size() < 8; line++) {
+        const auto asmLine = dissasmInstance.GetCurrentAsmLine(line);
+        if (asmLine.label.empty() && asmLine.size > 0)
+            kinds.push_back(static_cast<Kind>(asmLine.instructionKind));
+    }
+    REQUIRE(kinds == std::vector<Kind>{ Kind::Stack, Kind::Other, Kind::Call, Kind::ConditionalJump, Kind::Other, Kind::ConditionalJump, Kind::Stack,
+                                        Kind::Return });
+    // the immediate search
+    REQUIRE(zone.FindImmediate(1, 0, zone.GetCodeSize()) == std::optional<uint64>(0x20)); // mov w0, #1
+}
+
+TEST_CASE("Arm64RegisterNames", "[Dissasm]Arm64")
+{
+    for (const auto name : { "x0", "x30", "w0", "w30", "xzr", "wzr", "v31", "q0", "d7", "s3", "h1", "b0" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::General);
+    for (const auto name : { "sp", "wsp", "fp", "lr" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::Pointer);
+    for (const auto name : { "x31", "w31", "v32", "x", "sub_20", "loc_18" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::None);
+}

@@ -611,7 +611,7 @@ void Instance::RemoveLocalVariable()
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     const auto language      = convertedZone->zoneDetails.language;
-    if (!convertedZone->isInit || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+    if (!convertedZone->isInit || !DissasmCodeZone::IsNativeCodeLanguage(language))
         return;
     if (convertedZone->localVariables.Empty()) {
         Dialogs::MessageBox::ShowNotification(
@@ -1027,6 +1027,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     switch (zone->zoneDetails.language) {
     case DisassemblyLanguage::x86:
     case DisassemblyLanguage::x64:
+    case DisassemblyLanguage::ARM64:
         return DrawDissasmX86AndX64CodeZone(dli, zone);
     case DisassemblyLanguage::JavaByteCode:
         return DrawDissasmJavaByteCodeZone(dli, zone);
@@ -1955,8 +1956,8 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         return;
     }
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    if (convertedZone->zoneDetails.language != DisassemblyLanguage::x86 && convertedZone->zoneDetails.language != DisassemblyLanguage::x64) {
-        Dialogs::MessageBox::ShowNotification("Error", "Query function name available only for x86 and x64 functions!");
+    if (!DissasmCodeZone::IsNativeCodeLanguage(convertedZone->zoneDetails.language)) {
+        Dialogs::MessageBox::ShowNotification("Error", "Query function name available only for x86, x64 and ARM64 functions!");
         return;
     }
     QuerySmartAssistantParams params = {};
@@ -1965,7 +1966,7 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         params.startsAtSelectedLine = true;
         params.maxLines             = lineEnd - lineStart + 1u;
     }
-    const char* architectureName = convertedZone->zoneDetails.language == DisassemblyLanguage::x64 ? "x64" : "x86";
+    const char* architectureName = convertedZone->GetArchitectureName();
     if (queryType == QueryTypeSmartAssistant::FunctionName) {
         params.mnemonicStarsWith              = "sub_";
         params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "

@@ -40,6 +40,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     const bool is64;
     const uint64 addressMask; // the addresses of 32 bit code wrap around at 4 GB
     const uint64 labelBase;
+    const DissasmArch arch;
 
     csh handle           = 0;
     cs_insn* insn        = nullptr;
@@ -67,11 +68,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     uint32 extraLines = 0;
 
     DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
-        : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture), detectLocalVariables(initData.enableLocalVariablesDetection),
+        : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture),
+          detectLocalVariables(initData.enableLocalVariablesDetection && !zone->IsArm64Code()), // the frames of the x86 / x64 code only
           isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), findImport(initData.findImport),
           addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
           asmLines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
-          labelBase(zone->labelAddressBase), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
+          labelBase(zone->labelAddressBase), arch(zone->GetArch()), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
           switchDetector(is64, zone->labelAddressBase, initData.imageBase)
     {
     }
@@ -111,14 +113,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (codeSize == 0)
             return false;
         // the instruction details give the branches and their targets (GetX86Flow / GetX86OperandsInfo)
-        if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
+        if (cs_open(zone->capstoneArch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
             handle = 0;
             return false;
         }
         if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
             return false;
         insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase);
+        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, zone->IsArm64Code());
         callsFound.reserve(16);
 
         // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
@@ -156,14 +158,23 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         // functions that are not called directly (callbacks, virtual methods, exports): recognized by their prologue
         const uint64 instructionOffset = codeStart + insn->address; // decoded inside the code: can not overflow
-        const auto prologueStart       = prologueDetector.Next(*insn, instructionOffset);
-        if (prologueStart.has_value())
-            AddFunctionStart(prologueStart.value());
+        const bool isArm64             = arch == DissasmArch::Arm64;
+        if (!isArm64) { // the x86 / x64 prologues (the ARM64 functions come from the calls and from the plugin)
+            const auto prologueStart = prologueDetector.Next(*insn, instructionOffset);
+            if (prologueStart.has_value())
+                AddFunctionStart(prologueStart.value());
+        }
 
         // the cross references, in the address space of the labels (VA)
-        const auto flow     = GetX86Flow(*insn);
-        const auto operands = GetX86OperandsInfo(*insn, is64);
+        const auto flow     = GetInstructionFlow(*insn, arch);
+        const auto operands = GetInstructionOperands(*insn, arch);
         const uint64 from   = labelBase + insn->address;
+        if (isArm64) {
+            AnalyzeBranchesAndData(flow, operands, from, insn->id == ARM64_INS_ADR);
+            atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == ARM64_INS_NOP ||
+                           insn->id == ARM64_INS_INVALID;
+            return;
+        }
 
         // an import thunk (IDA j_Name): a jmp through an import slot that starts a block, reached by calls instead of the import itself.
         // An endbr at the start of a block keeps it a block start: the CET stubs (ELF .plt.sec: endbr64; bnd jmp [rip + ...]) start with
@@ -203,12 +214,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 }
             }
         }
+        AnalyzeBranchesAndData(flow, operands, from, insn->id == X86_INS_LEA);
+    }
+
+    // the cross references of the branches and of the data, the labels of the branch targets
+    void AnalyzeBranchesAndData(X86Flow flow, const X86OperandsInfo& operands, uint64 from, bool takesAddress)
+    {
         if (IsX86Branch(flow) && operands.directTarget.has_value()) {
             const auto kind = flow == X86Flow::Call ? DissasmXrefKind::Call : (flow == X86Flow::Jump ? DissasmXrefKind::Jump : DissasmXrefKind::ConditionalJump);
             xrefs.Add(from, (labelBase + operands.directTarget.value()) & addressMask, kind);
         }
-        const auto dataKind =
-              insn->id == X86_INS_LEA ? DissasmXrefKind::Offset : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
+        const auto dataKind = takesAddress ? DissasmXrefKind::Offset : ((operands.memoryAccess & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
         if (operands.ripTarget.has_value())
             xrefs.Add(from, (labelBase + operands.ripTarget.value()) & addressMask, dataKind);
         if (operands.absoluteMemory.has_value() && isFileAddress && isFileAddress(operands.absoluteMemory.value()))
@@ -294,7 +310,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
         // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
         if (detectLocalVariables) {
-            hasDetailHandle = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &detailHandle) == CS_ERR_OK;
+            hasDetailHandle = cs_open(zone->capstoneArch, static_cast<cs_mode>(internalArchitecture), &detailHandle) == CS_ERR_OK;
             if (hasDetailHandle && cs_option(detailHandle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK) {
                 cs_close(&detailHandle);
                 hasDetailHandle = false;
@@ -456,14 +472,14 @@ struct GView::View::DissasmViewer::DissasmLineCounter {
             cs_close(&handle);
     }
 
-    bool Start(int internalArchitecture)
+    bool Start(cs_arch arch, int internalArchitecture)
     {
-        if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
+        if (cs_open(arch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
             handle = 0;
             return false;
         }
         insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, zoneStart, zoneSize, handle, 0, boundaries, alignmentBase);
+        walker = DissasmCodeLinesWalker(obj, zoneStart, zoneSize, handle, 0, boundaries, alignmentBase, arch == CS_ARCH_ARM64);
         offsets.clear();
         offsets.push_back({ zoneStart, 0 });
         return insn != nullptr;
@@ -482,9 +498,10 @@ struct GView::View::DissasmViewer::DissasmLineCounter {
                 lastOffset = address;
                 offsets.push_back({ address + zoneStart, lines });
             }
-            // 00 00 (add byte ptr [rax], al), or a last single 00 byte (a data line: db 0x00)
-            const bool isZeroPadding = (insn->id == X86_INS_ADD && insn->size == 2 && insn->bytes[0] == 0 && insn->bytes[1] == 0) ||
-                                       (insn->id == X86_INS_INVALID && insn->size == 1 && insn->bytes[0] == 0);
+            // only zero bytes: 00 00 (x86: add byte ptr [rax], al), 00 00 00 00 (ARM64: udf #0), a last 00 byte (a data line: db 0x00)
+            const bool isZeroPadding = std::all_of(insn->bytes, insn->bytes + std::min<size_t>(insn->size, sizeof(insn->bytes)), [](uint8 value) {
+                return value == 0;
+            });
             zeroRunLines = isZeroPadding ? zeroRunLines + 1u : 0u;
             if (--linesUntilCheck == 0) {
                 linesUntilCheck = LINES_BETWEEN_DEADLINE_CHECKS;
@@ -522,8 +539,8 @@ csh DissasmCodeZone::GetDecodeHandle()
 {
     // opening a handle allocates the capstone tables: it was done for every decoded line before. The instruction details (groups,
     // operands) give the meaning of the instructions (GetX86Flow / GetX86OperandsInfo).
-    if (decodeHandle == 0 && internalArchitecture != 0) {
-        if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &decodeHandle) != CS_ERR_OK)
+    if (decodeHandle == 0 && hasDecoder) {
+        if (cs_open(capstoneArch, static_cast<cs_mode>(internalArchitecture), &decodeHandle) != CS_ERR_OK)
             decodeHandle = 0;
         else if (cs_option(decodeHandle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
             cs_close(&decodeHandle); // sets the handle to 0
@@ -714,10 +731,21 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
 
     switch (zoneDetails.language) {
     case DisassemblyLanguage::x86:
+        capstoneArch         = CS_ARCH_X86;
         internalArchitecture = CS_MODE_32;
         break;
     case DisassemblyLanguage::x64:
+        capstoneArch         = CS_ARCH_X86;
         internalArchitecture = CS_MODE_64;
+        break;
+    case DisassemblyLanguage::ARM64:
+        capstoneArch         = CS_ARCH_ARM64;
+        internalArchitecture = CS_MODE_ARM; // little endian
+        if (!cs_support(CS_ARCH_ARM64)) {
+            if (initData.dli.IsValid())
+                initData.dli->WriteErrorToScreen("Capstone does not support ARM64");
+            return false;
+        }
         break;
     default: {
         if (initData.dli.IsValid())
@@ -726,6 +754,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         return false;
     }
     }
+    hasDecoder = true;
 
     // the places where an instruction starts (the function entries, the section starts of the plugin), relative to the zone start
     instructionBoundaries.clear();
@@ -748,7 +777,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     lineCounter.reset();
     if (IsValidCodeZone(zoneDetails, initData.obj)) {
         lineCounter = std::make_unique<DissasmLineCounter>(cachedCodeOffsets, zoneDetails, initData.obj, &instructionBoundaries, paddingAlignmentBase);
-        if (!lineCounter->Start(internalArchitecture))
+        if (!lineCounter->Start(capstoneArch, internalArchitecture))
             lineCounter.reset();
     }
     if (!lineCounter) {
@@ -1116,7 +1145,7 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
 {
     DissasmFunctionGraph graph;
     graph.functionStart = functionStart;
-    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || internalArchitecture == 0)
+    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || !hasDecoder)
         return graph;
     constexpr uint64 MAX_FUNCTION_SIZE  = 0x40000;
     constexpr size_t MAX_INSTRUCTIONS   = 20000;
@@ -1139,19 +1168,19 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
     };
     std::vector<Instruction> instructions;
     csh handle = 0;
-    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+    if (cs_open(capstoneArch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
         return graph;
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, IsArm64Code());
         while (walker.Next(insn) && insn->address < end) {
             if (instructions.size() == MAX_INSTRUCTIONS) {
                 graph.truncated = true;
                 break;
             }
-            const auto flow     = GetX86Flow(*insn);
-            const auto operands = IsX86Branch(flow) ? GetX86OperandsInfo(*insn, Is64BitCode()) : X86OperandsInfo{};
+            const auto flow     = GetInstructionFlow(*insn, GetArch());
+            const auto operands = IsX86Branch(flow) ? GetInstructionOperands(*insn, GetArch()) : X86OperandsInfo{};
             instructions.push_back({ insn->address, insn->size, flow, operands.directTarget });
         }
         cs_free(insn, 1);
@@ -1305,7 +1334,7 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
       uint64 functionStart, const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport) const
 {
     std::vector<DissasmCallReference> callees;
-    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || internalArchitecture == 0)
+    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || !hasDecoder)
         return callees;
     // the function ends with the next one (the size of a function is not known for every function)
     constexpr uint64 MAX_FUNCTION_SIZE = 0x100000;
@@ -1316,17 +1345,17 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
         return callees;
 
     csh handle = 0;
-    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+    if (cs_open(capstoneArch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
         return callees;
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, IsArm64Code());
         while (walker.Next(insn) && insn->address < end) {
-            const auto flow = GetX86Flow(*insn);
+            const auto flow = GetInstructionFlow(*insn, GetArch());
             if (flow != X86Flow::Call && flow != X86Flow::Jump)
                 continue;
-            const auto operands = GetX86OperandsInfo(*insn, Is64BitCode());
+            const auto operands = GetInstructionOperands(*insn, GetArch());
             DissasmCallReference callee;
             callee.site = insn->address;
             if (operands.directTarget.has_value()) {
@@ -1417,13 +1446,13 @@ std::optional<uint64> DissasmCodeZone::FindBytes(const std::vector<int16>& patte
 
 std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, uint64 to) const
 {
-    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || internalArchitecture == 0)
+    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || !hasDecoder)
         return {};
     to = std::min(to, GetCodeSize());
     if (from >= to)
         return {};
     csh handle = 0;
-    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+    if (cs_open(capstoneArch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
         return {};
     std::optional<uint64> result;
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
@@ -1431,10 +1460,17 @@ std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, 
         const uint64 mask       = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
         const uint64 wanted     = value & mask;
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from, &instructionBoundaries, paddingAlignmentBase);
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, GetCodeSize(), handle, from, &instructionBoundaries, paddingAlignmentBase, IsArm64Code());
         while (!result.has_value() && walker.Next(insn) && insn->address < to) {
             if (insn->id == X86_INS_INVALID || !insn->detail)
                 continue; // a data line (db)
+            if (IsArm64Code()) { // mov x0, #0x10 / cmp w1, #0x20 / add x0, x1, #0x8
+                const cs_arm64& arm64 = insn->detail->arm64;
+                for (uint8 index = 0; index < arm64.op_count && !result.has_value(); index++)
+                    if (arm64.operands[index].type == ARM64_OP_IMM && static_cast<uint64>(arm64.operands[index].imm) == wanted)
+                        result = insn->address;
+                continue;
+            }
             const cs_x86& x86 = insn->detail->x86;
             for (uint8 index = 0; index < x86.op_count; index++) {
                 const cs_x86_op& op = x86.operands[index];
@@ -1753,7 +1789,7 @@ std::string DissasmCodeZone::BuildAssistantFunctionText(uint64 functionStart, Di
     const auto labelLine                = GetLabelDisplayLine(functionStart);
     if (!labelLine.has_value() || !zoneObject.IsValid())
         return {};
-    std::string text = std::string("Here is ") + (Is64BitCode() ? "x64" : "x86") + " assembly code:\n";
+    std::string text = std::string("Here is ") + GetArchitectureName() + " assembly code:\n";
     std::vector<std::string> calls;
     uint32 sentLines        = 0;
     const uint32 linesCount = GetDisplayLinesCount();

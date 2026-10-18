@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DissasmViewer.hpp"
+#include "x86_x64/X86InstructionInfo.hpp"
 
 namespace GView::View::DissasmViewer
 {
@@ -110,7 +111,9 @@ struct DissasmCodeZone : public ParseZone {
 
     std::vector<AsmOffsetLine> cachedCodeOffsets;
     DisassemblyZone zoneDetails{};
-    int internalArchitecture = 0; // used for dissasm libraries
+    int internalArchitecture = 0;           // the capstone mode (CS_MODE_32 / CS_MODE_64 / CS_MODE_ARM)
+    cs_arch capstoneArch     = CS_ARCH_X86; // CS_ARCH_X86 / CS_ARCH_ARM64
+    bool hasDecoder          = false;       // the language is known: capstoneArch and internalArchitecture are set
     bool isInit              = false;
 
     // x86/x64: decoded instructions count (the zone lines are the instructions plus the annotations of the root type)
@@ -249,7 +252,7 @@ struct DissasmCodeZone : public ParseZone {
     // x86/x64 zone initialized successfully: only then the lines can be reached / decoded
     bool CanReachAsmLines() const
     {
-        return isInit && linesReady && (zoneDetails.language == DisassemblyLanguage::x86 || zoneDetails.language == DisassemblyLanguage::x64);
+        return isInit && linesReady && IsNativeCodeLanguage(zoneDetails.language);
     }
 
     // the line index (the sorted lines of the annotations) after the annotations changed; the decoding starts again from a cached offset
@@ -300,9 +303,27 @@ struct DissasmCodeZone : public ParseZone {
     bool FetchCodeWindow(Reference<GView::Object> obj, uint64 relativeStart, uint64 relativeEnd);
 
     // local variables
+    // 64 bit addresses (x64, ARM64)
     bool Is64BitCode() const
     {
-        return zoneDetails.language == DisassemblyLanguage::x64;
+        return zoneDetails.language == DisassemblyLanguage::x64 || zoneDetails.language == DisassemblyLanguage::ARM64;
+    }
+    bool IsArm64Code() const
+    {
+        return zoneDetails.language == DisassemblyLanguage::ARM64;
+    }
+    DissasmArch GetArch() const
+    {
+        return IsArm64Code() ? DissasmArch::Arm64 : (zoneDetails.language == DisassemblyLanguage::x64 ? DissasmArch::X64 : DissasmArch::X86);
+    }
+    const char* GetArchitectureName() const
+    {
+        return IsArm64Code() ? "ARM64" : (zoneDetails.language == DisassemblyLanguage::x64 ? "x64" : "x86");
+    }
+    // the code decoded by capstone (x86, x64, ARM64), not the Java bytecode
+    static bool IsNativeCodeLanguage(DisassemblyLanguage language)
+    {
+        return language == DisassemblyLanguage::x86 || language == DisassemblyLanguage::x64 || language == DisassemblyLanguage::ARM64;
     }
     // the variable defined by `line` (variable line) or used by the instruction on `line`
     bool GetLocalVariableFromLine(uint32 line, Reference<GView::Object> obj, uint64& functionStart, int32& frameOffset);

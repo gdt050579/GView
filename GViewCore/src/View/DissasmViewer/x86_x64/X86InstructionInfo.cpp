@@ -274,5 +274,11 @@ X86RegisterKind GView::View::DissasmViewer::GetX86RegisterKind(std::string_view 
     if (numbered("r", 8, 15, "bwd") || numbered("xmm", 0, 31, "") || numbered("ymm", 0, 31, "") || numbered("zmm", 0, 31, "") ||
         numbered("mm", 0, 7, "") || numbered("k", 0, 7, "") || numbered("cr", 0, 15, "") || numbered("dr", 0, 15, ""))
         return X86RegisterKind::General;
+    // ARM64: x0 .. x30 / w0 .. w30, the vector and floating point registers; fp (x29) and lr (x30) are pointers, as sp
+    if (token == "fp" || token == "lr" || token == "wsp")
+        return X86RegisterKind::Pointer;
+    if (token == "xzr" || token == "wzr" || numbered("x", 0, 30, "") || numbered("w", 0, 30, "") || numbered("v", 0, 31, "") ||
+        numbered("q", 0, 31, "") || numbered("d", 0, 31, "") || numbered("s", 0, 31, "") || numbered("h", 0, 31, "") || numbered("b", 0, 31, ""))
+        return X86RegisterKind::General;
     return X86RegisterKind::None;
 }

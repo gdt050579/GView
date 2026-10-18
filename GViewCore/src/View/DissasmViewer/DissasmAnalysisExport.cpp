@@ -62,7 +62,7 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
     const uint64 base       = zone.labelAddressBase;
     const auto& details     = zone.zoneDetails;
     const auto findImport   = [settings, &zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, &zone, operands); };
-    json result             = { { "language", details.language == DisassemblyLanguage::x64 ? "x64" : "x86" },
+    json result             = { { "language", zone.GetArchitectureName() },
                                 { "fileOffset", Hex(details.startingZonePoint) },
                                 { "size", Hex(details.size) },
                                 { "entryPoint", Hex(base + (details.entryPoint - details.startingZonePoint)) },

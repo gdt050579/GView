@@ -36,13 +36,34 @@ std::optional<AppCUI::uint8> GetX64ArgumentSlot(const cs_insn& insn);
 enum class X86InstructionKind : AppCUI::uint8 { Other, Call, Jump, ConditionalJump, Return, Compare, Stack, Padding, Data, System };
 X86InstructionKind GetX86InstructionKind(unsigned int id, std::string_view mnemonic);
 
-// A register name of the operands text: Pointer for the stack / frame / index / instruction pointers (rsp, ebp, si, rip, ...), General for
-// the others (rax, r8d, cl, cs, xmm0, ...); None for anything else (a name, a number, dword, ptr)
+// A register name of the operands text: Pointer for the stack / frame / index / instruction pointers (rsp, ebp, si, rip, ...; ARM64: sp,
+// fp, lr), General for the others (rax, r8d, cl, cs, xmm0, ...; ARM64: x0, w1, v2, d3, xzr); None for anything else (a name, a number,
+// dword, ptr)
 enum class X86RegisterKind : AppCUI::uint8 { None, General, Pointer };
 X86RegisterKind GetX86RegisterKind(std::string_view token);
 
 inline bool IsX86Branch(X86Flow flow)
 {
     return flow == X86Flow::Call || flow == X86Flow::Jump || flow == X86Flow::ConditionalJump;
+}
+
+// The instruction set of a code zone. The ARM64 versions give the same results as the x86 ones (x86_x64/Arm64InstructionInfo.cpp): the
+// branches and their targets (b / bl / cbz / tbz / b.cond: the last operand), the addresses taken by adr and read by ldr literal (ripTarget)
+enum class DissasmArch : AppCUI::uint8 { X86, X64, Arm64 };
+X86Flow GetArm64Flow(const cs_insn& insn);
+X86OperandsInfo GetArm64OperandsInfo(const cs_insn& insn);
+X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mnemonic);
+
+inline X86Flow GetInstructionFlow(const cs_insn& insn, DissasmArch arch)
+{
+    return arch == DissasmArch::Arm64 ? GetArm64Flow(insn) : GetX86Flow(insn);
+}
+inline X86OperandsInfo GetInstructionOperands(const cs_insn& insn, DissasmArch arch)
+{
+    return arch == DissasmArch::Arm64 ? GetArm64OperandsInfo(insn) : GetX86OperandsInfo(insn, arch == DissasmArch::X64);
+}
+inline X86InstructionKind GetInstructionKind(unsigned int id, std::string_view mnemonic, DissasmArch arch)
+{
+    return arch == DissasmArch::Arm64 ? GetArm64InstructionKind(id, mnemonic) : GetX86InstructionKind(id, mnemonic);
 }
 } // namespace GView::View::DissasmViewer

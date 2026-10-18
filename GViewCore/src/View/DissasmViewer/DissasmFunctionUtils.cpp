@@ -39,7 +39,7 @@ bool IsNameCharacter(char c)
 }
 bool CanPrecedeNumber(char c)
 {
-    return c == ' ' || c == '[' || c == ',' || c == '+' || c == '-' || c == '*' || c == ':';
+    return c == ' ' || c == '[' || c == ',' || c == '+' || c == '-' || c == '*' || c == ':' || c == '#'; // ARM64: #0x10
 }
 } // namespace
 
@@ -182,10 +182,81 @@ bool DecodeX86Padding(csh handle, const uint8_t** code, size_t* size, uint64_t* 
     *address += length;
     return true;
 }
+// a line that is not an instruction (X86_INS_INVALID / ARM64_INS_INVALID: no flow): db / .word / align
+void SetDataLine(cs_insn* insn, uint64_t address, const uint8_t* bytes, size_t length, const char* mnemonic, const char* operands)
+{
+    insn->id = 0;
+    if (insn->detail)
+        memset(insn->detail, 0, sizeof(cs_detail)); // no groups / operands (the previous instruction left its own)
+    insn->address = address;
+    insn->size    = static_cast<uint16_t>(length);
+    memset(insn->bytes, 0, sizeof(insn->bytes));
+    memcpy(insn->bytes, bytes, std::min(length, sizeof(insn->bytes)));
+    snprintf(insn->mnemonic, sizeof(insn->mnemonic), "%s", mnemonic);
+    snprintf(insn->op_str, sizeof(insn->op_str), "%s", operands);
+}
+
+// ARM64: 4 bytes instructions. A run of nops up to the next 16 bytes aligned address is one align line (as on x86, at least 2 of them,
+// not longer than the alignment of its end); an undecodable word is a data line (.word 0x..), the bytes before a boundary or the end of
+// the code (less than 4) are db lines
+bool DecodeArm64Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, AppCUI::uint64 alignmentBase)
+{
+    constexpr uint32_t NOP = 0xD503201F;
+    const auto wordAt      = [](const uint8_t* bytes) {
+        return static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) | (static_cast<uint32_t>(bytes[2]) << 16) |
+               (static_cast<uint32_t>(bytes[3]) << 24);
+    };
+    const auto advance = [code, size, address](size_t length) {
+        *code += length;
+        *size -= length;
+        *address += length;
+    };
+    char text[24];
+    if (alignmentBase != GView::View::DissasmViewer::DISSASM_NO_PADDING_ALIGNMENT && available >= 8 && wordAt(*code) == NOP) {
+        const AppCUI::uint64 start    = *address + alignmentBase;
+        const AppCUI::uint64 chunkEnd = (start | 0xF) + 1;
+        const size_t limit            = static_cast<size_t>(std::min<AppCUI::uint64>(chunkEnd - start, available));
+        size_t length                 = 0;
+        while (length + 4 <= limit && wordAt(*code + length) == NOP)
+            length += 4;
+        const AppCUI::uint64 end       = start + length;
+        const AppCUI::uint64 alignment = std::min<AppCUI::uint64>(end & (~end + 1), 0x10);
+        if (length >= 8 && length <= alignment) {
+            snprintf(text, sizeof(text), "0x%x", static_cast<unsigned int>(alignment));
+            SetDataLine(insn, *address, *code, length, "align", text);
+            advance(length);
+            return true;
+        }
+    }
+    if (available >= 4) {
+        const uint8_t* data = *code;
+        size_t left         = 4;
+        uint64_t at         = *address;
+        if (cs_disasm_iter(handle, &data, &left, &at, insn)) {
+            advance(4);
+            return true;
+        }
+        snprintf(text, sizeof(text), "0x%08x", static_cast<unsigned int>(wordAt(*code)));
+        SetDataLine(insn, *address, *code, 4, ".word", text);
+        advance(4);
+        return true;
+    }
+    snprintf(text, sizeof(text), "0x%02x", static_cast<unsigned int>(**code));
+    SetDataLine(insn, *address, *code, 1, "db", text);
+    advance(1);
+    return true;
+}
 } // namespace
 
 bool DecodeX86Line(
-      csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, const std::vector<AppCUI::uint64>* boundaries, AppCUI::uint64 alignmentBase)
+      csh handle,
+      const uint8_t** code,
+      size_t* size,
+      uint64_t* address,
+      cs_insn* insn,
+      const std::vector<AppCUI::uint64>* boundaries,
+      AppCUI::uint64 alignmentBase,
+      bool arm64)
 {
     if (*size == 0)
         return false;
@@ -196,6 +267,8 @@ bool DecodeX86Line(
         if (next != boundaries->end() && *next - *address < available)
             available = static_cast<size_t>(*next - *address);
     }
+    if (arm64)
+        return DecodeArm64Line(handle, code, size, address, insn, available, alignmentBase);
     if (alignmentBase != DISSASM_NO_PADDING_ALIGNMENT && IsPaddingStart(*code, available) &&
         DecodeX86Padding(handle, code, size, address, insn, available, alignmentBase))
         return true;
@@ -358,7 +431,7 @@ bool DissasmCodeLinesWalker::Next(cs_insn* insn)
     const uint8_t* data = view.GetData();
     size_t size         = static_cast<size_t>(std::min<uint64>(view.GetLength(), requested));
     uint64_t current    = address;
-    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries, alignmentBase))
+    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries, alignmentBase, arm64))
         return false;
     address = current;
     return true;
@@ -402,7 +475,8 @@ cs_insn* GetCurrentInstructionByOffset(
     while (zone->asmAddress <= offsetToReach) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
         const bool decoded =
-              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase);
+              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase,
+                            zone->IsArm64Code());
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the offset is after the decoded code
             if (dli)

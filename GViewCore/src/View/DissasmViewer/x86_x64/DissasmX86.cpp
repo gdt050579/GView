@@ -254,7 +254,7 @@ inline void DissasmAddColorsToInstruction(
         auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer](std::string_view token) {
             lambdaBuffer.Clear();
             // numbers: hexadecimal (0x...) or decimal (small values, or switched to decimal with the H key)
-            if (!token.empty() && token[0] >= '0' && token[0] <= '9') {
+            if (!token.empty() && ((token[0] >= '0' && token[0] <= '9') || (token[0] == '#' && token.size() > 1))) { // ARM64: #0x10
                 cb.Add(token.data(), colors.AsmOffsetColor);
                 return;
             }
@@ -369,7 +369,8 @@ inline cs_insn* GetCurrentInstructionByLine(
     while (lineDifferences > 0) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
         const bool decoded =
-              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase);
+              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase,
+                            zone->IsArm64Code());
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the line is after the decoded code
             zone->offsetCacheMaxLine = 0;
@@ -570,8 +571,8 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
             line.autoComment = mapping->second.name;
             return;
         }
-        if (insn.id != X86_INS_LEA)
-            return; // the other instructions read / write the data (a variable, a pointer), only lea takes the address of a string
+        if (insn.id != (params.zone->IsArm64Code() ? static_cast<unsigned int>(ARM64_INS_ADR) : static_cast<unsigned int>(X86_INS_LEA)))
+            return; // the other instructions read / write the data (a variable, a pointer), only lea / adr take the address of a string
         fileOffset = TranslateOperandAddressToFileOffset(settings, rva, false);
     } else {
         // the immediates only: a memory operand ([0x403000]) reads a variable, it is not the string itself
@@ -590,9 +591,22 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
         line.autoComment = std::move(text.value());
 }
 
-// a call to a known Windows API (KNOWN_FUNCTIONS): its arguments are named on the lines prepared before the call
+// ARM64: the operands before the last one, the address (cbz x0, / tbnz w1, #3, / adr x0,). Empty for x86 / x64
+static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const DissasmCodeZone* zone)
+{
+    if (!zone->IsArm64Code())
+        return {};
+    const std::string_view operands = insn.op_str;
+    const auto separator            = operands.rfind(", ");
+    return separator == std::string_view::npos ? std::string() : std::string(operands.substr(0, separator + 2));
+}
+
+// a call to a known Windows API (KNOWN_FUNCTIONS): its arguments are named on the lines prepared before the call (x86 / x64 calling
+// conventions)
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
+    if (params.zone->IsArm64Code())
+        return;
     GView::Hashes::CRC32 crc32{};
     uint32 hash = 0;
     if (!crc32.Init(GView::Hashes::CRC32Type::JAMCRC) || !crc32.Update(reinterpret_cast<const uint8*>(functionName.data()), static_cast<uint32>(functionName.size())) ||
@@ -617,7 +631,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     currentLine = params.actualLine;
 
     SetMnemonic(insn->mnemonic);
-    instructionKind = static_cast<uint8>(GetX86InstructionKind(insn->id, insn->mnemonic));
+    instructionKind = static_cast<uint8>(GetInstructionKind(insn->id, insn->mnemonic, params.zone->GetArch()));
 
     if (!params.settings || !params.asmData) {
         SetOperands(insn->op_str, params.zone);
@@ -625,9 +639,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     }
 
     // the meaning of the instruction from the capstone details (groups, operands), not from its text
-    const auto flow     = GetX86Flow(*insn);
-    const auto operands = GetX86OperandsInfo(*insn, params.zone->Is64BitCode());
-    if (params.zone->Is64BitCode()) {
+    const auto flow     = GetInstructionFlow(*insn, params.zone->GetArch());
+    const auto operands = GetInstructionOperands(*insn, params.zone->GetArch());
+    if (params.zone->GetArch() == DissasmArch::X64) {
         const auto slot = GetX64ArgumentSlot(*insn); // mov rcx, ... / mov [rsp + 0x20], ...: an argument of the next call
         argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
     }
@@ -635,10 +649,16 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
     else if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump)
         flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
-    else if (insn->id == X86_INS_PUSH)
+    else if (insn->id == X86_INS_PUSH && !params.zone->IsArm64Code())
         flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
     else {
-        SetOperands(insn->op_str, params.zone);
+        if (params.zone->IsArm64Code() && operands.ripTarget.has_value()) {
+            // adr x0, label / ldr x0, label: capstone writes the address relative to the zone start, the listing shows the VA
+            LocalString<32> target;
+            target.SetFormat("0x%llx", static_cast<unsigned long long>(params.zone->labelAddressBase + operands.ripTarget.value()));
+            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + target.GetText()).c_str(), params.zone);
+        } else
+            SetOperands(insn->op_str, params.zone);
 #ifndef DISSASM_DISABLE_STRING_PREVIEW
         AddReferencedDataComment(*this, *insn, operands, params); // lea rcx, [rip + 0x...] / mov ecx, 0x403000
 #endif
@@ -681,7 +701,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 LocalString<32> target;
                 const uint64 addressMask = params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull; // 32 bit addresses wrap around
                 target.SetFormat("0x%llx", static_cast<unsigned long long>((params.zone->labelAddressBase + operands.directTarget.value()) & addressMask));
-                SetOperands(target.GetText(), params.zone);
+                SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + target.GetText()).c_str(), params.zone);
             } else {
                 SetOperands(insn->op_str, params.zone); // indirect: the operands are shown as they are
                 const auto switchJump = params.zone->switchJumps.find(address);
@@ -703,6 +723,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (labelName.empty())
             labelName = params.zone->GetLabelName(shouldConsiderCall ? "sub_" : "loc_", operands.directTarget.value());
+        labelName = GetArm64BranchOperandsPrefix(*insn, params.zone) + labelName; // cbz x0, loc_... / tbnz w1, #3, loc_...
         op_str      = portable_strdup(labelName.c_str());
         op_str_size = static_cast<uint32>(labelName.size());
     }
@@ -1276,7 +1297,7 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
     text.SetFormat(
           "; GView disassembly listing (%s)\n; code: file offset 0x%" PRIx64 ", size 0x%" PRIx64 ", entry point 0x%" PRIx64 "\n"
           "; the addresses are %s\n",
-          zone.Is64BitCode() ? "x64" : "x86",
+          zone.GetArchitectureName(),
           zone.zoneDetails.startingZonePoint,
           zone.zoneDetails.size,
           zone.zoneDetails.entryPoint,
@@ -1379,8 +1400,8 @@ void Instance::CommandExportAsmFile()
         const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
         const uint32 index  = zoneIndex++; // every code zone keeps its own number, the files of two zones never overwrite each other
         const auto language = codeZone->zoneDetails.language;
-        if (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64) {
-            Dialogs::MessageBox::ShowNotification("Warning", "Only the x86/x64 zones can be exported!");
+        if (!DissasmCodeZone::IsNativeCodeLanguage(language)) {
+            Dialogs::MessageBox::ShowNotification("Warning", "Only the x86 / x64 / ARM64 zones can be exported!");
             continue;
         }
         if (!codeZone->CanReachAsmLines()) {
@@ -1391,7 +1412,7 @@ void Instance::CommandExportAsmFile()
         // the default file: next to the analysed file, the user picks the location (the folder of the file can be read only)
         const std::filesystem::path filePath = obj->GetPath();
         LocalString<256> fileName;
-        fileName.SetFormat("%s.z%u.%s.asm", reinterpret_cast<const char*>(filePath.filename().u8string().c_str()), index, language == DisassemblyLanguage::x64 ? "x64" : "x86");
+        fileName.SetFormat("%s.z%u.%s.asm", reinterpret_cast<const char*>(filePath.filename().u8string().c_str()), index, codeZone->GetArchitectureName());
         const auto selectedPath = Dialogs::FileDialog::ShowSaveFileWindow(fileName, "Assembly:asm", filePath.parent_path());
         if (!selectedPath.has_value())
             continue;
@@ -1440,7 +1461,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (!IsX86Branch(GetX86Flow(*insn))) {
+        if (!IsX86Branch(GetInstructionFlow(*insn, zone->GetArch()))) {
             cs_free(insn, 1);
             return;
         }
@@ -1448,7 +1469,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
         jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
         for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
             jumpMnemonic[i] = insn->mnemonic[i];
-        const auto target       = GetX86OperandsInfo(*insn, zone->Is64BitCode()).directTarget;
+        const auto target       = GetInstructionOperands(*insn, zone->GetArch()).directTarget;
         const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
         cs_free(insn, 1);
         if (!targetOffset.has_value()) {
@@ -1549,7 +1570,7 @@ void Instance::RefreshCursorLineNumbers()
         return;
     const auto zone     = static_cast<DissasmCodeZone*>(parseZone.get());
     const auto language = zone->zoneDetails.language;
-    if (!zone->isInit || zone->cachedCodeOffsets.empty() || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+    if (!zone->isInit || zone->cachedCodeOffsets.empty() || !DissasmCodeZone::IsNativeCodeLanguage(language))
         return;
     // zone line 0 is the title and line 1 the columns header; when the zone title is scrolled out, the first row shows the header
     const uint32 zoneLine = zonesFound[0].startingLine;
@@ -2025,7 +2046,7 @@ void Instance::ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::stri
             if (cs_insn* insn = GetCurrentInstructionByOffset(fileOffset.value(), zone, obj, instructionIndex)) {
                 row.instruction = std::string(insn->mnemonic) + " ";
                 const auto operands =
-                      IsX86Branch(GetX86Flow(*insn)) ? GetX86OperandsInfo(*insn, zone->zoneDetails.language == DisassemblyLanguage::x64) : X86OperandsInfo{};
+                      IsX86Branch(GetInstructionFlow(*insn, zone->GetArch())) ? GetInstructionOperands(*insn, zone->GetArch()) : X86OperandsInfo{};
                 if (operands.directTarget.has_value()) {
                     std::string branchName = zone->GetLabelNameAt(operands.directTarget.value());
                     row.instruction += branchName.empty() ? zone->FormatCodeAddress(operands.directTarget.value()) : branchName;
@@ -3762,7 +3783,7 @@ void Instance::QuerySmartAssistantX86X64(
 
     LocalString<DISSASM_ASSISTANT_MAX_BYTE_TO_SEND> bufferToSendToAssistant;
     bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
-    bufferToSendToAssistant.AddFormat("Here is %s assembly code: \n", codeZone->Is64BitCode() ? "x64" : "x86");
+    bufferToSendToAssistant.AddFormat("Here is %s assembly code: \n", codeZone->GetArchitectureName());
     // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
     // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
     for (const auto& asmLine : assemblyLines) {

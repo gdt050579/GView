@@ -211,6 +211,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
         const uint32 pointerSize = machO->is64 ? 8 : 4;
         constexpr uint32 LAZY_POINTERS     = static_cast<uint32>(MAC::SectionType::LAZY_SYMBOL_POINTERS);
         constexpr uint32 NON_LAZY_POINTERS = static_cast<uint32>(MAC::SectionType::NON_LAZY_SYMBOL_POINTERS);
+        constexpr uint32 SYMBOL_STUBS      = static_cast<uint32>(MAC::SectionType::SYMBOL_STUBS);
         constexpr uint32 INDIRECT_SYMBOL_LOCAL = 0x80000000; // a pointer to a local symbol / an absolute value: not an import
         constexpr uint32 INDIRECT_SYMBOL_ABS   = 0x40000000;
         for (const auto& segment : machO->segments)
@@ -218,6 +219,26 @@ GVIEW_PLUGIN_ENTRY_POINTS
             for (const auto& section : segment.sections)
             {
                 const uint32 type = section.flags & MAC::SECTION_TYPE;
+                if (type == SYMBOL_STUBS && section.reserved2 > 0)
+                {
+                    // __stubs: a stub of reserved2 bytes for every symbol (reserved1: the index of the first one); the stubs are named after
+                    // their import (j__malloc) for every CPU (an ARM64 stub, adrp / ldr / br, is not read as an import thunk)
+                    for (uint64 stub = 0; stub < section.size / section.reserved2; stub++)
+                    {
+                        const uint64 index = section.reserved1 + stub;
+                        if (index >= command.nindirectsyms)
+                            break;
+                        const uint32 symbol = symbols[index];
+                        if ((symbol & (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS)) != 0 || symbol >= names.size() ||
+                            names[symbol].symbolNameDemangled.empty())
+                            continue;
+                        settings.AddFunctionEntry(
+                              static_cast<uint64>(section.offset) + stub * section.reserved2,
+                              "j_" + names[symbol].symbolNameDemangled,
+                              DissasmViewer::FunctionEntryType::Symbol);
+                    }
+                    continue;
+                }
                 if (type != LAZY_POINTERS && type != NON_LAZY_POINTERS)
                     continue;
                 // reserved1: the index of the first pointer in the indirect symbol table
@@ -298,8 +319,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
         }
     }
 
-    // The disassembly of the x86 / x64 code: one zone from the first to the last instructions section (__text, __stubs, __stub_helper),
-    // the entry point of LC_MAIN
+    // The disassembly of the x86 / x64 / ARM64 code: one zone from the first to the last instructions section (__text, __stubs,
+    // __stub_helper), the entry point of LC_MAIN
     void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
     {
         if (!machO->isMacho || machO->shouldSwapEndianess)
@@ -309,8 +330,10 @@ GVIEW_PLUGIN_ENTRY_POINTS
             language = DissasmViewer::DisassemblyLanguage::x64;
         else if (machO->header.cputype == MAC::CPU_TYPE_I386)
             language = DissasmViewer::DisassemblyLanguage::x86;
+        else if (machO->header.cputype == MAC::CPU_TYPE_ARM64)
+            language = DissasmViewer::DisassemblyLanguage::ARM64;
         else
-            return; // the disassembly view decodes only x86 / x64
+            return; // the disassembly view decodes x86 / x64 / ARM64
 
         uint64 start = UINT64_MAX, end = 0;
         std::vector<uint64> sectionStarts; // the padding between two sections never hides the start of the next one
