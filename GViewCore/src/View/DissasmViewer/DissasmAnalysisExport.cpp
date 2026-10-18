@@ -1,5 +1,7 @@
 #include "DissasmAnalysisExport.hpp"
 #include "DissasmCodeZone.hpp"
+#include "DissasmAnnotations.hpp"
+#include "DissasmSignatures.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
 
 #include <nlohmann/json.hpp>
@@ -116,7 +118,8 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
 }
 } // namespace
 
-bool GView::View::DissasmViewer::BuildAnalysisJson(Reference<GView::Object> obj, Settings& viewerSettings, std::string& json, std::string& error)
+bool GView::View::DissasmViewer::BuildAnalysisJson(
+      Reference<GView::Object> obj, Settings& viewerSettings, std::string& json, std::string& error, const DissasmAnalysisOptions& options)
 {
     std::unique_ptr<SettingsData> settings(static_cast<SettingsData*>(viewerSettings.data));
     viewerSettings.data = nullptr;
@@ -140,22 +143,56 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(Reference<GView::Object> obj,
 
     const auto pathText = std::filesystem::path(obj->GetPath()).u8string();
     nlohmann::json root = { { "file", std::string(reinterpret_cast<const char*>(pathText.data()), pathText.size()) } };
-    nlohmann::json zones = nlohmann::json::array();
-    for (const auto& parseZone : settings->parseZones) {
-        const auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
-        DissasmCodeZoneInitData initData{};
+    // every zone is analyzed first: the annotations and the signatures apply to all of them
+    std::vector<DissasmCodeZoneInitData> initDatas(settings->parseZones.size());
+    std::vector<DissasmCodeZone*> analyzedZones;
+    for (size_t index = 0; index < settings->parseZones.size(); index++) {
+        const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
+        auto& initData  = initDatas[index];
         initData.enableDeepScanDissasmOnStart  = true; // at once: there is no window to show a partial analysis
         initData.enableLocalVariablesDetection = true;
         initData.visibleRows                   = 1;
         PrepareCodeZoneInitData(settings.get(), obj, zone, initData);
-        if (!zone->InitZone(initData)) {
-            zones.push_back({ { "fileOffset", Hex(zone->zoneDetails.startingZonePoint) }, { "error", "the zone could not be disassembled" } });
+        if (!zone->InitZone(initData))
             continue;
-        }
         bool zoneLinesChanged = false;
         if (cache.hasCache)
             zone->TryLoadDataFromCache(cache, zoneLinesChanged);
-        zones.push_back(ZoneToJson(*zone, settings.get(), initData));
+        analyzedZones.push_back(zone);
+    }
+
+    std::string optionError;
+    if (options.annotations) {
+        DissasmAnnotationsImport result;
+        if (ImportAnnotationsDocument(*options.annotations, analyzedZones, result, optionError))
+            root["annotationsImport"] = { { "zones", result.zones },
+                                          { "names", result.names },
+                                          { "comments", result.comments },
+                                          { "variables", result.variables },
+                                          { "decimalOperands", result.decimalOperands },
+                                          { "collapsibleZones", result.collapsibleZones },
+                                          { "suggestions", result.suggestedNames + result.aiComments },
+                                          { "skipped", result.skipped } };
+        else
+            root["annotationsImport"] = { { "error", optionError } };
+    }
+    if (options.signatures) {
+        DissasmSignaturesApply result;
+        if (ApplySignaturesDocument(*options.signatures, analyzedZones, result, optionError))
+            root["signaturesApply"] = { { "signatures", result.signatures }, { "named", result.named }, { "ambiguous", result.ambiguous } };
+        else
+            root["signaturesApply"] = { { "error", optionError } };
+    }
+    if (options.signaturesOutput)
+        *options.signaturesOutput = BuildSignaturesDocument(analyzedZones);
+
+    nlohmann::json zones = nlohmann::json::array();
+    for (size_t index = 0; index < settings->parseZones.size(); index++) {
+        const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
+        if (std::find(analyzedZones.begin(), analyzedZones.end(), zone) == analyzedZones.end())
+            zones.push_back({ { "fileOffset", Hex(zone->zoneDetails.startingZonePoint) }, { "error", "the zone could not be disassembled" } });
+        else
+            zones.push_back(ZoneToJson(*zone, settings.get(), initDatas[index]));
     }
     root["zones"] = std::move(zones);
     json          = root.dump(2);

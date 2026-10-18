@@ -55,13 +55,13 @@ void GView::App::ReapplyKeyBindings()
     if (gviewAppInstance)
         gviewAppInstance->ApplyKeyBindings();
 }
-bool GView::App::AnalyzeFile(const std::filesystem::path& path, std::string_view typeName, std::string& json, std::string& error)
+bool GView::App::AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptions& options, std::string& json, std::string& error)
 {
     if (!gviewAppInstance) {
         error = "GView is not initialized!";
         return false;
     }
-    return gviewAppInstance->AnalyzeFile(path, typeName, json, error);
+    return gviewAppInstance->AnalyzeFile(path, options, json, error);
 }
 bool GView::App::Init(bool isTestingEnabled)
 {

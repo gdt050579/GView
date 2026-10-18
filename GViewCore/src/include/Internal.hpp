@@ -799,7 +799,7 @@ namespace App
               Reference<Window> parent           = nullptr,
               const ConstString& creationProcess = "");
         // GView analyze: the analysis of the disassembly of a file as JSON, without a window (HeadlessAnalysis.cpp)
-        bool AnalyzeFile(const std::filesystem::path& path, std::string_view typeName, std::string& json, std::string& error);
+        bool AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptions& options, std::string& json, std::string& error);
         bool AddBufferWindow(
               BufferView buf,
               const ConstString& name,

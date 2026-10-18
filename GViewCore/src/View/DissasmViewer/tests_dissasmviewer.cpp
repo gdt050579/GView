@@ -5389,3 +5389,61 @@ TEST_CASE("SignaturesArm64", "[Dissasm]Signatures")
     x64["architecture"] = "x64";
     REQUIRE_FALSE(ApplySignaturesDocument(x64, { stripped.zone.get() }, result, error));
 }
+
+TEST_CASE("HeadlessAnalysisSignatures", "[Dissasm]Analyze")
+{
+    const auto file = SignaturesSampleCode(false);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    const auto analyze = [&](const DissasmAnalysisOptions& options) {
+        Settings settings;
+        settings.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+        std::string text, error;
+        REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error, options));
+        return nlohmann::json::parse(text);
+    };
+    const auto functionName = [](const nlohmann::json& root, std::string_view address) {
+        for (const auto& function : root["zones"][0]["functions"])
+            if (function["address"].get<std::string>() == address)
+                return function["name"].get<std::string>();
+        return std::string();
+    };
+
+    // the names of an annotations file, then the signatures of the named functions
+    const nlohmann::json annotations = { { "format", DISSASM_ANNOTATIONS_FORMAT },
+                                         { "version", DISSASM_ANNOTATIONS_VERSION },
+                                         { "zones",
+                                           { { { "fileOffset", "0x0" },
+                                               { "names", { { { "address", "0x20" }, { "name", "add_mul" } }, { { "address", "0x40" }, { "name", "neg_shift" } } } } } } } };
+    nlohmann::json signatures;
+    DissasmAnalysisOptions first;
+    first.annotations      = &annotations;
+    first.signaturesOutput = &signatures;
+    const auto named = analyze(first);
+    INFO(named.dump(2));
+    REQUIRE(named["annotationsImport"]["names"] == 2);
+    REQUIRE(functionName(named, "0x20") == "add_mul");
+    REQUIRE(signatures["format"].get<std::string>() == DISSASM_SIGNATURES_FORMAT);
+    REQUIRE(signatures["signatures"].size() == 2);
+    REQUIRE_FALSE(named.contains("signaturesApply"));
+
+    // a new analysis (no names) with the signatures
+    DissasmAnalysisOptions second;
+    second.signatures = &signatures;
+    const auto applied = analyze(second);
+    REQUIRE(applied["signaturesApply"]["named"] == 2);
+    REQUIRE(applied["signaturesApply"]["ambiguous"] == 0);
+    REQUIRE(functionName(applied, "0x20") == "add_mul");
+    REQUIRE(functionName(applied, "0x40") == "neg_shift");
+
+    // a file of another architecture / format: the error is in the JSON, the analysis is still written
+    auto arm64            = signatures;
+    arm64["architecture"] = "ARM64";
+    const nlohmann::json other = { { "format", "other" } };
+    DissasmAnalysisOptions wrong;
+    wrong.signatures  = &arm64;
+    wrong.annotations = &other;
+    const auto failed = analyze(wrong);
+    REQUIRE(failed["signaturesApply"].contains("error"));
+    REQUIRE(failed["annotationsImport"].contains("error"));
+    REQUIRE(functionName(failed, "0x20") == "sub_20");
+}

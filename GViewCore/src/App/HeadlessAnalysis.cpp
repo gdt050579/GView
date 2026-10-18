@@ -1,7 +1,9 @@
 #include "Internal.hpp"
 #include "DissasmAnalysisExport.hpp"
 
+#include <fstream>
 #include <optional>
+#include <sstream>
 
 using namespace GView::App;
 using namespace GView::View;
@@ -86,10 +88,43 @@ class HeadlessWindow : public WindowInterface
         return nullptr;
     }
 };
+
+// a JSON file given on the command line (an annotations / signatures file); false (and the reason) when it can not be read or parsed
+bool ReadJsonFile(const std::filesystem::path& path, std::string_view what, nlohmann::json& document, std::string& error)
+{
+    std::ifstream stream(path, std::ios::binary);
+    std::stringstream text;
+    if (!stream || !(text << stream.rdbuf())) {
+        error = "Unable to read the " + std::string(what) + " file!";
+        return false;
+    }
+    document = nlohmann::json::parse(text.str(), nullptr, false);
+    if (document.is_discarded()) {
+        error = "The " + std::string(what) + " file is not a valid JSON file!";
+        return false;
+    }
+    return true;
+}
 } // namespace
 
-bool Instance::AnalyzeFile(const std::filesystem::path& path, std::string_view typeName, std::string& json, std::string& error)
+bool Instance::AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptions& options, std::string& json, std::string& error)
 {
+    // the files of the options are read first: a bad file stops before the (long) analysis
+    nlohmann::json annotations, signatures, signaturesOutput;
+    DissasmViewer::DissasmAnalysisOptions analysisOptions;
+    if (!options.annotations.empty()) {
+        if (!ReadJsonFile(options.annotations, "annotations", annotations, error))
+            return false;
+        analysisOptions.annotations = &annotations;
+    }
+    if (!options.signatures.empty()) {
+        if (!ReadJsonFile(options.signatures, "signatures", signatures, error))
+            return false;
+        analysisOptions.signatures = &signatures;
+    }
+    if (!options.signaturesOutput.empty())
+        analysisOptions.signaturesOutput = &signaturesOutput;
+    const std::string_view typeName = options.typeName;
     auto file = std::make_unique<AppCUI::OS::File>();
     if (!file->OpenRead(path)) {
         error = "Unable to open the file!";
@@ -131,5 +166,14 @@ bool Instance::AnalyzeFile(const std::filesystem::path& path, std::string_view t
         error = "The type of the file has no disassembly view!";
         return false;
     }
-    return DissasmViewer::BuildAnalysisJson(object.get(), window.dissasmSettings.value(), json, error);
+    if (!DissasmViewer::BuildAnalysisJson(object.get(), window.dissasmSettings.value(), json, error, analysisOptions))
+        return false;
+    if (!options.signaturesOutput.empty()) {
+        std::ofstream stream(options.signaturesOutput, std::ios::binary);
+        if (!stream || !(stream << signaturesOutput.dump(2) << "\n")) {
+            error = "Unable to write the signatures file!";
+            return false;
+        }
+    }
+    return true;
 }
