@@ -203,7 +203,7 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
             const auto start = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
             const uint64 size = item.is_object() && item.contains("size") && item["size"].is_number_unsigned() ? item["size"].get<uint64>() : 0;
             const uint64 unit = item.is_object() && item.contains("unit") && item["unit"].is_number_unsigned() ? item["unit"].get<uint64>() : 99;
-            const bool validUnit = unit == 0 || unit == 1 || unit == 2 || unit == 4 || unit == 8;
+            const bool validUnit = DissasmInstructionSet::IsValidDataUnit(unit);
             if (!start.has_value() || size == 0 || size > zone.GetCodeSize() - start.value() || !validUnit) {
                 result.skipped++;
                 continue;
@@ -304,15 +304,31 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
     result.zones++;
 }
 
+bool GView::View::DissasmViewer::BeginCodeZoneReanalysis(DissasmCodeZone& zone, DissasmCodeZoneInitData& initData, DissasmReanalysis& state)
+{
+    state.annotations            = ExportZoneAnnotations(zone); // the data of the user, by address
+    state.history                = zone.TakeEditHistory();
+    zone.dissasmType.annotations = {}; // the labels of the previous analysis (the deep scan gives new ones)
+    if (zone.InitZone(initData))
+        return true;
+    zone.RestoreEditHistory(std::move(state.history));
+    return false;
+}
+
+void GView::View::DissasmViewer::FinishCodeZoneReanalysis(DissasmCodeZone& zone, DissasmReanalysis& state, DissasmAnnotationsImport& imported)
+{
+    ImportZoneAnnotations(zone, state.annotations, imported); // clears the history: it comes back after
+    zone.RestoreEditHistory(std::move(state.history));
+}
+
 bool GView::View::DissasmViewer::ReanalyzeCodeZone(DissasmCodeZone& zone, DissasmCodeZoneInitData& initData, DissasmAnnotationsImport& imported)
 {
-    const auto annotations = ExportZoneAnnotations(zone); // the data of the user, by address
-    initData.deepScanBudget.reset();                       // at once: the annotations need the labels
+    initData.deepScanBudget.reset(); // at once: the annotations need the labels
     initData.lineCountBudget.reset();
-    zone.dissasmType.annotations = {}; // the labels of the previous analysis (the deep scan gives new ones)
-    if (!zone.InitZone(initData))
+    DissasmReanalysis state;
+    if (!BeginCodeZoneReanalysis(zone, initData, state))
         return false;
-    ImportZoneAnnotations(zone, annotations, imported);
+    FinishCodeZoneReanalysis(zone, state, imported);
     return true;
 }
 

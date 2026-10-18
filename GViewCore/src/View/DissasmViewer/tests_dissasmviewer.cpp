@@ -5972,3 +5972,106 @@ TEST_CASE("UserDataRangesCache", "[Dissasm]UserData")
     REQUIRE(wrong.AddRegion("DissasmUserData.0", buffer.data(), static_cast<uint32>(buffer.size())));
     REQUIRE(ReadUserDataRanges(wrong, *dissasmInstance.zone).empty());
 }
+
+TEST_CASE("UserDataUndo", "[Dissasm]UserData")
+{
+    const auto file = UserDataSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // two edits: A on the string, then D on the dword; each one is recorded with the ranges it replaced
+    auto before = zone.userDataRanges;
+    REQUIRE(zone.DefineUserString(0x10));
+    zone.RecordUserDataEdit(before, 0x10);
+    before = zone.userDataRanges;
+    REQUIRE(zone.DefineUserData(0x19));
+    zone.RecordUserDataEdit(before, 0x19);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.CanUndoEdit()); // the history survives the new analysis
+
+    // Ctrl+Z: the dword is code again (the zone needs a new analysis), the string stays
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->reanalyze);
+    REQUIRE(place->address == std::optional<uint64>(0x19));
+    REQUIRE(zone.userDataRanges.size() == 1);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.CanRedoEdit());
+    REQUIRE(dissasmInstance.GetListing().find("db     0x11") == std::string::npos);
+    // Ctrl+Y: the db again
+    place = zone.RedoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(zone.userDataRanges.size() == 2);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "db     0x11").size() > 0);
+    // the first edit is still there
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.userDataRanges.empty());
+}
+
+TEST_CASE("UserDataReanalysisInSteps", "[Dissasm]UserData")
+{
+    // many functions: the new analysis continues in steps; the names of the user come back when it ends
+    auto file = MakeManyFunctions(4000);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(11 * 100) == "sub_14000144C");
+    REQUIRE(zone.ApplyUserLabelName(11 * 100, "function100"));
+    const uint32 linesBefore = zone.GetDisplayLinesCount();
+
+    REQUIRE(zone.DefineUserData(11 * 2000 + 4)); // the call of a function: db
+    auto initData           = dissasmInstance.lastInitData;
+    initData.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmReanalysis state;
+    REQUIRE(BeginCodeZoneReanalysis(zone, initData, state));
+    REQUIRE(zone.IsDeepScanPending());
+    uint32 steps = 0;
+    while (!zone.ContinueDeepScan(std::chrono::steady_clock::now()))
+        REQUIRE(++steps < 100000);
+    zone.CommitDeepScan();
+    DissasmAnnotationsImport imported;
+    FinishCodeZoneReanalysis(zone, state, imported);
+    REQUIRE(imported.names == 1);
+    REQUIRE(zone.GetLabelNameAt(11 * 100) == "function100");
+    // db 0xe8, then the bytes of the call target decoded alone: more lines than before
+    REQUIRE(zone.GetDisplayLinesCount() > linesBefore);
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "db     0xe8").size() > 0);
+}
+
+TEST_CASE("UserDataUtf16String", "[Dissasm]UserData")
+{
+    std::vector<unsigned char> file = { 0xC3, 0xCC, 0xCC, 0xCC }; // 0x00: ret
+    for (const char c : std::string_view("Hi there!")) {          // 0x04: L"Hi there!"
+        file.push_back(static_cast<unsigned char>(c));
+        file.push_back(0);
+    }
+    file.insert(file.end(), { 0x00, 0x00 });
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.DefineUserString(0x04));
+    REQUIRE(zone.userDataRanges.size() == 1);
+    REQUIRE(zone.userDataRanges[0] == DissasmInstructionSet::DataRange{ 0x04, 0x04 + 20, DissasmInstructionSet::UTF16_STRING });
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "du     \"Hi there\"").size() > 0); // 8 characters per line
+    REQUIRE(FindListingLine(listing, "du     \"!\", 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "int3").size() > 0);
+}

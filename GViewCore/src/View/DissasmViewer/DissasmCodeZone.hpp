@@ -33,7 +33,7 @@ std::string ParseAssistantSuggestedName(std::string_view answer);
 
 // An edit of the user with what it replaced: it can be undone and redone (Ctrl+Z / Ctrl+Y)
 struct DissasmEdit {
-    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone };
+    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges };
     Kind kind = Kind::Comment;
     DissasmCommentAnchor anchor;              // Comment
     uint64 address     = 0;                   // LabelName: the label; VariableName: the function; DecimalOperand: the instruction
@@ -41,12 +41,19 @@ struct DissasmEdit {
     uint32 numberIndex = 0;                   // DecimalOperand
     std::optional<std::string> before, after; // Comment (none: no comment), LabelName, VariableName
     DissasmCollapsibleZone zone;              // AddZone / RemoveZone
+    std::vector<DissasmInstructionSet::DataRange> rangesBefore, rangesAfter; // DataRanges (address: the edited line)
 };
+// the edits that can be undone / redone
+struct DissasmEditHistory {
+    std::vector<DissasmEdit> undo, redo;
+};
+struct DissasmReanalysis; // DissasmAnnotations.hpp
 // where an undone / redone edit is (relative address of a line, or a line of the expanded layout): the cursor goes there
 struct DissasmEditPlace {
     std::optional<uint64> address;
     std::optional<uint32> expandedLine;
-    bool onLabel = false; // the edit is on the label (or a local variable) of the address, not on its instruction
+    bool onLabel    = false; // the edit is on the label (or a local variable) of the address, not on its instruction
+    bool reanalyze  = false; // the data defined by the user changed: the zone needs a new analysis (ReanalyzeCodeZone)
 };
 
 // a call between two functions (DissasmCodeZone::GetCallers / GetCallees)
@@ -269,6 +276,15 @@ struct DissasmCodeZone : public ParseZone {
         return !redoEdits.empty();
     }
     void ClearEditHistory();
+    // the history taken before a new analysis and given back after it: the edits of the collapsible zones are dropped (they are kept by
+    // their lines, which the new analysis changes), the others are kept by address
+    DissasmEditHistory TakeEditHistory();
+    void RestoreEditHistory(DissasmEditHistory history);
+    // D / A / U: the data ranges before the change (userDataRanges has the new ones); `address` is the edited line
+    void RecordUserDataEdit(std::vector<DissasmInstructionSet::DataRange> before, uint64 address);
+    // a new analysis that continues in the background (BeginCodeZoneReanalysis): the annotations come back when its deep scan ends
+    std::unique_ptr<DissasmReanalysis> pendingReanalysis;
+    std::optional<uint64> pendingReanalysisAddress; // the line to show again then
 
     // the suggestions of the assistant on a shown line: the comment of the line, the name suggested for its label
     bool GetAIComment(const DissasmAsmPreCacheLine& line, std::string& comment) const;

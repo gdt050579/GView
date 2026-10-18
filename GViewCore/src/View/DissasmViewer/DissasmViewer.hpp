@@ -64,7 +64,13 @@ namespace View
                 return next == modeChanges.begin() ? defaultMode : (next - 1)->second;
             }
             // the data inside the code found by the analysis (the jump tables of the switches) or defined by the user (IDA D / A): data lines
-            // of `unit` bytes (1, 2, 4, 8), unit 0: an ASCII string
+            // of `unit` bytes (1, 2, 4, 8), or a string (ASCII_STRING, UTF16_STRING)
+            static constexpr uint8 ASCII_STRING = 0;
+            static constexpr uint8 UTF16_STRING = 0x10;
+            static bool IsValidDataUnit(uint64 unit)
+            {
+                return unit == ASCII_STRING || unit == UTF16_STRING || unit == 1 || unit == 2 || unit == 4 || unit == 8;
+            }
             struct DataRange {
                 uint64 start; // relative addresses [start, end)
                 uint64 end;
@@ -893,8 +899,10 @@ namespace View
             // IDA D / A / U on the cursor line: the data of the user changes, the zone is analyzed again (its annotations are kept)
             enum class UserDataEdit : uint8 { Data, String, Undefine };
             void DefineUserData(UserDataEdit edit);
-            // the zone analyzed again at once (ReanalyzeCodeZone); the cursor goes back to `keepAddress` (relative) when given
-            bool ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress);
+            // the zone analyzed again; the cursor goes back to `keepAddress` (relative) when given. background: a big zone shows its lines at
+            // once and its deep scan continues in the frame updates (the annotations come back when it ends, EndDeepScan); otherwise the whole
+            // analysis runs now (ReanalyzeCodeZone)
+            bool ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background);
             void FillCodeZoneInitData(DissasmCodeZoneInitData& initData, DrawLineInfo* dli, DissasmCodeZone* zone);
             int PrintCursorValueInfo(int x, int y, Renderer& r);
             void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);

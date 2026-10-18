@@ -1,4 +1,5 @@
 #include "DissasmCodeZone.hpp"
+#include "DissasmAnnotations.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
@@ -1668,7 +1669,7 @@ bool DissasmCodeZone::DefineUserData(uint64 address)
           std::find_if(userDataRanges.begin(), userDataRanges.end(), [address](const auto& range) { return address >= range.start && address < range.end; });
     if (found != userDataRanges.end()) {
         start = found->start;
-        unit  = found->unit == 0 || found->unit >= 8 ? 1 : static_cast<uint8>(found->unit * 2); // db -> dw -> dd -> dq -> db; a string -> db
+        unit  = found->unit == DissasmInstructionSet::ASCII_STRING || found->unit >= 8 ? 1 : static_cast<uint8>(found->unit * 2); // db -> dw -> dd -> dq -> db; a string -> db
     }
     if (start + unit > codeSize)
         unit = 1;
@@ -1686,17 +1687,25 @@ bool DissasmCodeZone::DefineUserString(uint64 address)
     const auto view = obj->GetData().Get(cachedCodeOffsets[0].offset + address, static_cast<uint32>(std::min<uint64>(codeSize - address, MAX_STRING_SIZE)), false);
     if (!view.IsValid())
         return false;
-    size_t length = 0;
-    while (length < view.GetLength()) {
-        const uint8 value = view.GetData()[length];
-        if (!((value >= 0x20 && value < 0x7F) || value == '\t' || value == '\r' || value == '\n'))
-            break;
-        length++;
+    const auto isText = [](uint8 value) { return (value >= 0x20 && value < 0x7F) || value == '\t' || value == '\r' || value == '\n'; };
+    const uint8* bytes = view.GetData();
+    const size_t size  = view.GetLength();
+    // UTF-16 (the text of the Windows APIs): a character, a zero, at least 2 of them
+    size_t characters = 0;
+    while (2 * characters + 1 < size && isText(bytes[2 * characters]) && bytes[2 * characters + 1] == 0)
+        characters++;
+    if (characters >= 2) {
+        const bool endsWithZero = 2 * characters + 1 < size && bytes[2 * characters] == 0 && bytes[2 * characters + 1] == 0;
+        SetUserDataRange({ address, address + 2 * characters + (endsWithZero ? 2u : 0u), DissasmInstructionSet::UTF16_STRING });
+        return true;
     }
+    size_t length = 0;
+    while (length < size && isText(bytes[length]))
+        length++;
     if (length == 0)
         return false;
-    const bool endsWithZero = length < view.GetLength() && view.GetData()[length] == 0;
-    SetUserDataRange({ address, address + length + (endsWithZero ? 1u : 0u), 0 });
+    const bool endsWithZero = length < size && bytes[length] == 0;
+    SetUserDataRange({ address, address + length + (endsWithZero ? 1u : 0u), DissasmInstructionSet::ASCII_STRING });
     return true;
 }
 
@@ -2407,6 +2416,33 @@ void DissasmCodeZone::ClearEditHistory()
     redoEdits.clear();
 }
 
+DissasmEditHistory DissasmCodeZone::TakeEditHistory()
+{
+    const auto byLine = [](const DissasmEdit& edit) { return edit.kind == DissasmEdit::Kind::AddZone || edit.kind == DissasmEdit::Kind::RemoveZone; };
+    DissasmEditHistory history{ std::move(undoEdits), std::move(redoEdits) };
+    history.undo.erase(std::remove_if(history.undo.begin(), history.undo.end(), byLine), history.undo.end());
+    history.redo.erase(std::remove_if(history.redo.begin(), history.redo.end(), byLine), history.redo.end());
+    undoEdits.clear();
+    redoEdits.clear();
+    return history;
+}
+
+void DissasmCodeZone::RestoreEditHistory(DissasmEditHistory history)
+{
+    undoEdits = std::move(history.undo);
+    redoEdits = std::move(history.redo);
+}
+
+void DissasmCodeZone::RecordUserDataEdit(std::vector<DissasmInstructionSet::DataRange> before, uint64 address)
+{
+    DissasmEdit edit;
+    edit.kind         = DissasmEdit::Kind::DataRanges;
+    edit.address      = address;
+    edit.rangesBefore = std::move(before);
+    edit.rangesAfter  = userDataRanges;
+    RecordEdit(std::move(edit));
+}
+
 bool DissasmCodeZone::RenameLabel(uint32 expandedLine, const std::string& currentName, const std::string& newName)
 {
     auto& annotations = dissasmType.annotations;
@@ -2462,6 +2498,9 @@ bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
             decimalOperands[edit.address] = mask;
         break;
     }
+    case DissasmEdit::Kind::DataRanges:
+        userDataRanges = forward ? edit.rangesAfter : edit.rangesBefore; // the caller analyzes the zone again (DissasmEditPlace::reanalyze)
+        break;
     case DissasmEdit::Kind::AddZone:
     case DissasmEdit::Kind::RemoveZone: {
         const bool add = (edit.kind == DissasmEdit::Kind::AddZone) == forward;
@@ -2493,8 +2532,9 @@ static DissasmEditPlace GetEditPlace(const DissasmEdit& edit)
         place.address = edit.anchor.address;
     else
         place.address = edit.address;
-    place.onLabel = edit.kind == DissasmEdit::Kind::LabelName || edit.kind == DissasmEdit::Kind::VariableName ||
+    place.onLabel   = edit.kind == DissasmEdit::Kind::LabelName || edit.kind == DissasmEdit::Kind::VariableName ||
                     (edit.kind == DissasmEdit::Kind::Comment && edit.anchor.kind != DissasmCommentAnchor::Kind::Instruction);
+    place.reanalyze = edit.kind == DissasmEdit::Kind::DataRanges;
     return place;
 }
 

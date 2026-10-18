@@ -202,13 +202,16 @@ bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_i
 {
     if (available == 0)
         return false;
-    if (unit == 0) {
-        // a string defined by the user: up to DISSASM_MAX_LINE_SIZE bytes per line, db "text", 0 (the bytes that are not printable as numbers)
-        const size_t width = std::min<size_t>(available, DISSASM_MAX_LINE_SIZE);
+    const bool isUtf16 = unit == DissasmInstructionSet::UTF16_STRING && available >= 2;
+    if (unit == DissasmInstructionSet::ASCII_STRING || isUtf16) {
+        // a string defined by the user: up to DISSASM_MAX_LINE_SIZE bytes per line, db "text", 0 / du "text", 0 (UTF-16: 2 bytes per
+        // character); what is not printable as numbers
+        const size_t charSize = isUtf16 ? 2 : 1;
+        const size_t width    = std::min<size_t>(available, DISSASM_MAX_LINE_SIZE) / charSize * charSize;
         std::string text;
         bool inQuotes = false;
-        for (size_t index = 0; index < width; index++) {
-            const uint8_t value = (*code)[index];
+        for (size_t index = 0; index < width; index += charSize) {
+            const uint32_t value = isUtf16 ? static_cast<uint32_t>((*code)[index] | ((*code)[index + 1] << 8)) : (*code)[index];
             if (value >= 0x20 && value < 0x7F && value != '"') {
                 if (!inQuotes)
                     text += text.empty() ? "\"" : ", \"";
@@ -220,19 +223,19 @@ bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_i
                 text.push_back('"');
             inQuotes = false;
             char number[8];
-            snprintf(number, sizeof(number), value == 0 ? "0" : "0x%02x", static_cast<unsigned int>(value));
+            snprintf(number, sizeof(number), value == 0 ? "0" : (isUtf16 ? "0x%04x" : "0x%02x"), static_cast<unsigned int>(value));
             text += text.empty() ? "" : ", ";
             text += number;
         }
         if (inQuotes)
             text.push_back('"');
-        SetDataLine(insn, *address, *code, width, isArm ? ".ascii" : "db", text.c_str());
+        SetDataLine(insn, *address, *code, width, isUtf16 ? "du" : (isArm ? ".ascii" : "db"), text.c_str());
         *code += width;
         *size -= width;
         *address += width;
         return true;
     }
-    const size_t width = available >= unit ? unit : 1;
+    const size_t width = available >= unit && unit <= 8 ? unit : 1; // the last byte of a UTF-16 string of an odd size: db
     uint64_t value     = 0;
     for (size_t index = 0; index < width; index++)
         value |= static_cast<uint64_t>((*code)[index]) << (8 * index);

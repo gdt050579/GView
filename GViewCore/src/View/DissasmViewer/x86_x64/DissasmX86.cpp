@@ -1317,6 +1317,23 @@ bool Instance::HasPendingDeepScans() const
 
 void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
 {
+    // the end of a new analysis (D / A / U, an undo of them): the annotations of the user come back (not the data of the cache, older)
+    if (zone->pendingReanalysis) {
+        if (cancel)
+            zone->CancelDeepScan();
+        else
+            zone->CommitDeepScan();
+        DissasmAnnotationsImport imported;
+        FinishCodeZoneReanalysis(*zone, *zone->pendingReanalysis, imported);
+        const auto address = zone->pendingReanalysisAddress;
+        zone->pendingReanalysis.reset();
+        zone->pendingReanalysisAddress.reset();
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+        zone->asmPreCacheData.Clear();
+        if (address.has_value())
+            MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
+        return;
+    }
     // until the scan ends the lines of the zone are its instructions: the cursor stays on the same instruction (the view moves with it)
     const uint32 cursorLine = Cursor.startViewLine + Cursor.lineInView;
     const uint32 firstLine  = zone->startLineIndex + 2u; // +1 for the title, +1 for the columns header
@@ -1627,8 +1644,8 @@ void Instance::ImportAnnotations()
     DissasmAnnotationsImport result;
     std::string error;
     FinishDeepScans(); // the labels of the analysis receive the names
-    // the zones whose data (D / A) changed are analyzed again
-    if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt); })) {
+    // the zones whose data (D / A) changed are analyzed again (at once: the names of the document go to the new labels)
+    if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); })) {
         Dialogs::MessageBox::ShowError("Error", error);
         return;
     }
@@ -2081,6 +2098,7 @@ void Instance::DefineUserData(UserDataEdit edit)
         return;
     }
     const uint64 address = asmLine.address; // a label / a variable: the instruction they belong to
+    const auto before    = zone->userDataRanges;
     bool changed         = false;
     if (edit == UserDataEdit::Data)
         changed = zone->DefineUserData(address);
@@ -2093,11 +2111,13 @@ void Instance::DefineUserData(UserDataEdit edit)
         if (!changed)
             Dialogs::MessageBox::ShowNotification("Info", "This line is not data defined with D / string!");
     }
-    if (changed)
-        ReanalyzeZone(zone, address);
+    if (!changed)
+        return;
+    zone->RecordUserDataEdit(before, address); // Ctrl+Z gives the previous data back
+    ReanalyzeZone(zone, address, true);
 }
 
-bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress)
+bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background)
 {
     if (zone->IsDeepScanPending()) {
         zone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
@@ -2105,14 +2125,27 @@ bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAd
     }
     DissasmCodeZoneInitData initData{};
     FillCodeZoneInitData(initData, nullptr, zone);
-    DissasmAnnotationsImport imported;
-    if (!ReanalyzeCodeZone(*zone, initData, imported)) {
+    if (!background) {
+        initData.deepScanBudget.reset();
+        initData.lineCountBudget.reset();
+    }
+    auto state = std::make_unique<DissasmReanalysis>();
+    if (!BeginCodeZoneReanalysis(*zone, initData, *state)) {
         Dialogs::MessageBox::ShowError("Error", "The dissasm zone could not be analyzed again!");
         return false;
     }
     AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
     zone->asmPreCacheData.Clear();
     drawnLinesGeneration++;
+    if (zone->IsDeepScanPending()) {
+        // a big zone: its instructions are shown now, the labels and the annotations when the scan ends (EndDeepScan)
+        zone->pendingReanalysis        = std::move(state);
+        zone->pendingReanalysisAddress = keepAddress;
+    } else {
+        DissasmAnnotationsImport imported;
+        FinishCodeZoneReanalysis(*zone, *state, imported);
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // a collapsed zone placed again
+    }
     if (keepAddress.has_value())
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + keepAddress.value(), false);
     return true;
@@ -2822,6 +2855,7 @@ DissasmCodeZone* Instance::GetCursorOrFirstCodeZone()
 
 void Instance::UndoOrRedo(bool redo)
 {
+    FinishDeepScans(); // a new analysis in progress ends first (its history comes back with it)
     const auto zone = GetCursorOrFirstCodeZone();
     if (!zone || !zone->isInit || !zone->CanReachAsmLines())
         return;
@@ -2832,6 +2866,10 @@ void Instance::UndoOrRedo(bool redo)
     const auto place = redo ? zone->RedoEdit() : zone->UndoEdit();
     if (!place.has_value()) {
         Dialogs::MessageBox::ShowNotification(redo ? "Redo" : "Undo", "The edit can not be applied any more (its line changed)!");
+        return;
+    }
+    if (place->reanalyze) { // D / A / U: the previous data ranges, the zone is analyzed again
+        ReanalyzeZone(zone, place->address, true);
         return;
     }
     AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title: a zone added / removed changes the lines

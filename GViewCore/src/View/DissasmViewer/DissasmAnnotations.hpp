@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Internal.hpp"
+#include "DissasmCodeZone.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -52,6 +53,15 @@ bool ImportAnnotationsDocument(
       const std::function<bool(DissasmCodeZone&)>& reanalyze);
 
 struct DissasmCodeZoneInitData;
+// a new analysis of a zone: the annotations of the user and the history of the edits, given back when the analysis ends
+struct DissasmReanalysis {
+    nlohmann::json annotations;
+    DissasmEditHistory history;
+};
+// the new analysis starts (InitZone with the budgets of initData: the deep scan may continue, IsDeepScanPending); false when the zone can
+// not be initialized. FinishCodeZoneReanalysis once the deep scan ended (committed or cancelled): the annotations and the history come back
+bool BeginCodeZoneReanalysis(DissasmCodeZone& zone, DissasmCodeZoneInitData& initData, DissasmReanalysis& state);
+void FinishCodeZoneReanalysis(DissasmCodeZone& zone, DissasmReanalysis& state, DissasmAnnotationsImport& imported);
 // The zone analyzed again (its user data ranges changed: D / A / U): the annotations of the user are exported, the zone is initialized again
 // (the line count and the deep scan run at once) and the annotations are imported into the new analysis. False when the zone can not be
 // initialized.

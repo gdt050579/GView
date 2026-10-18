@@ -400,7 +400,7 @@ std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::ReadUs
         DissasmInstructionSet::DataRange range{};
         if (!read(&range.start, sizeof(range.start)) || !read(&range.end, sizeof(range.end)) || !read(&range.unit, sizeof(range.unit)))
             return {};
-        const bool validUnit = range.unit == 0 || range.unit == 1 || range.unit == 2 || range.unit == 4 || range.unit == 8;
+        const bool validUnit = DissasmInstructionSet::IsValidDataUnit(range.unit);
         if (range.start < range.end && range.end <= zone.zoneDetails.size && validUnit && (ranges.empty() || ranges.back().end <= range.start))
             ranges.push_back(range);
     }
