@@ -392,6 +392,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_IMPORT_ANNOTATIONS:
             ImportAnnotations();
             return true;
+        case COMMAND_CREATE_SIGNATURES:
+            CreateSignatures();
+            return true;
+        case COMMAND_APPLY_SIGNATURES:
+            ApplySignatures();
+            return true;
         case COMMAND_TOGGLE_AI_SUGGESTIONS:
             showAISuggestions = !showAISuggestions;
             RefreshDrawnLines();

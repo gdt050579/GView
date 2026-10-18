@@ -767,6 +767,8 @@ namespace View
             // the annotations of the user as a plain text (JSON) file keyed by the addresses: written / added to the analysed zones
             void ExportAnnotations();
             void ImportAnnotations();
+            void CreateSignatures();
+            void ApplySignatures();
             void ProcessSpaceKey(bool goToEntryPoint = false);
 
             // jumps history (back / forward)

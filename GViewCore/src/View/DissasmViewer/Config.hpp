@@ -38,6 +38,8 @@ constexpr uint32 COMMAND_FIND                  = 131;
 constexpr uint32 COMMAND_TOGGLE_KEY_PROFILE    = 132;
 constexpr uint32 COMMAND_EXPORT_ANNOTATIONS    = 133;
 constexpr uint32 COMMAND_IMPORT_ANNOTATIONS    = 134;
+constexpr uint32 COMMAND_CREATE_SIGNATURES     = 135;
+constexpr uint32 COMMAND_APPLY_SIGNATURES      = 136;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -229,6 +231,12 @@ namespace View
             inline static KeyboardControl ImportAnnotationsCommand = {
                 Input::Key::None, "ImportAnnotations", "Add the names, comments, variables and zones of a JSON annotations file", COMMAND_IMPORT_ANNOTATIONS
             };
+            inline static KeyboardControl CreateSignaturesCommand = {
+                Input::Key::None, "CreateSignatures", "Write the signatures of the named functions to a JSON file (FLIRT like)", COMMAND_CREATE_SIGNATURES
+            };
+            inline static KeyboardControl ApplySignaturesCommand = {
+                Input::Key::None, "ApplySignatures", "Name the sub_ functions that match a JSON signatures file", COMMAND_APPLY_SIGNATURES
+            };
 
             inline static KeyboardControl ShowGraphCommand = {
                 Input::Key::Ctrl | Input::Key::B, "ShowGraph", "Show the graph of the basic blocks of the current function", COMMAND_SHOW_GRAPH
@@ -366,10 +374,12 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 30> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 32> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
                 ExportAnnotationsCommand,
                 ImportAnnotationsCommand,
+                CreateSignaturesCommand,
+                ApplySignaturesCommand,
                 GoToAddressCommand,
                 FindCommand,
                 ToggleKeyProfileCommand,

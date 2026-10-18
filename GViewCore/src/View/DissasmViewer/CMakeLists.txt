@@ -26,6 +26,8 @@ target_sources(
 	DissasmAssistantRequest.hpp
 	DissasmAnnotations.hpp
 	DissasmAnnotations.cpp
+	DissasmSignatures.hpp
+	DissasmSignatures.cpp
 	DissasmAssistantRequest.cpp
 	DissasmIOHelpers.hpp
 

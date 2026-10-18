@@ -5,6 +5,7 @@
 #include "DissasmX86LocalVariables.hpp"
 #include "X86InstructionInfo.hpp"
 #include "DissasmAnnotations.hpp"
+#include "DissasmSignatures.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>
@@ -1489,6 +1490,46 @@ static std::vector<DissasmCodeZone*> GetAnalysedCodeZones(SettingsData* settings
     return zones;
 }
 
+// a JSON document chosen by the user (at most 64 MB); false (the error was shown) when it can not be read or parsed
+static bool ReadJsonFile(const std::filesystem::path& path, std::string_view what, nlohmann::json& document)
+{
+    constexpr uint64 MAX_JSON_FILE_SIZE = 64ull * 1024 * 1024;
+    AppCUI::OS::File f;
+    std::string text;
+    LocalString<128> message;
+    if (!f.OpenRead(path) || f.GetSize() > MAX_JSON_FILE_SIZE) {
+        f.Close();
+        message.SetFormat("Failed to read the %.*s file!", static_cast<int>(what.size()), what.data());
+        Dialogs::MessageBox::ShowError("Error", message);
+        return false;
+    }
+    text.resize(static_cast<size_t>(f.GetSize()));
+    const bool read = text.empty() || f.Read(text.data(), static_cast<uint32>(text.size()));
+    f.Close();
+    document = nlohmann::json::parse(text, nullptr, false);
+    if (!read || document.is_discarded()) {
+        message.SetFormat("The %.*s file is not a valid JSON file!", static_cast<int>(what.size()), what.data());
+        Dialogs::MessageBox::ShowError("Error", message);
+        return false;
+    }
+    return true;
+}
+
+// writes the text to a file chosen by the user; false (the error was shown) when it can not be written
+static bool WriteTextFile(const std::filesystem::path& path, const std::string& text, std::string_view what)
+{
+    AppCUI::OS::File f;
+    if (!f.Create(path, true) || !f.Write(text.data(), static_cast<uint32>(text.size()))) {
+        f.Close();
+        LocalString<128> message;
+        message.SetFormat("Failed to write the %.*s file!", static_cast<int>(what.size()), what.data());
+        Dialogs::MessageBox::ShowError("Error", message);
+        return false;
+    }
+    f.Close();
+    return true;
+}
+
 void Instance::ExportAnnotations()
 {
     if (GView::App::IsExportBlockedFor(obj, "exporting the annotations of the disassembly"))
@@ -1507,13 +1548,8 @@ void Instance::ExportAnnotations()
         return;
 
     const std::string text = BuildAnnotationsDocument(zones, std::string_view(reinterpret_cast<const char*>(fileName.data()), fileName.size())).dump(2) + "\n";
-    AppCUI::OS::File f;
-    if (!f.Create(selectedPath.value(), true) || !f.Write(text.data(), static_cast<uint32>(text.size()))) {
-        f.Close();
-        Dialogs::MessageBox::ShowError("Error", "Failed to write the annotations file!");
+    if (!WriteTextFile(selectedPath.value(), text, "annotations"))
         return;
-    }
-    f.Close();
     Dialogs::MessageBox::ShowNotification("Info", "The annotations were written (names, comments, variables, zones, suggestions).");
 }
 
@@ -1528,22 +1564,9 @@ void Instance::ImportAnnotations()
     const auto selectedPath              = Dialogs::FileDialog::ShowOpenFileWindow("", "Annotations:json", filePath.parent_path());
     if (!selectedPath.has_value())
         return;
-    constexpr uint64 MAX_ANNOTATIONS_FILE_SIZE = 64ull * 1024 * 1024;
-    AppCUI::OS::File f;
-    std::string text;
-    if (!f.OpenRead(selectedPath.value()) || f.GetSize() > MAX_ANNOTATIONS_FILE_SIZE) {
-        f.Close();
-        Dialogs::MessageBox::ShowError("Error", "Failed to read the annotations file!");
+    nlohmann::json document;
+    if (!ReadJsonFile(selectedPath.value(), "annotations", document))
         return;
-    }
-    text.resize(static_cast<size_t>(f.GetSize()));
-    const bool read = text.empty() || f.Read(text.data(), static_cast<uint32>(text.size()));
-    f.Close();
-    nlohmann::json document = nlohmann::json::parse(text, nullptr, false);
-    if (!read || document.is_discarded()) {
-        Dialogs::MessageBox::ShowError("Error", "The annotations file is not a valid JSON file!");
-        return;
-    }
 
     DissasmAnnotationsImport result;
     std::string error;
@@ -1565,6 +1588,73 @@ void Instance::ImportAnnotations()
           result.suggestedNames + result.aiComments,
           result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
     Dialogs::MessageBox::ShowNotification("Annotations", summary.GetText());
+}
+
+void Instance::CreateSignatures()
+{
+    if (GView::App::IsExportBlockedFor(obj, "exporting the function signatures of the disassembly"))
+        return;
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and create the signatures again!");
+        return;
+    }
+    if (HasPendingDeepScans()) { // the functions and their names come from the analysis
+        Dialogs::MessageBox::ShowNotification("Info", "The analysis is still running: create the signatures when it ends!");
+        return;
+    }
+    const auto document = BuildSignaturesDocument(zones);
+    const auto count    = document["signatures"].size();
+    if (count == 0) {
+        Dialogs::MessageBox::ShowNotification(
+              "Info", "No named function has a signature: the functions need names (symbols, renames) and enough bytes that do not depend on addresses.");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    LocalString<256> defaultName;
+    defaultName.SetFormat("%s.signatures.json", reinterpret_cast<const char*>(filePath.filename().u8string().c_str()));
+    const auto selectedPath = Dialogs::FileDialog::ShowSaveFileWindow(defaultName, "Signatures:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+    if (!WriteTextFile(selectedPath.value(), document.dump(2) + "\n", "signatures"))
+        return;
+    LocalString<128> summary;
+    summary.SetFormat("Signatures written: %u (one for every named function long enough).", static_cast<uint32>(count));
+    Dialogs::MessageBox::ShowNotification("Signatures", summary.GetText());
+}
+
+void Instance::ApplySignatures()
+{
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and apply the signatures again!");
+        return;
+    }
+    if (HasPendingDeepScans()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The analysis is still running: apply the signatures when it ends!");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto selectedPath              = Dialogs::FileDialog::ShowOpenFileWindow("", "Signatures:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+    nlohmann::json document;
+    if (!ReadJsonFile(selectedPath.value(), "signatures", document))
+        return;
+    DissasmSignaturesApply result;
+    std::string error;
+    if (!ApplySignaturesDocument(document, zones, result, error)) {
+        Dialogs::MessageBox::ShowError("Error", error);
+        return;
+    }
+    RefreshDrawnLines();
+    LocalString<256> summary;
+    summary.SetFormat(
+          "Functions named: %u (signatures read: %u)%s",
+          result.named,
+          result.signatures,
+          result.ambiguous > 0 ? " (some functions match several names or a name matches several functions: left as they are)" : "");
+    Dialogs::MessageBox::ShowNotification("Signatures", summary.GetText());
 }
 
 void Instance::CommandExportAsmFile()

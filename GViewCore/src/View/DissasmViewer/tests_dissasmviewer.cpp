@@ -4,6 +4,7 @@
 #include "DissasmAnalysisExport.hpp"
 #include "DissasmAssistantRequest.hpp"
 #include "DissasmAnnotations.hpp"
+#include "DissasmSignatures.hpp"
 #include <atomic>
 #include <thread>
 #include <nlohmann/json.hpp>
@@ -5187,4 +5188,204 @@ TEST_CASE("AnnotationsImportErrors", "[Dissasm]Annotations")
     REQUIRE(ImportAnnotationsDocument(document, zones, result, error));
     REQUIRE(result.comments == 1);
     REQUIRE(result.skipped == 3);
+}
+
+// x64: the entry point calls two functions (0x20, 0x40) that do not depend on their place but for a RIP relative lea
+static std::vector<unsigned char> SignaturesSampleCode(bool sameFunctions)
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0xE8, 0x32, 0x00, 0x00, 0x00, // 0x09: call 0x40
+        0x5D,                         // 0x0e: pop rbp
+        0xC3,                         // 0x0f: ret
+    };
+    const std::vector<unsigned char> addMul = {
+        0x48, 0x89, 0xC8,                         // mov rax, rcx
+        0x48, 0x01, 0xD0,                         // add rax, rdx
+        0x48, 0x0F, 0xAF, 0xC1,                   // imul rax, rcx
+        0x48, 0x83, 0xC0, 0x07,                   // add rax, 7
+        0x48, 0x8D, 0x05, 0x00, 0x01, 0x00, 0x00, // lea rax, [rip + 0x100]
+        0xC3,                                     // ret
+    };
+    const std::vector<unsigned char> negShift = {
+        0x48, 0x31, 0xC0,       // xor rax, rax
+        0x48, 0xFF, 0xC0,       // inc rax
+        0x48, 0xC1, 0xE0, 0x04, // shl rax, 4
+        0x48, 0x83, 0xE8, 0x03, // sub rax, 3
+        0x48, 0xF7, 0xD8,       // neg rax
+        0xC3,                   // ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), addMul.begin(), addMul.end());
+    file.resize(0x40, 0xCC);
+    const auto& second = sameFunctions ? addMul : negShift;
+    file.insert(file.end(), second.begin(), second.end());
+    file.resize(0x60, 0xCC);
+    return file;
+}
+
+TEST_CASE("SignaturesRoundTrip", "[Dissasm]Signatures")
+{
+    const auto file = SignaturesSampleCode(false);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+
+    // the file with the names (a build with symbols)
+    DissasmTestInstance named(file.data(), file.size(), true, layout);
+    auto& zone = *named.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x40 });
+    REQUIRE(zone.ApplyUserLabelName(0x20, "add_mul"));
+    REQUIRE(zone.ApplyUserLabelName(0x40, "neg_shift"));
+
+    // the targets of the calls and the RIP relative displacements are masked; the padding up to the next function is not in the pattern
+    // (the size of the function keeps it)
+    const auto entry = BuildFunctionPattern(zone, 0x00);
+    REQUIRE(entry.has_value());
+    REQUIRE(entry->functionSize == 0x20);
+    REQUIRE(entry->ToText() == "55 48 89 E5 E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 5D C3");
+    REQUIRE(entry->FixedBytes() == 8); // not enough for a signature
+    const auto addMul = BuildFunctionPattern(zone, 0x20);
+    REQUIRE(addMul.has_value());
+    REQUIRE(addMul->ToText() == "48 89 C8 48 01 D0 48 0F AF C1 48 83 C0 07 48 8D 05 ?? ?? ?? ?? C3");
+    REQUIRE(addMul->functionSize == 0x20);
+
+    const auto document = BuildSignaturesDocument({ &zone });
+    INFO(document.dump(2));
+    REQUIRE(document["format"].get<std::string>() == DISSASM_SIGNATURES_FORMAT);
+    REQUIRE(document["architecture"].get<std::string>() == "x64");
+    REQUIRE(document["signatures"].size() == 2); // the entry point keeps its automatic name (and is too short)
+    REQUIRE(document["signatures"][0]["name"].get<std::string>() == "add_mul");
+    REQUIRE(document["signatures"][0]["size"].get<uint64>() == 0x20);
+
+    // the stripped file, at another address: the functions get their names
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance stripped(file.data(), file.size(), true, layout);
+    auto& other = *stripped.zone;
+    REQUIRE(other.GetLabelNameAt(0x20) == "sub_140001020");
+    DissasmSignaturesApply result;
+    std::string error;
+    REQUIRE(ApplySignaturesDocument(nlohmann::json::parse(document.dump()), { &other }, result, error));
+    REQUIRE(result.signatures == 2);
+    REQUIRE(result.named == 2);
+    REQUIRE(result.ambiguous == 0);
+    REQUIRE(other.GetLabelNameAt(0x20) == "add_mul");
+    REQUIRE(other.GetLabelNameAt(0x40) == "neg_shift");
+    REQUIRE(other.GetLabelNameAt(0x00) == "EntryPoint");
+    REQUIRE_FALSE(other.CanUndoEdit());
+
+    // applied again: the names are there already
+    result = {};
+    REQUIRE(ApplySignaturesDocument(document, { &other }, result, error));
+    REQUIRE(result.named == 0);
+}
+
+TEST_CASE("SignaturesAmbiguousAndErrors", "[Dissasm]Signatures")
+{
+    auto file = SignaturesSampleCode(false);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance named(file.data(), file.size(), true, layout);
+    REQUIRE(named.zone->ApplyUserLabelName(0x20, "add_mul"));
+    const auto document = BuildSignaturesDocument({ named.zone.get() });
+    REQUIRE(document["signatures"].size() == 1);
+
+    // the same code twice: the name would go to two functions, none gets it
+    const auto twice = SignaturesSampleCode(true);
+    DissasmTestInstance copies(twice.data(), twice.size(), true, layout);
+    std::vector<DissasmCodeZone*> zones{ copies.zone.get() };
+    DissasmSignaturesApply result;
+    std::string error;
+    REQUIRE(ApplySignaturesDocument(document, zones, result, error));
+    REQUIRE(result.named == 0);
+    REQUIRE(result.ambiguous == 2);
+    REQUIRE(copies.zone->GetLabelNameAt(0x20) == "sub_20");
+
+    // two names for the same bytes: the function is ambiguous
+    auto twoNames                      = document;
+    twoNames["signatures"].push_back(twoNames["signatures"][0]);
+    twoNames["signatures"][1]["name"] = "add_mul_copy";
+    DissasmTestInstance single(file.data(), file.size(), true, layout);
+    result = {};
+    REQUIRE(ApplySignaturesDocument(twoNames, { single.zone.get() }, result, error));
+    REQUIRE(result.named == 0);
+    REQUIRE(result.ambiguous == 1);
+
+    // not a signatures file, a newer version, another architecture
+    REQUIRE_FALSE(ApplySignaturesDocument(nlohmann::json{ { "format", "other" } }, zones, result, error));
+    auto newer       = document;
+    newer["version"] = DISSASM_SIGNATURES_VERSION + 1;
+    REQUIRE_FALSE(ApplySignaturesDocument(newer, zones, result, error));
+    auto arm64            = document;
+    arm64["architecture"] = "ARM64";
+    REQUIRE_FALSE(ApplySignaturesDocument(arm64, zones, result, error));
+    REQUIRE(error.find("ARM64") != std::string::npos);
+
+    // the bad entries are skipped
+    auto bad                          = document;
+    bad["signatures"][0]["pattern"]   = "48 8Z";
+    bad["signatures"].push_back({ { "name", "short" }, { "pattern", "48 89 C8" } });
+    result = {};
+    REQUIRE(ApplySignaturesDocument(bad, { single.zone.get() }, result, error));
+    REQUIRE(result.signatures == 0);
+    REQUIRE(result.named == 0);
+}
+
+TEST_CASE("SignaturesArm64", "[Dissasm]Signatures")
+{
+    std::vector<unsigned char> file = {
+        0x08, 0x00, 0x00, 0x94, // 0x00: bl 0x20
+        0xC0, 0x03, 0x5F, 0xD6, // 0x04: ret
+    };
+    while (file.size() < 0x20)
+        file.insert(file.end(), { 0x1F, 0x20, 0x03, 0xD5 }); // nop
+    file.insert(file.end(), {
+                                  0xFD, 0x7B, 0xBF, 0xA9, // 0x20: stp x29, x30, [sp, #-0x10]!
+                                  0xFD, 0x03, 0x00, 0x91, // 0x24: mov x29, sp
+                                  0x20, 0x00, 0x80, 0x52, // 0x28: mov w0, #1
+                                  0x05, 0x00, 0x00, 0x94, // 0x2c: bl 0x40
+                                  0x00, 0x04, 0x00, 0x11, // 0x30: add w0, w0, #1
+                                  0xFD, 0x7B, 0xC1, 0xA8, // 0x34: ldp x29, x30, [sp], #0x10
+                                  0xC0, 0x03, 0x5F, 0xD6, // 0x38: ret
+                                  0x1F, 0x20, 0x03, 0xD5, // 0x3c: nop
+                                  0x40, 0x00, 0x80, 0x52, // 0x40: mov w0, #2
+                                  0xC0, 0x03, 0x5F, 0xD6, // 0x44: ret
+                            });
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance named(file.data(), file.size(), true, layout);
+    auto& zone = *named.zone;
+    REQUIRE(zone.ApplyUserLabelName(0x20, "add_one"));
+    REQUIRE(zone.ApplyUserLabelName(0x40, "two")); // too short for a signature
+
+    // the whole bl is masked (its target is in the instruction), the nop after the ret is not in the pattern
+    const auto pattern = BuildFunctionPattern(zone, 0x20);
+    REQUIRE(pattern.has_value());
+    REQUIRE(pattern->ToText() == "FD 7B BF A9 FD 03 00 91 20 00 80 52 ?? ?? ?? ?? 00 04 00 11 FD 7B C1 A8 C0 03 5F D6");
+    const auto document = BuildSignaturesDocument({ &zone });
+    INFO(document.dump(2));
+    REQUIRE(document["architecture"].get<std::string>() == "ARM64");
+    REQUIRE(document["signatures"].size() == 1);
+
+    // the stripped file at another address
+    layout.labelAddressBase = 0x400000;
+    DissasmTestInstance stripped(file.data(), file.size(), true, layout);
+    DissasmSignaturesApply result;
+    std::string error;
+    REQUIRE(ApplySignaturesDocument(document, { stripped.zone.get() }, result, error));
+    REQUIRE(result.named == 1);
+    REQUIRE(stripped.zone->GetLabelNameAt(0x20) == "add_one");
+    REQUIRE(stripped.zone->GetLabelNameAt(0x40) == "sub_400040");
+
+    // x64 signatures do not apply to ARM64 code
+    auto x64            = document;
+    x64["architecture"] = "x64";
+    REQUIRE_FALSE(ApplySignaturesDocument(x64, { stripped.zone.get() }, result, error));
 }
