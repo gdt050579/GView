@@ -329,6 +329,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_SHOW_XREFS:
             ShowXrefs();
             return true;
+        case COMMAND_SHOW_FUNCTIONS:
+            ShowFunctions();
+            return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
             RefreshDrawnLines();

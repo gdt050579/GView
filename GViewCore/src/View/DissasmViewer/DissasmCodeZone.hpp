@@ -5,6 +5,28 @@
 namespace GView::View::DissasmViewer
 {
 struct DissasmDeepScan;
+
+// a function found by the analysis (DissasmCodeZone::GetFunctions)
+struct DissasmFunctionInfo {
+    uint64 start = 0; // relative address
+    uint64 size  = 0; // the size given by the plugin (exception data), or up to the next function
+    std::string name;
+    uint32 xrefs      = 0; // the references to the function (calls, jumps, addresses taken)
+    bool isThunk      = false;
+    bool isExport     = false;
+    bool isEntryPoint = false;
+};
+
+// What the GoTo dialog accepts. A prefix chooses the kind (va:, rva:, off: / offset:, line:); otherwise the text is a label name, or else an
+// address in the shown address mode. The addresses are hexadecimal, as in IDA (140001000, 0x140001000, 140001000h); a line is decimal.
+struct DissasmGoToRequest {
+    std::string name; // a label name, looked for before the address (empty with a prefix)
+    std::optional<uint64> address;
+    DissasmPEConversionType addressType = DissasmPEConversionType::FileOffset;
+    std::optional<uint32> line;
+};
+std::optional<DissasmGoToRequest> ParseDissasmGoToText(std::string_view text, DissasmPEConversionType shownAddressType);
+
 struct DissasmCodeZone : public ParseZone {
     enum class CollapseExpandType : uint8 { Collapse, Expand, NegateCurrentState };
     uint32 lastDrawnLine      = 0; // optimization not to recompute buffer every time
@@ -58,6 +80,10 @@ struct DissasmCodeZone : public ParseZone {
 
     // the name shown for the label at the relative address (renamed or not); empty when there is no label there
     std::string GetLabelNameAt(uint64 relativeAddress) const;
+    // the relative address of the label with this name (the exact name first, then ignoring the case)
+    std::optional<uint64> FindLabelByName(std::string_view name) const;
+    // the functions of the analysis, by address; functionEntries (the plugin) gives the exports and the sizes it knows
+    std::vector<DissasmFunctionInfo> GetFunctions(const std::map<uint64, DissasmFunctionEntry>* functionEntries) const;
     // "sub_140001010+0x1A": the function that contains the relative address (its name as shown)
     std::string FormatCodeAddress(uint64 relativeAddress) const;
     // the references to the label at the relative address, shown after the label: "xrefs: sub_140001010+0x84 (call), ... +3"

@@ -3343,3 +3343,92 @@ TEST_CASE("DeepScanCancelled", "[Dissasm]DeepScan")
     REQUIRE(listing.find("EntryPoint:") == std::string::npos); // no label lines (the call operands still name their targets)
     REQUIRE(listing.find("sub_7:") == std::string::npos);
 }
+
+TEST_CASE("GoToText", "[Dissasm]GoTo")
+{
+    using Type = DissasmPEConversionType;
+    // a name or an address in the shown mode (hexadecimal, as in IDA)
+    auto request = ParseDissasmGoToText("  140001000 ", Type::VA);
+    REQUIRE(request.has_value());
+    REQUIRE(request->name == "140001000");
+    REQUIRE(request->address == 0x140001000ull);
+    REQUIRE(request->addressType == Type::VA);
+    REQUIRE(ParseDissasmGoToText("0x1A2b", Type::RVA)->address == 0x1A2Bull);
+    REQUIRE(ParseDissasmGoToText("401000h", Type::VA)->address == 0x401000ull);
+
+    // a name that is not a number
+    request = ParseDissasmGoToText("CreateFileW", Type::VA);
+    REQUIRE(request.has_value());
+    REQUIRE(request->name == "CreateFileW");
+    REQUIRE_FALSE(request->address.has_value());
+
+    // the prefixes choose the kind
+    request = ParseDissasmGoToText("rva:1000", Type::VA);
+    REQUIRE(request->name.empty());
+    REQUIRE(request->address == 0x1000ull);
+    REQUIRE(request->addressType == Type::RVA);
+    REQUIRE(ParseDissasmGoToText("VA:0x140001000", Type::FileOffset)->addressType == Type::VA);
+    REQUIRE(ParseDissasmGoToText("off:400", Type::VA)->addressType == Type::FileOffset);
+    REQUIRE(ParseDissasmGoToText("offset:400", Type::VA)->address == 0x400ull);
+    REQUIRE(ParseDissasmGoToText("line:120", Type::VA)->line == 120u);
+
+    // not valid
+    REQUIRE_FALSE(ParseDissasmGoToText("", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("   ", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("rva:xyz", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("line:12a", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("va:11112222333344445", Type::VA).has_value()); // more than 64 bits
+}
+
+TEST_CASE("FunctionsList", "[Dissasm]GoTo")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x07, 0x00, 0x00, 0x00, // 0x04: call 0x10
+        0xE8, 0x12, 0x00, 0x00, 0x00, // 0x09: call 0x20
+        0xC3,                         // 0x0e: ret
+        0xCC,                         // 0x0f
+        0x31, 0xC0,                   // 0x10: xor eax, eax
+        0xC3,                         // 0x12: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0xEB, 0xFF, 0xFF, 0xFF, 0xC3 }); // 0x20: call 0x10; ret (the export "Worker")
+    file.resize(0x30, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    layout.functionEntries  = { { 0x20, { "Worker", 6, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    const auto functions = zone.GetFunctions(&layout.functionEntries);
+    REQUIRE(functions.size() == 3);
+    REQUIRE(functions[0].name == "EntryPoint");
+    REQUIRE(functions[0].isEntryPoint);
+    REQUIRE(functions[0].size == 0x10);
+    REQUIRE(functions[1].name == "sub_140001010");
+    REQUIRE(functions[1].start == 0x10);
+    REQUIRE(functions[1].xrefs == 2); // called by the entry point and by Worker
+    REQUIRE(functions[1].size == 0x10);
+    REQUIRE(functions[2].name == "Worker");
+    REQUIRE(functions[2].isExport);
+    REQUIRE(functions[2].size == 6); // the size given by the plugin
+    REQUIRE(functions[2].xrefs == 1);
+
+    // the labels by name: exact, then ignoring the case
+    REQUIRE(zone.FindLabelByName("Worker") == 0x20ull);
+    REQUIRE(zone.FindLabelByName("worker") == 0x20ull);
+    REQUIRE(zone.FindLabelByName("SUB_140001010") == 0x10ull);
+    REQUIRE_FALSE(zone.FindLabelByName("missing").has_value());
+    REQUIRE_FALSE(zone.FindLabelByName("").has_value());
+
+    // a renamed function is found by its new name
+    std::string_view name = "helper";
+    REQUIRE(dissasmInstance.CheckLineText(6, "sub_140001010")); // EntryPoint, 4 instructions, int3, the label
+    REQUIRE(zone.TryRenameLine(6, &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.FindLabelByName("helper") == 0x10ull);
+    REQUIRE(zone.GetFunctions(nullptr)[1].name == "helper");
+}

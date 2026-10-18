@@ -5,6 +5,7 @@
 #include "x86_x64/X86SwitchTables.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <unordered_set>
 
 using namespace GView::View::DissasmViewer;
@@ -740,6 +741,140 @@ std::string DissasmCodeZone::GetLabelNameAt(uint64 relativeAddress) const
         return {};
     const auto annotation = dissasmType.annotations.find(line->second);
     return annotation != dissasmType.annotations.end() ? annotation->second.first : std::string{};
+}
+
+std::optional<uint64> DissasmCodeZone::FindLabelByName(std::string_view name) const
+{
+    if (name.empty())
+        return {};
+    const auto sameIgnoringCase = [](std::string_view left, std::string_view right) {
+        return left.size() == right.size() && std::equal(left.begin(), left.end(), right.begin(), [](char a, char b) {
+                   return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+               });
+    };
+    std::optional<uint64> ignoringCase;
+    for (const auto& [line, details] : dissasmType.annotations.mappings) {
+        if (IsLocalVariableAnnotation(details))
+            continue;
+        if (details.first == name)
+            return details.second;
+        if (!ignoringCase.has_value() && sameIgnoringCase(details.first, name))
+            ignoringCase = details.second;
+    }
+    return ignoringCase;
+}
+
+std::vector<DissasmFunctionInfo> DissasmCodeZone::GetFunctions(const std::map<uint64, DissasmFunctionEntry>* functionEntries) const
+{
+    std::vector<DissasmFunctionInfo> functions;
+    if (cachedCodeOffsets.empty())
+        return functions;
+    const uint64 codeStart = cachedCodeOffsets[0].offset;
+    const uint64 codeSize  = GetCodeSize();
+    functions.reserve(functionStarts.size());
+    for (size_t index = 0; index < functionStarts.size(); index++) {
+        DissasmFunctionInfo function;
+        function.start    = functionStarts[index];
+        const uint64 next = index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize;
+        function.size     = next > function.start ? next - function.start : 0;
+        function.name     = GetLabelNameAt(function.start);
+        if (function.name.empty())
+            function.name = GetLabelName("sub_", function.start);
+        const auto [first, last] = xrefs.To(labelAddressBase + function.start);
+        function.xrefs           = static_cast<uint32>(last - first);
+        function.isThunk         = thunkImports.contains(function.start);
+        function.isEntryPoint    = codeStart + function.start == zoneDetails.entryPoint;
+        if (functionEntries) {
+            const auto entry = functionEntries->find(codeStart + function.start);
+            if (entry != functionEntries->end()) {
+                function.isExport = entry->second.isExport;
+                if (entry->second.size > 0)
+                    function.size = entry->second.size;
+            }
+        }
+        functions.push_back(std::move(function));
+    }
+    return functions;
+}
+
+std::optional<DissasmGoToRequest> GView::View::DissasmViewer::ParseDissasmGoToText(std::string_view text, DissasmPEConversionType shownAddressType)
+{
+    const auto isSpace = [](char c) { return c == ' ' || c == '\t'; };
+    while (!text.empty() && isSpace(text.front()))
+        text.remove_prefix(1);
+    while (!text.empty() && isSpace(text.back()))
+        text.remove_suffix(1);
+    if (text.empty())
+        return {};
+
+    // hexadecimal: 140001000, 0x140001000, 140001000h
+    const auto parseHex = [](std::string_view number) -> std::optional<uint64> {
+        if (number.size() > 2 && number[0] == '0' && (number[1] == 'x' || number[1] == 'X'))
+            number.remove_prefix(2);
+        else if (number.size() > 1 && (number.back() == 'h' || number.back() == 'H'))
+            number.remove_suffix(1);
+        if (number.empty() || number.size() > 16)
+            return {};
+        uint64 value = 0;
+        for (const char c : number) {
+            uint64 digit = 0;
+            if (c >= '0' && c <= '9')
+                digit = static_cast<uint64>(c - '0');
+            else if (c >= 'a' && c <= 'f')
+                digit = static_cast<uint64>(c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F')
+                digit = static_cast<uint64>(c - 'A' + 10);
+            else
+                return {};
+            value = value * 16 + digit;
+        }
+        return value;
+    };
+    const auto startsWithPrefix = [&text](std::string_view prefix) {
+        if (text.size() < prefix.size())
+            return false;
+        for (size_t index = 0; index < prefix.size(); index++)
+            if (std::tolower(static_cast<unsigned char>(text[index])) != prefix[index])
+                return false;
+        return true;
+    };
+
+    DissasmGoToRequest request;
+    if (startsWithPrefix("line:")) {
+        uint64 line = 0;
+        const auto number = text.substr(5);
+        if (number.empty() || number.size() > 10)
+            return {};
+        for (const char c : number) {
+            if (c < '0' || c > '9')
+                return {};
+            line = line * 10 + static_cast<uint64>(c - '0');
+        }
+        if (line > UINT32_MAX)
+            return {};
+        request.line = static_cast<uint32>(line);
+        return request;
+    }
+    struct Prefix {
+        std::string_view text;
+        DissasmPEConversionType type;
+    };
+    for (const auto& prefix : { Prefix{ "va:", DissasmPEConversionType::VA },
+                                Prefix{ "rva:", DissasmPEConversionType::RVA },
+                                Prefix{ "offset:", DissasmPEConversionType::FileOffset },
+                                Prefix{ "off:", DissasmPEConversionType::FileOffset } }) {
+        if (!startsWithPrefix(prefix.text))
+            continue;
+        request.address = parseHex(text.substr(prefix.text.size()));
+        if (!request.address.has_value())
+            return {};
+        request.addressType = prefix.type;
+        return request;
+    }
+    request.name        = std::string(text);
+    request.address     = parseHex(text);
+    request.addressType = shownAddressType;
+    return request;
 }
 
 std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const

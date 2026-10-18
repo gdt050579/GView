@@ -747,6 +747,13 @@ namespace View
             void EndDeepScan(DissasmCodeZone* zone, bool cancel);
             void FinishDeepScans(); // the actions that need the labels (rename, comments, cache, export) end the pending scans first
             void CancelDeepScans();
+            // GoTo: the file offset of an address / a label name, or the line (line:N); the reason when it can not be reached
+            std::optional<uint64> ResolveGoToText(std::string_view text, std::string& error, std::optional<uint32>& line);
+            // the cursor on the instruction of a file offset of a code zone (a zone that is not prepared yet: once it is drawn)
+            bool GoToFileOffset(uint64 fileOffset);
+            void ShowFunctions();
+            std::optional<uint64> pendingGoTo; // the file offset to reach once its zone is prepared (it is drawn)
+            bool repaintRequested = false;      // asked during a paint: the next frame update repaints
             bool frameUpdatesSeen    = false; // the frontend delivers frame updates (FPS mode): the deep scans continue there
             uint32 deepScanFrames    = 0;
             // the number under the cursor, or the only number of the cursor line
@@ -838,21 +845,26 @@ namespace View
             }
         };
 
+        // GoTo an address or a label name (ParseDissasmGoToText); the resolver tells if the text can be reached (or why not)
         class GoToDialog : public Window
         {
+          public:
+            using Resolver = std::function<bool(std::string_view text, std::string& error)>;
+
           private:
-            uint32 resultLine, totalAvailableLines;
-            Reference<TextField> lineTextField;
+            Reference<TextField> textField;
+            Resolver resolver;
+            std::string resultText;
 
             void Validate();
 
           public:
-            GoToDialog(uint32 currentLine, uint32 totalAvailableLines);
+            GoToDialog(std::string_view shownAddressType, Resolver resolver);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-            inline uint32 GetResultedLine() const
+            inline const std::string& GetResultText() const
             {
-                return resultLine;
+                return resultText;
             }
         };
 

@@ -824,6 +824,14 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         // the zone is prepared before its title is drawn: the title shows the progress of the deep scan from the first paint
         if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
             return false;
+        // a GoTo that waited for the zone (GoToFileOffset): the cursor moves now, the lines are drawn again at the next frame
+        if (pendingGoTo.has_value() && pendingGoTo.value() >= zone->zoneDetails.startingZonePoint &&
+            pendingGoTo.value() - zone->zoneDetails.startingZonePoint < zone->zoneDetails.size) {
+            const uint64 fileOffset = pendingGoTo.value();
+            pendingGoTo.reset();
+            MoveCursorToZoneFileOffset(zone, fileOffset, true);
+            repaintRequested = true;
+        }
 
         constexpr std::string_view zoneName = "Dissasm zone";
         chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
@@ -1132,13 +1140,15 @@ void Instance::CancelDeepScans()
 
 bool Instance::OnFrameUpdate()
 {
-    frameUpdatesSeen = true;
+    frameUpdatesSeen   = true;
+    const bool repaintAsked = repaintRequested;
+    repaintRequested   = false;
     if (!HasPendingDeepScans())
-        return false;
+        return repaintAsked;
     // a slice of every frame (~30 per second): the UI stays responsive while the scan runs
     constexpr auto DEEP_SCAN_SLICE = std::chrono::milliseconds(12);
     constexpr uint32 PROGRESS_REPAINT_FRAMES = 8; // the progress in the title of the zone
-    bool repaint = ++deepScanFrames % PROGRESS_REPAINT_FRAMES == 0;
+    bool repaint = repaintAsked || ++deepScanFrames % PROGRESS_REPAINT_FRAMES == 0;
     for (const auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
@@ -1880,6 +1890,88 @@ void Instance::ShowXrefs()
     const auto selected = dlg.GetSelectedRow();
     if (selected.has_value() && selected.value() < rows.size())
         MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + rows[selected.value()].from, false);
+}
+
+// The functions of the analysis (IDA Shift+F3): name, address, size, references; the search bar filters them, Enter / Go jumps to one
+class FunctionsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO    = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    FunctionsWindow(const std::vector<DissasmFunctionInfo>& functions, uint64 labelAddressBase)
+        : Window("Functions", "d:c,w:90%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this,
+              "l:1,t:1,r:1,b:3",
+              { "n:Name,w:50", "n:Address,w:20", "n:Size,w:12,a:r", "n:Xrefs,w:8,a:r", "n:Kind,w:10" },
+              ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        LocalString<32> address, size, xrefs;
+        for (size_t index = 0; index < functions.size(); index++) {
+            const auto& function = functions[index];
+            // the numbers are padded: the columns are sorted by their text
+            address.SetFormat("0x%016llx", static_cast<unsigned long long>(labelAddressBase + function.start));
+            size.SetFormat("%10llu", static_cast<unsigned long long>(function.size));
+            xrefs.SetFormat("%6u", function.xrefs);
+            const std::string_view kind = function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : ""));
+            auto item = list->AddItem({ std::string_view(function.name), address.ToStringView(), size.ToStringView(), xrefs.ToStringView(), kind });
+            item.SetData(static_cast<uint64>(index));
+        }
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowFunctions()
+{
+    // the code zone of the cursor, or the first code zone
+    DissasmCodeZone* zone = nullptr;
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+        zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    for (size_t index = 0; !zone && index < settings->parseZones.size(); index++)
+        if (settings->parseZones[index]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found when the disassembly zone is shown!");
+        return;
+    }
+    const auto functions = zone->GetFunctions(&settings->functionEntries);
+    if (functions.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan (Config.DeepScanDissasmOnStart)!");
+        return;
+    }
+    FunctionsWindow window(functions, zone->labelAddressBase);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
+        return;
+    MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + functions[window.GetSelectedRow().value()].start, true);
 }
 
 constexpr uint32 BTN_CLOSE_ID   = 0;

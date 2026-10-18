@@ -238,14 +238,100 @@ inline uint64 LinePositionToOffset(LinePosition&& linePosition, uint32 textSize)
     return static_cast<uint64>(linePosition.line) * textSize + linePosition.offset;
 }
 
+// the other views and panels (PE exports, sections) jump to a file offset: the instruction of a code zone that contains it
 bool Instance::GoTo(uint64 offset)
 {
-    return true;
+    repaintRequested = true; // asked by a panel: the view is drawn again at the next frame
+    return GoToFileOffset(offset);
 }
 
 bool Instance::Select(uint64 offset, uint64 size)
 {
-    return true;
+    repaintRequested = true;
+    return GoToFileOffset(offset); // the selection of this view is made of lines: the cursor goes to the start of the range
+}
+
+bool Instance::GoToFileOffset(uint64 fileOffset)
+{
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        const auto& details = codeZone->zoneDetails;
+        if (fileOffset < details.startingZonePoint || fileOffset - details.startingZonePoint >= details.size)
+            continue;
+        if (!codeZone->isInit || !codeZone->CanReachAsmLines()) {
+            // prepared when its title is drawn: the cursor goes there now, to the instruction after the zone is prepared
+            pendingGoTo          = fileOffset;
+            const auto from      = SaveCursorState();
+            Cursor.lineInView    = 0;
+            Cursor.startViewLine = codeZone->startLineIndex;
+            Cursor.hasMovedView  = true;
+            RecordJump(from);
+            return true;
+        }
+        return MoveCursorToZoneFileOffset(codeZone, fileOffset, true);
+    }
+    return false;
+}
+
+std::optional<uint64> Instance::ResolveGoToText(std::string_view text, std::string& error, std::optional<uint32>& line)
+{
+    line                      = std::nullopt;
+    const bool hasTranslation = settings->offsetTranslateCallback.IsValid();
+    const auto shownType      = hasTranslation ? static_cast<DissasmPEConversionType>(config.AddressMode) : DissasmPEConversionType::FileOffset;
+    const auto request        = ParseDissasmGoToText(text, shownType);
+    if (!request.has_value()) {
+        error = "Expecting a label name, a hexadecimal address or a prefix (va:, rva:, off:, line:)!";
+        return {};
+    }
+    if (request->line.has_value()) {
+        const uint32 totalLines = settings->parseZones.empty() ? 0 : settings->parseZones.back()->endingLineIndex;
+        if (request->line.value() >= totalLines) {
+            error = "The line must be lower than " + std::to_string(totalLines) + "!";
+            return {};
+        }
+        line = request->line;
+        return 0;
+    }
+
+    // a label name first: a name can also be a hexadecimal number (add, face)
+    for (const auto& zone : settings->parseZones) {
+        if (request->name.empty() || zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<const DissasmCodeZone*>(zone.get());
+        if (codeZone->cachedCodeOffsets.empty())
+            continue;
+        const auto address = codeZone->FindLabelByName(request->name);
+        if (address.has_value())
+            return codeZone->cachedCodeOffsets[0].offset + address.value();
+    }
+    if (!request->address.has_value()) {
+        error = "There is no label named `" + request->name + "`!";
+        return {};
+    }
+
+    uint64 fileOffset = request->address.value();
+    if (request->addressType != DissasmPEConversionType::FileOffset) {
+        if (!hasTranslation) {
+            error = "This file has no virtual addresses: use a file offset!";
+            return {};
+        }
+        fileOffset = settings->offsetTranslateCallback->TranslateToFileOffset(request->address.value(), static_cast<uint32>(request->addressType));
+        if (fileOffset == static_cast<uint64>(-1)) {
+            error = "The address is not a location of the file!";
+            return {};
+        }
+    }
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto& details = static_cast<const DissasmCodeZone*>(zone.get())->zoneDetails;
+        if (fileOffset >= details.startingZonePoint && fileOffset - details.startingZonePoint < details.size)
+            return fileOffset;
+    }
+    error = "The address is not inside a disassembled code zone!";
+    return {};
 }
 
 // bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
@@ -1488,20 +1574,32 @@ bool Instance::ShowGoToDialog()
 {
     if (settings->parseZones.empty())
         return true;
-    const uint32 totalLines  = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
-    const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
-    GoToDialog dlg(currentLine, totalLines);
-    if (dlg.Show() == Dialogs::Result::Ok) {
-        const auto lineToReach = dlg.GetResultedLine();
-        if (lineToReach != currentLine) {
+    FinishDeepScans(); // the names are the labels of the analysis
+
+    const bool hasTranslation = settings->offsetTranslateCallback.IsValid();
+    const auto shownType      = hasTranslation ? static_cast<DissasmPEConversionType>(config.AddressMode) : DissasmPEConversionType::FileOffset;
+    const std::string_view shownTypeName =
+          shownType == DissasmPEConversionType::VA ? "VA" : (shownType == DissasmPEConversionType::RVA ? "RVA" : "file offset");
+    GoToDialog dlg(shownTypeName, [this](std::string_view text, std::string& error) {
+        std::optional<uint32> line;
+        return ResolveGoToText(text, error, line).has_value();
+    });
+    if (dlg.Show() != Dialogs::Result::Ok)
+        return true;
+
+    std::string error;
+    std::optional<uint32> line;
+    const auto fileOffset = ResolveGoToText(dlg.GetResultText(), error, line);
+    if (line.has_value()) {
+        const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
+        if (line.value() != currentLine) {
             const auto from = SaveCursorState();
-            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), Key::None, false);
+            MoveTo(0, static_cast<int32>(line.value()) - static_cast<int32>(currentLine), Key::None, false);
             RecordJump(from);
         }
+    } else if (fileOffset.has_value()) {
+        GoToFileOffset(fileOffset.value());
     }
-    /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
-    constexpr auto lineToReach = 248;
-    MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);*/
     return true;
 }
 bool Instance::ShowFindDialog()
