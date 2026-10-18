@@ -978,6 +978,99 @@ std::optional<uint64> GView::View::DissasmViewer::ParseDissasmSearchNumber(std::
     return negative ? static_cast<uint64>(0) - value : value;
 }
 
+std::optional<uint64> DissasmCodeZone::GetFunctionContaining(uint64 relativeAddress) const
+{
+    const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
+    if (next == functionStarts.begin())
+        return {};
+    return *(next - 1);
+}
+
+std::vector<DissasmCallReference> DissasmCodeZone::GetCallers(uint64 functionStart) const
+{
+    std::vector<DissasmCallReference> callers;
+    const auto [first, last] = xrefs.To(labelAddressBase + functionStart);
+    for (auto it = first; it != last; ++it) {
+        if (it->kind != DissasmXrefKind::Call && it->kind != DissasmXrefKind::Jump)
+            continue;
+        DissasmCallReference caller;
+        caller.site          = it->from - labelAddressBase;
+        caller.functionStart = GetFunctionContaining(caller.site);
+        if (it->kind == DissasmXrefKind::Jump) {
+            // a jump from the same function is a loop, not a call
+            if (caller.functionStart == std::optional<uint64>(functionStart) || !caller.functionStart.has_value())
+                continue;
+            caller.isTailJump = true;
+        }
+        if (caller.functionStart.has_value()) {
+            caller.function = GetLabelNameAt(caller.functionStart.value());
+            if (caller.function.empty())
+                caller.function = GetLabelName("sub_", caller.functionStart.value());
+        } else {
+            caller.function = FormatCodeAddress(caller.site); // before the first function
+        }
+        callers.push_back(std::move(caller));
+    }
+    return callers;
+}
+
+std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
+      uint64 functionStart, const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport) const
+{
+    std::vector<DissasmCallReference> callees;
+    if (cachedCodeOffsets.empty() || !zoneObject.IsValid() || internalArchitecture == 0)
+        return callees;
+    // the function ends with the next one (the size of a function is not known for every function)
+    constexpr uint64 MAX_FUNCTION_SIZE = 0x100000;
+    const uint64 codeSize              = GetCodeSize();
+    const auto next                    = std::upper_bound(functionStarts.begin(), functionStarts.end(), functionStart);
+    const uint64 end                   = std::min<uint64>({ next != functionStarts.end() ? *next : codeSize, codeSize, functionStart + MAX_FUNCTION_SIZE });
+    if (functionStart >= end)
+        return callees;
+
+    csh handle = 0;
+    if (cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+        return callees;
+    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
+        cs_insn* insn                = cs_malloc(handle);
+        Reference<GView::Object> obj = zoneObject;
+        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart);
+        while (walker.Next(insn) && insn->address < end) {
+            const auto flow = GetX86Flow(*insn);
+            if (flow != X86Flow::Call && flow != X86Flow::Jump)
+                continue;
+            const auto operands = GetX86OperandsInfo(*insn, Is64BitCode());
+            DissasmCallReference callee;
+            callee.site = insn->address;
+            if (operands.directTarget.has_value()) {
+                const uint64 target = operands.directTarget.value();
+                // a jmp inside the function is not a call; a jmp to another function is a tail call
+                if (flow == X86Flow::Jump && target >= functionStart && target < end)
+                    continue;
+                callee.isTailJump    = flow == X86Flow::Jump;
+                callee.functionStart = target;
+                callee.function      = GetLabelNameAt(target);
+                if (callee.function.empty())
+                    callee.function = GetLabelName("sub_", target);
+            } else {
+                // through an import slot (call [rip + ...]), or an indirect call (call rax): a jmp rax is a switch, not a call
+                const auto import = findImport ? findImport(operands) : nullptr;
+                if (import)
+                    callee.function = import->name;
+                else if (flow == X86Flow::Call)
+                    callee.function = std::string(insn->mnemonic) + " " + insn->op_str;
+                else
+                    continue;
+                callee.isTailJump = flow == X86Flow::Jump;
+            }
+            callees.push_back(std::move(callee));
+        }
+        cs_free(insn, 1);
+    }
+    cs_close(&handle);
+    return callees;
+}
+
 std::vector<DissasmStringReference> DissasmCodeZone::GetReferencedStrings(const std::function<std::optional<uint64>(uint64)>& addressToFileOffset) const
 {
     std::vector<DissasmStringReference> strings;

@@ -3691,3 +3691,66 @@ TEST_CASE("UndoRedoEdits", "[Dissasm]Undo")
     REQUIRE_FALSE(zone.CanUndoEdit());
     REQUIRE_FALSE(zone.CanRedoEdit());
 }
+
+TEST_CASE("CallersAndCallees", "[Dissasm]CallTree")
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00,       // 0x00: call 0x10
+        0xFF, 0x15, 0x35, 0x00, 0x00, 0x00, // 0x05: call qword ptr [rip + 0x35] -> slot 0x40 (ExitProcess)
+        0x74, 0x01,                         // 0x0b: je 0x0e (inside the function: not a call)
+        0x90,                               // 0x0d: nop
+        0xEB, 0x10,                         // 0x0e: jmp 0x20 (a tail call)
+        0x31, 0xC0,                         // 0x10: xor eax, eax
+        0x75, 0xFC,                         // 0x12: jne 0x10 (a loop: not a caller)
+        0xC3,                               // 0x14: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });             // 0x20: push rbp; mov rbp, rsp
+    file.insert(file.end(), { 0xE8, 0xE7, 0xFF, 0xFF, 0xFF });       // 0x24: call 0x10
+    file.insert(file.end(), { 0x5D, 0xC3 });                         // 0x29: pop rbp; ret
+    file.resize(0x48, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "ExitProcess", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x10, 0x20 });
+    REQUIRE(zone.GetFunctionContaining(0x14) == 0x10ull);
+    REQUIRE(zone.GetFunctionContaining(0x05) == 0x0ull);
+
+    auto* settings = &dissasmInstance.settingsData;
+    auto* code     = dissasmInstance.zone.get();
+    const auto findImport = [settings, code](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, code, operands); };
+
+    // the calls of the entry point: a function, an import, a tail call (the je is inside the function)
+    const auto callees = zone.GetCallees(0x0, findImport);
+    REQUIRE(callees.size() == 3);
+    REQUIRE(callees[0].site == 0x00);
+    REQUIRE(callees[0].function == "sub_10");
+    REQUIRE(callees[0].functionStart == 0x10ull);
+    REQUIRE(callees[1].site == 0x05);
+    REQUIRE(callees[1].function == "ExitProcess");
+    REQUIRE_FALSE(callees[1].functionStart.has_value());
+    REQUIRE(callees[2].site == 0x0E);
+    REQUIRE(callees[2].function == "sub_20");
+    REQUIRE(callees[2].isTailJump);
+
+    // the callers of sub_10: the entry point and sub_20 (its loop is not a caller)
+    const auto callers = zone.GetCallers(0x10);
+    REQUIRE(callers.size() == 2);
+    REQUIRE(callers[0].site == 0x00);
+    REQUIRE(callers[0].function == "EntryPoint");
+    REQUIRE(callers[1].site == 0x24);
+    REQUIRE(callers[1].function == "sub_20");
+    REQUIRE(callers[1].functionStart == 0x20ull);
+
+    // the tail call is a caller of sub_20
+    const auto tailCallers = zone.GetCallers(0x20);
+    REQUIRE(tailCallers.size() == 1);
+    REQUIRE(tailCallers[0].isTailJump);
+    REQUIRE(tailCallers[0].function == "EntryPoint");
+}

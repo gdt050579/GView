@@ -347,6 +347,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_COMMAND_PALETTE:
             ShowCommandPalette();
             return true;
+        case COMMAND_SHOW_CALL_TREE:
+            ShowCallTree();
+            return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
             RefreshDrawnLines();

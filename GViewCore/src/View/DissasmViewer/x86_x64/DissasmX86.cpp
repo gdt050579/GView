@@ -2476,6 +2476,174 @@ void Instance::ShowCommandPalette()
     }
 }
 
+// The callers and the callees of a function (Ctrl+R): Enter on a function shows its own calls (Back returns), Go jumps to the selected
+// function, Call site to the instruction of the call
+class CallTreeWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO        = 1;
+    static constexpr int BTN_CALL_SITE = 2;
+    static constexpr int BTN_BACK      = 3;
+    static constexpr int BTN_CLOSE     = 4;
+
+    DissasmCodeZone* zone;
+    std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
+    Reference<Label> title;
+    Reference<ListView> callersList, calleesList, lastList;
+    std::vector<DissasmCallReference> callers, callees;
+    std::vector<uint64> history; // the functions shown before the current one
+    uint64 current = 0;
+    std::optional<uint64> result;
+    bool resultIsCallSite = false;
+
+    static void Fill(Reference<ListView> list, const std::vector<DissasmCallReference>& references, const DissasmCodeZone* zone)
+    {
+        list->DeleteAllItems();
+        for (size_t index = 0; index < references.size(); index++) {
+            const auto& reference  = references[index];
+            const std::string site = zone->FormatCodeAddress(reference.site) + (reference.isTailJump ? " (jmp)" : "");
+            auto item              = list->AddItem({ std::string_view(reference.function), std::string_view(site) });
+            item.SetData(static_cast<uint64>(index));
+        }
+    }
+
+    void ShowFunction(uint64 functionStart)
+    {
+        current = functionStart;
+        callers = zone->GetCallers(functionStart);
+        callees = zone->GetCallees(functionStart, findImport);
+        Fill(callersList, callers, zone);
+        Fill(calleesList, callees, zone);
+        std::string name = zone->GetLabelNameAt(functionStart);
+        if (name.empty())
+            name = zone->GetLabelName("sub_", functionStart);
+        LocalString<256> text;
+        text.SetFormat("%s: called by %zu, calls %zu", name.c_str(), callers.size(), callees.size());
+        title->SetText(text.GetText());
+    }
+
+    // the reference selected in the list used last
+    const DissasmCallReference* GetSelected()
+    {
+        const bool fromCallees = lastList == calleesList;
+        auto item              = (fromCallees ? calleesList : callersList)->GetCurrentItem();
+        if (!item.IsValid())
+            return nullptr;
+        const auto index = static_cast<size_t>(item.GetData(UINT64_MAX));
+        const auto& list = fromCallees ? callees : callers;
+        return index < list.size() ? &list[index] : nullptr;
+    }
+
+  public:
+    CallTreeWindow(DissasmCodeZone* zone, std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport, uint64 functionStart)
+        : Window("Call tree", "d:c,w:90%,h:80%", WindowFlags::Sizeable), zone(zone), findImport(std::move(findImport))
+    {
+        title = Factory::Label::Create(this, "", "l:1,t:0,r:1,h:1");
+        Factory::Label::Create(this, "Called by", "l:1,t:1,w:20");
+        Factory::Label::Create(this, "Calls", "l:51%,t:1,w:20");
+        callersList = Factory::ListView::Create(this, "l:1,t:2,r:51%,b:3", { "n:Function,w:40", "n:Call site,w:30" }, ListViewFlags::PopupSearchBar);
+        calleesList = Factory::ListView::Create(this, "l:51%,t:2,r:1,b:3", { "n:Function,w:40", "n:Call site,w:30" }, ListViewFlags::PopupSearchBar);
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "Call &site", "l:13,b:0,w:14", BTN_CALL_SITE);
+        Factory::Button::Create(this, "&Back", "l:29,b:0,w:10", BTN_BACK);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        ShowFunction(functionStart);
+        lastList = callees.empty() && !callers.empty() ? callersList : calleesList;
+        lastList->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewCurrentItemChanged) {
+            lastList = control == calleesList.ToBase<Control>() ? calleesList : callersList;
+            return false;
+        }
+        if (eventType == Event::ListViewItemPressed) {
+            // the calls of the selected function (an import or an indirect call has none)
+            lastList           = control == calleesList.ToBase<Control>() ? calleesList : callersList;
+            const auto selected = GetSelected();
+            if (selected && selected->functionStart.has_value()) {
+                history.push_back(current);
+                ShowFunction(selected->functionStart.value());
+            }
+            return true;
+        }
+        if (eventType != Event::ButtonClicked)
+            return false;
+        switch (ID) {
+        case BTN_GO:
+        case BTN_CALL_SITE: {
+            const auto selected = GetSelected();
+            if (!selected)
+                return true;
+            // an import (or an indirect call) is not in the code: its call site
+            resultIsCallSite = ID == BTN_CALL_SITE || !selected->functionStart.has_value();
+            result           = resultIsCallSite ? selected->site : selected->functionStart.value();
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        case BTN_BACK:
+            if (!history.empty()) {
+                const uint64 previous = history.back();
+                history.pop_back();
+                ShowFunction(previous);
+            }
+            return true;
+        case BTN_CLOSE:
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<uint64> GetResult() const
+    {
+        return result;
+    }
+    bool IsCallSite() const
+    {
+        return resultIsCallSite;
+    }
+};
+
+void Instance::ShowCallTree()
+{
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The calls are found when the disassembly zone is shown!");
+        return;
+    }
+    if (zone->functionStarts.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan (Config.DeepScanDissasmOnStart)!");
+        return;
+    }
+    // the function of the cursor line (the first function when the cursor is before the functions)
+    uint64 functionStart  = zone->functionStarts.front();
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex].get() == zone && zonesFound[0].startingLine >= 2) {
+        AsmData withoutKnownFunctions;
+        DissasmInsnExtractLineParams params{};
+        params.obj        = obj;
+        params.zone       = zone;
+        params.settings   = settings.get();
+        params.asmData    = &withoutKnownFunctions;
+        const auto line   = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+        const auto start  = zone->GetFunctionContaining(line.address);
+        if (start.has_value())
+            functionStart = start.value();
+    }
+    auto* settingsData = settings.get();
+    CallTreeWindow window(
+          zone,
+          [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); },
+          functionStart);
+    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+    if (window.Show() != Dialogs::Result::Ok || !window.GetResult().has_value())
+        return;
+    MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + window.GetResult().value(), !window.IsCallSite());
+}
+
 constexpr uint32 BTN_CLOSE_ID   = 0;
 constexpr uint32 BTN_APPLY_ID   = 1;
 constexpr uint32 RADIO_GROUP_ID = 2;

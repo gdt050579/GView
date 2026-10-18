@@ -27,6 +27,7 @@ constexpr uint32 COMMAND_FIND_NEXT             = 120;
 constexpr uint32 COMMAND_UNDO                  = 121;
 constexpr uint32 COMMAND_REDO                  = 122;
 constexpr uint32 COMMAND_COMMAND_PALETTE       = 123;
+constexpr uint32 COMMAND_SHOW_CALL_TREE        = 124;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -188,6 +189,10 @@ namespace View
                 Input::Key::Ctrl | Input::Key::P, "CommandPalette", "Show every command of the view with its key", COMMAND_COMMAND_PALETTE
             };
 
+            inline static KeyboardControl ShowCallTreeCommand = {
+                Input::Key::Ctrl | Input::Key::R, "ShowCallTree", "Show the callers and the callees of the current function", COMMAND_SHOW_CALL_TREE
+            };
+
             inline static KeyboardControl ShowStringsCommand = {
                 Input::Key::Shift | Input::Key::F12, "ShowStrings", "Show the strings used by the code", COMMAND_SHOW_STRINGS
             };
@@ -209,8 +214,9 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 15> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 16> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowCallTreeCommand,
                 UndoCommand,
                 RedoCommand,
                 CommandPaletteCommand,
@@ -301,8 +307,9 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 21> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 22> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ShowCallTreeCommand,
                 UndoCommand,
                 RedoCommand,
                 CommandPaletteCommand,

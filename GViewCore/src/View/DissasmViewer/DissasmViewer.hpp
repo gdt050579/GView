@@ -759,6 +759,7 @@ namespace View
             DissasmCodeZone* GetCursorOrFirstCodeZone();
             void UndoOrRedo(bool redo); // Ctrl+Z / Ctrl+Y: the edits of the zone of the cursor
             void ShowCommandPalette();
+            void ShowCallTree(); // Ctrl+R: the callers and the callees of the function of the cursor
             void FindNext(); // the next match of the last search (F6)
             std::optional<DissasmSearch> lastSearch;
             bool RunSearch(const DissasmSearch& search, bool showErrors);

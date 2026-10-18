@@ -45,6 +45,14 @@ struct DissasmEditPlace {
     bool onLabel = false; // the edit is on the label (or a local variable) of the address, not on its instruction
 };
 
+// a call between two functions (DissasmCodeZone::GetCallers / GetCallees)
+struct DissasmCallReference {
+    uint64 site = 0;                     // relative address of the call / jmp instruction
+    std::string function;                // the caller / the callee (an import: its name, an indirect call: its operands)
+    std::optional<uint64> functionStart; // relative address of the function when it is in the code
+    bool isTailJump = false;             // a jmp to another function
+};
+
 // a string used by the code (DissasmCodeZone::GetReferencedStrings)
 struct DissasmStringReference {
     uint64 address = 0; // in the address space of the labels (VA)
@@ -115,6 +123,12 @@ struct DissasmCodeZone : public ParseZone {
     std::optional<uint64> FindLabelByName(std::string_view name) const;
     // the functions of the analysis, by address; functionEntries (the plugin) gives the exports and the sizes it knows
     std::vector<DissasmFunctionInfo> GetFunctions(const std::map<uint64, DissasmFunctionEntry>* functionEntries) const;
+    // the start of the function that contains a relative address (the last function start before it)
+    std::optional<uint64> GetFunctionContaining(uint64 relativeAddress) const;
+    // the calls (and tail jumps) to the function, by the place of the call
+    std::vector<DissasmCallReference> GetCallers(uint64 functionStart) const;
+    // the calls (and tail jumps) of the function, in its order; findImport names the calls through the import slots
+    std::vector<DissasmCallReference> GetCallees(uint64 functionStart, const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport) const;
     // the strings at the data addresses used by the instructions (lea rcx, [rip + ...] / push offset), by address
     std::vector<DissasmStringReference> GetReferencedStrings(const std::function<std::optional<uint64>(uint64)>& addressToFileOffset) const;
     // the relative address of the first match in [from, to) of the code
