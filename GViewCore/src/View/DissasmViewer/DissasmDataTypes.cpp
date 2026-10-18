@@ -148,6 +148,8 @@ std::string_view GView::View::DissasmViewer::GetXrefKindName(DissasmXrefKind kin
         return "write";
     case DissasmXrefKind::Offset:
         return "offset";
+    case DissasmXrefKind::Switch:
+        return "switch";
     }
     return "";
 }

@@ -2,6 +2,7 @@
 #include "DissasmFunctionUtils.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
+#include "x86_x64/X86SwitchTables.hpp"
 
 #include <algorithm>
 #include <unordered_set>
@@ -20,7 +21,9 @@ inline bool ExtractCallsToInsertFunctionNames(
       bool detectLocalVariables,
       const std::function<bool(uint64)>& isFileAddress,
       const std::map<uint64, DissasmFunctionEntry>* functionEntries,
-      const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport)
+      const std::function<const MemoryMappingEntry*(const X86OperandsInfo&)>& findImport,
+      const std::function<std::optional<uint64>(uint64)>& addressToFileOffset,
+      std::optional<uint64> imageBase)
 {
     // the code is [offsets[0], end of the zone): the same lines as the ones counted by populateOffsetsVector
     const uint64 codeSize = zone->GetCodeSize();
@@ -69,6 +72,29 @@ inline bool ExtractCallsToInsertFunctionNames(
     std::vector<std::pair<uint64, std::string>> thunks; // file offset of an import thunk, the import
     bool atBlockStart = true; // the previous instruction does not continue into the current one (ret, jmp, int3, nop padding)
     X86PrologueDetector prologueDetector(is64);
+    zone->switchJumps.clear();
+    X86SwitchDetector switchDetector(is64, labelBase, imageBase);
+    // a value of a jump table (1, 4 or 8 bytes) at an address of the labels
+    auto readTableValue = [&obj, &addressToFileOffset](uint64 address, uint8 size) -> std::optional<uint64> {
+        const auto offset = addressToFileOffset(address);
+        if (!offset.has_value())
+            return {};
+        uint64 value = 0;
+        bool ok      = false;
+        if (size == 1) {
+            uint8 value8 = 0;
+            ok           = obj->GetData().Copy<uint8>(offset.value(), value8);
+            value        = value8;
+        } else if (size == 4) {
+            uint32 value32 = 0;
+            ok             = obj->GetData().Copy<uint32>(offset.value(), value32);
+            value          = value32;
+        } else if (size == 8) {
+            ok = obj->GetData().Copy<uint64>(offset.value(), value);
+        }
+        return ok ? std::optional<uint64>(value) : std::nullopt;
+    };
+    auto isCodeAddress = [labelBase, codeSize](uint64 address) { return address >= labelBase && address - labelBase < codeSize; };
     while (linesToDecode > 0 && walker.Next(insn)) {
         linesToDecode--;
         // functions that are not called directly (callbacks, virtual methods, exports): recognized by their prologue
@@ -91,6 +117,22 @@ inline bool ExtractCallsToInsertFunctionNames(
                 thunks.emplace_back(instructionOffset, import->name);
                 zone->thunkImports[insn->address] = import->name;
                 addFunctionStart(instructionOffset);
+            }
+        }
+
+        // the jump table of a switch: every case is a jump target (loc_) referenced by the jmp
+        const auto jumpTable = switchDetector.Next(*insn);
+        if (jumpTable.has_value() && addressToFileOffset) {
+            const auto targets = ReadX86JumpTableTargets(jumpTable.value(), readTableValue, isCodeAddress);
+            if (!targets.empty())
+                zone->switchJumps[insn->address] = static_cast<uint32>(targets.size());
+            for (const uint64 target : targets) {
+                zone->xrefs.Add(from, target, DissasmXrefKind::Switch);
+                const auto targetOffset = zone->GetFileOffsetOfAddress(target - labelBase);
+                if (targetOffset.has_value() && !callsMap.contains(targetOffset.value())) {
+                    callsFound.emplace_back(targetOffset.value(), zone->GetLabelName("loc_", target - labelBase));
+                    callsMap.insert({ targetOffset.value(), true });
+                }
             }
         }
         if (IsX86Branch(flow) && operands.directTarget.has_value()) {
@@ -550,7 +592,9 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
               initData.enableLocalVariablesDetection,
               initData.isFileAddress,
               initData.functionEntries,
-              initData.findImport);
+              initData.findImport,
+              initData.addressToFileOffset,
+              initData.imageBase);
         if (!scanned) {
             initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
             return false;

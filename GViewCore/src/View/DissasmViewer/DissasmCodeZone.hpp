@@ -53,6 +53,7 @@ struct DissasmCodeZone : public ParseZone {
     DissasmXrefs xrefs;
     std::vector<uint64> functionStarts;
     std::unordered_map<uint64, std::string> thunkImports; // relative address of an import thunk (jmp [slot]) -> the import
+    std::unordered_map<uint64, uint32> switchJumps;        // relative address of the indirect jmp of a switch -> its cases count
 
     // the name shown for the label at the relative address (renamed or not); empty when there is no label there
     std::string GetLabelNameAt(uint64 relativeAddress) const;

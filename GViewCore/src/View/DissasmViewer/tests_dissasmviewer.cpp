@@ -272,6 +272,8 @@ struct ZoneLayout {
     std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
     std::unordered_map<uint64, MemoryMappingEntry> imports;  // the imports by the RVA of their slot (the VA for x86 without translation)
     bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
+    std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
+    std::optional<uint64> imageBase;
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -354,6 +356,8 @@ class DissasmTestInstance
         if (layout.translateOffsets)
             settingsData.offsetTranslateCallback = &translation;
         settingsData.memoryMappings = layout.imports;
+        initData.addressToFileOffset = layout.addressToFileOffset;
+        initData.imageBase           = layout.imageBase;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
             auto* codeZone      = zone.get();
@@ -3072,4 +3076,189 @@ TEST_CASE("CallArgumentsX64", "[Dissasm]Thunks")
     REQUIRE(FindListingLine(listing, "sub    rsp, 0x28").find(';') == std::string_view::npos);
     // a call through the import slot
     REQUIRE(FindListingLine(listing, "mov    rcx, rbx").ends_with("; hObject"));
+}
+
+// the cases of the switch tests: mov eax, case; ret
+static void WriteSwitchCase(std::vector<unsigned char>& file, size_t offset, uint8 value)
+{
+    file.resize(std::max(file.size(), offset + 6), 0xCC);
+    const unsigned char code[] = { 0xB8, value, 0x00, 0x00, 0x00, 0xC3 };
+    std::copy(std::begin(code), std::end(code), file.begin() + offset);
+}
+
+static void WriteDword(std::vector<unsigned char>& file, size_t offset, uint32 value)
+{
+    file.resize(std::max(file.size(), offset + 4), 0x00);
+    for (uint32 index = 0; index < 4; index++)
+        file[offset + index] = static_cast<unsigned char>(value >> (8 * index));
+}
+
+// a PE like layout: the zone starts at the RVA 0x1000, the RVA of a file offset is offset + 0x1000
+static ZoneLayout MakeSwitchLayout(size_t fileSize, size_t codeSize, DisassemblyLanguage language, uint64 imageBase)
+{
+    ZoneLayout layout;
+    layout.size             = codeSize;
+    layout.entryPoint       = 0;
+    layout.language         = language;
+    layout.labelAddressBase = imageBase + 0x1000;
+    layout.imageBase        = imageBase;
+    const uint64 zoneVA     = imageBase + 0x1000;
+    layout.addressToFileOffset = [zoneVA, fileSize](uint64 va) -> std::optional<uint64> {
+        if (va < zoneVA || va - zoneVA >= fileSize)
+            return {};
+        return va - zoneVA;
+    };
+    return layout;
+}
+
+TEST_CASE("SwitchTableMsvcX64", "[Dissasm]Switch")
+{
+    std::vector<unsigned char> file = {
+        0x83, 0xF9, 0x02,                         // 0x00: cmp ecx, 2
+        0x77, 0x4B,                               // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                         // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF, // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00, // 0x0f: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                         // 0x16: add rcx, rdx
+        0xFF, 0xE1,                               // 0x19: jmp rcx
+    };
+    WriteSwitchCase(file, 0x20, 0);
+    WriteSwitchCase(file, 0x30, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    WriteDword(file, 0x80, 0x1020);                // the table of RVAs
+    WriteDword(file, 0x84, 0x1030);
+    WriteDword(file, 0x88, 0x1040);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x64, 0x140000000));
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.switchJumps.size() == 1);
+    REQUIRE(zone.switchJumps.at(0x19) == 3);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "loc_140001020");
+    REQUIRE(zone.GetLabelNameAt(0x30) == "loc_140001030");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "loc_140001040");
+    const auto [first, last] = zone.xrefs.To(0x140001030);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Switch);
+    REQUIRE(first->from == 0x140001019);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "jmp    rcx").ends_with("; switch: 3 cases"));
+    REQUIRE(FindListingLine(listing, "loc_140001030:").ends_with("; xref: EntryPoint+0x19 (switch)"));
+}
+
+TEST_CASE("SwitchTableMsvcX64IndexTable", "[Dissasm]Switch")
+{
+    std::vector<unsigned char> file = {
+        0x83, 0xF9, 0x05,                                     // 0x00: cmp ecx, 5 (6 cases)
+        0x77, 0x4B,                                           // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                                     // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF,             // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x0F, 0xB6, 0x84, 0x02, 0x90, 0x10, 0x00, 0x00,       // 0x0f: movzx eax, byte ptr [rdx + rax + 0x1090] (the index table)
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00,             // 0x17: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                                     // 0x1e: add rcx, rdx
+        0xFF, 0xE1,                                           // 0x21: jmp rcx
+    };
+    WriteSwitchCase(file, 0x30, 0);
+    WriteSwitchCase(file, 0x38, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    WriteDword(file, 0x80, 0x1030);
+    WriteDword(file, 0x84, 0x1038);
+    WriteDword(file, 0x88, 0x1040);
+    file.resize(0x90, 0x00);
+    file.insert(file.end(), { 0, 1, 0, 2, 2, 1 }); // 0x90: the entry of every case
+    file.resize(0xA0, 0x00);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x64, 0x140000000));
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.switchJumps.size() == 1);
+    REQUIRE(zone.switchJumps.at(0x21) == 6);
+    REQUIRE(zone.GetLabelNameAt(0x30) == "loc_140001030");
+    REQUIRE(zone.GetLabelNameAt(0x38) == "loc_140001038");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "loc_140001040");
+}
+
+TEST_CASE("SwitchTableGccRelative", "[Dissasm]Switch")
+{
+    // the bounds check gives the cases; without it, the table ends at its first entry that is not code
+    enum class BoundsCheck { Register, Memory, None };
+    for (const auto boundsCheck : { BoundsCheck::Register, BoundsCheck::Memory, BoundsCheck::None }) {
+        std::vector<unsigned char> file;
+        if (boundsCheck == BoundsCheck::Register)
+            file.insert(file.end(), { 0x83, 0xF8, 0x02, 0x77, 0x4B }); // 0x00: cmp eax, 2; ja 0x50
+        else if (boundsCheck == BoundsCheck::Memory)
+            file.insert(file.end(), { 0x80, 0x39, 0x02, 0x77, 0x4B }); // 0x00: cmp byte ptr [rcx], 2; ja 0x50
+        else
+            file.insert(file.end(), { 0x90, 0x90, 0x90, 0x90, 0x90 }); // 0x00: nop
+        file.insert(
+              file.end(),
+              {
+                    0x48, 0x8D, 0x15, 0x74, 0x00, 0x00, 0x00, // 0x05: lea rdx, [rip + 0x74] (the table, 0x80)
+                    0x48, 0x63, 0x04, 0x82,                   // 0x0c: movsxd rax, dword ptr [rdx + rax*4]
+                    0x48, 0x01, 0xD0,                         // 0x10: add rax, rdx
+                    0xFF, 0xE0,                               // 0x13: jmp rax
+              });
+        WriteSwitchCase(file, 0x20, 0);
+        WriteSwitchCase(file, 0x30, 1);
+        WriteSwitchCase(file, 0x40, 2);
+        file.resize(0x50, 0xCC);
+        file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+        WriteDword(file, 0x80, static_cast<uint32>(-0x60)); // the offsets from the table
+        WriteDword(file, 0x84, static_cast<uint32>(-0x50));
+        WriteDword(file, 0x88, static_cast<uint32>(-0x40));
+        WriteDword(file, 0x8C, static_cast<uint32>(-0x30)); // the next data: code too (the default), not a case of a bounded switch
+        WriteDword(file, 0x90, 0x7FFFFFF0);                 // not code
+
+        ZoneLayout layout;
+        layout.size                = 0x80;
+        layout.entryPoint          = 0;
+        layout.language            = DisassemblyLanguage::x64;
+        const uint64 fileSize      = file.size();
+        layout.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+        };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        auto& zone = *dissasmInstance.zone;
+        INFO("bounds check: " << static_cast<int>(boundsCheck));
+        REQUIRE(zone.switchJumps.size() == 1);
+        REQUIRE(zone.switchJumps.at(0x13) == (boundsCheck == BoundsCheck::None ? 4u : 3u));
+        REQUIRE(zone.GetLabelNameAt(0x20) == "loc_20");
+        REQUIRE(zone.GetLabelNameAt(0x40) == "loc_40");
+    }
+}
+
+TEST_CASE("SwitchTableMsvcX86", "[Dissasm]Switch")
+{
+    std::vector<unsigned char> file = {
+        0x83, 0xF8, 0x02,                         // 0x00: cmp eax, 2
+        0x77, 0x4B,                               // 0x03: ja 0x50 (default)
+        0xFF, 0x24, 0x85, 0x80, 0x10, 0x40, 0x00, // 0x05: jmp dword ptr [eax*4 + 0x401080]
+    };
+    WriteSwitchCase(file, 0x20, 0);
+    WriteSwitchCase(file, 0x30, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    WriteDword(file, 0x80, 0x401020);            // the table of addresses
+    WriteDword(file, 0x84, 0x401030);
+    WriteDword(file, 0x88, 0x401040);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x86, 0x400000));
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.switchJumps.size() == 1);
+    REQUIRE(zone.switchJumps.at(0x5) == 3);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "loc_401020");
+    REQUIRE(zone.GetLabelNameAt(0x30) == "loc_401030");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "loc_401040");
+    // a jump table that is not one (a bounds check with entries that are not code) is not used
+    WriteDword(file, 0x84, 0x12345678);
+    DissasmTestInstance wrongTable(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x86, 0x400000));
+    REQUIRE(wrongTable.zone->switchJumps.empty());
+    REQUIRE(wrongTable.zone->GetLabelNameAt(0x30).empty());
 }

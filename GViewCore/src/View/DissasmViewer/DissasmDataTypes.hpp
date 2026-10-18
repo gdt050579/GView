@@ -93,6 +93,7 @@ namespace View
             Read,            // reads the data at to (mov eax, [rip + ...])
             Write,           // writes the data at to
             Offset,          // takes the address (lea rcx, [rip + ...] / push offset / mov ecx, offset)
+            Switch,          // a case of the jump table of an indirect jmp (switch)
         };
         struct DissasmXref {
             uint64 from;

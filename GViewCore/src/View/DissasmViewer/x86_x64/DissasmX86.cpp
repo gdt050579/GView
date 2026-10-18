@@ -680,6 +680,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 SetOperands(target.GetText(), params.zone);
             } else {
                 SetOperands(insn->op_str, params.zone); // indirect: the operands are shown as they are
+                const auto switchJump = params.zone->switchJumps.find(address);
+                if (switchJump != params.zone->switchJumps.end())
+                    autoComment = "switch: " + std::to_string(switchJump->second) + " cases";
             }
             return true;
         }
@@ -944,7 +947,10 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     const bool hasUserComment = showComments && zone->GetComment(*asmCacheLine, comment);
     const bool hasAutoComment = showComments && !asmCacheLine->autoComment.empty();
     if (hasUserComment || hasAutoComment) {
-        uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
+        // the comments are aligned after the longest line, up to a limit: a long operand (a demangled import name) would push the comments
+        // of all the drawn lines out of the screen; a longer line has its comment right after it
+        constexpr uint32 MAX_ALIGNED_LINE_SIZE = 64;
+        uint32 diffLine = std::min(zone->asmPreCacheData.maxLineSize, MAX_ALIGNED_LINE_SIZE) + textTotalColumnLength + commentPaddingLength;
         if (config.ShowOnlyDissasm)
             diffLine -= textAndOpCodesTotalLength;
         if (chars.Len() > diffLine)
@@ -1015,15 +1021,23 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
             initData.labelAddressBase = va;
     }
     // the cross references of the immediates / absolute operands: only the addresses that are locations of the file
+    const uint64 fileSize = obj->GetData().GetSize();
     if (initData.labelAddressBase.has_value()) {
-        auto* settingsData     = settings.get();
-        initData.isFileAddress = [settingsData](uint64 va) {
-            return settingsData->offsetTranslateCallback->TranslateToFileOffset(va, static_cast<uint32>(DissasmPEConversionType::VA)) != static_cast<uint64>(-1);
+        auto* settingsData           = settings.get();
+        initData.addressToFileOffset = [settingsData, fileSize](uint64 va) -> std::optional<uint64> {
+            const auto offset = settingsData->offsetTranslateCallback->TranslateToFileOffset(va, static_cast<uint32>(DissasmPEConversionType::VA));
+            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
         };
+        // the image base: the VA of the zone start minus its RVA
+        const auto rva = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::RVA));
+        if (rva != static_cast<uint64>(-1) && rva <= initData.labelAddressBase.value())
+            initData.imageBase = initData.labelAddressBase.value() - rva;
     } else {
-        const uint64 fileSize  = obj->GetData().GetSize();
-        initData.isFileAddress = [fileSize](uint64 offset) { return offset < fileSize; };
+        initData.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+        };
     }
+    initData.isFileAddress = [toFileOffset = initData.addressToFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
     initData.functionEntries = &settings->functionEntries;
     if (!settings->memoryMappings.empty()) {
         auto* settingsData  = settings.get();

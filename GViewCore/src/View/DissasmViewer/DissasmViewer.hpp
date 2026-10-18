@@ -414,6 +414,10 @@ namespace View
             const std::map<uint64, DissasmFunctionEntry>* functionEntries = nullptr;
             // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
             std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
+            // the file offset of an address (address space of the labels): the jump tables of the switches are read there
+            std::function<std::optional<uint64>(uint64)> addressToFileOffset;
+            // the VA of the RVA 0 (PE): the jump tables of MSVC x64 hold RVAs
+            std::optional<uint64> imageBase;
         };
 
         struct MemoryMappingEntry {
