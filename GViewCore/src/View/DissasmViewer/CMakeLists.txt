@@ -24,6 +24,8 @@ target_sources(
 	DissasmAnalysisExport.hpp
 	DissasmAnalysisExport.cpp
 	DissasmAssistantRequest.hpp
+	DissasmAnnotations.hpp
+	DissasmAnnotations.cpp
 	DissasmAssistantRequest.cpp
 	DissasmIOHelpers.hpp
 

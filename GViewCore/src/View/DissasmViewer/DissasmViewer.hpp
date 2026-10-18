@@ -764,6 +764,9 @@ namespace View
             void RemoveLocalVariable();
             bool InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             void CommandExportAsmFile();
+            // the annotations of the user as a plain text (JSON) file keyed by the addresses: written / added to the analysed zones
+            void ExportAnnotations();
+            void ImportAnnotations();
             void ProcessSpaceKey(bool goToEntryPoint = false);
 
             // jumps history (back / forward)

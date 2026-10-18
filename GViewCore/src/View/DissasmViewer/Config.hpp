@@ -36,6 +36,8 @@ constexpr uint32 COMMAND_SHOW_GRAPH            = 129;
 constexpr uint32 COMMAND_GOTO_ADDRESS          = 130;
 constexpr uint32 COMMAND_FIND                  = 131;
 constexpr uint32 COMMAND_TOGGLE_KEY_PROFILE    = 132;
+constexpr uint32 COMMAND_EXPORT_ANNOTATIONS    = 133;
+constexpr uint32 COMMAND_IMPORT_ANNOTATIONS    = 134;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -221,6 +223,13 @@ namespace View
                                                                       "Switch the keys between the GView and the IDA profiles (saved in GView.ini)",
                                                                       COMMAND_TOGGLE_KEY_PROFILE };
 
+            inline static KeyboardControl ExportAnnotationsCommand = {
+                Input::Key::None, "ExportAnnotations", "Write the names, comments, variables and zones to a JSON file (by address)", COMMAND_EXPORT_ANNOTATIONS
+            };
+            inline static KeyboardControl ImportAnnotationsCommand = {
+                Input::Key::None, "ImportAnnotations", "Add the names, comments, variables and zones of a JSON annotations file", COMMAND_IMPORT_ANNOTATIONS
+            };
+
             inline static KeyboardControl ShowGraphCommand = {
                 Input::Key::Ctrl | Input::Key::B, "ShowGraph", "Show the graph of the basic blocks of the current function", COMMAND_SHOW_GRAPH
             };
@@ -357,8 +366,10 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 28> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 30> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ExportAnnotationsCommand,
+                ImportAnnotationsCommand,
                 GoToAddressCommand,
                 FindCommand,
                 ToggleKeyProfileCommand,

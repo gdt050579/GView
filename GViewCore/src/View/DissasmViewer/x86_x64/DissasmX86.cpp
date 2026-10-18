@@ -4,6 +4,7 @@
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmX86LocalVariables.hpp"
 #include "X86InstructionInfo.hpp"
+#include "DissasmAnnotations.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>
@@ -1478,6 +1479,94 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
     return true;
 }
 
+// the code zones whose lines are ready (the annotations are read from / written to them)
+static std::vector<DissasmCodeZone*> GetAnalysedCodeZones(SettingsData* settings)
+{
+    std::vector<DissasmCodeZone*> zones;
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(zone.get())->CanReachAsmLines())
+            zones.push_back(static_cast<DissasmCodeZone*>(zone.get()));
+    return zones;
+}
+
+void Instance::ExportAnnotations()
+{
+    if (GView::App::IsExportBlockedFor(obj, "exporting the annotations of the disassembly"))
+        return;
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and export again!");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto fileName                  = filePath.filename().u8string();
+    LocalString<256> defaultName;
+    defaultName.SetFormat("%s.annotations.json", reinterpret_cast<const char*>(fileName.c_str()));
+    const auto selectedPath = Dialogs::FileDialog::ShowSaveFileWindow(defaultName, "Annotations:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+
+    const std::string text = BuildAnnotationsDocument(zones, std::string_view(reinterpret_cast<const char*>(fileName.data()), fileName.size())).dump(2) + "\n";
+    AppCUI::OS::File f;
+    if (!f.Create(selectedPath.value(), true) || !f.Write(text.data(), static_cast<uint32>(text.size()))) {
+        f.Close();
+        Dialogs::MessageBox::ShowError("Error", "Failed to write the annotations file!");
+        return;
+    }
+    f.Close();
+    Dialogs::MessageBox::ShowNotification("Info", "The annotations were written (names, comments, variables, zones, suggestions).");
+}
+
+void Instance::ImportAnnotations()
+{
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and import again!");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto selectedPath              = Dialogs::FileDialog::ShowOpenFileWindow("", "Annotations:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+    constexpr uint64 MAX_ANNOTATIONS_FILE_SIZE = 64ull * 1024 * 1024;
+    AppCUI::OS::File f;
+    std::string text;
+    if (!f.OpenRead(selectedPath.value()) || f.GetSize() > MAX_ANNOTATIONS_FILE_SIZE) {
+        f.Close();
+        Dialogs::MessageBox::ShowError("Error", "Failed to read the annotations file!");
+        return;
+    }
+    text.resize(static_cast<size_t>(f.GetSize()));
+    const bool read = text.empty() || f.Read(text.data(), static_cast<uint32>(text.size()));
+    f.Close();
+    nlohmann::json document = nlohmann::json::parse(text, nullptr, false);
+    if (!read || document.is_discarded()) {
+        Dialogs::MessageBox::ShowError("Error", "The annotations file is not a valid JSON file!");
+        return;
+    }
+
+    DissasmAnnotationsImport result;
+    std::string error;
+    if (!ImportAnnotationsDocument(document, zones, result, error)) {
+        Dialogs::MessageBox::ShowError("Error", error);
+        return;
+    }
+    for (auto* zone : result.zonesWithNewLines) // a collapsed zone was placed
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
+    RefreshDrawnLines();
+    LocalString<256> summary;
+    summary.SetFormat(
+          "Imported: %u names, %u comments, %u variables, %u numbers in decimal, %u zones, %u suggestions%s",
+          result.names,
+          result.comments,
+          result.variables,
+          result.decimalOperands,
+          result.collapsibleZones,
+          result.suggestedNames + result.aiComments,
+          result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
+    Dialogs::MessageBox::ShowNotification("Annotations", summary.GetText());
+}
+
 void Instance::CommandExportAsmFile()
 {
     if (GView::App::IsExportBlockedFor(obj, "exporting the disassembly to .asm files"))
@@ -1490,7 +1579,7 @@ void Instance::CommandExportAsmFile()
         const uint32 index  = zoneIndex++; // every code zone keeps its own number, the files of two zones never overwrite each other
         const auto language = codeZone->zoneDetails.language;
         if (!DissasmCodeZone::IsNativeCodeLanguage(language)) {
-            Dialogs::MessageBox::ShowNotification("Warning", "Only the x86 / x64 / ARM64 zones can be exported!");
+            Dialogs::MessageBox::ShowNotification("Warning", "Only the x86 / x64 / ARM zones can be exported!");
             continue;
         }
         if (!codeZone->CanReachAsmLines()) {
@@ -1532,7 +1621,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint64 jumpFromAddress = 0;
     char jumpMnemonic[16]  = {};
     if (!zone->CanReachAsmLines()) {
-        Dialogs::MessageBox::ShowNotification("Warning", "This dissasm zone is not an initialized x86/x64 zone!");
+        Dialogs::MessageBox::ShowNotification("Warning", "This dissasm zone is not an initialized code zone!");
         return;
     }
     if (!offsetToReach) {

@@ -3,6 +3,7 @@
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmAnalysisExport.hpp"
 #include "DissasmAssistantRequest.hpp"
+#include "DissasmAnnotations.hpp"
 #include <atomic>
 #include <thread>
 #include <nlohmann/json.hpp>
@@ -5076,4 +5077,114 @@ TEST_CASE("ArmFrameOperandForms", "[Dissasm]Arm32")
     REQUIRE_FALSE(FindArmFrameOperand("lr, [sp, #-4]!", "fp", slot));
     REQUIRE_FALSE(FindArmFrameOperand("r4, [sp], #4", "fp", slot));
     REQUIRE_FALSE(FindArmFrameOperand("r0, [r7, #4]", "fp", slot)); // r7 is not the frame register of an ARM mode function
+}
+
+TEST_CASE("AnnotationsRoundTrip", "[Dissasm]Annotations")
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x10,       // 0x04: sub rsp, 0x10
+        0x48, 0x89, 0x45, 0xF8,       // 0x08: mov qword ptr [rbp - 8], rax
+        0x8B, 0x45, 0xF4,             // 0x0c: mov eax, dword ptr [rbp - 0xc]
+        0xE8, 0x0C, 0x00, 0x00, 0x00, // 0x0f: call 0x20
+        0xC9,                         // 0x14: leave
+        0xC3,                         // 0x15: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+
+    // the annotations of the user on a first analysis
+    DissasmTestInstance first(file.data(), file.size(), true, layout);
+    auto& zone           = *first.zone;
+    const auto findLine = [](DissasmCodeZone& target, std::string_view text) {
+        const auto line = target.FindText(text, true, 0, UINT32_MAX, nullptr);
+        REQUIRE(line.has_value());
+        return line.value();
+    };
+    REQUIRE(first.AddOrUpdateComment(findLine(zone, "sub rsp, 0x10"), "frame of 16"));
+    std::string_view helperName = "helper";
+    REQUIRE(zone.TryRenameLine(findLine(zone, "sub_20"), &first.objects[0], &helperName).ok);
+    REQUIRE(zone.RenameLocalVariable(0x00, -8, "count").ok);
+    REQUIRE(first.AddCollpasibleZone(findLine(zone, "sub rsp, 0x10"), findLine(zone, "leave")));
+    zone.decimalOperands[0x04] = 1; // sub rsp, 16
+    zone.suggestedNames[0x20]  = "ReturnZero";
+
+    const auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    INFO(document.dump(2));
+    REQUIRE(document["format"].get<std::string>() == DISSASM_ANNOTATIONS_FORMAT);
+    const auto& zoneJson = document["zones"][0];
+    REQUIRE(zoneJson["names"][0]["address"].get<std::string>() == "0x20");
+    REQUIRE(zoneJson["names"][0]["name"].get<std::string>() == "helper");
+    REQUIRE(zoneJson["comments"][0]["text"].get<std::string>() == "frame of 16");
+    REQUIRE(zoneJson["variables"].size() == 1); // only the renamed one (var_C keeps the name of the analysis)
+    REQUIRE(zoneJson["variables"][0]["name"].get<std::string>() == "count");
+    REQUIRE(zoneJson["decimalOperands"][0]["mask"].get<uint32>() == 1);
+    REQUIRE(zoneJson["collapsibleZones"].size() == 1);
+    REQUIRE(zoneJson["suggestedNames"][0]["name"].get<std::string>() == "ReturnZero");
+
+    // a new analysis of the same code (through a text file: dump / parse), at another address: the annotations follow the code
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance second(file.data(), file.size(), true, layout);
+    auto& other = *second.zone;
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { &other }, result, error));
+    REQUIRE(result.zones == 1);
+    REQUIRE(result.names == 1);
+    REQUIRE(result.comments == 1);
+    REQUIRE(result.variables == 1);
+    REQUIRE(result.decimalOperands == 1);
+    REQUIRE(result.collapsibleZones == 1);
+    REQUIRE(result.suggestedNames == 1);
+    REQUIRE(result.skipped == 0);
+    REQUIRE(other.GetLabelNameAt(0x20) == "helper");
+    REQUIRE(other.localVariables.FindFunctionByStart(0x00)->FindVariable(-8)->name == "count");
+    REQUIRE(other.decimalOperands.at(0x04) == 1);
+    REQUIRE(other.suggestedNames.at(0x20) == "ReturnZero");
+    REQUIRE(other.collapsibleZones.size() == 1);
+    REQUIRE_FALSE(other.CanUndoEdit());
+    std::string comment;
+    REQUIRE(other.GetComment(findLine(other, "sub rsp, 16"), comment)); // the number in decimal as well
+    REQUIRE(comment == "frame of 16");
+    // the names of the document are the names of the second zone (in its VA)
+    REQUIRE(ExportZoneAnnotations(other)["names"][0]["address"].get<std::string>() == "0x140001020");
+}
+
+TEST_CASE("AnnotationsImportErrors", "[Dissasm]Annotations")
+{
+    std::vector<unsigned char> file(0x40, 0xC3);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    std::vector<DissasmCodeZone*> zones{ dissasmInstance.zone.get() };
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE_FALSE(ImportAnnotationsDocument(nlohmann::json{ { "format", "other" } }, zones, result, error));
+    REQUIRE_FALSE(ImportAnnotationsDocument(
+          nlohmann::json{ { "format", DISSASM_ANNOTATIONS_FORMAT }, { "version", DISSASM_ANNOTATIONS_VERSION + 1 }, { "zones", nlohmann::json::array() } },
+          zones,
+          result,
+          error));
+    // a zone of another file offset: nothing applies
+    nlohmann::json document = { { "format", DISSASM_ANNOTATIONS_FORMAT },
+                                { "version", DISSASM_ANNOTATIONS_VERSION },
+                                { "zones", { { { "fileOffset", "0x1000" } } } } };
+    REQUIRE_FALSE(ImportAnnotationsDocument(document, zones, result, error));
+    // the entries outside the code, a bad comment, a label that does not exist: skipped, the others applied
+    document["zones"] = { { { "fileOffset", "0x0" },
+                            { "comments",
+                              { { { "address", "0x5" }, { "text", "kept" } }, { { "address", "0x1000" }, { "text", "outside" } }, { { "address", "x" } } } },
+                            { "names", { { { "address", "0x6" }, { "name", "no_label_here" } } } } } };
+    result = {};
+    REQUIRE(ImportAnnotationsDocument(document, zones, result, error));
+    REQUIRE(result.comments == 1);
+    REQUIRE(result.skipped == 3);
 }

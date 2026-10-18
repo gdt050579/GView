@@ -386,6 +386,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_TOGGLE_KEY_PROFILE:
             ToggleKeyProfile();
             return true;
+        case COMMAND_EXPORT_ANNOTATIONS:
+            ExportAnnotations();
+            return true;
+        case COMMAND_IMPORT_ANNOTATIONS:
+            ImportAnnotations();
+            return true;
         case COMMAND_TOGGLE_AI_SUGGESTIONS:
             showAISuggestions = !showAISuggestions;
             RefreshDrawnLines();
