@@ -718,6 +718,16 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         return true;
     }
 
+    // an entry of a jump table: the name of its case (IDA: dd offset loc_...)
+    if (insn->id == 0 && !params.zone->tableEntries.empty()) {
+        const auto entry = params.zone->tableEntries.find(insn->address);
+        if (entry != params.zone->tableEntries.end()) {
+            const auto name = params.zone->GetLabelNameAt(entry->second);
+            SetOperands((name.empty() ? FormatAddress(params.zone->labelAddressBase + entry->second) : name).c_str(), params.zone);
+            return true;
+        }
+    }
+
     // the meaning of the instruction from the capstone details (groups, operands), not from its text
     const auto flow     = GetInstructionFlow(*insn, params.zone->GetArch());
     const auto operands = params.zone->GetOperandsInfo(*insn);

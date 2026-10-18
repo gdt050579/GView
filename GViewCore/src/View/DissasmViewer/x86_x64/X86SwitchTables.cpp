@@ -219,8 +219,13 @@ std::optional<uint32> X86SwitchDetector::FindCasesCount() const
 }
 
 std::vector<uint64> GView::View::DissasmViewer::ReadX86JumpTableTargets(
-      const X86JumpTable& table, const std::function<std::optional<uint64>(uint64, uint8)>& readValue, const std::function<bool(uint64)>& isTarget)
+      const X86JumpTable& table,
+      const std::function<std::optional<uint64>(uint64, uint8)>& readValue,
+      const std::function<bool(uint64)>& isTarget,
+      std::vector<uint64>* entryTargets)
 {
+    if (entryTargets)
+        entryTargets->clear();
     auto readEntry = [&](uint64 entryIndex) -> std::optional<uint64> {
         const auto value = readValue(table.tableAddress + entryIndex * table.entrySize, table.entrySize);
         if (!value.has_value())
@@ -256,6 +261,19 @@ std::vector<uint64> GView::View::DissasmViewer::ReadX86JumpTableTargets(
             }
             targets.push_back(entry->second);
         }
+        if (entryTargets) {
+            // the entries up to the last one used; an entry between them that no case uses ends the table when it is not a target
+            uint64 entriesCount = 0;
+            for (const auto& [index, target] : entries)
+                entriesCount = std::max<uint64>(entriesCount, index + 1);
+            for (uint64 index = 0; index < entriesCount; index++) {
+                const auto used   = entries.find(index);
+                const auto target = used != entries.end() ? std::optional<uint64>(used->second) : readEntry(index);
+                if (!target.has_value() || !isTarget(target.value()))
+                    break;
+                entryTargets->push_back(target.value());
+            }
+        }
         return targets;
     }
 
@@ -270,5 +288,7 @@ std::vector<uint64> GView::View::DissasmViewer::ReadX86JumpTableTargets(
         }
         targets.push_back(target.value());
     }
+    if (entryTargets)
+        *entryTargets = targets;
     return targets;
 }

@@ -56,9 +56,12 @@ class X86SwitchDetector
 
 // The targets of the cases of a jump table, in the order of the cases (the same target can appear several times). readValue reads a value of
 // 1, 4 or 8 bytes at an address; isTarget tells if an address can be a case (an address of the code). A table without a known bounds check
-// ends at its first entry that is not a target.
+// ends at its first entry that is not a target. `entryTargets`: the target of every entry of the table, in the order of the entries (an
+// index table maps several cases to one entry): the table is the entries count times entrySize bytes at tableAddress (and the cases count
+// bytes of the index table)
 std::vector<AppCUI::uint64> ReadX86JumpTableTargets(
       const X86JumpTable& table,
       const std::function<std::optional<AppCUI::uint64>(AppCUI::uint64 address, AppCUI::uint8 size)>& readValue,
-      const std::function<bool(AppCUI::uint64 address)>& isTarget);
+      const std::function<bool(AppCUI::uint64 address)>& isTarget,
+      std::vector<AppCUI::uint64>* entryTargets = nullptr);
 } // namespace GView::View::DissasmViewer

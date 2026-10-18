@@ -5447,3 +5447,150 @@ TEST_CASE("HeadlessAnalysisSignatures", "[Dissasm]Analyze")
     REQUIRE(failed["annotationsImport"].contains("error"));
     REQUIRE(functionName(failed, "0x20") == "sub_20");
 }
+
+TEST_CASE("SwitchTableInsideCode", "[Dissasm]Switch")
+{
+    // MSVC x64 puts the table after the code of the function, in .text: its entries become data lines
+    std::vector<unsigned char> file = {
+        0x83, 0xF9, 0x02,                         // 0x00: cmp ecx, 2
+        0x77, 0x4B,                               // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                         // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF, // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00, // 0x0f: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                         // 0x16: add rcx, rdx
+        0xFF, 0xE1,                               // 0x19: jmp rcx
+    };
+    WriteSwitchCase(file, 0x20, 0);
+    WriteSwitchCase(file, 0x30, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    file.resize(0x80, 0xCC);
+    WriteDword(file, 0x80, 0x1020); // the table of RVAs, inside the code
+    WriteDword(file, 0x84, 0x1030);
+    WriteDword(file, 0x88, 0x1040);
+    // 0x8c: mov eax, 5; ret - decoded from the last entry (40 10 00: adc byte ptr [rax], dl; 00 b8 ...) it would be hidden
+    file.insert(file.end(), { 0xB8, 0x05, 0x00, 0x00, 0x00, 0xC3 });
+    file.resize(0xA0, 0xCC);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), file.size(), DisassemblyLanguage::x64, 0x140000000));
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.switchJumps.at(0x19) == 3);
+    REQUIRE(zone.instructionSet.dataRanges.size() == 1);
+    REQUIRE(zone.instructionSet.dataRanges[0].start == 0x80);
+    REQUIRE(zone.instructionSet.dataRanges[0].end == 0x8C);
+    REQUIRE(zone.instructionSet.dataRanges[0].unit == 4);
+    REQUIRE(zone.tableEntries.size() == 3);
+    REQUIRE(zone.GetLabelNameAt(0x80) == "jpt_140001019");
+    const auto [first, last] = zone.xrefs.To(0x140001080);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Read);
+    REQUIRE(first->from == 0x140001019);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "jpt_140001019:").ends_with("; xref: EntryPoint+0x19 (read)"));
+    REQUIRE(FindListingLine(listing, "dd     loc_140001020").size() > 0);
+    REQUIRE(FindListingLine(listing, "dd     loc_140001040").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, 5").size() > 0); // the code after the table is decoded from its start
+    REQUIRE(listing.find("adc ") == std::string::npos);
+
+    // the same lines when the scan runs in steps (the lines are counted again in steps too): many functions after the table
+    auto big           = file;
+    const auto filler  = MakeManyFunctions(1000);
+    big.insert(big.end(), filler.begin(), filler.end());
+    auto layout = MakeSwitchLayout(big.size(), big.size(), DisassemblyLanguage::x64, 0x140000000);
+    DissasmTestInstance bigOneShot(big.data(), big.size(), false, layout);
+    REQUIRE(bigOneShot.zone->instructionSet.dataRanges.size() == 1);
+    layout.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance inSteps(big.data(), big.size(), false, layout);
+    auto& steppedZone = *inSteps.zone;
+    REQUIRE(steppedZone.IsDeepScanPending());
+    REQUIRE(steppedZone.instructionSet.dataRanges.empty()); // until the scan is committed
+    float progress = steppedZone.GetDeepScanProgress();
+    uint32 steps   = 0;
+    while (!steppedZone.ContinueDeepScan(std::chrono::steady_clock::now())) {
+        const float current = steppedZone.GetDeepScanProgress();
+        REQUIRE(current >= progress);
+        progress = current;
+        REQUIRE(++steps < 100000);
+    }
+    REQUIRE(steps > 2);
+    steppedZone.CommitDeepScan();
+    REQUIRE(steppedZone.instructionSet.dataRanges.size() == 1);
+    REQUIRE(steppedZone.asmLinesCount == bigOneShot.zone->asmLinesCount);
+    REQUIRE(steppedZone.cachedCodeOffsets.size() == bigOneShot.zone->cachedCodeOffsets.size());
+    REQUIRE(steppedZone.GetDisplayLinesCount() == bigOneShot.zone->GetDisplayLinesCount());
+    REQUIRE(inSteps.GetListing() == bigOneShot.GetListing());
+
+    // the index table of the cases (MSVC: a byte per case) is data too; a table without a bound is not (its end is a guess)
+    std::vector<unsigned char> indexed = {
+        0x83, 0xF9, 0x05,                               // 0x00: cmp ecx, 5 (6 cases)
+        0x77, 0x4B,                                     // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                               // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF,       // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x0F, 0xB6, 0x84, 0x02, 0x90, 0x10, 0x00, 0x00, // 0x0f: movzx eax, byte ptr [rdx + rax + 0x1090]
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00,       // 0x17: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                               // 0x1e: add rcx, rdx
+        0xFF, 0xE1,                                     // 0x21: jmp rcx
+    };
+    WriteSwitchCase(indexed, 0x30, 0);
+    WriteSwitchCase(indexed, 0x38, 1);
+    WriteSwitchCase(indexed, 0x40, 2);
+    indexed.resize(0x50, 0xCC);
+    indexed.insert(indexed.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    indexed.resize(0x80, 0xCC);
+    WriteDword(indexed, 0x80, 0x1030);
+    WriteDword(indexed, 0x84, 0x1038);
+    WriteDword(indexed, 0x88, 0x1040);
+    indexed.resize(0x90, 0xCC);
+    indexed.insert(indexed.end(), { 0, 1, 0, 2, 2, 1 }); // 0x90: the entry of every case
+    indexed.resize(0xA0, 0xCC);
+    DissasmTestInstance indexInstance(indexed.data(), indexed.size(), false, MakeSwitchLayout(indexed.size(), indexed.size(), DisassemblyLanguage::x64, 0x140000000));
+    const auto& ranges = indexInstance.zone->instructionSet.dataRanges;
+    REQUIRE(ranges.size() == 2);
+    REQUIRE((ranges[0].start == 0x80 && ranges[0].end == 0x8C && ranges[0].unit == 4));
+    REQUIRE((ranges[1].start == 0x90 && ranges[1].end == 0x96 && ranges[1].unit == 1));
+    const std::string indexListing = indexInstance.GetListing();
+    INFO(indexListing);
+    REQUIRE(FindListingLine(indexListing, "dd     loc_140001038").size() > 0);
+    REQUIRE(FindListingLine(indexListing, "db     0x02").size() > 0);
+}
+
+TEST_CASE("SwitchTableThumbTbb", "[Dissasm]Arm32")
+{
+    std::vector<unsigned char> file = {
+        0x02, 0x28,             // 0x00: cmp r0, #2
+        0x0A, 0xD8,             // 0x02: bhi 0x1a (default)
+        0xDF, 0xE8, 0x00, 0xF0, // 0x04: tbb [pc, r0] - the case i is at 0x08 + 2 * entry i
+        0x02, 0x04, 0x06,       // 0x08: the byte table
+        0x00,                   // 0x0b: the padding to the next instruction
+        0x01, 0x20, 0x70, 0x47, // 0x0c: movs r0, #1; bx lr
+        0x02, 0x20, 0x70, 0x47, // 0x10: movs r0, #2; bx lr
+        0x03, 0x20, 0x70, 0x47, // 0x14: movs r0, #3; bx lr
+        0x00, 0xBF,             // 0x18: nop
+        0x00, 0x20, 0x70, 0x47, // 0x1a: movs r0, #0; bx lr
+    };
+    ZoneLayout layout;
+    layout.size                = file.size();
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::Thumb;
+    const uint64 fileSize      = file.size();
+    layout.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+        return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.switchJumps.at(0x04) == 3);
+    REQUIRE(zone.instructionSet.dataRanges.size() == 1);
+    REQUIRE(zone.instructionSet.dataRanges[0].start == 0x08);
+    REQUIRE(zone.instructionSet.dataRanges[0].end == 0x0C); // the padding byte too: the instructions are 2 bytes aligned
+    REQUIRE(zone.GetLabelNameAt(0x08) == "jpt_4");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "db     loc_C").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     loc_14").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     0x00").size() > 0);
+    REQUIRE(FindListingLine(listing, "movs   r0, #1").size() > 0);
+}

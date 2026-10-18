@@ -84,13 +84,20 @@ Where <command> is on of:
    list-types               List all available types (as loaded from gview.ini).
                             Ex: 'GView list-types' 
 
-   analyze <file> [--out <file.json>] [--type:<type>]
+   analyze <file> [--out <file.json>] [--type:<type>] [options]
                             Analyzes the disassembly of a file without a window
                             and writes it as JSON (to stdout without --out):
                             the functions with their callers and callees, the
                             strings used by the code, the switches and the
                             comments / names of the user (from its cache).
                             Ex: 'GView analyze sample.exe --out sample.json'
+                            --annotations <file.json>  adds an annotations
+                                                       file (ExportAnnotations)
+                            --signatures <file.json>   names the sub_ functions
+                                                       that match the signatures
+                                                       (CreateSignatures)
+                            --make-signatures <file.json>  writes the signatures
+                                                       of the named functions
 
 Remote mode (requires a build with -DGVIEW_ENABLE_REMOTE=ON):
    serve [files] [options]  Runs GView as a server: the analysis runs here and
@@ -191,16 +198,29 @@ std::string readFile(const std::filesystem::path& path)
     return content;
 }
 
-// GView analyze <file> [--out <file.json>] [--type:<type>]
+// GView analyze <file> [--out <file.json>] [--type:<type>] [--annotations <file>] [--signatures <file>] [--make-signatures <file>]
 template <typename T>
 int ProcessAnalyzeCommand(int argc, T** argv)
 {
     std::filesystem::path file, output;
     std::string type;
+    GView::App::AnalyzeOptions options;
     for (int index = 2; index < argc; index++) {
         const std::string argument = ArgumentToUtf8(argv[index]);
         if (argument == "--out" && index + 1 < argc) {
             output = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--annotations" && index + 1 < argc) {
+            options.annotations = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--signatures" && index + 1 < argc) {
+            options.signatures = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--make-signatures" && index + 1 < argc) {
+            options.signaturesOutput = std::filesystem::path(argv[++index]);
             continue;
         }
         if (argument.starts_with("--type:")) {
@@ -218,12 +238,14 @@ int ProcessAnalyzeCommand(int argc, T** argv)
         file = std::filesystem::path(argv[index]);
     }
     if (file.empty()) {
-        std::cout << "Use: GView analyze <file> [--out <file.json>] [--type:<type>]" << std::endl;
+        std::cout << "Use: GView analyze <file> [--out <file.json>] [--type:<type>] [--annotations <file.json>] [--signatures <file.json>] [--make-signatures <file.json>]"
+                  << std::endl;
         return 1;
     }
     CHECK(GView::App::Init(true), 1, ""); // the testing terminal: nothing is drawn
     std::string json, error;
-    if (!GView::App::AnalyzeFile(file, type, json, error)) {
+    options.typeName = type;
+    if (!GView::App::AnalyzeFile(file, options, json, error)) {
         std::cerr << "Error: " << error << std::endl;
         return 1;
     }

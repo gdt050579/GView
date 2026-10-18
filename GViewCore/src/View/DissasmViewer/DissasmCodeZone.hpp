@@ -149,6 +149,8 @@ struct DissasmCodeZone : public ParseZone {
     // the relative addresses where an instruction starts (function entries, section starts): no decoded instruction crosses them
     std::vector<uint64> instructionBoundaries;
     std::unordered_map<uint64, uint32> switchJumps;        // relative address of the indirect jmp of a switch -> its cases count
+    // the jump tables inside the code shown as data lines (instructionSet.dataRanges): relative address of an entry -> its case (relative)
+    std::map<uint64, uint64> tableEntries;
     // ARM64 (deep scan): relative address of an instruction of an adrp pair (add / ldr / str [page + offset], br / blr through the slot read
     // before) -> the relative address it uses; the lines are decoded alone, the pair is known only by the sweep
     std::unordered_map<uint64, uint64> resolvedAddresses;

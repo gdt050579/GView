@@ -63,6 +63,38 @@ namespace View
                       modeChanges.begin(), modeChanges.end(), address, [](uint64 value, const std::pair<uint64, ArmCodeMode>& change) { return value < change.first; });
                 return next == modeChanges.begin() ? defaultMode : (next - 1)->second;
             }
+            // the data inside the code found by the analysis (the jump tables of the switches): data lines of `unit` bytes (1, 2, 4, 8)
+            struct DataRange {
+                uint64 start; // relative addresses [start, end)
+                uint64 end;
+                uint8 unit;
+            };
+            std::vector<DataRange> dataRanges; // sorted, not overlapping
+            const DataRange* DataRangeAt(uint64 address) const
+            {
+                const auto next = std::upper_bound(
+                      dataRanges.begin(), dataRanges.end(), address, [](uint64 value, const DataRange& range) { return value < range.start; });
+                return next != dataRanges.begin() && address < (next - 1)->end ? &*(next - 1) : nullptr;
+            }
+            // the start of the first range after `address` (an instruction never runs into it)
+            std::optional<uint64> NextDataRangeStart(uint64 address) const
+            {
+                const auto next = std::upper_bound(
+                      dataRanges.begin(), dataRanges.end(), address, [](uint64 value, const DataRange& range) { return value < range.start; });
+                return next != dataRanges.end() ? std::optional<uint64>(next->start) : std::nullopt;
+            }
+            // adds the range (inside [0, codeSize)) when it overlaps no other one; false when it was not added
+            bool AddDataRange(const DataRange& range)
+            {
+                if (range.end <= range.start)
+                    return false;
+                const auto next = std::upper_bound(
+                      dataRanges.begin(), dataRanges.end(), range.start, [](uint64 value, const DataRange& item) { return value < item.start; });
+                if ((next != dataRanges.end() && next->start < range.end) || (next != dataRanges.begin() && (next - 1)->end > range.start))
+                    return false;
+                dataRanges.insert(next, range);
+                return true;
+            }
         };
         static constexpr uint64 DISSASM_MAX_CODE_WINDOW_SIZE      = 4096;
 

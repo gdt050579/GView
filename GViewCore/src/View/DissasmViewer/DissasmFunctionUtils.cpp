@@ -196,6 +196,42 @@ void SetDataLine(cs_insn* insn, uint64_t address, const uint8_t* bytes, size_t l
     snprintf(insn->op_str, sizeof(insn->op_str), "%s", operands);
 }
 
+// An entry of a jump table: a data line of `unit` bytes (db / dw / dd / dq, ARM: db / .short / .word / .quad); a last entry shorter than the
+// unit (the end of the table, of the code) is a db line
+bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, uint8_t unit, bool isArm)
+{
+    if (available == 0)
+        return false;
+    const size_t width = available >= unit ? unit : 1;
+    uint64_t value     = 0;
+    for (size_t index = 0; index < width; index++)
+        value |= static_cast<uint64_t>((*code)[index]) << (8 * index);
+    char text[24];
+    const char* mnemonic = "db";
+    switch (width) {
+    case 2:
+        mnemonic = isArm ? ".short" : "dw";
+        snprintf(text, sizeof(text), "0x%04llx", static_cast<unsigned long long>(value));
+        break;
+    case 4:
+        mnemonic = isArm ? ".word" : "dd";
+        snprintf(text, sizeof(text), "0x%08llx", static_cast<unsigned long long>(value));
+        break;
+    case 8:
+        mnemonic = isArm ? ".quad" : "dq";
+        snprintf(text, sizeof(text), "0x%016llx", static_cast<unsigned long long>(value));
+        break;
+    default:
+        snprintf(text, sizeof(text), "0x%02llx", static_cast<unsigned long long>(value));
+        break;
+    }
+    SetDataLine(insn, *address, *code, width, mnemonic, text);
+    *code += width;
+    *size -= width;
+    *address += width;
+    return true;
+}
+
 // ARM64: 4 bytes instructions. A run of nops up to the next 16 bytes aligned address is one align line (as on x86, at least 2 of them,
 // not longer than the alignment of its end); an undecodable word is a data line (.word 0x..), the bytes before a boundary or the end of
 // the code (less than 4) are db lines
@@ -306,6 +342,16 @@ bool DecodeX86Line(
         const auto next = std::upper_bound(boundaries->begin(), boundaries->end(), static_cast<AppCUI::uint64>(*address));
         if (next != boundaries->end() && *next - *address < available)
             available = static_cast<size_t>(*next - *address);
+    }
+    // the jump tables found by the analysis: data lines of their entries; no instruction runs into a table
+    if (instructionSet && !instructionSet->dataRanges.empty()) {
+        if (const auto* range = instructionSet->DataRangeAt(*address)) {
+            const size_t left = static_cast<size_t>(std::min<AppCUI::uint64>(range->end - *address, available));
+            return DecodeTableLine(code, size, address, insn, left, range->unit, instructionSet->kind != DissasmInstructionSet::Kind::X86);
+        }
+        const auto nextRange = instructionSet->NextDataRangeStart(*address);
+        if (nextRange.has_value() && nextRange.value() - *address < available)
+            available = static_cast<size_t>(nextRange.value() - *address);
     }
     if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm64)
         return DecodeArm64Line(handle, code, size, address, insn, available, alignmentBase);

@@ -15,11 +15,113 @@ using GView::Utils::GStatus;
 
 constexpr uint64 DISSASM_MAX_ANALYZED_FUNCTION_SIZE = 0x1000000; // 16 MB, larger functions are analyzed only partially
 
+// The lines of the zone, counted by a linear sweep (DecodeX86Line) that stops at a deadline and continues later: a big zone shows its first
+// lines before the end of its code is read. A cached offset (file offset, line) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes.
+// The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it. An undecodable byte
+// is a data line (db) and the decoding continues after it (inline data, jump tables); a zone bigger than the data cache window is decoded
+// window after window.
+struct GView::View::DissasmViewer::DissasmLineCounter {
+    // the zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is not
+    // shown. A run inside the code (between functions, data) is decoded as it is
+    static constexpr uint32 TRAILING_ZEROS_MINIMUM_LINES = 4;
+    static constexpr uint32 LINES_BETWEEN_DEADLINE_CHECKS = 4096;
+
+    vector<AsmOffsetLine>& offsets;
+    Reference<GView::Object> obj;
+    uint64 zoneStart;
+    uint64 zoneSize;
+    const std::vector<uint64>* boundaries;
+    uint64 alignmentBase;
+    csh handle    = 0;
+    cs_insn* insn = nullptr;
+    DissasmCodeLinesWalker walker;
+    uint32 lines        = 0;
+    uint32 zeroRunLines = 0;
+    uint64 lastOffset   = 0;
+    bool ended          = false;
+
+    DissasmLineCounter(
+          vector<AsmOffsetLine>& offsets,
+          const DisassemblyZone& zoneDetails,
+          Reference<GView::Object> obj,
+          const std::vector<uint64>* boundaries,
+          uint64 alignmentBase)
+        : offsets(offsets), obj(obj), zoneStart(zoneDetails.startingZonePoint), zoneSize(zoneDetails.size), boundaries(boundaries),
+          alignmentBase(alignmentBase), walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, 0, 0, boundaries, alignmentBase)
+    {
+    }
+
+    ~DissasmLineCounter()
+    {
+        if (insn)
+            cs_free(insn, 1);
+        if (handle != 0)
+            cs_close(&handle);
+    }
+
+    bool Start(cs_arch arch, int internalArchitecture, const DissasmInstructionSet* instructionSet)
+    {
+        if (cs_open(arch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
+            handle = 0;
+            return false;
+        }
+        insn   = cs_malloc(handle);
+        walker = DissasmCodeLinesWalker(obj, zoneStart, zoneSize, handle, 0, boundaries, alignmentBase, instructionSet);
+        offsets.clear();
+        offsets.push_back({ zoneStart, 0 });
+        return insn != nullptr;
+    }
+
+    // true when the whole code is counted
+    bool Run(std::chrono::steady_clock::time_point deadline)
+    {
+        if (ended)
+            return true;
+        uint32 linesUntilCheck = LINES_BETWEEN_DEADLINE_CHECKS;
+        while (walker.Next(insn)) {
+            lines++;
+            const uint64 address = walker.GetAddress(); // the next line
+            if (address - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN) {
+                lastOffset = address;
+                offsets.push_back({ address + zoneStart, lines });
+            }
+            // only zero bytes: 00 00 (x86: add byte ptr [rax], al), 00 00 00 00 (ARM64: udf #0), a last 00 byte (a data line: db 0x00)
+            const bool isZeroPadding = std::all_of(insn->bytes, insn->bytes + std::min<size_t>(insn->size, sizeof(insn->bytes)), [](uint8 value) {
+                return value == 0;
+            });
+            zeroRunLines = isZeroPadding ? zeroRunLines + 1u : 0u;
+            if (--linesUntilCheck == 0) {
+                linesUntilCheck = LINES_BETWEEN_DEADLINE_CHECKS;
+                if (std::chrono::steady_clock::now() >= deadline)
+                    return false;
+            }
+        }
+        if (zeroRunLines >= TRAILING_ZEROS_MINIMUM_LINES && zeroRunLines < lines) {
+            lines -= zeroRunLines;
+            // the cached offsets placed inside the removed lines point to lines that do not exist
+            while (offsets.size() > 1 && offsets.back().line >= lines)
+                offsets.pop_back();
+        }
+        ended = true;
+        return true;
+    }
+
+    // the part of the code already counted: 0..1
+    float GetProgress() const
+    {
+        return zoneSize == 0 ? 1.0f : static_cast<float>(static_cast<double>(walker.GetAddress()) / static_cast<double>(zoneSize));
+    }
+};
+
 // The deep scan of a code zone: the labels (calls, jumps, functions, import thunks, switch cases), the cross references and the local
 // variables. It runs in steps, each one until a deadline: a big zone is analyzed while its linear listing is already shown. The results
 // stay here until the scan ends and are given to the zone at once (Commit): the drawn lines never see a partial analysis.
+// The jump tables found inside the code (MSVC x64, Thumb tbb / tbh) become data lines: the lines are counted again with them (Recount) and
+// the sweep starts again on the new lines (the bytes of a table decoded as instructions gave false labels and could hide the instructions
+// after it), until no new table is found (at most DISSASM_MAX_TABLE_PASSES sweeps).
 struct GView::View::DissasmViewer::DissasmDeepScan {
-    enum class Phase : uint8 { Sweep, Labels, Done };
+    static constexpr uint32 DISSASM_MAX_TABLE_PASSES = 3;
+    enum class Phase : uint8 { Sweep, Recount, Labels, Done };
     enum LabelType { SUB, OFFSET, OTHER };
 
     DissasmCodeZone* zone;
@@ -35,12 +137,22 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the code is [codeStart, codeStart + codeSize): the same lines as the ones counted by DissasmLineCounter
     const uint64 codeStart;
     const uint64 codeSize;
-    const uint32 asmLines;
+    uint32 lines; // the lines of the zone (counted again when tables became data lines)
     uint32 linesToDecode;
     const bool is64;
     const uint64 addressMask; // the addresses of 32 bit code wrap around at 4 GB
     const uint64 labelBase;
     const DissasmArch arch;
+    const std::optional<uint64> imageBase;
+
+    // the instruction set of the zone and the tables found by the previous sweeps; the lines counted with them
+    DissasmInstructionSet instructionSet;
+    std::vector<DissasmInstructionSet::DataRange> pendingRanges; // found by this sweep, not yet data lines
+    std::unique_ptr<DissasmLineCounter> recounter;
+    std::vector<AsmOffsetLine> recountedOffsets;
+    bool recounted = false;
+    uint32 passes  = 1;
+    std::map<uint64, uint64> tableEntries; // relative address of an entry of a table -> the relative address of its case
 
     csh handle           = 0;
     cs_insn* insn        = nullptr;
@@ -77,17 +189,23 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
           detectLocalVariables(initData.enableLocalVariablesDetection),
           isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), findImport(initData.findImport),
           addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
-          asmLines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
-          labelBase(zone->labelAddressBase), arch(zone->GetArch()), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
+          lines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
+          labelBase(zone->labelAddressBase), arch(zone->GetArch()), imageBase(initData.imageBase), instructionSet(zone->instructionSet),
+          walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
           switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase),
-          arm32Tracker(zone->labelAddressBase, [this](uint64 relativeAddress) -> std::optional<uint32> {
-              // a word of a literal pool (32 bit ARM)
-              if (!addressToFileOffset)
-                  return {};
-              const auto value = ReadTableValue(labelBase + relativeAddress, 4);
-              return value.has_value() ? std::optional<uint32>(static_cast<uint32>(value.value())) : std::nullopt;
-          })
+          arm32Tracker(zone->labelAddressBase, LiteralReader())
     {
+    }
+
+    // a word of a literal pool (32 bit ARM)
+    Arm32Tracker::ReadWord LiteralReader()
+    {
+        return [this](uint64 relativeAddress) -> std::optional<uint32> {
+            if (!addressToFileOffset)
+                return {};
+            const auto value = ReadTableValue(labelBase + relativeAddress, 4);
+            return value.has_value() ? std::optional<uint32>(static_cast<uint32>(value.value())) : std::nullopt;
+        };
     }
 
     ~DissasmDeepScan()
@@ -132,15 +250,108 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK)
             return false;
         insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &zone->instructionSet);
+        walker = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
         callsFound.reserve(16);
+        AddPluginFunctions();
+        return true;
+    }
 
-        // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
+    // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
+    void AddPluginFunctions()
+    {
         if (functionEntries) {
             for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
                 AddFunctionStart(it->first);
         }
-        return true;
+    }
+
+    // a new sweep on the lines counted again: everything found by the previous one is dropped
+    void ResetSweep()
+    {
+        prologueDetector = X86PrologueDetector(is64);
+        switchDetector   = X86SwitchDetector(is64, labelBase, imageBase);
+        atBlockStart     = true;
+        blockEndbr.reset();
+        callsFound.clear();
+        callsMap.clear();
+        thunks.clear();
+        xrefs = DissasmXrefs{};
+        thunkImports.clear();
+        switchJumps.clear();
+        resolvedAddresses.clear();
+        adrpTracker  = Arm64AdrpTracker(labelBase);
+        arm32Tracker = Arm32Tracker(labelBase, LiteralReader());
+        prologueCandidates.clear();
+        conditionalTargets.clear();
+        tableEntries.clear();
+        pendingRanges.clear();
+        linesToDecode = lines;
+        walker        = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+        AddPluginFunctions();
+    }
+
+    // the bytes [start, end) (relative) of a table inside the code: data lines of `unit` bytes after the next sweep. A range that covers
+    // a function entry / a section start, or overlaps another table, is not a table
+    void AddDataCandidate(uint64 start, uint64 end, uint8 unit)
+    {
+        end = std::min(end, codeSize);
+        if (start >= end)
+            return;
+        const auto boundary = std::upper_bound(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), start);
+        if (boundary != zone->instructionBoundaries.end() && *boundary < end)
+            return;
+        const DissasmInstructionSet::DataRange range{ start, end, unit };
+        if (const auto* known = instructionSet.DataRangeAt(start); known && known->start == start && known->end == end)
+            return; // a data line already
+        for (const auto& pending : pendingRanges)
+            if (pending.start < end && start < pending.end)
+                return;
+        DissasmInstructionSet check = instructionSet;
+        if (check.AddDataRange(range))
+            pendingRanges.push_back(range);
+    }
+
+    // a jump table (VA) inside the code: its entries (the VA of the case of every entry) become data lines with the names of their cases,
+    // its first entry gets a label (IDA: jpt_ + the address of the jump) read by the jump
+    void AddTable(uint64 jumpAddress, uint64 from, uint64 table, uint8 unit, const std::vector<uint64>& entryTargets, bool alignEnd)
+    {
+        if (table < labelBase || table - labelBase >= codeSize || entryTargets.empty() || unit == 0)
+            return;
+        const uint64 start = table - labelBase;
+        uint64 end         = start + entryTargets.size() * unit;
+        if (alignEnd) // Thumb: the instruction after a tbb table of an odd size is 2 bytes aligned
+            end = (end + 1) & ~static_cast<uint64>(1);
+        AddDataCandidate(start, end, unit);
+        for (size_t index = 0; index < entryTargets.size(); index++)
+            if (entryTargets[index] >= labelBase)
+                tableEntries[start + index * unit] = entryTargets[index] - labelBase;
+        xrefs.Add(from, table, DissasmXrefKind::Read);
+        const uint64 tableOffset = codeStart + start;
+        if (!callsMap.contains(tableOffset)) {
+            callsFound.emplace_back(tableOffset, zone->GetLabelName("jpt_", jumpAddress));
+            callsMap.insert({ tableOffset, true });
+        }
+    }
+
+    // the line of the instruction at a file offset (the lines of the scan: counted again when tables became data lines); none after the
+    // last decoded line
+    std::optional<uint32> LineOfOffset(uint64 fileOffset)
+    {
+        const auto& offsets = recounted ? recountedOffsets : zone->cachedCodeOffsets;
+        if (offsets.empty() || fileOffset < codeStart)
+            return {};
+        auto closest = std::upper_bound(offsets.begin(), offsets.end(), fileOffset, [](uint64 value, const AsmOffsetLine& item) { return value < item.offset; });
+        --closest; // the first cached offset is the code start
+        DissasmCodeLinesWalker lineWalker(
+              obj, codeStart, codeSize, handle, closest->offset - codeStart, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+        const uint64 target = fileOffset - codeStart;
+        uint32 line         = closest->line;
+        while (lineWalker.Next(insn)) {
+            if (lineWalker.GetAddress() > target)
+                return line;
+            line++;
+        }
+        return {};
     }
 
     // a value of a jump table (1, 2, 4 or 8 bytes) at an address of the labels
@@ -247,6 +458,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     targets.push_back(labelBase + target);
                 }
                 AddSwitchTargets(insn->address, from, targets);
+                if (!targets.empty() && table->entrySize > 0) // tbb / tbh / ldr pc, [pc, rN, lsl #2]: the table follows the jump
+                    AddTable(insn->address, from, labelBase + table->table, table->entrySize, targets, insnArch == DissasmArch::Thumb);
             }
             // a prologue at a block start: a function (a candidate until the end of the sweep: a shrink wrapped prologue is reached by a
             // conditional branch of its own function)
@@ -285,11 +498,21 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // the jump table of a switch: every case is a jump target (loc_) referenced by the jmp
         const auto jumpTable = switchDetector.Next(*insn);
         if (jumpTable.has_value() && addressToFileOffset) {
+            std::vector<uint64> entryTargets;
             const auto targets = ReadX86JumpTableTargets(
                   jumpTable.value(),
                   [this](uint64 address, uint8 size) { return ReadTableValue(address, size); },
-                  [this](uint64 address) { return address >= labelBase && address - labelBase < codeSize; });
+                  [this](uint64 address) { return address >= labelBase && address - labelBase < codeSize; },
+                  &entryTargets);
             AddSwitchTargets(insn->address, from, targets);
+            // only a table with a bound (cmp / ja before the jump): the end of a table without one is a guess, the code after it would
+            // become data
+            if (!targets.empty() && jumpTable->casesCount.has_value()) {
+                AddTable(insn->address, from, jumpTable->tableAddress, jumpTable->entrySize, entryTargets, false);
+                const auto indexTable = jumpTable->indexTableAddress;
+                if (indexTable.has_value() && indexTable.value() >= labelBase) // MSVC: the byte of the entry of every case
+                    AddDataCandidate(indexTable.value() - labelBase, indexTable.value() - labelBase + jumpTable->casesCount.value(), 1);
+            }
         }
         AnalyzeBranchesAndData(flow, operands, from, insn->id == X86_INS_LEA);
     }
@@ -418,13 +641,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     void PlaceLabel(const std::pair<uint64, std::string>& call)
     {
         const uint64 callValue = call.first;
-        uint32 diffLines       = 0;
-        auto callInsn          = GetCurrentInstructionByOffset(callValue, zone, obj, diffLines);
-        if (!callInsn)
-            return;
-        cs_free(callInsn, 1);
-        if (diffLines >= asmLines)
+        const auto line        = LineOfOffset(callValue);
+        if (!line.has_value() || line.value() >= lines)
             return; // the target is after the last decoded instruction (trailing data), it has no line
+        const uint32 diffLines = line.value();
 
         const uint64 relativeAddress = callValue - codeStart;
         annotations.insert({ diffLines + extraLines, { call.second, relativeAddress } });
@@ -442,6 +662,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (entry != functionEntries->end() && entry->second.size > 0 && entry->second.size < limit - relativeAddress)
                 limit = relativeAddress + entry->second.size;
         }
+        if (const auto table = instructionSet.NextDataRangeStart(relativeAddress); table.has_value() && table.value() < limit)
+            limit = table.value(); // the jump table after the code of the function
         const uint64 bytesToRead = std::min<uint64>(limit - relativeAddress, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
         const auto functionData  = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
         if (!functionData.IsValid())
@@ -473,36 +695,80 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         constexpr uint32 INSTRUCTIONS_BETWEEN_CLOCK_CHECKS = 512;
         constexpr uint32 LABELS_BETWEEN_CLOCK_CHECKS       = 16;
         uint32 counter                                     = 0;
-        while (phase == Phase::Sweep) {
-            if (linesToDecode == 0 || !walker.Next(insn)) {
-                FinishSweep();
-                phase = Phase::Labels;
+        for (;;) {
+            switch (phase) {
+            case Phase::Sweep:
+                if (linesToDecode == 0 || !walker.Next(insn)) {
+                    EndSweep();
+                    break;
+                }
+                linesToDecode--;
+                AnalyzeInstruction();
+                if (++counter % INSTRUCTIONS_BETWEEN_CLOCK_CHECKS == 0 && std::chrono::steady_clock::now() >= deadline)
+                    return false;
                 break;
-            }
-            linesToDecode--;
-            AnalyzeInstruction();
-            if (++counter % INSTRUCTIONS_BETWEEN_CLOCK_CHECKS == 0 && std::chrono::steady_clock::now() >= deadline)
-                return false;
-        }
-        while (phase == Phase::Labels) {
-            if (labelIndex >= callsFound.size()) {
-                phase = Phase::Done;
+            case Phase::Recount:
+                if (!recounter->Run(deadline))
+                    return false;
+                lines = recounter->lines;
+                recounter.reset();
+                recounted = true;
+                ResetSweep();
+                phase = Phase::Sweep;
                 break;
+            case Phase::Labels:
+                if (labelIndex >= callsFound.size()) {
+                    phase = Phase::Done;
+                    break;
+                }
+                PlaceLabel(callsFound[labelIndex++]);
+                if (++counter % LABELS_BETWEEN_CLOCK_CHECKS == 0 && std::chrono::steady_clock::now() >= deadline)
+                    return false;
+                break;
+            case Phase::Done:
+                return true;
             }
-            PlaceLabel(callsFound[labelIndex++]);
-            if (++counter % LABELS_BETWEEN_CLOCK_CHECKS == 0 && std::chrono::steady_clock::now() >= deadline)
-                return false;
         }
-        return true;
+    }
+
+    // the end of a sweep: the new tables become data lines (the lines are counted again, then a new sweep), or the labels are placed
+    void EndSweep()
+    {
+        if (!pendingRanges.empty() && passes < DISSASM_MAX_TABLE_PASSES) {
+            auto ranges = instructionSet.dataRanges;
+            for (const auto& range : pendingRanges)
+                instructionSet.AddDataRange(range);
+            pendingRanges.clear();
+            recountedOffsets.clear();
+            recounter = std::make_unique<DissasmLineCounter>(recountedOffsets, zone->zoneDetails, obj, &zone->instructionBoundaries, zone->paddingAlignmentBase);
+            if (recounter->Start(zone->capstoneArch, internalArchitecture, &instructionSet)) {
+                passes++;
+                phase = Phase::Recount;
+                return;
+            }
+            recounter.reset();
+            instructionSet.dataRanges = std::move(ranges); // the lines can not be counted again: the tables stay instructions
+        }
+        FinishSweep();
+        phase = Phase::Labels;
     }
 
     float GetProgress() const
     {
         // the sweep is most of the work
+        const float sweepDone = lines == 0 ? 1.0f : static_cast<float>(lines - linesToDecode) / static_cast<float>(lines);
+        // the sweeps after the first one (the tables became data lines) and their line counts: 0.8 .. 0.9, every pass after the previous one
+        const auto rescanProgress = [this](float fraction) {
+            return 0.8f + 0.1f * (static_cast<float>(passes - 2) + fraction) / static_cast<float>(DISSASM_MAX_TABLE_PASSES - 1);
+        };
+        if (phase == Phase::Recount)
+            return rescanProgress(0.5f * (recounter ? recounter->GetProgress() : 1.0f));
         if (phase == Phase::Sweep)
-            return asmLines == 0 ? 0.0f : 0.8f * static_cast<float>(asmLines - linesToDecode) / static_cast<float>(asmLines);
-        if (phase == Phase::Labels)
-            return callsFound.empty() ? 1.0f : 0.8f + 0.2f * static_cast<float>(labelIndex) / static_cast<float>(callsFound.size());
+            return passes == 1 ? 0.8f * sweepDone : rescanProgress(0.5f + 0.5f * sweepDone);
+        if (phase == Phase::Labels) {
+            const float start = passes == 1 ? 0.8f : 0.9f;
+            return callsFound.empty() ? 1.0f : start + (1.0f - start) * static_cast<float>(labelIndex) / static_cast<float>(callsFound.size());
+        }
         return 1.0f;
     }
 
@@ -516,6 +782,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->functionStarts            = std::move(functionStarts);
         zone->dissasmType.annotations   = std::move(annotations);
         zone->localVariables.functions  = std::move(frames);
+        // the tables that became data lines: their entries show the names of their cases
+        zone->tableEntries.clear();
+        for (const auto& [entry, target] : tableEntries)
+            if (instructionSet.DataRangeAt(entry))
+                zone->tableEntries.emplace(entry, target);
+        zone->instructionSet = std::move(instructionSet);
+        if (recounted) {
+            zone->cachedCodeOffsets = std::move(recountedOffsets);
+            zone->asmLinesCount     = lines;
+        }
         return extraLines;
     }
 };
@@ -532,104 +808,6 @@ inline bool IsValidCodeZone(const DisassemblyZone& zoneDetails, Reference<GView:
     // no line (the init must not fail on every paint)
     return zoneDetails.entryPoint >= zoneDetails.startingZonePoint && zoneDetails.entryPoint - zoneDetails.startingZonePoint < zoneDetails.size;
 }
-
-// The lines of the zone, counted by a linear sweep (DecodeX86Line) that stops at a deadline and continues later: a big zone shows its first
-// lines before the end of its code is read. A cached offset (file offset, line) is kept every DISSASM_INSTRUCTION_OFFSET_MARGIN bytes.
-// The code is decoded from the start of the zone: every decoded address (and every branch target) is relative to it. An undecodable byte
-// is a data line (db) and the decoding continues after it (inline data, jump tables); a zone bigger than the data cache window is decoded
-// window after window.
-struct GView::View::DissasmViewer::DissasmLineCounter {
-    // the zero bytes at the end of the section (file alignment padding) decode as "add byte ptr [rax], al": a trailing run of them is not
-    // shown. A run inside the code (between functions, data) is decoded as it is
-    static constexpr uint32 TRAILING_ZEROS_MINIMUM_LINES = 4;
-    static constexpr uint32 LINES_BETWEEN_DEADLINE_CHECKS = 4096;
-
-    vector<AsmOffsetLine>& offsets;
-    Reference<GView::Object> obj;
-    uint64 zoneStart;
-    uint64 zoneSize;
-    const std::vector<uint64>* boundaries;
-    uint64 alignmentBase;
-    csh handle    = 0;
-    cs_insn* insn = nullptr;
-    DissasmCodeLinesWalker walker;
-    uint32 lines        = 0;
-    uint32 zeroRunLines = 0;
-    uint64 lastOffset   = 0;
-    bool ended          = false;
-
-    DissasmLineCounter(
-          vector<AsmOffsetLine>& offsets,
-          const DisassemblyZone& zoneDetails,
-          Reference<GView::Object> obj,
-          const std::vector<uint64>* boundaries,
-          uint64 alignmentBase)
-        : offsets(offsets), obj(obj), zoneStart(zoneDetails.startingZonePoint), zoneSize(zoneDetails.size), boundaries(boundaries),
-          alignmentBase(alignmentBase), walker(obj, zoneDetails.startingZonePoint, zoneDetails.size, 0, 0, boundaries, alignmentBase)
-    {
-    }
-
-    ~DissasmLineCounter()
-    {
-        if (insn)
-            cs_free(insn, 1);
-        if (handle != 0)
-            cs_close(&handle);
-    }
-
-    bool Start(cs_arch arch, int internalArchitecture, const DissasmInstructionSet* instructionSet)
-    {
-        if (cs_open(arch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK) {
-            handle = 0;
-            return false;
-        }
-        insn   = cs_malloc(handle);
-        walker = DissasmCodeLinesWalker(obj, zoneStart, zoneSize, handle, 0, boundaries, alignmentBase, instructionSet);
-        offsets.clear();
-        offsets.push_back({ zoneStart, 0 });
-        return insn != nullptr;
-    }
-
-    // true when the whole code is counted
-    bool Run(std::chrono::steady_clock::time_point deadline)
-    {
-        if (ended)
-            return true;
-        uint32 linesUntilCheck = LINES_BETWEEN_DEADLINE_CHECKS;
-        while (walker.Next(insn)) {
-            lines++;
-            const uint64 address = walker.GetAddress(); // the next line
-            if (address - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN) {
-                lastOffset = address;
-                offsets.push_back({ address + zoneStart, lines });
-            }
-            // only zero bytes: 00 00 (x86: add byte ptr [rax], al), 00 00 00 00 (ARM64: udf #0), a last 00 byte (a data line: db 0x00)
-            const bool isZeroPadding = std::all_of(insn->bytes, insn->bytes + std::min<size_t>(insn->size, sizeof(insn->bytes)), [](uint8 value) {
-                return value == 0;
-            });
-            zeroRunLines = isZeroPadding ? zeroRunLines + 1u : 0u;
-            if (--linesUntilCheck == 0) {
-                linesUntilCheck = LINES_BETWEEN_DEADLINE_CHECKS;
-                if (std::chrono::steady_clock::now() >= deadline)
-                    return false;
-            }
-        }
-        if (zeroRunLines >= TRAILING_ZEROS_MINIMUM_LINES && zeroRunLines < lines) {
-            lines -= zeroRunLines;
-            // the cached offsets placed inside the removed lines point to lines that do not exist
-            while (offsets.size() > 1 && offsets.back().line >= lines)
-                offsets.pop_back();
-        }
-        ended = true;
-        return true;
-    }
-
-    // the part of the code already counted: 0..1
-    float GetProgress() const
-    {
-        return zoneSize == 0 ? 1.0f : static_cast<float>(static_cast<double>(walker.GetAddress()) / static_cast<double>(zoneSize));
-    }
-};
 
 DissasmCodeZone::DissasmCodeZone() = default;
 
@@ -902,6 +1080,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     instructionBoundaries.erase(std::unique(instructionBoundaries.begin(), instructionBoundaries.end()), instructionBoundaries.end());
 
     localVariables.functions.clear();
+    tableEntries.clear();
     deepScan.reset();
     deepScanInitData.reset();
     lineCounter.reset();
@@ -934,7 +1113,8 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         const auto deadline = initData.deepScanBudget.has_value() ? std::chrono::steady_clock::now() + initData.deepScanBudget.value()
                                                                   : std::chrono::steady_clock::time_point::max();
         if (deepScan && deepScan->Run(deadline)) {
-            totalLines += deepScan->Commit();
+            const uint32 extraLines = deepScan->Commit(); // the jump tables inside the code may have changed the lines count
+            totalLines              = asmLinesCount + extraLines;
             deepScan.reset();
         }
     } else {
