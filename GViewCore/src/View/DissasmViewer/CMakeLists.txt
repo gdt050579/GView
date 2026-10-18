@@ -23,6 +23,8 @@ target_sources(
 	DissasmCache.cpp
 	DissasmAnalysisExport.hpp
 	DissasmAnalysisExport.cpp
+	DissasmChainedFixups.hpp
+	DissasmChainedFixups.cpp
 	DissasmAssistantRequest.hpp
 	DissasmAnnotations.hpp
 	DissasmAnnotations.cpp

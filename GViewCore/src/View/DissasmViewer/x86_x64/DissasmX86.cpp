@@ -1460,7 +1460,36 @@ bool Instance::PrepareNextCodeZone()
             return true;
         }
     }
-    return false;
+    return LinkDataZones();
+}
+
+bool Instance::LinkDataZones()
+{
+    if (dataZonesLinked || HasPendingDeepScans())
+        return false;
+    dataZonesLinked = true;
+    // only when a data zone points into another one: its labels there come from these pointers
+    bool linked = false;
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto dataZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        if (!dataZone->zoneDetails.isData || !dataZone->CanReachAsmLines())
+            continue;
+        for (const auto& xref : dataZone->xrefs.byTarget) {
+            const auto target = dataZone->FindCodeZoneOfAddress(xref.to);
+            if (target && target != dataZone && target->zoneDetails.isData) {
+                linked = true;
+                break;
+            }
+        }
+        if (linked)
+            break;
+    }
+    if (!linked)
+        return false;
+    RefreshDataZones();
+    return true;
 }
 
 void Instance::PrepareCodeOnlyZones()

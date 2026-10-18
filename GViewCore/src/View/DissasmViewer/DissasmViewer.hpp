@@ -533,6 +533,10 @@ namespace View
             std::optional<uint64> globalOffsetTable;                         // 32 bit x86 PIC: the value of ebx in the PLT stubs
             std::map<uint64, ArmCodeMode> armCodeModes;                     // 32 bit ARM: the mode from a file offset on
             std::map<uint64, uint64> relocatedPointers;                     // the pointers the loader writes (file offset -> VA)
+            // Mach-O LC_DYLD_CHAINED_FIXUPS (Settings::AddChainedFixups): decoded into relocatedPointers / memoryMappings when the viewer
+            // (or the headless analysis) takes the settings
+            std::vector<uint8> chainedFixups;
+            uint64 chainedFixupsImageBase = 0;
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmStructureType> dissasmTypeMapped; // mapped types against the offset of the file
@@ -826,6 +830,10 @@ namespace View
             // once they are analyzed. One zone (PrepareNextCodeZone, the frame updates) or all of them (PrepareCodeZones); false when
             // every zone is prepared
             bool PrepareNextCodeZone();
+            // every data zone is prepared: analyzed once more with the pointers of the data zones prepared after them (a table of __const to
+            // the strings of __cstring, .data to .rdata); false when there is nothing to do
+            bool LinkDataZones();
+            bool dataZonesLinked = false;
             void PrepareCodeZones();
             void PrepareCodeOnlyZones(); // the zones of instructions (not the data zones), their analysis ended
             void CommandExportAsmFile();

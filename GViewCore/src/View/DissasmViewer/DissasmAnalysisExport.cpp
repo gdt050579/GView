@@ -1,5 +1,6 @@
 #include "DissasmAnalysisExport.hpp"
 #include "DissasmCodeZone.hpp"
+#include "DissasmChainedFixups.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmSignatures.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
@@ -136,6 +137,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
         error = "The file has no disassembly zone!";
         return false;
     }
+    ApplyChainedFixups(*settings, obj); // Mach-O: the pointers and the import slots that dyld writes
     // the code zones of the viewer
     for (const auto& [start, details] : settings->disassemblyZones) {
         auto zone         = std::make_unique<DissasmCodeZone>();

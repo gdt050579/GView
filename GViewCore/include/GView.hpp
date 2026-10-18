@@ -1829,6 +1829,12 @@ namespace View
              */
             void AddRelocatedPointer(uint64 fileOffset, uint64 value);
             /**
+             * \brief Mach-O: the payload of LC_DYLD_CHAINED_FIXUPS (from its dyld_chained_fixups_header) and the VA of the mach header.
+             * The viewer follows the chains in the segments: a rebase becomes a relocated pointer, a bind an import slot named after its
+             * symbol (the pointers of __const, __objc_*, __got that dyld writes).
+             */
+            void AddChainedFixups(BufferView data, uint64 imageBase);
+            /**
              * \brief 32 bit ARM: the code from the file offset is decoded in `mode` (until the next mode change); the ELF mapping symbols
              * ($a, $t, $d), the Thumb bit of the function symbols, the ARM .plt of a Thumb file. A later call for the same offset wins.
              */

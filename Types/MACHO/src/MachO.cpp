@@ -400,6 +400,11 @@ GVIEW_PLUGIN_ENTRY_POINTS
                                                                                                                        : DissasmViewer::ArmCodeMode::Thumb);
         settings.SetOffsetTranslationList({ "RVA", "VA" }, &machO->dissasmTranslation);
         AddDissasmImports(settings, machO, win->GetObject());
+        // LC_DYLD_CHAINED_FIXUPS (macOS 12+ / iOS 15+ binaries): the rebased pointers and the binds, followed by the viewer
+        constexpr uint32 MAX_CHAINED_FIXUPS_SIZE = 0x4000000;
+        for (const auto& data : machO->linkEditDatas)
+            if (data.cmd == MAC::LoadCommandType::DYLD_CHAINED_FIXUPS && data.datasize > 0 && data.datasize <= MAX_CHAINED_FIXUPS_SIZE)
+                settings.AddChainedFixups(win->GetObject()->GetData().CopyToBuffer(data.dataoff, data.datasize), machO->dissasmTranslation.GetImageBase());
         AddDissasmFunctionEntries(settings, machO, win->GetObject());
         win->CreateViewer(settings);
     }

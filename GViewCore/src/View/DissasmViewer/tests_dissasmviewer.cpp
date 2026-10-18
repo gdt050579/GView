@@ -1,4 +1,5 @@
 #include "DissasmCodeZone.hpp"
+#include "DissasmChainedFixups.hpp"
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmAnalysisExport.hpp"
@@ -6675,4 +6676,91 @@ TEST_CASE("RelocatedPointerTables", "[Dissasm]DataZone")
     layout.siblings         = { code.zone.get() };
     DissasmTestInstance named(file.data(), file.size(), false, layout);
     REQUIRE(named.zone->GetLabelNameAt(0x00) == "off_1040");
+}
+
+// the payload of LC_DYLD_CHAINED_FIXUPS for one segment of one page (at segmentOffset, its chain from the page start) and the imports
+// _lib_print / _lib_add (DYLD_CHAINED_IMPORT)
+static std::vector<uint8> MakeChainedFixups(uint16 pointerFormat, uint64 segmentOffset)
+{
+    std::vector<uint8> data;
+    const auto put = [&data](uint64 value, size_t size) {
+        for (size_t index = 0; index < size; index++)
+            data.push_back(static_cast<uint8>(value >> (8 * index)));
+    };
+    // dyld_chained_fixups_header: version, starts 32, imports 72, symbols 80, 2 imports, DYLD_CHAINED_IMPORT, names not compressed
+    for (const uint32 value : { 0u, 32u, 72u, 80u, 2u, 1u, 0u })
+        put(value, 4);
+    put(0, 4); // padding up to 32
+    // dyld_chained_starts_in_image: 3 segments, the third one has fixups (its starts at 32 + 16)
+    for (const uint32 value : { 3u, 0u, 0u, 16u })
+        put(value, 4);
+    // dyld_chained_starts_in_segment: size, page_size, pointer_format, segment_offset, max_valid_pointer, page_count, page_start[0]
+    put(24, 4);
+    put(0x4000, 2);
+    put(pointerFormat, 2);
+    put(segmentOffset, 8);
+    put(0, 4);
+    put(1, 2);
+    put(0, 2);
+    // the imports (lib_ordinal 1, name offsets 0 and 11) and their names
+    put(1 | (0u << 9), 4);
+    put(1 | (11u << 9), 4);
+    for (const char c : std::string_view("_lib_print\0_lib_add\0", 20))
+        data.push_back(static_cast<uint8>(c));
+    return data;
+}
+
+TEST_CASE("ChainedFixups", "[Dissasm]MachO")
+{
+    constexpr uint64 imageBase = 0x100000000ull;
+    std::map<uint64, uint64> memory; // the pointers of the image, by VA
+    const auto readPointer = [&memory](uint64 address, uint8) -> std::optional<uint64> {
+        const auto it = memory.find(address);
+        return it != memory.end() ? std::optional<uint64>(it->second) : std::nullopt;
+    };
+    // DYLD_CHAINED_PTR_64_OFFSET (lld, ld64 on macOS 12+): a rebase (an offset in the image), a bind (import 1), a rebase; the next pointer
+    // is next * 4 bytes away
+    {
+        const auto data = MakeChainedFixups(6, 0x4000);
+        memory          = {
+            { imageBase + 0x4000, 0x530ull | (2ull << 51) },
+            { imageBase + 0x4008, (1ull << 63) | 1ull | (2ull << 51) },
+            { imageBase + 0x4010, 0x5A0ull },
+        };
+        std::vector<ChainedFixup> fixups;
+        REQUIRE(DecodeChainedFixups(data.data(), data.size(), imageBase, readPointer, fixups));
+        REQUIRE(fixups.size() == 3);
+        REQUIRE_FALSE(fixups[0].isBind);
+        REQUIRE(fixups[0].address == imageBase + 0x4000);
+        REQUIRE(fixups[0].target == imageBase + 0x530);
+        REQUIRE(fixups[1].isBind);
+        REQUIRE(fixups[1].name == "_lib_add");
+        REQUIRE(fixups[2].target == imageBase + 0x5A0);
+    }
+    // DYLD_CHAINED_PTR_ARM64E: a rebase to a VA, an authenticated rebase (an offset), a bind with a negative addend; next * 8 bytes
+    {
+        const auto data = MakeChainedFixups(1, 0x8000);
+        memory          = {
+            { imageBase + 0x8000, (imageBase + 0x600) | (1ull << 51) },
+            { imageBase + 0x8008, (1ull << 63) | 0x640ull | (1ull << 51) },
+            { imageBase + 0x8010, (1ull << 62) | 0ull | ((0x7FFFFull & static_cast<uint64>(-8)) << 32) },
+        };
+        std::vector<ChainedFixup> fixups;
+        REQUIRE(DecodeChainedFixups(data.data(), data.size(), imageBase, readPointer, fixups));
+        REQUIRE(fixups.size() == 3);
+        REQUIRE(fixups[0].target == imageBase + 0x600);
+        REQUIRE(fixups[1].target == imageBase + 0x640);
+        REQUIRE(fixups[2].isBind);
+        REQUIRE(fixups[2].name == "_lib_print");
+        REQUIRE(fixups[2].addend == -8);
+    }
+    // not a payload of a known version / a pointer format of the kernel: false
+    {
+        auto data = MakeChainedFixups(6, 0x4000);
+        data[0]   = 1;
+        std::vector<ChainedFixup> fixups;
+        REQUIRE_FALSE(DecodeChainedFixups(data.data(), data.size(), imageBase, readPointer, fixups));
+        REQUIRE_FALSE(DecodeChainedFixups(MakeChainedFixups(7, 0x4000).data(), MakeChainedFixups(7, 0x4000).size(), imageBase, readPointer, fixups));
+        REQUIRE(fixups.empty());
+    }
 }

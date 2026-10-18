@@ -73,6 +73,14 @@ void Settings::AddRelocatedPointer(uint64 fileOffset, uint64 value)
     INTERNAL_SETTINGS->relocatedPointers[fileOffset] = value;
 }
 
+void Settings::AddChainedFixups(BufferView data, uint64 imageBase)
+{
+    if (!data.IsValid())
+        return;
+    INTERNAL_SETTINGS->chainedFixups.assign(data.GetData(), data.GetData() + data.GetLength());
+    INTERNAL_SETTINGS->chainedFixupsImageBase = imageBase;
+}
+
 void Settings::AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode)
 {
     INTERNAL_SETTINGS->armCodeModes[fileOffset] = mode;

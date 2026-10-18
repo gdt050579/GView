@@ -2,6 +2,7 @@
 
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
+#include "DissasmChainedFixups.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -174,6 +175,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     } else {
         this->settings.reset(new SettingsData());
     }
+    ApplyChainedFixups(*this->settings, obj); // Mach-O: the pointers and the import slots that dyld writes
 
     queryInterface = nullptr;
     if (config.Loaded == false)
@@ -1330,6 +1332,7 @@ void Instance::RecomputeDissasmZones()
     params.showFileContent                 = config.ShowFileContent;
     params.structuresInitialCollapsedState = Layout.structuresInitialCollapsedState;
     BuildDissasmParseZones(*settings.get(), params);
+    dataZonesLinked = false; // new zones: their data zones are linked again once prepared
 
     if (!settings->parseZones.empty())
         UpdateLayoutTotalLines();
