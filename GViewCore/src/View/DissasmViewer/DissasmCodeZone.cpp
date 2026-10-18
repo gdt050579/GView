@@ -73,7 +73,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
     DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
         : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture),
-          detectLocalVariables(initData.enableLocalVariablesDetection && !zone->IsArm64Code()), // the frames of the x86 / x64 code only
+          detectLocalVariables(initData.enableLocalVariablesDetection),
           isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), findImport(initData.findImport),
           addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
           asmLines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
@@ -418,8 +418,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return;
 
         DissasmFunctionFrame frame{};
-        if (!AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame) ||
-            frame.variables.empty())
+        const bool analyzed = arch == DissasmArch::Arm64
+                                    ? AnalyzeArm64FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame)
+                                    : AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame);
+        if (!analyzed || frame.variables.empty())
             return;
         // IDA like: the variables are listed right below the function label
         for (const auto& variable : frame.variables) {

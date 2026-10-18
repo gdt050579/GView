@@ -264,6 +264,8 @@ namespace View
             uint64 startAddress;
             uint64 endAddress;                           // exclusive
             std::vector<DissasmLocalVariable> variables; // sorted by frameOffset, unique offsets and names
+            int32 stackOffset = 0;            // ARM64: sp - x29 in the body (the [sp, #n] slots); recomputed by the deep scan
+            bool usesFrameRegister = true;    // ARM64: false for a function without x29 (offsets from the sp of the entry)
 
             DissasmLocalVariable* FindVariable(int32 frameOffset);
             const DissasmLocalVariable* FindVariable(int32 frameOffset) const;

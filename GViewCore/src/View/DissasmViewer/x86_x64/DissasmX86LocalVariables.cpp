@@ -1,4 +1,5 @@
 #include "DissasmX86LocalVariables.hpp"
+#include "X86InstructionInfo.hpp"
 #include <algorithm>
 #include <memory>
 
@@ -315,4 +316,266 @@ bool GView::View::DissasmViewer::FindX86FrameOperand(std::string_view operands, 
     result.replaceEnd   = static_cast<uint32>(position);
     result.frameOffset  = isNegative ? -static_cast<int32>(value) : static_cast<int32>(value);
     return true;
+}
+
+namespace
+{
+uint16 Arm64RegisterSize(arm64_reg reg)
+{
+    if ((reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30) || reg == ARM64_REG_WZR || reg == ARM64_REG_WSP)
+        return 4;
+    if (reg >= ARM64_REG_B0 && reg <= ARM64_REG_B31)
+        return 1;
+    if (reg >= ARM64_REG_H0 && reg <= ARM64_REG_H31)
+        return 2;
+    if (reg >= ARM64_REG_S0 && reg <= ARM64_REG_S31)
+        return 4;
+    if (reg >= ARM64_REG_Q0 && reg <= ARM64_REG_Q31)
+        return 16;
+    return 8; // x0 .. x28, fp, lr, xzr, d0 .. d31
+}
+
+// the size of every register moved by a load / store (stp / ldp: two of them); 0 for the other instructions
+uint16 Arm64AccessSize(const cs_insn& insn, bool& isPair)
+{
+    const cs_arm64& arm64 = insn.detail->arm64;
+    isPair                = false;
+    switch (insn.id) {
+    case ARM64_INS_LDRB:
+    case ARM64_INS_STRB:
+    case ARM64_INS_LDRSB:
+    case ARM64_INS_LDURB:
+    case ARM64_INS_STURB:
+    case ARM64_INS_LDURSB:
+        return 1;
+    case ARM64_INS_LDRH:
+    case ARM64_INS_STRH:
+    case ARM64_INS_LDRSH:
+    case ARM64_INS_LDURH:
+    case ARM64_INS_STURH:
+    case ARM64_INS_LDURSH:
+        return 2;
+    case ARM64_INS_LDRSW:
+    case ARM64_INS_LDURSW:
+        return 4;
+    case ARM64_INS_LDR:
+    case ARM64_INS_STR:
+    case ARM64_INS_LDUR:
+    case ARM64_INS_STUR:
+        return arm64.op_count > 0 && arm64.operands[0].type == ARM64_OP_REG ? Arm64RegisterSize(arm64.operands[0].reg) : 0;
+    case ARM64_INS_LDP:
+    case ARM64_INS_STP:
+    case ARM64_INS_LDNP:
+    case ARM64_INS_STNP:
+        isPair = true;
+        return arm64.op_count > 0 && arm64.operands[0].type == ARM64_OP_REG ? Arm64RegisterSize(arm64.operands[0].reg) : 0;
+    default:
+        return 0;
+    }
+}
+
+// x19 .. x30, d8 .. d15: the registers a function saves (stp x20, x19, [sp, #0x10] keeps them, these slots are not variables)
+bool IsArm64CalleeSaved(arm64_reg reg)
+{
+    return (reg >= ARM64_REG_X19 && reg <= ARM64_REG_X28) || reg == ARM64_REG_X29 || reg == ARM64_REG_X30 || (reg >= ARM64_REG_D8 && reg <= ARM64_REG_D15);
+}
+} // namespace
+
+bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
+      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame)
+{
+    frame.startAddress = codeAddress;
+    frame.endAddress   = codeAddress;
+    frame.stackOffset  = 0;
+    frame.variables.clear();
+    if (!code || codeSize == 0 || limitAddress <= codeAddress)
+        return false;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return false;
+
+    constexpr uint32 MAX_PROLOGUE_INSTRUCTIONS = 12;
+    const uint8* data           = code;
+    size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
+    uint64 address              = codeAddress;
+    uint64 furthestBranchTarget = 0;
+    uint32 decodedInstructions  = 0;
+    bool hasFrame               = false;
+    bool stackOnly              = false; // no frame register: the slots are relative to the sp of the entry (a leaf function)
+    int64 entryDelta            = 0;     // sp - the sp of the entry, during the prologue
+    int64 stackPointer          = 0; // sp - x29, once the frame register is set
+    std::optional<int64> bodyStackPointer;
+    std::vector<FrameAccess> accesses;
+    accesses.reserve(32);
+
+    while (decodedInstructions < MAX_FUNCTION_INSTRUCTIONS && size >= 4) {
+        size_t left         = 4;
+        const uint8* bytes  = data;
+        uint64 at           = address;
+        if (!cs_disasm_iter(detailHandle, &bytes, &left, &at, insn.get()))
+            break; // a data word: not a frame we can follow
+        data += 4;
+        size -= 4;
+        address += 4;
+        decodedInstructions++;
+        frame.endAddress      = address;
+        const cs_insn& current = *insn;
+        const cs_arm64& arm64 = current.detail->arm64;
+        const auto isRegister = [&arm64](uint8 index, arm64_reg reg) {
+            return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_REG && arm64.operands[index].reg == reg;
+        };
+        const auto immediateAt = [&arm64](uint8 index) -> std::optional<int64> {
+            return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_IMM ? std::optional<int64>(arm64.operands[index].imm) : std::nullopt;
+        };
+
+        // sub sp, sp, #N / add sp, sp, #N / the writeback of [sp, #-N]! and [sp], #N
+        int64 spChange = 0;
+        if ((current.id == ARM64_INS_SUB || current.id == ARM64_INS_ADD) && isRegister(0, ARM64_REG_SP) && isRegister(1, ARM64_REG_SP) && immediateAt(2))
+            spChange = current.id == ARM64_INS_SUB ? -immediateAt(2).value() : immediateAt(2).value();
+        else if (arm64.writeback) {
+            for (uint8 index = 0; index < arm64.op_count; index++)
+                if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP)
+                    spChange = arm64.post_index ? immediateAt(static_cast<uint8>(arm64.op_count - 1)).value_or(0) : arm64.operands[index].mem.disp;
+        }
+
+        if (!hasFrame) {
+            // mov x29, sp / add x29, sp, #M: the frame register (the frame record x29, x30 is at x29)
+            if (isRegister(0, ARM64_REG_X29) && isRegister(1, ARM64_REG_SP) &&
+                (current.id == ARM64_INS_MOV || (current.id == ARM64_INS_ADD && immediateAt(2).has_value()))) {
+                const int64 offset = current.id == ARM64_INS_ADD ? immediateAt(2).value() : 0;
+                stackPointer       = -offset;
+                hasFrame           = true;
+                continue;
+            }
+            // the prologue: sub sp, stp / str of the saved registers, pacibsp, bti
+            bool savesOnStack = false;
+            if (current.id == ARM64_INS_STP || current.id == ARM64_INS_STR)
+                for (uint8 index = 0; index < arm64.op_count; index++)
+                    savesOnStack |= arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP;
+            const bool isPrologue = spChange != 0 || savesOnStack || current.id == ARM64_INS_PACIBSP || current.id == ARM64_INS_PACIASP ||
+                                    current.id == ARM64_INS_BTI;
+            if (isPrologue && decodedInstructions < MAX_PROLOGUE_INSTRUCTIONS) {
+                entryDelta += spChange;
+                continue;
+            }
+            if (entryDelta >= 0)
+                return false; // no frame: the locals (if any) are in registers
+            // sub sp, sp, #N without a frame register: the slots are relative to the sp of the entry
+            hasFrame     = true;
+            stackOnly    = true;
+            stackPointer = entryDelta;
+            spChange     = 0; // counted in the prologue
+        }
+        stackPointer += spChange;
+
+        bool writesFrameRegister = false;
+        bool isPair              = false;
+        const uint16 accessSize  = Arm64AccessSize(current, isPair);
+        const bool savesRegisters = isPair && arm64.op_count > 1 && arm64.operands[0].type == ARM64_OP_REG && IsArm64CalleeSaved(arm64.operands[0].reg);
+        for (uint8 index = 0; index < arm64.op_count; index++) {
+            const cs_arm64_op& op = arm64.operands[index];
+            if (op.type == ARM64_OP_REG && (op.access & CS_AC_WRITE) && op.reg == ARM64_REG_X29)
+                writesFrameRegister = true;
+            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback || savesRegisters || accessSize == 0)
+                continue;
+            int64 offset = 0;
+            if (op.mem.base == ARM64_REG_X29 && !stackOnly)
+                offset = op.mem.disp;
+            else if (op.mem.base == ARM64_REG_SP) {
+                // the slots addressed through sp are kept in x29 offsets: sp stays the same in the body of the function
+                if (!bodyStackPointer.has_value())
+                    bodyStackPointer = stackPointer;
+                if (stackPointer != bodyStackPointer.value())
+                    continue;
+                offset = op.mem.disp + stackPointer;
+            } else
+                continue;
+            if (offset >= 0 && (stackOnly || offset < 16))
+                continue; // the frame record (the saved x29 and x30); a function without a frame register: the slots of its caller
+            if (offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
+                continue;
+            accesses.push_back({ static_cast<int32>(offset), accessSize });
+            if (isPair)
+                accesses.push_back({ static_cast<int32>(offset + accessSize), accessSize });
+        }
+        // add x0, sp, #0x10 / sub x0, x29, #0x10: the address of a slot (a buffer, a structure): its size is unknown
+        if ((current.id == ARM64_INS_ADD || current.id == ARM64_INS_SUB) && arm64.op_count == 3 && immediateAt(2) &&
+            !isRegister(0, ARM64_REG_SP) && !isRegister(0, ARM64_REG_X29)) {
+            const int64 value = current.id == ARM64_INS_SUB ? -immediateAt(2).value() : immediateAt(2).value();
+            if (isRegister(1, ARM64_REG_X29) && value < 0 && !stackOnly)
+                accesses.push_back({ static_cast<int32>(value), 0 });
+            else if (isRegister(1, ARM64_REG_SP) && bodyStackPointer.value_or(stackPointer) == stackPointer && value + stackPointer < 0) {
+                if (!bodyStackPointer.has_value())
+                    bodyStackPointer = stackPointer;
+                accesses.push_back({ static_cast<int32>(value + stackPointer), 0 });
+            }
+        }
+        if (accesses.size() >= ACCESSES_COMPACT_THRESHOLD && !CompactAccesses(accesses))
+            return false;
+        if (writesFrameRegister && current.id != ARM64_INS_LDP && !stackOnly)
+            break; // another frame (the ldp x29, x30 of the epilogue restores it)
+
+        // the branches inside the function: the code after a ret / b belongs to it when one of them reaches it
+        const auto flow = GetArm64Flow(current);
+        const auto operands = GetArm64OperandsInfo(current);
+        if ((flow == X86Flow::ConditionalJump || flow == X86Flow::Jump) && operands.directTarget.has_value()) {
+            const uint64 target = operands.directTarget.value();
+            if (target > current.address && target < limitAddress)
+                furthestBranchTarget = std::max(furthestBranchTarget, target);
+        }
+        if ((flow == X86Flow::Return || flow == X86Flow::Jump) && furthestBranchTarget < address)
+            break;
+    }
+    if (!hasFrame || !CompactAccesses(accesses))
+        return false;
+    frame.stackOffset       = static_cast<int32>(bodyStackPointer.value_or(stackPointer));
+    frame.usesFrameRegister = !stackOnly;
+    frame.variables.reserve(accesses.size());
+    for (const auto& access : accesses) {
+        DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
+        FormatDefaultLocalVariableName(access.frameOffset, true, variable.name);
+        frame.variables.push_back(std::move(variable));
+    }
+    return true;
+}
+
+bool GView::View::DissasmViewer::FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result)
+{
+    // [x29, #-0x10] / [sp, #0x18]: one slot (not [sp, #-0x10]! or [sp], #0x10, the writeback of the prologue / epilogue)
+    for (const std::string_view base : { std::string_view("[x29, #"), std::string_view("[sp, #") }) {
+        const size_t start = operands.find(base);
+        if (start == std::string_view::npos)
+            continue;
+        size_t position       = start + base.size();
+        const size_t length   = operands.size();
+        const bool isNegative = position < length && operands[position] == '-';
+        if (isNegative)
+            position++;
+        uint64 value  = 0;
+        uint32 digits = 0;
+        const bool isHex = position + 1 < length && operands[position] == '0' && operands[position + 1] == 'x';
+        if (isHex)
+            position += 2;
+        for (; position < length; position++, digits++) {
+            const char c = operands[position];
+            uint32 digit = 0;
+            if (c >= '0' && c <= '9')
+                digit = static_cast<uint32>(c - '0');
+            else if (isHex && c >= 'a' && c <= 'f')
+                digit = static_cast<uint32>(c - 'a' + 10);
+            else
+                break;
+            value = value * (isHex ? 16 : 10) + digit;
+            if (value > 0x7FFFFFFF)
+                return false;
+        }
+        if (digits == 0 || position >= length || operands[position] != ']' || (position + 1 < length && operands[position + 1] == '!'))
+            return false;
+        result.replaceStart        = static_cast<uint32>(start + base.size());
+        result.replaceEnd          = static_cast<uint32>(position);
+        result.displacement        = isNegative ? -static_cast<int32>(value) : static_cast<int32>(value);
+        result.isStackPointerBased = base[1] == 's';
+        return true;
+    }
+    return false;
 }

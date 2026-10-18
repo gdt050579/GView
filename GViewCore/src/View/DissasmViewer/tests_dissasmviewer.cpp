@@ -4744,3 +4744,68 @@ TEST_CASE("Arm64Prologues", "[Dissasm]Arm64")
     REQUIRE(std::find(starts.begin(), starts.end(), 0x0C) == starts.end());
     REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x0C) == "loc_C");
 }
+
+TEST_CASE("Arm64FrameVariables", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0xFF, 0xC3, 0x00, 0xD1, // 0x00: sub sp, sp, #0x30
+        0xFD, 0x7B, 0x02, 0xA9, // 0x04: stp x29, x30, [sp, #0x20]   (the frame record: not a variable)
+        0xFD, 0x83, 0x00, 0x91, // 0x08: add x29, sp, #0x20          (sp = x29 - 0x20)
+        0xA0, 0xC3, 0x1F, 0xB8, // 0x0c: stur w0, [x29, #-4]         -> var_4
+        0xE1, 0x07, 0x00, 0xF9, // 0x10: str x1, [sp, #8]            -> x29 - 0x18: var_18
+        0xA0, 0xC3, 0x5F, 0xB8, // 0x14: ldur w0, [x29, #-4]
+        0xFD, 0x7B, 0x42, 0xA9, // 0x18: ldp x29, x30, [sp, #0x20]
+        0xFF, 0xC3, 0x00, 0x91, // 0x1c: add sp, sp, #0x30
+        0xC0, 0x03, 0x5F, 0xD6, // 0x20: ret
+        0xFF, 0x43, 0x00, 0xD1, // 0x24: sub sp, sp, #0x10           (a leaf function without x29)
+        0xE0, 0x0F, 0x00, 0xB9, // 0x28: str w0, [sp, #0xc]          -> the sp of the entry - 4: var_4
+        0xE0, 0x0F, 0x40, 0xB9, // 0x2c: ldr w0, [sp, #0xc]
+        0xFF, 0x43, 0x00, 0x91, // 0x30: add sp, sp, #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x34: ret
+    };
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->usesFrameRegister);
+    REQUIRE(frame->stackOffset == -0x20);
+    REQUIRE(frame->variables.size() == 2);
+    REQUIRE(frame->variables[0].frameOffset == -0x18);
+    REQUIRE(frame->variables[0].size == 8);
+    REQUIRE(frame->variables[0].name == "var_18");
+    REQUIRE(frame->variables[1].frameOffset == -4);
+    REQUIRE(frame->variables[1].size == 4);
+
+    const auto* leaf = zone.localVariables.FindFunctionByStart(0x24);
+    REQUIRE(leaf != nullptr);
+    REQUIRE_FALSE(leaf->usesFrameRegister);
+    REQUIRE(leaf->variables.size() == 1);
+    REQUIRE(leaf->variables[0].name == "var_4");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("var_18 = qword ptr -0x18") != std::string::npos);
+    REQUIRE(listing.find("stur   w0, [x29, #var_4]") != std::string::npos);
+    REQUIRE(listing.find("str    x1, [sp, #var_18]") != std::string::npos);
+    REQUIRE(listing.find("str    w0, [sp, #var_4]") != std::string::npos);
+    REQUIRE(listing.find("stp    x29, x30, [sp, #0x20]") != std::string::npos); // the saved registers keep their operands
+}
+
+TEST_CASE("Arm64FrameOperands", "[Dissasm]Arm64")
+{
+    Arm64FrameOperand slot{};
+    REQUIRE(FindArm64FrameOperand("w0, [x29, #-0x14]", slot));
+    REQUIRE(slot.displacement == -0x14);
+    REQUIRE_FALSE(slot.isStackPointerBased);
+    REQUIRE(FindArm64FrameOperand("x1, [sp, #8]", slot));
+    REQUIRE(slot.displacement == 8);
+    REQUIRE(slot.isStackPointerBased);
+    REQUIRE_FALSE(FindArm64FrameOperand("x29, x30, [sp, #-0x10]!", slot)); // the writeback of the prologue
+    REQUIRE_FALSE(FindArm64FrameOperand("x29, x30, [sp], #0x10", slot));
+    REQUIRE_FALSE(FindArm64FrameOperand("x0, [x20, #8]", slot));
+}

@@ -26,4 +26,19 @@ struct X86FrameOperand {
 // Finds a memory operand that uses only the frame register and a displacement ("[ebp - 8]", "[rbp + 0x10]") inside the capstone Intel syntax
 // operands string. Operands with an index register or without displacement are ignored.
 bool FindX86FrameOperand(std::string_view operands, bool is64, X86FrameOperand& result);
+
+// ARM64: a function with a frame register (stp x29, x30, [sp, #-N]!; mov x29, sp / add x29, sp, #M) and its slots: the ones addressed
+// through x29 ([x29, #-0x8] -> var_8) and the ones addressed through sp, kept in x29 offsets (frame.stackOffset: sp - x29 in the body of
+// the function). The saved registers (the frame record, stp x20, x19, ...) are not variables. A function without x29 that reserves stack
+// (sub sp, sp, #N) has its slots relative to the sp of its entry (frame.usesFrameRegister = false). False when it has neither.
+bool AnalyzeArm64FunctionFrame(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame);
+
+struct Arm64FrameOperand {
+    uint32 replaceStart; // first character after "#"
+    uint32 replaceEnd;   // position of the closing ']'
+    int32 displacement;
+    bool isStackPointerBased; // [sp, #n]: the frame offset is n + frame.stackOffset
+};
+// Finds a slot operand of the capstone operands string: [x29, #-0x10], [sp, #0x18] (not the writeback forms [sp, #-0x10]! / [sp], #0x10)
+bool FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result);
 } // namespace GView::View::DissasmViewer

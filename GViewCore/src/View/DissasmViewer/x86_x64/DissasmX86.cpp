@@ -491,7 +491,18 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     const DissasmFunctionFrame* function = nullptr;
     const DissasmLocalVariable* variable = nullptr;
     X86FrameOperand frameOperand{};
-    if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
+    std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]
+    if (zone && !zone->localVariables.Empty() && zone->IsArm64Code()) {
+        Arm64FrameOperand slot{};
+        if (FindArm64FrameOperand(text, slot)) {
+            function = zone->localVariables.FindFunctionByAddress(address);
+            if (function && (slot.isStackPointerBased || function->usesFrameRegister)) {
+                frameOperand = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + function->stackOffset : slot.displacement };
+                variable     = function->FindVariable(frameOperand.frameOffset);
+                joiner       = {};
+            }
+        }
+    } else if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
         function = zone->localVariables.FindFunctionByAddress(address);
         variable = function ? function->FindVariable(frameOperand.frameOffset) : nullptr;
     }
@@ -513,7 +524,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     std::string rewritten;
     rewritten.reserve(text.size() + variable->name.size() + 3u);
     rewritten.append(text.substr(0, frameOperand.replaceStart));
-    rewritten.append(" + ");
+    rewritten.append(joiner);
     localVariableNameStart = static_cast<uint32>(rewritten.size());
     rewritten.append(variable->name);
     rewritten.append(text.substr(frameOperand.replaceEnd));
