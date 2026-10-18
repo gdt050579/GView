@@ -553,6 +553,14 @@ const MemoryMappingEntry* GView::View::DissasmViewer::FindX86OperandsImport(Sett
     return nullptr;
 }
 
+// an address of the listing (VA) as text: 0x...
+static std::string FormatAddress(uint64 address)
+{
+    LocalString<32> text;
+    text.SetFormat("0x%llx", static_cast<unsigned long long>(address));
+    return text.GetText();
+}
+
 // the data referenced by the operands, shown as an automatic comment (never saved): the import loaded by mov rax, [rip + 0x...] or the
 // string of lea rcx, [rip + 0x...] on x64, the string of push / mov offset aText (an immediate VA) on x86
 static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
@@ -571,8 +579,14 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
             line.autoComment = mapping->second.name;
             return;
         }
-        if (insn.id != (params.zone->IsArm64Code() ? static_cast<unsigned int>(ARM64_INS_ADR) : static_cast<unsigned int>(X86_INS_LEA)))
-            return; // the other instructions read / write the data (a variable, a pointer), only lea / adr take the address of a string
+        const bool takesAddress = params.zone->IsArm64Code() ? insn.id == ARM64_INS_ADR || insn.id == ARM64_INS_ADD : insn.id == X86_INS_LEA;
+        if (!takesAddress) {
+            // the other instructions read / write the data (a variable, a pointer), only lea / adr / add take the address of a string. The
+            // address of an ARM64 adrp pair is not in the operands: it is shown
+            if (params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address))
+                line.autoComment = FormatAddress(params.zone->labelAddressBase + operands.ripTarget.value());
+            return;
+        }
         fileOffset = TranslateOperandAddressToFileOffset(settings, rva, false);
     } else {
         // the immediates only: a memory operand ([0x403000]) reads a variable, it is not the string itself
@@ -584,6 +598,9 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
                 break;
         }
     }
+    const bool isAdrpPair = params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address);
+    if (isAdrpPair && operands.ripTarget.has_value())
+        line.autoComment = FormatAddress(params.zone->labelAddressBase + operands.ripTarget.value()); // add x0, x0, #off: the address, when it is not a string
     if (!fileOffset.has_value() || fileOffset.value() >= params.obj->GetData().GetSize())
         return;
     auto text = TryExtractStringPreview(params.obj, fileOffset.value());
@@ -640,7 +657,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
     // the meaning of the instruction from the capstone details (groups, operands), not from its text
     const auto flow     = GetInstructionFlow(*insn, params.zone->GetArch());
-    const auto operands = GetInstructionOperands(*insn, params.zone->GetArch());
+    const auto operands = params.zone->GetOperandsInfo(*insn);
     if (params.zone->GetArch() == DissasmArch::X64) {
         const auto slot = GetX64ArgumentSlot(*insn); // mov rcx, ... / mov [rsp + 0x20], ...: an argument of the next call
         argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
@@ -652,7 +669,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     else if (insn->id == X86_INS_PUSH && !params.zone->IsArm64Code())
         flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
     else {
-        if (params.zone->IsArm64Code() && operands.ripTarget.has_value()) {
+        if (params.zone->IsArm64Code() && insn->id == ARM64_INS_ADRP) {
+            // adrp x0, page: the page of the VA (capstone decodes from the zone start)
+            const uint64 page = params.zone->labelAddressBase + GetArm64AdrpPage(*insn, params.zone->labelAddressBase);
+            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + FormatAddress(page)).c_str(), params.zone);
+        } else if (params.zone->IsArm64Code() && GetArm64OperandsInfo(*insn).ripTarget.has_value()) {
             // adr x0, label / ldr x0, label: capstone writes the address relative to the zone start, the listing shows the VA
             LocalString<32> target;
             target.SetFormat("0x%llx", static_cast<unsigned long long>(params.zone->labelAddressBase + operands.ripTarget.value()));

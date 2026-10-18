@@ -4544,3 +4544,110 @@ TEST_CASE("Arm64RegisterNames", "[Dissasm]Arm64")
     for (const auto name : { "x31", "w31", "v32", "x", "sub_20", "loc_18" })
         CHECK(GetX86RegisterKind(name) == X86RegisterKind::None);
 }
+
+TEST_CASE("Arm64AdrpPairs", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0x00, 0x00, 0x00, 0xB0, // 0x00: adrp x0, 0x1000
+        0x00, 0x80, 0x00, 0x91, // 0x04: add x0, x0, #0x20      -> 0x1020 (a string)
+        0x08, 0x00, 0x00, 0xB0, // 0x08: adrp x8, 0x1000
+        0x08, 0x09, 0x40, 0xF9, // 0x0c: ldr x8, [x8, #0x10]    -> 0x1010 (the slot of puts)
+        0x00, 0x01, 0x3F, 0xD6, // 0x10: blr x8                 -> a call of puts
+        0x04, 0x00, 0x00, 0x94, // 0x14: bl 0x24                (the stub)
+        0x09, 0x00, 0x00, 0xB0, // 0x18: adrp x9, 0x1000        (after a call: the registers are set again)
+        0x21, 0x09, 0x00, 0xB9, // 0x1c: str w1, [x9, #8]       -> 0x1008 written
+        0xC0, 0x03, 0x5F, 0xD6, // 0x20: ret
+        0x10, 0x00, 0x00, 0xB0, // 0x24: adrp x16, 0x1000       \ the stub of malloc: j_malloc
+        0x10, 0x0E, 0x40, 0xF9, // 0x28: ldr x16, [x16, #0x18]  |
+        0x00, 0x02, 0x1F, 0xD6, // 0x2c: br x16                 /
+    };
+    const uint64 codeSize = file.size();
+    file.resize(0x1020, 0x00);
+    for (const char c : std::string_view("Pair string"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x1040, 0x00);
+
+    ZoneLayout layout;
+    layout.size             = codeSize;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true; // the RVA is the file offset
+    layout.imports          = { { 0x1010, { "puts", MemoryMappingType::FunctionMapping } }, { 0x1018, { "malloc", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // the deep scan resolves the pairs: the drawn lines are decoded alone
+    REQUIRE(zone.resolvedAddresses.at(0x04) == 0x1020);
+    REQUIRE(zone.resolvedAddresses.at(0x0C) == 0x1010);
+    REQUIRE(zone.resolvedAddresses.at(0x10) == 0x1010);
+    REQUIRE(zone.resolvedAddresses.at(0x1C) == 0x1008);
+    REQUIRE(zone.resolvedAddresses.at(0x2C) == 0x1018);
+    REQUIRE_FALSE(zone.resolvedAddresses.contains(0x00)); // adrp alone: a page
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("\"Pair string\"") != std::string::npos); // add x0, x0, #0x20: the string
+    REQUIRE(listing.find("blr    puts") != std::string::npos);     // the call through the slot of the import
+    REQUIRE(listing.find("bl     j_malloc") != std::string::npos); // the stub is an import thunk
+    REQUIRE(zone.GetLabelNameAt(0x24) == "j_malloc");
+    REQUIRE(listing.find("; 0x1008") != std::string::npos);         // str w1, [x9, #8]: the address written
+    REQUIRE(listing.find("; puts") != std::string::npos);           // ldr x8, [x8, #0x10]: the import of the slot
+
+    // the cross references of the data
+    const auto kindsTo = [&zone](uint64 address) {
+        std::vector<std::pair<uint64, DissasmXrefKind>> kinds;
+        const auto [first, last] = zone.xrefs.To(address);
+        for (auto it = first; it != last; ++it)
+            kinds.emplace_back(it->from, it->kind);
+        return kinds;
+    };
+    REQUIRE(kindsTo(0x1020) == std::vector<std::pair<uint64, DissasmXrefKind>>{ { 0x04, DissasmXrefKind::Offset } });
+    REQUIRE(kindsTo(0x1008) == std::vector<std::pair<uint64, DissasmXrefKind>>{ { 0x1C, DissasmXrefKind::Write } });
+    REQUIRE(kindsTo(0x1010).size() == 2); // ldr and blr read the slot
+}
+
+TEST_CASE("Arm64AdrpTrackerLimits", "[Dissasm]Arm64")
+{
+    csh handle = 0;
+    REQUIRE(cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle) == CS_ERR_OK);
+    REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    Arm64AdrpTracker tracker;
+    const auto next = [&](uint32 word, uint64 address) {
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, address, 1, &insn) == 1);
+        const auto result = tracker.Next(*insn, false);
+        cs_free(insn, 1);
+        return result;
+    };
+    // the page register is changed by another instruction: no pair
+    next(0xB0000000, 0x0);   // adrp x0, 0x1000
+    next(0xAA0103E0, 0x4);   // mov x0, x1
+    REQUIRE_FALSE(next(0x91008000, 0x8).has_value()); // add x0, x0, #0x20
+    // a jump ends the pair
+    next(0xB0000000, 0xC);   // adrp x0, 0x1000
+    next(0x14000001, 0x10);  // b 0x14
+    REQUIRE_FALSE(next(0x91008000, 0x14).has_value());
+    // add with lsl #12
+    next(0xB0000000, 0x18);  // adrp x0, 0x1000
+    const auto shifted = next(0x91400400, 0x1C); // add x0, x0, #1, lsl #12
+    REQUIRE(shifted.has_value());
+    REQUIRE(shifted->address == 0x2000);
+    REQUIRE(shifted->memoryAccess == 0);
+
+    // a zone that starts inside a page (VA 0x100000450): adrp gives the page of the VA (capstone decoded from the zone start, address 0)
+    Arm64AdrpTracker based(0x100000450);
+    const auto nextBased = [&](uint32 word, uint64 address) {
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, address, 1, &insn) == 1);
+        const auto result = based.Next(*insn, false);
+        cs_free(insn, 1);
+        return result;
+    };
+    nextBased(0xB0000000, 0x0); // adrp x0, +1 page: VA 0x100001000
+    const auto basedPair = nextBased(0x91008000, 0x4); // add x0, x0, #0x20
+    REQUIRE(basedPair.has_value());
+    REQUIRE(basedPair->address == 0x100001020 - 0x100000450);
+    cs_close(&handle);
+}

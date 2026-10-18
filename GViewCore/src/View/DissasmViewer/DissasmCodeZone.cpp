@@ -61,6 +61,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     DissasmXrefs xrefs;
     std::unordered_map<uint64, std::string> thunkImports;
     std::unordered_map<uint64, uint32> switchJumps;
+    std::unordered_map<uint64, uint64> resolvedAddresses; // ARM64: the addresses of the adrp pairs
+    Arm64AdrpTracker adrpTracker;
     std::vector<uint64> functionStarts;
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
@@ -74,7 +76,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
           addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
           asmLines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
           labelBase(zone->labelAddressBase), arch(zone->GetArch()), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
-          switchDetector(is64, zone->labelAddressBase, initData.imageBase)
+          switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase)
     {
     }
 
@@ -170,7 +172,26 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto operands = GetInstructionOperands(*insn, arch);
         const uint64 from   = labelBase + insn->address;
         if (isArm64) {
-            AnalyzeBranchesAndData(flow, operands, from, insn->id == ARM64_INS_ADR);
+            // the adrp pairs: the address of add / ldr / str [page + offset], the import slot of br / blr (import stubs, import calls)
+            const bool isBlockStart = atBlockStart || std::binary_search(zone->instructionBoundaries.begin(), zone->instructionBoundaries.end(), insn->address);
+            auto pairOperands       = operands;
+            const auto pair         = adrpTracker.Next(*insn, isBlockStart);
+            if (pair.has_value()) {
+                resolvedAddresses[insn->address] = pair->address;
+                pairOperands.ripTarget           = pair->address;
+                pairOperands.memoryAccess        = pair->memoryAccess;
+                // an import stub (j_Name): adrp x16, page; ldr x16, [x16, #off]; br x16 from a block start
+                if (pair->throughSlot && flow == X86Flow::Jump && pair->sequenceAtBlockStart && findImport) {
+                    const auto import = findImport(pairOperands);
+                    if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
+                        thunks.emplace_back(codeStart + pair->sequenceStart, import->name);
+                        thunkImports[pair->sequenceStart] = import->name;
+                        AddFunctionStart(codeStart + pair->sequenceStart);
+                    }
+                }
+            }
+            const bool takesAddress = insn->id == ARM64_INS_ADR || (insn->id == ARM64_INS_ADD && pair.has_value());
+            AnalyzeBranchesAndData(flow, pairOperands, from, takesAddress);
             atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || insn->id == ARM64_INS_NOP ||
                            insn->id == ARM64_INS_INVALID;
             return;
@@ -408,6 +429,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->xrefs                     = std::move(xrefs);
         zone->thunkImports              = std::move(thunkImports);
         zone->switchJumps               = std::move(switchJumps);
+        zone->resolvedAddresses         = std::move(resolvedAddresses);
         zone->functionStarts            = std::move(functionStarts);
         zone->dissasmType.annotations   = std::move(annotations);
         zone->localVariables.functions  = std::move(frames);

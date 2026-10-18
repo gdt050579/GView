@@ -149,6 +149,22 @@ struct DissasmCodeZone : public ParseZone {
     // the relative addresses where an instruction starts (function entries, section starts): no decoded instruction crosses them
     std::vector<uint64> instructionBoundaries;
     std::unordered_map<uint64, uint32> switchJumps;        // relative address of the indirect jmp of a switch -> its cases count
+    // ARM64 (deep scan): relative address of an instruction of an adrp pair (add / ldr / str [page + offset], br / blr through the slot read
+    // before) -> the relative address it uses; the lines are decoded alone, the pair is known only by the sweep
+    std::unordered_map<uint64, uint64> resolvedAddresses;
+    // the operands of an instruction (GetInstructionOperands) with the address of its adrp pair (ARM64)
+    X86OperandsInfo GetOperandsInfo(const cs_insn& insn) const
+    {
+        auto operands = GetInstructionOperands(insn, GetArch());
+        if (!resolvedAddresses.empty()) {
+            const auto resolved = resolvedAddresses.find(insn.address);
+            if (resolved != resolvedAddresses.end()) {
+                operands.ripTarget    = resolved->second;
+                operands.memoryAccess = insn.id == ARM64_INS_ADD ? 0 : static_cast<uint8>(insn.id == ARM64_INS_STR || insn.id == ARM64_INS_STRB || insn.id == ARM64_INS_STRH ? CS_AC_WRITE : CS_AC_READ);
+            }
+        }
+        return operands;
+    }
 
     // the name shown for the label at the relative address (renamed or not); empty when there is no label there
     std::string GetLabelNameAt(uint64 relativeAddress) const;

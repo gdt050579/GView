@@ -140,3 +140,135 @@ X86InstructionKind GView::View::DissasmViewer::GetArm64InstructionKind(unsigned 
         return X86InstructionKind::Other;
     }
 }
+
+namespace
+{
+// x0 .. x30 (and their w halves): 0 .. 30; -1 for the other registers (sp, xzr, the vector registers)
+int Arm64RegisterIndex(arm64_reg reg)
+{
+    if (reg >= ARM64_REG_X0 && reg <= ARM64_REG_X28)
+        return static_cast<int>(reg - ARM64_REG_X0);
+    if (reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30)
+        return static_cast<int>(reg - ARM64_REG_W0);
+    if (reg == ARM64_REG_X29)
+        return 29;
+    if (reg == ARM64_REG_X30)
+        return 30;
+    return -1;
+}
+
+bool IsArm64LoadOrStore(unsigned int id, bool& isStore)
+{
+    switch (id) {
+    case ARM64_INS_LDR:
+    case ARM64_INS_LDRB:
+    case ARM64_INS_LDRH:
+    case ARM64_INS_LDRSB:
+    case ARM64_INS_LDRSH:
+    case ARM64_INS_LDRSW:
+        isStore = false;
+        return true;
+    case ARM64_INS_STR:
+    case ARM64_INS_STRB:
+    case ARM64_INS_STRH:
+        isStore = true;
+        return true;
+    default:
+        return false;
+    }
+}
+} // namespace
+
+AppCUI::uint64 GView::View::DissasmViewer::GetArm64AdrpPage(const cs_insn& insn, AppCUI::uint64 addressBase)
+{
+    if (insn.id != ARM64_INS_ADRP || !insn.detail || insn.detail->arm64.op_count < 2 || insn.detail->arm64.operands[1].type != ARM64_OP_IMM)
+        return 0;
+    constexpr uint64 PAGE_MASK = ~static_cast<uint64>(0xFFF);
+    // the pages from the instruction to the target, as capstone computed them from the relative address
+    const uint64 delta = static_cast<uint64>(insn.detail->arm64.operands[1].imm) - (insn.address & PAGE_MASK);
+    return ((addressBase + insn.address) & PAGE_MASK) + delta - addressBase;
+}
+
+void Arm64AdrpTracker::Reset()
+{
+    registers.fill({});
+}
+
+std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& insn, bool atBlockStart)
+{
+    if (insn.id == ARM64_INS_INVALID || !insn.detail) {
+        Reset(); // a data line: the code before it is another block
+        return {};
+    }
+    const cs_arm64& arm64 = insn.detail->arm64;
+    std::optional<Result> result;
+    int kept = -1; // the register this instruction sets to a known value
+    const auto registerOf = [&arm64](uint8 index) { return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_REG ? Arm64RegisterIndex(arm64.operands[index].reg) : -1; };
+
+    bool isStore = false;
+    if (insn.id == ARM64_INS_ADRP) {
+        // adrp x0, page: the 4 KB page of an address, the next instructions add its offset
+        const int target = registerOf(0);
+        if (target >= 0 && arm64.op_count >= 2 && arm64.operands[1].type == ARM64_OP_IMM) {
+            registers[target] = { GetArm64AdrpPage(insn, addressBase), {}, insn.address, atBlockStart };
+            kept              = target;
+        }
+    } else if (insn.id == ARM64_INS_ADD && arm64.op_count == 3 && arm64.operands[2].type == ARM64_OP_IMM) {
+        // add x1, x0, #off: the address itself (a string, a variable, a table)
+        const int base = registerOf(1);
+        if (base >= 0 && registers[base].page.has_value()) {
+            const auto& offset = arm64.operands[2];
+            const uint64 value = static_cast<uint64>(offset.imm) << (offset.shift.type == ARM64_SFT_LSL ? offset.shift.value : 0);
+            result             = Result{ registers[base].page.value() + value, false, registers[base].start, registers[base].startAtBlock, 0 };
+        }
+    } else if (IsArm64LoadOrStore(insn.id, isStore)) {
+        // ldr x1, [x0, #off] / str w1, [x0, #off]: the address is read / written
+        for (uint8 index = 0; index < arm64.op_count; index++) {
+            const cs_arm64_op& op = arm64.operands[index];
+            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID)
+                continue;
+            const int base = Arm64RegisterIndex(op.mem.base);
+            if (base < 0 || !registers[base].page.has_value())
+                break;
+            const auto& value = registers[base];
+            result            = Result{ value.page.value() + static_cast<uint64>(static_cast<int64>(op.mem.disp)), false, value.start, value.startAtBlock,
+                                     static_cast<uint8>(isStore ? CS_AC_WRITE : CS_AC_READ) };
+            // ldr x16, [x16, #off]: the register holds the value of the slot (an import: the next br / blr goes through it)
+            const int target = registerOf(0);
+            if (insn.id == ARM64_INS_LDR && !isStore && target >= 0) {
+                const auto start  = value.start;
+                const bool atBlock = value.startAtBlock;
+                registers[target] = { {}, result->address, start, atBlock };
+                kept              = target;
+            }
+            break;
+        }
+    } else if (insn.id == ARM64_INS_BR || insn.id == ARM64_INS_BLR) {
+        // br x16 / blr x8: through the slot read before
+        const int target = registerOf(0);
+        if (target >= 0 && registers[target].slot.has_value())
+            result = Result{ registers[target].slot.value(), true, registers[target].start, registers[target].startAtBlock, CS_AC_READ };
+    }
+
+    // the registers written by the instruction do not hold the page / slot any more
+    for (uint8 index = 0; index < arm64.op_count; index++) {
+        const cs_arm64_op& op = arm64.operands[index];
+        if (op.type == ARM64_OP_REG && (op.access & CS_AC_WRITE) != 0) {
+            const int target = Arm64RegisterIndex(op.reg);
+            if (target >= 0 && target != kept)
+                registers[target] = {};
+        } else if (op.type == ARM64_OP_MEM && arm64.writeback) {
+            const int base = Arm64RegisterIndex(op.mem.base);
+            if (base >= 0)
+                registers[base] = {};
+        }
+    }
+    const auto flow = GetArm64Flow(insn);
+    if (flow == X86Flow::Call) { // the called function changes the argument / temporary registers (x0 .. x18) and the link register
+        for (size_t index = 0; index <= 18; index++)
+            registers[index] = {};
+        registers[30] = {};
+    } else if (flow == X86Flow::Jump || flow == X86Flow::Return)
+        Reset(); // the next instruction starts another block
+    return result;
+}

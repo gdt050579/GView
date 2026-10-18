@@ -3,6 +3,7 @@
 #include <AppCUI/include/AppCUI.hpp>
 #include <capstone/capstone.h>
 
+#include <array>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -53,6 +54,40 @@ enum class DissasmArch : AppCUI::uint8 { X86, X64, Arm64 };
 X86Flow GetArm64Flow(const cs_insn& insn);
 X86OperandsInfo GetArm64OperandsInfo(const cs_insn& insn);
 X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mnemonic);
+
+// Follows the adrp pairs of the instructions of a linear sweep (ARM64): adrp x0, page then add x1, x0, #off / ldr / str [x0, #off] give
+// the address; ldr x16, [x16, #off] then br / blr x16 jump / call through the slot that was read (an import stub / an import call). A pair
+// never continues after a jump, a return or a data line; a call changes x0 .. x18 and x30
+// adrp x0, page: the page (relative address) of the VA of the instruction. Capstone decodes from the zone start (address 0): its page is
+// right only when the zone starts at a 4 KB aligned VA; `addressBase` is the VA of the relative address 0 (labelAddressBase)
+AppCUI::uint64 GetArm64AdrpPage(const cs_insn& insn, AppCUI::uint64 addressBase);
+
+class Arm64AdrpTracker
+{
+  public:
+    explicit Arm64AdrpTracker(AppCUI::uint64 addressBase = 0) : addressBase(addressBase)
+    {
+    }
+    struct Result {
+        AppCUI::uint64 address;       // same base as the decoded addresses
+        bool throughSlot;             // br / blr: the address of the slot that was read
+        AppCUI::uint64 sequenceStart; // the address of the adrp
+        bool sequenceAtBlockStart;
+        AppCUI::uint8 memoryAccess; // CS_AC_READ (ldr, br, blr) / CS_AC_WRITE (str); 0: the address is taken (add)
+    };
+    std::optional<Result> Next(const cs_insn& insn, bool atBlockStart);
+    void Reset();
+
+  private:
+    struct Value {
+        std::optional<AppCUI::uint64> page; // adrp
+        std::optional<AppCUI::uint64> slot; // ldr from page + offset: the register holds the value of the slot
+        AppCUI::uint64 start = 0;
+        bool startAtBlock    = false;
+    };
+    std::array<Value, 31> registers{};
+    AppCUI::uint64 addressBase;
+};
 
 inline X86Flow GetInstructionFlow(const cs_insn& insn, DissasmArch arch)
 {
