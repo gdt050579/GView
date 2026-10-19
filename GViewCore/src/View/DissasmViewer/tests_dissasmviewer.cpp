@@ -4899,6 +4899,50 @@ TEST_CASE("X64ArgumentSlots", "[Dissasm]Help")
     REQUIRE(slotOf({ 0x48, 0x89, 0x44, 0x24, 0x20 }, false) == std::optional<uint8>(4));
 }
 
+TEST_CASE("ArgumentSlots", "[Dissasm]Help")
+{
+    const auto slotOf = [](cs_arch arch, cs_mode mode, std::initializer_list<unsigned char> code, DissasmArch dissasmArch) {
+        csh handle;
+        REQUIRE(cs_open(arch, mode, &handle) == CS_ERR_OK);
+        REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+        cs_insn* insn = cs_malloc(handle);
+        const std::vector<unsigned char> bytes(code);
+        const uint8_t* data = bytes.data();
+        size_t size         = bytes.size();
+        uint64_t address    = 0;
+        REQUIRE(cs_disasm_iter(handle, &data, &size, &address, insn));
+        const auto slot = GetArgumentSlot(*insn, dissasmArch, false);
+        cs_free(insn, 1);
+        cs_close(&handle);
+        return slot;
+    };
+    const auto arm64 = [&](uint32 word) {
+        return slotOf(CS_ARCH_ARM64, CS_MODE_ARM, { static_cast<unsigned char>(word), static_cast<unsigned char>(word >> 8),
+                                                    static_cast<unsigned char>(word >> 16), static_cast<unsigned char>(word >> 24) },
+                      DissasmArch::Arm64);
+    };
+    REQUIRE(arm64(0x52800041) == std::optional<uint8>(1)); // mov w1, #2
+    REQUIRE(arm64(0x10000000) == std::optional<uint8>(0)); // adr x0, #0
+    REQUIRE(arm64(0xF90007E8) == std::optional<uint8>(9)); // str x8, [sp, #8]: the second argument in the stack
+    REQUIRE_FALSE(arm64(0xAA0003F3).has_value());          // mov x19, x0
+    REQUIRE_FALSE(arm64(0xA9BF7BFD).has_value());          // stp x29, x30, [sp, #-0x10]!
+
+    const auto arm = [&](uint32 word) {
+        return slotOf(CS_ARCH_ARM, CS_MODE_ARM, { static_cast<unsigned char>(word), static_cast<unsigned char>(word >> 8),
+                                                  static_cast<unsigned char>(word >> 16), static_cast<unsigned char>(word >> 24) },
+                      DissasmArch::Arm);
+    };
+    REQUIRE(arm(0xE3A01002) == std::optional<uint8>(1)); // mov r1, #2
+    REQUIRE(arm(0xE58D2004) == std::optional<uint8>(5)); // str r2, [sp, #4]: the sixth argument
+    REQUIRE_FALSE(arm(0xE92D4010).has_value());          // push {r4, lr}
+    REQUIRE_FALSE(arm(0xE1A04000).has_value());          // mov r4, r0
+
+    const auto x86 = [&](std::initializer_list<unsigned char> code) { return slotOf(CS_ARCH_X86, CS_MODE_32, code, DissasmArch::X86); };
+    REQUIRE(x86({ 0xC7, 0x44, 0x24, 0x04, 0x02, 0x00, 0x00, 0x00 }) == std::optional<uint8>(1)); // mov dword ptr [esp + 4], 2
+    REQUIRE(x86({ 0x89, 0x04, 0x24 }) == std::optional<uint8>(0));                               // mov dword ptr [esp], eax
+    REQUIRE_FALSE(x86({ 0x8B, 0x44, 0x24, 0x04 }).has_value());                                 // mov eax, dword ptr [esp + 4]
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes

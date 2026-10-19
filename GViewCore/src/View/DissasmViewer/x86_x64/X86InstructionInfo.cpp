@@ -176,6 +176,66 @@ std::optional<uint8> GView::View::DissasmViewer::GetX64ArgumentSlot(const cs_ins
     return {};
 }
 
+std::optional<uint8> GView::View::DissasmViewer::GetArgumentSlot(const cs_insn& insn, DissasmArch arch, bool systemV)
+{
+    constexpr int64 MAX_STACK_ARG = 16;
+    if (insn.id == 0 || !insn.detail)
+        return {};
+    switch (arch) {
+    case DissasmArch::X64:
+        return GetX64ArgumentSlot(insn, systemV);
+    case DissasmArch::X86: {
+        const cs_x86& x86 = insn.detail->x86;
+        if (insn.id != X86_INS_MOV || x86.op_count != 2)
+            return {};
+        const cs_x86_op& op = x86.operands[0];
+        if (op.type == X86_OP_MEM && op.mem.base == X86_REG_ESP && op.mem.index == X86_REG_INVALID && op.mem.disp >= 0 && op.mem.disp % 4 == 0 &&
+            op.mem.disp < 4 * MAX_STACK_ARG)
+            return static_cast<uint8>(op.mem.disp / 4);
+        return {};
+    }
+    case DissasmArch::Arm64: {
+        const cs_arm64& arm64 = insn.detail->arm64;
+        if (arm64.op_count == 0)
+            return {};
+        const cs_arm64_op& first = arm64.operands[0];
+        if ((insn.id == ARM64_INS_STR || insn.id == ARM64_INS_STUR) && arm64.op_count == 2 && arm64.operands[1].type == ARM64_OP_MEM) {
+            const auto& mem = arm64.operands[1].mem;
+            if (mem.base == ARM64_REG_SP && mem.index == ARM64_REG_INVALID && !arm64.writeback && mem.disp >= 0 && mem.disp % 8 == 0 && mem.disp < 8 * MAX_STACK_ARG)
+                return static_cast<uint8>(8 + mem.disp / 8);
+            return {};
+        }
+        if (first.type != ARM64_OP_REG || (first.access & CS_AC_WRITE) == 0)
+            return {};
+        if (first.reg >= ARM64_REG_X0 && first.reg <= ARM64_REG_X7)
+            return static_cast<uint8>(first.reg - ARM64_REG_X0);
+        if (first.reg >= ARM64_REG_W0 && first.reg <= ARM64_REG_W7)
+            return static_cast<uint8>(first.reg - ARM64_REG_W0);
+        return {};
+    }
+    case DissasmArch::Arm:
+    case DissasmArch::Thumb: {
+        const cs_arm& arm = insn.detail->arm;
+        if (arm.op_count == 0)
+            return {};
+        if (insn.id == ARM_INS_STR && arm.op_count == 2 && arm.operands[1].type == ARM_OP_MEM) {
+            const auto& mem = arm.operands[1].mem;
+            if (mem.base == ARM_REG_SP && mem.index == ARM_REG_INVALID && !arm.writeback && mem.disp >= 0 && mem.disp % 4 == 0 && mem.disp < 4 * MAX_STACK_ARG)
+                return static_cast<uint8>(4 + mem.disp / 4);
+            return {};
+        }
+        const cs_arm_op& first = arm.operands[0];
+        if (insn.id == ARM_INS_PUSH || insn.id == ARM_INS_POP || insn.id == ARM_INS_LDM || insn.id == ARM_INS_STM || first.type != ARM_OP_REG ||
+            (first.access & CS_AC_WRITE) == 0)
+            return {};
+        if (first.reg >= ARM_REG_R0 && first.reg <= ARM_REG_R3)
+            return static_cast<uint8>(first.reg - ARM_REG_R0);
+        return {};
+    }
+    }
+    return {};
+}
+
 X86InstructionKind GView::View::DissasmViewer::GetX86InstructionKind(unsigned int id, std::string_view mnemonic)
 {
     switch (id) {

@@ -75,6 +75,13 @@ X86InstructionKind GetArm32InstructionKind(unsigned int id, std::string_view mne
 // the prefixes (rep, lock), the condition families (jcc / setcc / cmovcc, ARM b.cond and the condition suffixes), SSE / AVX, the common
 // ARM64 / ARM / Thumb instructions; `operands` tells the string movsd from the SSE one. Empty when it is not known
 std::string DescribeInstruction(std::string_view mnemonic, std::string_view operands, DissasmArch arch);
+
+// The argument of the next call an instruction writes (the calling convention of the architecture of its line):
+//  - x64: GetX64ArgumentSlot (Windows / System V)
+//  - x86: mov dword ptr [esp + n], ... (GCC: the arguments stored in the stack instead of pushed): n / 4 (the pushes are counted apart)
+//  - ARM64: w0 / x0 .. w7 / x7 written, then str xN, [sp, #n]: 8 + n / 8
+//  - ARM / Thumb: r0 .. r3 written, then str rN, [sp, #n]: 4 + n / 4
+std::optional<AppCUI::uint8> GetArgumentSlot(const cs_insn& insn, DissasmArch arch, bool systemV);
 X86Flow GetArm64Flow(const cs_insn& insn);
 X86OperandsInfo GetArm64OperandsInfo(const cs_insn& insn);
 X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mnemonic);

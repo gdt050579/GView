@@ -878,10 +878,10 @@ static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const Dissa
 // conventions); not when the lines are built without the known functions (asmData.functions empty: the cursor line)
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
-    if (params.zone->IsArmCode() || params.asmData->functions.empty())
+    if (params.asmData->functions.empty())
         return;
-    if (const auto* details = FindApiPrototype(functionName))
-        params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode());
+    if (const auto* details = FindApiPrototype(functionName)) // x64 / ARM: the registers; x86: the pushes and mov [esp + n]
+        params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode() || params.zone->IsArmCode());
 }
 
 // the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
@@ -979,8 +979,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     // the meaning of the instruction from the capstone details (groups, operands), not from its text
     const auto flow     = GetInstructionFlow(*insn, params.zone->GetArch());
     const auto operands = params.zone->GetOperandsInfo(*insn);
-    if (params.zone->GetArch() == DissasmArch::X64) {
-        const auto slot = GetX64ArgumentSlot(*insn, params.zone->systemVCalls); // mov rcx, ... / mov [rsp + 0x20], ...: an argument of the next call
+    {
+        // mov rcx, ... / mov [rsp + 0x20], ... / mov x0, ... / mov r1, ... / mov [esp + 4], ...: an argument of the next call
+        const auto slot = GetArgumentSlot(*insn, params.zone->GetArchAt(insn->address), params.zone->systemVCalls);
         argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
     }
     if (flow == X86Flow::Call)
@@ -1067,6 +1068,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 target.SetFormat("0x%llx", static_cast<unsigned long long>(targetVA));
                 // another code zone of the file (a call from .text to PAGE): the label there, once that zone is analyzed
                 const std::string otherLabel = FindLabelInOtherZones(params.settings, params.zone, targetVA);
+                if (shouldConsiderCall && !otherLabel.empty())
+                    AnnounceKnownFunctionCall(params, otherLabel); // a PLT stub of another section: j_getenv
                 SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (otherLabel.empty() ? std::string(target.GetText()) : otherLabel)).c_str(), params.zone);
             } else {
                 SetSymbolicOperands(*insn, operands, params); // indirect: call cs:__guard_dispatch_icall_fptr, jmp [rax*8 + table]
@@ -1078,15 +1081,17 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         }
 
         // a call through an import thunk (call j_CreateFileW): the arguments of the import
+        std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (shouldConsiderCall) {
             const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
             if (thunk != params.zone->thunkImports.end())
                 AnnounceKnownFunctionCall(params, thunk->second);
+            else if (!labelName.empty())
+                AnnounceKnownFunctionCall(params, labelName); // a function of the file named so (a static binary: getenv)
         }
 
         // the label of the target with its current name (renamed, an export, a function reached by a jmp keeps its sub_ label); a target
         // without a label (the deep scan is disabled): the name it would have
-        std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (labelName.empty())
             labelName = params.zone->GetLabelName(shouldConsiderCall ? "sub_" : "loc_", operands.directTarget.value());
         labelName = GetArm64BranchOperandsPrefix(*insn, params.zone) + labelName; // cbz x0, loc_... / tbnz w1, #3, loc_...

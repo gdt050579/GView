@@ -1659,9 +1659,9 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
         bool named[MAX_ARGUMENTS]          = {};
         uint32 remaining                   = std::min(paramsCount, MAX_ARGUMENTS);
         for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
-            const std::string_view mnemonic = it->mnemonic;
+            const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
             if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || it->size == 0 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
-                mnemonic == "jmp" || mnemonic == "ret")
+                kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return)
                 break;
             const uint8 slot = it->argumentSlot;
             if (slot >= paramsCount || slot >= MAX_ARGUMENTS || named[slot])
@@ -1673,17 +1673,26 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
         return;
     }
 
-    // x86: the pushes, the last one is the first argument
+    // x86: the pushes, the last one is the first argument; GCC stores them instead: mov dword ptr [esp + 4], ... is the second
     constexpr uint32 MAX_LINE_DIFF = 10;
-    uint32 pushIndex = 0, pushesRemaining = paramsCount;
-    for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && pushesRemaining; ++it) {
+    uint32 pushIndex = 0, remaining = paramsCount;
+    std::vector<bool> named(paramsCount, false);
+    for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
-        if (it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
+        const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
+        if (it->size != 0 && (kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return))
+            break; // the block of another call
+        uint32 slot = paramsCount;
+        if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
+            slot = pushIndex++;
+        else if (it->argumentSlot != DissasmAsmPreCacheLine::NO_ARGUMENT)
+            slot = it->argumentSlot;
+        if (slot >= paramsCount || named[slot])
             continue;
-        nameArgument(*it, functionDetails->params[pushIndex].name);
-        pushesRemaining--;
-        pushIndex++;
+        named[slot] = true;
+        remaining--;
+        nameArgument(*it, functionDetails->params[slot].name);
     }
 }
 
