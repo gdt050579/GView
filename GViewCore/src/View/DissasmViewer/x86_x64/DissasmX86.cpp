@@ -2925,7 +2925,7 @@ class FunctionsWindow : public AppCUI::Controls::Window
         list = Factory::ListView::Create(
               this,
               "l:1,t:1,r:1,b:3",
-              { "n:Name,w:50", "n:Address,w:20", "n:Size,w:12,a:r", "n:Xrefs,w:8,a:r", "n:Kind,w:10" },
+              { "n:Name,w:50", "n:Address,w:20", "n:Size,w:12,a:r", "n:Xrefs,w:8,a:r", "n:Kind,w:18" },
               ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
         LocalString<32> address, size, xrefs;
         for (size_t index = 0; index < functions.size(); index++) {
@@ -2934,8 +2934,10 @@ class FunctionsWindow : public AppCUI::Controls::Window
             address.SetFormat("0x%016llx", static_cast<unsigned long long>(labelAddressBase + function.start));
             size.SetFormat("%10llu", static_cast<unsigned long long>(function.size));
             xrefs.SetFormat("%6u", function.xrefs);
-            const std::string_view kind = function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : ""));
-            auto item = list->AddItem({ std::string_view(function.name), address.ToStringView(), size.ToStringView(), xrefs.ToStringView(), kind });
+            std::string kind(function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : "")));
+            if (function.isNoReturn) // IDA: the noreturn attribute
+                kind += kind.empty() ? "noreturn" : ", noreturn";
+            auto item = list->AddItem({ std::string_view(function.name), address.ToStringView(), size.ToStringView(), xrefs.ToStringView(), std::string_view(kind) });
             item.SetData(static_cast<uint64>(index));
         }
         Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);

@@ -103,6 +103,12 @@ bool IsTokenCharacter(char16_t c);
 // the occurrences of `token` from `fromColumn` (whole names: the characters around them are not name characters) get `color`
 void HighlightTokenOccurrences(AppCUI::Graphics::CharacterBuffer& chars, AppCUI::uint32 fromColumn, std::string_view token, AppCUI::Graphics::ColorPair color);
 
+// a function that never returns to its caller, by its name (IDA: noreturn): exit, abort, ExitProcess, __stack_chk_fail, __cxa_throw,
+// std::terminate, the std::__throw_ helpers, ... The name of an import, an export, a symbol or a thunk: an import prefix (__imp_, j_), a
+// version / decoration suffix (exit@GLIBC_2.2.5, exit@plt, _ExitProcess@4), the underscore of Mach-O (_exit for exit), a mangled
+// (_ZSt9terminatev, ?terminate@@YAXXZ) or demangled (void __cdecl std::terminate(void)) C++ name are accepted
+bool IsNoReturnFunctionName(std::string_view name);
+
 // the text found at `offset`, quoted: "ascii" or L"utf-16" (printable characters, at least DISSASM_MINIMUM_STRING_PREVIEW of them, until a
 // NUL or the first non printable character); none when the bytes do not look like a string
 std::optional<std::string> TryExtractStringPreview(Reference<GView::Object> obj, AppCUI::uint64 offset);

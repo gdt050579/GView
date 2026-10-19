@@ -3,8 +3,132 @@
 #include "DissasmFunctionUtils.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <unordered_set>
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
+
+namespace
+{
+// the qualified name of a mangled C++ / Rust name: Itanium (_ZSt9terminatev: std::terminate, _ZN4core9panicking9panic_fmt17h..E:
+// core::panicking::panic_fmt, without the hash of Rust) or MSVC (?_Xlength_error@std@@YAXPEBD@Z: std::_Xlength_error); none for the other
+// names (templates, operators)
+std::optional<std::string> QualifiedMangledName(std::string_view name)
+{
+    std::vector<std::string_view> parts;
+    const auto readPart = [&name, &parts]() {
+        size_t length = 0, digits = 0;
+        while (digits < name.size() && digits < 5 && name[digits] >= '0' && name[digits] <= '9')
+            length = length * 10 + static_cast<size_t>(name[digits++] - '0');
+        if (digits == 0 || length == 0 || length > name.size() - digits)
+            return false;
+        parts.push_back(name.substr(digits, length));
+        name.remove_prefix(digits + length);
+        return true;
+    };
+    if (name.starts_with("__Z")) // Mach-O: the underscore of the C names
+        name.remove_prefix(1);
+    if (name.starts_with("_ZSt")) {
+        name.remove_prefix(4);
+        parts.push_back("std");
+        if (!readPart())
+            return std::nullopt;
+    } else if (name.starts_with("_ZN")) {
+        name.remove_prefix(3);
+        if (name.starts_with("St")) {
+            parts.push_back("std");
+            name.remove_prefix(2);
+        }
+        while (!name.empty() && name.front() != 'E')
+            if (!readPart())
+                return std::nullopt;
+        if (name.empty() || parts.size() < 2)
+            return std::nullopt;
+        // Rust (legacy mangling): the last part is the hash of the crate (h + 16 hexadecimal digits)
+        const auto last = parts.back();
+        if (last.size() == 17 && last.front() == 'h' && std::all_of(last.begin() + 1, last.end(), [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }))
+            parts.pop_back();
+    } else if (name.starts_with('?') && name.size() > 1 && name[1] != '?' && name[1] != '$') {
+        const auto end = name.find("@@");
+        if (end == std::string_view::npos)
+            return std::nullopt;
+        for (std::string_view scope = name.substr(1, end - 1); !scope.empty();) {
+            const auto at = scope.find('@');
+            parts.insert(parts.begin(), scope.substr(0, at));
+            scope = at == std::string_view::npos ? std::string_view() : scope.substr(at + 1);
+        }
+    } else
+        return std::nullopt;
+    std::string result;
+    for (const auto part : parts) {
+        if (!result.empty())
+            result += "::";
+        result += part;
+    }
+    return result;
+}
+} // namespace
+
+bool IsNoReturnFunctionName(std::string_view name)
+{
+    static const std::unordered_set<std::string_view> NAMES = {
+        // C, POSIX, glibc, the C++ ABI, the unwinder, the sanitizers, Objective-C
+        "abort", "exit", "_exit", "_Exit", "quick_exit", "__assert_fail", "__assert_perror_fail", "__assert_rtn", "__assert", "__assert_func",
+        "__assert2", "__stack_chk_fail", "__stack_chk_fail_local", "__chk_fail", "__fortify_fail", "__fortify_fail_abort", "__libc_fatal",
+        "__libc_start_main", "__malloc_assert", "__libc_dynarray_at_failure", "_dl_fatal_printf", "_dl_signal_error", "longjmp", "_longjmp",
+        "siglongjmp", "__longjmp_chk", "__libc_longjmp", "__libc_siglongjmp", "pthread_exit", "thrd_exit", "__pthread_unwind",
+        "__pthread_unwind_next", "err", "errx", "verr", "verrx", "__cxa_throw", "__cxa_rethrow", "__cxa_bad_cast", "__cxa_bad_typeid",
+        "__cxa_throw_bad_array_new_length", "__cxa_call_terminate", "__cxa_call_unexpected", "__cxa_pure_virtual", "__cxa_deleted_virtual",
+        "_Unwind_Resume", "__ubsan_handle_builtin_unreachable", "__ubsan_handle_missing_return", "objc_exception_throw",
+        "objc_exception_rethrow", "objc_terminate", "_objc_fatal",
+        // Windows: the API, the native API, the kernel, the C / C++ run-time
+        "ExitProcess", "ExitThread", "FreeLibraryAndExitThread", "FatalExit", "FatalAppExitA", "FatalAppExitW", "RaiseFailFastException",
+        "RtlExitUserProcess", "RtlExitUserThread", "RtlRaiseStatus", "ExRaiseStatus", "ExRaiseAccessViolation",
+        "ExRaiseDatatypeMisalignment", "KeBugCheck", "KeBugCheckEx", "_invalid_parameter_noreturn", "_invoke_watson", "_CxxThrowException",
+        "__std_terminate", "terminate", "_amsg_exit", "__report_gsfailure", "__report_rangecheckfailure", "__report_securityfailure",
+        // Go
+        "runtime.throw", "runtime.fatal", "runtime.fatalthrow", "runtime.fatalpanic", "runtime.gopanic", "runtime.goexit", "runtime.panicwrap",
+    };
+    // the qualified names (C++, Rust)
+    static const std::unordered_set<std::string_view> QUALIFIED_NAMES = {
+        "std::terminate", "std::rethrow_exception", "std::abort", "std::exit", "std::_Exit", "std::quick_exit", "std::_Xbad_alloc",
+        "std::_Xinvalid_argument", "std::_Xlength_error", "std::_Xout_of_range", "std::_Xoverflow_error", "std::_Xruntime_error",
+        "std::_Xbad_function_call", "std::_Xregex_error", "__gnu_cxx::__verbose_terminate_handler", "std::process::exit",
+        "std::process::abort", "std::panicking::begin_panic", "std::panicking::rust_panic_with_hook", "core::result::unwrap_failed",
+        "core::option::unwrap_failed", "core::option::expect_failed", "alloc::alloc::handle_alloc_error",
+    };
+    const auto isQualifiedNoReturn = [](std::string_view qualified) {
+        return QUALIFIED_NAMES.contains(qualified) || qualified.starts_with("std::__throw_") || qualified.starts_with("std::_Throw_") ||
+               qualified.starts_with("core::panicking::panic") || (qualified.starts_with("core::slice::index::") && qualified.ends_with("_fail"));
+    };
+    // a demangled name: the qualified name, after the return type / the convention, before the parameters (void __cdecl std::terminate(void))
+    if (const auto parameters = name.find('('); parameters != std::string_view::npos && parameters > 0) {
+        name = name.substr(0, parameters);
+        if (const auto space = name.rfind(' '); space != std::string_view::npos)
+            name = name.substr(space + 1);
+    }
+    // the import / thunk prefixes
+    for (bool stripped = true; stripped;) {
+        stripped = false;
+        for (const std::string_view prefix : { std::string_view("__imp_"), std::string_view("_imp__"), std::string_view("j_") })
+            if (name.size() > prefix.size() && name.starts_with(prefix)) {
+                name.remove_prefix(prefix.size());
+                stripped = true;
+            }
+    }
+    if (const auto qualified = QualifiedMangledName(name); qualified.has_value()) // ?terminate@@YAXXZ: a global name, terminate
+        return isQualifiedNoReturn(qualified.value()) || NAMES.contains(qualified.value());
+    // the version (exit@GLIBC_2.2.5, exit@@GLIBC_2.2.5), the PLT (exit@plt), the stdcall decoration (_ExitProcess@4)
+    if (const auto at = name.find('@'); at != std::string_view::npos && at > 0)
+        name = name.substr(0, at);
+    if (name.find("::") != std::string_view::npos)
+        return isQualifiedNoReturn(name);
+    if (NAMES.contains(name) || (name.starts_with("__ubsan_handle_") && name.ends_with("_abort")) ||
+        (name.starts_with("__asan_report_") && name.find("noabort") == std::string_view::npos) || name.starts_with("runtime.panic") ||
+        name.starts_with("runtime.goPanic"))
+        return true;
+    // Mach-O / 32 bit Windows: the underscore of the C names (_exit for exit, __stack_chk_fail_local, _ExitProcess@4)
+    return name.size() > 1 && name.front() == '_' && NAMES.contains(name.substr(1));
+}
 
 LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
 {

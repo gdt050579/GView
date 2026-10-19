@@ -80,6 +80,8 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
     for (const auto& function : zone.GetFunctions(&settings->functionEntries)) {
         json item = { { "address", Hex(base + function.start) }, { "name", function.name }, { "size", function.size }, { "xrefs", function.xrefs } };
         item["kind"] = function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : "function"));
+        if (function.isNoReturn)
+            item["noreturn"] = true;
         json callers = json::array();
         for (const auto& caller : zone.GetCallers(function.start))
             callers.push_back({ { "function", caller.function },

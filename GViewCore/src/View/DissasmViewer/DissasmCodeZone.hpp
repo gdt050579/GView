@@ -3,6 +3,8 @@
 #include "DissasmViewer.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
 
+#include <unordered_set>
+
 namespace GView::View::DissasmViewer
 {
 struct DissasmDeepScan;
@@ -17,6 +19,7 @@ struct DissasmFunctionInfo {
     bool isThunk      = false;
     bool isExport     = false;
     bool isEntryPoint = false;
+    bool isNoReturn   = false; // never returns to its caller (DissasmCodeZone::noReturnFunctions)
 };
 
 // What the GoTo dialog accepts. A prefix chooses the kind (va:, rva:, off: / offset:, line:); otherwise the text is a label name, or else an
@@ -185,6 +188,10 @@ struct DissasmCodeZone : public ParseZone {
     DissasmXrefs xrefs;
     std::vector<uint64> functionStarts;
     std::unordered_map<uint64, std::string> thunkImports; // relative address of an import thunk (jmp [slot]) -> the import
+    // the functions that never return (IDA: noreturn): by their name (exit, abort, ExitProcess, a thunk of one) or because no path of
+    // theirs returns; relative starts, sorted. The calls to them (and to the imports that do not return): relative addresses
+    std::vector<uint64> noReturnFunctions;
+    std::unordered_set<uint64> noReturnCalls;
     // the relative addresses where an instruction starts (function entries, section starts): no decoded instruction crosses them
     std::vector<uint64> instructionBoundaries;
     std::unordered_map<uint64, uint32> switchJumps;        // relative address of the indirect jmp of a switch -> its cases count

@@ -4466,6 +4466,161 @@ TEST_CASE("AlignPaddingReachable", "[Dissasm]Align")
     REQUIRE(CountOccurrences(armListing, "align  0x10") == 1);
 }
 
+TEST_CASE("NoReturnFunctionNames", "[Dissasm]NoReturn")
+{
+    for (const std::string_view name :
+         { "exit", "_exit", "abort", "__imp_ExitProcess", "j_exit", "exit@GLIBC_2.2.5", "exit@plt", "_ExitProcess@4", "__stack_chk_fail",
+           "___stack_chk_fail", "_abort", "__CxxThrowException@8", "KeBugCheckEx", "_ZSt9terminatev", "__ZSt9terminatev",
+           "_ZSt20__throw_length_errorPKc", "?terminate@@YAXXZ", "?_Xlength_error@std@@YAXPEBD@Z", "void __cdecl std::terminate(void)",
+           "std::__throw_bad_alloc()", "_ZN4core9panicking9panic_fmt17h0123456789abcdefE", "__ubsan_handle_type_mismatch_v1_abort",
+           "__asan_report_load4", "runtime.panicIndex" }) {
+        INFO(name);
+        REQUIRE(IsNoReturnFunctionName(name));
+    }
+    for (const std::string_view name : { "", "printf", "j_printf", "error", "_assert", "atexit", "exit_group", "terminate_handler",
+                                         "RaiseException", "TerminateProcess", "std::_Xtime_get_ticks", "?_Xtime_get_ticks@std@@YA_JXZ",
+                                         "_ZSt4cout", "__asan_report_load4_noabort", "_ZN4core3fmt5write17h0123456789abcdefE" }) {
+        INFO(name);
+        REQUIRE_FALSE(IsNoReturnFunctionName(name));
+    }
+}
+
+TEST_CASE("NoReturnFunctions", "[Dissasm]NoReturn")
+{
+    // fatal calls exit (an import): it does not return; fatal2 calls fatal on both paths (found by the second round); user and the entry
+    // point return. The padding after a call to fatal is not reached (no label after it: the align line comes from the noreturn call)
+    std::vector<unsigned char> file = {
+        0x85, 0xFF,                   // 0x00: test edi, edi
+        0x75, 0x11,                   // 0x02: jne 0x15
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call fatal (0x20)
+    };
+    file.insert(file.end(), 7, 0xCC);                                         // 0x09: align 0x10 (fatal does not return)
+    file.insert(file.end(), { 0xE8, 0x2B, 0x00, 0x00, 0x00 });                // 0x10: call user (0x40), no label
+    file.push_back(0xC3);                                                     // 0x15: ret
+    file.insert(file.end(), 10, 0xCC);                                        // 0x16: align 0x10
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });                      // 0x20: fatal: sub rsp, 0x28
+    file.insert(file.end(), { 0xB9, 0x01, 0x00, 0x00, 0x00 });                // 0x24: mov ecx, 1
+    file.insert(file.end(), { 0xFF, 0x15, 0x51, 0x00, 0x00, 0x00 });          // 0x29: call qword ptr [rip + 0x51] -> slot 0x80 (exit)
+    file.push_back(0xCC);                                                     // 0x2f: int3 (a lone one: an instruction)
+    file.insert(file.end(), { 0x85, 0xC9, 0x74, 0x05 });                      // 0x30: fatal2: test ecx, ecx; je 0x39
+    file.insert(file.end(), { 0xE8, 0xE7, 0xFF, 0xFF, 0xFF });                // 0x34: call fatal
+    file.insert(file.end(), { 0xE8, 0xE2, 0xFF, 0xFF, 0xFF });                // 0x39: call fatal
+    file.insert(file.end(), { 0xCC, 0xCC });                                  // 0x3e: align 0x10
+    file.insert(file.end(), { 0x85, 0xFF, 0x75, 0x05 });                      // 0x40: user: test edi, edi; jne 0x49
+    file.insert(file.end(), { 0xE8, 0xE7, 0xFF, 0xFF, 0xFF });                // 0x44: call fatal2
+    file.insert(file.end(), { 0x8D, 0x47, 0x01, 0xC3 });                      // 0x49: lea eax, [rdi + 1]; ret
+    file.resize(0x88, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.alignPadding     = true;
+    layout.imports          = { { 0x80, { "exit", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x20, 0x30 });
+    REQUIRE(zone.noReturnCalls == std::unordered_set<uint64>{ 0x04, 0x29, 0x34, 0x39, 0x44 });
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(CountOccurrences(listing, "int3") == 1);
+    REQUIRE(zone.GetLabelNameAt(0x10).empty());
+    for (const auto& function : zone.GetFunctions(nullptr))
+        REQUIRE(function.isNoReturn == (function.start == 0x20 || function.start == 0x30));
+
+    // the graph of the entry point: the block of the call to fatal has no successor (it does not exit either)
+    const auto graph = zone.BuildFunctionGraph(0x0);
+    REQUIRE(graph.blocks.size() == 3);
+    REQUIRE(graph.blocks[1].start == 0x04);
+    REQUIRE(graph.blocks[1].successors.empty());
+    REQUIRE_FALSE(graph.blocks[1].exits);
+    REQUIRE(graph.blocks[2].start == 0x15);
+    // fatal2: the test block, then two blocks that end with a call to fatal
+    const auto graph2 = zone.BuildFunctionGraph(0x30);
+    REQUIRE(graph2.blocks.size() == 3);
+    REQUIRE(graph2.blocks[1].successors.empty());
+    REQUIRE(graph2.blocks[2].successors.empty());
+}
+
+TEST_CASE("NoReturnLocalImport", "[Dissasm]NoReturn")
+{
+    // a PIC library calls its own exported function through its thunk (fatal@plt: j_fatal); the function of that name does not return
+    std::vector<unsigned char> file = { 0xE8, 0x0B, 0x00, 0x00, 0x00 }; // 0x00: call j_fatal (0x10)
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x2A, 0x00, 0x00, 0x00 }); // 0x10: jmp qword ptr [rip + 0x2a] -> slot 0x40 (fatal)
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x15, 0x22, 0x00, 0x00, 0x00 }); // 0x20: fatal: call qword ptr [rip + 0x22] -> slot 0x48 (exit)
+    file.resize(0x50, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "fatal", MemoryMappingType::FunctionMapping } }, { 0x48, { "exit", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = { { 0x20, { "fatal", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x10) == "j_fatal");
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x00, 0x10, 0x20 }); // the entry point calls only j_fatal
+    REQUIRE(zone.noReturnCalls.contains(0x00));
+}
+
+TEST_CASE("NoReturnArm", "[Dissasm]NoReturn")
+{
+    std::vector<unsigned char> arm;
+    const auto word = [&arm](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            arm.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    // ARM64: fatal (0x10) calls abort (a symbol of the plugin); the entry point returns on one path
+    word(0xB4000040); // 0x00: cbz x0, 0x08
+    word(0x94000003); // 0x04: bl fatal (0x10)
+    word(0x52800020); // 0x08: mov w0, #1
+    word(0xD65F03C0); // 0x0c: ret
+    word(0xA9BF7BFD); // 0x10: fatal: stp x29, x30, [sp, #-0x10]!
+    word(0x94000003); // 0x14: bl abort (0x20)
+    word(0xD503201F); // 0x18: nop
+    word(0xD503201F); // 0x1c: nop
+    word(0xD4200020); // 0x20: abort: brk #1
+    word(0xD503201F);
+    word(0xD503201F);
+    word(0xD65F03C0);
+    ZoneLayout layout;
+    layout.size            = arm.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x20, { "abort", 0, true } } };
+    {
+        DissasmTestInstance armInstance(arm.data(), arm.size(), false, layout);
+        REQUIRE(armInstance.zone->noReturnFunctions == std::vector<uint64>{ 0x10, 0x20 });
+        REQUIRE(armInstance.zone->noReturnCalls == std::unordered_set<uint64>{ 0x04, 0x14 });
+    }
+
+    // Thumb: bxlt lr in an IT block is a return (the function returns), the call to abort does not return
+    std::vector<unsigned char> thumb = {
+        0x06, 0x28,             // 0x00: cmp r0, #6
+        0xBC, 0xBF,             // 0x02: itt lt
+        0x40, 0x00,             // 0x04: lsllt r0, r0, #1
+        0x70, 0x47,             // 0x06: bxlt lr
+        0x00, 0xF0, 0x02, 0xF8, // 0x08: bl abort (0x10)
+        0x00, 0xBF, 0x00, 0xBF, // 0x0c: nop, nop
+        0x00, 0xDE,             // 0x10: abort: udf #0
+    };
+    while (thumb.size() < 0x20) {
+        thumb.push_back(0x00);
+        thumb.push_back(0xBF); // nop
+    }
+    layout.size            = thumb.size();
+    layout.language        = DisassemblyLanguage::ARM;
+    layout.armCodeModes    = { { 0x0, ArmCodeMode::Thumb } };
+    layout.functionEntries = { { 0x10, { "abort", 0, true } } };
+    DissasmTestInstance thumbInstance(thumb.data(), thumb.size(), false, layout);
+    REQUIRE(thumbInstance.zone->noReturnFunctions == std::vector<uint64>{ 0x10 });
+    REQUIRE(thumbInstance.zone->noReturnCalls.contains(0x08));
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes

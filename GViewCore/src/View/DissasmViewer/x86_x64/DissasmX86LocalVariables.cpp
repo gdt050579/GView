@@ -111,7 +111,8 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
       uint64 limitAddress,
       bool is64,
       DissasmFunctionFrame& frame,
-      const X86FrameHelperCheck& frameHelper)
+      const X86FrameHelperCheck& frameHelper,
+      const X86CallNoReturn& callNoReturn)
 {
     frame.startAddress = codeAddress;
     frame.endAddress   = codeAddress;
@@ -225,6 +226,9 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
         case X86_INS_UD2:
             endsFlow = true;
             break;
+        case X86_INS_CALL:
+            endsFlow = callNoReturn && callNoReturn(*current); // exit, abort
+            break;
         default:
             break;
         }
@@ -276,6 +280,7 @@ StackFrameResult AnalyzeStackPointerFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86CalleeStackPurge& calleePurge,
+      const X86CallNoReturn& callNoReturn,
       uint8 reading,
       uint8& ambiguousPushes)
 {
@@ -343,6 +348,7 @@ StackFrameResult AnalyzeStackPointerFrame(
             return index < x86.op_count && x86.operands[index].type == X86_OP_IMM ? std::optional<int64>(x86.operands[index].imm) : std::nullopt;
         };
         const bool adjustsStack = (current->id == X86_INS_SUB || current->id == X86_INS_ADD) && IsRegisterOperand(x86, 0, stackRegister);
+        const bool noReturnCall = current->id == X86_INS_CALL && callNoReturn && callNoReturn(*current); // exit, abort: the path ends
 
         // the depth before this instruction: after a ret / jmp the one of a branch to it, after a call to an unknown callee its arguments
         // are popped (stdcall) unless the caller cleans up (cdecl: add esp, 8)
@@ -453,8 +459,8 @@ StackFrameResult AnalyzeStackPointerFrame(
             }
             break;
         case X86_INS_CALL:
-            if (is64)
-                break; // the callee returns with the same rsp
+            if (is64 || noReturnCall)
+                break; // the callee returns with the same rsp; a callee that does not return pops nothing
             if (x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM && static_cast<uint64>(x86.operands[0].imm) == nextAddress) {
                 change = -pointerSize; // call $+5; pop ebx: the return address stays on the stack
                 break;
@@ -543,6 +549,9 @@ StackFrameResult AnalyzeStackPointerFrame(
         case X86_INS_UD2:
             endsFlow = true;
             break;
+        case X86_INS_CALL:
+            endsFlow = noReturnCall;
+            break;
         default:
             break;
         }
@@ -577,16 +586,17 @@ bool GView::View::DissasmViewer::AnalyzeX86StackFrame(
       uint64 limitAddress,
       bool is64,
       DissasmFunctionFrame& frame,
-      const X86CalleeStackPurge& calleePurge)
+      const X86CalleeStackPurge& calleePurge,
+      const X86CallNoReturn& callNoReturn)
 {
     // push ecx at the entry: a local (MSVC: sub esp, 4) or the argument of the first call; push esi after a call: a saved register or an
     // argument. The other readings of the pushes the function has, while the stack stays unbalanced
     uint8 ambiguousPushes = 0;
-    auto result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, 0, ambiguousPushes);
+    auto result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, 0, ambiguousPushes);
     const uint8 firstAmbiguousPushes = ambiguousPushes;
     for (uint8 reading = 1; reading <= (ENTRY_PUSHES_ARE_ARGUMENTS | LATE_SAVES_ARE_ARGUMENTS) && result == StackFrameResult::Unbalanced; reading++)
         if ((reading & ~firstAmbiguousPushes) == 0)
-            result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, reading, ambiguousPushes);
+            result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, reading, ambiguousPushes);
     return result == StackFrameResult::Accepted;
 }
 

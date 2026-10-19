@@ -160,9 +160,28 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     struct PaddingRun {
         uint64 start, end;
         bool fallsThrough, afterCall;
+        uint64 previousAddress; // the line before (relative): a call that does not return does not go on into the padding
     };
     std::vector<PaddingRun> paddingRuns;
     bool previousFallsThrough = false, previousIsCall = false;
+    uint64 previousAddress    = 0;
+    // the instructions that change the flow (the functions that do not return, InferNoReturnFunctions): relative addresses, in the order
+    // of the sweep
+    enum class FlowKind : uint8 { Call, Jump, ConditionalJump, Return, Trap, Unknown };
+    static constexpr uint64 NO_TARGET = UINT64_MAX;
+    struct FlowRecord {
+        uint64 address;
+        uint64 target; // a direct branch (relative); NO_TARGET: an indirect one
+        uint8 size;
+        FlowKind kind;
+        bool noReturnImport; // through the slot of an import that does not return
+        bool localImport;    // through the slot of an import named as a function of the zone (localImports)
+    };
+    std::vector<FlowRecord> flowRecords;
+    std::unordered_map<uint64, std::string> localImports;       // relative address of the instruction -> the import
+    std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
+    std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
+    std::unordered_set<uint64> noReturnCalls;  // relative addresses of the calls to them
     uint32 passes  = 1;
     std::map<uint64, uint64> tableEntries; // relative address of an entry of a table -> the relative address of its case
 
@@ -370,9 +389,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the functions known by the plugin (exports, exception data, TLS callbacks): functions even when nothing calls them directly
     void AddPluginFunctions()
     {
+        localFunctionNames.clear();
         if (functionEntries) {
-            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it) {
                 AddFunctionStart(it->first);
+                if (it->second.name.empty())
+                    continue;
+                localFunctionNames.emplace(it->second.name, it->first - codeStart);
+                if (IsNoReturnFunctionName(it->second.name))
+                    noReturnStarts.insert(it->first - codeStart); // exit, abort, __stack_chk_fail of the symbols / exports
+            }
         }
     }
 
@@ -407,6 +433,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         pendingRanges.clear();
         paddingRuns.clear();
         previousFallsThrough = previousIsCall = false;
+        previousAddress = 0;
+        flowRecords.clear();
+        localImports.clear();
+        noReturnStarts.clear();
+        noReturnCalls.clear();
         linesToDecode = lines;
         walker        = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
         AddPluginFunctions();
@@ -525,9 +556,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // the padding lines (align) and whether the line before goes on into them
         if (zone->paddingAlignmentBase != DISSASM_NO_PADDING_ALIGNMENT && !isArm32) {
             if (insn->id == 0 && std::string_view(insn->mnemonic) == "align")
-                paddingRuns.push_back({ insn->address, insn->address + insn->size, previousFallsThrough, previousIsCall });
-            const bool isTrap = isArm64 ? (insn->id == ARM64_INS_BRK || insn->id == ARM64_INS_HLT)
-                                        : (insn->id == X86_INS_INT3 || insn->id == X86_INS_HLT || insn->id == X86_INS_UD2);
+                paddingRuns.push_back({ insn->address, insn->address + insn->size, previousFallsThrough, previousIsCall, previousAddress });
+            previousAddress = insn->address;
+            const bool isTrap = IsTrapInstruction(*insn, insnArch) || (isArm64 ? insn->id == ARM64_INS_HLT : (insn->id == X86_INS_INT3 || insn->id == X86_INS_HLT));
             previousFallsThrough = insn->id != 0 && flow != X86Flow::Jump && flow != X86Flow::Return && !isTrap;
             previousIsCall       = flow == X86Flow::Call;
         }
@@ -560,6 +591,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         thunks.emplace_back(codeStart + pair->sequenceStart, import->name);
                         thunkImports[pair->sequenceStart] = import->name;
                         AddFunctionStart(codeStart + pair->sequenceStart);
+                        if (IsNoReturnFunctionName(import->name))
+                            noReturnStarts.insert(pair->sequenceStart);
                     }
                 }
             }
@@ -624,8 +657,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const bool takesAddress = isArm64 ? insn->id == ARM64_INS_ADR || (insn->id == ARM64_INS_ADD && pair.has_value())
                                               : (pair.has_value() && pair->memoryAccess == 0) || insn->id == ARM_INS_ADR || insn->id == ARM_INS_ADD || insn->id == ARM_INS_SUB;
             AnalyzeBranchesAndData(flow, pairOperands, from, takesAddress);
-            const bool isNop = isArm64 ? insn->id == ARM64_INS_NOP : insn->id == ARM_INS_NOP;
-            atBlockStart     = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || isNop || insn->id == 0;
+            const bool isNop        = isArm64 ? insn->id == ARM64_INS_NOP : insn->id == ARM_INS_NOP;
+            const bool noReturnCall = RecordFlow(flow, pairOperands, insnArch);
+            atBlockStart = flow == X86Flow::Jump || flow == X86Flow::Return || flow == X86Flow::Interrupt || isNop || insn->id == 0 || noReturnCall;
+            if (noReturnCall)
+                previousFallsThrough = false;
             return;
         }
 
@@ -652,6 +688,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 thunks.emplace_back(thunkStart, import->name);
                 thunkImports[thunkStart - codeStart] = import->name;
                 AddFunctionStart(thunkStart);
+                if (IsNoReturnFunctionName(import->name))
+                    noReturnStarts.insert(thunkStart - codeStart);
             }
         }
 
@@ -682,6 +720,229 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
         }
         AnalyzeBranchesAndData(flow, operands, from, insn->id == X86_INS_LEA);
+        // a call that does not return: the next instruction starts a block (a thunk, the code whose address is taken), the padding after
+        // it is not reached. Not a prologue after padding: the endbr64 of a landing pad (CET) follows the call __stack_chk_fail of its
+        // function
+        if (RecordFlow(flow, operands, insnArch)) {
+            atBlockStart         = true;
+            previousFallsThrough = false;
+        }
+    }
+
+    // an instruction that stops the program (a path of a function ends there): ud2, int 0x29 (__fastfail), brk / udf (__builtin_trap). Not
+    // int3 / hlt / bkpt: a debugger / an interrupt continues after them (DebugBreak: int3; ret)
+    static bool IsTrapInstruction(const cs_insn& instruction, DissasmArch instructionArch)
+    {
+        if (instructionArch == DissasmArch::Arm64)
+            return instruction.id == ARM64_INS_BRK || instruction.id == ARM64_INS_UDF;
+        if (instructionArch == DissasmArch::Arm || instructionArch == DissasmArch::Thumb)
+            return instruction.id == ARM_INS_UDF;
+        if (instruction.id == X86_INS_UD2)
+            return true;
+        return instruction.id == X86_INS_INT && instruction.detail && instruction.detail->x86.op_count == 1 &&
+               instruction.detail->x86.operands[0].type == X86_OP_IMM && instruction.detail->x86.operands[0].imm == 0x29;
+    }
+
+    // a relative address of a call / jump target is a function that does not return: of this zone (noReturnStarts) or of another code zone
+    // of the file (a PLT stub of .plt: its analysis or its name, j_exit)
+    bool IsNoReturnTarget(uint64 target)
+    {
+        if (target < codeSize) {
+            if (noReturnStarts.contains(target))
+                return true;
+            const auto thunk = thunkImports.find(target);
+            return thunk != thunkImports.end() && IsLocalNoReturnImport(thunk->second);
+        }
+        const uint64 address = (labelBase + target) & addressMask;
+        const auto* other    = zone->FindCodeZoneOfAddress(address);
+        if (!other || other == zone)
+            return false;
+        const uint64 start = address - other->labelAddressBase;
+        if (std::binary_search(other->noReturnFunctions.begin(), other->noReturnFunctions.end(), start))
+            return true;
+        const auto thunk       = other->thunkImports.find(start);
+        const std::string name = thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(start);
+        return !name.empty() && (IsNoReturnFunctionName(name) || IsLocalNoReturnImport(name));
+    }
+
+    // an import of the library itself (a PIC library calls its exported functions through the PLT / the GOT: fatal@plt) that does not
+    // return: the function of the zone of that name
+    bool IsLocalNoReturnImport(std::string_view name) const
+    {
+        if (name.starts_with("j_"))
+            name.remove_prefix(2);
+        if (const auto at = name.find('@'); at != std::string_view::npos && at > 0)
+            name = name.substr(0, at);
+        const auto local = localFunctionNames.find(std::string(name));
+        return local != localFunctionNames.end() && noReturnStarts.contains(local->second);
+    }
+
+    // the callee of a call / the target of a jump of a record does not return
+    bool RecordReachesNoReturn(const FlowRecord& record)
+    {
+        if (record.noReturnImport || (record.target != NO_TARGET && IsNoReturnTarget(record.target)))
+            return true;
+        if (!record.localImport)
+            return false;
+        const auto import = localImports.find(record.address);
+        return import != localImports.end() && IsLocalNoReturnImport(import->second);
+    }
+
+    // the flow of the instruction for the functions that do not return (InferNoReturnFunctions); true for a call known now to not return
+    // (a function of the zone named so, an import through its slot, a function of another zone)
+    bool RecordFlow(X86Flow flow, const X86OperandsInfo& operands, DissasmArch instructionArch)
+    {
+        FlowKind kind;
+        const bool isArm32 = instructionArch == DissasmArch::Arm || instructionArch == DissasmArch::Thumb;
+        if (insn->id == 0)
+            kind = FlowKind::Unknown; // a data line, an undecodable byte, the padding
+        else if (IsTrapInstruction(*insn, instructionArch))
+            kind = FlowKind::Trap;
+        else if (flow == X86Flow::Call)
+            kind = FlowKind::Call;
+        else if (flow == X86Flow::Jump)
+            kind = FlowKind::Jump;
+        else if (flow == X86Flow::ConditionalJump)
+            kind = FlowKind::ConditionalJump;
+        else if (flow == X86Flow::Return)
+            kind = FlowKind::Return;
+        else if (isArm32 && insn->detail && insn->detail->arm.cc != ARM_CC_AL && insn->detail->arm.cc != ARM_CC_INVALID &&
+                 (insn->id == ARM_INS_BX ||
+                  std::any_of(insn->detail->arm.operands, insn->detail->arm.operands + insn->detail->arm.op_count, [](const cs_arm_op& op) {
+                      return op.type == ARM_OP_REG && op.reg == ARM_REG_PC;
+                  })))
+            kind = FlowKind::Unknown; // popne {r4, pc} / bxlt lr (an IT block): a conditional return
+        else
+            return false;
+        FlowRecord record{ insn->address, NO_TARGET, static_cast<uint8>(insn->size), kind, false, false };
+        if (IsX86Branch(flow) && operands.directTarget.has_value())
+            record.target = operands.directTarget.value() & addressMask;
+        if (kind == FlowKind::Call && record.target == insn->address + insn->size)
+            return false; // call $+5: the address of the code
+        if (record.target == NO_TARGET && (kind == FlowKind::Call || kind == FlowKind::Jump) && findImport) {
+            const auto* import = findImport(operands);
+            if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
+                record.noReturnImport = IsNoReturnFunctionName(import->name);
+                if (!record.noReturnImport && localFunctionNames.contains(import->name)) { // call [rip + fatal@GOTPCREL] (-fno-plt)
+                    record.localImport          = true;
+                    localImports[insn->address] = import->name;
+                }
+            }
+        }
+        flowRecords.push_back(record);
+        if (kind != FlowKind::Call || !RecordReachesNoReturn(record))
+            return false;
+        noReturnCalls.insert(insn->address);
+        return true;
+    }
+
+    // the functions that do not return: named so (noReturnStarts), or none of whose paths returns: every path ends with a call / a jump to
+    // such a function or to an import that does not return, or a trap (IDA: noreturn). The rounds end when no new one is found. Then the
+    // calls to them (noReturnCalls); the instruction after each of them starts a block. A path that falls into the next function, an
+    // indirect jump (not a switch), a ret, an undecodable byte: the function returns
+    void InferNoReturnFunctions()
+    {
+        constexpr uint32 MAX_ROUNDS     = 8;
+        constexpr uint32 MAX_PATH_STEPS = 4096;
+        std::vector<uint64> starts;
+        for (const auto& [offset, isJump] : callsMap)
+            if (!isJump && offset >= codeStart && offset - codeStart < codeSize)
+                starts.push_back(offset - codeStart);
+        if (functionEntries)
+            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+                starts.push_back(it->first - codeStart);
+        const auto& details = zone->zoneDetails;
+        if (details.HasEntryPoint() && details.entryPoint >= codeStart && details.entryPoint - codeStart < codeSize)
+            starts.push_back(details.entryPoint - codeStart); // _start: __libc_start_main does not return
+        std::sort(starts.begin(), starts.end());
+        starts.erase(std::unique(starts.begin(), starts.end()), starts.end());
+        std::unordered_map<uint64, std::vector<uint64>> switchCases; // relative address of the jump -> its cases (relative)
+        for (const auto& xref : xrefs.byTarget)
+            if (xref.kind == DissasmXrefKind::Switch && xref.from >= labelBase && xref.to >= labelBase)
+                switchCases[xref.from - labelBase].push_back(xref.to - labelBase);
+
+        std::vector<size_t> pending;
+        std::unordered_set<size_t> seen; // the records of the function already walked
+        const auto firstRecordAt = [this](uint64 address) {
+            return static_cast<size_t>(
+                  std::lower_bound(flowRecords.begin(), flowRecords.end(), address, [](const FlowRecord& record, uint64 value) { return record.address < value; }) -
+                  flowRecords.begin());
+        };
+        const auto returns = [&](size_t index) {
+            const uint64 start  = starts[index];
+            const uint64 end    = index + 1 < starts.size() ? starts[index + 1] : codeSize;
+            const auto inside   = [start, end](uint64 target) { return target >= start && target < end; };
+            uint32 steps        = 0;
+            pending.assign(1, firstRecordAt(start));
+            seen.clear();
+            while (!pending.empty()) {
+                size_t position = pending.back();
+                pending.pop_back();
+                for (bool walking = true; walking; position++) {
+                    if (position >= flowRecords.size() || flowRecords[position].address >= end || ++steps > MAX_PATH_STEPS)
+                        return true; // into the next function
+                    if (!seen.insert(position).second)
+                        break; // walked from another path
+                    const auto& record = flowRecords[position];
+                    switch (record.kind) {
+                    case FlowKind::Return:
+                    case FlowKind::Unknown:
+                        return true;
+                    case FlowKind::Trap:
+                        walking = false;
+                        break;
+                    case FlowKind::Call:
+                        walking = !RecordReachesNoReturn(record);
+                        break;
+                    case FlowKind::ConditionalJump:
+                        if (record.target != NO_TARGET && inside(record.target))
+                            pending.push_back(firstRecordAt(record.target));
+                        else if (record.target == NO_TARGET || !IsNoReturnTarget(record.target))
+                            return true; // a conditional tail call
+                        break;
+                    case FlowKind::Jump:
+                        walking = false;
+                        if (const auto cases = switchCases.find(record.address); cases != switchCases.end()) {
+                            for (const uint64 target : cases->second) {
+                                if (!inside(target))
+                                    return true;
+                                pending.push_back(firstRecordAt(target));
+                            }
+                        } else if (record.target != NO_TARGET && inside(record.target))
+                            pending.push_back(firstRecordAt(record.target));
+                        else if (!RecordReachesNoReturn(record))
+                            return true; // a tail call, an indirect jump
+                        break;
+                    }
+                }
+            }
+            return false;
+        };
+        for (uint32 round = 0; round < MAX_ROUNDS && !flowRecords.empty(); round++) {
+            bool found = false;
+            for (size_t index = 0; index < starts.size(); index++)
+                if (!noReturnStarts.contains(starts[index]) && !returns(index)) {
+                    noReturnStarts.insert(starts[index]);
+                    found = true;
+                }
+            if (!found)
+                break;
+        }
+        noReturnCalls.clear();
+        for (const auto& record : flowRecords) {
+            if (record.kind != FlowKind::Call || !RecordReachesNoReturn(record))
+                continue;
+            noReturnCalls.insert(record.address);
+            // the next instruction starts a block (the code whose address is taken there is a function), not the padding (int3, nop)
+            const uint64 next = record.address + record.size;
+            uint32 word       = 0;
+            if (next < blockStarts.size() && obj->GetData().Copy<uint32>(codeStart + next, word)) {
+                const bool padding = IsArmArch(arch) ? word == 0xD503201Fu || (word & 0xFFFF) == 0xBF00 || word == 0xE320F000u
+                                                     : (word & 0xFF) == 0xCC || (word & 0xFF) == 0x90 || (word & 0xFFFF) == 0x9066;
+                if (!padding)
+                    blockStarts[next] = true;
+            }
+        }
     }
 
     // the cases of a switch (VA): every case is a jump target (loc_) referenced by the indirect jump
@@ -1299,7 +1560,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                   frame,
                   is64 ? X86FrameHelperCheck{} : X86FrameHelperCheck([this](const cs_insn& call) {
                       return IsFrameHelper(static_cast<uint64>(call.detail->x86.operands[0].imm));
-                  }));
+                  }),
+                  [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
             if (!analyzed) // no frame register (MSVC x64, x86 FPO / GCC -O2): the slots through the stack pointer
                 analyzed = AnalyzeX86StackFrame(
                       detailHandle,
@@ -1309,7 +1571,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                       limit,
                       is64,
                       frame,
-                      is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); }));
+                      is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); }),
+                      [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
         }
         if (!analyzed || frame.variables.empty())
             return;
@@ -1385,7 +1648,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::vector<uint64> starts;
         for (const auto& run : paddingRuns) {
             std::optional<uint64> from;
-            if (run.fallsThrough && !(run.afterCall && callsMap.contains(codeStart + run.end)))
+            if (run.fallsThrough && !noReturnCalls.contains(run.previousAddress) && !(run.afterCall && callsMap.contains(codeStart + run.end)))
                 from = run.start;
             else if (const auto target = std::lower_bound(targets.begin(), targets.end(), run.start); target != targets.end() && *target < run.end)
                 from = *target;
@@ -1421,6 +1684,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // reaches becomes instructions (the lines are counted again), then the labels are placed
     void EndSweep()
     {
+        InferNoReturnFunctions();
         const auto reachedBefore = instructionSet.reachablePadding;
         const bool paddingReached = passes < DISSASM_MAX_TABLE_PASSES && AddReachedPadding();
         if (!pendingRanges.empty() && passes < DISSASM_MAX_TABLE_PASSES) {
@@ -1485,6 +1749,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->adrpPages                 = std::move(adrpPages);
         zone->imageBaseTables           = std::move(imageBaseTables);
         zone->functionStarts            = std::move(functionStarts);
+        zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
+        std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
+        zone->noReturnCalls = std::move(noReturnCalls);
         zone->dissasmType.annotations   = std::move(annotations);
         zone->localVariables.functions  = std::move(frames);
         // the tables that became data lines: their entries show the names of their cases
@@ -2101,6 +2368,7 @@ std::vector<DissasmFunctionInfo> DissasmCodeZone::GetFunctions(const std::map<ui
             function.name = GetLabelName("sub_", function.start);
         function.xrefs           = static_cast<uint32>(GetXrefsTo(labelAddressBase + function.start).size());
         function.isThunk         = thunkImports.contains(function.start);
+        function.isNoReturn      = std::binary_search(noReturnFunctions.begin(), noReturnFunctions.end(), function.start);
         function.isEntryPoint    = codeStart + function.start == zoneDetails.entryPoint;
         if (functionEntries) {
             const auto entry = functionEntries->find(codeStart + function.start);
@@ -2539,7 +2807,8 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
             for (const uint64 target : cases->second)
                 if (inside(target))
                     leaders.insert(target);
-        if ((isJump || instruction.flow == X86Flow::Return) && index + 1 < instructions.size())
+        const bool noReturnCall = instruction.flow == X86Flow::Call && noReturnCalls.contains(instruction.address);
+        if ((isJump || instruction.flow == X86Flow::Return || noReturnCall) && index + 1 < instructions.size())
             leaders.insert(instructions[index + 1].address);
     }
 
@@ -2590,6 +2859,14 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
             break;
         case X86Flow::Return:
             block.exits = true;
+            break;
+        case X86Flow::Call:
+            if (noReturnCalls.contains(last.address))
+                break; // exit, abort, __stack_chk_fail: the block ends there, nothing follows
+            if (nextBlock.has_value())
+                block.successors.push_back({ nextBlock.value(), DissasmGraphBlock::EdgeKind::Jump });
+            else
+                block.exits = true;
             break;
         default:
             if (nextBlock.has_value())

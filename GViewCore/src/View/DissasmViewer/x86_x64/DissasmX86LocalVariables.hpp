@@ -8,6 +8,8 @@ namespace GView::View::DissasmViewer
 // 32 bit: true when the callee of a call builds the frame of its caller (MSVC __SEH_prolog4 / __EH_prolog3 / _EH_prolog: ebp = the stack
 // pointer of the caller's entry - 4, as push ebp; mov ebp, esp)
 using X86FrameHelperCheck = std::function<bool(const cs_insn& call)>;
+// true when the callee of a call never returns (exit, abort, __stack_chk_fail): the path of the function ends with the call
+using X86CallNoReturn = std::function<bool(const cs_insn& call)>;
 
 // Recognizes a frame based function (push ebp; mov ebp, esp / push rbp; mov rbp, rsp / enter; 32 bit: push 0x10; push offset scopetable;
 // call __SEH_prolog4 / push 8; mov eax, offset handler; call __EH_prolog3 / mov eax, offset handler; call _EH_prolog, when `frameHelper`
@@ -25,7 +27,8 @@ bool AnalyzeX86FunctionFrame(
       uint64 limitAddress,
       bool is64,
       DissasmFunctionFrame& frame,
-      const X86FrameHelperCheck& frameHelper = {});
+      const X86FrameHelperCheck& frameHelper = {},
+      const X86CallNoReturn& callNoReturn    = {});
 
 // 32 bit code: the bytes a callee pops from the stack of its caller (stdcall / thiscall: ret 8; cdecl: 0), none when it is not known
 using X86CalleeStackPurge = std::function<std::optional<uint32>(const cs_insn& call)>;
@@ -47,7 +50,8 @@ bool AnalyzeX86StackFrame(
       uint64 limitAddress,
       bool is64,
       DissasmFunctionFrame& frame,
-      const X86CalleeStackPurge& calleePurge = {});
+      const X86CalleeStackPurge& calleePurge = {},
+      const X86CallNoReturn& callNoReturn    = {});
 
 // IDA like names: [ebp - 0x4C] -> var_4C, [ebp + 8] -> arg_0 (x86) / [rbp + 0x10] -> arg_0 (x64)
 void FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name);
