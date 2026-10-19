@@ -503,6 +503,31 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
     const uint32 flagsOffset           = is64 ? 144 : 88;
     const uint64 functionTable         = readField(80, 128);
     const uint64 functionCount         = readField(84, 136);
+    // the entries of the guard tables: an RVA (the function, the IAT slot, the target) and the flag bytes of GuardFlags
+    if (flagsOffset + 4 <= size && data.Copy<uint32>(start + flagsOffset, guardFlags)) {
+        const uint32 entrySize = 4 + ((guardFlags >> 28) & 0xF);
+        struct GuardTable {
+            uint32 table32, table64, count32, count64;
+            std::string_view entry;
+        };
+        constexpr GuardTable tables[] = {
+            { 80, 128, 84, 136, "function" },
+            { 104, 160, 108, 168, "iat entry" },
+            { 112, 176, 116, 184, "longjmp target" },
+            { 164, 264, 168, 272, "eh continuation" },
+        };
+        for (const auto& table : tables) {
+            const uint64 tableVA = readField(table.table32, table.table64);
+            const uint64 count   = readField(table.count32, table.count64);
+            if (tableVA <= pe->imageBase || count > MAX_TABLE_ENTRIES)
+                continue;
+            for (uint64 index = 0; index < count; index++) {
+                settings.AddDataField(tableVA + index * entrySize, 4, DissasmViewer::DataFieldType::RVA, table.entry);
+                if (entrySize > 4)
+                    settings.AddDataField(tableVA + index * entrySize + 4, entrySize - 4, DissasmViewer::DataFieldType::Value, "flags");
+            }
+        }
+    }
     if (flagsOffset + 4 <= size && data.Copy<uint32>(start + flagsOffset, guardFlags) && functionTable > pe->imageBase && functionCount <= MAX_TABLE_ENTRIES) {
         const uint32 entrySize = 4 + ((guardFlags >> 28) & 0xF);
         const auto tableFa     = pe->RVAToFA(functionTable - pe->imageBase);
@@ -525,6 +550,156 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
                 break;
             if (const auto fa = pe->RVAToFA(rva); fa != PE_INVALID_ADDRESS)
                 settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::Symbol);
+            settings.AddDataField(handlerTable + index * 4, 4, DissasmViewer::DataFieldType::RVA, "handler");
+        }
+    }
+}
+
+// The directories of the image as typed structures of the data zones (IDA): the import descriptors (__IMPORT_DESCRIPTOR_KERNEL32, their
+// lookup tables and hint / name entries), the export directory and its tables, the TLS directory (_tls_used) and its callbacks, the debug
+// directory and its CodeView record (the PDB)
+void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+{
+    using Type                    = DissasmViewer::DataFieldType;
+    const bool is64               = pe->hdr64;
+    const uint32 pointerSize      = is64 ? 8u : 4u;
+    const uint64 base             = pe->imageBase;
+    constexpr uint32 MAX_ENTRIES  = 0x10000;
+    const auto readString         = [&](uint64 rva) {
+        std::string text;
+        const auto fa = pe->RVAToFA(rva);
+        for (uint32 index = 0; fa != PE_INVALID_ADDRESS && index < 512; index++) {
+            uint8 c = 0;
+            if (!data.Copy<uint8>(fa + index, c) || c == 0)
+                break;
+            text.push_back(static_cast<char>(c));
+        }
+        return text;
+    };
+    const auto addFields = [&](uint64 rva, std::initializer_list<std::tuple<uint32, Type, std::string_view>> fields) {
+        uint64 offset = 0;
+        for (const auto& [size, type, name] : fields) {
+            settings.AddDataField(base + rva + offset, size, type, name);
+            offset += size;
+        }
+    };
+
+    // the imports: IMAGE_IMPORT_DESCRIPTOR {OriginalFirstThunk, TimeDateStamp, ForwarderChain, Name, FirstThunk} until an empty one
+    if (const auto& directory = pe->GetDirectory(PE::DirectoryType::Import); directory.VirtualAddress != 0) {
+        for (uint32 index = 0; index < 4096; index++) {
+            const uint64 rva = directory.VirtualAddress + index * 20ull;
+            const auto fa    = pe->RVAToFA(rva);
+            uint32 fields[5] = {};
+            if (fa == PE_INVALID_ADDRESS || !data.Copy<uint32>(fa, fields[0]) || !data.Copy<uint32>(fa + 4, fields[1]) || !data.Copy<uint32>(fa + 8, fields[2]) ||
+                !data.Copy<uint32>(fa + 12, fields[3]) || !data.Copy<uint32>(fa + 16, fields[4]))
+                break;
+            if ((fields[0] | fields[3] | fields[4]) == 0)
+                break;
+            std::string dll = readString(fields[3]);
+            if (const auto dot = dll.rfind('.'); dot != std::string::npos)
+                dll = dll.substr(0, dot);
+            std::string label = "__IMPORT_DESCRIPTOR_";
+            for (const char c : dll)
+                label.push_back(std::isalnum(static_cast<unsigned char>(c)) ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : '_');
+            settings.AddMemoryMapping(rva, label, DissasmViewer::MemoryMappingType::TextMapping);
+            addFields(rva, { { 4, Type::RVA, "OriginalFirstThunk" }, { 4, Type::Value, "TimeDateStamp" }, { 4, Type::Value, "ForwarderChain" },
+                             { 4, Type::RVA, "Name" }, { 4, Type::RVA, "FirstThunk" } });
+            // the import lookup table: an RVA of a hint / name entry, or an ordinal (the high bit)
+            for (uint32 entry = 0; fields[0] != 0 && entry < MAX_ENTRIES; entry++) {
+                const uint64 slotRVA = fields[0] + static_cast<uint64>(entry) * pointerSize;
+                const auto slotFa    = pe->RVAToFA(slotRVA);
+                uint64 value         = 0;
+                if (slotFa == PE_INVALID_ADDRESS || !ReadImagePointer(data, slotFa, is64, value) || value == 0)
+                    break;
+                const bool byOrdinal = (value >> (is64 ? 63 : 31)) != 0;
+                if (byOrdinal) {
+                    settings.AddDataField(base + slotRVA, pointerSize, Type::Value, "ordinal " + std::to_string(value & 0xFFFF));
+                    continue;
+                }
+                const uint64 hintRVA   = value & 0x7FFFFFFF;
+                const std::string name = readString(hintRVA + 2);
+                settings.AddDataField(base + slotRVA, pointerSize, Type::RVA, name);
+                settings.AddDataField(base + hintRVA, 2, Type::Value, "hint");
+                if (!name.empty())
+                    settings.AddDataField(base + hintRVA + 2, static_cast<uint32>(name.size() + 1), Type::String, "name");
+            }
+        }
+    }
+
+    // the exports: IMAGE_EXPORT_DIRECTORY, the addresses of the functions (by ordinal), the names and their ordinals
+    if (const auto& directory = pe->GetDirectory(PE::DirectoryType::Export); directory.VirtualAddress != 0) {
+        const auto fa       = pe->RVAToFA(directory.VirtualAddress);
+        uint32 fields[10]   = {}; // from Name (offset 12)
+        bool ok             = fa != PE_INVALID_ADDRESS;
+        for (uint32 index = 0; ok && index < 7; index++)
+            ok = data.Copy<uint32>(fa + 12 + index * 4ull, fields[index]);
+        if (ok) {
+            addFields(directory.VirtualAddress,
+                      { { 4, Type::Value, "Characteristics" }, { 4, Type::Value, "TimeDateStamp" }, { 2, Type::Value, "MajorVersion" },
+                        { 2, Type::Value, "MinorVersion" }, { 4, Type::RVA, "Name" }, { 4, Type::Value, "Base" }, { 4, Type::Value, "NumberOfFunctions" },
+                        { 4, Type::Value, "NumberOfNames" }, { 4, Type::RVA, "AddressOfFunctions" }, { 4, Type::RVA, "AddressOfNames" },
+                        { 4, Type::RVA, "AddressOfNameOrdinals" } });
+            const uint32 ordinalBase = fields[1], functions = fields[2], names = fields[3];
+            const uint32 functionsRVA = fields[4], namesRVA = fields[5], ordinalsRVA = fields[6];
+            std::vector<std::string> functionNames(std::min(functions, MAX_ENTRIES));
+            for (uint32 index = 0; index < names && index < MAX_ENTRIES; index++) {
+                uint32 nameRVA = 0;
+                uint16 ordinal = 0;
+                const auto nameFa    = pe->RVAToFA(namesRVA + index * 4ull);
+                const auto ordinalFa = pe->RVAToFA(ordinalsRVA + index * 2ull);
+                if (nameFa == PE_INVALID_ADDRESS || ordinalFa == PE_INVALID_ADDRESS || !data.Copy<uint32>(nameFa, nameRVA) || !data.Copy<uint16>(ordinalFa, ordinal))
+                    break;
+                const std::string name = readString(nameRVA);
+                if (ordinal < functionNames.size())
+                    functionNames[ordinal] = name;
+                settings.AddDataField(base + namesRVA + index * 4ull, 4, Type::RVA, "name");
+                settings.AddDataField(base + ordinalsRVA + index * 2ull, 2, Type::Value, "ordinal");
+                if (!name.empty())
+                    settings.AddDataField(base + nameRVA, static_cast<uint32>(name.size() + 1), Type::String, "export name");
+            }
+            for (uint32 index = 0; index < functionNames.size(); index++)
+                settings.AddDataField(base + functionsRVA + index * 4ull, 4, Type::RVA,
+                                      functionNames[index].empty() ? "ordinal " + std::to_string(ordinalBase + index) : functionNames[index]);
+        }
+    }
+
+    // TLS: IMAGE_TLS_DIRECTORY (_tls_used) and its callbacks (pointers until 0)
+    if (const auto& directory = pe->GetDirectory(PE::DirectoryType::TLS); directory.VirtualAddress != 0) {
+        settings.AddMemoryMapping(directory.VirtualAddress, "_tls_used", DissasmViewer::MemoryMappingType::TextMapping);
+        addFields(directory.VirtualAddress,
+                  { { pointerSize, Type::Pointer, "StartAddressOfRawData" }, { pointerSize, Type::Pointer, "EndAddressOfRawData" },
+                    { pointerSize, Type::Pointer, "AddressOfIndex" }, { pointerSize, Type::Pointer, "AddressOfCallBacks" },
+                    { 4, Type::Value, "SizeOfZeroFill" }, { 4, Type::Value, "Characteristics" } });
+        uint64 callbacks  = 0;
+        const auto tlsFa  = pe->RVAToFA(directory.VirtualAddress);
+        if (tlsFa != PE_INVALID_ADDRESS && ReadImagePointer(data, tlsFa + 3ull * pointerSize, is64, callbacks) && callbacks > base) {
+            for (uint32 index = 0; index < 256; index++) {
+                uint64 callback  = 0;
+                const auto entry = pe->RVAToFA(callbacks - base + index * static_cast<uint64>(pointerSize));
+                if (entry == PE_INVALID_ADDRESS || !ReadImagePointer(data, entry, is64, callback) || callback == 0)
+                    break;
+                settings.AddDataField(callbacks + index * static_cast<uint64>(pointerSize), pointerSize, Type::Pointer, "callback");
+            }
+        }
+    }
+
+    // the debug directory: IMAGE_DEBUG_DIRECTORY entries; a CodeView record (RSDS): its GUID, age and the path of the PDB
+    if (const auto& directory = pe->GetDirectory(PE::DirectoryType::Debug); directory.VirtualAddress != 0) {
+        for (uint32 index = 0; index < directory.Size / 28 && index < 64; index++) {
+            const uint64 rva = directory.VirtualAddress + index * 28ull;
+            addFields(rva, { { 4, Type::Value, "Characteristics" }, { 4, Type::Value, "TimeDateStamp" }, { 2, Type::Value, "MajorVersion" },
+                             { 2, Type::Value, "MinorVersion" }, { 4, Type::Value, "Type" }, { 4, Type::Value, "SizeOfData" },
+                             { 4, Type::RVA, "AddressOfRawData" }, { 4, Type::Value, "PointerToRawData" } });
+            const auto fa = pe->RVAToFA(rva);
+            uint32 type = 0, dataSize = 0, dataRVA = 0, signature = 0;
+            if (fa == PE_INVALID_ADDRESS || !data.Copy<uint32>(fa + 12, type) || !data.Copy<uint32>(fa + 16, dataSize) || !data.Copy<uint32>(fa + 20, dataRVA))
+                continue;
+            const auto recordFa = dataRVA != 0 ? pe->RVAToFA(dataRVA) : PE_INVALID_ADDRESS;
+            if (type == 2 && dataSize >= 24 && recordFa != PE_INVALID_ADDRESS && data.Copy<uint32>(recordFa, signature) && signature == 0x53445352) { // RSDS
+                const std::string pdb = readString(dataRVA + 24);
+                addFields(dataRVA, { { 4, Type::Value, "Signature" }, { 16, Type::Value, "Guid" }, { 4, Type::Value, "Age" } });
+                settings.AddDataField(base + dataRVA + 24, static_cast<uint32>(pdb.size() + 1), Type::String, "PdbFileName");
+            }
         }
     }
 }
@@ -633,6 +808,7 @@ UInt16 e_res[4];)");
     AddDissasmFunctionEntries(settings, pe, win->GetObject()->GetData());
     AddDissasmDelayImports(settings, pe, win->GetObject()->GetData());
     AddDissasmLoadConfig(settings, pe, win->GetObject()->GetData());
+    AddDissasmDirectoryFields(settings, pe, win->GetObject()->GetData());
 
     win->CreateViewer(settings);
 }

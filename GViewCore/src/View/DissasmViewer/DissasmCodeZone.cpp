@@ -2526,12 +2526,17 @@ std::string GView::View::DissasmViewer::MakeStringLabelName(std::string_view tex
 void DissasmCodeZone::CollectDataZoneTargets(std::vector<uint64>& targets, std::vector<uint8>& sizes) const
 {
     std::map<uint64, uint8> found; // relative address -> the largest access
-    for (const auto* sibling : siblingZones)
-        for (const auto& xref : sibling->xrefs.byTarget)
+    const auto collect = [&](const DissasmCodeZone* source) {
+        for (const auto& xref : source->xrefs.byTarget)
             if (xref.to >= labelAddressBase && xref.to - labelAddressBase < zoneDetails.size) {
                 auto& size = found[xref.to - labelAddressBase];
                 size       = std::max(size, xref.size);
             }
+    };
+    for (const auto* sibling : siblingZones)
+        collect(sibling);
+    if (zoneDetails.isData)
+        collect(this); // its own pointers (the fields of a structure to a string of the same section): known from its previous analysis
     for (const uint64 slot : namedSlots)
         found.try_emplace(slot, 0);
     targets.clear();

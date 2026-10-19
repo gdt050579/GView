@@ -909,6 +909,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             const auto target = params.zone->FindCodeZoneOfAddress(value);
             const std::string name = target ? target->FormatCodeAddress(value - target->labelAddressBase) : FormatAddress(value);
             SetOperands(name.c_str(), params.zone);
+            if (autoComment == name) // a field named after what it points to (an export)
+                autoComment.clear();
             return true;
         }
     }
@@ -1631,7 +1633,7 @@ bool Instance::LinkDataZones()
             continue;
         for (const auto& xref : dataZone->xrefs.byTarget) {
             const auto target = dataZone->FindCodeZoneOfAddress(xref.to);
-            if (target && target != dataZone && target->zoneDetails.isData) {
+            if (target && target->zoneDetails.isData) { // also a pointer to its own data (labels from its own pointers)
                 linked = true;
                 break;
             }
