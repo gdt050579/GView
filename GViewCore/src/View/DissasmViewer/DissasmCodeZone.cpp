@@ -195,6 +195,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_set<uint64> conditionalTargets;  // ARM64: relative targets of the conditional branches
     std::vector<uint64> functionStarts;
     std::unordered_map<uint64, std::optional<uint32>> calleePurges; // 32 bit: what the functions of the zone pop (ret 8), by start
+    std::unordered_map<uint64, bool> frameHelpers;                  // 32 bit: the functions that build the frame of their caller, by start
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
     size_t labelIndex = 0; // the next label placed on its line
@@ -1155,6 +1156,54 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return result;
     }
 
+    // 32 bit: a function of the zone that builds the ebp frame of its caller (MSVC __SEH_prolog4 / __EH_prolog3 / _EH_prolog): it stores
+    // ebp in the stack (mov [esp + 0x10], ebp / mov [eax], ebp), points ebp into the stack (lea ebp, [esp + 0x10] / mov ebp, eax) and
+    // returns without restoring it
+    bool IsFrameHelper(uint64 target)
+    {
+        constexpr uint32 MAX_HELPER_INSTRUCTIONS = 48;
+        const auto known                         = frameHelpers.find(target);
+        if (known != frameHelpers.end())
+            return known->second;
+        bool storesFrame = false, setsFrame = false, helper = false;
+        const auto helperData = target < codeSize ? obj->GetData().Get(codeStart + target, static_cast<uint32>(std::min<uint64>(codeSize - target, 0x200)), false)
+                                                  : BufferView{};
+        cs_insn* helperInsn = helperData.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (helperInsn) {
+            const uint8* data = helperData.GetData();
+            size_t size       = helperData.GetLength();
+            uint64 address    = target;
+            for (uint32 decoded = 0; decoded < MAX_HELPER_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, helperInsn); decoded++) {
+                const cs_x86& x86 = helperInsn->detail->x86;
+                if (helperInsn->id == X86_INS_RET) {
+                    helper = storesFrame && setsFrame && x86.op_count == 0;
+                    break;
+                }
+                if (helperInsn->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_MEM && x86.operands[1].type == X86_OP_REG &&
+                    x86.operands[1].reg == X86_REG_EBP)
+                    storesFrame = true; // mov [esp + 0x10], ebp
+                else if ((helperInsn->id == X86_INS_LEA || helperInsn->id == X86_INS_MOV) && x86.op_count == 2 && IsRegisterOperandOf(x86, 0, X86_REG_EBP))
+                    setsFrame = storesFrame; // lea ebp, [esp + 0x10] / mov ebp, eax: after the old one is stored
+                else {
+                    bool writesFrame = helperInsn->id == X86_INS_LEAVE;
+                    for (uint8 index = 0; index < x86.op_count; index++)
+                        writesFrame |= x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
+                                       x86.operands[index].reg == X86_REG_EBP;
+                    if (writesFrame || helperInsn->id == X86_INS_CALL || helperInsn->id == X86_INS_JMP || cs_insn_group(detailHandle, helperInsn, CS_GRP_JUMP))
+                        break; // pop ebp / a branch: a regular function
+                }
+            }
+            cs_free(helperInsn, 1);
+        }
+        frameHelpers.emplace(target, helper);
+        return helper;
+    }
+
+    static bool IsRegisterOperandOf(const cs_x86& x86, uint8 index, x86_reg reg)
+    {
+        return index < x86.op_count && x86.operands[index].type == X86_OP_REG && x86.operands[index].reg == reg;
+    }
+
     // 32 bit: the bytes popped by the callee of a call: a function of the zone (its ret), an import (its decorated name), a function of
     // another zone (a PLT stub: cdecl); none for an indirect call
     std::optional<uint32> CalleeStackPurge(const cs_insn& call)
@@ -1216,7 +1265,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             analyzed = AnalyzeArm32FunctionFrame(
                   detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch == DissasmArch::Thumb, frame);
         else {
-            analyzed = AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame);
+            analyzed = AnalyzeX86FunctionFrame(
+                  detailHandle,
+                  functionData.GetData(),
+                  functionData.GetLength(),
+                  relativeAddress,
+                  limit,
+                  is64,
+                  frame,
+                  is64 ? X86FrameHelperCheck{} : X86FrameHelperCheck([this](const cs_insn& call) {
+                      return IsFrameHelper(static_cast<uint64>(call.detail->x86.operands[0].imm));
+                  }));
             if (!analyzed) // no frame register (MSVC x64, x86 FPO / GCC -O2): the slots through the stack pointer
                 analyzed = AnalyzeX86StackFrame(
                       detailHandle,

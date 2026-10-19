@@ -5,13 +5,27 @@
 
 namespace GView::View::DissasmViewer
 {
-// Recognizes a frame based function (push ebp; mov ebp, esp / push rbp; mov rbp, rsp / enter) starting at `codeAddress` and collects the stack
-// slots addressed only through the frame register ([ebp - 8] -> var_8, [ebp + 8] -> arg_0) until the end of the function: the first
-// ret / jmp / int3 that is not followed by code reached through a branch of the function, a write to the frame register or `limitAddress`.
+// 32 bit: true when the callee of a call builds the frame of its caller (MSVC __SEH_prolog4 / __EH_prolog3 / _EH_prolog: ebp = the stack
+// pointer of the caller's entry - 4, as push ebp; mov ebp, esp)
+using X86FrameHelperCheck = std::function<bool(const cs_insn& call)>;
+
+// Recognizes a frame based function (push ebp; mov ebp, esp / push rbp; mov rbp, rsp / enter; 32 bit: push 0x10; push offset scopetable;
+// call __SEH_prolog4 / push 8; mov eax, offset handler; call __EH_prolog3 / mov eax, offset handler; call _EH_prolog, when `frameHelper`
+// confirms the callee) starting at `codeAddress` and collects the stack slots addressed only through the frame register ([ebp - 8] ->
+// var_8, [ebp + 8] -> arg_0) until the end of the function: the first ret / jmp / int3 that is not followed by code reached through a
+// branch of the function, a write to the frame register or `limitAddress`. The SEH record of a function with two pushes before its helper
+// is named as IDA does (ms_exc.registration.TryLevel at [ebp - 4] ... ms_exc.old_esp at [ebp - 0x18]).
 // `detailHandle` must be a capstone handle opened with CS_OPT_DETAIL; `code` holds the bytes found at the relative address `codeAddress`.
 // Returns false when the function does not use a frame pointer. The variables of the returned frame are sorted by their frame offset.
 bool AnalyzeX86FunctionFrame(
-      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool is64, DissasmFunctionFrame& frame);
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      DissasmFunctionFrame& frame,
+      const X86FrameHelperCheck& frameHelper = {});
 
 // 32 bit code: the bytes a callee pops from the stack of its caller (stdcall / thiscall: ret 8; cdecl: 0), none when it is not known
 using X86CalleeStackPurge = std::function<std::optional<uint32>(const cs_insn& call)>;

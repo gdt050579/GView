@@ -1491,6 +1491,67 @@ TEST_CASE("LocalVariablesStackPointerFrames32", "[Dissasm]LocalVariables")
     REQUIRE(dissasmInstance.CheckLineText(12, "mov dword ptr [esp + 0x14 + var_C], ecx"));
 }
 
+TEST_CASE("LocalVariablesFrameHelpers", "[Dissasm]LocalVariables")
+{
+    DetailHandle x86(CS_MODE_32);
+    DissasmFunctionFrame frame{};
+    const auto analyze = [&](const std::vector<uint8>& code, bool isHelper) {
+        return AnalyzeX86FunctionFrame(
+              x86.handle, code.data(), code.size(), 0, code.size(), false, frame, [isHelper](const cs_insn&) { return isHelper; });
+    };
+    // push 8; mov eax, offset handler; call __EH_prolog3; mov [ebp - 4], ecx; mov eax, [ebp + 8]; ret: an ebp frame (default names)
+    const std::vector<uint8> eh3 = { 0x6A, 0x08, 0xB8, 0x34, 0x12, 0x00, 0x00, 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x4D, 0xFC, 0x8B, 0x45, 0x08, 0xC3 };
+    REQUIRE(analyze(eh3, true));
+    REQUIRE(CheckFrameVariables(frame, { { -4, 4, "var_4" }, { 8, 4, "arg_0" } }));
+    REQUIRE(!analyze(eh3, false)); // a call to a regular function: no frame
+    // push 0x10; push offset scopetable; call __SEH_prolog4; mov [ebp - 4], eax; mov [ebp - 0x18], esp; mov [ebp - 0x20], ecx; ret: the SEH
+    // record of IDA (ms_exc = CPPEH_RECORD ptr -0x18)
+    const std::vector<uint8> seh4 = { 0x6A, 0x10, 0x68, 0x34, 0x12, 0x00, 0x00, 0xE8, 0x10, 0x00, 0x00, 0x00,
+                                      0x89, 0x45, 0xFC, 0x89, 0x65, 0xE8, 0x89, 0x4D, 0xE0, 0xC3 };
+    REQUIRE(analyze(seh4, true));
+    REQUIRE(CheckFrameVariables(frame, { { -0x20, 4, "var_20" }, { -0x18, 4, "ms_exc.old_esp" }, { -4, 4, "ms_exc.registration.TryLevel" } }));
+    // three setup instructions, or none, are not the call of a frame helper
+    REQUIRE(!analyze({ 0x6A, 0x10, 0x6A, 0x10, 0x6A, 0x10, 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x45, 0xFC, 0xC3 }, true));
+    REQUIRE(!analyze({ 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x45, 0xFC, 0xC3 }, true));
+
+    // the deep scan recognizes the helper from its code: it stores ebp, points ebp into the stack and returns without restoring it
+    std::vector<uint8> file = {
+        0x6A, 0x08,                         // 0x00: push 8
+        0x68, 0x78, 0x56, 0x34, 0x12,       // 0x02: push 0x12345678
+        0xE8, 0x39, 0x00, 0x00, 0x00,       // 0x07: call 0x45 (__SEH_prolog4)
+        0x89, 0x45, 0xFC,                   // 0x0C: mov [ebp - 4], eax
+        0x8B, 0x45, 0x08,                   // 0x0F: mov eax, [ebp + 8]
+        0x89, 0x45, 0xE0,                   // 0x12: mov [ebp - 0x20], eax
+        0xE8, 0x67, 0x00, 0x00, 0x00,       // 0x15: call 0x81 (__SEH_epilog4)
+        0xC2, 0x04, 0x00,                   // 0x1A: ret 4
+    };
+    file.resize(0x45, 0xCC);
+    for (const uint8 byte : { 0x68, 0x00, 0x20, 0x00, 0x00,       // push offset _except_handler4
+                              0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00, // push dword ptr fs:[0]
+                              0x8B, 0x44, 0x24, 0x10,             // mov eax, [esp + 0x10]
+                              0x89, 0x6C, 0x24, 0x10,             // mov [esp + 0x10], ebp
+                              0x8D, 0x6C, 0x24, 0x10,             // lea ebp, [esp + 0x10]
+                              0x2B, 0xE0,                         // sub esp, eax
+                              0x53, 0x56, 0x57,                   // push ebx; push esi; push edi
+                              0xC3 })                             // ret
+        file.push_back(byte);
+    file.resize(0x81, 0xCC);
+    file.push_back(0xC3);
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(1, "var_20 = dword ptr -0x20"));
+    REQUIRE(dissasmInstance.CheckLineText(2, "ms_exc.registration.TryLevel = dword ptr -4"));
+    REQUIRE(dissasmInstance.CheckLineText(3, "arg_0 = dword ptr 8"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "push 8"));
+    REQUIRE(dissasmInstance.CheckLineText(7, "mov dword ptr [ebp + ms_exc.registration.TryLevel], eax"));
+    REQUIRE(dissasmInstance.CheckLineText(8, "mov eax, dword ptr [ebp + arg_0]"));
+    REQUIRE(dissasmInstance.CheckLineText(9, "mov dword ptr [ebp + var_20], eax"));
+}
+
 TEST_CASE("LocalVariablesSerialization", "[Dissasm]LocalVariables")
 {
     DissasmLocalVariables variables;

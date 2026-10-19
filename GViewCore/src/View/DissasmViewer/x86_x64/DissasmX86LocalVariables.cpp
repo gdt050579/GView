@@ -1,6 +1,7 @@
 #include "DissasmX86LocalVariables.hpp"
 #include "X86InstructionInfo.hpp"
 #include <algorithm>
+#include <array>
 #include <map>
 #include <memory>
 
@@ -103,7 +104,14 @@ bool IsNameCharacter(char c)
 } // namespace
 
 bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
-      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool is64, DissasmFunctionFrame& frame)
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      DissasmFunctionFrame& frame,
+      const X86FrameHelperCheck& frameHelper)
 {
     frame.startAddress = codeAddress;
     frame.endAddress   = codeAddress;
@@ -125,6 +133,8 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     uint64 endAddress                                              = codeAddress;
     uint32 decodedInstructions                                     = 0;
     enum class State : uint8 { ExpectPush, ExpectMov, Body } state = State::ExpectPush;
+    uint32 helperSetup = 0, helperPushes = 0; // push 0x10; push offset scopetable / mov eax, offset handler before the frame helper
+    bool sehRecord     = false;               // __SEH_prolog4: the SEH record (CPPEH_RECORD) is at [ebp - 0x18]
 
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
@@ -145,8 +155,22 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
                 state = State::Body;
                 continue;
             }
-            if (decodedInstructions <= MAX_PROLOGUE_PADDING_INSTRUCTIONS && IsProloguePadding(current))
+            if (decodedInstructions <= MAX_PROLOGUE_PADDING_INSTRUCTIONS && helperSetup == 0 && IsProloguePadding(current))
                 continue;
+            // MSVC: the frame built by a helper (push 0x10; push offset scopetable; call __SEH_prolog4 / push 8; mov eax, offset handler;
+            // call __EH_prolog3 / mov eax, offset handler; call _EH_prolog)
+            if (frameHelper && !is64 && helperSetup < 2 &&
+                ((current->id == X86_INS_PUSH && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) ||
+                 (current->id == X86_INS_MOV && IsRegisterOperand(x86, 0, X86_REG_EAX) && x86.operands[1].type == X86_OP_IMM))) {
+                helperSetup++;
+                helperPushes += current->id == X86_INS_PUSH ? 1u : 0u;
+                continue;
+            }
+            if (helperSetup > 0 && current->id == X86_INS_CALL && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM && frameHelper(*current)) {
+                sehRecord = helperPushes == 2;
+                state     = State::Body;
+                continue;
+            }
             return false;
         }
         if (state == State::ExpectMov) {
@@ -214,11 +238,19 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     if (!CompactAccesses(accesses))
         return false;
 
+    // the fields of the SEH record of __SEH_prolog4 (IDA: ms_exc = CPPEH_RECORD ptr -0x18)
+    static constexpr std::array<std::string_view, 6> SEH_RECORD_FIELDS = {
+        "ms_exc.old_esp",       "ms_exc.exc_ptr", "ms_exc.registration.Next", "ms_exc.registration.ExceptionHandler", "ms_exc.registration.ScopeTable",
+        "ms_exc.registration.TryLevel",
+    };
     frame.endAddress = endAddress;
     frame.variables.reserve(accesses.size());
     for (const auto& access : accesses) {
         DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
-        FormatDefaultLocalVariableName(access.frameOffset, is64, variable.name);
+        if (sehRecord && access.frameOffset >= -0x18 && access.frameOffset < 0 && access.frameOffset % 4 == 0)
+            variable.name = SEH_RECORD_FIELDS[(access.frameOffset + 0x18) / 4];
+        else
+            FormatDefaultLocalVariableName(access.frameOffset, is64, variable.name);
         frame.variables.push_back(std::move(variable));
     }
     return true;
