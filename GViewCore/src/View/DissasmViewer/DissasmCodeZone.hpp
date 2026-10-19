@@ -203,6 +203,13 @@ struct DissasmCodeZone : public ParseZone {
     // theirs returns; relative starts, sorted. The calls to them (and to the imports that do not return): relative addresses
     std::vector<uint64> noReturnFunctions;
     std::unordered_set<uint64> noReturnCalls;
+    // the end (relative, exclusive) of every function of functionStarts (the same index): the end of its last instruction that a path from
+    // its start reaches (IDA: the function end), the padding and the dead code after it excluded; at most the next function start
+    std::vector<uint64> functionEnds;
+    // the end of a function (relative start): functionEnds, else the next function start
+    uint64 GetFunctionEnd(uint64 functionStart) const;
+    // IDA's attributes of a function, for its label line: "noreturn", "thunk", "bp-based frame" (empty when it has none / is not a function)
+    std::string FormatFunctionAttributes(uint64 relativeAddress) const;
     // the relative addresses where an instruction starts (function entries, section starts): no decoded instruction crosses them
     std::vector<uint64> instructionBoundaries;
     std::unordered_map<uint64, uint32> switchJumps;        // relative address of the indirect jmp of a switch -> its cases count

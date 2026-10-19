@@ -776,7 +776,13 @@ bool IsArm64CalleeSaved(arm64_reg reg)
 } // namespace
 
 bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
-      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame)
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callNoReturn)
 {
     frame.startAddress = codeAddress;
     frame.endAddress   = codeAddress;
@@ -917,7 +923,8 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
             if (target > current.address && target < limitAddress)
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
         }
-        if ((flow == X86Flow::Return || flow == X86Flow::Jump) && furthestBranchTarget < address)
+        const bool noReturnCall = flow == X86Flow::Call && callNoReturn && callNoReturn(current); // bl abort
+        if ((flow == X86Flow::Return || flow == X86Flow::Jump || noReturnCall) && furthestBranchTarget < address)
             break;
     }
     if (!hasFrame || !CompactAccesses(accesses))
@@ -1037,7 +1044,14 @@ int64 Arm32PushedBytes(const cs_arm& arm, bool skipFirst)
 } // namespace
 
 bool GView::View::DissasmViewer::AnalyzeArm32FunctionFrame(
-      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool thumb, DissasmFunctionFrame& frame)
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool thumb,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callNoReturn)
 {
     frame.startAddress  = codeAddress;
     frame.endAddress    = codeAddress;
@@ -1169,7 +1183,8 @@ bool GView::View::DissasmViewer::AnalyzeArm32FunctionFrame(
             if (target > current.address && target < limitAddress)
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
         }
-        if ((flow == X86Flow::Return || flow == X86Flow::Jump) && furthestBranchTarget < address)
+        const bool noReturnCall = flow == X86Flow::Call && callNoReturn && callNoReturn(current); // bl abort
+        if ((flow == X86Flow::Return || flow == X86Flow::Jump || noReturnCall) && furthestBranchTarget < address)
             break;
     }
     if (!hasFrame || !CompactAccesses(accesses))

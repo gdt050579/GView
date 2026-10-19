@@ -3670,11 +3670,11 @@ TEST_CASE("FunctionsList", "[Dissasm]GoTo")
     REQUIRE(functions.size() == 3);
     REQUIRE(functions[0].name == "EntryPoint");
     REQUIRE(functions[0].isEntryPoint);
-    REQUIRE(functions[0].size == 0x10);
+    REQUIRE(functions[0].size == 0x0F); // up to its ret: the int3 after it is not part of it
     REQUIRE(functions[1].name == "sub_140001010");
     REQUIRE(functions[1].start == 0x10);
     REQUIRE(functions[1].xrefs == 2); // called by the entry point and by Worker
-    REQUIRE(functions[1].size == 0x10);
+    REQUIRE(functions[1].size == 3);
     REQUIRE(functions[2].name == "Worker");
     REQUIRE(functions[2].isExport);
     REQUIRE(functions[2].size == 6); // the size given by the plugin
@@ -4619,6 +4619,80 @@ TEST_CASE("NoReturnArm", "[Dissasm]NoReturn")
     DissasmTestInstance thumbInstance(thumb.data(), thumb.size(), false, layout);
     REQUIRE(thumbInstance.zone->noReturnFunctions == std::vector<uint64>{ 0x10 });
     REQUIRE(thumbInstance.zone->noReturnCalls.contains(0x08));
+}
+
+TEST_CASE("FunctionEnds", "[Dissasm]NoReturn")
+{
+    // the end of a function: the last instruction its paths reach (the dead code after a call to exit and the padding excluded)
+    std::vector<unsigned char> file = {
+        0x85, 0xFF,                   // 0x00: test edi, edi
+        0x74, 0x0A,                   // 0x02: je 0x0e
+        0xE8, 0x27, 0x00, 0x00, 0x00, // 0x04: call exit (0x30)
+        0x31, 0xC0,                   // 0x09: xor eax, eax (dead code)
+        0x31, 0xC9,                   // 0x0b: xor ecx, ecx
+        0xC3,                         // 0x0d: ret
+        0x31, 0xD2,                   // 0x0e: xor edx, edx
+        0xC3,                         // 0x10: ret
+    };
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0x0F, 0x0B }); // 0x30: exit: ud2
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.alignPadding    = true;
+    layout.functionEntries = { { 0x30, { "exit", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x30 });
+    REQUIRE(zone.functionEnds == std::vector<uint64>{ 0x11, 0x32 });
+    REQUIRE(zone.GetFunctionEnd(0x30) == 0x32);
+    const auto functions = zone.GetFunctions(nullptr);
+    REQUIRE(functions[0].size == 0x11);
+    REQUIRE(functions[1].size == 2);
+    // the attributes on the label line (IDA: ; Attributes: noreturn)
+    REQUIRE(zone.FormatFunctionAttributes(0x30) == "noreturn");
+    REQUIRE(zone.FormatFunctionAttributes(0x00).empty());
+    REQUIRE(zone.FormatFunctionAttributes(0x0E).empty()); // not a function
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("Attributes: noreturn; xref: EntryPoint+0x4 (call)") != std::string::npos);
+}
+
+TEST_CASE("FunctionFramesNoReturn", "[Dissasm]NoReturn")
+{
+    // ARM64: the code after bl abort is not the function's (its slot is not a variable)
+    std::vector<unsigned char> arm;
+    const auto word = [&arm](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            arm.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BE7BFD); // 0x00: stp x29, x30, [sp, #-0x20]!
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0xB9001FA0); // 0x08: str w0, [x29, #0x1c]
+    word(0x94000005); // 0x0c: bl abort (0x20)
+    word(0xB9401BA1); // 0x10: ldr w1, [x29, #0x18] (dead code)
+    word(0xA8C27BFD); // 0x14: ldp x29, x30, [sp], #0x20
+    word(0xD65F03C0); // 0x18: ret
+    word(0xD503201F); // 0x1c: nop
+    word(0xD4200020); // 0x20: abort: brk #1
+    word(0xD503201F);
+    word(0xD503201F);
+    word(0xD65F03C0);
+    ZoneLayout layout;
+    layout.size            = arm.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x20, { "abort", 0, true } } };
+    DissasmTestInstance dissasmInstance(arm.data(), arm.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->variables.size() == 1);
+    REQUIRE(frame->variables[0].frameOffset == 0x1C);
+    REQUIRE(zone.GetFunctionEnd(0x00) == 0x10);
+    REQUIRE(zone.FormatFunctionAttributes(0x00) == "noreturn bp-based frame");
 }
 
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")

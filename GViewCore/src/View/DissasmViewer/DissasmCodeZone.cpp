@@ -167,7 +167,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     uint64 previousAddress    = 0;
     // the instructions that change the flow (the functions that do not return, InferNoReturnFunctions): relative addresses, in the order
     // of the sweep
-    enum class FlowKind : uint8 { Call, Jump, ConditionalJump, Return, Trap, Unknown };
+    enum class FlowKind : uint8 { Call, Jump, ConditionalJump, Return, Trap, Unknown, MaybeReturn }; // MaybeReturn: a conditional return
     static constexpr uint64 NO_TARGET = UINT64_MAX;
     struct FlowRecord {
         uint64 address;
@@ -215,6 +215,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the code whose address is taken (lea rcx, [rip + func], push offset func; the pointer tables of the data zones): a function when it
     // starts a block (after a ret / jmp / padding), relative addresses
     std::vector<uint64> addressTakenTargets;
+    std::vector<uint64> dataPointerTargets; // every pointer of the data zones into the code (relative): the code they reach is reached
     std::vector<bool> blockStarts; // the instructions that start a block, by relative address
     std::optional<uint64> returnedAddress; // mov eax, offset X: an address taken only when the next instruction is not a ret
     // 32 bit x86 PIC: the value of ebx (the global offset table, VA) set by call $+5; pop ebx / call __x86.get_pc_thunk.bx, then add ebx, imm;
@@ -227,6 +228,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, bool> frameHelpers;                  // 32 bit: the functions that build the frame of their caller, by start
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
+    std::vector<uint64> functionEnds; // ComputeFunctionEnds
     size_t labelIndex = 0; // the next label placed on its line
     uint32 extraLines = 0;
 
@@ -437,6 +439,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         prologueCandidates.clear();
         conditionalTargets.clear();
         addressTakenTargets.clear();
+        dataPointerTargets.clear();
         returnedAddress.reset();
         ebxValue.reset();
         functionEbx.reset();
@@ -826,7 +829,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                   std::any_of(insn->detail->arm.operands, insn->detail->arm.operands + insn->detail->arm.op_count, [](const cs_arm_op& op) {
                       return op.type == ARM_OP_REG && op.reg == ARM_REG_PC;
                   })))
-            kind = FlowKind::Unknown; // popne {r4, pc} / bxlt lr (an IT block): a conditional return
+            kind = FlowKind::MaybeReturn; // popne {r4, pc} / bxlt lr (an IT block): a conditional return
         else
             return false;
         FlowRecord record{ insn->address, NO_TARGET, static_cast<uint8>(insn->size), kind, false, false };
@@ -849,6 +852,98 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return false;
         noReturnCalls.insert(insn->address);
         return true;
+    }
+
+    // the first flow record at or after a relative address
+    size_t FirstRecordAt(uint64 address) const
+    {
+        return static_cast<size_t>(
+              std::lower_bound(flowRecords.begin(), flowRecords.end(), address, [](const FlowRecord& record, uint64 value) { return record.address < value; }) -
+              flowRecords.begin());
+    }
+
+    // the cases of the switches: relative address of the indirect jump -> its cases (relative)
+    std::unordered_map<uint64, std::vector<uint64>> SwitchCases() const
+    {
+        std::unordered_map<uint64, std::vector<uint64>> cases;
+        for (const auto& xref : xrefs.byTarget)
+            if (xref.kind == DissasmXrefKind::Switch && xref.from >= labelBase && xref.to >= labelBase)
+                cases[xref.from - labelBase].push_back(xref.to - labelBase);
+        return cases;
+    }
+
+    // the end of every function (functionEnds): the paths from its start (and from the code of the function whose address is taken: a
+    // handler of its exceptions, a callback) through the flow records, up to a ret / a jump out / a trap / a call that does not return /
+    // padding (an align line, undecodable bytes); a path that goes on into the next function (or past the record budget) ends there
+    void ComputeFunctionEnds()
+    {
+        constexpr uint32 MAX_PATH_STEPS = 4096;
+        functionEnds.assign(functionStarts.size(), 0);
+        const auto switchCases = SwitchCases();
+        std::vector<uint64> seeds = addressTakenTargets; // sorted by FinishSweep
+        seeds.insert(seeds.end(), dataPointerTargets.begin(), dataPointerTargets.end());
+        std::sort(seeds.begin(), seeds.end());
+        seeds.erase(std::unique(seeds.begin(), seeds.end()), seeds.end());
+        std::vector<size_t> pending;
+        std::unordered_set<size_t> seen;
+        for (size_t index = 0; index < functionStarts.size(); index++) {
+            const uint64 start = functionStarts[index];
+            const uint64 limit = std::min<uint64>(index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize, codeSize);
+            const auto inside  = [start, limit](uint64 target) { return target >= start && target < limit; };
+            uint64 end         = start;
+            uint32 steps       = 0;
+            pending.assign(1, FirstRecordAt(start));
+            for (auto seed = std::upper_bound(seeds.begin(), seeds.end(), start); seed != seeds.end() && *seed < limit; ++seed)
+                pending.push_back(FirstRecordAt(*seed));
+            seen.clear();
+            while (!pending.empty() && end < limit) {
+                size_t position = pending.back();
+                pending.pop_back();
+                for (bool walking = true; walking; position++) {
+                    if (position >= flowRecords.size() || flowRecords[position].address >= limit || ++steps > MAX_PATH_STEPS) {
+                        end = limit; // into the next function
+                        break;
+                    }
+                    if (!seen.insert(position).second)
+                        break;
+                    const auto& record = flowRecords[position];
+                    if (record.kind == FlowKind::Unknown) {
+                        // padding the code reaches (6f: instructions after the sweep, an align line in it) goes on; the other padding / the
+                        // bytes after the code: the function ends before them
+                        if (std::binary_search(instructionSet.reachablePadding.begin(), instructionSet.reachablePadding.end(), record.address))
+                            continue;
+                        end = std::max(end, record.address);
+                        break;
+                    }
+                    end = std::max(end, record.address + record.size);
+                    switch (record.kind) {
+                    case FlowKind::Return:
+                    case FlowKind::Trap:
+                        walking = false;
+                        break;
+                    case FlowKind::Call:
+                        walking = !RecordReachesNoReturn(record);
+                        break;
+                    case FlowKind::ConditionalJump:
+                        if (record.target != NO_TARGET && inside(record.target))
+                            pending.push_back(FirstRecordAt(record.target));
+                        break;
+                    case FlowKind::Jump:
+                        walking = false;
+                        if (const auto cases = switchCases.find(record.address); cases != switchCases.end()) {
+                            for (const uint64 target : cases->second)
+                                if (inside(target))
+                                    pending.push_back(FirstRecordAt(target));
+                        } else if (record.target != NO_TARGET && inside(record.target))
+                            pending.push_back(FirstRecordAt(record.target));
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
+            functionEnds[index] = std::max(std::min(end, limit), std::min(start + 1, limit));
+        }
     }
 
     // the functions that do not return: named so (noReturnStarts), or none of whose paths returns: every path ends with a call / a jump to
@@ -880,18 +975,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                      starts.end());
         for (const uint64 start : userReturns)
             noReturnStarts.erase(start); // a name (exit) or a thunk of the sweep
-        std::unordered_map<uint64, std::vector<uint64>> switchCases; // relative address of the jump -> its cases (relative)
-        for (const auto& xref : xrefs.byTarget)
-            if (xref.kind == DissasmXrefKind::Switch && xref.from >= labelBase && xref.to >= labelBase)
-                switchCases[xref.from - labelBase].push_back(xref.to - labelBase);
-
+        const auto switchCases = SwitchCases();
         std::vector<size_t> pending;
         std::unordered_set<size_t> seen; // the records of the function already walked
-        const auto firstRecordAt = [this](uint64 address) {
-            return static_cast<size_t>(
-                  std::lower_bound(flowRecords.begin(), flowRecords.end(), address, [](const FlowRecord& record, uint64 value) { return record.address < value; }) -
-                  flowRecords.begin());
-        };
+        const auto firstRecordAt = [this](uint64 address) { return FirstRecordAt(address); };
         const auto returns = [&](size_t index) {
             const uint64 start  = starts[index];
             const uint64 end    = index + 1 < starts.size() ? starts[index + 1] : codeSize;
@@ -911,6 +998,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     switch (record.kind) {
                     case FlowKind::Return:
                     case FlowKind::Unknown:
+                    case FlowKind::MaybeReturn:
                         return true;
                     case FlowKind::Trap:
                         walking = false;
@@ -1284,6 +1372,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     AddTakenCodeAddress(value - labelBase);
                     continue;
                 }
+                dataPointerTargets.push_back(value - labelBase); // the SEH filters / handlers, the unwind actions
                 if (!is64 && position >= 4 && isSmallNumber(readValue(position - 4)))
                     continue; // FilterFunc, action, addressOfHandler
                 if (!is64 && position >= 8 && isSmallNumber(readValue(position - 8)))
@@ -1579,10 +1668,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto functionArch = zone->GetArchAt(relativeAddress);
         bool analyzed           = false;
         if (functionArch == DissasmArch::Arm64)
-            analyzed = AnalyzeArm64FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame);
+            analyzed = AnalyzeArm64FunctionFrame(
+                  detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame, [this](const cs_insn& call) {
+                      return noReturnCalls.contains(call.address);
+                  });
         else if (functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb)
             analyzed = AnalyzeArm32FunctionFrame(
-                  detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch == DissasmArch::Thumb, frame);
+                  detailHandle,
+                  functionData.GetData(),
+                  functionData.GetLength(),
+                  relativeAddress,
+                  limit,
+                  functionArch == DissasmArch::Thumb,
+                  frame,
+                  [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
         else {
             analyzed = AnalyzeX86FunctionFrame(
                   detailHandle,
@@ -1738,6 +1837,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             instructionSet.reachablePadding = reachedBefore;
         }
         FinishSweep();
+        ComputeFunctionEnds();
         if (paddingReached && pendingRanges.empty()) {
             // the reached padding only: the lines are counted again, the instructions and the analysis stay
             recountedOffsets.clear();
@@ -1783,6 +1883,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->adrpPages                 = std::move(adrpPages);
         zone->imageBaseTables           = std::move(imageBaseTables);
         zone->functionStarts            = std::move(functionStarts);
+        zone->functionEnds              = std::move(functionEnds);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);
@@ -2395,8 +2496,8 @@ std::vector<DissasmFunctionInfo> DissasmCodeZone::GetFunctions(const std::map<ui
     for (size_t index = 0; index < functionStarts.size(); index++) {
         DissasmFunctionInfo function;
         function.start    = functionStarts[index];
-        const uint64 next = index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize;
-        function.size     = next > function.start ? next - function.start : 0;
+        const uint64 end  = GetFunctionEnd(function.start); // the reachable code (the plugin size wins below)
+        function.size     = end > function.start ? end - function.start : 0;
         function.name     = GetLabelNameAt(function.start);
         if (function.name.empty())
             function.name = GetLabelName("sub_", function.start);
@@ -2579,6 +2680,38 @@ std::optional<uint64> GView::View::DissasmViewer::ParseDissasmSearchNumber(std::
         value = value * base + digit;
     }
     return negative ? static_cast<uint64>(0) - value : value;
+}
+
+uint64 DissasmCodeZone::GetFunctionEnd(uint64 functionStart) const
+{
+    const auto found = std::lower_bound(functionStarts.begin(), functionStarts.end(), functionStart);
+    const uint64 codeSize = GetCodeSize();
+    if (found == functionStarts.end() || *found != functionStart)
+        return std::min(functionStart + 1, codeSize);
+    const size_t index = static_cast<size_t>(found - functionStarts.begin());
+    if (index < functionEnds.size() && functionEnds.size() == functionStarts.size())
+        return functionEnds[index];
+    return index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize;
+}
+
+std::string DissasmCodeZone::FormatFunctionAttributes(uint64 relativeAddress) const
+{
+    if (!std::binary_search(functionStarts.begin(), functionStarts.end(), relativeAddress))
+        return {};
+    std::string text;
+    const auto add = [&text](std::string_view attribute) {
+        if (!text.empty())
+            text += ' ';
+        text += attribute;
+    };
+    if (thunkImports.contains(relativeAddress))
+        add("thunk");
+    if (std::binary_search(noReturnFunctions.begin(), noReturnFunctions.end(), relativeAddress))
+        add("noreturn");
+    const auto* frame = localVariables.FindFunctionByStart(relativeAddress);
+    if (frame && frame->usesFrameRegister && !frame->variables.empty())
+        add("bp-based frame");
+    return text;
 }
 
 std::optional<uint64> DissasmCodeZone::GetFunctionContaining(uint64 relativeAddress) const
@@ -2785,8 +2918,7 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
     constexpr size_t MAX_INSTRUCTIONS   = 20000;
     constexpr size_t MAX_BLOCKS         = 400;
     const uint64 codeSize               = GetCodeSize();
-    const auto next                     = std::upper_bound(functionStarts.begin(), functionStarts.end(), functionStart);
-    uint64 end                          = std::min<uint64>(next != functionStarts.end() ? *next : codeSize, codeSize);
+    uint64 end                          = std::min<uint64>(GetFunctionEnd(functionStart), codeSize); // the code its paths reach
     if (end - std::min(end, functionStart) > MAX_FUNCTION_SIZE) {
         end             = functionStart + MAX_FUNCTION_SIZE;
         graph.truncated = true;
@@ -4209,6 +4341,8 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
         line.label   = annotation->second.first;
         line.SetMnemonic(line.label);
         line.autoComment = FormatXrefsSummary(line.address); // who uses it
+        if (const auto attributes = FormatFunctionAttributes(line.address); !attributes.empty()) // IDA: ; Attributes: noreturn
+            line.autoComment = "Attributes: " + attributes + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
         return line;
     }
 

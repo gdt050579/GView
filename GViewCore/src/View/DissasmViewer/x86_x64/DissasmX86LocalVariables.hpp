@@ -74,7 +74,15 @@ bool FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std
 // through x29 ([x29, #-0x8] -> var_8) and the ones addressed through sp, kept in x29 offsets (frame.stackOffset: sp - x29 in the body of
 // the function). The saved registers (the frame record, stp x20, x19, ...) are not variables. A function without x29 that reserves stack
 // (sub sp, sp, #N) has its slots relative to the sp of its entry (frame.usesFrameRegister = false). False when it has neither.
-bool AnalyzeArm64FunctionFrame(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame);
+// `callNoReturn`: a call that does not return ends a path (as a ret), the code after it belongs to the function only through a branch
+bool AnalyzeArm64FunctionFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callNoReturn = {});
 
 struct Arm64FrameOperand {
     uint32 replaceStart; // first character after "#"
@@ -92,5 +100,12 @@ bool FindArmFrameOperand(std::string_view operands, std::string_view frameRegist
 // (Thumb), then the slots of the frame register and of sp (in frame register offsets), as AnalyzeArm64FunctionFrame; a function without
 // a frame register that reserves stack: the slots from the sp of its entry. frame.frameRegister: 11 or 7 (0 without one)
 bool AnalyzeArm32FunctionFrame(
-      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool thumb, DissasmFunctionFrame& frame);
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool thumb,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callNoReturn = {});
 } // namespace GView::View::DissasmViewer
