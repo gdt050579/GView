@@ -504,7 +504,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     }
 
     // the line of the instruction at a file offset (the lines of the scan: counted again when tables became data lines); none after the
-    // last decoded line
+    // last decoded line. The labels come by address: the walk goes on from the line of the previous one when it is not behind the target
+    // and not before the closest cached offset (one decoding of the lines for all the labels, not one per label from its cached offset)
+    std::optional<DissasmCodeLinesWalker> labelWalker;
+    uint32 labelWalkerLine = 0; // the line of the instruction at labelWalker->GetAddress()
     std::optional<uint32> LineOfOffset(uint64 fileOffset)
     {
         const auto& offsets = recounted ? recountedOffsets : zone->cachedCodeOffsets;
@@ -512,15 +515,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return {};
         auto closest = std::upper_bound(offsets.begin(), offsets.end(), fileOffset, [](uint64 value, const AsmOffsetLine& item) { return value < item.offset; });
         --closest; // the first cached offset is the code start
-        DissasmCodeLinesWalker lineWalker(
-              obj, codeStart, codeSize, handle, closest->offset - codeStart, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
         const uint64 target = fileOffset - codeStart;
-        uint32 line         = closest->line;
-        while (lineWalker.Next(insn)) {
-            if (lineWalker.GetAddress() > target)
-                return line;
-            line++;
+        if (!labelWalker.has_value() || labelWalker->GetAddress() > target || labelWalker->GetAddress() < closest->offset - codeStart) {
+            labelWalker.emplace(
+                  obj, codeStart, codeSize, handle, closest->offset - codeStart, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+            labelWalkerLine = closest->line;
         }
+        while (labelWalker->Next(insn)) {
+            const uint32 line = labelWalkerLine++;
+            if (labelWalker->GetAddress() > target)
+                return line;
+        }
+        labelWalker.reset(); // the end of the code
         return {};
     }
 
@@ -2004,7 +2010,7 @@ DissasmCodeZone::~DissasmCodeZone()
         cs_close(&decodeHandle);
 }
 
-csh DissasmCodeZone::GetDecodeHandle()
+csh DissasmCodeZone::GetDecodeHandle() const
 {
     // opening a handle allocates the capstone tables: it was done for every decoded line before. The instruction details (groups,
     // operands) give the meaning of the instructions (GetX86Flow / GetX86OperandsInfo).
@@ -3047,10 +3053,10 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
         std::optional<uint64> target;
     };
     std::vector<Instruction> instructions;
-    csh handle = 0;
-    if (cs_open(capstoneArch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+    const csh handle = GetDecodeHandle(); // the handle of the zone (details on): no capstone tables allocated per call
+    if (handle == 0)
         return graph;
-    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
+    {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
         for (const auto& [rangeStart, rangeEnd] : ranges) { // the function, then its chunks (by address)
@@ -3067,7 +3073,6 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
         }
         cs_free(insn, 1);
     }
-    cs_close(&handle);
     if (instructions.empty())
         return graph;
 
@@ -3538,10 +3543,10 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
     if (functionStart >= end)
         return callees;
 
-    csh handle = 0;
-    if (cs_open(capstoneArch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+    const csh handle = GetDecodeHandle(); // the handle of the zone (details on): no capstone tables allocated per call
+    if (handle == 0)
         return callees;
-    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
+    {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
         const auto ranges            = GetFunctionRanges(functionStart, end);
@@ -3589,7 +3594,6 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
         }
         cs_free(insn, 1);
     }
-    cs_close(&handle);
     return callees;
 }
 
@@ -3737,11 +3741,11 @@ std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, 
     to = std::min(to, GetCodeSize());
     if (from >= to)
         return {};
-    csh handle = 0;
-    if (cs_open(capstoneArch, static_cast<cs_mode>(internalArchitecture), &handle) != CS_ERR_OK)
+    const csh handle = GetDecodeHandle(); // the handle of the zone (details on)
+    if (handle == 0)
         return {};
     std::optional<uint64> result;
-    if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
+    {
         cs_insn* insn           = cs_malloc(handle);
         const uint64 mask       = Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
         const uint64 wanted     = value & mask;
@@ -3778,7 +3782,6 @@ std::optional<uint64> DissasmCodeZone::FindImmediate(uint64 value, uint64 from, 
         }
         cs_free(insn, 1);
     }
-    cs_close(&handle);
     return result;
 }
 

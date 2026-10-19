@@ -353,7 +353,7 @@ struct DissasmCodeZone : public ParseZone {
 
     // x86/x64: the capstone handle that decodes the lines, opened once (in the mode of the zone) and closed with the zone; 0 when capstone
     // can not open it
-    csh GetDecodeHandle();
+    csh GetDecodeHandle() const;
 
     void ResetZoneCaching();
     // the zone of the shown lines [zoneLineStart, zoneLineEnd) (a collapsed line counts as its whole zone); false when it would
@@ -593,7 +593,7 @@ struct DissasmCodeZone : public ParseZone {
     bool CanPlaceZone(const DissasmCollapsibleZone& zone) const;
     void InsertZone(DissasmCollapsibleZone zone);
 
-    csh decodeHandle = 0;
+    mutable csh decodeHandle = 0; // GetDecodeHandle: opened at the first use
     std::vector<DissasmEdit> undoEdits, redoEdits;
     void RecordEdit(DissasmEdit edit);
     bool ApplyEdit(const DissasmEdit& edit, bool forward);
