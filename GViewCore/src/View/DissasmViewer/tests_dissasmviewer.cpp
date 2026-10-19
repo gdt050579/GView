@@ -4410,6 +4410,62 @@ TEST_CASE("AlignPadding", "[Dissasm]Align")
     }
 }
 
+TEST_CASE("AlignPaddingReachable", "[Dissasm]Align")
+{
+    // the padding that the code reaches is instructions (IDA: align only for the bytes no code reaches)
+    std::vector<unsigned char> file = {
+        0x85, 0xC0,                         // 0x00: test eax, eax
+        0x74, 0x0C,                         // 0x02: je 0x10
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00, // 0x04: nop word ptr [rax + rax] (reached: je falls through)
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00, // 0x0a: nop word ptr [rax + rax]
+        0xC3,                               // 0x10: ret
+    };
+    file.insert(file.end(), 15, 0xCC);               // 0x11: align 0x10 (after ret: no code reaches it)
+    file.insert(file.end(), { 0xE8, 0x0B, 0, 0, 0 }); // 0x20: call 0x30
+    file.insert(file.end(), 11, 0x90);               // 0x25: align 0x10 (after a call, then a function: a call that does not return)
+    file.insert(file.end(), { 0x74, 0x06 });         // 0x30: je 0x38 (into the padding)
+    file.insert(file.end(), { 0xEB, 0x0C });         // 0x32: jmp 0x40
+    file.insert(file.end(), 12, 0xCC);               // 0x34: align 0x8 (0x34 - 0x38), then 8 int3 the je reaches
+    file.push_back(0xC3);                            // 0x40: ret
+    file.resize(0x50, 0xC3);
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(CountOccurrences(listing, "nop    word ptr [rax + rax]") == 2);
+    REQUIRE(CountOccurrences(listing, "align  0x10") == 2);
+    REQUIRE(CountOccurrences(listing, "align  0x8") == 1);
+    REQUIRE(CountOccurrences(listing, "int3") == 8);
+    REQUIRE(!dissasmInstance.zone->GetLabelNameAt(0x38).empty()); // the target in the padding keeps its label
+
+    // ARM64: cbz x0, 0x10 falls through into 3 nops (instructions); the 3 nops after ret are an align line
+    std::vector<unsigned char> arm = {};
+    const auto word = [&arm](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            arm.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xB4000080); // 0x00: cbz x0, 0x10
+    for (int index = 0; index < 3; index++)
+        word(0xD503201F); // 0x04: nop
+    word(0xD65F03C0); // 0x10: ret
+    for (int index = 0; index < 3; index++)
+        word(0xD503201F); // 0x14: align 0x10
+    word(0xD65F03C0); // 0x20: ret
+    arm.resize(0x30, 0);
+    layout.size     = arm.size();
+    layout.language = DisassemblyLanguage::ARM64;
+    DissasmTestInstance armInstance(arm.data(), arm.size(), false, layout);
+    const std::string armListing = armInstance.GetListing();
+    INFO(armListing);
+    REQUIRE(CountOccurrences(armListing, "nop") == 3);
+    REQUIRE(CountOccurrences(armListing, "align  0x10") == 1);
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes

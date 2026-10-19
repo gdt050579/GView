@@ -649,12 +649,24 @@ bool DecodeX86Line(
         if (nextRange.has_value() && nextRange.value() - *address < available)
             available = static_cast<size_t>(nextRange.value() - *address);
     }
-    if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm64)
-        return DecodeArm64Line(handle, code, size, address, insn, available, alignmentBase);
+    // the padding the code reaches: instructions; an align line never runs into a reached padding instruction
+    bool reachedPadding     = false;
+    size_t paddingAvailable = available;
+    if (instructionSet && !instructionSet->reachablePadding.empty()) {
+        const auto reached = std::lower_bound(instructionSet->reachablePadding.begin(), instructionSet->reachablePadding.end(), static_cast<AppCUI::uint64>(*address));
+        if (reached != instructionSet->reachablePadding.end()) {
+            reachedPadding = *reached == *address;
+            if (!reachedPadding && *reached - *address < paddingAvailable)
+                paddingAvailable = static_cast<size_t>(*reached - *address);
+        }
+    }
+    const AppCUI::uint64 paddingBase = reachedPadding ? DISSASM_NO_PADDING_ALIGNMENT : alignmentBase;
+    if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm64) // 4 bytes instructions: the limit is a multiple of 4
+        return DecodeArm64Line(handle, code, size, address, insn, paddingAvailable >= 4 ? paddingAvailable : available, paddingBase);
     if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm32)
         return DecodeArm32Line(handle, code, size, address, insn, available, instructionSet->ModeAt(*address));
-    if (alignmentBase != DISSASM_NO_PADDING_ALIGNMENT && IsPaddingStart(*code, available) &&
-        DecodeX86Padding(handle, code, size, address, insn, available, alignmentBase))
+    if (paddingBase != DISSASM_NO_PADDING_ALIGNMENT && IsPaddingStart(*code, paddingAvailable) &&
+        DecodeX86Padding(handle, code, size, address, insn, paddingAvailable, paddingBase))
         return true;
     size_t left = available;
     if (cs_disasm_iter(handle, code, &left, address, insn)) {

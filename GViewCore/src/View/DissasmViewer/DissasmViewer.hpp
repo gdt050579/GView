@@ -92,6 +92,9 @@ namespace View
                 bool operator==(const DataRange&) const = default;
             };
             std::vector<DataRange> dataRanges; // sorted, not overlapping
+            // the padding instructions (nop / int3) that the code reaches (a fall through, a branch target): instructions, never an align
+            // line (IDA: align only for the bytes no code reaches). Relative addresses, sorted
+            std::vector<uint64> reachablePadding;
             const DataRange* DataRangeAt(uint64 address) const
             {
                 const auto next = std::upper_bound(

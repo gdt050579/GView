@@ -155,6 +155,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unique_ptr<DissasmLineCounter> recounter;
     std::vector<AsmOffsetLine> recountedOffsets;
     bool recounted = false;
+    bool recountOnly = false; // the reached padding: the lines are counted again, the sweep is not done again (no instruction moves)
+    // the align lines of the sweep and how the code reaches them: the line before falls through (after a call or not)
+    struct PaddingRun {
+        uint64 start, end;
+        bool fallsThrough, afterCall;
+    };
+    std::vector<PaddingRun> paddingRuns;
+    bool previousFallsThrough = false, previousIsCall = false;
     uint32 passes  = 1;
     std::map<uint64, uint64> tableEntries; // relative address of an entry of a table -> the relative address of its case
 
@@ -397,6 +405,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         blockStarts.assign(blockStarts.size(), false);
         tableEntries.clear();
         pendingRanges.clear();
+        paddingRuns.clear();
+        previousFallsThrough = previousIsCall = false;
         linesToDecode = lines;
         walker        = DissasmCodeLinesWalker(obj, codeStart, codeSize, handle, 0, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
         AddPluginFunctions();
@@ -512,6 +522,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
         // the cross references, in the address space of the labels (VA)
         const auto flow     = GetInstructionFlow(*insn, insnArch);
+        // the padding lines (align) and whether the line before goes on into them
+        if (zone->paddingAlignmentBase != DISSASM_NO_PADDING_ALIGNMENT && !isArm32) {
+            if (insn->id == 0 && std::string_view(insn->mnemonic) == "align")
+                paddingRuns.push_back({ insn->address, insn->address + insn->size, previousFallsThrough, previousIsCall });
+            const bool isTrap = isArm64 ? (insn->id == ARM64_INS_BRK || insn->id == ARM64_INS_HLT)
+                                        : (insn->id == X86_INS_INT3 || insn->id == X86_INS_HLT || insn->id == X86_INS_UD2);
+            previousFallsThrough = insn->id != 0 && flow != X86Flow::Jump && flow != X86Flow::Return && !isTrap;
+            previousIsCall       = flow == X86Flow::Call;
+        }
         auto operands       = GetInstructionOperands(*insn, insnArch, labelBase);
         const uint64 from   = labelBase + insn->address;
         if (isArm64 || isArm32) {
@@ -1326,6 +1345,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 lines = recounter->lines;
                 recounter.reset();
                 recounted = true;
+                if (recountOnly) { // the reached padding: the sweep is done (FinishSweep ran), the labels follow
+                    recountOnly = false;
+                    phase       = Phase::Labels;
+                    break;
+                }
                 ResetSweep();
                 phase = Phase::Sweep;
                 break;
@@ -1344,9 +1368,61 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
-    // the end of a sweep: the new tables become data lines (the lines are counted again, then a new sweep), or the labels are placed
+    // the padding (align lines) that the code reaches: a fall through (after a call only when no function starts after the padding: a
+    // call to a function that does not return, then the padding of the next function) or a branch into it. Its instruction starts are
+    // added to the instruction set; true when there are new ones
+    bool AddReachedPadding()
+    {
+        if (paddingRuns.empty())
+            return false;
+        std::vector<uint64> targets; // the code that a branch reaches (relative)
+        for (const auto& xref : xrefs.byTarget)
+            if ((xref.kind == DissasmXrefKind::Call || xref.kind == DissasmXrefKind::Jump || xref.kind == DissasmXrefKind::ConditionalJump ||
+                 xref.kind == DissasmXrefKind::Switch) &&
+                xref.to >= labelBase && xref.to - labelBase < codeSize)
+                targets.push_back(xref.to - labelBase);
+        std::sort(targets.begin(), targets.end());
+        std::vector<uint64> starts;
+        for (const auto& run : paddingRuns) {
+            std::optional<uint64> from;
+            if (run.fallsThrough && !(run.afterCall && callsMap.contains(codeStart + run.end)))
+                from = run.start;
+            else if (const auto target = std::lower_bound(targets.begin(), targets.end(), run.start); target != targets.end() && *target < run.end)
+                from = *target;
+            if (!from.has_value())
+                continue;
+            // its instructions, decoded one by one
+            const auto bytes = obj->GetData().Get(codeStart + from.value(), static_cast<uint32>(run.end - from.value()), false);
+            if (!bytes.IsValid())
+                continue;
+            const uint8* data = bytes.GetData();
+            size_t size       = bytes.GetLength();
+            uint64 address    = from.value();
+            while (size > 0 && address < run.end) {
+                starts.push_back(address);
+                if (zone->IsArm64Code()) {
+                    const size_t step = std::min<size_t>(4, size);
+                    data += step;
+                    size -= step;
+                    address += step;
+                } else if (!DecodeX86Line(handle, &data, &size, &address, insn, nullptr, DISSASM_NO_PADDING_ALIGNMENT, nullptr))
+                    break;
+            }
+        }
+        auto& reached        = instructionSet.reachablePadding;
+        const size_t before  = reached.size();
+        reached.insert(reached.end(), starts.begin(), starts.end());
+        std::sort(reached.begin(), reached.end());
+        reached.erase(std::unique(reached.begin(), reached.end()), reached.end());
+        return reached.size() != before;
+    }
+
+    // the end of a sweep: the new tables become data lines (the lines are counted again, then a new sweep), the padding that the code
+    // reaches becomes instructions (the lines are counted again), then the labels are placed
     void EndSweep()
     {
+        const auto reachedBefore = instructionSet.reachablePadding;
+        const bool paddingReached = passes < DISSASM_MAX_TABLE_PASSES && AddReachedPadding();
         if (!pendingRanges.empty() && passes < DISSASM_MAX_TABLE_PASSES) {
             auto ranges = instructionSet.dataRanges;
             for (const auto& range : pendingRanges)
@@ -1361,8 +1437,22 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             recounter.reset();
             instructionSet.dataRanges = std::move(ranges); // the lines can not be counted again: the tables stay instructions
+            instructionSet.reachablePadding = reachedBefore;
         }
         FinishSweep();
+        if (paddingReached && pendingRanges.empty()) {
+            // the reached padding only: the lines are counted again, the instructions and the analysis stay
+            recountedOffsets.clear();
+            recounter = std::make_unique<DissasmLineCounter>(recountedOffsets, zone->zoneDetails, obj, &zone->instructionBoundaries, zone->paddingAlignmentBase);
+            if (recounter->Start(zone->capstoneArch, internalArchitecture, &instructionSet)) {
+                passes++;
+                recountOnly = true;
+                phase       = Phase::Recount;
+                return;
+            }
+            recounter.reset();
+            instructionSet.reachablePadding = reachedBefore;
+        }
         phase = Phase::Labels;
     }
 
