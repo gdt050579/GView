@@ -371,9 +371,12 @@ void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEF
     }
 }
 
-// The pointers of the Control Flow Guard (load config directory): every indirect call of a CFG image goes through them
-// (call [__guard_dispatch_icall_fptr]), named like IDA
-void AddDissasmGuardPointers(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+// The load config directory (_load_config_used), named like IDA:
+// - the variables it points to: the security cookie of /GS (mov rax, cs:__security_cookie in every protected function), the pointers of
+//   the Control Flow Guard that the indirect calls go through (call cs:__guard_dispatch_icall_fptr), the tables (__guard_fids_table, ...)
+// - the functions: every valid target of an indirect call (the CFG function table: RVAs, with flag bytes after them), the exception
+//   handlers of a 32 bit image (the SafeSEH table)
+void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
 {
     const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
     const auto start      = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
@@ -381,23 +384,74 @@ void AddDissasmGuardPointers(DissasmViewer::Settings& settings, Reference<PE::PE
     if (start == PE_INVALID_ADDRESS || !data.Copy<uint32>(start, size))
         return;
     const bool is64 = pe->hdr64;
-    struct GuardPointer {
+    settings.AddMemoryMapping(directory.VirtualAddress, "_load_config_used", DissasmViewer::MemoryMappingType::TextMapping);
+    struct ConfigField {
         uint32 offset32, offset64;
         std::string_view name;
     };
-    constexpr GuardPointer pointers[] = {
+    // the pointers (to variables, to the function pointers of the guards, to tables)
+    constexpr ConfigField fields[] = {
+        { 32, 40, "__lock_prefix_table" },
+        { 60, 88, "__security_cookie" },
+        { 64, 96, "__safe_se_handler_table" },
         { 72, 112, "__guard_check_icall_fptr" },
         { 76, 120, "__guard_dispatch_icall_fptr" },
+        { 80, 128, "__guard_fids_table" },
+        { 104, 160, "__guard_iat_table" },
+        { 112, 176, "__guard_longjmp_table" },
+        { 120, 192, "__dynamic_value_reloc_table" },
+        { 124, 200, "__chpe_metadata" },
+        { 132, 216, "__guard_ss_verify_failure_fptr" },
+        { 144, 232, "__guard_ss_verify_sp_default" },
+        { 156, 248, "__enclave_config" },
+        { 160, 256, "__volatile_metadata" },
+        { 164, 264, "__guard_eh_cont_table" },
         { 172, 280, "__guard_xfg_check_icall_fptr" },
         { 176, 288, "__guard_xfg_dispatch_icall_fptr" },
         { 180, 296, "__guard_xfg_table_dispatch_icall_fptr" },
+        { 184, 304, "__castguard_check_failure_os_handled_fptr" },
+        { 188, 312, "__guard_memcpy_fptr" },
     };
-    for (const auto& pointer : pointers) {
-        const uint32 offset = is64 ? pointer.offset64 : pointer.offset32;
-        uint64 va           = 0;
-        if (offset + (is64 ? 8u : 4u) > size || !ReadImagePointer(data, start + offset, is64, va) || va <= pe->imageBase)
-            continue;
-        settings.AddMemoryMapping(va - pe->imageBase, pointer.name, DissasmViewer::MemoryMappingType::FunctionMapping);
+    const uint32 pointerSize = is64 ? 8u : 4u;
+    const auto readField     = [&](uint32 offset32, uint32 offset64) -> uint64 {
+        const uint32 offset = is64 ? offset64 : offset32;
+        uint64 value        = 0;
+        return offset + pointerSize <= size && ReadImagePointer(data, start + offset, is64, value) ? value : 0;
+    };
+    for (const auto& field : fields) {
+        const uint64 va = readField(field.offset32, field.offset64);
+        if (va > pe->imageBase)
+            settings.AddMemoryMapping(va - pe->imageBase, field.name, DissasmViewer::MemoryMappingType::TextMapping);
+    }
+    // the CFG function table: an RVA for every valid target of an indirect call, followed by the flag bytes of GuardFlags (bits 28..31)
+    constexpr uint32 MAX_TABLE_ENTRIES = 0x100000;
+    uint32 guardFlags                  = 0;
+    const uint32 flagsOffset           = is64 ? 144 : 88;
+    const uint64 functionTable         = readField(80, 128);
+    const uint64 functionCount         = readField(84, 136);
+    if (flagsOffset + 4 <= size && data.Copy<uint32>(start + flagsOffset, guardFlags) && functionTable > pe->imageBase && functionCount <= MAX_TABLE_ENTRIES) {
+        const uint32 entrySize = 4 + ((guardFlags >> 28) & 0xF);
+        const auto tableFa     = pe->RVAToFA(functionTable - pe->imageBase);
+        for (uint64 index = 0; tableFa != PE_INVALID_ADDRESS && index < functionCount; index++) {
+            uint32 rva = 0;
+            if (!data.Copy<uint32>(tableFa + index * entrySize, rva))
+                break;
+            if (const auto fa = pe->RVAToFA(rva); fa != PE_INVALID_ADDRESS)
+                settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::Symbol);
+        }
+    }
+    // the SafeSEH handlers (32 bit): RVAs of functions
+    const uint64 handlerTable = is64 ? 0 : readField(64, 96);
+    const uint64 handlerCount = is64 ? 0 : readField(68, 104);
+    if (handlerTable > pe->imageBase && handlerCount <= MAX_TABLE_ENTRIES) {
+        const auto tableFa = pe->RVAToFA(handlerTable - pe->imageBase);
+        for (uint64 index = 0; tableFa != PE_INVALID_ADDRESS && index < handlerCount; index++) {
+            uint32 rva = 0;
+            if (!data.Copy<uint32>(tableFa + index * 4, rva))
+                break;
+            if (const auto fa = pe->RVAToFA(rva); fa != PE_INVALID_ADDRESS)
+                settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::Symbol);
+        }
     }
 }
 
@@ -504,7 +558,7 @@ UInt16 e_res[4];)");
     }
     AddDissasmFunctionEntries(settings, pe, win->GetObject()->GetData());
     AddDissasmDelayImports(settings, pe, win->GetObject()->GetData());
-    AddDissasmGuardPointers(settings, pe, win->GetObject()->GetData());
+    AddDissasmLoadConfig(settings, pe, win->GetObject()->GetData());
 
     win->CreateViewer(settings);
 }

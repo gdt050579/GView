@@ -135,7 +135,7 @@ namespace
 // a name that says the place is a pointer: off_, an import slot, an Objective-C reference (the size of the operand is not written)
 bool IsPointerName(std::string_view name)
 {
-    for (const std::string_view prefix : { "off_", "__imp_", "selRef_", "classRef_", "superRef_" })
+    for (const std::string_view prefix : { "off_", "__imp_", "selRef_", "classRef_", "superRef_", "__security_cookie", "__guard_" })
         if (name.starts_with(prefix))
             return true;
     return false;
