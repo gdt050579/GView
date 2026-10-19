@@ -4,6 +4,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmChainedFixups.hpp"
 #include "DissasmObjC.hpp"
+#include "DissasmRtti.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -178,6 +179,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     }
     ApplyChainedFixups(*this->settings, obj); // Mach-O: the pointers and the import slots that dyld writes
     ApplyObjCMetadata(*this->settings, obj);  // Mach-O: the methods of the Objective-C classes, the selector / class references
+    ApplyCppRtti(*this->settings, obj);       // C++: the vtables, the type descriptors / typeinfo objects of the classes
 
     queryInterface = nullptr;
     if (config.Loaded == false)

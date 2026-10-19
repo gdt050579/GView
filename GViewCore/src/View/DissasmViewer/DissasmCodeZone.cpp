@@ -318,8 +318,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     // an import slot: __imp_ and the name of the import (a demangled C++ name keeps its letters and digits); a slot named by
                     // the metadata (TextMapping: selRef_alloc, classRef_NSString, _OBJC_CLASS_$_Animal) keeps its name
                     name = import->type == MemoryMappingType::FunctionMapping ? "__imp_" : "";
+                    // the names of the metadata keep the characters of the C++ names (Animal::vftable, std::pair<int,int>::typeinfo)
+                    const bool isMetadata = import->type == MemoryMappingType::TextMapping;
                     for (const char c : import->name)
-                        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$')
+                        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$' ||
+                            (isMetadata && (c == ':' || c == '<' || c == '>' || c == '~' || c == ',')))
                             name.push_back(c);
                         else if (name.back() != '_')
                             name.push_back('_');

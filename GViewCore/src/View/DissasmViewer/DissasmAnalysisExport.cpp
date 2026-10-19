@@ -2,6 +2,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmChainedFixups.hpp"
 #include "DissasmObjC.hpp"
+#include "DissasmRtti.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmSignatures.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
@@ -141,6 +142,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
     }
     ApplyChainedFixups(*settings, obj); // Mach-O: the pointers and the import slots that dyld writes
     ApplyObjCMetadata(*settings, obj);  // Mach-O: the Objective-C methods, the selector / class references
+    ApplyCppRtti(*settings, obj);       // C++: the vtables, the type descriptors / typeinfo objects
     // the code zones of the viewer
     for (const auto& [start, details] : settings->disassemblyZones) {
         auto zone         = std::make_unique<DissasmCodeZone>();

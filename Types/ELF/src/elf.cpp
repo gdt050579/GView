@@ -151,6 +151,15 @@ GVIEW_PLUGIN_ENTRY_POINTS
         // addend; the resolver of an ifunc), a 64 bit pointer to a symbol of the file (its value plus the addend); a pointer to an import
         // (a vtable entry, a callback of another library) is named after it. REL (32 bit x86 / ARM) keeps the value in the file
         constexpr unsigned R_AARCH64_IRELATIVE = 1032;
+        // a copy relocation: the variable of a library copied into the program (stdout, environ, the vtables of __cxxabiv1 that the typeinfo
+        // objects of a non PIE program point to), named after its symbol
+        constexpr unsigned R_AARCH64_COPY = 1024;
+        constexpr unsigned R_ARM_COPY     = 20;
+        auto addCopy                      = [&](uint64 slot, uint64 symbolIndex, uint64 type) {
+            const bool isCopy = machine == ELF::EM_AARCH64 ? type == R_AARCH64_COPY : (machine == ELF::EM_ARM ? type == R_ARM_COPY : type == ELF::R_X86_64_COPY);
+            if (isCopy && symbolIndex != 0 && symbolIndex < elf->dynamicSymbolsNames.size() && !elf->dynamicSymbolsNames[symbolIndex].empty() && slot >= imageBase)
+                settings.AddMemoryMapping(slot - imageBase, elf->dynamicSymbolsNames[symbolIndex], DissasmViewer::MemoryMappingType::TextMapping);
+        };
         auto addPointer                        = [&](uint64 slot, uint64 symbolIndex, uint64 type, int64 addend) {
             bool isRelative = false, isAbsolute = false;
             if (machine == ELF::EM_X86_64)
@@ -201,6 +210,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
                     ELF::Elf64_Rela relocation{};
                     memcpy(&relocation, data + position, entrySize); // r_offset and r_info start both layouts (REL: no addend)
                     addSlot(relocation.r_offset, ELF64_R_SYM(relocation.r_info), ELF64_R_TYPE(relocation.r_info));
+                    addCopy(relocation.r_offset, ELF64_R_SYM(relocation.r_info), ELF64_R_TYPE(relocation.r_info));
                     if (type == ELF::SHT_RELA)
                         addPointer(relocation.r_offset, ELF64_R_SYM(relocation.r_info), ELF64_R_TYPE(relocation.r_info), relocation.r_addend);
                 }
@@ -213,6 +223,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
                     ELF::Elf32_Rel relocation;
                     memcpy(&relocation, data + position, sizeof(relocation));
                     addSlot(relocation.r_offset, ELF32_R_SYM(relocation.r_info), ELF32_R_TYPE(relocation.r_info));
+                    addCopy(relocation.r_offset, ELF32_R_SYM(relocation.r_info), ELF32_R_TYPE(relocation.r_info));
                 }
             }
         };

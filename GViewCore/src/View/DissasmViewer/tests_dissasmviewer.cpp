@@ -1,6 +1,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmChainedFixups.hpp"
 #include "DissasmObjC.hpp"
+#include "DissasmRtti.hpp"
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmAnalysisExport.hpp"
@@ -7081,4 +7082,78 @@ TEST_CASE("ImageBaseTables", "[Dissasm]Operands")
     REQUIRE(FindListingLine(listing, "movzx  eax, byte ptr [rdx + rcx + 0x2008]").size() > 0);
     CHECK(SubstituteX86TableOperand("eax, dword ptr [rdx + rcx*8 + 0x1a8aa0]", 0x1a8aa0, "dword_1801A8AA0", false, true, true) ==
           std::optional<std::string>("eax, ds:(dword_1801A8AA0 - __ImageBase)[rdx + rcx*8]"));
+}
+
+// a range of the RTTI tests: bytes written as 32 / 64 bit values and strings at offsets
+struct RttiTestRange {
+    RttiRange range;
+    explicit RttiTestRange(uint64 address, size_t size) : range{ address, std::vector<uint8>(size, 0) }
+    {
+    }
+    void Put(uint64 address, uint64 value, uint8 size)
+    {
+        memcpy(range.bytes.data() + (address - range.address), &value, size);
+    }
+    void Text(uint64 address, std::string_view text)
+    {
+        memcpy(range.bytes.data() + (address - range.address), text.data(), text.size());
+    }
+};
+
+TEST_CASE("CppRtti", "[Dissasm]Rtti")
+{
+    // MSVC x64 (image base 0x140000000): a type descriptor .?AUBird@zoo@@, its complete object locator (signature 1, the RVA of itself)
+    // and the vtable after a pointer to the locator
+    {
+        constexpr uint64 base = 0x140000000ull;
+        RttiTestRange rdata(0x140002000ull, 0x200);
+        rdata.Put(0x140002100, 0x140002300, 8); // the type descriptor: pVFTable, spare, name
+        rdata.Text(0x140002110, ".?AUBird@zoo@@");
+        rdata.Put(0x140002040, 1, 4); // the locator: signature, offset, cdOffset, TypeDescriptor, ClassDescriptor, self (RVAs)
+        rdata.Put(0x14000204C, 0x2100, 4);
+        rdata.Put(0x140002050, 0x2180, 4);
+        rdata.Put(0x140002054, 0x2040, 4);
+        rdata.Put(0x140002000, 0x140002040, 8); // the vtable: the locator, then the virtual functions
+        rdata.Put(0x140002008, 0x140001060, 8);
+        RttiInput input;
+        input.pointerSize = 8;
+        input.imageBase   = base;
+        input.ranges.push_back(rdata.range);
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x140002100] == "zoo::Bird::RTTI_Type_Descriptor");
+        REQUIRE(names[0x140002040] == "zoo::Bird::RTTI_Complete_Object_Locator");
+        REQUIRE(names[0x140002180] == "zoo::Bird::RTTI_Class_Hierarchy_Descriptor");
+        REQUIRE(names[0x140002008] == "zoo::Bird::vftable");
+        REQUIRE(result.classes.size() == 1);
+        REQUIRE(result.classes[0].second == "zoo::Bird");
+    }
+    // Itanium (an ELF shared object): the typeinfo of Dog (its vptr bound to __cxxabiv1::__class_type_info, its name 3Dog), the vtable
+    // {0, typeinfo, functions} and a secondary vtable {-16, typeinfo, functions}
+    {
+        RttiTestRange data(0x2000, 0x100);
+        data.Put(0x2080, 0, 8);           // vptr: a relocation bound to _ZTVN10__cxxabiv117__class_type_infoE (value 0 in the file)
+        data.Put(0x2088, 0x20C0, 8);      // the name
+        data.Text(0x20C0, "3Dog");
+        data.Put(0x2000, 0, 8);           // the vtable: offset to top, typeinfo, functions
+        data.Put(0x2008, 0x2080, 8);
+        data.Put(0x2010, 0x1B20, 8);
+        data.Put(0x2020, static_cast<uint64>(-16), 8); // a secondary vtable
+        data.Put(0x2028, 0x2080, 8);
+        data.Put(0x2040, 0x12345, 8);     // not a vtable: a positive offset to top
+        data.Put(0x2048, 0x2080, 8);
+        RttiInput input;
+        input.pointerSize = 8;
+        input.ranges.push_back(data.range);
+        input.slotName = [](uint64 address) { return address == 0x2080 ? std::string("_ZTVN10__cxxabiv117__class_type_infoE") : std::string(); };
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x2080] == "Dog::typeinfo");
+        REQUIRE(names[0x20C0] == "Dog::typeinfo_name");
+        REQUIRE(names[0x2000] == "Dog::vtable");
+        REQUIRE(names[0x2020] == "Dog::vtable_10");
+        REQUIRE_FALSE(names.contains(0x2040));
+    }
 }

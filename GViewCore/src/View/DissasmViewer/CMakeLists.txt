@@ -27,6 +27,8 @@ target_sources(
 	DissasmChainedFixups.cpp
 	DissasmObjC.hpp
 	DissasmObjC.cpp
+	DissasmRtti.hpp
+	DissasmRtti.cpp
 	DissasmAssistantRequest.hpp
 	DissasmAnnotations.hpp
 	DissasmAnnotations.cpp
