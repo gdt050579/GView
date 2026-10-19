@@ -1410,9 +1410,9 @@ bool PEFile::Update()
             errList.AddError("%s", tempStr.GetText());
         }
     }
-    // recalculez :
-    computedSize = sect[nrSections - 1].PointerToRawData + sect[nrSections - 1].SizeOfRawData;
-    if (sect[nrSections - 1].SizeOfRawData == 0) {
+    // recalculez : (no section: an invalid NumberOfSections, the file is its size)
+    computedSize = nrSections > 0 ? sect[nrSections - 1].PointerToRawData + sect[nrSections - 1].SizeOfRawData : obj->GetData().GetSize();
+    if (nrSections > 0 && sect[nrSections - 1].SizeOfRawData == 0) {
         computedSize = obj->GetData().GetSize();
         errList.AddWarning("File is using LastSection.SizeOfRawData = 0 trick");
     }
@@ -1441,8 +1441,8 @@ bool PEFile::Update()
               (int) ((computedSize - obj->GetData().GetSize()) * 100) / computedSize);
     }
 
-    tmp = sect[nrSections - 1].VirtualAddress + sect[nrSections - 1].Misc.VirtualSize;
-    if (nth32.OptionalHeader.SectionAlignment > 0) {
+    tmp = nrSections > 0 ? sect[nrSections - 1].VirtualAddress + sect[nrSections - 1].Misc.VirtualSize : 0;
+    if (nrSections > 0 && nth32.OptionalHeader.SectionAlignment > 0) {
         tmp += (nth32.OptionalHeader.SectionAlignment - tmp % nth32.OptionalHeader.SectionAlignment) % nth32.OptionalHeader.SectionAlignment;
     }
     if (tmp != nth32.OptionalHeader.SizeOfImage) {

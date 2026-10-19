@@ -358,7 +358,29 @@ GVIEW_PLUGIN_ENTRY_POINTS
                     start = std::min<uint64>(start, section.offset);
                     end   = std::max<uint64>(end, static_cast<uint64>(section.offset) + section.size);
                 }
-        end = std::min<uint64>(end, win->GetObject()->GetData().GetSize());
+        // no usable instructions section (damaged section headers): the executable segments, after the mach header and the load
+        // commands
+        const uint64 dataSize = win->GetObject()->GetData().GetSize();
+        if (start >= std::min<uint64>(end, dataSize))
+        {
+            start = UINT64_MAX;
+            end   = 0;
+            // mach_header has the reserved field of the 64 bit header
+            const uint64 headerEnd = (machO->is64 ? sizeof(MAC::mach_header) : sizeof(MAC::mach_header) - sizeof(uint32)) + machO->header.sizeofcmds;
+            for (const auto& segment : machO->segments)
+            {
+                if ((segment.initprot & static_cast<uint32>(MAC::VMProtectionFlags::EXECUTE)) == 0 || segment.filesize == 0 || segment.fileoff >= dataSize)
+                    continue;
+                const uint64 segmentStart = std::max<uint64>(segment.fileoff, segment.fileoff == 0 ? headerEnd : 0);
+                const uint64 segmentEnd   = std::min<uint64>(segment.fileoff + segment.filesize, dataSize);
+                if (segmentStart >= segmentEnd)
+                    continue;
+                sectionStarts.push_back(segmentStart);
+                start = std::min(start, segmentStart);
+                end   = std::max(end, segmentEnd);
+            }
+        }
+        end = std::min<uint64>(end, dataSize);
         if (start >= end)
             return;
         // LC_MAIN: the offset of the entry point from the start of the __TEXT segment (its file offset)

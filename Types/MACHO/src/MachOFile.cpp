@@ -201,15 +201,18 @@ bool MachOFile::SetHeader(uint64& offset)
 
 bool MachOFile::SetLoadCommands(uint64& offset)
 {
-    loadCommands.reserve(header.ncmds);
-
+    // a damaged table (ncmds bigger than the commands, a command smaller than its header) ends at the last command that can be read
+    loadCommands.reserve(std::min<uint32>(header.ncmds, 0x1000));
     for (decltype(header.ncmds) i = 0; i < header.ncmds; i++) {
         MAC::load_command lc{};
-        CHECK(obj->GetData().Copy<MAC::load_command>(offset, lc), false, "");
+        if (!obj->GetData().Copy<MAC::load_command>(offset, lc))
+            break;
         if (shouldSwapEndianess) {
             Swap(lc);
         }
         loadCommands.push_back({ lc, offset });
+        if (lc.cmdsize < sizeof(MAC::load_command))
+            break; // the next command is not known (its segment keeps no section: the code is its executable part)
         offset += lc.cmdsize;
     }
 
@@ -240,10 +243,13 @@ bool MachOFile::SetSegmentsAndTheirSections()
             segment.nsects   = sc.nsects;
             segment.flags    = sc.flags;
 
-            auto offset = lc.offset + sizeof(decltype(sc));
-            for (auto i = 0U; i < sc.nsects; i++) {
+            // the sections the command holds (a damaged nsects is bounded by cmdsize); a section that can not be read ends the list
+            auto offset         = lc.offset + sizeof(decltype(sc));
+            const uint32 nsects = std::min<uint32>(sc.nsects, sc.cmdsize > sizeof(sc) ? (sc.cmdsize - sizeof(sc)) / sizeof(MAC::section) : 0);
+            for (auto i = 0U; i < nsects; i++) {
                 MAC::section section{};
-                CHECK(obj->GetData().Copy<decltype(section)>(offset, section), false, "");
+                if (!obj->GetData().Copy<decltype(section)>(offset, section))
+                    break;
                 if (shouldSwapEndianess) {
                     Swap(section);
                 }
@@ -284,10 +290,12 @@ bool MachOFile::SetSegmentsAndTheirSections()
             segment.nsects   = sc.nsects;
             segment.flags    = sc.flags;
 
-            auto offset = lc.offset + sizeof(decltype(sc));
-            for (auto i = 0U; i < sc.nsects; i++) {
+            auto offset         = lc.offset + sizeof(decltype(sc));
+            const uint32 nsects = std::min<uint32>(sc.nsects, sc.cmdsize > sizeof(sc) ? (sc.cmdsize - sizeof(sc)) / sizeof(MAC::section_64) : 0);
+            for (auto i = 0U; i < nsects; i++) {
                 MAC::section_64 section{};
-                CHECK(obj->GetData().Copy<decltype(section)>(offset, section), false, "");
+                if (!obj->GetData().Copy<decltype(section)>(offset, section))
+                    break;
                 if (shouldSwapEndianess) {
                     Swap(section);
                 }
@@ -472,7 +480,10 @@ bool MachOFile::SetSymbols()
             const auto symbolTable       = obj->GetData().CopyToBuffer(dySymTab->sc.symoff, static_cast<uint32>(symbolTableOffset));
             CHECK(symbolTable.IsValid(), false, "");
 
-            for (auto i = 0U; i < dySymTab->sc.nsyms; i++) {
+            // the symbols the table holds; the names inside the string table
+            const size_t entrySize = is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist);
+            const size_t count     = std::min<size_t>(dySymTab->sc.nsyms, symbolTable.GetLength() / entrySize);
+            for (size_t i = 0; i < count; i++) {
                 MyNList nlist{};
 
                 if (is64) {
@@ -499,10 +510,12 @@ bool MachOFile::SetSymbols()
                     nlist.n_value = nl.n_value;
                 }
 
+                std::string name;
+                for (size_t character = nlist.n_strx; character < stringTable.GetLength() && stringTable.GetData()[character] != 0; character++)
+                    name.push_back(static_cast<char>(stringTable.GetData()[character]));
                 String demangled;
-                const auto str = reinterpret_cast<char*>(stringTable.GetData() + nlist.n_strx);
-                if (GView::Utils::Demangle(str, demangled) == false) {
-                    demangled = str;
+                if (name.empty() || GView::Utils::Demangle(name, demangled) == false) {
+                    demangled = name.c_str();
                 }
 
                 nlist.symbolNameDemangled = demangled;
@@ -1171,8 +1184,8 @@ bool MachOFile::PopulateItem(TreeViewItem item)
     item.SetText(1, tmp.Format("%s (%s)", info.description.c_str(), nf.ToString(arch.cpusubtype, hex).data()));
 
     const auto fileType             = arch.filetype;
-    const auto& fileTypeName        = MAC::FileTypeNames.at(fileType);
-    const auto& fileTypeDescription = MAC::FileTypeDescriptions.at(fileType);
+    const auto& fileTypeName        = MAC::NameOf(MAC::FileTypeNames, fileType);
+    const auto& fileTypeDescription = MAC::NameOf(MAC::FileTypeDescriptions, fileType);
     item.SetText(2, tmp.Format("%s (0x%X) %s", fileTypeName.data(), fileType, fileTypeDescription.data()));
     item.SetText(3, nf.ToString(arch.offset, hex));
     item.SetText(4, nf.ToString(arch.size, hex));

@@ -13,6 +13,14 @@ namespace MAC
         x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                                           \
     }
 
+// the name of a value read from the file: UNKNOWN for a value the map does not know (a damaged or crafted file; .at() would throw)
+template <typename Key, typename Value>
+inline std::string_view NameOf(const std::map<Key, std::string_view>& names, const Value& value)
+{
+    const auto entry = names.find(static_cast<Key>(value));
+    return entry != names.end() ? entry->second : std::string_view("UNKNOWN");
+}
+
 inline const std::map<ByteOrder, std::string_view> ByteOrderNames{
     GET_PAIR_FROM_ENUM(ByteOrder::Unknown),
     GET_PAIR_FROM_ENUM(ByteOrder::LittleEndian),

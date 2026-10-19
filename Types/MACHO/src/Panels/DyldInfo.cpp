@@ -26,7 +26,7 @@ void DyldInfo::UpdateBasicInfo()
     general->AddItem({ "Command",
                        tmp.Format(
                              "%s (%s)",
-                             std::string(MAC::LoadCommandNames.at(machO->dyldInfo->cmd)).c_str(),
+                             std::string(MAC::NameOf(MAC::LoadCommandNames, machO->dyldInfo->cmd)).c_str(),
                              std::string(n.ToString(static_cast<uint32_t>(machO->dyldInfo->cmd), hex).data()).c_str()) });
     general->AddItem({ "Cmd Size",
                        tmp.Format(
