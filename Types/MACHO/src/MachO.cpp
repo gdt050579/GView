@@ -417,6 +417,20 @@ GVIEW_PLUGIN_ENTRY_POINTS
         for (const auto& data : machO->linkEditDatas)
             if (data.cmd == MAC::LoadCommandType::DYLD_CHAINED_FIXUPS && data.datasize > 0 && data.datasize <= MAX_CHAINED_FIXUPS_SIZE)
                 settings.AddChainedFixups(win->GetObject()->GetData().CopyToBuffer(data.dataoff, data.datasize), machO->dissasmTranslation.GetImageBase());
+        // LC_DYLD_INFO (the binaries before macOS 12): the bind and weak bind opcodes; the lazy binds are the __la_symbol_ptr slots of the
+        // indirect symbols
+        constexpr uint32 MAX_BIND_INFO_SIZE = 0x4000000;
+        if (machO->dyldInfo.has_value()) {
+            std::vector<uint64> segmentAddresses;
+            for (const auto& segment : machO->segments)
+                segmentAddresses.push_back(segment.vmaddr);
+            const uint8 pointerSize = machO->is64 ? 8 : 4;
+            for (const auto& [offset, size] : { std::pair<uint32, uint32>{ machO->dyldInfo->bind_off, machO->dyldInfo->bind_size },
+                                                { machO->dyldInfo->weak_bind_off, machO->dyldInfo->weak_bind_size } })
+                if (offset != 0 && size > 0 && size <= MAX_BIND_INFO_SIZE)
+                    settings.AddDyldBindInfo(
+                          win->GetObject()->GetData().CopyToBuffer(offset, size), segmentAddresses, pointerSize, machO->dissasmTranslation.GetImageBase());
+        }
         AddDissasmFunctionEntries(settings, machO, win->GetObject());
         win->CreateViewer(settings);
     }

@@ -568,6 +568,17 @@ namespace View
             // (or the headless analysis) takes the settings
             std::vector<uint8> chainedFixups;
             uint64 chainedFixupsImageBase = 0;
+            // Mach-O LC_DYLD_INFO (Settings::AddDyldBindInfo): the bind / weak bind opcodes, decoded with the chained fixups
+            struct DyldBindInfo {
+                std::vector<uint8> opcodes;
+                std::vector<uint64> segmentAddresses;
+                uint8 pointerSize;
+                uint64 imageBase;
+            };
+            std::vector<DyldBindInfo> dyldBindInfos;
+            // Mach-O: the symbol of every pointer that dyld binds, by RVA. The line of the pointer shows it even when a structure that starts
+            // there names the place (the isa of a metaclass bound to _OBJC_METACLASS_$_NSObject, the vptr of a typeinfo)
+            std::unordered_map<uint64, std::string> boundSymbols;
             // the fields of the structures of the data (AddDataField and the parsers of the metadata), by VA
             std::map<uint64, DissasmDataField> dataFields;
             // the file offset (from DISSASM_UNINITIALIZED_ZONES_BASE) of a VA of an uninitialized data zone

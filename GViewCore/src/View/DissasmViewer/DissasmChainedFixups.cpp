@@ -229,9 +229,133 @@ bool GView::View::DissasmViewer::DecodeChainedFixups(
     return known;
 }
 
+bool GView::View::DissasmViewer::DecodeDyldBindOpcodes(
+      const uint8* data, size_t size, const std::vector<uint64>& segmentAddresses, uint8 pointerSize, std::vector<DyldBind>& binds)
+{
+    constexpr uint8 OPCODE_MASK    = 0xF0;
+    constexpr uint8 IMMEDIATE_MASK = 0x0F;
+    constexpr size_t MAX_BINDS     = 0x400000;
+    constexpr uint64 MAX_REPEAT    = 0x100000;
+    size_t position                = 0;
+    bool malformed                 = false;
+    const auto uleb                = [&]() -> uint64 {
+        uint64 value = 0;
+        uint32 shift = 0;
+        while (position < size) {
+            const uint8 byte = data[position++];
+            if (shift < 64)
+                value |= static_cast<uint64>(byte & 0x7F) << shift;
+            shift += 7;
+            if ((byte & 0x80) == 0)
+                return value;
+        }
+        malformed = true;
+        return value;
+    };
+    const auto sleb = [&]() -> int64 {
+        int64 value  = 0;
+        uint32 shift = 0;
+        uint8 byte   = 0;
+        do {
+            if (position >= size) {
+                malformed = true;
+                return value;
+            }
+            byte = data[position++];
+            if (shift < 64)
+                value |= static_cast<int64>(byte & 0x7F) << shift;
+            shift += 7;
+        } while ((byte & 0x80) != 0);
+        if (shift < 64 && (byte & 0x40) != 0)
+            value |= -(static_cast<int64>(1) << shift);
+        return value;
+    };
+    std::string symbol;
+    int64 addend = 0;
+    std::optional<uint64> address; // set by SET_SEGMENT_AND_OFFSET
+    const auto bind = [&]() {
+        if (address.has_value() && !symbol.empty() && binds.size() < MAX_BINDS)
+            binds.push_back({ address.value(), symbol, addend });
+        if (address.has_value())
+            address = address.value() + pointerSize;
+    };
+    while (position < size && !malformed) {
+        const uint8 byte      = data[position++];
+        const uint8 immediate = byte & IMMEDIATE_MASK;
+        switch (byte & OPCODE_MASK) {
+        case 0x00: // DONE
+            return true;
+        case 0x10: // SET_DYLIB_ORDINAL_IMM
+        case 0x30: // SET_DYLIB_SPECIAL_IMM
+            break;
+        case 0x20: // SET_DYLIB_ORDINAL_ULEB
+            uleb();
+            break;
+        case 0x40: { // SET_SYMBOL_TRAILING_FLAGS_IMM, the name
+            const size_t start = position;
+            while (position < size && data[position] != 0)
+                position++;
+            if (position >= size)
+                return false;
+            symbol.assign(reinterpret_cast<const char*>(data + start), position - start);
+            position++;
+            break;
+        }
+        case 0x50: // SET_TYPE_IMM
+            break;
+        case 0x60: // SET_ADDEND_SLEB
+            addend = sleb();
+            break;
+        case 0x70: { // SET_SEGMENT_AND_OFFSET_ULEB
+            const uint64 offset = uleb();
+            if (immediate >= segmentAddresses.size())
+                return false;
+            address = segmentAddresses[immediate] + offset;
+            break;
+        }
+        case 0x80: // ADD_ADDR_ULEB
+            if (address.has_value())
+                address = address.value() + uleb();
+            else
+                uleb();
+            break;
+        case 0x90: // DO_BIND
+            bind();
+            break;
+        case 0xA0: { // DO_BIND_ADD_ADDR_ULEB
+            bind();
+            const uint64 skip = uleb();
+            if (address.has_value())
+                address = address.value() + skip;
+            break;
+        }
+        case 0xB0: // DO_BIND_ADD_ADDR_IMM_SCALED
+            bind();
+            if (address.has_value())
+                address = address.value() + static_cast<uint64>(immediate) * pointerSize;
+            break;
+        case 0xC0: { // DO_BIND_ULEB_TIMES_SKIPPING_ULEB
+            const uint64 count = uleb();
+            const uint64 skip  = uleb();
+            if (count > MAX_REPEAT)
+                return false;
+            for (uint64 index = 0; index < count && !malformed; index++) {
+                bind();
+                if (address.has_value())
+                    address = address.value() + skip;
+            }
+            break;
+        }
+        default: // THREADED (arm64e) and the unknown opcodes
+            return true;
+        }
+    }
+    return !malformed;
+}
+
 void GView::View::DissasmViewer::ApplyChainedFixups(SettingsData& settings, Reference<GView::Object> obj)
 {
-    if (settings.chainedFixups.empty() || !obj.IsValid() || !settings.offsetTranslateCallback.IsValid())
+    if ((settings.chainedFixups.empty() && settings.dyldBindInfos.empty()) || !obj.IsValid() || !settings.offsetTranslateCallback.IsValid())
         return;
     const uint64 fileSize   = obj->GetData().GetSize();
     const auto toFileOffset = [&settings, fileSize](uint64 address) -> std::optional<uint64> {
@@ -250,8 +374,17 @@ void GView::View::DissasmViewer::ApplyChainedFixups(SettingsData& settings, Refe
         return obj->GetData().Copy<uint32>(offset.value(), value) ? std::optional<uint64>(value) : std::nullopt;
     };
     std::vector<ChainedFixup> fixups;
-    DecodeChainedFixups(settings.chainedFixups.data(), settings.chainedFixups.size(), settings.chainedFixupsImageBase, readPointer, fixups);
-    const uint64 imageBase = settings.chainedFixupsImageBase;
+    if (!settings.chainedFixups.empty())
+        DecodeChainedFixups(settings.chainedFixups.data(), settings.chainedFixups.size(), settings.chainedFixupsImageBase, readPointer, fixups);
+    // LC_DYLD_INFO: the binds of the opcodes, as the binds of the chains (the rebased pointers of these files already hold their address)
+    for (const auto& info : settings.dyldBindInfos) {
+        std::vector<DyldBind> binds;
+        DecodeDyldBindOpcodes(info.opcodes.data(), info.opcodes.size(), info.segmentAddresses, info.pointerSize, binds);
+        for (auto& bind : binds)
+            fixups.push_back({ bind.address, true, 0, std::move(bind.name), bind.addend });
+    }
+    const uint64 imageBase = settings.chainedFixups.empty() && !settings.dyldBindInfos.empty() ? settings.dyldBindInfos.front().imageBase : settings.chainedFixupsImageBase;
+    settings.dyldBindInfos.clear();
     for (const auto& fixup : fixups) {
         const auto offset = toFileOffset(fixup.address);
         if (!offset.has_value())
@@ -268,6 +401,7 @@ void GView::View::DissasmViewer::ApplyChainedFixups(SettingsData& settings, Refe
 #ifndef DISSASM_DISABLE_API_CALLS
             settings.memoryMappings.insert({ fixup.address - imageBase, { name, MemoryMappingType::FunctionMapping } });
 #endif
+            settings.boundSymbols[fixup.address - imageBase] = name;
         }
         settings.relocatedPointers.emplace(offset.value(), 0);
     }

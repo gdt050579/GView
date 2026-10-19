@@ -305,9 +305,16 @@ void GView::View::DissasmViewer::ApplyObjCMetadata(SettingsData& settings, Refer
         addSlot(slot, ToLabelName("selRef_", selector));
     for (const auto& [slot, name] : metadata.classRefs)
         addSlot(slot, ToLabelName("classRef_", name));
-    for (const auto& [address, name] : metadata.structures)
-        if (address != 0)
+    for (const auto& [address, name] : metadata.structures) {
+        if (address == 0 || address < imageBase)
+            continue;
+        // a structure that starts with a bound pointer (the isa of a metaclass: _OBJC_METACLASS_$_NSObject) names the place; the line of the
+        // pointer keeps its symbol (boundSymbols)
+        if (settings.boundSymbols.contains(address - imageBase))
+            settings.memoryMappings[address - imageBase] = { ToLabelName("", name), MemoryMappingType::TextMapping };
+        else
             addSlot(address, ToLabelName("", name));
+    }
 #endif
     for (const auto& field : metadata.fields)
         settings.dataFields.try_emplace(field.address, DissasmDataField{ field.size, field.type, field.name });

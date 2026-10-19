@@ -295,6 +295,7 @@ struct ZoneLayout {
     std::map<uint64, uint64> relocatedPointers;               // the pointers the loader writes (file offset -> VA)
     bool isUninitialized = false;                             // an uninitialized data zone (start: its file offset, labelAddressBase: its VA)
     std::map<uint64, DissasmDataField> dataFields;            // the fields of the structures of the data, by VA
+    std::unordered_map<uint64, std::string> boundSymbols;     // Mach-O: the symbols of the pointers dyld binds, by RVA
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -393,6 +394,7 @@ class DissasmTestInstance
         initData.instructionBoundaries = &layout.instructionBoundaries;
         initData.globalOffsetTable     = layout.globalOffsetTable;
         settingsData.globalOffsetTable = layout.globalOffsetTable;
+        settingsData.boundSymbols      = layout.boundSymbols;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
             auto* codeZone      = zone.get();
@@ -6951,6 +6953,87 @@ static std::vector<uint8> MakeChainedFixups(uint16 pointerFormat, uint64 segment
     for (const char c : std::string_view("_lib_print\0_lib_add\0", 20))
         data.push_back(static_cast<uint8>(c));
     return data;
+}
+
+TEST_CASE("DyldBindOpcodes", "[Dissasm]MachO")
+{
+    // the bind opcodes of LC_DYLD_INFO: the segments 0 (__PAGEZERO), 1 (__TEXT), 2 (__DATA at 0x100003000)
+    const std::vector<uint64> segments = { 0, 0x100000000ull, 0x100003000ull };
+    std::vector<uint8> opcodes         = { 0x11, 0x40 }; // SET_DYLIB_ORDINAL_IMM 1, SET_SYMBOL_TRAILING_FLAGS_IMM
+    const auto text = [&opcodes](std::string_view name) {
+        opcodes.insert(opcodes.end(), name.begin(), name.end());
+        opcodes.push_back(0);
+    };
+    text("_OBJC_CLASS_$_NSObject");
+    opcodes.insert(opcodes.end(), { 0x51, 0x72, 0x10, 0x90 }); // SET_TYPE_IMM pointer, SET_SEGMENT_AND_OFFSET_ULEB 2 + 0x10, DO_BIND
+    opcodes.push_back(0x40);
+    text("__objc_empty_cache");
+    opcodes.push_back(0xB1); // DO_BIND_ADD_ADDR_IMM_SCALED 1: bind at 0x18, then 0x18 + 8 + 8
+    opcodes.insert(opcodes.end(), { 0x60, 0x7F, 0x40 }); // SET_ADDEND_SLEB -1
+    text("_puts");
+    opcodes.insert(opcodes.end(), { 0xC0, 0x02, 0x08 }); // DO_BIND_ULEB_TIMES_SKIPPING_ULEB 2, 8: binds at 0x28 and 0x38
+    opcodes.insert(opcodes.end(), { 0xA0, 0x10 });       // DO_BIND_ADD_ADDR_ULEB 0x10: a bind at 0x48
+    opcodes.insert(opcodes.end(), { 0x00, 0x90 });       // DONE: the rest is not read
+    std::vector<DyldBind> binds;
+    REQUIRE(DecodeDyldBindOpcodes(opcodes.data(), opcodes.size(), segments, 8, binds));
+    REQUIRE(binds.size() == 5);
+    const std::vector<std::pair<uint64, std::string>> expected = { { 0x100003010, "_OBJC_CLASS_$_NSObject" },
+                                                                   { 0x100003018, "__objc_empty_cache" },
+                                                                   { 0x100003028, "_puts" },
+                                                                   { 0x100003038, "_puts" },
+                                                                   { 0x100003048, "_puts" } };
+    for (size_t index = 0; index < expected.size(); index++) {
+        REQUIRE(binds[index].address == expected[index].first);
+        REQUIRE(binds[index].name == expected[index].second);
+    }
+    REQUIRE(binds[0].addend == 0);
+    REQUIRE(binds[2].addend == -1);
+
+    // a segment that does not exist, a truncated name, a truncated number
+    binds.clear();
+    const std::vector<uint8> badSegment = { 0x40, '_', 'a', 0, 0x75, 0x00, 0x90 };
+    REQUIRE_FALSE(DecodeDyldBindOpcodes(badSegment.data(), badSegment.size(), segments, 8, binds));
+    const std::vector<uint8> truncatedName = { 0x40, '_', 'a' };
+    REQUIRE_FALSE(DecodeDyldBindOpcodes(truncatedName.data(), truncatedName.size(), segments, 8, binds));
+    const std::vector<uint8> truncatedNumber = { 0x40, '_', 'a', 0, 0x72, 0x80 };
+    REQUIRE_FALSE(DecodeDyldBindOpcodes(truncatedNumber.data(), truncatedNumber.size(), segments, 8, binds));
+    REQUIRE(binds.empty());
+    // a 32 bit image: the address moves by 4
+    const std::vector<uint8> pointers32 = { 0x40, '_', 'a', 0, 0x71, 0x00, 0x90, 0x90 };
+    REQUIRE(DecodeDyldBindOpcodes(pointers32.data(), pointers32.size(), { 0, 0x1000 }, 4, binds));
+    REQUIRE(binds.size() == 2);
+    REQUIRE(binds[1].address == 0x1004);
+}
+
+TEST_CASE("BoundPointerOfAStructure", "[Dissasm]MachO")
+{
+    // the isa of a metaclass (a pointer dyld binds to _OBJC_METACLASS_$_NSObject) at the start of the structure _OBJC_METACLASS_$_Dog: the
+    // line of the pointer shows the symbol and the field, not the name of the structure
+    std::vector<unsigned char> file = { 0xC3 }; // 0x00: ret (EntryPoint)
+    file.resize(0x120, 0x00);
+    ZoneLayout layout;
+    layout.size                = 0x100;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true; // the VA (and the RVA) is the file offset
+    layout.addressToFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start        = 0x100;
+    layout.size         = 0x20;
+    layout.entryPoint   = NO_ENTRY_POINT;
+    layout.isData       = true;
+    layout.siblings     = { code.zone.get() };
+    layout.dataFields   = { { 0x100, { 8, DataFieldType::Pointer, "isa" } }, { 0x108, { 8, DataFieldType::Pointer, "superclass" } } };
+    layout.boundSymbols = { { 0x100, "_OBJC_METACLASS_$_NSObject" } };
+    layout.imports      = { { 0x100, { "_OBJC_METACLASS_$_Dog", MemoryMappingType::TextMapping } } };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dq     _OBJC_METACLASS_$_NSObject").ends_with("; isa"));
+    REQUIRE(FindListingLine(listing, "dq     EntryPoint").ends_with("; superclass")); // not bound: its value (0, the entry point here)
 }
 
 TEST_CASE("ChainedFixups", "[Dissasm]MachO")

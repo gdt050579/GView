@@ -919,6 +919,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         return true;
     }
 
+    // a field of a structure: its name is the comment of its line
+    if (insn->id == 0 && !params.zone->fieldNames.empty())
+        if (const auto field = params.zone->fieldNames.find(insn->address); field != params.zone->fieldNames.end())
+            autoComment = field->second;
+
     // an import slot of a data zone: the name of the import (its bytes are the RVA of the name until the loader writes the address; a
     // pointer to an import that the loader writes is 0 in the file)
     if (insn->id == 0 && params.zone->zoneDetails.isData && insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
@@ -927,14 +932,21 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         const auto* import = FindX86OperandsImport(params.settings, params.zone, slot);
         if (import && !import->name.empty() && import->type == MemoryMappingType::FunctionMapping) {
             SetOperands(import->name.c_str(), params.zone);
+            if (autoComment == import->name)
+                autoComment.clear();
             return true;
         }
     }
 
-    // a field of a structure: its name is the comment of its line
-    if (insn->id == 0 && !params.zone->fieldNames.empty())
-        if (const auto field = params.zone->fieldNames.find(insn->address); field != params.zone->fieldNames.end())
-            autoComment = field->second;
+    // a pointer that dyld binds (Mach-O) at the start of a structure named otherwise: its symbol (dq _OBJC_METACLASS_$_NSObject ; isa)
+    if (insn->id == 0 && params.zone->zoneDetails.isData && !params.settings->boundSymbols.empty() && params.settings->offsetTranslateCallback.IsValid() &&
+        insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
+        const auto bound = params.settings->boundSymbols.find(GetCodeStartRVA(params.settings, params.zone) + insn->address);
+        if (bound != params.settings->boundSymbols.end()) {
+            SetOperands(bound->second.c_str(), params.zone);
+            return true;
+        }
+    }
 
     // a pointer of a data zone: the name of what it points to (a label of any zone), else its value
     if (insn->id == 0) {

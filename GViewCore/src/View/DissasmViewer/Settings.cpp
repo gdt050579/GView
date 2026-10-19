@@ -81,6 +81,13 @@ void Settings::AddChainedFixups(BufferView data, uint64 imageBase)
     INTERNAL_SETTINGS->chainedFixupsImageBase = imageBase;
 }
 
+void Settings::AddDyldBindInfo(BufferView opcodes, const std::vector<uint64>& segmentAddresses, uint8 pointerSize, uint64 imageBase)
+{
+    if (!opcodes.IsValid() || opcodes.GetLength() == 0 || (pointerSize != 4 && pointerSize != 8))
+        return;
+    INTERNAL_SETTINGS->dyldBindInfos.push_back({ std::vector<uint8>(opcodes.GetData(), opcodes.GetData() + opcodes.GetLength()), segmentAddresses, pointerSize, imageBase });
+}
+
 void Settings::AddUninitializedDataZone(uint64 address, uint64 size, DisassemblyLanguage lang, std::string_view name)
 {
     if (size == 0)

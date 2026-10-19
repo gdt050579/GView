@@ -1838,6 +1838,13 @@ namespace View
              */
             void AddChainedFixups(BufferView data, uint64 imageBase);
             /**
+             * \brief Mach-O LC_DYLD_INFO(_ONLY): the bind (or weak bind) opcodes and the VA of every segment, in the order of the load
+             * commands (the opcodes refer to them by index). The viewer names every bound pointer after its symbol: the ones outside
+             * __got / __la_symbol_ptr (the superclass of an Objective-C class, __objc_empty_cache, a pointer to an imported function or
+             * variable in __data) have no indirect symbol. `imageBase`: the VA of the mach header.
+             */
+            void AddDyldBindInfo(BufferView opcodes, const std::vector<uint64>& segmentAddresses, uint8 pointerSize, uint64 imageBase);
+            /**
              * \brief A data zone without bytes in the file: the uninitialized data of the program at the VA `address` (ELF .bss, Mach-O
              * zero fill sections, the part of a PE section past its raw data). Its lines are the variables the code uses (dd ?), placed
              * after the end of the file.
