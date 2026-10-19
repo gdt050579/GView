@@ -329,7 +329,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const bool isMetadata = import->type == MemoryMappingType::TextMapping;
                     for (const char c : import->name)
                         if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$' ||
-                            (isMetadata && (c == ':' || c == '<' || c == '>' || c == '~' || c == ',')))
+                            (isMetadata && (c == ':' || c == '<' || c == '>' || c == '~' || c == ',' || c == '{' || c == '}' || c == '(' ||
+                                            c == ')' || c == '-')))
                             name.push_back(c);
                         else if (name.back() != '_')
                             name.push_back('_');

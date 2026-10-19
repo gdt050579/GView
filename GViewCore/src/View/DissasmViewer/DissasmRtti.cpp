@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace GView::View::DissasmViewer;
 
@@ -11,6 +12,29 @@ namespace
 constexpr uint64 MAX_RANGE_BYTES  = 32ull * 1024 * 1024;
 constexpr uint32 MAX_NAME         = 512;
 constexpr int64 MAX_OFFSET_TO_TOP = 0x100000;
+constexpr uint32 MAX_BASE_CLASSES = 256;
+
+// a base class of a class: its name and where it is in the object (MSVC: mdisp / pdisp / vdisp; Itanium: the offset, virtual)
+struct RttiBaseClass {
+    std::string name;
+    int64 offset;
+    bool isVirtual;
+};
+
+// the name of a vtable / locator of a base at an offset (multiple inheritance): {for_Base} (IDA: `vftable'{for `Base'}), the offset
+// when no base is known there
+std::string BaseSuffix(const std::vector<RttiBaseClass>* bases, int64 offset)
+{
+    if (offset == 0)
+        return {};
+    if (bases)
+        for (size_t index = 1; index < bases->size(); index++) // the first entry of an MSVC array is the class itself
+            if ((*bases)[index].offset == offset && !(*bases)[index].isVirtual)
+                return "{for_" + (*bases)[index].name + "}";
+    char text[24];
+    snprintf(text, sizeof(text), "_%llX", static_cast<unsigned long long>(offset));
+    return text;
+}
 
 class RttiParser
 {
@@ -129,6 +153,15 @@ class RttiParser
             return;
         // the complete object locators: x64 {1, offset, cdOffset, rva TypeDescriptor, rva ClassDescriptor, rva self}; x86 {0, offset,
         // cdOffset, TypeDescriptor, ClassDescriptor}
+        struct Locator {
+            uint64 address;
+            std::string className;
+            uint32 offset;
+            uint64 hierarchy;
+        };
+        std::vector<Locator> found;
+        const DataFieldType reference = is64 ? DataFieldType::RVA : DataFieldType::Pointer;
+        const auto toAddress          = [&](uint64 value) { return is64 ? input.imageBase + value : value; };
         for (const auto& range : input.ranges)
             for (uint64 offset = 0; offset + (is64 ? 24 : 20) <= range.bytes.size(); offset += 4) {
                 uint32 fields[6] = {};
@@ -142,15 +175,7 @@ class RttiParser
                 const auto known        = descriptors.find(descriptor);
                 if (known == descriptors.end())
                     continue;
-                std::string suffix; // a vtable of a base at an offset (multiple inheritance)
-                if (fields[1] != 0) {
-                    char text[24];
-                    snprintf(text, sizeof(text), "_%X", fields[1]);
-                    suffix = text;
-                }
-                locators[address] = { known->second, suffix };
-                result.names.emplace_back(address, known->second + "::RTTI_Complete_Object_Locator" + suffix);
-                const DataFieldType reference = is64 ? DataFieldType::RVA : DataFieldType::Pointer;
+                found.push_back({ address, known->second, fields[1], toAddress(fields[4]) });
                 result.fields.push_back({ address, 4, DataFieldType::Value, "signature" });
                 result.fields.push_back({ address + 4, 4, DataFieldType::Value, "offset" });
                 result.fields.push_back({ address + 8, 4, DataFieldType::Value, "cdOffset" });
@@ -158,15 +183,67 @@ class RttiParser
                 result.fields.push_back({ address + 16, 4, reference, "pClassDescriptor" });
                 if (is64)
                     result.fields.push_back({ address + 20, 4, DataFieldType::RVA, "pSelf" });
-                const uint64 hierarchy = is64 ? input.imageBase + fields[4] : fields[4]; // the class hierarchy descriptor
-                if (fields[1] == 0 && RangeOf(hierarchy, 16)) {
-                    result.names.emplace_back(hierarchy, known->second + "::RTTI_Class_Hierarchy_Descriptor");
-                    result.fields.push_back({ hierarchy, 4, DataFieldType::Value, "signature" });
-                    result.fields.push_back({ hierarchy + 4, 4, DataFieldType::Value, "attributes" });
-                    result.fields.push_back({ hierarchy + 8, 4, DataFieldType::Value, "numBaseClasses" });
-                    result.fields.push_back({ hierarchy + 12, 4, reference, "pBaseClassArray" });
+            }
+        // the class hierarchy descriptors {signature, attributes, numBaseClasses, pBaseClassArray}, their arrays of base class descriptors
+        // {pTypeDescriptor, numContainedBases, mdisp, pdisp, vdisp, attributes[, pClassDescriptor]}: the bases of the classes and where
+        // they are (the first entry: the class itself)
+        std::unordered_map<uint64, std::vector<RttiBaseClass>> hierarchies;
+        std::unordered_set<uint64> baseDescriptors;
+        // the descriptors of the locators, then the ones of the bases (pClassDescriptor: an abstract class has no locator of its own)
+        std::vector<std::pair<uint64, std::string>> pending;
+        for (const auto& locator : found)
+            pending.emplace_back(locator.hierarchy, locator.className);
+        for (size_t next = 0; next < pending.size() && next < MAX_BASE_CLASSES * 16; next++) {
+            const auto [hierarchy, className] = pending[next];
+            if (hierarchies.contains(hierarchy) || !RangeOf(hierarchy, 16))
+                continue;
+            auto& bases                 = hierarchies[hierarchy];
+            const uint32 numBaseClasses = static_cast<uint32>(Read(hierarchy + 8, 4).value_or(0));
+            const uint64 array          = toAddress(Read(hierarchy + 12, 4).value_or(0));
+            result.names.emplace_back(hierarchy, className + "::RTTI_Class_Hierarchy_Descriptor");
+            result.fields.push_back({ hierarchy, 4, DataFieldType::Value, "signature" });
+            result.fields.push_back({ hierarchy + 4, 4, DataFieldType::Value, "attributes" });
+            result.fields.push_back({ hierarchy + 8, 4, DataFieldType::Value, "numBaseClasses" });
+            result.fields.push_back({ hierarchy + 12, 4, reference, "pBaseClassArray" });
+            if (numBaseClasses == 0 || numBaseClasses > MAX_BASE_CLASSES || !RangeOf(array, 4ull * numBaseClasses))
+                continue;
+            if (baseDescriptors.insert(array).second) {
+                result.names.emplace_back(array, className + "::RTTI_Base_Class_Array");
+                for (uint32 index = 0; index < numBaseClasses; index++)
+                    result.fields.push_back({ array + 4ull * index, 4, reference, "pBaseClassDescriptor" });
+            }
+            for (uint32 index = 0; index < numBaseClasses; index++) {
+                const uint64 descriptor = toAddress(Read(array + 4ull * index, 4).value_or(0));
+                if (!RangeOf(descriptor, 24))
+                    break;
+                int32 values[6] = {};
+                for (uint32 field = 0; field < 6; field++)
+                    values[field] = static_cast<int32>(Read(descriptor + 4ull * field, 4).value_or(0));
+                const auto type = descriptors.find(toAddress(static_cast<uint32>(values[0])));
+                if (type == descriptors.end())
+                    break;
+                bases.push_back({ type->second, values[2], values[3] != -1 });
+                if (!baseDescriptors.insert(descriptor).second)
+                    continue; // shared by the arrays of several classes: named once
+                char at[64];
+                snprintf(at, sizeof(at), "::RTTI_Base_Class_Descriptor_at_(%d,%d,%d,%u)", values[2], values[3], values[4], static_cast<uint32>(values[5]));
+                result.names.emplace_back(descriptor, type->second + at);
+                static constexpr const char* FIELDS[] = { "pTypeDescriptor", "numContainedBases", "mdisp", "pdisp", "vdisp", "attributes" };
+                for (uint32 field = 0; field < 6; field++)
+                    result.fields.push_back({ descriptor + 4ull * field, 4, field == 0 ? reference : DataFieldType::Value, FIELDS[field] });
+                if ((values[5] & 0x40) != 0 && RangeOf(descriptor + 24, 4)) { // BCD_HASPCHD
+                    result.fields.push_back({ descriptor + 24, 4, reference, "pClassDescriptor" });
+                    pending.emplace_back(toAddress(Read(descriptor + 24, 4).value_or(0)), type->second);
                 }
             }
+        }
+        // the names of the locators: a locator of a base at an offset (multiple inheritance) is the one of the vtable {for_Base}
+        for (const auto& locator : found) {
+            const auto bases        = hierarchies.find(locator.hierarchy);
+            const std::string suffix = BaseSuffix(bases != hierarchies.end() ? &bases->second : nullptr, locator.offset);
+            locators[locator.address] = { locator.className, suffix };
+            result.names.emplace_back(locator.address, locator.className + "::RTTI_Complete_Object_Locator" + suffix);
+        }
         for (const auto& [address, name] : descriptors)
             result.names.emplace_back(address, name + "::RTTI_Type_Descriptor");
         // the vtables: the pointer to the locator, then the virtual functions
@@ -186,6 +263,7 @@ class RttiParser
     void ParseItanium()
     {
         std::unordered_map<uint64, std::string> typeinfos; // VA -> class
+        std::unordered_map<uint64, uint8> typeinfoKinds;   // VA -> 1: __si_class_type_info, 2: __vmi_class_type_info
         // the typeinfo objects: {vptr (__cxxabiv1::__*class_type_info vtable + 2 pointers), name}
         const auto isTypeInfoClass = [](const std::string& symbol) { return symbol.find("class_type_info") != std::string::npos; };
         for (const auto& range : input.ranges)
@@ -205,6 +283,12 @@ class RttiParser
                 if (className.empty())
                     continue;
                 typeinfos[address] = className;
+                // __si_class_type_info: one public base at 0; __vmi_class_type_info: a list of bases
+                const std::string kind = input.slotName ? input.slotName(address) + " " + input.slotName(vptr - 2ull * pointerSize) : std::string();
+                if (kind.find("vmi_class_type_info") != std::string::npos)
+                    typeinfoKinds[address] = 2;
+                else if (kind.find("si_class_type_info") != std::string::npos)
+                    typeinfoKinds[address] = 1;
                 result.names.emplace_back(address, className + "::typeinfo");
                 result.names.emplace_back(namePointer, className + "::typeinfo_name");
                 result.fields.push_back({ address, pointerSize, DataFieldType::Pointer, "vptr" });
@@ -212,6 +296,37 @@ class RttiParser
             }
         if (typeinfos.empty())
             return;
+        // the bases: __si_class_type_info {vptr, name, base_type}; __vmi_class_type_info {vptr, name, flags, base_count, {base_type,
+        // offset_flags (the offset << 8, 1: virtual, 2: public)}...}
+        std::unordered_map<std::string, std::vector<RttiBaseClass>> bases; // class -> its bases
+        for (const auto& [address, kind] : typeinfoKinds) {
+            const auto& className = typeinfos[address];
+            const uint64 first    = address + 2ull * pointerSize;
+            if (kind == 1) {
+                const auto base = Read(first, pointerSize);
+                if (!base.has_value())
+                    continue;
+                result.fields.push_back({ first, pointerSize, DataFieldType::Pointer, "base_type" });
+                if (const auto known = typeinfos.find(base.value()); known != typeinfos.end())
+                    bases[className].push_back({ known->second, 0, false });
+                continue;
+            }
+            const uint32 count = static_cast<uint32>(Read(first + 4, 4).value_or(0));
+            if (count == 0 || count > MAX_BASE_CLASSES || !RangeOf(first + 8, 2ull * pointerSize * count))
+                continue;
+            result.fields.push_back({ first, 4, DataFieldType::Value, "flags" });
+            result.fields.push_back({ first + 4, 4, DataFieldType::Value, "base_count" });
+            for (uint32 index = 0; index < count; index++) {
+                const uint64 entry = first + 8 + 2ull * pointerSize * index;
+                result.fields.push_back({ entry, pointerSize, DataFieldType::Pointer, "base_type" });
+                result.fields.push_back({ entry + pointerSize, pointerSize, DataFieldType::Value, "offset_flags" });
+                const uint64 flags  = Read(entry + pointerSize, pointerSize).value_or(0);
+                const int64 offset  = pointerSize == 8 ? static_cast<int64>(flags) >> 8 : static_cast<int64>(static_cast<int32>(flags)) >> 8;
+                const auto known    = typeinfos.find(Read(entry, pointerSize).value_or(0));
+                if (known != typeinfos.end())
+                    bases[className].push_back({ known->second, offset, (flags & 1) != 0 });
+            }
+        }
         // the vtables: {offset to top (0, or the negative offset of a secondary vtable), typeinfo, the virtual functions}
         for (const auto& range : input.ranges)
             for (uint64 offset = pointerSize; offset + pointerSize <= range.bytes.size(); offset += pointerSize) {
@@ -225,12 +340,14 @@ class RttiParser
                 const int64 offsetToTop = pointerSize == 8 ? static_cast<int64>(top) : static_cast<int64>(static_cast<int32>(top));
                 if (offsetToTop > 0 || offsetToTop < -MAX_OFFSET_TO_TOP)
                     continue;
-                std::string name = typeinfo->second + "::vtable";
-                if (offsetToTop != 0) {
-                    char text[24];
-                    snprintf(text, sizeof(text), "_%llX", static_cast<unsigned long long>(-offsetToTop));
-                    name += text;
+                // a secondary vtable (multiple inheritance): the one of the base at -offset_to_top, {for_Base}
+                const auto classBases  = bases.find(typeinfo->second);
+                std::vector<RttiBaseClass> withSelf; // BaseSuffix skips the first entry (the class itself in the MSVC arrays)
+                if (classBases != bases.end()) {
+                    withSelf.push_back({ typeinfo->second, 0, false });
+                    withSelf.insert(withSelf.end(), classBases->second.begin(), classBases->second.end());
                 }
+                const std::string name = typeinfo->second + "::vtable" + BaseSuffix(withSelf.empty() ? nullptr : &withSelf, -offsetToTop);
                 const uint64 vtable = range.address + offset - pointerSize;
                 result.names.emplace_back(vtable, name);
                 result.classes.emplace_back(vtable, typeinfo->second);

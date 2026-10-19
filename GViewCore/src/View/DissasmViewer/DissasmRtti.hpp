@@ -42,8 +42,11 @@ struct RttiResult {
 //   descriptors (.?AVAnimal@@, .?AUBird@zoo@@), the vtables that follow a pointer to a locator
 // - Itanium (GCC / clang, ELF / Mach-O): the typeinfo objects (a vptr bound to __cxxabiv1::__*class_type_info, a pointer to the mangled
 //   name), the vtables ({offset to top, typeinfo, the virtual functions})
-// The names are the demangled class names: Animal::vftable / Animal::RTTI_Complete_Object_Locator / Animal::RTTI_Type_Descriptor (MSVC),
-// Dog::vtable / Dog::typeinfo / Dog::typeinfo_name (Itanium)
+// - the bases: MSVC class hierarchy descriptors, their base class arrays and base class descriptors (mdisp / pdisp / vdisp); Itanium
+//   __si_class_type_info (base_type) / __vmi_class_type_info (base_type, offset_flags). A vtable of a base at an offset (multiple
+//   inheritance) is the one of that base: zoo::Bird::vftable{for_Flyer} (IDA: `vftable'{for `Flyer'}), zoo::Bird::vtable{for_Flyer}
+// The names are the demangled class names: Animal::vftable / Animal::RTTI_Complete_Object_Locator / Animal::RTTI_Type_Descriptor /
+// Animal::RTTI_Base_Class_Descriptor_at_(0,-1,0,64) (MSVC), Dog::vtable / Dog::typeinfo / Dog::typeinfo_name (Itanium)
 void ParseCppRtti(const RttiInput& input, RttiResult& result);
 
 // the data zones of the settings parsed for their run-time type information: the names become named slots (labels of the data zones,

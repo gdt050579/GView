@@ -285,10 +285,15 @@ inline void DissasmAddColorsToInstruction(
             buffer.Clear();
         };
 
-        char lastOp = ' ';
+        char lastOp      = ' ';
+        uint32 nameDepth = 0; // inside the parentheses / angle brackets of a name (std::pair<int,int>, RTTI_Base_Class_Descriptor_at_(0,-1,0,64))
         for (size_t i = 0; i < op_str.size(); i++) {
             const char c = op_str[i];
-            if (c == ' ' || c == ',' || c == '[' || c == ']') {
+            if (buffer.Len() > 0 && (c == '(' || c == '<'))
+                nameDepth++;
+            else if (nameDepth > 0 && (c == ')' || c == '>'))
+                nameDepth--;
+            if (nameDepth == 0 && (c == ' ' || c == ',' || c == '[' || c == ']')) {
                 if (buffer.Len() > 0) {
                     if (lastOp != '[')
                         cb.Add(" ");

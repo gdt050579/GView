@@ -7407,6 +7407,115 @@ TEST_CASE("CppRtti", "[Dissasm]Rtti")
     }
 }
 
+TEST_CASE("CppRttiBaseClasses", "[Dissasm]Rtti")
+{
+    const auto hasField = [](const RttiResult& result, uint64 address, std::string_view name) {
+        return std::any_of(result.fields.begin(), result.fields.end(), [&](const RttiField& field) { return field.address == address && field.name == name; });
+    };
+    // MSVC x86 (pointers): struct zoo::Bird : Animal, Flyer. Two locators (offsets 0 and 8) share the class hierarchy descriptor; its array
+    // lists the base class descriptors {pTypeDescriptor, numContainedBases, mdisp, pdisp, vdisp, attributes[, pClassDescriptor]}
+    {
+        RttiTestRange rdata(0x402000ull, 0x300);
+        rdata.Text(0x402208, ".?AUBird@zoo@@"); // the type descriptors: pVFTable, spare, name
+        rdata.Text(0x402248, ".?AUAnimal@@");
+        rdata.Text(0x402288, ".?AUFlyer@@");
+        for (const auto& [address, offset] : { std::pair<uint64, uint64>{ 0x402100, 0 }, { 0x402114, 8 } }) { // the locators
+            rdata.Put(address + 4, offset, 4);
+            rdata.Put(address + 12, 0x402200, 4);
+            rdata.Put(address + 16, 0x402140, 4);
+        }
+        rdata.Put(0x402148, 3, 4); // the hierarchy: signature, attributes, numBaseClasses, pBaseClassArray
+        rdata.Put(0x40214C, 0x402150, 4);
+        rdata.Put(0x402150, 0x402160, 4); // the array
+        rdata.Put(0x402154, 0x402180, 4);
+        rdata.Put(0x402158, 0x4021A0, 4);
+        const auto descriptor = [&rdata](uint64 address, uint64 type, int32 mdisp, uint32 attributes, uint64 hierarchy) {
+            rdata.Put(address, type, 4);
+            rdata.Put(address + 8, static_cast<uint32>(mdisp), 4);
+            rdata.Put(address + 12, 0xFFFFFFFF, 4); // pdisp -1
+            rdata.Put(address + 20, attributes, 4);
+            rdata.Put(address + 24, hierarchy, 4);
+        };
+        descriptor(0x402160, 0x402200, 0, 0x40, 0x402140);
+        descriptor(0x402180, 0x402240, 0, 0x40, 0x4021C0); // Animal: abstract, no locator; its hierarchy through pClassDescriptor
+        descriptor(0x4021A0, 0x402280, 8, 0, 0);
+        rdata.Put(0x4021C8, 1, 4); // the hierarchy of Animal and its array
+        rdata.Put(0x4021CC, 0x4021D0, 4);
+        rdata.Put(0x4021D0, 0x402180, 4);
+        rdata.Put(0x402000, 0x402100, 4); // the vtables: the locator, then the virtual functions
+        rdata.Put(0x402004, 0x401010, 4);
+        rdata.Put(0x402010, 0x402114, 4);
+        rdata.Put(0x402014, 0x401020, 4);
+        RttiInput input;
+        input.pointerSize = 4;
+        input.ranges.push_back(rdata.range);
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x402004] == "zoo::Bird::vftable");
+        REQUIRE(names[0x402014] == "zoo::Bird::vftable{for_Flyer}");
+        REQUIRE(names[0x402114] == "zoo::Bird::RTTI_Complete_Object_Locator{for_Flyer}");
+        REQUIRE(names[0x402150] == "zoo::Bird::RTTI_Base_Class_Array");
+        REQUIRE(names[0x402160] == "zoo::Bird::RTTI_Base_Class_Descriptor_at_(0,-1,0,64)");
+        REQUIRE(names[0x402180] == "Animal::RTTI_Base_Class_Descriptor_at_(0,-1,0,64)");
+        REQUIRE(names[0x4021A0] == "Flyer::RTTI_Base_Class_Descriptor_at_(8,-1,0,0)");
+        REQUIRE(names[0x4021C0] == "Animal::RTTI_Class_Hierarchy_Descriptor");
+        REQUIRE(names[0x4021D0] == "Animal::RTTI_Base_Class_Array");
+        REQUIRE(hasField(result, 0x402154, "pBaseClassDescriptor"));
+        REQUIRE(hasField(result, 0x4021A8, "mdisp"));
+        REQUIRE(hasField(result, 0x402178, "pClassDescriptor"));
+        REQUIRE_FALSE(hasField(result, 0x4021B8, "pClassDescriptor")); // attributes without BCD_HASPCHD
+    }
+    // Itanium: zoo::Bird (__vmi_class_type_info: Animal at 0, Flyer at 8), Dog (__si_class_type_info: Animal); the secondary vtable of
+    // Bird at -8 is the one of Flyer, one at -0x10 has no base there
+    {
+        RttiTestRange data(0x2000, 0x200);
+        const auto typeinfo = [&data](uint64 address, uint64 name, std::string_view mangled) {
+            data.Put(address + 8, name, 8);
+            data.Text(name, mangled);
+        };
+        typeinfo(0x2100, 0x2180, "6Animal");
+        typeinfo(0x2110, 0x2190, "5Flyer");
+        typeinfo(0x2120, 0x21A0, "N3zoo4BirdE");
+        data.Put(0x2134, 2, 4); // flags, base_count, {base_type, offset_flags}...
+        data.Put(0x2138, 0x2100, 8);
+        data.Put(0x2140, 0x2, 8);
+        data.Put(0x2148, 0x2110, 8);
+        data.Put(0x2150, 0x802, 8);
+        typeinfo(0x2160, 0x21B0, "3Dog");
+        data.Put(0x2170, 0x2100, 8); // base_type
+        data.Put(0x2008, 0x2120, 8); // the vtables of Bird: offset to top, typeinfo, functions
+        data.Put(0x2010, 0x1B20, 8);
+        data.Put(0x2018, static_cast<uint64>(-8), 8);
+        data.Put(0x2020, 0x2120, 8);
+        data.Put(0x2030, static_cast<uint64>(-16), 8);
+        data.Put(0x2038, 0x2120, 8);
+        data.Put(0x2050, 0x2160, 8); // the vtable of Dog
+        RttiInput input;
+        input.pointerSize = 8;
+        input.ranges.push_back(data.range);
+        input.slotName = [](uint64 address) {
+            if (address == 0x2120)
+                return std::string("_ZTVN10__cxxabiv121__vmi_class_type_infoE");
+            if (address == 0x2160)
+                return std::string("_ZTVN10__cxxabiv120__si_class_type_infoE");
+            return address == 0x2100 || address == 0x2110 ? std::string("_ZTVN10__cxxabiv117__class_type_infoE") : std::string();
+        };
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x2120] == "zoo::Bird::typeinfo");
+        REQUIRE(names[0x2000] == "zoo::Bird::vtable");
+        REQUIRE(names[0x2018] == "zoo::Bird::vtable{for_Flyer}");
+        REQUIRE(names[0x2030] == "zoo::Bird::vtable_10");
+        REQUIRE(names[0x2048] == "Dog::vtable");
+        REQUIRE(hasField(result, 0x2134, "base_count"));
+        REQUIRE(hasField(result, 0x2148, "base_type"));
+        REQUIRE(hasField(result, 0x2150, "offset_flags"));
+        REQUIRE(hasField(result, 0x2170, "base_type"));
+    }
+}
+
 TEST_CASE("DataFields", "[Dissasm]DataZone")
 {
     // a structure of a data zone: a value, an RVA, a 32 bit offset from the field and a pointer, all to the entry point of the code; each
