@@ -267,10 +267,32 @@ json GView::View::DissasmViewer::BuildSignaturesDocument(const std::vector<Dissa
     return document;
 }
 
+namespace
+{
+// a text field of the document (untrusted): empty for another type (json::value throws for another type)
+std::string JsonText(const json& item, const char* name)
+{
+    const auto field = item.is_object() ? item.find(name) : item.end();
+    return field != item.end() && field->is_string() ? field->get<std::string>() : std::string();
+}
+} // namespace
+static bool ApplySignaturesDocumentFields(const json& document, const std::vector<DissasmCodeZone*>& zones, DissasmSignaturesApply& result, std::string& error);
+
 bool GView::View::DissasmViewer::ApplySignaturesDocument(
       const json& document, const std::vector<DissasmCodeZone*>& zones, DissasmSignaturesApply& result, std::string& error)
 {
-    if (!document.is_object() || document.value("format", std::string()) != DISSASM_SIGNATURES_FORMAT) {
+    // the document is untrusted: a field of an unexpected type that a check missed is an invalid document, never an exception out of here
+    try {
+        return ApplySignaturesDocumentFields(document, zones, result, error);
+    } catch (const json::exception&) {
+        error = "The signatures file has a field of an unexpected type!";
+        return false;
+    }
+}
+
+static bool ApplySignaturesDocumentFields(const json& document, const std::vector<DissasmCodeZone*>& zones, DissasmSignaturesApply& result, std::string& error)
+{
+    if (!document.is_object() || JsonText(document, "format") != DISSASM_SIGNATURES_FORMAT) {
         error = "This is not a GView signatures file!";
         return false;
     }
@@ -278,7 +300,7 @@ bool GView::View::DissasmViewer::ApplySignaturesDocument(
         error = "The signatures file was written by a newer GView!";
         return false;
     }
-    const auto architecture = document.value("architecture", std::string());
+    const auto architecture = JsonText(document, "architecture");
 
     struct Signature {
         std::string name;

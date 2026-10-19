@@ -17,6 +17,19 @@ std::string Hex(uint64 value)
     return text;
 }
 
+// the fields of the document (untrusted): the value of its type, the default for any other type (json::value throws for another type)
+std::string JsonText(const json& item, const char* name, std::string_view fallback)
+{
+    const auto field = item.is_object() ? item.find(name) : item.end();
+    return field != item.end() && field->is_string() ? field->get<std::string>() : std::string(fallback);
+}
+
+bool JsonBool(const json& item, const char* name)
+{
+    const auto field = item.is_object() ? item.find(name) : item.end();
+    return field != item.end() && field->is_boolean() && field->get<bool>();
+}
+
 // "0x140001000" / "5368713216" / a number
 std::optional<uint64> ParseAddress(const json& value)
 {
@@ -101,7 +114,7 @@ std::optional<DissasmCommentAnchor> AnchorFromJson(const json& item, const Rebas
         return {};
     DissasmCommentAnchor anchor;
     anchor.address    = address.value();
-    const auto kind   = item.value("kind", std::string("instruction"));
+    const auto kind   = JsonText(item, "kind", "instruction");
     if (kind == "label")
         anchor.kind = DissasmCommentAnchor::Kind::Label;
     else if (kind == "variable") {
@@ -240,9 +253,9 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
             const auto address = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
             uint8 flags        = 0;
             if (item.is_object()) {
-                if (item.value("create", false) == true)
+                if (JsonBool(item, "create"))
                     flags |= USER_FUNCTION_CREATE;
-                if (item.value("delete", false) == true)
+                if (JsonBool(item, "delete"))
                     flags |= USER_FUNCTION_DELETE;
                 if (item.contains("noreturn") && item["noreturn"].is_boolean())
                     flags |= item["noreturn"].get<bool>() ? USER_FUNCTION_NORETURN : USER_FUNCTION_RETURNS;
@@ -327,7 +340,7 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
         const auto last  = item.is_object() && item.contains("last") ? AnchorFromJson(item["last"], rebase) : std::nullopt;
         const auto name  = item.is_object() && item.contains("name") && item["name"].is_string() ? item["name"].get<std::string>() : std::string();
         if (first.has_value() && last.has_value() && name.size() <= MAX_NAME_SIZE)
-            collapsibles.push_back({ first.value(), last.value(), name, item.value("collapsed", false) });
+            collapsibles.push_back({ first.value(), last.value(), name, JsonBool(item, "collapsed") });
         else
             result.skipped++;
     }
@@ -406,7 +419,19 @@ bool GView::View::DissasmViewer::ImportAnnotationsDocument(
 bool GView::View::DissasmViewer::ImportAnnotationsDocument(
       const json& document, const std::vector<DissasmCodeZone*>& zones, DissasmAnnotationsImport& result, std::string& error)
 {
-    if (!document.is_object() || document.value("format", std::string()) != DISSASM_ANNOTATIONS_FORMAT) {
+    // the document is untrusted: a field of an unexpected type that a check missed is an invalid document, never an exception out of here
+    try {
+        return ImportAnnotationsDocumentFields(document, zones, result, error);
+    } catch (const json::exception&) {
+        error = "The annotations file has a field of an unexpected type!";
+        return false;
+    }
+}
+
+bool GView::View::DissasmViewer::ImportAnnotationsDocumentFields(
+      const json& document, const std::vector<DissasmCodeZone*>& zones, DissasmAnnotationsImport& result, std::string& error)
+{
+    if (!document.is_object() || JsonText(document, "format", "") != DISSASM_ANNOTATIONS_FORMAT) {
         error = "This is not a GView annotations file!";
         return false;
     }

@@ -6933,6 +6933,46 @@ TEST_CASE("UserFunctionsCacheAndUndo", "[Dissasm]UserData")
     REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x20, 0x30 });
 }
 
+TEST_CASE("UntrustedDocumentsFieldTypes", "[Dissasm]UserData")
+{
+    // the annotations and the signatures come from files: a field of another type is skipped or the document refused, never an exception
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    DissasmAnnotationsImport result;
+    std::string error;
+
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    document["format"] = 7; // a number instead of the text
+    REQUIRE_NOTHROW(ImportAnnotationsDocument(document, { &zone }, result, error));
+    REQUIRE_FALSE(ImportAnnotationsDocument(document, { &zone }, result, error));
+
+    document = nlohmann::json::parse(R"({"format": "gview-disassembly-annotations", "version": 1, "zones": [{"fileOffset": "0x0",
+        "comments": [{"address": "0x9", "kind": 5, "text": "a"}, {"address": 9, "kind": "variable", "frameOffset": "x", "text": "b"}],
+        "functions": [{"address": "0x20", "create": "yes"}, {"address": "0x30", "noreturn": 1}],
+        "collapsibleZones": [{"first": {"address": "0x0"}, "last": {"address": "0x5"}, "name": 3, "collapsed": "no"}],
+        "names": [{"address": [], "name": {}}], "variables": [{"function": null, "frameOffset": 1.5, "name": 2}],
+        "decimalOperands": [{"address": "0x5", "mask": -1}], "dataRanges": [{"address": "0x10", "size": "4", "unit": true}]}]})");
+    result = {};
+    REQUIRE_NOTHROW(ImportAnnotationsDocument(document, { &zone }, result, error));
+    REQUIRE(result.zones == 1);
+    REQUIRE(result.comments == 1); // a kind of another type: the default kind (an instruction); the variable without a frame offset: skipped
+    REQUIRE(result.functions == 0);
+    REQUIRE(zone.userFunctions.empty());
+
+    DissasmSignaturesApply applied;
+    auto signatures = BuildSignaturesDocument({ &zone });
+    signatures["architecture"] = 64;
+    REQUIRE_NOTHROW(ApplySignaturesDocument(signatures, { &zone }, applied, error));
+    signatures["format"] = nullptr;
+    REQUIRE_NOTHROW(ApplySignaturesDocument(signatures, { &zone }, applied, error));
+    REQUIRE_FALSE(ApplySignaturesDocument(signatures, { &zone }, applied, error));
+}
+
 TEST_CASE("UserDataRangesCache", "[Dissasm]UserData")
 {
     const auto file = UserDataSample();

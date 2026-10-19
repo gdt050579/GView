@@ -44,6 +44,8 @@ void ImportZoneAnnotations(DissasmCodeZone& zone, const nlohmann::json& zoneJson
 // every zone of the document applied to the zone of the same file offset; false (and the reason) when it is not such a document. The zones
 // whose data ranges changed are listed (zonesToReanalyze): their ranges apply at their next analysis
 bool ImportAnnotationsDocument(const nlohmann::json& document, const std::vector<DissasmCodeZone*>& zones, DissasmAnnotationsImport& result, std::string& error);
+// the same, without the guard against the exceptions of the fields of an unexpected type (ImportAnnotationsDocument catches them)
+bool ImportAnnotationsDocumentFields(const nlohmann::json& document, const std::vector<DissasmCodeZone*>& zones, DissasmAnnotationsImport& result, std::string& error);
 // the same, and the zones whose data ranges changed are analyzed again by `reanalyze`, then the document is imported into them again (the
 // names of the new labels)
 bool ImportAnnotationsDocument(
