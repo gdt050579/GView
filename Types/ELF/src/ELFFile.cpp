@@ -157,7 +157,173 @@ bool ELFFile::Update()
 
     CHECK(ParseGoData(), false, "");
     CHECK(ParseSymbols(), false, "");
+    ParseDynamic(); // a malformed dynamic segment leaves the file as it is
 
+    return true;
+}
+
+bool ELFFile::ParseDynamic()
+{
+    constexpr uint64 MAX_DYNAMIC_ENTRIES = 0x10000;
+    constexpr uint64 MAX_SYMBOLS         = 0x100000;
+    constexpr uint64 MAX_TABLE_SIZE      = 0x4000000;
+    // the entries of PT_DYNAMIC (d_tag, d_val), until DT_NULL
+    std::vector<std::pair<int64, uint64>> entries;
+    const auto readEntries = [&](uint64 offset, uint64 size) {
+        const uint64 entrySize = is64 ? sizeof(Elf64_Dyn) : sizeof(Elf32_Dyn);
+        for (uint64 position = 0; position + entrySize <= size && entries.size() < MAX_DYNAMIC_ENTRIES; position += entrySize)
+        {
+            int64 tag    = 0;
+            uint64 value = 0;
+            if (is64)
+            {
+                Elf64_Dyn entry{};
+                if (!obj->GetData().Copy<Elf64_Dyn>(offset + position, entry))
+                    return;
+                tag   = static_cast<int64>(entry.d_tag);
+                value = entry.d_un.d_val;
+            }
+            else
+            {
+                Elf32_Dyn entry{};
+                if (!obj->GetData().Copy<Elf32_Dyn>(offset + position, entry))
+                    return;
+                tag   = static_cast<int32>(entry.d_tag);
+                value = entry.d_un.d_val;
+            }
+            if (tag == DT_NULL)
+                return;
+            entries.emplace_back(tag, value);
+        }
+    };
+    if (is64)
+    {
+        for (const auto& segment : segments64)
+            if (segment.p_type == PT_DYNAMIC)
+                readEntries(segment.p_offset, segment.p_filesz);
+    }
+    else
+    {
+        for (const auto& segment : segments32)
+            if (segment.p_type == PT_DYNAMIC)
+                readEntries(segment.p_offset, segment.p_filesz);
+    }
+    if (entries.empty())
+        return false;
+    const auto value = [&entries](int64 tag) -> std::optional<uint64> {
+        for (const auto& [entryTag, entryValue] : entries)
+            if (entryTag == tag)
+                return entryValue;
+        return std::nullopt;
+    };
+
+    pltGot = value(DT_PLTGOT);
+
+    // the relocation tables
+    constexpr int64 DT_ANDROID_REL    = 0x6000000F, DT_ANDROID_RELSZ = 0x60000010;
+    constexpr int64 DT_ANDROID_RELA   = 0x60000011, DT_ANDROID_RELASZ = 0x60000012;
+    constexpr int64 DT_ANDROID_RELR   = 0x6FFFE000, DT_ANDROID_RELRSZ = 0x6FFFE001;
+    constexpr uint32 SHT_ANDROID_REL  = 0x60000001, SHT_ANDROID_RELA = 0x60000002, SHT_ANDROID_RELR = 0x6FFFFF00;
+    const auto addTable = [&](int64 addressTag, int64 sizeTag, uint32 type) {
+        const auto address = value(addressTag);
+        const auto size    = value(sizeTag);
+        if (!address.has_value() || !size.has_value() || size.value() == 0 || size.value() > MAX_TABLE_SIZE)
+            return;
+        const uint64 offset = VAToFileOffset(address.value());
+        if (offset != ELF_INVALID_ADDRESS && offset < obj->GetData().GetSize())
+            dynamicRelocations.push_back({ offset, size.value(), type });
+    };
+    addTable(DT_RELA, DT_RELASZ, SHT_RELA);
+    addTable(DT_REL, DT_RELSZ, SHT_REL);
+    addTable(DT_JMPREL, DT_PLTRELSZ, value(DT_PLTREL).value_or(DT_RELA) == DT_REL ? SHT_REL : SHT_RELA);
+    addTable(DT_RELR, DT_RELRSZ, SHT_RELR);
+    addTable(DT_ANDROID_REL, DT_ANDROID_RELSZ, SHT_ANDROID_REL);
+    addTable(DT_ANDROID_RELA, DT_ANDROID_RELASZ, SHT_ANDROID_RELA);
+    addTable(DT_ANDROID_RELR, DT_ANDROID_RELRSZ, SHT_ANDROID_RELR);
+
+    // the dynamic symbols, when no section holds them
+    if (!dynamicSymbolsNames.empty())
+        return true;
+    const auto symbolTable = value(DT_SYMTAB);
+    const auto stringTable = value(DT_STRTAB);
+    const auto stringSize  = value(DT_STRSZ);
+    if (!symbolTable.has_value() || !stringTable.has_value() || !stringSize.has_value() || stringSize.value() > MAX_TABLE_SIZE)
+        return false;
+    const uint64 symbolSize    = is64 ? sizeof(Elf64_Sym) : sizeof(Elf32_Sym);
+    const uint64 symbolsOffset = VAToFileOffset(symbolTable.value());
+    const uint64 stringsOffset = VAToFileOffset(stringTable.value());
+    if (symbolsOffset == ELF_INVALID_ADDRESS || stringsOffset == ELF_INVALID_ADDRESS)
+        return false;
+    // the count: the chains of DT_HASH; the last chain of DT_GNU_HASH; else the symbols before the strings
+    std::optional<uint64> count;
+    if (const auto hash = value(DT_HASH); hash.has_value())
+    {
+        uint32 header[2] = {};
+        const uint64 offset = VAToFileOffset(hash.value());
+        if (offset != ELF_INVALID_ADDRESS && obj->GetData().Copy(offset, header))
+            count = header[1]; // nchain
+    }
+    if (!count.has_value())
+        if (const auto gnuHash = value(DT_GNU_HASH); gnuHash.has_value())
+        {
+            const uint64 offset = VAToFileOffset(gnuHash.value());
+            uint32 header[4]    = {}; // nbuckets, symoffset, bloom_size, bloom_shift
+            if (offset != ELF_INVALID_ADDRESS && obj->GetData().Copy(offset, header) && header[0] < MAX_SYMBOLS && header[2] < MAX_SYMBOLS)
+            {
+                const uint64 buckets = offset + 16 + static_cast<uint64>(header[2]) * (is64 ? 8 : 4);
+                const uint64 chains  = buckets + 4ull * header[0];
+                uint32 last          = 0;
+                for (uint32 index = 0; index < header[0]; index++)
+                {
+                    uint32 bucket = 0;
+                    if (obj->GetData().Copy<uint32>(buckets + 4ull * index, bucket))
+                        last = std::max(last, bucket);
+                }
+                if (last < header[1])
+                    count = header[1];
+                else
+                {
+                    // the end of the chain of the last bucket: the entry with the bit 0 set
+                    for (uint32 chain = 0; last < MAX_SYMBOLS && obj->GetData().Copy<uint32>(chains + 4ull * (last - header[1]), chain); last++)
+                        if ((chain & 1) != 0)
+                            break;
+                    count = static_cast<uint64>(last) + 1;
+                }
+            }
+        }
+    if (!count.has_value() && stringTable.value() > symbolTable.value())
+        count = (stringTable.value() - symbolTable.value()) / symbolSize;
+    if (!count.has_value() || count.value() == 0 || count.value() > MAX_SYMBOLS)
+        return false;
+    const auto symbols = obj->GetData().CopyToBuffer(symbolsOffset, static_cast<uint32>(count.value() * symbolSize));
+    const auto strings = obj->GetData().CopyToBuffer(stringsOffset, static_cast<uint32>(stringSize.value()));
+    if (!symbols.IsValid() || !strings.IsValid())
+        return false;
+    const auto nameAt = [&strings](uint64 offset) {
+        std::string name;
+        for (uint64 position = offset; position < strings.GetLength() && strings.GetData()[position] != 0; position++)
+            name.push_back(static_cast<char>(strings.GetData()[position]));
+        String demangled;
+        return GView::Utils::Demangle(name, demangled) ? std::string(demangled.GetText()) : name;
+    };
+    for (uint64 position = 0; position + symbolSize <= symbols.GetLength(); position += symbolSize)
+    {
+        if (is64)
+        {
+            Elf64_Sym symbol{};
+            memcpy(&symbol, symbols.GetData() + position, sizeof(symbol));
+            dynamicSymbols64.push_back(symbol);
+            dynamicSymbolsNames.push_back(nameAt(symbol.st_name));
+        }
+        else
+        {
+            Elf32_Sym symbol{};
+            memcpy(&symbol, symbols.GetData() + position, sizeof(symbol));
+            dynamicSymbols32.push_back(symbol);
+            dynamicSymbolsNames.push_back(nameAt(symbol.st_name));
+        }
+    }
+    panelsMask |= (1ULL << (uint8) Panels::IDs::DynamicSymbols);
     return true;
 }
 
@@ -454,14 +620,36 @@ uint64 TranslateBySections(const std::vector<Section>& sections, uint64 value, b
 }
 } // namespace
 
+// the PT_LOAD segments: the addresses that no section holds (a file without section headers)
+template <typename Segment>
+uint64 TranslateBySegments(const std::vector<Segment>& segments, uint64 value, bool fromFileOffset)
+{
+    for (const auto& segment : segments)
+    {
+        if (segment.p_type != PT_LOAD || segment.p_filesz == 0)
+            continue;
+        const uint64 from = fromFileOffset ? static_cast<uint64>(segment.p_offset) : static_cast<uint64>(segment.p_vaddr);
+        const uint64 to   = fromFileOffset ? static_cast<uint64>(segment.p_vaddr) : static_cast<uint64>(segment.p_offset);
+        if (value >= from && value - from < segment.p_filesz)
+            return to + (value - from);
+    }
+    return ELF_INVALID_ADDRESS;
+}
+
 uint64 ELFFile::FileOffsetToVA(uint64 fileOffset)
 {
-    return is64 ? TranslateBySections(sections64, fileOffset, true) : TranslateBySections(sections32, fileOffset, true);
+    const uint64 va = is64 ? TranslateBySections(sections64, fileOffset, true) : TranslateBySections(sections32, fileOffset, true);
+    if (va != ELF_INVALID_ADDRESS || (is64 ? !sections64.empty() : !sections32.empty()))
+        return va;
+    return is64 ? TranslateBySegments(segments64, fileOffset, true) : TranslateBySegments(segments32, fileOffset, true);
 }
 
 uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
 {
-    return is64 ? TranslateBySections(sections64, virtualAddress, false) : TranslateBySections(sections32, virtualAddress, false);
+    const uint64 offset = is64 ? TranslateBySections(sections64, virtualAddress, false) : TranslateBySections(sections32, virtualAddress, false);
+    if (offset != ELF_INVALID_ADDRESS || (is64 ? !sections64.empty() : !sections32.empty()))
+        return offset;
+    return is64 ? TranslateBySegments(segments64, virtualAddress, false) : TranslateBySegments(segments32, virtualAddress, false);
 }
 
 uint64 ELFFile::GetImageBase() const

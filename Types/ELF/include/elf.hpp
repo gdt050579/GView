@@ -77,6 +77,17 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     std::vector<Elf64_Sym> dynamicSymbols64;
     std::vector<std::string> dynamicSymbolsNames;
 
+    // the relocation tables of the dynamic segment (DT_RELA / DT_REL / DT_JMPREL / DT_RELR / the Android packed ones): the relocations of
+    // a file without section headers (sstrip); `type` is the matching section type (SHT_RELA, SHT_RELR, SHT_ANDROID_RELA, ...)
+    struct DynamicRelocationTable
+    {
+        uint64 fileOffset;
+        uint64 size;
+        uint32 type;
+    };
+    std::vector<DynamicRelocationTable> dynamicRelocations;
+    std::optional<uint64> pltGot; // DT_PLTGOT: the global offset table of the PLT (32 bit x86: the value of ebx in the PLT stubs)
+
     // GO
     uint32 nameSize = 0;
     uint32 valSize  = 0;
@@ -99,6 +110,9 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     bool HasPanel(Panels::IDs id);
     bool ParseGoData();
     bool ParseSymbols();
+    // PT_DYNAMIC: the dynamic symbols when no section holds them (DT_SYMTAB / DT_STRTAB, the count from DT_HASH / DT_GNU_HASH) and the
+    // relocation tables (dynamicRelocations)
+    bool ParseDynamic();
 
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
     bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);

@@ -334,16 +334,31 @@ GVIEW_PLUGIN_ENTRY_POINTS
             else if (type == ELF::SHT_RELR || type == SHT_ANDROID_RELR || type == SHT_ANDROID_REL || type == SHT_ANDROID_RELA)
                 readPackedRelocations(offset, size, type);
         };
+        bool hasRelocationSections = false;
+        const auto isRelocationSection = [&](uint32 type) {
+            return type == ELF::SHT_RELA || type == ELF::SHT_REL || type == ELF::SHT_RELR || type == SHT_ANDROID_RELR || type == SHT_ANDROID_REL ||
+                   type == SHT_ANDROID_RELA;
+        };
         if (elf->is64)
         {
             for (const auto& section : elf->sections64)
+            {
+                hasRelocationSections |= isRelocationSection(section.sh_type);
                 readSection(section.sh_offset, section.sh_size, section.sh_type);
+            }
         }
         else
         {
             for (const auto& section : elf->sections32)
+            {
+                hasRelocationSections |= isRelocationSection(section.sh_type);
                 readSection(section.sh_offset, section.sh_size, section.sh_type);
+            }
         }
+        // a file without section headers (sstrip): the tables of the dynamic segment
+        if (!hasRelocationSections)
+            for (const auto& table : elf->dynamicRelocations)
+                readSection(table.fileOffset, table.size, table.type);
     }
 
     // ARM: the mode of every executable section: the .plt stubs of glibc are ARM code even in a Thumb file, the others have the mode of the
@@ -456,6 +471,29 @@ GVIEW_PLUGIN_ENTRY_POINTS
             for (const auto& section : elf->sections32)
                 addSection(section.sh_flags, section.sh_type, section.sh_offset, section.sh_size);
         }
+        // a file without section headers (sstrip): the executable PT_LOAD segments
+        const bool hasSections = elf->is64 ? !elf->sections64.empty() : !elf->sections32.empty();
+        const auto forEachLoad = [&](auto&& callback) {
+            if (elf->is64)
+            {
+                for (const auto& segment : elf->segments64)
+                    if (segment.p_type == ELF::PT_LOAD)
+                        callback(static_cast<uint32>(segment.p_flags), static_cast<uint64>(segment.p_offset), static_cast<uint64>(segment.p_filesz),
+                                 static_cast<uint64>(segment.p_vaddr), static_cast<uint64>(segment.p_memsz));
+            }
+            else
+            {
+                for (const auto& segment : elf->segments32)
+                    if (segment.p_type == ELF::PT_LOAD)
+                        callback(static_cast<uint32>(segment.p_flags), static_cast<uint64>(segment.p_offset), static_cast<uint64>(segment.p_filesz),
+                                 static_cast<uint64>(segment.p_vaddr), static_cast<uint64>(segment.p_memsz));
+            }
+        };
+        if (!hasSections)
+            forEachLoad([&](uint32 flags, uint64 offset, uint64 size, uint64, uint64) {
+                if ((flags & ELF::PF_X) != 0)
+                    addSection(ELF::SHF_EXECINSTR, ELF::SHT_PROGBITS, offset, size);
+            });
         const uint64 fileSize = win->GetObject()->GetData().GetSize();
         end                   = std::min(end, fileSize);
         if (start >= end)
@@ -499,6 +537,18 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 addDataSection(index, section.sh_flags, section.sh_type, section.sh_offset, section.sh_size);
             }
         }
+        // a file without section headers: the other PT_LOAD segments are the data (LOAD_R / LOAD_RW), the part of a writable one past its
+        // bytes the uninitialized data
+        if (!hasSections)
+            forEachLoad([&](uint32 flags, uint64 offset, uint64 size, uint64 address, uint64 memorySize) {
+                if ((flags & ELF::PF_X) != 0)
+                    return;
+                const std::string name = (flags & ELF::PF_W) != 0 ? "LOAD_RW" : "LOAD_R";
+                if (size > 0 && offset < fileSize && !(offset < end && start < offset + size))
+                    settings.AddDataZone(offset, std::min(size, fileSize - offset), language, name);
+                if ((flags & ELF::PF_W) != 0 && memorySize > size && address != 0)
+                    settings.AddUninitializedDataZone(address + size, memorySize - size, language, name + "_bss");
+            });
         // the uninitialized data (.bss, .sbss, .lbss: no bytes in the file); not the thread local ones (.tbss: their addresses are offsets of
         // the TLS block)
         const auto addUninitializedSection = [&](size_t index, uint64 flags, uint32 type, uint64 address, uint64 size) {
@@ -536,6 +586,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 else if (elf->sectionNames[index] == ".got")
                     got = elf->sections32[index].sh_addr;
             }
+            if (gotPlt == 0 && got == 0 && elf->pltGot.has_value())
+                gotPlt = elf->pltGot.value(); // a file without section headers: DT_PLTGOT
             if (gotPlt != 0 || got != 0)
                 settings.SetGlobalOffsetTable(gotPlt != 0 ? gotPlt : got);
         }
