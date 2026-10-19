@@ -223,6 +223,193 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     return true;
 }
 
+bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
+      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame)
+{
+    frame.startAddress      = codeAddress;
+    frame.endAddress        = codeAddress;
+    frame.usesFrameRegister = false;
+    frame.stackOffset       = 0;
+    frame.variables.clear();
+    frame.stackDeltas.clear();
+    frame.stackAlias.clear();
+    frame.stackAliasDelta = 0;
+    frame.stackAliasStart = frame.stackAliasEnd = 0;
+    if (!code || codeSize == 0 || limitAddress <= codeAddress)
+        return false;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return false;
+
+    const uint8* data           = code;
+    size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
+    uint64 address              = codeAddress;
+    uint64 furthestBranchTarget = 0;
+    uint32 decodedInstructions  = 0;
+    int64 delta                 = 0; // rsp - the rsp of the entry
+    int64 deepest               = 0; // the rsp of the body
+    x86_reg alias               = X86_REG_INVALID; // mov r11, rsp: a copy of rsp, until it is written
+    int64 aliasDelta            = 0;
+    std::vector<FrameAccess> accesses;
+    accesses.reserve(32);
+    frame.stackDeltas.emplace_back(codeAddress, 0);
+    const auto setDelta = [&](uint64 at, int64 value) {
+        delta = value;
+        if (frame.stackDeltas.back().first == at)
+            frame.stackDeltas.back().second = static_cast<int32>(value);
+        else if (frame.stackDeltas.back().second != value)
+            frame.stackDeltas.emplace_back(at, static_cast<int32>(value));
+    };
+
+    while (decodedInstructions < MAX_FUNCTION_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
+        decodedInstructions++;
+        const cs_insn* current   = insn.get();
+        const cs_x86& x86        = current->detail->x86;
+        const uint64 nextAddress = current->address + current->size;
+        frame.endAddress         = nextAddress;
+
+        // the slots: [rsp + n] with the rsp before this instruction, [r11 - n] with the rsp of the copy
+        for (uint8 index = 0; index < x86.op_count; index++) {
+            const cs_x86_op& op = x86.operands[index];
+            const bool viaAlias = alias != X86_REG_INVALID && op.type == X86_OP_MEM && op.mem.base == alias;
+            if (op.type != X86_OP_MEM || (op.mem.base != X86_REG_RSP && !viaAlias) || op.mem.index != X86_REG_INVALID ||
+                (op.mem.segment != X86_REG_INVALID && op.mem.segment != X86_REG_SS))
+                continue;
+            const int64 offset = op.mem.disp + (viaAlias ? aliasDelta : delta);
+            if ((offset >= 0 && offset < 8) || offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
+                continue; // the return address
+            accesses.push_back({ static_cast<int32>(offset), static_cast<uint16>(current->id == X86_INS_LEA ? 0 : op.size) });
+            if (accesses.size() >= ACCESSES_COMPACT_THRESHOLD && !CompactAccesses(accesses))
+                return false;
+        }
+
+        // the changes of rsp
+        const auto immediate = [&x86](uint8 index) -> std::optional<int64> {
+            return index < x86.op_count && x86.operands[index].type == X86_OP_IMM ? std::optional<int64>(x86.operands[index].imm) : std::nullopt;
+        };
+        std::optional<int64> change;
+        bool writesStack = false;
+        switch (current->id) {
+        case X86_INS_PUSH:
+        case X86_INS_PUSHFQ:
+            change = -8;
+            break;
+        case X86_INS_POP:
+        case X86_INS_POPFQ:
+            change = 8;
+            break;
+        case X86_INS_SUB:
+        case X86_INS_ADD:
+            if (IsRegisterOperand(x86, 0, X86_REG_RSP)) {
+                if (const auto value = immediate(1); value.has_value())
+                    change = current->id == X86_INS_SUB ? -value.value() : value.value();
+                else
+                    writesStack = true;
+            }
+            break;
+        case X86_INS_LEA:
+            if (IsRegisterOperand(x86, 0, X86_REG_RSP)) {
+                if (x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.base == X86_REG_RSP &&
+                    x86.operands[1].mem.index == X86_REG_INVALID)
+                    change = x86.operands[1].mem.disp;
+                else
+                    writesStack = true;
+            }
+            break;
+        case X86_INS_CALL:
+            break; // the callee returns with the same rsp
+        default:
+            for (uint8 index = 0; index < x86.op_count; index++)
+                if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
+                    (x86.operands[index].reg == X86_REG_RSP || x86.operands[index].reg == X86_REG_ESP))
+                    writesStack = true;
+            break;
+        }
+        if (writesStack)
+            return false; // mov rsp, rbp / and rsp, -0x10: rsp is not followed (a frame register function)
+        // the copy of rsp: mov r11, rsp sets it (once), any write of its register ends it
+        if (alias != X86_REG_INVALID) {
+            bool writesAlias = false;
+            for (uint8 index = 0; index < x86.op_count; index++)
+                if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
+                    GetX64RegisterFamily(x86.operands[index].reg) == GetX64RegisterFamily(alias))
+                    writesAlias = true;
+            for (uint8 index = 0; index < current->detail->regs_write_count; index++)
+                writesAlias |= GetX64RegisterFamily(current->detail->regs_write[index]) == GetX64RegisterFamily(alias);
+            if (writesAlias || current->id == X86_INS_CALL) {
+                frame.stackAliasEnd = current->address;
+                alias               = X86_REG_INVALID;
+            } else
+                frame.stackAliasEnd = nextAddress;
+        } else if (frame.stackAlias.empty() && current->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG &&
+                   x86.operands[0].size == 8 && IsRegisterOperand(x86, 1, X86_REG_RSP)) {
+            alias                 = x86.operands[0].reg;
+            aliasDelta            = delta;
+            frame.stackAlias      = cs_reg_name(detailHandle, alias);
+            frame.stackAliasDelta = static_cast<int32>(delta);
+            frame.stackAliasStart = nextAddress;
+            frame.stackAliasEnd   = nextAddress;
+        }
+        if (change.has_value()) {
+            setDelta(nextAddress, delta + change.value());
+            deepest = std::min(deepest, delta);
+        }
+
+        if (cs_insn_group(detailHandle, current, CS_GRP_JUMP) && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) {
+            const uint64 target = static_cast<uint64>(x86.operands[0].imm);
+            if (target > current->address && target < limitAddress)
+                furthestBranchTarget = std::max(furthestBranchTarget, target);
+        }
+        bool endsFlow = false;
+        switch (current->id) {
+        case X86_INS_RET:
+        case X86_INS_RETF:
+        case X86_INS_RETFQ:
+        case X86_INS_JMP:
+        case X86_INS_INT3:
+        case X86_INS_HLT:
+        case X86_INS_UD2:
+            endsFlow = true;
+            break;
+        default:
+            break;
+        }
+        if (endsFlow) {
+            if (furthestBranchTarget < nextAddress)
+                break;
+            setDelta(nextAddress, deepest); // the code after an epilogue: reached from the body
+        }
+    }
+    if (accesses.empty() || !CompactAccesses(accesses))
+        return false;
+    frame.stackOffset = static_cast<int32>(deepest);
+    frame.variables.reserve(accesses.size());
+    for (const auto& access : accesses) {
+        DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
+        // the arguments from the return address: [entry + 8] is arg_0 (FormatDefaultLocalVariableName counts them from the saved rbp)
+        FormatDefaultLocalVariableName(access.frameOffset >= 8 ? access.frameOffset + 8 : access.frameOffset, true, variable.name);
+        frame.variables.push_back(std::move(variable));
+    }
+    return true;
+}
+
+bool GView::View::DissasmViewer::FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std::string_view stackRegister)
+{
+    const std::string base = "[" + std::string(stackRegister);
+    const size_t start     = operands.find(base);
+    if (start == std::string_view::npos || stackRegister.empty())
+        return false;
+    const size_t position = start + base.size();
+    if (position < operands.size() && operands[position] == ']') { // [rsp]: the displacement 0
+        result = { static_cast<uint32>(position), static_cast<uint32>(position), 0 };
+        return true;
+    }
+    // [rsp + 0x20]: the form of [ebp + 8], parsed by FindX86FrameOperand on the text with ebp
+    std::string text(operands);
+    text.replace(start, base.size(), "[ebp");
+    return FindX86FrameOperand(text, false, result);
+}
+
 void GView::View::DissasmViewer::FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name)
 {
     const int64 offset              = frameOffset;

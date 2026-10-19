@@ -1326,6 +1326,78 @@ TEST_CASE("LocalVariablesFrameAnalysis", "[Dissasm]LocalVariables")
     REQUIRE(CheckFrameVariables(frame, { { -0x14, 4, "var_14" }, { 0x10, 8, "arg_0" } }));
 }
 
+// x64 without a frame register: the slots of rsp (and of a copy of rsp) in offsets from the rsp of the entry
+static const std::vector<uint8> x64StackFrameCode = {
+    0x4C, 0x8B, 0xDC,                   // 0x00: mov r11, rsp
+    0x53,                               // 0x03: push rbx
+    0x48, 0x83, 0xEC, 0x30,             // 0x04: sub rsp, 0x30
+    0x49, 0x89, 0x43, 0xF0,             // 0x08: mov qword ptr [r11 - 0x10], rax
+    0x89, 0x44, 0x24, 0x20,             // 0x0C: mov dword ptr [rsp + 0x20], eax
+    0x48, 0x8B, 0x44, 0x24, 0x40,       // 0x10: mov rax, qword ptr [rsp + 0x40]
+    0x48, 0x8B, 0x04, 0x24,             // 0x15: mov rax, qword ptr [rsp]
+    0x45, 0x31, 0xDB,                   // 0x19: xor r11d, r11d (the copy of rsp ends)
+    0x49, 0x89, 0x43, 0xF8,             // 0x1C: mov qword ptr [r11 - 8], rax
+    0x48, 0x83, 0xC4, 0x30,             // 0x20: add rsp, 0x30
+    0x5B,                               // 0x24: pop rbx
+    0xC3,                               // 0x25: ret
+};
+
+TEST_CASE("LocalVariablesStackPointerFrames", "[Dissasm]LocalVariables")
+{
+    X86FrameOperand operand{};
+    REQUIRE(FindX86StackOperand("dword ptr [rsp + 0x20], eax", operand));
+    REQUIRE(operand.frameOffset == 0x20);
+    REQUIRE(FindX86StackOperand("rax, qword ptr [rsp]", operand));
+    REQUIRE(operand.frameOffset == 0);
+    REQUIRE(operand.replaceStart == operand.replaceEnd);
+    REQUIRE(FindX86StackOperand("qword ptr [r11 - 0x28], rax", operand, "r11"));
+    REQUIRE(operand.frameOffset == -0x28);
+    REQUIRE(!FindX86StackOperand("qword ptr [r11 - 0x28], rax", operand));
+    REQUIRE(!FindX86StackOperand("dword ptr [rsp + rax*4 + 8]", operand));
+    REQUIRE(!FindX86StackOperand("dword ptr [rbp - 8]", operand));
+    REQUIRE(!FindX86StackOperand("dword ptr [rsp + 8]", operand, ""));
+
+    DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX64StackFrame(x64.handle, x64StackFrameCode.data(), x64StackFrameCode.size(), 0, x64StackFrameCode.size(), frame));
+    REQUIRE(!frame.usesFrameRegister);
+    REQUIRE(frame.endAddress == 0x26);
+    REQUIRE(frame.stackOffset == -0x38);
+    // [rsp + 0x40] is above the return address: arg_0 (IDA); [r11 - 8] is not a slot after the copy of rsp is written
+    REQUIRE(CheckFrameVariables(frame, { { -0x38, 8, "var_38" }, { -0x18, 4, "var_18" }, { -0x10, 8, "var_10" }, { 8, 8, "arg_0" } }));
+    const std::vector<std::pair<uint64, int32>> deltas = { { 0, 0 }, { 4, -8 }, { 8, -0x38 }, { 0x24, -8 }, { 0x25, 0 } };
+    REQUIRE(frame.stackDeltas == deltas);
+    REQUIRE(frame.StackDeltaAt(0x10) == -0x38);
+    REQUIRE(frame.StackDeltaAt(0x24) == -8);
+    REQUIRE(frame.stackAlias == "r11");
+    REQUIRE(frame.stackAliasDelta == 0);
+    REQUIRE(frame.stackAliasStart == 3);
+    REQUIRE(frame.stackAliasEnd == 0x19);
+
+    // rsp written by something else than push / pop / sub / add / lea: not followed (push rbp; mov rbp, rsp; and rsp, -0x10; ...)
+    const std::vector<uint8> aligned = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xE4, 0xF0, 0x89, 0x44, 0x24, 0x20, 0xC9, 0xC3 };
+    REQUIRE(!AnalyzeX64StackFrame(x64.handle, aligned.data(), aligned.size(), 0, aligned.size(), frame));
+
+    // the listing: [rsp + 0x38 + var_18] (rsp + 0x38 is the rsp of the entry), [r11 + var_10]
+    std::vector<uint8> file = x64StackFrameCode;
+    file.resize(64, 0xCC); // int3
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(1, "var_38 = qword ptr -0x38"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "arg_0 = qword ptr 8"));
+    REQUIRE(dissasmInstance.CheckLineText(5, "mov r11, rsp"));
+    REQUIRE(dissasmInstance.CheckLineText(8, "mov qword ptr [r11 + var_10], rax"));
+    REQUIRE(dissasmInstance.CheckLineText(9, "mov dword ptr [rsp + 0x38 + var_18], eax"));
+    REQUIRE(dissasmInstance.CheckLineText(10, "mov rax, qword ptr [rsp + 0x38 + arg_0]"));
+    REQUIRE(dissasmInstance.CheckLineText(11, "mov rax, qword ptr [rsp + 0x38 + var_38]"));
+    REQUIRE(dissasmInstance.CheckLineText(13, "mov qword ptr [r11 - 8], rax"));
+    REQUIRE(dissasmInstance.CheckLineText(14, "add rsp, 0x30"));
+}
+
 TEST_CASE("LocalVariablesSerialization", "[Dissasm]LocalVariables")
 {
     DissasmLocalVariables variables;

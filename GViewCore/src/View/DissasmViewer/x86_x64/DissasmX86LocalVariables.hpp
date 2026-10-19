@@ -12,6 +12,13 @@ namespace GView::View::DissasmViewer
 bool AnalyzeX86FunctionFrame(
       csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool is64, DissasmFunctionFrame& frame);
 
+// x64 without a frame register (MSVC: push rbx; sub rsp, 0x30, then [rsp + 0x20]): rsp is followed from the entry (push / pop / sub / add rsp
+// / lea rsp, [rsp + n]; after a ret / jmp the body goes on with the deepest rsp: the code after an epilogue is reached from the body), the
+// slots are kept in offsets from the rsp of the entry: [rsp + 0x20] with rsp = entry - 0x38 is var_18; the home space and the stack
+// arguments above the return address are arg_0 ([entry + 8]) ... (frame.usesFrameRegister = false, frame.stackDeltas). False when rsp is
+// written otherwise (mov rsp, rbp: a frame of AnalyzeX86FunctionFrame) or no slot is used
+bool AnalyzeX64StackFrame(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame);
+
 // IDA like names: [ebp - 0x4C] -> var_4C, [ebp + 8] -> arg_0 (x86) / [rbp + 0x10] -> arg_0 (x64)
 void FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name);
 // "var_8 = dword ptr -8", `nameSize` receives the length of the name placed at the start of the text
@@ -26,6 +33,8 @@ struct X86FrameOperand {
 // Finds a memory operand that uses only the frame register and a displacement ("[ebp - 8]", "[rbp + 0x10]") inside the capstone Intel syntax
 // operands string. Operands with an index register or without displacement are ignored.
 bool FindX86FrameOperand(std::string_view operands, bool is64, X86FrameOperand& result);
+// [rsp + 0x20] / [rsp] (or a copy of rsp: [r11 - 0x28]): a slot of the stack pointer (x64); frameOffset receives the displacement
+bool FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std::string_view stackRegister = "rsp");
 
 // ARM64: a function with a frame register (stp x29, x30, [sp, #-N]!; mov x29, sp / add x29, sp, #M) and its slots: the ones addressed
 // through x29 ([x29, #-0x8] -> var_8) and the ones addressed through sp, kept in x29 offsets (frame.stackOffset: sp - x29 in the body of

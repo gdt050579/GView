@@ -496,7 +496,8 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     const DissasmFunctionFrame* function = nullptr;
     const DissasmLocalVariable* variable = nullptr;
     X86FrameOperand frameOperand{};
-    std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]
+    std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]; x64 without a frame register: [rsp + 0x38 + var_18]
+    std::string stackJoiner;
     if (zone && !zone->localVariables.Empty() && zone->IsArmCode()) {
         // ARM: [x29, #var_8] / [fp, #var_8] / [r7, #var_8] / [sp, #var_10] / [sp] -> [sp, #var_18]
         function = zone->localVariables.FindFunctionByAddress(address);
@@ -510,7 +511,26 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         }
     } else if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
         function = zone->localVariables.FindFunctionByAddress(address);
-        variable = function ? function->FindVariable(frameOperand.frameOffset) : nullptr;
+        variable = function && function->usesFrameRegister ? function->FindVariable(frameOperand.frameOffset) : nullptr;
+    } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() && zone->Is64BitCode() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
+               stackFunction && !stackFunction->usesFrameRegister &&
+               (FindX86StackOperand(text, frameOperand) ||
+                (address >= stackFunction->stackAliasStart && address < stackFunction->stackAliasEnd && FindX86StackOperand(text, frameOperand, stackFunction->stackAlias)))) {
+        // x64 without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the rsp of the entry; a copy of rsp
+        // (mov r11, rsp): [r11 - 0x28] -> [r11 + var_28]
+        function           = stackFunction;
+        const bool viaCopy = text.find("[rsp") == std::string_view::npos;
+        const auto delta   = viaCopy ? std::optional<int32>(function->stackAliasDelta) : function->StackDeltaAt(address);
+        if (delta.has_value()) {
+            frameOperand.frameOffset += delta.value();
+            variable = function->FindVariable(frameOperand.frameOffset);
+            if (delta.value() != 0) {
+                char depth[24];
+                snprintf(depth, sizeof(depth), " + 0x%x + ", static_cast<unsigned int>(-delta.value()));
+                stackJoiner = depth;
+                joiner      = stackJoiner;
+            }
+        }
     }
     // numbers the user switched to decimal (H key)
     const uint32 decimalMask = zone ? zone->GetDecimalOperandsMask(address) : 0u;

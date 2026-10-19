@@ -1110,8 +1110,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         else if (functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb)
             analyzed = AnalyzeArm32FunctionFrame(
                   detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch == DissasmArch::Thumb, frame);
-        else
+        else {
             analyzed = AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame);
+            if (!analyzed && is64) // MSVC x64: no frame register, the slots through rsp
+                analyzed = AnalyzeX64StackFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame);
+        }
         if (!analyzed || frame.variables.empty())
             return;
         // IDA like: the variables are listed right below the function label

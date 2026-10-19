@@ -268,6 +268,19 @@ namespace View
             int32 stackOffset = 0;            // ARM64: sp - x29 in the body (the [sp, #n] slots); recomputed by the deep scan
             bool usesFrameRegister = true;    // ARM64: false for a function without x29 (offsets from the sp of the entry)
             uint8 frameRegister    = 0;       // 32 bit ARM: r11 (ARM mode) or r7 (Thumb)
+            // x64 without a frame register: rsp - the rsp of the entry from an address on (push / pop / sub / add rsp), sorted; the slots
+            // ([rsp + 0x20]) are kept in offsets from the rsp of the entry (the return address at 0). Recomputed by the deep scan
+            std::vector<std::pair<uint64, int32>> stackDeltas;
+            // x64: a copy of rsp (mov r11, rsp at the entry: [r11 - 0x28]) in [stackAliasStart, stackAliasEnd), with rsp - entry = stackAliasDelta
+            std::string stackAlias;
+            int32 stackAliasDelta  = 0;
+            uint64 stackAliasStart = 0, stackAliasEnd = 0;
+            std::optional<int32> StackDeltaAt(uint64 address) const
+            {
+                const auto next = std::upper_bound(
+                      stackDeltas.begin(), stackDeltas.end(), address, [](uint64 value, const std::pair<uint64, int32>& change) { return value < change.first; });
+                return next == stackDeltas.begin() ? std::nullopt : std::optional<int32>((next - 1)->second);
+            }
 
             DissasmLocalVariable* FindVariable(int32 frameOffset);
             const DissasmLocalVariable* FindVariable(int32 frameOffset) const;
