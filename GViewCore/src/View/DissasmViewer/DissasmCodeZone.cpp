@@ -229,6 +229,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
     std::vector<uint64> functionEnds; // ComputeFunctionEnds
+    std::vector<DissasmFunctionChunk> chunks; // DetectFunctionChunks
     size_t labelIndex = 0; // the next label placed on its line
     uint32 extraLines = 0;
 
@@ -944,6 +945,82 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             functionEnds[index] = std::max(std::min(end, limit), std::min(start + 1, limit));
         }
+    }
+
+    // the functions that are blocks of another function (IDA: function chunks): a start the prologue rules (or a jump) found, that only
+    // jumps / conditional jumps / switch cases of one other function reach, and whose code jumps back into that function. Not the entry
+    // point, a function of the plugin or of the user, a thunk. They stop being functions: their label is a location, their code belongs to
+    // the function (DissasmCodeZone::functionChunks), the ends of the functions are computed again
+    void DetectFunctionChunks()
+    {
+        if (functionStarts.size() < 2 || functionEnds.size() != functionStarts.size())
+            return;
+        const auto containing = [this](uint64 address) -> std::optional<size_t> {
+            const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), address);
+            return next == functionStarts.begin() ? std::nullopt : std::optional<size_t>(static_cast<size_t>(next - functionStarts.begin()) - 1);
+        };
+        std::unordered_map<size_t, size_t> parentOf; // index of a chunk -> index of its function
+        for (size_t index = 0; index < functionStarts.size(); index++) {
+            const uint64 start = functionStarts[index];
+            if ((zone->zoneDetails.HasEntryPoint() && codeStart + start == zone->zoneDetails.entryPoint) ||
+                (functionEntries && functionEntries->contains(codeStart + start)) || thunkImports.contains(start))
+                continue;
+            if (const auto user = zone->userFunctions.find(start); user != zone->userFunctions.end() && (user->second & USER_FUNCTION_CREATE))
+                continue;
+            const auto [first, last] = xrefs.To(labelBase + start);
+            std::optional<size_t> parent;
+            bool onlyJumps = first != last;
+            for (auto xref = first; xref != last && onlyJumps; ++xref) {
+                const bool isJump = xref->kind == DissasmXrefKind::Jump || xref->kind == DissasmXrefKind::ConditionalJump || xref->kind == DissasmXrefKind::Switch;
+                const auto source = xref->from >= labelBase && xref->from - labelBase < codeSize ? containing(xref->from - labelBase) : std::nullopt;
+                if (!isJump || !source.has_value()) {
+                    onlyJumps = false;
+                    break;
+                }
+                if (source.value() == index)
+                    continue; // a loop of the block
+                if (parent.has_value() && parent.value() != source.value())
+                    onlyJumps = false;
+                parent = source;
+            }
+            if (!onlyJumps || !parent.has_value())
+                continue;
+            // its code jumps back into the function
+            const uint64 parentStart = functionStarts[parent.value()];
+            const uint64 parentLimit = parent.value() + 1 < functionStarts.size() ? functionStarts[parent.value() + 1] : codeSize;
+            bool jumpsBack           = false;
+            for (size_t position = FirstRecordAt(start); position < flowRecords.size() && flowRecords[position].address < functionEnds[index] && !jumpsBack; position++) {
+                const auto& record = flowRecords[position];
+                jumpsBack = (record.kind == FlowKind::Jump || record.kind == FlowKind::ConditionalJump) && record.target != NO_TARGET &&
+                            record.target >= parentStart && record.target < parentLimit;
+            }
+            if (jumpsBack)
+                parentOf[index] = parent.value();
+        }
+        if (parentOf.empty())
+            return;
+        // a chunk of a chunk belongs to the function at the end of the chain
+        for (const auto& [index, parent] : parentOf) {
+            size_t root = parent;
+            for (size_t steps = 0; parentOf.contains(root) && steps < parentOf.size(); steps++)
+                root = parentOf.at(root);
+            if (parentOf.contains(root))
+                continue; // a cycle: none of them is a function's
+            chunks.push_back({ functionStarts[index], functionEnds[index], functionStarts[root] });
+        }
+        std::sort(chunks.begin(), chunks.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
+        // they are not functions any more: their labels are locations
+        std::unordered_set<uint64> chunkStarts;
+        for (const auto& chunk : chunks)
+            chunkStarts.insert(chunk.start);
+        functionStarts.erase(std::remove_if(functionStarts.begin(), functionStarts.end(), [&chunkStarts](uint64 start) { return chunkStarts.contains(start); }),
+                             functionStarts.end());
+        for (auto& call : callsFound)
+            if (call.first >= codeStart && chunkStarts.contains(call.first - codeStart) && GetLabelType(call.second) == SUB) {
+                call.second          = zone->GetLabelName("loc_", call.first - codeStart);
+                callsMap[call.first] = true;
+            }
+        ComputeFunctionEnds(); // the functions before them reach further
     }
 
     // the functions that do not return: named so (noReturnStarts), or none of whose paths returns: every path ends with a call / a jump to
@@ -1838,6 +1915,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         FinishSweep();
         ComputeFunctionEnds();
+        DetectFunctionChunks();
         if (paddingReached && pendingRanges.empty()) {
             // the reached padding only: the lines are counted again, the instructions and the analysis stay
             recountedOffsets.clear();
@@ -1884,6 +1962,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->imageBaseTables           = std::move(imageBaseTables);
         zone->functionStarts            = std::move(functionStarts);
         zone->functionEnds              = std::move(functionEnds);
+        zone->functionChunks            = std::move(chunks);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);
@@ -2504,6 +2583,9 @@ std::vector<DissasmFunctionInfo> DissasmCodeZone::GetFunctions(const std::map<ui
         function.xrefs           = static_cast<uint32>(GetXrefsTo(labelAddressBase + function.start).size());
         function.isThunk         = thunkImports.contains(function.start);
         function.isNoReturn      = std::binary_search(noReturnFunctions.begin(), noReturnFunctions.end(), function.start);
+        for (const auto& chunk : functionChunks)
+            if (chunk.function == function.start)
+                function.chunks.emplace_back(chunk.start, chunk.end);
         function.isEntryPoint    = codeStart + function.start == zoneDetails.entryPoint;
         if (functionEntries) {
             const auto entry = functionEntries->find(codeStart + function.start);
@@ -2682,6 +2764,35 @@ std::optional<uint64> GView::View::DissasmViewer::ParseDissasmSearchNumber(std::
     return negative ? static_cast<uint64>(0) - value : value;
 }
 
+const DissasmFunctionChunk* DissasmCodeZone::FindChunkContaining(uint64 relativeAddress) const
+{
+    const auto next = std::upper_bound(
+          functionChunks.begin(), functionChunks.end(), relativeAddress, [](uint64 value, const DissasmFunctionChunk& chunk) { return value < chunk.start; });
+    if (next == functionChunks.begin())
+        return nullptr;
+    const auto& chunk = *(next - 1);
+    return relativeAddress < chunk.end ? &chunk : nullptr;
+}
+
+std::vector<std::pair<uint64, uint64>> DissasmCodeZone::GetFunctionRanges(uint64 functionStart, uint64 end) const
+{
+    std::vector<std::pair<uint64, uint64>> ranges{ { functionStart, end } };
+    for (const auto& chunk : functionChunks)
+        if (chunk.function == functionStart && (chunk.start < functionStart || chunk.start >= end)) // a chunk inside the range: already there
+            ranges.emplace_back(chunk.start, chunk.end);
+    std::sort(ranges.begin(), ranges.end());
+    return ranges;
+}
+
+const DissasmFunctionFrame* DissasmCodeZone::FindFrameOfAddress(uint64 relativeAddress) const
+{
+    if (const auto* frame = localVariables.FindFunctionByAddress(relativeAddress))
+        return frame;
+    const auto* chunk = FindChunkContaining(relativeAddress);
+    const auto* frame = chunk ? localVariables.FindFunctionByStart(chunk->function) : nullptr;
+    return frame && frame->usesFrameRegister ? frame : nullptr;
+}
+
 uint64 DissasmCodeZone::GetFunctionEnd(uint64 functionStart) const
 {
     const auto found = std::lower_bound(functionStarts.begin(), functionStarts.end(), functionStart);
@@ -2716,6 +2827,8 @@ std::string DissasmCodeZone::FormatFunctionAttributes(uint64 relativeAddress) co
 
 std::optional<uint64> DissasmCodeZone::GetFunctionContaining(uint64 relativeAddress) const
 {
+    if (const auto* chunk = FindChunkContaining(relativeAddress))
+        return chunk->function; // a block of a function placed apart
     const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
     if (next == functionStarts.begin())
         return {};
@@ -2925,6 +3038,7 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
     }
     if (functionStart >= end)
         return graph;
+    const auto ranges = GetFunctionRanges(functionStart, end);
 
     // the instructions of the function, in the order of the listing
     struct Instruction {
@@ -2939,15 +3053,17 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, &instructionSet);
-        while (walker.Next(insn) && insn->address < end) {
-            if (instructions.size() == MAX_INSTRUCTIONS) {
-                graph.truncated = true;
-                break;
+        for (const auto& [rangeStart, rangeEnd] : ranges) { // the function, then its chunks (by address)
+            DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, rangeStart, &instructionBoundaries, paddingAlignmentBase, &instructionSet);
+            while (walker.Next(insn) && insn->address < rangeEnd) {
+                if (instructions.size() == MAX_INSTRUCTIONS) {
+                    graph.truncated = true;
+                    break;
+                }
+                const auto flow     = GetInstructionFlow(*insn, GetArch());
+                const auto operands = IsX86Branch(flow) ? GetInstructionOperands(*insn, GetArch()) : X86OperandsInfo{};
+                instructions.push_back({ insn->address, insn->size, flow, operands.directTarget });
             }
-            const auto flow     = GetInstructionFlow(*insn, GetArch());
-            const auto operands = IsX86Branch(flow) ? GetInstructionOperands(*insn, GetArch()) : X86OperandsInfo{};
-            instructions.push_back({ insn->address, insn->size, flow, operands.directTarget });
         }
         cs_free(insn, 1);
     }
@@ -2958,11 +3074,13 @@ DissasmFunctionGraph DissasmCodeZone::BuildFunctionGraph(uint64 functionStart) c
     // the cases of the switches of the function
     std::unordered_map<uint64, std::vector<uint64>> switchTargets;
     for (const auto& xref : xrefs.byTarget)
-        if (xref.kind == DissasmXrefKind::Switch && xref.from - labelAddressBase >= functionStart && xref.from - labelAddressBase < end)
-            switchTargets[xref.from - labelAddressBase].push_back(xref.to - labelAddressBase);
+        if (xref.kind == DissasmXrefKind::Switch && xref.from >= labelAddressBase)
+            switchTargets[xref.from - labelAddressBase].push_back(xref.to - labelAddressBase); // used only for the jumps of the function
 
     // the leaders: the start, the targets of the branches, the instruction after a jump / ret
-    const auto inside = [functionStart, end](uint64 address) { return address >= functionStart && address < end; };
+    const auto inside = [&ranges](uint64 address) {
+        return std::any_of(ranges.begin(), ranges.end(), [address](const auto& range) { return address >= range.first && address < range.second; });
+    };
     std::set<uint64> leaders{ functionStart };
     for (size_t index = 0; index < instructions.size(); index++) {
         const auto& instruction = instructions[index];
@@ -3426,8 +3544,13 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
     if (cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK) {
         cs_insn* insn                = cs_malloc(handle);
         Reference<GView::Object> obj = zoneObject;
-        DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, functionStart, &instructionBoundaries, paddingAlignmentBase, &instructionSet);
-        while (walker.Next(insn) && insn->address < end) {
+        const auto ranges            = GetFunctionRanges(functionStart, end);
+        const auto inside            = [&ranges](uint64 address) {
+            return std::any_of(ranges.begin(), ranges.end(), [address](const auto& range) { return address >= range.first && address < range.second; });
+        };
+        for (const auto& [rangeStart, rangeEnd] : ranges) // the function, then its chunks
+        for (DissasmCodeLinesWalker walker(obj, cachedCodeOffsets[0].offset, codeSize, handle, rangeStart, &instructionBoundaries, paddingAlignmentBase, &instructionSet);
+             walker.Next(insn) && insn->address < rangeEnd;) {
             const auto flow = GetInstructionFlow(*insn, GetArch());
             if (flow != X86Flow::Call && flow != X86Flow::Jump)
                 continue;
@@ -3437,7 +3560,7 @@ std::vector<DissasmCallReference> DissasmCodeZone::GetCallees(
             if (operands.directTarget.has_value()) {
                 const uint64 target = operands.directTarget.value();
                 // a jmp inside the function is not a call; a jmp to another function is a tail call; call $+5 takes the address of the code
-                if ((flow == X86Flow::Jump && target >= functionStart && target < end) || (flow == X86Flow::Call && target == insn->address + insn->size))
+                if ((flow == X86Flow::Jump && inside(target)) || (flow == X86Flow::Call && target == insn->address + insn->size))
                     continue;
                 callee.isTailJump = flow == X86Flow::Jump;
                 // a function of another code zone of the file (.text calls PAGE): its address and its name there
@@ -4343,6 +4466,12 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
         line.autoComment = FormatXrefsSummary(line.address); // who uses it
         if (const auto attributes = FormatFunctionAttributes(line.address); !attributes.empty()) // IDA: ; Attributes: noreturn
             line.autoComment = "Attributes: " + attributes + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
+        if (const auto* chunk = FindChunkContaining(line.address); chunk && chunk->start == line.address) { // IDA: START OF FUNCTION CHUNK FOR
+            std::string function = GetLabelNameAt(chunk->function);
+            if (function.empty())
+                function = GetLabelName("sub_", chunk->function);
+            line.autoComment = "Chunk of " + function + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
+        }
         return line;
     }
 

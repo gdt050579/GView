@@ -4695,6 +4695,60 @@ TEST_CASE("FunctionFramesNoReturn", "[Dissasm]NoReturn")
     REQUIRE(zone.FormatFunctionAttributes(0x00) == "noreturn bp-based frame");
 }
 
+TEST_CASE("FunctionChunks", "[Dissasm]NoReturn")
+{
+    // the jne of the entry point reaches a block placed after the padding (endbr64: the prologue rules take it for a function) that jumps
+    // back: a chunk of the entry point (IDA: a function tail), not a function
+    std::vector<unsigned char> file = {
+        0x55,             // 0x00: push rbp
+        0x48, 0x89, 0xE5, // 0x01: mov rbp, rsp
+        0x89, 0x7D, 0xF8, // 0x04: mov dword ptr [rbp - 8], edi
+        0x85, 0xFF,       // 0x07: test edi, edi
+        0x75, 0x15,       // 0x09: jne 0x20
+        0x8B, 0x45, 0xF8, // 0x0b: mov eax, dword ptr [rbp - 8]
+        0x5D,             // 0x0e: pop rbp
+        0xC3,             // 0x0f: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xF3, 0x0F, 0x1E, 0xFA }); // 0x20: endbr64
+    file.insert(file.end(), { 0x8B, 0x45, 0xF8 });       // 0x24: mov eax, dword ptr [rbp - 8]
+    file.insert(file.end(), { 0x01, 0xC0 });             // 0x27: add eax, eax
+    file.insert(file.end(), { 0xEB, 0xE3 });             // 0x29: jmp 0x0e
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00 });
+    REQUIRE(zone.functionChunks == std::vector<DissasmFunctionChunk>{ { 0x20, 0x2B, 0x00 } });
+    REQUIRE(zone.GetFunctionContaining(0x27) == 0x0ull);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "loc_20");
+    REQUIRE(zone.GetFunctions(nullptr)[0].chunks == std::vector<std::pair<uint64, uint64>>{ { 0x20, 0x2B } });
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("Chunk of EntryPoint; xref: EntryPoint+0x9 (jcc)") != std::string::npos);
+    // the frame of the function names the slot in the chunk too
+    REQUIRE(CountOccurrences(listing, "mov    eax, dword ptr [rbp + var_8]") == 2);
+    // the graph of the entry point: its blocks and the chunk (the jne goes there, the chunk goes back to the epilogue)
+    const auto graph = zone.BuildFunctionGraph(0x0);
+    REQUIRE(graph.blocks.size() == 4);
+    REQUIRE(graph.blocks[3].start == 0x20);
+    REQUIRE(graph.blocks[3].successors.size() == 1);
+    REQUIRE(graph.blocks[graph.blocks[3].successors[0].target].start == 0x0E);
+
+    // called by another function: a function, not a chunk
+    file[0x09] = 0xE8; // 0x09: call 0x20 (replaces jne + mov eax, ...)
+    file[0x0A] = 0x12;
+    file[0x0B] = 0x00;
+    file[0x0C] = 0x00;
+    file[0x0D] = 0x00;
+    DissasmTestInstance called(file.data(), file.size(), false, layout);
+    REQUIRE(called.zone->functionStarts == std::vector<uint64>{ 0x00, 0x20 });
+    REQUIRE(called.zone->functionChunks.empty());
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes

@@ -82,6 +82,12 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
         item["kind"] = function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : "function"));
         if (function.isNoReturn)
             item["noreturn"] = true;
+        if (!function.chunks.empty()) { // IDA: the function chunks (tails)
+            json chunks = json::array();
+            for (const auto& [chunkStart, chunkEnd] : function.chunks)
+                chunks.push_back({ { "address", Hex(base + chunkStart) }, { "size", chunkEnd - chunkStart } });
+            item["chunks"] = std::move(chunks);
+        }
         json callers = json::array();
         for (const auto& caller : zone.GetCallers(function.start))
             callers.push_back({ { "function", caller.function },

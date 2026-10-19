@@ -10,6 +10,13 @@ namespace GView::View::DissasmViewer
 struct DissasmDeepScan;
 struct DissasmLineCounter;
 
+// a block of a function placed apart from it (IDA: a function chunk / tail): only jumps of the function reach it and it jumps back into it
+struct DissasmFunctionChunk {
+    uint64 start = 0, end = 0; // relative, end exclusive
+    uint64 function = 0;       // the relative start of its function
+    bool operator==(const DissasmFunctionChunk&) const = default;
+};
+
 // a function found by the analysis (DissasmCodeZone::GetFunctions)
 struct DissasmFunctionInfo {
     uint64 start = 0; // relative address
@@ -20,6 +27,7 @@ struct DissasmFunctionInfo {
     bool isExport     = false;
     bool isEntryPoint = false;
     bool isNoReturn   = false; // never returns to its caller (DissasmCodeZone::noReturnFunctions)
+    std::vector<std::pair<uint64, uint64>> chunks; // its chunks apart from it: relative start, end
 };
 
 // What the GoTo dialog accepts. A prefix chooses the kind (va:, rva:, off: / offset:, line:); otherwise the text is a label name, or else an
@@ -208,6 +216,14 @@ struct DissasmCodeZone : public ParseZone {
     std::vector<uint64> functionEnds;
     // the end of a function (relative start): functionEnds, else the next function start
     uint64 GetFunctionEnd(uint64 functionStart) const;
+    // the chunks of the functions (DissasmFunctionChunk), sorted by start; the chunk that contains an address
+    std::vector<DissasmFunctionChunk> functionChunks;
+    const DissasmFunctionChunk* FindChunkContaining(uint64 relativeAddress) const;
+    // the code of a function: [start, end) (`end`: its next function, or functionEnds with `reachableEnd`) and its chunks, by address
+    std::vector<std::pair<uint64, uint64>> GetFunctionRanges(uint64 functionStart, uint64 end) const;
+    // the frame of the function of an instruction: the one whose range contains it, or the frame register frame of the function of its
+    // chunk ([ebp - 8] means the same there; the stack pointer frames need the depth at the chunk)
+    const DissasmFunctionFrame* FindFrameOfAddress(uint64 relativeAddress) const;
     // IDA's attributes of a function, for its label line: "noreturn", "thunk", "bp-based frame" (empty when it has none / is not a function)
     std::string FormatFunctionAttributes(uint64 relativeAddress) const;
     // the relative addresses where an instruction starts (function entries, section starts): no decoded instruction crosses them
