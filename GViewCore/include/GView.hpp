@@ -217,6 +217,17 @@ namespace Utils
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
+    // ELF packed relocations. RELR (SHT_RELR, -z pack-relative-relocs): the addresses of the relative relocations (their addend is the
+    // value in place). Android APS2 (SHT_ANDROID_REL / SHT_ANDROID_RELA, --pack-dyn-relocs=android): the relocations (r_info as in the
+    // file: ELF32_R_SYM / ELF64_R_SYM). False when the data is malformed (the relocations found until then are kept)
+    struct ElfRelocation {
+        uint64 offset;
+        uint64 info;
+        int64 addend;
+    };
+    CORE_EXPORT bool DecodeElfRelr(BufferView data, bool is64, std::vector<uint64>& addresses);
+    CORE_EXPORT bool DecodeAndroidPackedRelocations(BufferView data, bool isRela, std::vector<ElfRelocation>& relocations);
+
     struct CORE_EXPORT SelectionZoneInterface {
         virtual uint32 GetSelectionZonesCount() const                                    = 0;
         virtual GView::TypeInterface::SelectionZone GetSelectionZone(uint32 index) const = 0;

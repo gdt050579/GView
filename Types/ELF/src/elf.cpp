@@ -221,15 +221,26 @@ GVIEW_PLUGIN_ENTRY_POINTS
         };
         constexpr uint64 MAX_RELOCATIONS_SIZE = 0x1000000; // 16 MB of relocations
         // 32 bit REL: a pointer to a symbol (R_386_32 / R_ARM_ABS32: a vtable entry, the vptr / the name of a typeinfo); the addend is the
-        // value in the file. A symbol of another module: named after it; a symbol of the file (preemptible in a shared object): its value
-        constexpr unsigned R_ARM_ABS32 = 2;
-        auto addPointer32              = [&](uint64 slot, uint64 symbolIndex, uint64 type) {
+        // value in the file. A symbol of another module: named after it; a symbol of the file (preemptible in a shared object): its value.
+        // R_386_RELATIVE / R_ARM_RELATIVE: the value in place is the pointer
+        constexpr unsigned R_ARM_ABS32    = 2;
+        constexpr unsigned R_ARM_RELATIVE = 23;
+        constexpr unsigned R_386_RELATIVE = 8;
+        auto addPointer32                 = [&](uint64 slot, uint64 symbolIndex, uint64 type) {
             const bool isAbsolute = (machine == ELF::EM_386 && type == ELF::R_386_32) || (machine == ELF::EM_ARM && type == R_ARM_ABS32);
-            if (!isAbsolute || symbolIndex == 0 || symbolIndex >= elf->dynamicSymbols32.size() || slot < imageBase)
+            const bool isRelative = (machine == ELF::EM_386 && type == R_386_RELATIVE) || (machine == ELF::EM_ARM && type == R_ARM_RELATIVE);
+            if ((!isAbsolute && !isRelative) || slot < imageBase)
                 return;
             const uint64 offset = elf->VAToFileOffset(slot);
             uint32 addend       = 0;
             if (offset == ELF::ELF_INVALID_ADDRESS || !obj->GetData().Copy<uint32>(offset, addend))
+                return;
+            if (isRelative) // the image base (0 here) plus the value in place: a pointer of the file (a vtable entry, a callback)
+            {
+                settings.AddRelocatedPointer(offset, addend);
+                return;
+            }
+            if (symbolIndex == 0 || symbolIndex >= elf->dynamicSymbols32.size())
                 return;
             const auto& symbol = elf->dynamicSymbols32[symbolIndex];
             if (symbol.st_shndx != ELF::SHN_UNDEF)
@@ -275,17 +286,63 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 }
             }
         };
+        // the packed relocations: RELR (-z pack-relative-relocs: the relative relocations, their addend in place) and Android APS2
+        // (--pack-dyn-relocs=android: every relocation, decoded as the ones of the REL / RELA sections)
+        constexpr uint32 SHT_ANDROID_REL  = 0x60000001;
+        constexpr uint32 SHT_ANDROID_RELA = 0x60000002;
+        constexpr uint32 SHT_ANDROID_RELR = 0x6fffff00;
+        auto readPackedRelocations        = [&](uint64 offset, uint64 size, uint32 type) {
+            if (size == 0 || size > MAX_RELOCATIONS_SIZE || offset >= obj->GetData().GetSize())
+                return;
+            const auto buffer = obj->GetData().CopyToBuffer(offset, static_cast<uint32>(size));
+            if (type == ELF::SHT_RELR || type == SHT_ANDROID_RELR)
+            {
+                std::vector<uint64> addresses;
+                GView::Utils::DecodeElfRelr(buffer, elf->is64, addresses);
+                for (const uint64 address : addresses)
+                {
+                    // R_*_RELATIVE: the image base (0 here) plus the value in place
+                    const uint64 fileOffset = elf->VAToFileOffset(address);
+                    if (fileOffset == ELF::ELF_INVALID_ADDRESS)
+                        continue;
+                    uint64 value = 0;
+                    uint32 value32 = 0;
+                    const bool read = elf->is64 ? obj->GetData().Copy<uint64>(fileOffset, value) : obj->GetData().Copy<uint32>(fileOffset, value32);
+                    if (read)
+                        settings.AddRelocatedPointer(fileOffset, elf->is64 ? value : value32);
+                }
+                return;
+            }
+            const bool isRela = type == SHT_ANDROID_RELA;
+            std::vector<GView::Utils::ElfRelocation> relocations;
+            GView::Utils::DecodeAndroidPackedRelocations(buffer, isRela, relocations);
+            for (const auto& relocation : relocations)
+            {
+                const uint64 symbol = elf->is64 ? ELF64_R_SYM(relocation.info) : ELF32_R_SYM(static_cast<uint32>(relocation.info));
+                const uint64 kind   = elf->is64 ? ELF64_R_TYPE(relocation.info) : ELF32_R_TYPE(static_cast<uint32>(relocation.info));
+                addSlot(relocation.offset, symbol, kind);
+                addCopy(relocation.offset, symbol, kind);
+                if (isRela && elf->is64)
+                    addPointer(relocation.offset, symbol, kind, relocation.addend);
+                else if (!isRela && !elf->is64)
+                    addPointer32(relocation.offset, symbol, kind);
+            }
+        };
+        const auto readSection = [&](uint64 offset, uint64 size, uint32 type) {
+            if (type == ELF::SHT_RELA || type == ELF::SHT_REL)
+                readRelocations(offset, size, type);
+            else if (type == ELF::SHT_RELR || type == SHT_ANDROID_RELR || type == SHT_ANDROID_REL || type == SHT_ANDROID_RELA)
+                readPackedRelocations(offset, size, type);
+        };
         if (elf->is64)
         {
             for (const auto& section : elf->sections64)
-                if (section.sh_type == ELF::SHT_RELA || section.sh_type == ELF::SHT_REL)
-                    readRelocations(section.sh_offset, section.sh_size, section.sh_type);
+                readSection(section.sh_offset, section.sh_size, section.sh_type);
         }
         else
         {
             for (const auto& section : elf->sections32)
-                if (section.sh_type == ELF::SHT_RELA || section.sh_type == ELF::SHT_REL)
-                    readRelocations(section.sh_offset, section.sh_size, section.sh_type);
+                readSection(section.sh_offset, section.sh_size, section.sh_type);
         }
     }
 
