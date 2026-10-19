@@ -68,11 +68,21 @@ class ObjCParser
         return directSelectors ? memory.readString(target) : memory.readString(Pointer(target));
     }
 
+    void AddPointers(uint64 address, std::initializer_list<const char*> names)
+    {
+        for (const char* name : names) {
+            metadata.fields.push_back({ address, 8, DataFieldType::Pointer, name });
+            address += 8;
+        }
+    }
+
     void ParseMethodList(uint64 list, const std::string& owner, bool isClassMethod, std::string listName)
     {
         if (list == 0 || owner.empty())
             return;
         metadata.structures.emplace_back(list, std::move(listName));
+        metadata.fields.push_back({ list, 4, DataFieldType::Value, "entsizeAndFlags" });
+        metadata.fields.push_back({ list + 4, 4, DataFieldType::Value, "count" });
         const auto flags = memory.readU32(list);
         const auto count = memory.readU32(list + 4);
         if (!flags.has_value() || !count.has_value() || count.value() > MAX_METHODS)
@@ -85,6 +95,12 @@ class ObjCParser
         for (uint32 index = 0; index < count.value(); index++) {
             const uint64 entry = list + 8 + static_cast<uint64>(index) * size;
             uint64 implementation = 0;
+            if (relative) {
+                metadata.fields.push_back({ entry, 4, DataFieldType::Relative, "name" });
+                metadata.fields.push_back({ entry + 4, 4, DataFieldType::Relative, "types" });
+                metadata.fields.push_back({ entry + 8, 4, DataFieldType::Relative, "imp" });
+            } else
+                AddPointers(entry, { "name", "types", "imp" });
             if (relative) {
                 const auto offset = memory.readU32(entry + 8);
                 if (!offset.has_value())
@@ -99,6 +115,20 @@ class ObjCParser
         }
     }
 
+    // class_t and its class_ro_t
+    void AddClassFields(uint64 classAddress)
+    {
+        AddPointers(classAddress, { "isa", "superclass", "cache", "vtable", "data" });
+        const uint64 readOnly = ReadOnlyData(classAddress);
+        if (readOnly == 0)
+            return;
+        metadata.fields.push_back({ readOnly, 4, DataFieldType::Value, "flags" });
+        metadata.fields.push_back({ readOnly + 4, 4, DataFieldType::Value, "instanceStart" });
+        metadata.fields.push_back({ readOnly + 8, 4, DataFieldType::Value, "instanceSize" });
+        metadata.fields.push_back({ readOnly + 12, 4, DataFieldType::Value, "reserved" });
+        AddPointers(readOnly + 16, { "ivarLayout", "name", "baseMethods", "baseProtocols", "ivars", "weakIvarLayout", "baseProperties" });
+    }
+
     // the instance methods of a class (class_ro_t::baseMethods, at +32), the class methods of its metaclass (isa)
     void ParseClass(uint64 classAddress)
     {
@@ -109,11 +139,13 @@ class ObjCParser
             return;
         metadata.structures.emplace_back(classAddress, "_OBJC_CLASS_$_" + name);
         metadata.structures.emplace_back(ReadOnlyData(classAddress), "__OBJC_CLASS_RO_$_" + name);
+        AddClassFields(classAddress);
         ParseMethodList(Pointer(ReadOnlyData(classAddress) + 32), name, false, "__OBJC_$_INSTANCE_METHODS_" + name);
         const uint64 metaclass = Pointer(classAddress);
         if (metaclass != 0 && metaclass != classAddress && parsedClasses.insert(metaclass).second) {
             metadata.structures.emplace_back(metaclass, "_OBJC_METACLASS_$_" + name);
             metadata.structures.emplace_back(ReadOnlyData(metaclass), "__OBJC_METACLASS_RO_$_" + name);
+            AddClassFields(metaclass);
             ParseMethodList(Pointer(ReadOnlyData(metaclass) + 32), name, true, "__OBJC_$_CLASS_METHODS_" + name);
         }
     }
@@ -130,6 +162,7 @@ class ObjCParser
         const std::string owner  = name.empty() ? className : className + "(" + name + ")";
         const std::string suffix = className + "_$_" + name;
         metadata.structures.emplace_back(category, "__OBJC_$_CATEGORY_" + suffix);
+        AddPointers(category, { "name", "cls", "instanceMethods", "classMethods", "protocols", "instanceProperties" });
         ParseMethodList(Pointer(category + 16), owner, false, "__OBJC_$_CATEGORY_INSTANCE_METHODS_" + suffix);
         ParseMethodList(Pointer(category + 24), owner, true, "__OBJC_$_CATEGORY_CLASS_METHODS_" + suffix);
     }
@@ -276,4 +309,6 @@ void GView::View::DissasmViewer::ApplyObjCMetadata(SettingsData& settings, Refer
         if (address != 0)
             addSlot(address, ToLabelName("", name));
 #endif
+    for (const auto& field : metadata.fields)
+        settings.dataFields.try_emplace(field.address, DissasmDataField{ field.size, field.type, field.name });
 }

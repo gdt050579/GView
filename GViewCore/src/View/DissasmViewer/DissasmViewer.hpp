@@ -74,6 +74,11 @@ namespace View
             static constexpr uint8 ASCII_STRING = 0;
             static constexpr uint8 UTF16_STRING = 0x10;
             static constexpr uint8 BYTES_ROW    = 0x20; // the bytes of a data zone that are not a string / a pointer: rows of up to 16 bytes
+            // the address of a reference: the value (a VA), the image base plus the value (an RVA), the address of the value plus the value (a
+            // signed offset from the field)
+            static constexpr uint8 REFERENCE_VA       = 0;
+            static constexpr uint8 REFERENCE_RVA      = 1;
+            static constexpr uint8 REFERENCE_RELATIVE = 2;
             static bool IsValidDataUnit(uint64 unit)
             {
                 return unit == ASCII_STRING || unit == UTF16_STRING || unit == 1 || unit == 2 || unit == 4 || unit == 8;
@@ -83,6 +88,7 @@ namespace View
                 uint64 end;
                 uint8 unit;
                 bool isOffset = false; // the values (4 / 8 bytes) are addresses: shown with the name of what they point to
+                uint8 reference = REFERENCE_VA; // isOffset: how a value gives its address
                 bool operator==(const DataRange&) const = default;
             };
             std::vector<DataRange> dataRanges; // sorted, not overlapping
@@ -235,6 +241,7 @@ namespace View
         struct DissasmCodeZone;
         struct X86OperandsInfo;
         struct MemoryMappingEntry;
+        struct DissasmDataField;
         struct DissasmInsnExtractLineParams {
             Reference<GView::Object> obj;
             uint32 asmLine;
@@ -505,6 +512,8 @@ namespace View
             const std::map<uint64, ArmCodeMode>* armCodeModes = nullptr;
             // the pointers the loader writes, by file offset (SettingsData::relocatedPointers); can be null
             const std::map<uint64, uint64>* relocatedPointers = nullptr;
+            // the fields of the structures of the data, by VA; can be null
+            const std::map<uint64, DissasmDataField>* dataFields = nullptr;
             // the named places of the plugin (imports, Objective-C references), keyed by RVA (by VA without an offset translation); can be null
             const std::unordered_map<uint64, MemoryMappingEntry>* memoryMappings = nullptr;
             // the import used by the operands of an instruction (import thunks: jmp [slot]); empty: there are no imports
@@ -524,6 +533,11 @@ namespace View
         struct MemoryMappingEntry {
             std::string name;
             MemoryMappingType type;
+        };
+        struct DissasmDataField {
+            uint32 size;
+            DataFieldType type;
+            std::string name;
         };
 
         // TODO: improve to be more generic!
@@ -554,6 +568,8 @@ namespace View
             // (or the headless analysis) takes the settings
             std::vector<uint8> chainedFixups;
             uint64 chainedFixupsImageBase = 0;
+            // the fields of the structures of the data (AddDataField and the parsers of the metadata), by VA
+            std::map<uint64, DissasmDataField> dataFields;
             // the file offset (from DISSASM_UNINITIALIZED_ZONES_BASE) of a VA of an uninitialized data zone
             std::optional<uint64> GetUninitializedFileOffset(uint64 address) const
             {

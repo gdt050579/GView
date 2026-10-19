@@ -193,6 +193,8 @@ struct DissasmCodeZone : public ParseZone {
     // a data zone: the slots named by the plugin (the import slots, the Objective-C references and classes), relative addresses, sorted: a
     // label each, even when no code refers to them (CollectDataZoneTargets)
     std::vector<uint64> namedSlots;
+    // a data zone: the names of the fields of its structures (relative address -> SecurityCookie), the comments of their lines
+    std::unordered_map<uint64, std::string> fieldNames;
     // the pointers the loader writes (the relocations of a PIE / shared object), by file offset; can be null
     const std::map<uint64, uint64>* relocatedPointers = nullptr;
     // the value of the pointer at a relative address that the loader writes (its bytes in the file are 0 or the addend)

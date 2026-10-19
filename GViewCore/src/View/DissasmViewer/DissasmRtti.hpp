@@ -23,7 +23,16 @@ struct RttiInput {
     std::function<std::string(uint64 address)> slotName;
 };
 
+// a field of a structure of the RTTI (its line, its name)
+struct RttiField {
+    uint64 address;
+    uint32 size;
+    DataFieldType type;
+    std::string name;
+};
+
 struct RttiResult {
+    std::vector<RttiField> fields;
     std::vector<std::pair<uint64, std::string>> names;   // VA -> Animal::vftable, Animal::RTTI_Type_Descriptor, zoo::Bird::typeinfo, ...
     std::vector<std::pair<uint64, std::string>> classes; // the VA of a vtable -> its class (zoo::Bird)
 };

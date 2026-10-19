@@ -294,6 +294,7 @@ struct ZoneLayout {
     std::map<uint64, ArmCodeMode> armCodeModes;               // 32 bit ARM: the mode changes, by file offset
     std::map<uint64, uint64> relocatedPointers;               // the pointers the loader writes (file offset -> VA)
     bool isUninitialized = false;                             // an uninitialized data zone (start: its file offset, labelAddressBase: its VA)
+    std::map<uint64, DissasmDataField> dataFields;            // the fields of the structures of the data, by VA
 };
 
 // the RVA (and the VA) of an offset is the offset
@@ -388,6 +389,7 @@ class DissasmTestInstance
         initData.lineCountBudget     = layout.lineCountBudget;
         initData.armCodeModes        = &layout.armCodeModes;
         initData.relocatedPointers   = &layout.relocatedPointers;
+        initData.dataFields          = &layout.dataFields;
         initData.instructionBoundaries = &layout.instructionBoundaries;
         initData.globalOffsetTable     = layout.globalOffsetTable;
         if (!layout.imports.empty()) {
@@ -7156,4 +7158,53 @@ TEST_CASE("CppRtti", "[Dissasm]Rtti")
         REQUIRE(names[0x2020] == "Dog::vtable_10");
         REQUIRE_FALSE(names.contains(0x2040));
     }
+}
+
+TEST_CASE("DataFields", "[Dissasm]DataZone")
+{
+    // a structure of a data zone: a value, an RVA, a 32 bit offset from the field and a pointer, all to the entry point of the code; each
+    // field is a line with its name, the references show the name of their target
+    std::vector<unsigned char> file = { 0xC3 }; // 0x00: ret (EntryPoint)
+    file.resize(0x100, 0xCC);
+    const auto put = [&file](size_t offset, uint64 value, size_t size) {
+        for (size_t index = 0; index < size; index++)
+            file[offset + index] = static_cast<unsigned char>(value >> (8 * index));
+    };
+    file.resize(0x120, 0x00);
+    put(0x100, 0x20, 4);                                                   // Size
+    put(0x104, 0x0, 4);                                                    // an RVA: the image base (0) + 0
+    put(0x108, static_cast<uint32>(static_cast<int32>(0x0 - 0x108)), 4);  // an offset from 0x108: 0
+    put(0x110, 0x0, 8);                                                    // a pointer: 0
+    const auto toFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.size                = 0x100;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true; // the VA (and the RVA) is the file offset
+    layout.addressToFileOffset = toFileOffset;
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    REQUIRE(code.zone->GetLabelNameAt(0) == "EntryPoint");
+
+    layout.start      = 0x100;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    layout.dataFields = {
+        { 0x100, { 4, DataFieldType::Value, "Size" } },
+        { 0x104, { 4, DataFieldType::RVA, "pRva" } },
+        { 0x108, { 4, DataFieldType::Relative, "pRelative" } },
+        { 0x110, { 8, DataFieldType::Pointer, "pPointer" } },
+    };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dd     0x00000020").ends_with("; Size"));
+    REQUIRE(FindListingLine(listing, "dd     EntryPoint").ends_with("; pRva"));
+    REQUIRE(listing.find("0x00000108  dd     EntryPoint") != std::string::npos); // the offset from the field
+    REQUIRE(listing.find("; pRelative") != std::string::npos);
+    REQUIRE(FindListingLine(listing, "dq     EntryPoint").ends_with("; pPointer"));
+    REQUIRE(data.zone->fieldNames.size() == 4);
 }

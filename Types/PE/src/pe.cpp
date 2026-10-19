@@ -413,6 +413,80 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
         { 188, 312, "__guard_memcpy_fptr" },
     };
     const uint32 pointerSize = is64 ? 8u : 4u;
+    // the fields of the directory: a line each in the data zone, named (P: the size of a pointer)
+    {
+        using Type            = DissasmViewer::DataFieldType;
+        constexpr uint8 P     = 0;
+        struct Field {
+            uint8 size;
+            Type type;
+            std::string_view name;
+        };
+        constexpr Field common[] = {
+            { 4, Type::Value, "Size" },           { 4, Type::Value, "TimeDateStamp" },    { 2, Type::Value, "MajorVersion" },
+            { 2, Type::Value, "MinorVersion" },   { 4, Type::Value, "GlobalFlagsClear" }, { 4, Type::Value, "GlobalFlagsSet" },
+            { 4, Type::Value, "CriticalSectionDefaultTimeout" },                          { P, Type::Value, "DeCommitFreeBlockThreshold" },
+            { P, Type::Value, "DeCommitTotalFreeThreshold" },                             { P, Type::Pointer, "LockPrefixTable" },
+            { P, Type::Value, "MaximumAllocationSize" },                                  { P, Type::Value, "VirtualMemoryThreshold" },
+        };
+        // the order of these two differs between the layouts
+        constexpr Field affinity64[] = { { 8, Type::Value, "ProcessAffinityMask" }, { 4, Type::Value, "ProcessHeapFlags" } };
+        constexpr Field affinity32[] = { { 4, Type::Value, "ProcessHeapFlags" }, { 4, Type::Value, "ProcessAffinityMask" } };
+        constexpr Field rest[] = {
+            { 2, Type::Value, "CSDVersion" },
+            { 2, Type::Value, "DependentLoadFlags" },
+            { P, Type::Pointer, "EditList" },
+            { P, Type::Pointer, "SecurityCookie" },
+            { P, Type::Pointer, "SEHandlerTable" },
+            { P, Type::Value, "SEHandlerCount" },
+            { P, Type::Pointer, "GuardCFCheckFunctionPointer" },
+            { P, Type::Pointer, "GuardCFDispatchFunctionPointer" },
+            { P, Type::Pointer, "GuardCFFunctionTable" },
+            { P, Type::Value, "GuardCFFunctionCount" },
+            { 4, Type::Value, "GuardFlags" },
+            { 12, Type::Value, "CodeIntegrity" },
+            { P, Type::Pointer, "GuardAddressTakenIatEntryTable" },
+            { P, Type::Value, "GuardAddressTakenIatEntryCount" },
+            { P, Type::Pointer, "GuardLongJumpTargetTable" },
+            { P, Type::Value, "GuardLongJumpTargetCount" },
+            { P, Type::Pointer, "DynamicValueRelocTable" },
+            { P, Type::Pointer, "CHPEMetadataPointer" },
+            { P, Type::Pointer, "GuardRFFailureRoutine" },
+            { P, Type::Pointer, "GuardRFFailureRoutineFunctionPointer" },
+            { 4, Type::Value, "DynamicValueRelocTableOffset" },
+            { 2, Type::Value, "DynamicValueRelocTableSection" },
+            { 2, Type::Value, "Reserved2" },
+            { P, Type::Pointer, "GuardRFVerifyStackPointerFunctionPointer" },
+            { 4, Type::Value, "HotPatchTableOffset" },
+            { 4, Type::Value, "Reserved3" },
+            { P, Type::Pointer, "EnclaveConfigurationPointer" },
+            { P, Type::Pointer, "VolatileMetadataPointer" },
+            { P, Type::Pointer, "GuardEHContinuationTable" },
+            { P, Type::Value, "GuardEHContinuationCount" },
+            { P, Type::Pointer, "GuardXFGCheckFunctionPointer" },
+            { P, Type::Pointer, "GuardXFGDispatchFunctionPointer" },
+            { P, Type::Pointer, "GuardXFGTableDispatchFunctionPointer" },
+            { P, Type::Pointer, "CastGuardOsDeterminedFailureMode" },
+            { P, Type::Pointer, "GuardMemcpyFunctionPointer" },
+        };
+        const uint64 directoryVA = pe->imageBase + directory.VirtualAddress;
+        uint32 offset            = 0;
+        const auto addFields     = [&](const auto& fields) {
+            for (const auto& field : fields) {
+                const uint32 fieldSize = field.size == P ? pointerSize : field.size;
+                if (offset + fieldSize > size)
+                    return;
+                settings.AddDataField(directoryVA + offset, fieldSize, field.type, field.name);
+                offset += fieldSize;
+            }
+        };
+        addFields(common);
+        if (is64)
+            addFields(affinity64);
+        else
+            addFields(affinity32);
+        addFields(rest);
+    }
     const auto readField     = [&](uint32 offset32, uint32 offset64) -> uint64 {
         const uint32 offset = is64 ? offset64 : offset32;
         uint64 value        = 0;

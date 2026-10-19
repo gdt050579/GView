@@ -1780,6 +1780,9 @@ namespace View
         enum class VariableType : uint32 { UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, AsciiZ, Utf16Z, Utf32Z };
 
         enum class MemoryMappingType { FunctionMapping, TextMapping };
+        // a field of a structure of the data (AddDataField): a value, a pointer (a VA), an RVA (the image base plus the value), a 32 bit
+        // offset from the field itself (the relative method lists of Objective-C), a C string
+        enum class DataFieldType : uint8 { Value, Pointer, RVA, Relative, String };
         enum class FunctionEntryType : uint8 { Export, ExceptionData, TlsCallback, Symbol }; // Symbol: a symbol table (an export name wins)
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
@@ -1840,6 +1843,12 @@ namespace View
              * after the end of the file.
              */
             void AddUninitializedDataZone(uint64 address, uint64 size, DisassemblyLanguage lang, std::string_view name);
+            /**
+             * \brief A field of a structure of the data at the VA `address` (the load config directory, ...): its own line in the data zone
+             * (`size` bytes: 1, 2, 4, 8, or a row), its name as the comment, a pointer / an RVA / an offset shown as the name of what it
+             * points to.
+             */
+            void AddDataField(uint64 address, uint32 size, DataFieldType type, std::string_view name);
             /**
              * \brief 32 bit ARM: the code from the file offset is decoded in `mode` (until the next mode change); the ELF mapping symbols
              * ($a, $t, $d), the Thumb bit of the function symbols, the ARM .plt of a Thumb file. A later call for the same offset wins.

@@ -287,7 +287,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!range.isOffset || range.unit == 0)
                 continue;
             for (uint64 entry = range.start; entry + range.unit <= range.end; entry += range.unit) {
-                const auto value = ReadTableValue(labelBase + entry, range.unit);
+                auto value = ReadTableValue(labelBase + entry, range.unit);
+                if (value.has_value() && range.reference == DissasmInstructionSet::REFERENCE_RVA)
+                    value = imageBase.has_value() ? std::optional<uint64>(imageBase.value() + value.value()) : std::nullopt;
+                else if (value.has_value() && range.reference == DissasmInstructionSet::REFERENCE_RELATIVE)
+                    value = labelBase + entry + static_cast<uint64>(range.unit == 4 ? static_cast<int64>(static_cast<int32>(value.value())) : static_cast<int64>(value.value()));
                 if (value.has_value() && isFileAddress && isFileAddress(value.value()))
                     xrefs.Add(labelBase + entry, value.value(), DissasmXrefKind::Offset);
             }
@@ -1535,6 +1539,39 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
         for (const auto& range : userDataRanges)
             if (range.end <= zoneDetails.size)
                 fixedRanges.push_back(range);
+        // the fields of the structures (the load config directory, the RTTI, the Objective-C metadata): a line each, named
+        fieldNames.clear();
+        if (initData.dataFields && !initData.dataFields->empty()) {
+            std::vector<DissasmInstructionSet::DataRange> fields;
+            uint64 fieldsEnd = 0;
+            for (auto it = initData.dataFields->lower_bound(labelAddressBase);
+                 it != initData.dataFields->end() && it->first - labelAddressBase < zoneDetails.size;
+                 ++it) {
+                const uint64 position = it->first - labelAddressBase;
+                const auto& field     = it->second;
+                if (position < fieldsEnd || position + field.size > zoneDetails.size)
+                    continue; // overlaps the previous field
+                const bool overlaps = std::any_of(fixedRanges.begin(), fixedRanges.end(), [&](const auto& range) {
+                    return range.start < position + field.size && position < range.end;
+                });
+                if (overlaps)
+                    continue;
+                DissasmInstructionSet::DataRange range{ position, position + field.size, DissasmInstructionSet::BYTES_ROW };
+                if (field.type == DataFieldType::String)
+                    range.unit = DissasmInstructionSet::ASCII_STRING;
+                else if (field.size == 1 || field.size == 2 || field.size == 4 || field.size == 8)
+                    range.unit = static_cast<uint8>(field.size);
+                range.isOffset  = field.type == DataFieldType::Pointer || field.type == DataFieldType::RVA || field.type == DataFieldType::Relative;
+                range.reference = field.type == DataFieldType::RVA        ? DissasmInstructionSet::REFERENCE_RVA
+                                  : field.type == DataFieldType::Relative ? DissasmInstructionSet::REFERENCE_RELATIVE
+                                                                          : DissasmInstructionSet::REFERENCE_VA;
+                fields.push_back(range);
+                fieldNames[position] = field.name;
+                fieldsEnd            = position + field.size;
+            }
+            fixedRanges.insert(fixedRanges.end(), fields.begin(), fields.end());
+            std::sort(fixedRanges.begin(), fixedRanges.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
+        }
         // the import slots the code uses (call [__imp_CreateFileW]): a pointer each, named after the import
         const uint8 slotSize = Is64BitCode() ? 8 : 4;
         if (initData.findImport) {

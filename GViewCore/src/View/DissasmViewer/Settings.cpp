@@ -97,6 +97,12 @@ void Settings::AddUninitializedDataZone(uint64 address, uint64 size, Disassembly
     zone.virtualAddress  = address;
 }
 
+void Settings::AddDataField(uint64 address, uint32 size, DataFieldType type, std::string_view name)
+{
+    if (size > 0)
+        INTERNAL_SETTINGS->dataFields[address] = { size, type, std::string(name) };
+}
+
 void Settings::AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode)
 {
     INTERNAL_SETTINGS->armCodeModes[fileOffset] = mode;

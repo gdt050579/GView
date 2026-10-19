@@ -38,6 +38,14 @@ struct ObjCMetadata {
     // the structures, named as the compiler names their symbols: _OBJC_CLASS_$_Name, _OBJC_METACLASS_$_Name, __OBJC_CLASS_RO_$_Name,
     // __OBJC_$_INSTANCE_METHODS_Name, __OBJC_$_CATEGORY_Class_$_Category, ...
     std::vector<std::pair<uint64, std::string>> structures;
+    // the fields of the structures (class_t, class_ro_t, category_t, the method lists): their lines and names
+    struct Field {
+        uint64 address;
+        uint32 size;
+        DataFieldType type;
+        std::string name;
+    };
+    std::vector<Field> fields;
 };
 
 // The classes and categories of the lists: the methods of their method lists (the classic ones: {name, types, imp} pointers; the relative

@@ -886,6 +886,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         }
     }
 
+    // a field of a structure: its name is the comment of its line
+    if (insn->id == 0 && !params.zone->fieldNames.empty())
+        if (const auto field = params.zone->fieldNames.find(insn->address); field != params.zone->fieldNames.end())
+            autoComment = field->second;
+
     // a pointer of a data zone: the name of what it points to (a label of any zone), else its value
     if (insn->id == 0) {
         const auto* range = params.zone->instructionSet.DataRangeAt(insn->address);
@@ -893,7 +898,14 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             uint64 value = 0;
             for (uint32 index = 0; index < range->unit; index++)
                 value |= static_cast<uint64>(insn->bytes[index]) << (8 * index);
-            value             = params.zone->GetRelocatedPointer(insn->address).value_or(value); // written by the loader (PIE)
+            value = params.zone->GetRelocatedPointer(insn->address).value_or(value); // written by the loader (PIE)
+            if (range->reference == DissasmInstructionSet::REFERENCE_RVA && params.settings->offsetTranslateCallback.IsValid()) {
+                const uint64 zoneRVA = GetCodeStartRVA(params.settings, params.zone);
+                value += params.zone->labelAddressBase - zoneRVA; // the image base
+            } else if (range->reference == DissasmInstructionSet::REFERENCE_RELATIVE) {
+                const int64 offset = range->unit == 4 ? static_cast<int32>(value) : (range->unit == 2 ? static_cast<int16>(value) : static_cast<int64>(value));
+                value              = params.zone->labelAddressBase + insn->address + static_cast<uint64>(offset);
+            }
             const auto target = params.zone->FindCodeZoneOfAddress(value);
             const std::string name = target ? target->FormatCodeAddress(value - target->labelAddressBase) : FormatAddress(value);
             SetOperands(name.c_str(), params.zone);
@@ -1515,6 +1527,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.armCodeModes          = &settings->armCodeModes;
     initData.relocatedPointers     = &settings->relocatedPointers;
     initData.memoryMappings        = &settings->memoryMappings;
+    initData.dataFields            = &settings->dataFields;
     if (!settings->memoryMappings.empty()) {
         auto* settingsData  = settings;
         initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };

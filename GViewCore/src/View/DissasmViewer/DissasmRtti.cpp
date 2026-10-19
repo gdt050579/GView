@@ -116,8 +116,14 @@ class RttiParser
                 if (name[0] != '.' || name[1] != '?' || name[2] != 'A' || (name[3] != 'V' && name[3] != 'U'))
                     continue;
                 const std::string className = MsvcClassName(ReadName(range.address + offset + 2ull * pointerSize));
-                if (!className.empty())
-                    descriptors[range.address + offset] = className;
+                if (!className.empty()) {
+                    const uint64 address = range.address + offset;
+                    descriptors[address] = className;
+                    const uint32 nameSize = static_cast<uint32>(ReadName(address + 2ull * pointerSize).size() + 1);
+                    result.fields.push_back({ address, pointerSize, DataFieldType::Pointer, "pVFTable" });
+                    result.fields.push_back({ address + pointerSize, pointerSize, DataFieldType::Value, "spare" });
+                    result.fields.push_back({ address + 2ull * pointerSize, nameSize, DataFieldType::String, "name" });
+                }
             }
         if (descriptors.empty())
             return;
@@ -144,9 +150,22 @@ class RttiParser
                 }
                 locators[address] = { known->second, suffix };
                 result.names.emplace_back(address, known->second + "::RTTI_Complete_Object_Locator" + suffix);
+                const DataFieldType reference = is64 ? DataFieldType::RVA : DataFieldType::Pointer;
+                result.fields.push_back({ address, 4, DataFieldType::Value, "signature" });
+                result.fields.push_back({ address + 4, 4, DataFieldType::Value, "offset" });
+                result.fields.push_back({ address + 8, 4, DataFieldType::Value, "cdOffset" });
+                result.fields.push_back({ address + 12, 4, reference, "pTypeDescriptor" });
+                result.fields.push_back({ address + 16, 4, reference, "pClassDescriptor" });
+                if (is64)
+                    result.fields.push_back({ address + 20, 4, DataFieldType::RVA, "pSelf" });
                 const uint64 hierarchy = is64 ? input.imageBase + fields[4] : fields[4]; // the class hierarchy descriptor
-                if (fields[1] == 0 && RangeOf(hierarchy, 16))
+                if (fields[1] == 0 && RangeOf(hierarchy, 16)) {
                     result.names.emplace_back(hierarchy, known->second + "::RTTI_Class_Hierarchy_Descriptor");
+                    result.fields.push_back({ hierarchy, 4, DataFieldType::Value, "signature" });
+                    result.fields.push_back({ hierarchy + 4, 4, DataFieldType::Value, "attributes" });
+                    result.fields.push_back({ hierarchy + 8, 4, DataFieldType::Value, "numBaseClasses" });
+                    result.fields.push_back({ hierarchy + 12, 4, reference, "pBaseClassArray" });
+                }
             }
         for (const auto& [address, name] : descriptors)
             result.names.emplace_back(address, name + "::RTTI_Type_Descriptor");
@@ -188,6 +207,8 @@ class RttiParser
                 typeinfos[address] = className;
                 result.names.emplace_back(address, className + "::typeinfo");
                 result.names.emplace_back(namePointer, className + "::typeinfo_name");
+                result.fields.push_back({ address, pointerSize, DataFieldType::Pointer, "vptr" });
+                result.fields.push_back({ address + pointerSize, pointerSize, DataFieldType::Pointer, "name" });
             }
         if (typeinfos.empty())
             return;
@@ -213,6 +234,8 @@ class RttiParser
                 const uint64 vtable = range.address + offset - pointerSize;
                 result.names.emplace_back(vtable, name);
                 result.classes.emplace_back(vtable, typeinfo->second);
+                result.fields.push_back({ vtable, pointerSize, DataFieldType::Value, "offset_to_top" });
+                result.fields.push_back({ vtable + pointerSize, pointerSize, DataFieldType::Pointer, "typeinfo" });
             }
     }
 };
@@ -279,4 +302,6 @@ void GView::View::DissasmViewer::ApplyCppRtti(SettingsData& settings, Reference<
         if (address >= imageBase)
             settings.memoryMappings[address - imageBase] = { name, MemoryMappingType::TextMapping };
 #endif
+    for (const auto& field : result.fields)
+        settings.dataFields.try_emplace(field.address, DissasmDataField{ field.size, field.type, field.name });
 }
