@@ -1532,8 +1532,10 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
     DissasmCodeZoneInitData initData{};
     FillCodeZoneInitData(initData, dli, zone);
     // the data defined by the user (D / A) are saved apart: the lines are counted with them
-    if (cacheData.hasCache)
+    if (cacheData.hasCache) {
         zone->userDataRanges = ReadUserDataRanges(cacheData, *zone);
+        zone->userFunctions  = ReadUserFunctions(cacheData, *zone); // P / Delete function / noreturn
+    }
 
     if (!zone->InitZone(initData))
         return false;
@@ -2011,12 +2013,13 @@ void Instance::ImportAnnotations()
     RefreshDrawnLines();
     LocalString<256> summary;
     summary.SetFormat(
-          "Imported: %u names, %u comments, %u variables, %u numbers in decimal, %u zones, %u suggestions%s",
+          "Imported: %u names, %u comments, %u variables, %u numbers in decimal, %u zones, %u functions, %u suggestions%s",
           result.names,
           result.comments,
           result.variables,
           result.decimalOperands,
           result.collapsibleZones,
+          result.functions,
           result.suggestedNames + result.aiComments,
           result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
     Dialogs::MessageBox::ShowNotification("Annotations", summary.GetText());
@@ -2510,6 +2513,67 @@ void Instance::DefineUserData(UserDataEdit edit)
         return;
     zone->RecordUserDataEdit(before, address); // Ctrl+Z gives the previous data back
     ReanalyzeZone(zone, address, true);
+}
+
+void Instance::EditUserFunction(UserFunctionEdit edit)
+{
+    FinishDeepScans(); // the functions of the analysis are known
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please expand the collapsed zone first!");
+        return;
+    }
+    const uint64 address = asmLine.address; // a label / a variable: the instruction they belong to
+    const auto before    = zone->userFunctions;
+    std::optional<uint64> function;
+    if (edit == UserFunctionEdit::Create) {
+        const bool isData = std::any_of(zone->instructionSet.dataRanges.begin(), zone->instructionSet.dataRanges.end(), [address](const auto& range) {
+            return address >= range.start && address < range.end;
+        });
+        if (isData) {
+            Dialogs::MessageBox::ShowNotification("Info", "This line is data: undefine it first (U)!");
+            return;
+        }
+        if (!zone->CreateUserFunction(address)) {
+            Dialogs::MessageBox::ShowNotification("Info", "A function starts here already!");
+            return;
+        }
+        function = address;
+    } else {
+        function = zone->GetFunctionContaining(address);
+        const bool changed = function.has_value() &&
+                             (edit == UserFunctionEdit::Delete ? zone->DeleteUserFunction(function.value()) : zone->ToggleUserNoReturn(function.value()));
+        if (!changed) {
+            Dialogs::MessageBox::ShowNotification(
+                  "Info", function.has_value() ? "The entry point stays a function!" : "This line is not inside a function!");
+            return;
+        }
+    }
+    zone->RecordUserFunctionsEdit(before, function.value()); // Ctrl+Z gives the previous functions back
+    ReanalyzeZone(zone, address, true);
+    if (edit == UserFunctionEdit::ToggleNoReturn) {
+        const auto flags = zone->userFunctions.find(function.value());
+        std::string name = zone->GetLabelNameAt(function.value());
+        if (name.empty())
+            name = zone->GetLabelName("sub_", function.value());
+        LocalString<128> text;
+        text.SetFormat("%s %s", name.c_str(), flags != zone->userFunctions.end() && (flags->second & USER_FUNCTION_NORETURN) ? "does not return" : "returns");
+        Dialogs::MessageBox::ShowNotification("Function", text.GetText());
+    }
 }
 
 bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background)

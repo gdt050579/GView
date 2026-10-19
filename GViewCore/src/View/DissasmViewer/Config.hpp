@@ -43,6 +43,9 @@ constexpr uint32 COMMAND_APPLY_SIGNATURES      = 136;
 constexpr uint32 COMMAND_DEFINE_DATA           = 137;
 constexpr uint32 COMMAND_DEFINE_STRING         = 138;
 constexpr uint32 COMMAND_UNDEFINE              = 139;
+constexpr uint32 COMMAND_CREATE_FUNCTION       = 140;
+constexpr uint32 COMMAND_DELETE_FUNCTION       = 141;
+constexpr uint32 COMMAND_TOGGLE_NORETURN       = 142;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -326,6 +329,16 @@ namespace View
             inline static KeyboardControl UndefineCommand = {
                 Input::Key::U, "Undefine", "Remove the data / string of the line (decoded as code again)", COMMAND_UNDEFINE
             };
+            // IDA P / Delete function / Alt+P (the attributes of the function)
+            inline static KeyboardControl CreateFunctionCommand = {
+                Input::Key::P, "CreateFunction", "Make the line the start of a function", COMMAND_CREATE_FUNCTION
+            };
+            inline static KeyboardControl DeleteFunctionCommand = {
+                Input::Key::Shift | Input::Key::P, "DeleteFunction", "The function of the line is not a function any more (its label stays)", COMMAND_DELETE_FUNCTION
+            };
+            inline static KeyboardControl ToggleNoReturnCommand = {
+                Input::Key::Alt | Input::Key::P, "ToggleNoReturn", "Mark the function of the line as one that does not return (again: it returns)", COMMAND_TOGGLE_NORETURN
+            };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
                 AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand, RemoveLocalVariableCommand
@@ -359,7 +372,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 26> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 29> KeyEventCommands = {
                 &AcceptAISuggestionCommand,
                 &DismissAISuggestionCommand,
                 &MoveDownCommand,
@@ -386,6 +399,9 @@ namespace View
                 &DefineDataCommand,
                 &DefineStringCommand,
                 &UndefineCommand,
+                &CreateFunctionCommand,
+                &DeleteFunctionCommand,
+                &ToggleNoReturnCommand,
             };
             inline static Input::KeyMap Map;
 

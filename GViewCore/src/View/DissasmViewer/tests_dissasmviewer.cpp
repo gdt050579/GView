@@ -6403,6 +6403,165 @@ TEST_CASE("UserDataRanges", "[Dissasm]UserData")
     REQUIRE(dissasmInstance.GetListing().find("Hi there") == std::string::npos);
 }
 
+namespace
+{
+// the entry point calls helper (0x10) and sub_30; 0x20 is code that nothing calls (a callback the analysis does not find)
+std::vector<unsigned char> UserFunctionsSample()
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00, // 0x00: call 0x10
+        0xE8, 0x26, 0x00, 0x00, 0x00, // 0x05: call 0x30
+        0xC3,                         // 0x0a: ret
+    };
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x10: xor eax, eax; ret
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }); // 0x20: mov eax, 1; ret
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xB8, 0x02, 0x00, 0x00, 0x00, 0xC3 }); // 0x30: mov eax, 2; ret
+    file.resize(0x40, 0xCC);
+    return file;
+}
+} // namespace
+
+TEST_CASE("UserFunctions", "[Dissasm]UserData")
+{
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    REQUIRE(zone.ApplyUserLabelName(0x10, "helper"));
+
+    // P: 0x20 is a function; not where one starts already
+    REQUIRE(zone.CreateUserFunction(0x20));
+    REQUIRE_FALSE(zone.CreateUserFunction(0x10));
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x20, 0x30 });
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_20");
+    REQUIRE(zone.GetLabelNameAt(0x10) == "helper");
+
+    // Delete function: helper is a location (its name stays), the entry point stays a function
+    REQUIRE(zone.DeleteUserFunction(0x10));
+    REQUIRE_FALSE(zone.DeleteUserFunction(0x00));
+    REQUIRE_FALSE(zone.DeleteUserFunction(0x12)); // no function starts there
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x30 });
+    REQUIRE(zone.GetLabelNameAt(0x10) == "helper");
+    REQUIRE(zone.GetXrefsTo(0x10).size() == 1); // the call is still a reference
+
+    // the noreturn attribute: sub_30 returns, the user says it does not (the call to it ends the flow), then the other way around
+    REQUIRE(zone.noReturnFunctions.empty());
+    REQUIRE(zone.ToggleUserNoReturn(0x30));
+    REQUIRE(zone.userFunctions.at(0x30) == USER_FUNCTION_NORETURN);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x00, 0x30 }); // the entry point ends with the call to it
+    REQUIRE(zone.noReturnCalls.contains(0x05));
+    for (const auto& function : zone.GetFunctions(nullptr))
+        REQUIRE(function.isNoReturn == (function.start == 0x00 || function.start == 0x30));
+
+    // the functions of the user in the annotations: a new analysis of the same file gets them
+    const auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["functions"].size() == 3);
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    auto& freshZone = *fresh.zone;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { &freshZone }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.functions == 3);
+    REQUIRE(freshZone.userFunctions == zone.userFunctions);
+    REQUIRE(freshZone.functionStarts == zone.functionStarts);
+    REQUIRE(freshZone.noReturnFunctions == zone.noReturnFunctions);
+    REQUIRE(freshZone.GetLabelNameAt(0x10) == "helper");
+
+    // the attribute again: it returns (an exit named function would too)
+    REQUIRE(zone.ToggleUserNoReturn(0x30));
+    REQUIRE(zone.userFunctions.at(0x30) == USER_FUNCTION_RETURNS);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.noReturnFunctions.empty());
+    // a deleted function of the user (P) leaves nothing
+    REQUIRE(zone.DeleteUserFunction(0x20));
+    REQUIRE_FALSE(zone.userFunctions.contains(0x20));
+}
+
+TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
+{
+    // a function named exit by the plugin does not return; the user says it does
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x30, { "exit", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x00, 0x30 });
+    REQUIRE(zone.ToggleUserNoReturn(0x30));
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.noReturnFunctions.empty());
+    REQUIRE(zone.noReturnCalls.empty());
+}
+
+TEST_CASE("UserFunctionsCacheAndUndo", "[Dissasm]UserData")
+{
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // the record: magic, version, count, then address, flags
+    std::vector<std::byte> buffer;
+    const auto add = [&buffer](const auto& value) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    add(uint32{ 0x46554447 });
+    add(uint32{ 1 });
+    add(uint32{ 4 });
+    add(uint64{ 0x20 }), add(uint8{ USER_FUNCTION_CREATE });
+    add(uint64{ 0x30 }), add(uint8{ USER_FUNCTION_NORETURN });
+    add(uint64{ 0x10 }), add(uint8{ 0x30 });                     // unknown flags: dropped
+    add(uint64{ 0x1000 }), add(uint8{ USER_FUNCTION_DELETE }); // outside of the zone: dropped
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserFunctions.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    const auto functions = ReadUserFunctions(cache, zone);
+    REQUIRE(functions == std::map<uint64, uint8>{ { 0x20, USER_FUNCTION_CREATE }, { 0x30, USER_FUNCTION_NORETURN } });
+    buffer[0] = std::byte{ 0 };
+    DissasmCache wrong;
+    REQUIRE(wrong.AddRegion("DissasmUserFunctions.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserFunctions(wrong, zone).empty());
+
+    // P recorded: Ctrl+Z removes the function (the zone needs a new analysis), Ctrl+Y gives it back
+    auto before = zone.userFunctions;
+    REQUIRE(zone.CreateUserFunction(0x20));
+    zone.RecordUserFunctionsEdit(before, 0x20);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.CanUndoEdit()); // the history survives the new analysis
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->reanalyze);
+    REQUIRE(place->address == std::optional<uint64>(0x20));
+    REQUIRE(zone.userFunctions.empty());
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    place = zone.RedoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x20, 0x30 });
+}
+
 TEST_CASE("UserDataRangesCache", "[Dissasm]UserData")
 {
     const auto file = UserDataSample();

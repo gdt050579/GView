@@ -290,6 +290,15 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_UNDEFINE:
         DefineUserData(UserDataEdit::Undefine);
         return true;
+    case COMMAND_CREATE_FUNCTION:
+        EditUserFunction(UserFunctionEdit::Create);
+        return true;
+    case COMMAND_DELETE_FUNCTION:
+        EditUserFunction(UserFunctionEdit::Delete);
+        return true;
+    case COMMAND_TOGGLE_NORETURN:
+        EditUserFunction(UserFunctionEdit::ToggleNoReturn);
+        return true;
     }
     return false;
 }

@@ -631,6 +631,9 @@ namespace View
         void LinkCodeZones(const std::vector<std::unique_ptr<ParseZone>>& zones);
         // the data defined by the user in a code zone, saved in the cache (read before the zone is analyzed)
         std::vector<DissasmInstructionSet::DataRange> ReadUserDataRanges(const DissasmCache& cache, const DissasmCodeZone& zone);
+        // the functions edited by the user in a code zone (DissasmCodeZone::userFunctions), saved in the cache (read before the zone is
+        // analyzed)
+        std::map<uint64, uint8> ReadUserFunctions(const DissasmCache& cache, const DissasmCodeZone& zone);
 
         struct LayoutDissasm {
             uint32 visibleRows;
@@ -973,6 +976,10 @@ namespace View
             // IDA D / A / U on the cursor line: the data of the user changes, the zone is analyzed again (its annotations are kept)
             enum class UserDataEdit : uint8 { Data, String, Undefine };
             void DefineUserData(UserDataEdit edit);
+            // IDA P (a function starts at the cursor line), Delete function, the noreturn attribute of the function of the cursor line: the
+            // functions of the user change, the zone is analyzed again
+            enum class UserFunctionEdit : uint8 { Create, Delete, ToggleNoReturn };
+            void EditUserFunction(UserFunctionEdit edit);
             // the zone analyzed again; the cursor goes back to `keepAddress` (relative) when given. background: a big zone shows its lines at
             // once and its deep scan continues in the frame updates (the annotations come back when it ends, EndDeepScan); otherwise the whole
             // analysis runs now (ReanalyzeCodeZone)

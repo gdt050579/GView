@@ -34,9 +34,19 @@ std::optional<DissasmGoToRequest> ParseDissasmGoToText(std::string_view text, Di
 // the first name of an answer of the assistant (names separated by commas / new lines, numbered or quoted); empty when there is none
 std::string ParseAssistantSuggestedName(std::string_view answer);
 
+// a function edited by the user (IDA: P creates a function, Delete function, the noreturn attribute): the flags of
+// DissasmCodeZone::userFunctions. NORETURN / RETURNS replace what the analysis finds
+enum DissasmUserFunctionFlags : uint8 {
+    USER_FUNCTION_CREATE   = 1,
+    USER_FUNCTION_DELETE   = 2,
+    USER_FUNCTION_NORETURN = 4,
+    USER_FUNCTION_RETURNS  = 8,
+    USER_FUNCTION_ALL      = 15,
+};
+
 // An edit of the user with what it replaced: it can be undone and redone (Ctrl+Z / Ctrl+Y)
 struct DissasmEdit {
-    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges };
+    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges, UserFunctions };
     Kind kind = Kind::Comment;
     DissasmCommentAnchor anchor;              // Comment
     uint64 address     = 0;                   // LabelName: the label; VariableName: the function; DecimalOperand: the instruction
@@ -45,6 +55,7 @@ struct DissasmEdit {
     std::optional<std::string> before, after; // Comment (none: no comment), LabelName, VariableName
     DissasmCollapsibleZone zone;              // AddZone / RemoveZone
     std::vector<DissasmInstructionSet::DataRange> rangesBefore, rangesAfter; // DataRanges (address: the edited line)
+    std::map<uint64, uint8> functionsBefore, functionsAfter;                 // UserFunctions (address: the function)
 };
 // the edits that can be undone / redone
 struct DissasmEditHistory {
@@ -56,7 +67,7 @@ struct DissasmEditPlace {
     std::optional<uint64> address;
     std::optional<uint32> expandedLine;
     bool onLabel    = false; // the edit is on the label (or a local variable) of the address, not on its instruction
-    bool reanalyze  = false; // the data defined by the user changed: the zone needs a new analysis (ReanalyzeCodeZone)
+    bool reanalyze  = false; // the data / the functions defined by the user changed: the zone needs a new analysis (ReanalyzeCodeZone)
 };
 
 // a call between two functions (DissasmCodeZone::GetCallers / GetCallees)
@@ -289,6 +300,15 @@ struct DissasmCodeZone : public ParseZone {
     bool DefineUserString(uint64 address);
     bool UndefineUserData(uint64 address);
     void SetUserDataRange(const DissasmInstructionSet::DataRange& range); // the ranges it overlaps are removed
+    // the functions edited by the user (IDA P / Delete function / the noreturn attribute): relative address -> DissasmUserFunctionFlags.
+    // Like userDataRanges: a change needs a new analysis of the zone, saved in the cache and in the annotations
+    std::map<uint64, uint8> userFunctions;
+    // P: a function starts at the address (false when one starts there already). Delete: the function that starts at the address is not a
+    // function any more (its label stays, loc_); false for the entry point and for an address where no function starts. The noreturn
+    // attribute: the function does not return when the analysis found that it returns, and the other way around
+    bool CreateUserFunction(uint64 address);
+    bool DeleteUserFunction(uint64 functionStart);
+    bool ToggleUserNoReturn(uint64 functionStart);
     // a data zone: the places the code of the other zones refers to (relative, sorted) and the largest access there (0: an address taken)
     void CollectDataZoneTargets(std::vector<uint64>& targets, std::vector<uint8>& sizes) const;
     // the references to an address (VA) from this zone, then from the other code zones of the file
@@ -341,6 +361,8 @@ struct DissasmCodeZone : public ParseZone {
     void RestoreEditHistory(DissasmEditHistory history);
     // D / A / U: the data ranges before the change (userDataRanges has the new ones); `address` is the edited line
     void RecordUserDataEdit(std::vector<DissasmInstructionSet::DataRange> before, uint64 address);
+    // P / Delete function / the noreturn attribute: the functions of the user before the change; `address` is the function
+    void RecordUserFunctionsEdit(std::map<uint64, uint8> before, uint64 address);
     // a new analysis that continues in the background (BeginCodeZoneReanalysis): the annotations come back when its deep scan ends
     std::unique_ptr<DissasmReanalysis> pendingReanalysis;
     std::optional<uint64> pendingReanalysisAddress; // the line to show again then

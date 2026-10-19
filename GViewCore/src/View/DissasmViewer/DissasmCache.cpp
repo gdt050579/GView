@@ -409,6 +409,59 @@ std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::ReadUs
     return ranges;
 }
 
+constexpr uint32 DISSASM_USER_FUNCTIONS_MAGIC   = 0x46554447; // "GDUF"
+constexpr uint32 DISSASM_USER_FUNCTIONS_VERSION = 1;
+
+static void FormatUserFunctionsRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmUserFunctions.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, uint8> GView::View::DissasmViewer::ReadUserFunctions(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, uint8> functions;
+    LocalString<64> name;
+    FormatUserFunctionsRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return functions;
+    const std::byte* data = entry->second.data.get();
+    const size_t size     = entry->second.size;
+    size_t position       = 0;
+    const auto read       = [&](void* value, size_t length) {
+        if (position + length > size)
+            return false;
+        memcpy(value, data + position, length);
+        position += length;
+        return true;
+    };
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read(&magic, sizeof(magic)) || magic != DISSASM_USER_FUNCTIONS_MAGIC || !read(&version, sizeof(version)) ||
+        version != DISSASM_USER_FUNCTIONS_VERSION || !read(&count, sizeof(count)) || count > DISSASM_MAX_USER_DATA)
+        return functions;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        uint8 flags    = 0;
+        if (!read(&address, sizeof(address)) || !read(&flags, sizeof(flags)))
+            return {};
+        if (address < zone.zoneDetails.size && flags != 0 && (flags & ~USER_FUNCTION_ALL) == 0)
+            functions[address] = flags;
+    }
+    return functions;
+}
+
+static void UserFunctionsToBuffer(const std::map<uint64, uint8>& functions, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_USER_FUNCTIONS_MAGIC);
+    append_bytes(buffer, DISSASM_USER_FUNCTIONS_VERSION);
+    append_bytes(buffer, static_cast<uint32>(functions.size()));
+    for (const auto& [address, flags] : functions) {
+        append_bytes(buffer, address);
+        append_bytes(buffer, flags);
+    }
+}
+
 static void UserDataRangesToBuffer(const std::vector<DissasmInstructionSet::DataRange>& ranges, std::vector<std::byte>& buffer)
 {
     buffer.clear();
@@ -469,6 +522,9 @@ void Instance::SaveCacheData()
         FormatUserDataRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
         if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
             keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatUserFunctionsRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
     }
     // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
     for (auto& [name, entry] : cacheData.zonesData) {
@@ -504,6 +560,12 @@ void Instance::SaveCacheData()
         if (!dissasmZone->userDataRanges.empty()) {
             UserDataRangesToBuffer(dissasmZone->userDataRanges, buffer);
             FormatUserDataRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->userFunctions.empty()) {
+            UserFunctionsToBuffer(dissasmZone->userFunctions, buffer);
+            FormatUserFunctionsRecordName(zoneName, *dissasmZone);
             if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
                 return;
         }

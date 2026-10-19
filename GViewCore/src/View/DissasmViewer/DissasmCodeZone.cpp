@@ -181,6 +181,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, std::string> localImports;       // relative address of the instruction -> the import
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
+    std::unordered_set<uint64> userReturns;    // the functions the user says return (USER_FUNCTION_RETURNS): never noreturn
     std::unordered_set<uint64> noReturnCalls;  // relative addresses of the calls to them
     uint32 passes  = 1;
     std::map<uint64, uint64> tableEntries; // relative address of an entry of a table -> the relative address of its case
@@ -399,6 +400,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (IsNoReturnFunctionName(it->second.name))
                     noReturnStarts.insert(it->first - codeStart); // exit, abort, __stack_chk_fail of the symbols / exports
             }
+        }
+        // the functions of the user (P) and their attributes
+        userReturns.clear();
+        for (const auto& [address, flags] : zone->userFunctions) {
+            if (address >= codeSize)
+                continue;
+            if (flags & USER_FUNCTION_CREATE)
+                AddFunctionStart(codeStart + address);
+            if (flags & USER_FUNCTION_NORETURN)
+                noReturnStarts.insert(address);
+            if (flags & USER_FUNCTION_RETURNS)
+                userReturns.insert(address);
         }
     }
 
@@ -748,6 +761,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     bool IsNoReturnTarget(uint64 target)
     {
         if (target < codeSize) {
+            if (userReturns.contains(target))
+                return false;
             if (noReturnStarts.contains(target))
                 return true;
             const auto thunk = thunkImports.find(target);
@@ -856,6 +871,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             starts.push_back(details.entryPoint - codeStart); // _start: __libc_start_main does not return
         std::sort(starts.begin(), starts.end());
         starts.erase(std::unique(starts.begin(), starts.end()), starts.end());
+        // the user: a deleted function is not a function, the attributes are not inferred
+        const auto userFlags = [this](uint64 start) {
+            const auto found = zone->userFunctions.find(start);
+            return found != zone->userFunctions.end() ? found->second : static_cast<uint8>(0);
+        };
+        starts.erase(std::remove_if(starts.begin(), starts.end(), [&userFlags](uint64 start) { return (userFlags(start) & USER_FUNCTION_DELETE) != 0; }),
+                     starts.end());
+        for (const uint64 start : userReturns)
+            noReturnStarts.erase(start); // a name (exit) or a thunk of the sweep
         std::unordered_map<uint64, std::vector<uint64>> switchCases; // relative address of the jump -> its cases (relative)
         for (const auto& xref : xrefs.byTarget)
             if (xref.kind == DissasmXrefKind::Switch && xref.from >= labelBase && xref.to >= labelBase)
@@ -921,7 +945,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         for (uint32 round = 0; round < MAX_ROUNDS && !flowRecords.empty(); round++) {
             bool found = false;
             for (size_t index = 0; index < starts.size(); index++)
-                if (!noReturnStarts.contains(starts[index]) && !returns(index)) {
+                if (!noReturnStarts.contains(starts[index]) && (userFlags(starts[index]) & (USER_FUNCTION_NORETURN | USER_FUNCTION_RETURNS)) == 0 &&
+                    !returns(index)) {
                     noReturnStarts.insert(starts[index]);
                     found = true;
                 }
@@ -1306,6 +1331,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
               std::unique(callsFound.begin(), callsFound.end(), [](const auto& left, const auto& right) { return left.first == right.first; }),
               callsFound.end());
         xrefs.Finish();
+
+        // the functions deleted by the user: their label stays, a location (loc_); not the entry point
+        for (auto& call : callsFound) {
+            const auto user = call.first >= codeStart ? zone->userFunctions.find(call.first - codeStart) : zone->userFunctions.end();
+            if (user != zone->userFunctions.end() && (user->second & USER_FUNCTION_DELETE) && GetLabelType(call.second) == SUB) {
+                call.second            = zone->GetLabelName("loc_", call.first - codeStart);
+                callsMap[call.first]   = true;
+            }
+        }
 
         // relative addresses, every function is bounded by the next one (or by its size, when the plugin knows it)
         for (const auto& call : callsFound)
@@ -3156,6 +3190,39 @@ bool DissasmCodeZone::DefineUserString(uint64 address)
     return true;
 }
 
+bool DissasmCodeZone::CreateUserFunction(uint64 address)
+{
+    if (address >= GetCodeSize() || std::binary_search(functionStarts.begin(), functionStarts.end(), address))
+        return false;
+    uint8& flags = userFunctions[address];
+    flags        = static_cast<uint8>((flags & ~USER_FUNCTION_DELETE) | USER_FUNCTION_CREATE);
+    return true;
+}
+
+bool DissasmCodeZone::DeleteUserFunction(uint64 functionStart)
+{
+    if (!std::binary_search(functionStarts.begin(), functionStarts.end(), functionStart) ||
+        (zoneDetails.HasEntryPoint() && !cachedCodeOffsets.empty() && cachedCodeOffsets[0].offset + functionStart == zoneDetails.entryPoint))
+        return false;
+    const auto found = userFunctions.find(functionStart);
+    if (found != userFunctions.end() && (found->second & USER_FUNCTION_CREATE)) {
+        userFunctions.erase(found); // a function of the user: nothing is left of it
+        return true;
+    }
+    userFunctions[functionStart] = USER_FUNCTION_DELETE;
+    return true;
+}
+
+bool DissasmCodeZone::ToggleUserNoReturn(uint64 functionStart)
+{
+    if (!std::binary_search(functionStarts.begin(), functionStarts.end(), functionStart))
+        return false;
+    const bool noReturn = std::binary_search(noReturnFunctions.begin(), noReturnFunctions.end(), functionStart);
+    uint8& flags        = userFunctions[functionStart];
+    flags               = static_cast<uint8>((flags & ~(USER_FUNCTION_NORETURN | USER_FUNCTION_RETURNS)) | (noReturn ? USER_FUNCTION_RETURNS : USER_FUNCTION_NORETURN));
+    return true;
+}
+
 bool DissasmCodeZone::UndefineUserData(uint64 address)
 {
     const auto found =
@@ -3896,6 +3963,16 @@ void DissasmCodeZone::RestoreEditHistory(DissasmEditHistory history)
     redoEdits = std::move(history.redo);
 }
 
+void DissasmCodeZone::RecordUserFunctionsEdit(std::map<uint64, uint8> before, uint64 address)
+{
+    DissasmEdit edit;
+    edit.kind            = DissasmEdit::Kind::UserFunctions;
+    edit.address         = address;
+    edit.functionsBefore = std::move(before);
+    edit.functionsAfter  = userFunctions;
+    RecordEdit(std::move(edit));
+}
+
 void DissasmCodeZone::RecordUserDataEdit(std::vector<DissasmInstructionSet::DataRange> before, uint64 address)
 {
     DissasmEdit edit;
@@ -3964,6 +4041,9 @@ bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
     case DissasmEdit::Kind::DataRanges:
         userDataRanges = forward ? edit.rangesAfter : edit.rangesBefore; // the caller analyzes the zone again (DissasmEditPlace::reanalyze)
         break;
+    case DissasmEdit::Kind::UserFunctions:
+        userFunctions = forward ? edit.functionsAfter : edit.functionsBefore; // the caller analyzes the zone again
+        break;
     case DissasmEdit::Kind::AddZone:
     case DissasmEdit::Kind::RemoveZone: {
         const bool add = (edit.kind == DissasmEdit::Kind::AddZone) == forward;
@@ -3997,7 +4077,7 @@ static DissasmEditPlace GetEditPlace(const DissasmEdit& edit)
         place.address = edit.address;
     place.onLabel   = edit.kind == DissasmEdit::Kind::LabelName || edit.kind == DissasmEdit::Kind::VariableName ||
                     (edit.kind == DissasmEdit::Kind::Comment && edit.anchor.kind != DissasmCommentAnchor::Kind::Instruction);
-    place.reanalyze = edit.kind == DissasmEdit::Kind::DataRanges;
+    place.reanalyze = edit.kind == DissasmEdit::Kind::DataRanges || edit.kind == DissasmEdit::Kind::UserFunctions;
     return place;
 }
 

@@ -174,8 +174,10 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
         initData.enableLocalVariablesDetection = true;
         initData.visibleRows                   = 1;
         PrepareCodeZoneInitData(settings.get(), obj, zone, initData);
-        if (cache.hasCache) // the data defined by the user (D / A): the lines are counted with them
+        if (cache.hasCache) { // the data defined by the user (D / A): the lines are counted with them; the functions of the user (P)
             zone->userDataRanges = ReadUserDataRanges(cache, *zone);
+            zone->userFunctions  = ReadUserFunctions(cache, *zone);
+        }
         if (!zone->InitZone(initData))
             continue;
         bool zoneLinesChanged = false;
@@ -204,6 +206,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
                                           { "collapsibleZones", result.collapsibleZones },
                                           { "suggestions", result.suggestedNames + result.aiComments },
                                           { "dataRanges", result.dataRanges },
+                                          { "functions", result.functions },
                                           { "skipped", result.skipped } };
         else
             root["annotationsImport"] = { { "error", optionError } };

@@ -135,6 +135,21 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     if (!dataRanges.empty())
         result["dataRanges"] = std::move(dataRanges);
 
+    // the functions of the user: created (P), deleted, their noreturn attribute (none: the one of the analysis)
+    json functions = json::array();
+    for (const auto& [address, flags] : zone.userFunctions) {
+        json item = { { "address", Hex(base + address) } };
+        if (flags & USER_FUNCTION_CREATE)
+            item["create"] = true;
+        if (flags & USER_FUNCTION_DELETE)
+            item["delete"] = true;
+        if (flags & (USER_FUNCTION_NORETURN | USER_FUNCTION_RETURNS))
+            item["noreturn"] = (flags & USER_FUNCTION_NORETURN) != 0;
+        functions.push_back(std::move(item));
+    }
+    if (!functions.empty())
+        result["functions"] = std::move(functions);
+
     json names = json::array();
     for (const auto& [address, name] : zone.GetUserLabelNames())
         names.push_back({ { "address", Hex(base + address) }, { "name", name } });
@@ -217,6 +232,32 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
         if (ranges != zone.userDataRanges) {
             zone.userDataRanges = std::move(ranges);
             result.zonesToReanalyze.push_back(&zone);
+        }
+    }
+    if (zoneJson.contains("functions")) {
+        auto functions = zone.userFunctions;
+        for (const auto& item : ArrayField(zoneJson, "functions")) {
+            const auto address = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
+            uint8 flags        = 0;
+            if (item.is_object()) {
+                if (item.value("create", false) == true)
+                    flags |= USER_FUNCTION_CREATE;
+                if (item.value("delete", false) == true)
+                    flags |= USER_FUNCTION_DELETE;
+                if (item.contains("noreturn") && item["noreturn"].is_boolean())
+                    flags |= item["noreturn"].get<bool>() ? USER_FUNCTION_NORETURN : USER_FUNCTION_RETURNS;
+            }
+            if (!address.has_value() || flags == 0 || ((flags & USER_FUNCTION_CREATE) && (flags & USER_FUNCTION_DELETE))) {
+                result.skipped++;
+                continue;
+            }
+            functions[address.value()] = flags;
+            result.functions++;
+        }
+        if (functions != zone.userFunctions) {
+            zone.userFunctions = std::move(functions);
+            if (std::find(result.zonesToReanalyze.begin(), result.zonesToReanalyze.end(), &zone) == result.zonesToReanalyze.end())
+                result.zonesToReanalyze.push_back(&zone);
         }
     }
 
@@ -350,10 +391,12 @@ bool GView::View::DissasmViewer::ImportAnnotationsDocument(
         if (reanalyze(*zone))
             reanalyzed.push_back(zone);
     const uint32 dataRanges = result.dataRanges;
+    const uint32 functions  = result.functions;
     result                  = {};
     if (!ImportAnnotationsDocument(document, zones, result, error))
         return false;
     result.dataRanges = dataRanges;
+    result.functions  = functions;
     for (auto* zone : reanalyzed)
         if (std::find(result.zonesWithNewLines.begin(), result.zonesWithNewLines.end(), zone) == result.zonesWithNewLines.end())
             result.zonesWithNewLines.push_back(zone); // its lines changed
