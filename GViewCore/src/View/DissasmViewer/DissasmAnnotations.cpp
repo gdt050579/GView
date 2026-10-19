@@ -164,7 +164,7 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     for (const auto& function : zone.localVariables.functions)
         for (const auto& variable : function.variables) {
             FormatDefaultLocalVariableName(variable.frameOffset, zone.Is64BitCode(), defaultName);
-            if (variable.name != defaultName)
+            if (variable.name != (variable.analysisName.empty() ? defaultName : variable.analysisName))
                 variables.push_back({ { "function", Hex(base + function.startAddress) }, { "frameOffset", variable.frameOffset }, { "name", variable.name } });
         }
     if (!variables.empty())

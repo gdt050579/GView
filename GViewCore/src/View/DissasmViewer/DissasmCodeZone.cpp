@@ -180,6 +180,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<FlowRecord> flowRecords;
     std::unordered_map<uint64, std::string> localImports;       // relative address of the instruction -> the import
     std::unordered_map<uint64, uint32> importCallCategories;   // a call / jmp through an import slot -> what the import does (DissasmApiCategory)
+    std::unordered_set<uint64> knownPrototypeCalls;            // the calls through an import slot of an API with a prototype (FindApiPrototype)
+    std::unordered_map<uint64, bool> knownPrototypeTargets;    // a direct target (relative) -> its name has a prototype (NameVariablesFromCalls)
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
     std::unordered_set<uint64> userReturns;    // the functions the user says return (USER_FUNCTION_RETURNS): never noreturn
@@ -456,6 +458,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         flowRecords.clear();
         localImports.clear();
         importCallCategories.clear();
+        knownPrototypeCalls.clear();
         noReturnStarts.clear();
         noReturnCalls.clear();
         linesToDecode = lines;
@@ -853,6 +856,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 record.noReturnImport = IsNoReturnFunctionName(import->name);
                 if (const uint32 categories = GetApiCategories(import->name); categories != 0)
                     importCallCategories[insn->address] = categories; // call [__imp_connect]
+                if (kind == FlowKind::Call && FindApiPrototype(import->name))
+                    knownPrototypeCalls.insert(insn->address);
                 if (!record.noReturnImport && localFunctionNames.contains(import->name)) { // call [rip + fatal@GOTPCREL] (-fno-plt)
                     record.localImport          = true;
                     localImports[insn->address] = import->name;
@@ -1769,6 +1774,274 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return purge;
     }
 
+    // the name of the function a call / jmp of the code reaches (an import through its slot, a thunk, a PLT stub of another zone, a function
+    // the plugin names); empty when it has none
+    std::string CalleeName(const cs_insn& call, DissasmArch functionArch)
+    {
+        auto operands = GetInstructionOperands(call, functionArch, labelBase);
+        if (const auto resolved = resolvedAddresses.find(call.address); resolved != resolvedAddresses.end())
+            operands.ripTarget = resolved->second; // 32 bit PIC: [ebx + n]; ARM64: the adrp pair of a blr
+        if (operands.directTarget.has_value()) {
+            const uint64 target = operands.directTarget.value() & addressMask;
+            if (target < codeSize) {
+                if (const auto thunk = thunkImports.find(target); thunk != thunkImports.end())
+                    return thunk->second;
+                const auto label = std::lower_bound(
+                      callsFound.begin(), callsFound.end(), codeStart + target, [](const auto& item, uint64 value) { return item.first < value; });
+                return label != callsFound.end() && label->first == codeStart + target ? label->second : std::string();
+            }
+            const uint64 address = (labelBase + target) & addressMask;
+            if (const auto* other = zone->FindCodeZoneOfAddress(address); other && other != zone) {
+                const auto thunk = other->thunkImports.find(address - other->labelAddressBase);
+                return thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(address - other->labelAddressBase);
+            }
+            return {};
+        }
+        const auto* import = findImport ? findImport(operands) : nullptr;
+        return import && import->type == MemoryMappingType::FunctionMapping ? import->name : std::string();
+    }
+
+    // IDA (its type libraries): a variable of the frame passed to a known API (FindApiPrototype) gets the name of that argument: lea rax,
+    // [rbp + var_79] then the phkResult of RegOpenKeyExW -> phkResult; mov eax, [ebp + var_8]; push eax as the hFile of CloseHandle -> hFile.
+    // The code of the function is followed in its order: the frame slot a register holds (its address or its value: lea / mov / ldr / add
+    // x0, sp, #n), the arguments stored in the stack (mov [rsp + 0x20] / [esp + n], str [sp, #n]) and the pushes (x86), until the call;
+    // only a variable with its default name (var_ / arg_) is named, never two with the same name
+    void NameVariablesFromCalls(DissasmFunctionFrame& frame, const uint8* code, size_t codeLength, uint64 start, uint64 limit, DissasmArch functionArch)
+    {
+        // only a function that calls a known API is decoded again (its calls: the flow records of the sweep)
+        bool callsKnownApi = false;
+        for (size_t position = FirstRecordAt(start); position < flowRecords.size() && flowRecords[position].address < limit && !callsKnownApi; position++) {
+            const auto& record = flowRecords[position];
+            if (record.kind != FlowKind::Call)
+                continue;
+            if (knownPrototypeCalls.contains(record.address)) {
+                callsKnownApi = true;
+                break;
+            }
+            if (record.target == NO_TARGET)
+                continue;
+            auto known = knownPrototypeTargets.find(record.target);
+            if (known == knownPrototypeTargets.end()) {
+                std::string name;
+                if (record.target < codeSize) {
+                    if (const auto thunk = thunkImports.find(record.target); thunk != thunkImports.end())
+                        name = thunk->second;
+                    else if (const auto label = std::lower_bound(callsFound.begin(), callsFound.end(), codeStart + record.target,
+                                                                 [](const auto& item, uint64 value) { return item.first < value; });
+                             label != callsFound.end() && label->first == codeStart + record.target)
+                        name = label->second;
+                } else if (const auto* other = zone->FindCodeZoneOfAddress((labelBase + record.target) & addressMask); other && other != zone) {
+                    const uint64 otherStart = ((labelBase + record.target) & addressMask) - other->labelAddressBase;
+                    const auto thunk        = other->thunkImports.find(otherStart);
+                    name                    = thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(otherStart);
+                }
+                known = knownPrototypeTargets.emplace(record.target, !name.empty() && FindApiPrototype(name) != nullptr).first;
+            }
+            callsKnownApi = known->second;
+        }
+        if (!callsKnownApi)
+            return;
+        constexpr uint32 MAX_INSTRUCTIONS = 20000;
+        constexpr size_t MAX_SLOTS        = 32;
+        const bool isArm64 = functionArch == DissasmArch::Arm64;
+        const bool isArm32 = functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb;
+        const bool isX64   = functionArch == DissasmArch::X64;
+        const bool isX86   = functionArch == DissasmArch::X86;
+        std::array<std::optional<int32>, 32> registers{};        // the frame slot (offset) a register holds: its address or its value
+        std::array<std::optional<int32>, MAX_SLOTS> stackArgs{}; // the arguments stored in the stack, by argument index
+        std::vector<std::optional<int32>> pushes;                 // x86: the pushed arguments, in their order
+        const auto registerIndex = [&](unsigned int reg) -> int {
+            if (isArm64) {
+                if (reg >= ARM64_REG_X0 && reg <= ARM64_REG_X28)
+                    return static_cast<int>(reg - ARM64_REG_X0);
+                if (reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30)
+                    return static_cast<int>(reg - ARM64_REG_W0);
+                return -1;
+            }
+            if (isArm32)
+                return reg >= ARM_REG_R0 && reg <= ARM_REG_R12 ? static_cast<int>(reg - ARM_REG_R0) : -1;
+            return GetX64RegisterFamily(reg);
+        };
+        // the register of an argument of the register conventions
+        const auto argumentRegister = [&](size_t index) -> int {
+            if (isArm64)
+                return index < 8 ? static_cast<int>(index) : -1;
+            if (isArm32)
+                return index < 4 ? static_cast<int>(index) : -1;
+            if (isX64) {
+                static constexpr int WINDOWS[] = { 1, 2, 8, 9 }, SYSTEM_V[] = { 7, 6, 2, 1, 8, 9 };
+                if (zone->systemVCalls)
+                    return index < std::size(SYSTEM_V) ? SYSTEM_V[index] : -1;
+                return index < std::size(WINDOWS) ? WINDOWS[index] : -1;
+            }
+            return -1;
+        };
+        // the frame offset of a memory operand of the frame (the frame register, or the stack pointer with its depth)
+        const auto frameOffsetOf = [&](unsigned int base, unsigned int index, int64 disp, uint64 address) -> std::optional<int32> {
+            if (isArm64) {
+                if (base == ARM64_REG_X29 && frame.usesFrameRegister)
+                    return static_cast<int32>(disp);
+                if (base == ARM64_REG_SP)
+                    return static_cast<int32>(disp + frame.stackOffset);
+                return {};
+            }
+            if (isArm32) {
+                const unsigned int frameRegister = frame.frameRegister == 11 ? ARM_REG_R11 : (frame.frameRegister == 7 ? ARM_REG_R7 : ARM_REG_INVALID);
+                if (frame.usesFrameRegister && base == frameRegister && frameRegister != ARM_REG_INVALID)
+                    return static_cast<int32>(disp);
+                if (base == ARM_REG_SP)
+                    return static_cast<int32>(disp + frame.stackOffset);
+                return {};
+            }
+            if (index != X86_REG_INVALID)
+                return {};
+            if (frame.usesFrameRegister && (base == X86_REG_RBP || base == X86_REG_EBP))
+                return static_cast<int32>(disp);
+            if (!frame.usesFrameRegister && (base == X86_REG_RSP || base == X86_REG_ESP))
+                if (const auto delta = frame.StackDeltaAt(address); delta.has_value())
+                    return static_cast<int32>(disp + delta.value());
+            return {};
+        };
+        const auto nameArguments = [&](const AsmFunctionDetails& prototype) {
+            for (size_t index = 0; index < prototype.params.size(); index++) {
+                std::optional<int32> source;
+                if (const int reg = argumentRegister(index); reg >= 0 && reg < static_cast<int>(registers.size()))
+                    source = registers[reg];
+                else if (isX86 && index < pushes.size())
+                    source = pushes[pushes.size() - 1 - index]; // the last push is the first argument
+                if (!source.has_value() && index < MAX_SLOTS)
+                    source = stackArgs[index];
+                if (!source.has_value())
+                    continue;
+                auto* variable           = frame.FindVariable(source.value());
+                const std::string_view name = prototype.params[index].name;
+                if (!variable || !(variable->name.starts_with("var_") || variable->name.starts_with("arg_")) || !IsValidLocalVariableName(name) ||
+                    frame.HasVariableNamed(name))
+                    continue;
+                variable->name = std::string(name);
+            }
+        };
+
+        cs_insn* insn = code ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return;
+        const uint8* data = code;
+        size_t size       = static_cast<size_t>(std::min<uint64>(codeLength, limit - start));
+        uint64 address    = start;
+        for (uint32 decoded = 0; decoded < MAX_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn); decoded++) {
+            const cs_insn& current = *insn;
+            const auto flow        = GetInstructionFlow(current, functionArch);
+            if (flow == X86Flow::Call) {
+                if (const auto* prototype = FindApiPrototype(CalleeName(current, functionArch)))
+                    nameArguments(*prototype);
+                registers.fill(std::nullopt); // the callee changes the volatile registers; the arguments are consumed
+                stackArgs.fill(std::nullopt);
+                pushes.clear();
+                continue;
+            }
+            if (flow == X86Flow::Jump || flow == X86Flow::Return) {
+                registers.fill(std::nullopt);
+                stackArgs.fill(std::nullopt);
+                pushes.clear();
+                continue;
+            }
+            // the register written by the instruction and what it holds then
+            int destination = -1;
+            std::optional<int32> held;
+            bool knownEffect = false;
+            if (isArm64 || isArm32) {
+                const uint8 count = isArm64 ? current.detail->arm64.op_count : current.detail->arm.op_count;
+                if (count == 0)
+                    continue;
+                const auto opType = [&](uint8 i) { return isArm64 ? static_cast<int>(current.detail->arm64.operands[i].type) : static_cast<int>(current.detail->arm.operands[i].type); };
+                const auto opReg  = [&](uint8 i) { return isArm64 ? static_cast<unsigned int>(current.detail->arm64.operands[i].reg) : static_cast<unsigned int>(current.detail->arm.operands[i].reg); };
+                const auto opImm  = [&](uint8 i) { return isArm64 ? static_cast<int64>(current.detail->arm64.operands[i].imm) : static_cast<int64>(current.detail->arm.operands[i].imm); };
+                const int REG = isArm64 ? ARM64_OP_REG : ARM_OP_REG, IMM = isArm64 ? ARM64_OP_IMM : ARM_OP_IMM, MEM = isArm64 ? ARM64_OP_MEM : ARM_OP_MEM;
+                const bool isStore = isArm64 ? (current.id == ARM64_INS_STR || current.id == ARM64_INS_STUR) : current.id == ARM_INS_STR;
+                const bool isLoad  = isArm64 ? (current.id == ARM64_INS_LDR || current.id == ARM64_INS_LDUR) : current.id == ARM_INS_LDR;
+                const bool isAdd   = isArm64 ? current.id == ARM64_INS_ADD : current.id == ARM_INS_ADD;
+                const bool isSub   = isArm64 ? current.id == ARM64_INS_SUB : current.id == ARM_INS_SUB;
+                const bool isMove  = isArm64 ? current.id == ARM64_INS_MOV : current.id == ARM_INS_MOV;
+                if (isStore && count == 2 && opType(1) == MEM) {
+                    // str x1, [sp, #8]: an argument in the stack
+                    if (const auto slot = GetArgumentSlot(current, functionArch, false); slot.has_value() && slot.value() < MAX_SLOTS) {
+                        const int source       = registerIndex(opReg(0));
+                        stackArgs[slot.value()] = source >= 0 ? registers[source] : std::nullopt;
+                    }
+                    continue;
+                }
+                if (opType(0) == REG)
+                    destination = registerIndex(opReg(0));
+                if (isLoad && count == 2 && opType(1) == MEM) {
+                    const auto& base = isArm64 ? static_cast<unsigned int>(current.detail->arm64.operands[1].mem.base) : static_cast<unsigned int>(current.detail->arm.operands[1].mem.base);
+                    const auto& indexRegister = isArm64 ? static_cast<unsigned int>(current.detail->arm64.operands[1].mem.index) : static_cast<unsigned int>(current.detail->arm.operands[1].mem.index);
+                    const int64 disp = isArm64 ? current.detail->arm64.operands[1].mem.disp : current.detail->arm.operands[1].mem.disp;
+                    const bool noIndex = isArm64 ? indexRegister == ARM64_REG_INVALID : indexRegister == ARM_REG_INVALID;
+                    if (noIndex)
+                        held = frameOffsetOf(base, isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, disp, current.address); // the value of the slot
+                    knownEffect = true;
+                } else if ((isAdd || isSub) && count == 3 && opType(1) == REG && opType(2) == IMM) {
+                    const int64 value = isSub ? -opImm(2) : opImm(2);
+                    held              = frameOffsetOf(opReg(1), isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, value, current.address); // the address of the slot
+                    knownEffect       = true;
+                } else if (isMove && count == 2 && opType(1) == REG) {
+                    const int source = registerIndex(opReg(1));
+                    held             = source >= 0 ? registers[source] : std::nullopt;
+                    knownEffect      = true;
+                }
+                if (destination >= 0 && destination < static_cast<int>(registers.size()))
+                    registers[destination] = knownEffect ? held : std::nullopt;
+                continue;
+            }
+            // x86 / x64
+            const cs_x86& x86 = current.detail->x86;
+            if (current.id == X86_INS_PUSH && x86.op_count == 1) {
+                const auto& op = x86.operands[0];
+                if (op.type == X86_OP_REG) {
+                    const int source = registerIndex(op.reg);
+                    pushes.push_back(source >= 0 ? registers[source] : std::nullopt);
+                } else if (op.type == X86_OP_MEM)
+                    pushes.push_back(frameOffsetOf(op.mem.base, op.mem.index, op.mem.disp, current.address));
+                else
+                    pushes.push_back(std::nullopt);
+                continue;
+            }
+            if ((current.id == X86_INS_MOV || current.id == X86_INS_LEA) && x86.op_count == 2) {
+                const auto& to   = x86.operands[0];
+                const auto& from = x86.operands[1];
+                if (to.type == X86_OP_MEM) {
+                    // mov [rsp + 0x20], rax / mov [esp + 4], eax: an argument in the stack
+                    if (const auto slot = GetArgumentSlot(current, functionArch, zone->systemVCalls); slot.has_value() && slot.value() < MAX_SLOTS) {
+                        const int source       = from.type == X86_OP_REG ? registerIndex(from.reg) : -1;
+                        stackArgs[slot.value()] = source >= 0 ? registers[source] : std::nullopt;
+                    }
+                    continue;
+                }
+                if (to.type == X86_OP_REG) {
+                    destination = registerIndex(to.reg);
+                    if (from.type == X86_OP_MEM)
+                        held = frameOffsetOf(from.mem.base, from.mem.index, from.mem.disp, current.address); // lea: the address; mov: the value
+                    else if (from.type == X86_OP_REG) {
+                        const int source = registerIndex(from.reg);
+                        held             = source >= 0 ? registers[source] : std::nullopt;
+                    }
+                    if (destination >= 0 && destination < static_cast<int>(registers.size()))
+                        registers[destination] = held;
+                    continue;
+                }
+            }
+            // any other write forgets what the register held
+            for (uint8 index = 0; index < x86.op_count; index++)
+                if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                    if (const int reg = registerIndex(x86.operands[index].reg); reg >= 0 && reg < static_cast<int>(registers.size()))
+                        registers[reg].reset();
+            for (uint8 index = 0; index < current.detail->regs_write_count; index++)
+                if (const int reg = registerIndex(current.detail->regs_write[index]); reg >= 0 && reg < static_cast<int>(registers.size()))
+                    registers[reg].reset();
+        }
+        cs_free(insn, 1);
+    }
+
     // a label on the line of its instruction, the local variables of a function below its label
     void PlaceLabel(const std::pair<uint64, std::string>& call)
     {
@@ -1846,6 +2119,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         if (!analyzed || frame.variables.empty())
             return;
+        NameVariablesFromCalls(frame, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch);
+        for (auto& variable : frame.variables)
+            variable.analysisName = variable.name; // a name different from it is the user's (the annotations)
         // IDA like: the variables are listed right below the function label
         for (const auto& variable : frame.variables) {
             annotations.insert({ diffLines + extraLines, { std::string{}, PackLocalVariableAnnotation(relativeAddress, variable.frameOffset) } });

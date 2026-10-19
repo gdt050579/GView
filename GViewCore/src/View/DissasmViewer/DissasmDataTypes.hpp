@@ -257,6 +257,9 @@ namespace View
             int32 frameOffset; // signed displacement relative to the frame register: [ebp - 8] -> -8
             uint16 size;       // widest access in bytes, 0 when only its address is taken (lea)
             std::string name;
+            // the name the analysis gave (var_8, or the argument of an API it is passed as: phkResult); empty: the default name. Not saved:
+            // the analysis gives it again; a name different from it is the user's
+            std::string analysisName;
         };
 
         // Frame of a function that uses a frame pointer (push ebp; mov ebp, esp). Addresses use the same base as the instructions drawn

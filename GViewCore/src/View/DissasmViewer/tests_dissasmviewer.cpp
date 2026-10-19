@@ -4943,6 +4943,55 @@ TEST_CASE("ArgumentSlots", "[Dissasm]Help")
     REQUIRE_FALSE(x86({ 0x8B, 0x44, 0x24, 0x04 }).has_value());                                 // mov eax, dword ptr [esp + 4]
 }
 
+TEST_CASE("VariableNamesFromApiArguments", "[Dissasm]Help")
+{
+    // &var_10 is the phkResult of RegOpenKeyExW (the fifth argument: [rsp + 0x20]), then its value the hKey of RegCloseKey: the variable is
+    // phkResult (the first call names it); var_8 is passed to nothing
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push rbp
+        0x48, 0x89, 0xE5,                   // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x30,             // 0x04: sub rsp, 0x30
+        0x89, 0x4D, 0xF8,                   // 0x08: mov dword ptr [rbp - 8], ecx
+        0x48, 0x8D, 0x45, 0xF0,             // 0x0b: lea rax, [rbp - 0x10]
+        0x48, 0x89, 0x44, 0x24, 0x20,       // 0x0f: mov qword ptr [rsp + 0x20], rax
+        0x41, 0xB9, 0x19, 0x00, 0x02, 0x00, // 0x14: mov r9d, 0x20019
+        0x45, 0x31, 0xC0,                   // 0x1a: xor r8d, r8d
+        0x31, 0xD2,                         // 0x1d: xor edx, edx
+        0xB9, 0x02, 0x00, 0x00, 0x80,       // 0x1f: mov ecx, 0x80000002
+        0xFF, 0x15, 0x56, 0x00, 0x00, 0x00, // 0x24: call qword ptr [rip + 0x56] -> slot 0x80 (RegOpenKeyExW)
+        0x48, 0x8B, 0x4D, 0xF0,             // 0x2a: mov rcx, qword ptr [rbp - 0x10]
+        0xFF, 0x15, 0x54, 0x00, 0x00, 0x00, // 0x2e: call qword ptr [rip + 0x54] -> slot 0x88 (RegCloseKey)
+        0x48, 0x89, 0xEC,                   // 0x34: mov rsp, rbp
+        0x5D,                               // 0x37: pop rbp
+        0xC3,                               // 0x38: ret
+    };
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "RegOpenKeyExW", MemoryMappingType::FunctionMapping } }, { 0x88, { "RegCloseKey", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x10) != nullptr);
+    REQUIRE(frame->FindVariable(-0x10)->name == "phkResult");
+    REQUIRE(frame->FindVariable(-0x10)->analysisName == "phkResult");
+    REQUIRE(frame->FindVariable(-8)->name == "var_8");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "lea    rax, [rbp + phkResult]").size() > 0);
+    // the name of the analysis is not a name of the user: not in the annotations; a rename of the user is
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE_FALSE(document["zones"][0].contains("variables"));
+    zone.localVariables.functions[0].FindVariable(-0x10)->name = "hRunKey";
+    document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["variables"].size() == 1);
+    REQUIRE(document["zones"][0]["variables"][0]["name"] == "hRunKey");
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes
