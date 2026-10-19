@@ -2250,6 +2250,11 @@ bool GView::View::DissasmViewer::DissasmCodeZone::InitZone(DissasmCodeZoneInitDa
     labelAddressBase = initData.labelAddressBase.value_or(zoneDetails.startingZonePoint); // the first decoded instruction is the zone start
     paddingAlignmentBase = initData.alignPadding ? labelAddressBase : DISSASM_NO_PADDING_ALIGNMENT;
     zoneObject       = initData.obj;
+    // the calling convention of x64 code: Windows for a PE, System V for the others (ELF, Mach-O)
+    {
+        auto contentType       = initData.obj.IsValid() ? initData.obj->GetContentType() : Reference<GView::TypeInterface>();
+        systemVCalls           = zoneDetails.language == DisassemblyLanguage::x64 && contentType.IsValid() && contentType->GetTypeName() != "PE";
+    }
     relocatedPointers = initData.relocatedPointers;
 
     // TODO: move this on init

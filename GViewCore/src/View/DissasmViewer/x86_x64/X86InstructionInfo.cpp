@@ -103,13 +103,40 @@ int GView::View::DissasmViewer::GetX64RegisterFamily(unsigned int reg)
     }
 }
 
-std::optional<uint8> GView::View::DissasmViewer::GetX64ArgumentSlot(const cs_insn& insn)
+std::optional<uint8> GView::View::DissasmViewer::GetX64ArgumentSlot(const cs_insn& insn, bool systemV)
 {
     if (insn.id == X86_INS_INVALID || !insn.detail || insn.detail->x86.op_count == 0)
         return {};
     const cs_x86_op& op = insn.detail->x86.operands[0];
     if ((op.access & CS_AC_WRITE) == 0)
         return {};
+    if (systemV) {
+        // the integer arguments (the floating point ones go in xmm0.. separately: not counted), the seventh on in the stack
+        constexpr int64 MAX_STACK_ARG = 16;
+        if (op.type == X86_OP_REG) {
+            const int family = GetX64RegisterFamily(op.reg);
+            switch (family) {
+            case 7: // rdi
+                return 0;
+            case 6: // rsi
+                return 1;
+            case 2: // rdx
+                return 2;
+            case 1: // rcx
+                return 3;
+            case 8: // r8
+                return 4;
+            case 9: // r9
+                return 5;
+            default:
+                return {};
+            }
+        }
+        if (op.type == X86_OP_MEM && op.mem.base == X86_REG_RSP && op.mem.index == X86_REG_INVALID && op.mem.disp >= 0 && op.mem.disp % 8 == 0 &&
+            op.mem.disp < 8 * MAX_STACK_ARG)
+            return static_cast<uint8>(6 + op.mem.disp / 8);
+        return {};
+    }
     if (op.type == X86_OP_REG) {
         switch (op.reg) {
         case X86_REG_RCX:

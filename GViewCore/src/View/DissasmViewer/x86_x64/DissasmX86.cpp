@@ -874,20 +874,14 @@ static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const Dissa
     return separator == std::string_view::npos ? std::string() : std::string(operands.substr(0, separator + 2));
 }
 
-// a call to a known Windows API (KNOWN_FUNCTIONS): its arguments are named on the lines prepared before the call (x86 / x64 calling
-// conventions)
+// a call to a known API (FindApiPrototype): its arguments are named on the lines prepared before the call (x86 / x64 calling
+// conventions); not when the lines are built without the known functions (asmData.functions empty: the cursor line)
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
-    if (params.zone->IsArmCode())
+    if (params.zone->IsArmCode() || params.asmData->functions.empty())
         return;
-    GView::Hashes::CRC32 crc32{};
-    uint32 hash = 0;
-    if (!crc32.Init(GView::Hashes::CRC32Type::JAMCRC) || !crc32.Update(reinterpret_cast<const uint8*>(functionName.data()), static_cast<uint32>(functionName.size())) ||
-        !crc32.Final(hash))
-        return;
-    const auto it = params.asmData->functions.find(hash);
-    if (it != params.asmData->functions.end())
-        params.zone->asmPreCacheData.AnnounceCallInstruction(it->second, params.zone->Is64BitCode());
+    if (const auto* details = FindApiPrototype(functionName))
+        params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode());
 }
 
 // the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
@@ -986,7 +980,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     const auto flow     = GetInstructionFlow(*insn, params.zone->GetArch());
     const auto operands = params.zone->GetOperandsInfo(*insn);
     if (params.zone->GetArch() == DissasmArch::X64) {
-        const auto slot = GetX64ArgumentSlot(*insn); // mov rcx, ... / mov [rsp + 0x20], ...: an argument of the next call
+        const auto slot = GetX64ArgumentSlot(*insn, params.zone->systemVCalls); // mov rcx, ... / mov [rsp + 0x20], ...: an argument of the next call
         argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
     }
     if (flow == X86Flow::Call)
@@ -2342,14 +2336,33 @@ void Instance::RefreshCursorLineNumbers()
         cursorLineNumbers.location = zone->FormatCodeAddress(asmLine.address) + fileOffset.GetText();
     }
 
+    // a call / jmp through an import slot (the name of the import is drawn instead of the operands): the prototype of the import
+    if (const auto* import = static_cast<const MemoryMappingEntry*>(asmLine.mapping);
+        import && import->type == MemoryMappingType::FunctionMapping && !asmLine.isCollapsedLine)
+        if (const auto* prototype = FindApiPrototype(import->name))
+            cursorLineNumbers.instruction = std::string(prototype->prototype);
+
     // only instructions: not labels, local variable lines or collapsed zones
     const bool isCollapsedZoneLine = asmLine.isCollapsedLine;
     if (!asmLine.op_str || asmLine.size == 0 || isCollapsedZoneLine || asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
         return;
-    // what the instruction does (explain on hover): the status bar
-    if (const auto help = DescribeInstruction(asmLine.mnemonic, std::string_view(asmLine.op_str, asmLine.op_str_size), zone->GetArchAt(asmLine.address));
-        !help.empty())
-        cursorLineNumbers.instruction = std::string(asmLine.mnemonic) + ": " + help;
+    // what the instruction does (explain on hover): the status bar; a call / jmp to a known API: its prototype
+    const std::string_view lineOperands(asmLine.op_str, asmLine.op_str_size);
+    const auto lineKind = static_cast<X86InstructionKind>(asmLine.instructionKind);
+    if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump)) {
+        // the last name of the operands: call CreateFileW / call cs:__imp_CreateFileW / jmp j_connect
+        size_t end = lineOperands.size();
+        while (end > 0 && !IsTokenCharacter(lineOperands[end - 1]))
+            end--;
+        size_t start = end;
+        while (start > 0 && IsTokenCharacter(lineOperands[start - 1]))
+            start--;
+        if (const auto* prototype = start < end ? FindApiPrototype(lineOperands.substr(start, end - start)) : nullptr)
+            cursorLineNumbers.instruction = std::string(prototype->prototype);
+    }
+    if (cursorLineNumbers.instruction.empty())
+        if (const auto help = DescribeInstruction(asmLine.mnemonic, lineOperands, zone->GetArchAt(asmLine.address)); !help.empty())
+            cursorLineNumbers.instruction = std::string(asmLine.mnemonic) + ": " + help;
 
     CharacterBuffer lineText; // drawn without the left margin: its columns have the same base as Cursor.offset
     std::vector<uint32> opStrColumns;

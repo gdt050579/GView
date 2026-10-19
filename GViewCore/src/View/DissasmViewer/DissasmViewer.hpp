@@ -386,7 +386,13 @@ namespace View
 
             std::string_view functionName;
             std::vector<NameType> params;
+            std::string_view prototype; // "HANDLE CreateFileW(LPCWSTR lpFileName, ...)"
         };
+        // the prototypes of the common APIs (Windows, the C run-time / POSIX; DissasmApiPrototypes.cpp): by the name of an import / a function
+        // (the import prefixes, the version / stdcall suffixes, the underscore of Mach-O, Zw for Nt); null when it is not known
+        const AsmFunctionDetails* FindApiPrototype(std::string_view name);
+        size_t GetApiPrototypesCount();
+        void ForEachApiPrototype(const std::function<void(const AsmFunctionDetails&)>& callback);
 
         struct DissasmAsmPreCacheData {
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
@@ -649,7 +655,8 @@ namespace View
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
             std::deque<DissasmCodeZone*> zonesToClear;
         };
-        // the Windows APIs with known arguments (AnnounceCallInstruction)
+        // the APIs with known arguments (AnnounceCallInstruction, FindApiPrototype): their names in asmData.functions (empty: the arguments
+        // are not named)
         void AddKnownFunctions(AsmData& asmData);
 
         struct DrawLineInfo {

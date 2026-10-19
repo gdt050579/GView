@@ -176,6 +176,7 @@ struct DissasmCodeZone : public ParseZone {
     cs_arch capstoneArch     = CS_ARCH_X86; // CS_ARCH_X86 / CS_ARCH_ARM64
     bool hasDecoder          = false;       // the language is known: capstoneArch and internalArchitecture are set
     bool isInit              = false;
+    bool systemVCalls        = false; // x64 code of an ELF / Mach-O file: the System V calling convention (GetX64ArgumentSlot)
     bool initTried           = false; // InitZone ran (it may have failed): the zones prepared in the background are not tried again
 
     // x86/x64: decoded instructions count (the zone lines are the instructions plus the annotations of the root type)

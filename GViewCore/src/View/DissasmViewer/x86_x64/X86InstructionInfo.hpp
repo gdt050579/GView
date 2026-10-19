@@ -35,7 +35,9 @@ int GetX64RegisterFamily(unsigned int reg);
 
 // The argument of the Windows x64 calling convention written by the instruction (its first operand): 0-3 for rcx / rdx / r8 / r9 (any size)
 // or xmm0-3, 4 and more for the stack slots [rsp + 0x20 + 8 * n]; none when it writes no argument.
-std::optional<AppCUI::uint8> GetX64ArgumentSlot(const cs_insn& insn);
+// `systemV`: the convention of Linux / macOS (rdi, rsi, rdx, rcx, r8, r9, then the stack from [rsp]); otherwise the one of Windows (rcx,
+// rdx, r8, r9, then the stack above the 0x20 bytes of home space)
+std::optional<AppCUI::uint8> GetX64ArgumentSlot(const cs_insn& insn, bool systemV = false);
 
 // What an instruction is, for its color: from its id (no CS_OPT_DETAIL needed); the data lines of DecodeX86Line (X86_INS_INVALID) by their
 // mnemonic: db is Data, align is Padding. System: the system calls, interrupts, privileged and anti debug / anti VM instructions (cpuid, rdtsc,

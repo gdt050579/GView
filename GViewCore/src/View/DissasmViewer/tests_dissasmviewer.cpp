@@ -4840,6 +4840,65 @@ TEST_CASE("InstructionHelp", "[Dissasm]Help")
     REQUIRE(thumb("pop") == "load registers from the stack (with pc: return)");
 }
 
+TEST_CASE("ApiPrototypes", "[Dissasm]Help")
+{
+    REQUIRE(GetApiPrototypesCount() > 450);
+    const auto* createFile = FindApiPrototype("CreateFileW");
+    REQUIRE(createFile != nullptr);
+    REQUIRE(createFile->params.size() == 7);
+    REQUIRE(std::string_view(createFile->params[0].name) == "lpFileName");
+    REQUIRE(std::string_view(createFile->params[0].type) == "LPCWSTR");
+    REQUIRE(std::string_view(createFile->params[6].name) == "hTemplateFile");
+    REQUIRE(createFile->prototype.starts_with("HANDLE CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess"));
+    const auto* createFileA = FindApiPrototype("__imp_CreateFileA"); // the A function of the same line
+    REQUIRE(createFileA != nullptr);
+    REQUIRE(std::string_view(createFileA->params[0].type) == "LPCSTR");
+    REQUIRE(FindApiPrototype("j_connect") == FindApiPrototype("connect"));
+    REQUIRE(FindApiPrototype("connect@GLIBC_2.2.5") == FindApiPrototype("connect"));
+    REQUIRE(FindApiPrototype("_connect") == FindApiPrototype("connect")); // Mach-O
+    REQUIRE(FindApiPrototype("_CreateProcessA@40") == FindApiPrototype("CreateProcessA"));
+    REQUIRE(FindApiPrototype("ZwClose") == FindApiPrototype("NtClose"));
+    REQUIRE(FindApiPrototype("Process32FirstW") != nullptr);
+    REQUIRE(FindApiPrototype("_stricmp")->functionName == "_stricmp");
+    const auto* printfDetails = FindApiPrototype("printf");
+    REQUIRE(printfDetails->params.size() == 1); // the ... is not an argument
+    REQUIRE(std::string_view(printfDetails->params[0].type) == "const char*");
+    const auto* execve = FindApiPrototype("execve");
+    REQUIRE(std::string_view(execve->params[1].type) == "char* const*");
+    REQUIRE(FindApiPrototype("GetTickCount")->params.empty());
+    REQUIRE(FindApiPrototype("NoSuchFunction") == nullptr);
+}
+
+TEST_CASE("X64ArgumentSlots", "[Dissasm]Help")
+{
+    const auto slotOf = [](std::initializer_list<unsigned char> code, bool systemV) {
+        csh handle;
+        REQUIRE(cs_open(CS_ARCH_X86, CS_MODE_64, &handle) == CS_ERR_OK);
+        REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+        cs_insn* insn = cs_malloc(handle);
+        const std::vector<unsigned char> bytes(code);
+        const uint8_t* data = bytes.data();
+        size_t size         = bytes.size();
+        uint64_t address    = 0;
+        REQUIRE(cs_disasm_iter(handle, &data, &size, &address, insn));
+        const auto slot = GetX64ArgumentSlot(*insn, systemV);
+        cs_free(insn, 1);
+        cs_close(&handle);
+        return slot;
+    };
+    // mov edi, 1: the first argument of System V, nothing on Windows
+    REQUIRE(slotOf({ 0xBF, 0x01, 0x00, 0x00, 0x00 }, true) == std::optional<uint8>(0));
+    REQUIRE_FALSE(slotOf({ 0xBF, 0x01, 0x00, 0x00, 0x00 }, false).has_value());
+    // mov ecx, 1: the fourth of System V, the first of Windows
+    REQUIRE(slotOf({ 0xB9, 0x01, 0x00, 0x00, 0x00 }, true) == std::optional<uint8>(3));
+    REQUIRE(slotOf({ 0xB9, 0x01, 0x00, 0x00, 0x00 }, false) == std::optional<uint8>(0));
+    // mov qword ptr [rsp + 8], rax: the eighth of System V (the stack from [rsp]), the home space on Windows
+    REQUIRE(slotOf({ 0x48, 0x89, 0x44, 0x24, 0x08 }, true) == std::optional<uint8>(7));
+    REQUIRE_FALSE(slotOf({ 0x48, 0x89, 0x44, 0x24, 0x08 }, false).has_value());
+    // mov qword ptr [rsp + 0x20], rax: the fifth of Windows
+    REQUIRE(slotOf({ 0x48, 0x89, 0x44, 0x24, 0x20 }, false) == std::optional<uint8>(4));
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes
