@@ -512,14 +512,14 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     } else if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
         function = zone->localVariables.FindFunctionByAddress(address);
         variable = function && function->usesFrameRegister ? function->FindVariable(frameOperand.frameOffset) : nullptr;
-    } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() && zone->Is64BitCode() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
+    } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
                stackFunction && !stackFunction->usesFrameRegister &&
-               (FindX86StackOperand(text, frameOperand) ||
+               (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp") ||
                 (address >= stackFunction->stackAliasStart && address < stackFunction->stackAliasEnd && FindX86StackOperand(text, frameOperand, stackFunction->stackAlias)))) {
-        // x64 without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the rsp of the entry; a copy of rsp
-        // (mov r11, rsp): [r11 - 0x28] -> [r11 + var_28]
+        // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; a copy of
+        // it (mov r11, rsp): [r11 - 0x28] -> [r11 + var_28]
         function           = stackFunction;
-        const bool viaCopy = text.find("[rsp") == std::string_view::npos;
+        const bool viaCopy = text.find(zone->Is64BitCode() ? "[rsp" : "[esp") == std::string_view::npos;
         const auto delta   = viaCopy ? std::optional<int32>(function->stackAliasDelta) : function->StackDeltaAt(address);
         if (delta.has_value()) {
             frameOperand.frameOffset += delta.value();

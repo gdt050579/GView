@@ -1359,7 +1359,7 @@ TEST_CASE("LocalVariablesStackPointerFrames", "[Dissasm]LocalVariables")
 
     DetailHandle x64(CS_MODE_64);
     DissasmFunctionFrame frame{};
-    REQUIRE(AnalyzeX64StackFrame(x64.handle, x64StackFrameCode.data(), x64StackFrameCode.size(), 0, x64StackFrameCode.size(), frame));
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, x64StackFrameCode.data(), x64StackFrameCode.size(), 0, x64StackFrameCode.size(), true, frame));
     REQUIRE(!frame.usesFrameRegister);
     REQUIRE(frame.endAddress == 0x26);
     REQUIRE(frame.stackOffset == -0x38);
@@ -1376,7 +1376,7 @@ TEST_CASE("LocalVariablesStackPointerFrames", "[Dissasm]LocalVariables")
 
     // rsp written by something else than push / pop / sub / add / lea: not followed (push rbp; mov rbp, rsp; and rsp, -0x10; ...)
     const std::vector<uint8> aligned = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xE4, 0xF0, 0x89, 0x44, 0x24, 0x20, 0xC9, 0xC3 };
-    REQUIRE(!AnalyzeX64StackFrame(x64.handle, aligned.data(), aligned.size(), 0, aligned.size(), frame));
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, aligned.data(), aligned.size(), 0, aligned.size(), true, frame));
 
     // the listing: [rsp + 0x38 + var_18] (rsp + 0x38 is the rsp of the entry), [r11 + var_10]
     std::vector<uint8> file = x64StackFrameCode;
@@ -1396,6 +1396,99 @@ TEST_CASE("LocalVariablesStackPointerFrames", "[Dissasm]LocalVariables")
     REQUIRE(dissasmInstance.CheckLineText(11, "mov rax, qword ptr [rsp + 0x38 + var_38]"));
     REQUIRE(dissasmInstance.CheckLineText(13, "mov qword ptr [r11 - 8], rax"));
     REQUIRE(dissasmInstance.CheckLineText(14, "add rsp, 0x30"));
+
+    // mov eax, 0x1050; call __chkstk; sub rsp, rax; mov [rsp + 0x20], ecx; add rsp, 0x1050; ret: the size of the frame from eax
+    const std::vector<uint8> probed = { 0xB8, 0x50, 0x10, 0x00, 0x00, 0xE8, 0x36, 0x00, 0x00, 0x00, 0x48, 0x2B, 0xE0,
+                                        0x89, 0x4C, 0x24, 0x20, 0x48, 0x81, 0xC4, 0x50, 0x10, 0x00, 0x00, 0xC3 };
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, probed.data(), probed.size(), 0, probed.size(), true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -0x1030, 4, "var_1030" } }));
+}
+
+// x86 without a frame register (MSVC FPO): a stdcall import, a cdecl callee cleaned up by pop ecx a few instructions later
+static const std::vector<uint8> x86StackFrameCode = {
+    0x83, 0xEC, 0x10,                   // 0x00: sub esp, 0x10
+    0x56,                               // 0x03: push esi (saved)
+    0x8B, 0x74, 0x24, 0x18,             // 0x04: mov esi, dword ptr [esp + 0x18] (arg_0)
+    0x89, 0x74, 0x24, 0x04,             // 0x08: mov dword ptr [esp + 4], esi (var_10)
+    0x6A, 0x00,                         // 0x0C: push 0
+    0x56,                               // 0x0E: push esi
+    0xFF, 0x15, 0x00, 0x20, 0x40, 0x00, // 0x0F: call dword ptr [0x402000] (stdcall: pops its 8 bytes)
+    0x8B, 0xC8,                         // 0x15: mov ecx, eax
+    0x89, 0x4C, 0x24, 0x08,             // 0x17: mov dword ptr [esp + 8], ecx (var_C)
+    0x51,                               // 0x1B: push ecx
+    0xE8, 0x1F, 0x00, 0x00, 0x00,       // 0x1C: call 0x40 (cdecl)
+    0x59,                               // 0x21: pop ecx (the caller cleans up)
+    0x5E,                               // 0x22: pop esi
+    0x83, 0xC4, 0x10,                   // 0x23: add esp, 0x10
+    0xC2, 0x04, 0x00,                   // 0x26: ret 4
+};
+
+TEST_CASE("LocalVariablesStackPointerFrames32", "[Dissasm]LocalVariables")
+{
+    X86FrameOperand operand{};
+    REQUIRE(FindX86StackOperand("dword ptr [esp + 0x18]", operand, "esp"));
+    REQUIRE(operand.frameOffset == 0x18);
+
+    DetailHandle x86(CS_MODE_32);
+    DissasmFunctionFrame frame{};
+    const auto analyze = [&](const std::vector<uint8>& code, const X86CalleeStackPurge& purge = {}, uint64 codeAddress = 0) {
+        return AnalyzeX86StackFrame(x86.handle, code.data(), code.size(), codeAddress, codeAddress + code.size(), false, frame, purge);
+    };
+    // the callees: not known (the guesses), or known (a direct call: cdecl, a call through memory: stdcall with 8 bytes)
+    const X86CalleeStackPurge knownCallees = [](const cs_insn& call) -> std::optional<uint32> {
+        return call.detail->x86.operands[0].type == X86_OP_IMM ? 0u : 8u;
+    };
+    for (const auto& purge : { X86CalleeStackPurge{}, knownCallees }) {
+        REQUIRE(analyze(x86StackFrameCode, purge));
+        REQUIRE(!frame.usesFrameRegister);
+        REQUIRE(frame.endAddress == 0x29);
+        REQUIRE(CheckFrameVariables(frame, { { -0x10, 4, "var_10" }, { -0xC, 4, "var_C" }, { 4, 4, "arg_0" } }));
+        REQUIRE(frame.StackDeltaAt(0x08) == -0x14);
+        REQUIRE(frame.StackDeltaAt(0x15) == (purge ? -0x14 : -0x1C)); // a guess waits for the next use of the stack
+        REQUIRE(frame.StackDeltaAt(0x17) == -0x14);
+        REQUIRE(frame.StackDeltaAt(0x21) == -0x18);
+        REQUIRE(frame.StackDeltaAt(0x26) == 0);
+    }
+
+    // push esi; mov esi, [esp + 8]; push esi; call [free]; push esi; call [free]; add esp, 8; pop esi; ret: the cleanup of two cdecl calls
+    // at once; guessed as stdcall the ret is unbalanced, known as cdecl it is not
+    const std::vector<uint8> deferred = { 0x56, 0x8B, 0x74, 0x24, 0x08, 0x56, 0xFF, 0x15, 0x00, 0x20, 0x40, 0x00,
+                                          0x56, 0xFF, 0x15, 0x04, 0x20, 0x40, 0x00, 0x83, 0xC4, 0x08, 0x5E, 0xC3 };
+    REQUIRE(!analyze(deferred));
+    REQUIRE(analyze(deferred, [](const cs_insn&) -> std::optional<uint32> { return 0u; }));
+    REQUIRE(CheckFrameVariables(frame, { { 4, 4, "arg_0" } }));
+
+    // push ecx; call [GetFileAttributesW]; mov eax, [esp + 8]; ret: push ecx at the entry is the argument, not a local (the other reading)
+    const std::vector<uint8> entryArgument = { 0x51, 0xFF, 0x15, 0x00, 0x20, 0x40, 0x00, 0x8B, 0x44, 0x24, 0x08, 0xC3 };
+    REQUIRE(analyze(entryArgument));
+    REQUIRE(CheckFrameVariables(frame, { { 8, 4, "arg_4" } }));
+
+    // mov edx, [esp + 8]; jmp __CxxFrameHandler3: a tail call with the stack of the entry; push esi; push 1; mov eax, [esp + 0x10]; jmp
+    // back: a chunk of another function (its pushes are still on the stack)
+    REQUIRE(analyze({ 0x8B, 0x54, 0x24, 0x08, 0xEB, 0x80 }, {}, 0x100));
+    REQUIRE(CheckFrameVariables(frame, { { 8, 4, "arg_4" } }));
+    REQUIRE(!analyze({ 0x56, 0x6A, 0x01, 0x8B, 0x44, 0x24, 0x10, 0xEB, 0x80 }, {}, 0x100));
+
+    // mov eax, 0x1000; call __chkstk (moves esp); mov [esp + 0x10], ecx; add esp, 0x1000; ret
+    REQUIRE(analyze({ 0xB8, 0x00, 0x10, 0x00, 0x00, 0xE8, 0x36, 0x00, 0x00, 0x00, 0x89, 0x4C, 0x24, 0x10, 0x81, 0xC4, 0x00, 0x10, 0x00, 0x00, 0xC3 }));
+    REQUIRE(CheckFrameVariables(frame, { { -0xFF0, 4, "var_FF0" } }));
+
+    // the listing: [esp + 0x14 + arg_0]; the callee at 0x40 (ret) is cdecl, the import is not known (a guess)
+    std::vector<uint8> file = x86StackFrameCode;
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3);
+    file.resize(0x60, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(1, "var_10 = dword ptr -0x10"));
+    REQUIRE(dissasmInstance.CheckLineText(3, "arg_0 = dword ptr 4"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "sub esp, 0x10"));
+    REQUIRE(dissasmInstance.CheckLineText(6, "mov esi, dword ptr [esp + 0x14 + arg_0]"));
+    REQUIRE(dissasmInstance.CheckLineText(7, "mov dword ptr [esp + 0x14 + var_10], esi"));
+    REQUIRE(dissasmInstance.CheckLineText(12, "mov dword ptr [esp + 0x14 + var_C], ecx"));
 }
 
 TEST_CASE("LocalVariablesSerialization", "[Dissasm]LocalVariables")

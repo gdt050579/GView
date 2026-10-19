@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DissasmViewer.hpp"
+#include <functional>
 
 namespace GView::View::DissasmViewer
 {
@@ -12,12 +13,27 @@ namespace GView::View::DissasmViewer
 bool AnalyzeX86FunctionFrame(
       csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, bool is64, DissasmFunctionFrame& frame);
 
-// x64 without a frame register (MSVC: push rbx; sub rsp, 0x30, then [rsp + 0x20]): rsp is followed from the entry (push / pop / sub / add rsp
-// / lea rsp, [rsp + n]; after a ret / jmp the body goes on with the deepest rsp: the code after an epilogue is reached from the body), the
-// slots are kept in offsets from the rsp of the entry: [rsp + 0x20] with rsp = entry - 0x38 is var_18; the home space and the stack
-// arguments above the return address are arg_0 ([entry + 8]) ... (frame.usesFrameRegister = false, frame.stackDeltas). False when rsp is
-// written otherwise (mov rsp, rbp: a frame of AnalyzeX86FunctionFrame) or no slot is used
-bool AnalyzeX64StackFrame(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame);
+// 32 bit code: the bytes a callee pops from the stack of its caller (stdcall / thiscall: ret 8; cdecl: 0), none when it is not known
+using X86CalleeStackPurge = std::function<std::optional<uint32>(const cs_insn& call)>;
+
+// Without a frame register (MSVC x64: push rbx; sub rsp, 0x30, then [rsp + 0x20]; x86 FPO / GCC -O2: [esp + 0x1c]): the stack pointer is
+// followed from the entry (push / pop / sub / add / lea rsp, [rsp + n]; mov eax, 0x2000 before __chkstk), the slots are kept in offsets
+// from the stack pointer of the entry: [rsp + 0x20] with rsp = entry - 0x38 is var_18; the arguments above the return address are arg_0
+// ([entry + 8] / [entry + 4]) ... (frame.usesFrameRegister = false, frame.stackDeltas). The code after a ret / jmp goes on with the depth
+// of a branch to it (or the depth of the body). 32 bit: a call moves esp by what its callee pops (`calleePurge`; when it is not known: the
+// arguments pushed since the previous call, unless the caller cleans up: add esp, 8 / pop ecx), a ret reached with an unbalanced stack
+// rejects the function (the ambiguous pushes are read again: push ecx at the entry, a local or an argument; push esi after a call, a saved
+// register or an argument), and so does a function without a ret or a jmp with the stack of the entry (a chunk of another function).
+// False when the stack pointer is written otherwise (mov esp, ebp: a frame of AnalyzeX86FunctionFrame) or no slot is used
+bool AnalyzeX86StackFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      DissasmFunctionFrame& frame,
+      const X86CalleeStackPurge& calleePurge = {});
 
 // IDA like names: [ebp - 0x4C] -> var_4C, [ebp + 8] -> arg_0 (x86) / [rbp + 0x10] -> arg_0 (x64)
 void FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name);
@@ -33,7 +49,7 @@ struct X86FrameOperand {
 // Finds a memory operand that uses only the frame register and a displacement ("[ebp - 8]", "[rbp + 0x10]") inside the capstone Intel syntax
 // operands string. Operands with an index register or without displacement are ignored.
 bool FindX86FrameOperand(std::string_view operands, bool is64, X86FrameOperand& result);
-// [rsp + 0x20] / [rsp] (or a copy of rsp: [r11 - 0x28]): a slot of the stack pointer (x64); frameOffset receives the displacement
+// [rsp + 0x20] / [esp] (or a copy of the stack pointer: [r11 - 0x28]): a slot of the stack pointer; frameOffset receives the displacement
 bool FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std::string_view stackRegister = "rsp");
 
 // ARM64: a function with a frame register (stp x29, x30, [sp, #-N]!; mov x29, sp / add x29, sp, #M) and its slots: the ones addressed

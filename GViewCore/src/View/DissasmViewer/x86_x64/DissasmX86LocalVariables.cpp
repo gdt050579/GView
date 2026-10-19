@@ -1,6 +1,7 @@
 #include "DissasmX86LocalVariables.hpp"
 #include "X86InstructionInfo.hpp"
 #include <algorithm>
+#include <map>
 #include <memory>
 
 using namespace GView::View::DissasmViewer;
@@ -223,8 +224,28 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     return true;
 }
 
-bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
-      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, uint64 limitAddress, DissasmFunctionFrame& frame)
+namespace
+{
+enum class StackFrameResult : uint8 { Accepted, Rejected, Unbalanced };
+
+// the readings of the pushes that are not arguments for sure (AnalyzeStackPointerFrame)
+enum StackPushReading : uint8 {
+    ENTRY_PUSHES_ARE_ARGUMENTS = 1, // push ecx at the entry: an argument of the first call instead of a local
+    LATE_SAVES_ARE_ARGUMENTS   = 2, // push esi after a call (esi not written yet): an argument instead of a saved register (shrink wrapping)
+};
+
+// AnalyzeX86StackFrame with a reading of the ambiguous pushes; `ambiguousPushes` receives the readings that the function needs
+StackFrameResult AnalyzeStackPointerFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      DissasmFunctionFrame& frame,
+      const X86CalleeStackPurge& calleePurge,
+      uint8 reading,
+      uint8& ambiguousPushes)
 {
     frame.startAddress      = codeAddress;
     frame.endAddress        = codeAddress;
@@ -236,20 +257,33 @@ bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
     frame.stackAliasDelta = 0;
     frame.stackAliasStart = frame.stackAliasEnd = 0;
     if (!code || codeSize == 0 || limitAddress <= codeAddress)
-        return false;
+        return StackFrameResult::Rejected;
     const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
     if (!insn || !insn->detail)
-        return false;
+        return StackFrameResult::Rejected;
 
+    const x86_reg stackRegister = is64 ? X86_REG_RSP : X86_REG_ESP;
+    const int64 pointerSize     = is64 ? 8 : 4;
     const uint8* data           = code;
     size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
     uint64 address              = codeAddress;
     uint64 furthestBranchTarget = 0;
     uint32 decodedInstructions  = 0;
-    int64 delta                 = 0; // rsp - the rsp of the entry
-    int64 deepest               = 0; // the rsp of the body
-    x86_reg alias               = X86_REG_INVALID; // mov r11, rsp: a copy of rsp, until it is written
-    int64 aliasDelta            = 0;
+    int64 delta                 = 0; // the stack pointer - the one of the entry
+    int64 deepest               = 0;
+    int64 bodyDelta             = 0;     // the depth after the prologue (the saved registers, sub esp)
+    bool calledYet              = false; // __chkstk is the first call; push esi after a call may be an argument
+    bool leadingPushes          = true;  // the pushes at the entry (push ecx: a local, not an argument)
+    uint32 writtenFamilies      = 0;     // the registers written so far (a saved register is pushed before it is written)
+    int64 pushedArguments       = 0;     // 32 bit: the bytes pushed since the previous call (the arguments of the next call)
+    std::optional<int64> unknownPurge;   // 32 bit: the arguments of a call to an unknown callee, popped unless the caller cleans up
+    std::optional<int64> accumulator;    // mov eax, 0x2000: eax keeps it through the call __chkstk that follows
+    bool accumulatorAfterCall = false;
+    bool flowEnded            = false;
+    bool reachedRet           = false; // 32 bit: a function chunk (the cold code of a function, reached by a jcc) has no ret
+    x86_reg alias             = X86_REG_INVALID; // mov r11, rsp: a copy of the stack pointer, until it is written
+    int64 aliasDelta          = 0;
+    std::map<uint64, int64> branchDeltas; // the depth at the targets of the forward branches
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
     frame.stackDeltas.emplace_back(codeAddress, 0);
@@ -260,6 +294,12 @@ bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
         else if (frame.stackDeltas.back().second != value)
             frame.stackDeltas.emplace_back(at, static_cast<int32>(value));
     };
+    const auto isCalleeSaved = [is64](x86_reg reg) {
+        if (is64)
+            return reg == X86_REG_RBX || reg == X86_REG_RBP || reg == X86_REG_RSI || reg == X86_REG_RDI || reg == X86_REG_R12 ||
+                   reg == X86_REG_R13 || reg == X86_REG_R14 || reg == X86_REG_R15;
+        return reg == X86_REG_EBX || reg == X86_REG_EBP || reg == X86_REG_ESI || reg == X86_REG_EDI;
+    };
 
     while (decodedInstructions < MAX_FUNCTION_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
         decodedInstructions++;
@@ -267,49 +307,113 @@ bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
         const cs_x86& x86        = current->detail->x86;
         const uint64 nextAddress = current->address + current->size;
         frame.endAddress         = nextAddress;
+        const auto immediate     = [&x86](uint8 index) -> std::optional<int64> {
+            return index < x86.op_count && x86.operands[index].type == X86_OP_IMM ? std::optional<int64>(x86.operands[index].imm) : std::nullopt;
+        };
+        const bool adjustsStack = (current->id == X86_INS_SUB || current->id == X86_INS_ADD) && IsRegisterOperand(x86, 0, stackRegister);
 
-        // the slots: [rsp + n] with the rsp before this instruction, [r11 - n] with the rsp of the copy
+        // the depth before this instruction: after a ret / jmp the one of a branch to it, after a call to an unknown callee its arguments
+        // are popped (stdcall) unless the caller cleans up (cdecl: add esp, 8)
+        if (flowEnded) {
+            const auto known = branchDeltas.find(current->address);
+            setDelta(current->address, known != branchDeltas.end() ? known->second : (is64 ? deepest : bodyDelta));
+            flowEnded = false;
+            unknownPurge.reset();
+            pushedArguments = 0;
+        }
+        const bool pushesRegister = current->id == X86_INS_PUSH && x86.op_count == 1 && x86.operands[0].type == X86_OP_REG;
+        const int pushedFamily    = pushesRegister ? GetX64RegisterFamily(x86.operands[0].reg) : -1;
+        if (unknownPurge.has_value()) {
+            // cdecl: the caller cleans up with the first instruction that uses the stack after the call (add esp, 8 / MSVC: pop ecx, maybe
+            // after a mov edi, eax); any other use of the stack (a push, a call, a slot, a branch, a ret): the callee popped its arguments
+            const bool callerCleans = (adjustsStack && current->id == X86_INS_ADD && immediate(1).has_value()) ||
+                                      (current->id == X86_INS_POP && x86.op_count == 1 &&
+                                       (IsRegisterOperand(x86, 0, X86_REG_ECX) || IsRegisterOperand(x86, 0, X86_REG_EDX)));
+            bool usesStack = branchDeltas.count(current->address) != 0 || cs_insn_group(detailHandle, current, CS_GRP_JUMP) ||
+                             cs_insn_group(detailHandle, current, CS_GRP_CALL) || cs_insn_group(detailHandle, current, CS_GRP_RET);
+            for (uint8 index = 0; index < current->detail->regs_read_count && !usesStack; index++)
+                usesStack = current->detail->regs_read[index] == X86_REG_ESP; // push / pop / pushfd
+            for (uint8 index = 0; index < x86.op_count && !usesStack; index++)
+                usesStack = (x86.operands[index].type == X86_OP_MEM && x86.operands[index].mem.base == stackRegister) ||
+                            (x86.operands[index].type == X86_OP_REG && x86.operands[index].reg == stackRegister);
+            if (callerCleans)
+                unknownPurge.reset();
+            else if (usesStack) {
+                setDelta(current->address, delta + unknownPurge.value());
+                unknownPurge.reset();
+            }
+        }
+        // push esi before esi is written: a saved register (also after a call: shrink wrapping); push ecx at the entry: a local
+        const bool savesRegister = pushesRegister && isCalleeSaved(x86.operands[0].reg) && pushedFamily >= 0 &&
+                                   (writtenFamilies & (1u << pushedFamily)) == 0 && !(calledYet && (reading & LATE_SAVES_ARE_ARGUMENTS));
+        const bool allocatesLocal = pushesRegister && leadingPushes && !(reading & ENTRY_PUSHES_ARE_ARGUMENTS) && IsRegisterOperand(x86, 0, X86_REG_ECX);
+        if (allocatesLocal)
+            ambiguousPushes |= ENTRY_PUSHES_ARE_ARGUMENTS;
+        if (savesRegister && calledYet)
+            ambiguousPushes |= LATE_SAVES_ARE_ARGUMENTS;
+        if (!pushesRegister && !IsProloguePadding(current))
+            leadingPushes = false;
+        const bool setsAccumulator = current->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG &&
+                                     GetX64RegisterFamily(x86.operands[0].reg) == 0 && x86.operands[0].size >= 4 && immediate(1).has_value();
+
+        // the slots: [rsp + n] with the stack pointer before this instruction, [r11 - n] with the one of the copy
         for (uint8 index = 0; index < x86.op_count; index++) {
             const cs_x86_op& op = x86.operands[index];
             const bool viaAlias = alias != X86_REG_INVALID && op.type == X86_OP_MEM && op.mem.base == alias;
-            if (op.type != X86_OP_MEM || (op.mem.base != X86_REG_RSP && !viaAlias) || op.mem.index != X86_REG_INVALID ||
+            if (op.type != X86_OP_MEM || (op.mem.base != stackRegister && !viaAlias) || op.mem.index != X86_REG_INVALID ||
                 (op.mem.segment != X86_REG_INVALID && op.mem.segment != X86_REG_SS))
                 continue;
             const int64 offset = op.mem.disp + (viaAlias ? aliasDelta : delta);
-            if ((offset >= 0 && offset < 8) || offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
+            if ((offset >= 0 && offset < pointerSize) || offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
                 continue; // the return address
             accesses.push_back({ static_cast<int32>(offset), static_cast<uint16>(current->id == X86_INS_LEA ? 0 : op.size) });
             if (accesses.size() >= ACCESSES_COMPACT_THRESHOLD && !CompactAccesses(accesses))
-                return false;
+                return StackFrameResult::Rejected;
         }
 
-        // the changes of rsp
-        const auto immediate = [&x86](uint8 index) -> std::optional<int64> {
-            return index < x86.op_count && x86.operands[index].type == X86_OP_IMM ? std::optional<int64>(x86.operands[index].imm) : std::nullopt;
-        };
+        // the changes of the stack pointer
         std::optional<int64> change;
         bool writesStack = false;
         switch (current->id) {
         case X86_INS_PUSH:
+        case X86_INS_PUSHFD:
         case X86_INS_PUSHFQ:
-            change = -8;
+            change = -pointerSize;
+            if (!is64 && !savesRegister && !allocatesLocal)
+                pushedArguments += pointerSize;
             break;
         case X86_INS_POP:
+        case X86_INS_POPFD:
         case X86_INS_POPFQ:
-            change = 8;
+            if (IsRegisterOperand(x86, 0, stackRegister)) {
+                writesStack = true;
+                break;
+            }
+            change          = pointerSize;
+            pushedArguments = std::max<int64>(pushedArguments - pointerSize, 0);
+            break;
+        case X86_INS_PUSHAL:
+            change = -32;
+            break;
+        case X86_INS_POPAL:
+            change = 32;
             break;
         case X86_INS_SUB:
         case X86_INS_ADD:
-            if (IsRegisterOperand(x86, 0, X86_REG_RSP)) {
+            if (adjustsStack) {
                 if (const auto value = immediate(1); value.has_value())
                     change = current->id == X86_INS_SUB ? -value.value() : value.value();
+                else if (current->id == X86_INS_SUB && accumulator.has_value() && x86.op_count == 2 && x86.operands[1].type == X86_OP_REG &&
+                         GetX64RegisterFamily(x86.operands[1].reg) == 0)
+                    change = -accumulator.value(); // mov eax, 0x2000; call __chkstk; sub rsp, rax
                 else
                     writesStack = true;
+                pushedArguments = current->id == X86_INS_SUB ? 0 : std::max<int64>(pushedArguments - change.value_or(0), 0);
             }
             break;
         case X86_INS_LEA:
-            if (IsRegisterOperand(x86, 0, X86_REG_RSP)) {
-                if (x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.base == X86_REG_RSP &&
+            if (IsRegisterOperand(x86, 0, stackRegister)) {
+                if (x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.base == stackRegister &&
                     x86.operands[1].mem.index == X86_REG_INVALID)
                     change = x86.operands[1].mem.disp;
                 else
@@ -317,17 +421,35 @@ bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
             }
             break;
         case X86_INS_CALL:
-            break; // the callee returns with the same rsp
+            if (is64)
+                break; // the callee returns with the same rsp
+            if (x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM && static_cast<uint64>(x86.operands[0].imm) == nextAddress) {
+                change = -pointerSize; // call $+5; pop ebx: the return address stays on the stack
+                break;
+            }
+            if (const auto purge = calleePurge ? calleePurge(*current) : std::nullopt; purge.has_value())
+                change = static_cast<int64>(purge.value());
+            else if (!calledYet && accumulator.has_value() && !accumulatorAfterCall && accumulator.value() >= 0x1000 && pushedArguments == 0)
+                change = -accumulator.value(); // mov eax, 0x2000; call __chkstk: the probe moves esp
+            else if (pushedArguments > 0)
+                unknownPurge = pushedArguments;
+            pushedArguments = 0;
+            break;
         default:
             for (uint8 index = 0; index < x86.op_count; index++)
                 if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
-                    (x86.operands[index].reg == X86_REG_RSP || x86.operands[index].reg == X86_REG_ESP))
+                    (x86.operands[index].reg == X86_REG_RSP || x86.operands[index].reg == X86_REG_ESP || x86.operands[index].reg == X86_REG_SP))
                     writesStack = true;
             break;
         }
         if (writesStack)
-            return false; // mov rsp, rbp / and rsp, -0x10: rsp is not followed (a frame register function)
-        // the copy of rsp: mov r11, rsp sets it (once), any write of its register ends it
+            return StackFrameResult::Rejected; // mov esp, ebp / and esp, -0x10: the stack pointer is not followed (a frame register function)
+        if (!is64 && (current->id == X86_INS_RET || current->id == X86_INS_RETF) && delta != 0)
+            return StackFrameResult::Unbalanced; // a ret with an unbalanced stack: a callee that pops something else than what was guessed
+        // a ret, or a jmp with the stack of the entry (a tail call: jmp __CxxFrameHandler3); a chunk jumps back with its pushes
+        reachedRet |= current->id == X86_INS_RET || current->id == X86_INS_RETF || (current->id == X86_INS_JMP && delta == 0);
+
+        // the copy of the stack pointer: mov r11, rsp sets it (once), any write of its register ends it
         if (alias != X86_REG_INVALID) {
             bool writesAlias = false;
             for (uint8 index = 0; index < x86.op_count; index++)
@@ -342,7 +464,7 @@ bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
             } else
                 frame.stackAliasEnd = nextAddress;
         } else if (frame.stackAlias.empty() && current->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG &&
-                   x86.operands[0].size == 8 && IsRegisterOperand(x86, 1, X86_REG_RSP)) {
+                   x86.operands[0].size == pointerSize && IsRegisterOperand(x86, 1, stackRegister)) {
             alias                 = x86.operands[0].reg;
             aliasDelta            = delta;
             frame.stackAlias      = cs_reg_name(detailHandle, alias);
@@ -353,12 +475,30 @@ bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
         if (change.has_value()) {
             setDelta(nextAddress, delta + change.value());
             deepest = std::min(deepest, delta);
+            if (savesRegister || (!calledYet && (allocatesLocal || (adjustsStack && current->id == X86_INS_SUB))))
+                bodyDelta = delta;
         }
+        if (current->id == X86_INS_CALL)
+            calledYet = true;
+        for (uint8 index = 0; index < x86.op_count && !IsProloguePadding(current); index++) // mov edi, edi does not change edi
+            if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                if (const int family = GetX64RegisterFamily(x86.operands[index].reg); family >= 0)
+                    writtenFamilies |= 1u << family;
+        // mov eax, 0x2000 (and the call __chkstk right after it): the size of a sub rsp, rax / of the probe
+        if (setsAccumulator) {
+            accumulator          = immediate(1);
+            accumulatorAfterCall = false;
+        } else if (current->id == X86_INS_CALL && accumulator.has_value() && !accumulatorAfterCall)
+            accumulatorAfterCall = true;
+        else
+            accumulator.reset();
 
         if (cs_insn_group(detailHandle, current, CS_GRP_JUMP) && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) {
             const uint64 target = static_cast<uint64>(x86.operands[0].imm);
-            if (target > current->address && target < limitAddress)
+            if (target > current->address && target < limitAddress) {
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
+                branchDeltas.emplace(target, delta);
+            }
         }
         bool endsFlow = false;
         switch (current->id) {
@@ -377,20 +517,45 @@ bool GView::View::DissasmViewer::AnalyzeX64StackFrame(
         if (endsFlow) {
             if (furthestBranchTarget < nextAddress)
                 break;
-            setDelta(nextAddress, deepest); // the code after an epilogue: reached from the body
+            flowEnded = true; // the code after an epilogue: reached through a branch of the body
         }
     }
+    if (!is64 && !reachedRet)
+        return StackFrameResult::Rejected; // no ret: the depth of the entry is not the one of a function (a chunk of another one)
     if (accesses.empty() || !CompactAccesses(accesses))
-        return false;
+        return StackFrameResult::Rejected;
     frame.stackOffset = static_cast<int32>(deepest);
     frame.variables.reserve(accesses.size());
     for (const auto& access : accesses) {
         DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
-        // the arguments from the return address: [entry + 8] is arg_0 (FormatDefaultLocalVariableName counts them from the saved rbp)
-        FormatDefaultLocalVariableName(access.frameOffset >= 8 ? access.frameOffset + 8 : access.frameOffset, true, variable.name);
+        // the arguments from the return address: [entry + 8] / [entry + 4] is arg_0 (FormatDefaultLocalVariableName counts them from the
+        // saved frame register)
+        FormatDefaultLocalVariableName(access.frameOffset >= pointerSize ? access.frameOffset + static_cast<int32>(pointerSize) : access.frameOffset, is64, variable.name);
         frame.variables.push_back(std::move(variable));
     }
-    return true;
+    return StackFrameResult::Accepted;
+}
+} // namespace
+
+bool GView::View::DissasmViewer::AnalyzeX86StackFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      DissasmFunctionFrame& frame,
+      const X86CalleeStackPurge& calleePurge)
+{
+    // push ecx at the entry: a local (MSVC: sub esp, 4) or the argument of the first call; push esi after a call: a saved register or an
+    // argument. The other readings of the pushes the function has, while the stack stays unbalanced
+    uint8 ambiguousPushes = 0;
+    auto result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, 0, ambiguousPushes);
+    const uint8 firstAmbiguousPushes = ambiguousPushes;
+    for (uint8 reading = 1; reading <= (ENTRY_PUSHES_ARE_ARGUMENTS | LATE_SAVES_ARE_ARGUMENTS) && result == StackFrameResult::Unbalanced; reading++)
+        if ((reading & ~firstAmbiguousPushes) == 0)
+            result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, reading, ambiguousPushes);
+    return result == StackFrameResult::Accepted;
 }
 
 bool GView::View::DissasmViewer::FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std::string_view stackRegister)

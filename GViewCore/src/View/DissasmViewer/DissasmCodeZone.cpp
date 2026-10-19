@@ -194,6 +194,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::optional<uint64> globalOffsetTable; // set by the constructor
     std::unordered_set<uint64> conditionalTargets;  // ARM64: relative targets of the conditional branches
     std::vector<uint64> functionStarts;
+    std::unordered_map<uint64, std::optional<uint32>> calleePurges; // 32 bit: what the functions of the zone pop (ret 8), by start
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
     size_t labelIndex = 0; // the next label placed on its line
@@ -1070,6 +1071,110 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // 32 bit: the bytes popped by an import: its decorated name (_CreateFileA@28), cdecl (0) for the C run-time (lowercase names: free,
+    // memset, _wcsicmp) and the variadic functions of the Windows API; none for the other names (the Windows API is stdcall: CamelCase
+    // names, and winsock)
+    std::optional<uint32> ImportStackPurge(const X86OperandsInfo& operands) const
+    {
+        static constexpr std::array<std::string_view, 39> STDCALL_LOWERCASE_NAMES = {
+            "accept",       "bind",          "closesocket",   "connect",          "freeaddrinfo",     "getaddrinfo",    "gethostbyaddr",
+            "gethostbyname", "gethostname",  "getnameinfo",   "getpeername",      "getprotobyname",   "getprotobynumber", "getservbyname",
+            "getservbyport", "getsockname",  "getsockopt",    "htonl",            "htons",            "inet_addr",      "inet_ntoa",
+            "inet_ntop",    "inet_pton",     "ioctlsocket",   "listen",           "ntohl",            "ntohs",          "recv",
+            "recvfrom",     "select",        "send",          "sendto",           "setsockopt",       "shutdown",       "socket",
+            "freehostent",  "getipnodebyname", "gai_strerrora", "gai_strerrorw",
+        };
+        const auto* import = findImport ? findImport(operands) : nullptr;
+        if (!import || import->type != MemoryMappingType::FunctionMapping || import->name.empty())
+            return std::nullopt;
+        const std::string& name = import->name;
+        const auto at           = name.rfind('@');
+        if (at != std::string::npos && at > 0 && at + 1 < name.size() && at + 4 >= name.size() &&
+            std::all_of(name.begin() + at + 1, name.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; }))
+            return static_cast<uint32>(std::stoul(name.substr(at + 1)));
+        if (name.find("__cdecl") != std::string::npos || name == "wsprintfA" || name == "wsprintfW" || name == "DbgPrint" || name == "DbgPrintEx")
+            return 0u; // a demangled name with its convention (void * __cdecl operator new(unsigned int)), the variadic APIs
+        const bool lowercase = std::all_of(name.begin(), name.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
+        if (lowercase && std::find(STDCALL_LOWERCASE_NAMES.begin(), STDCALL_LOWERCASE_NAMES.end(), name) == STDCALL_LOWERCASE_NAMES.end())
+            return 0u;
+        return std::nullopt;
+    }
+
+    // 32 bit: the bytes a function of the zone pops from its caller's stack: its first ret (ret 8 -> 8), decoded from its start up to the
+    // next function (the code after a jmp that a forward branch passes is the rest of the function); a jmp at the start (a thunk: jmp
+    // [__imp_X] / jmp sub_X) or past every forward branch (a tail call) gives what the jumped to function pops. None when no ret is found
+    // or the function moves esp otherwise (__chkstk: xchg eax, esp)
+    std::optional<uint32> DecodeCalleePurge(uint64 target, bool followThunk = true)
+    {
+        constexpr uint64 MAX_CALLEE_SIZE = 0x10000;
+        const auto nextFunction          = std::upper_bound(functionStarts.begin(), functionStarts.end(), target);
+        const uint64 end                 = std::min<uint64>({ codeSize, target + MAX_CALLEE_SIZE, nextFunction != functionStarts.end() ? *nextFunction : codeSize });
+        const auto calleeData            = obj->GetData().Get(codeStart + target, static_cast<uint32>(end - target), false);
+        cs_insn* calleeInsn              = calleeData.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (!calleeInsn)
+            return std::nullopt;
+        const uint8* data = calleeData.GetData();
+        size_t size       = calleeData.GetLength();
+        uint64 address    = target;
+        std::optional<uint32> result;
+        std::optional<uint64> thunkTarget;
+        uint64 furthestBranchTarget = 0;
+        while (cs_disasm_iter(detailHandle, &data, &size, &address, calleeInsn)) {
+            const cs_x86& x86 = calleeInsn->detail->x86;
+            if (cs_insn_group(detailHandle, calleeInsn, CS_GRP_JUMP) && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM &&
+                static_cast<uint64>(x86.operands[0].imm) > calleeInsn->address)
+                furthestBranchTarget = std::max(furthestBranchTarget, static_cast<uint64>(x86.operands[0].imm));
+            // a jmp at the start (a thunk) or past every forward branch (a tail call: the callee pops what the jumped to function pops)
+            if (calleeInsn->id == X86_INS_JMP && (calleeInsn->address == target || furthestBranchTarget < calleeInsn->address + calleeInsn->size)) {
+                const auto operands = zone->GetOperandsInfo(*calleeInsn);
+                if (operands.absoluteMemory.has_value())
+                    result = ImportStackPurge(operands); // jmp [__imp_X]
+                else if (operands.directTarget.has_value() && followThunk)
+                    thunkTarget = operands.directTarget; // jmp sub_X
+                break;
+            }
+            // the stack pointer written otherwise than by push / pop / sub / add / and esp, imm / lea / leave / mov esp, ebp
+            bool movesStack = false;
+            for (uint8 index = 0; index < x86.op_count; index++)
+                if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
+                    (x86.operands[index].reg == X86_REG_ESP || x86.operands[index].reg == X86_REG_SP))
+                    movesStack = true;
+            const bool restoresFrame = calleeInsn->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[1].type == X86_OP_REG && x86.operands[1].reg == X86_REG_EBP;
+            const bool immediateChange = (calleeInsn->id == X86_INS_SUB || calleeInsn->id == X86_INS_ADD || calleeInsn->id == X86_INS_AND) &&
+                                         x86.op_count == 2 && x86.operands[1].type == X86_OP_IMM;
+            if (movesStack && !restoresFrame && !immediateChange && calleeInsn->id != X86_INS_LEA && calleeInsn->id != X86_INS_LEAVE)
+                break; // xchg eax, esp / mov esp, eax: not a plain function
+            if (calleeInsn->id == X86_INS_RET) {
+                result = x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM ? static_cast<uint32>(x86.operands[0].imm) : 0u;
+                break;
+            }
+        }
+        cs_free(calleeInsn, 1);
+        if (thunkTarget.has_value() && thunkTarget.value() < codeSize && thunkTarget.value() != target)
+            return DecodeCalleePurge(thunkTarget.value(), false);
+        return result;
+    }
+
+    // 32 bit: the bytes popped by the callee of a call: a function of the zone (its ret), an import (its decorated name), a function of
+    // another zone (a PLT stub: cdecl); none for an indirect call
+    std::optional<uint32> CalleeStackPurge(const cs_insn& call)
+    {
+        const auto operands = zone->GetOperandsInfo(call);
+        if (operands.absoluteMemory.has_value())
+            return ImportStackPurge(operands);
+        if (!operands.directTarget.has_value())
+            return std::nullopt;
+        const uint64 target = operands.directTarget.value();
+        if (target >= codeSize)
+            return 0u;
+        const auto known = calleePurges.find(target);
+        if (known != calleePurges.end())
+            return known->second;
+        const auto purge = DecodeCalleePurge(target);
+        calleePurges.emplace(target, purge);
+        return purge;
+    }
+
     // a label on the line of its instruction, the local variables of a function below its label
     void PlaceLabel(const std::pair<uint64, std::string>& call)
     {
@@ -1112,8 +1217,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                   detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch == DissasmArch::Thumb, frame);
         else {
             analyzed = AnalyzeX86FunctionFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame);
-            if (!analyzed && is64) // MSVC x64: no frame register, the slots through rsp
-                analyzed = AnalyzeX64StackFrame(detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame);
+            if (!analyzed) // no frame register (MSVC x64, x86 FPO / GCC -O2): the slots through the stack pointer
+                analyzed = AnalyzeX86StackFrame(
+                      detailHandle,
+                      functionData.GetData(),
+                      functionData.GetLength(),
+                      relativeAddress,
+                      limit,
+                      is64,
+                      frame,
+                      is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); }));
         }
         if (!analyzed || frame.variables.empty())
             return;
