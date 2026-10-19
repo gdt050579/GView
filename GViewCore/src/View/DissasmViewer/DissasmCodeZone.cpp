@@ -178,6 +178,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, std::string> thunkImports;
     std::unordered_map<uint64, uint32> switchJumps;
     std::unordered_map<uint64, uint64> resolvedAddresses; // ARM64: the addresses of the adrp pairs
+    std::unordered_map<uint64, uint64> imageBaseTables;   // x64: the tables read through a register holding the image base
+    std::array<bool, 16> imageBaseRegisters{};            // x64: the registers that hold the image base (lea reg, __ImageBase), per function
     Arm64AdrpTracker adrpTracker;
     Arm32Tracker arm32Tracker;
     std::vector<uint64> prologueCandidates;         // ARM64: file offsets of the prologues at a block start
@@ -369,6 +371,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         thunkImports.clear();
         switchJumps.clear();
         resolvedAddresses.clear();
+        imageBaseTables.clear();
+        imageBaseRegisters.fill(false);
         adrpTracker  = Arm64AdrpTracker(labelBase);
         arm32Tracker = Arm32Tracker(labelBase, LiteralReader());
         prologueCandidates.clear();
@@ -600,6 +604,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const bool isEndbr      = insn->id == X86_INS_ENDBR64 || insn->id == X86_INS_ENDBR32;
         if (!is64)
             TrackGlobalOffsetTable(isBlockStart, instructionOffset, flow, operands);
+        else
+            TrackImageBase(isBlockStart, instructionOffset, flow, operands);
         if (isBlockStart && insn->address < blockStarts.size() && insn->id != X86_INS_INVALID && insn->id != X86_INS_INT3 && insn->id != X86_INS_NOP)
             blockStarts[insn->address] = true; // not the padding (int3, nop, align, db)
         const uint64 thunkStart = blockEndbr.value_or(instructionOffset);
@@ -736,6 +742,61 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         address &= ~static_cast<uint64>(1);
         if (address >= labelBase && address - labelBase < codeSize)
             addressTakenTargets.push_back(address - labelBase);
+    }
+
+    // x64 (MSVC): a register loaded with the image base (lea rdx, [rip - 0x18657] = __ImageBase) makes the displacement of the memory
+    // operands that use it (as the base, or as an index of scale 1) an RVA: movzx eax, byte ptr [rdx + rcx + 0x2d9f0] reads the table at
+    // __ImageBase + 0x2d9f0. The registers are followed through a function (the linear sweep), a write forgets them, a call forgets the
+    // volatile ones; a table is a cross reference (its label) and imageBaseTables (its name in the operands)
+    void TrackImageBase(bool isBlockStart, uint64 instructionOffset, X86Flow flow, const X86OperandsInfo& operands)
+    {
+        if (!imageBase.has_value() || !insn->detail)
+            return;
+        if (isBlockStart) {
+            const auto called = callsMap.find(instructionOffset);
+            if ((called != callsMap.end() && !called->second) || (functionEntries && functionEntries->contains(instructionOffset)))
+                imageBaseRegisters.fill(false); // another function
+        }
+        const cs_x86& x86 = insn->detail->x86;
+        for (uint8 index = 0; index < x86.op_count; index++) {
+            const auto& op = x86.operands[index];
+            if (op.type != X86_OP_MEM || op.mem.disp <= 0 || op.mem.base == X86_REG_RIP || (op.mem.segment != X86_REG_INVALID && op.mem.segment != X86_REG_DS))
+                continue;
+            const int base        = GetX64RegisterFamily(op.mem.base);
+            const int indexFamily = GetX64RegisterFamily(op.mem.index);
+            const bool viaBase    = base >= 0 && imageBaseRegisters[base];
+            const bool viaIndex   = indexFamily >= 0 && imageBaseRegisters[indexFamily] && op.mem.scale == 1;
+            if (!viaBase && !viaIndex)
+                continue;
+            const uint64 table = imageBase.value() + static_cast<uint64>(op.mem.disp);
+            if (!isFileAddress || !isFileAddress(table))
+                break;
+            imageBaseTables[insn->address] = table;
+            if (flow != X86Flow::Jump) { // the jump table of a switch has its own reference
+                const auto kind = insn->id == X86_INS_LEA ? DissasmXrefKind::Offset : ((op.access & CS_AC_WRITE) ? DissasmXrefKind::Write : DissasmXrefKind::Read);
+                xrefs.Add(labelBase + insn->address, table, kind, insn->id == X86_INS_LEA ? 0 : op.size);
+            }
+            break;
+        }
+        // the writes: lea reg, __ImageBase sets the register, any other write forgets it; a call changes the volatile registers
+        if (flow == X86Flow::Call) {
+            for (const int family : { 0, 1, 2, 8, 9, 10, 11 })
+                imageBaseRegisters[family] = false;
+            return;
+        }
+        const bool loadsImageBase = insn->id == X86_INS_LEA && operands.ripTarget.has_value() && labelBase + operands.ripTarget.value() == imageBase.value();
+        const int loaded = loadsImageBase && x86.op_count > 0 && x86.operands[0].type == X86_OP_REG && x86.operands[0].size == 8
+                                 ? GetX64RegisterFamily(x86.operands[0].reg)
+                                 : -1;
+        for (uint8 index = 0; index < x86.op_count; index++)
+            if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                if (const int family = GetX64RegisterFamily(x86.operands[index].reg); family >= 0)
+                    imageBaseRegisters[family] = false;
+        for (uint8 index = 0; index < insn->detail->regs_write_count; index++)
+            if (const int family = GetX64RegisterFamily(insn->detail->regs_write[index]); family >= 0)
+                imageBaseRegisters[family] = false;
+        if (loaded >= 0)
+            imageBaseRegisters[loaded] = true;
     }
 
     // 32 bit x86 PIC: ebx holds the global offset table in the functions that set it (call $+5; pop ebx / call __x86.get_pc_thunk.bx, then
@@ -1144,6 +1205,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->thunkImports              = std::move(thunkImports);
         zone->switchJumps               = std::move(switchJumps);
         zone->resolvedAddresses         = std::move(resolvedAddresses);
+        zone->imageBaseTables           = std::move(imageBaseTables);
         zone->functionStarts            = std::move(functionStarts);
         zone->dissasmType.annotations   = std::move(annotations);
         zone->localVariables.functions  = std::move(frames);

@@ -7033,3 +7033,52 @@ TEST_CASE("ObjCMetadata", "[Dissasm]MachO")
     REQUIRE(structures[0x4000] == "__OBJC_$_INSTANCE_METHODS_Animal");
     REQUIRE(structures[0x2200] == "__OBJC_$_CATEGORY_NSObject_$_Extra");
 }
+
+TEST_CASE("ImageBaseTables", "[Dissasm]Operands")
+{
+    // x64 MSVC: lea rdx, __ImageBase; movzx eax, byte ptr [rdx + rcx + 0x2000] reads the table at the image base + 0x2000; after a write of
+    // rdx the same form is not a table of the image
+    std::vector<unsigned char> file(0x11000, 0x00);
+    file.insert(file.end(), {
+                                  0x48, 0x8D, 0x15, 0xF9, 0xEF, 0xFF, 0xFF,       // 0x11000: lea rdx, [rip - 0x1007] (0x10000: the image base)
+                                  0x0F, 0xB6, 0x84, 0x0A, 0x00, 0x20, 0x00, 0x00, // 0x11007: movzx eax, byte ptr [rdx + rcx + 0x2000]
+                                  0x31, 0xD2,                                     // 0x1100f: xor edx, edx
+                                  0x0F, 0xB6, 0x84, 0x0A, 0x08, 0x20, 0x00, 0x00, // 0x11011: movzx eax, byte ptr [rdx + rcx + 0x2008]
+                                  0xC3,                                           // 0x11019: ret
+                              });
+    file.resize(0x12000, 0xCC);
+    file.resize(0x12020, 0x00); // 0x12000: the table
+    const auto toFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start               = 0x11000;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0x11000;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true; // the VA is the file offset
+    layout.imageBase           = 0x10000;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    REQUIRE(code.zone->imageBaseTables.size() == 1);
+    REQUIRE(code.zone->imageBaseTables.at(0x07) == 0x12000);
+
+    layout.start      = 0x12000;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "byte_12000");
+    REQUIRE(data.zone->GetLabelNameAt(0x08).empty()); // rdx = 0 there
+
+    code.zone->siblingZones = { data.zone.get() };
+    code.zone->asmPreCacheData.Clear();
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "movzx  eax, ds:(byte_12000 - __ImageBase)[rdx + rcx]").size() > 0);
+    REQUIRE(FindListingLine(listing, "movzx  eax, byte ptr [rdx + rcx + 0x2008]").size() > 0);
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [rdx + rcx*8 + 0x1a8aa0]", 0x1a8aa0, "dword_1801A8AA0", false, true, true) ==
+          std::optional<std::string>("eax, ds:(dword_1801A8AA0 - __ImageBase)[rdx + rcx*8]"));
+}

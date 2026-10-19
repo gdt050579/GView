@@ -191,7 +191,7 @@ std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands,
     return result;
 }
 
-std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, uint64 displacement, std::string_view name, bool isLea, bool is64)
+std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, uint64 displacement, std::string_view name, bool isLea, bool is64, bool relativeToImageBase)
 {
     if (name.empty())
         return {};
@@ -228,7 +228,11 @@ std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, 
             result.append(size).append(" ptr ");
         result.append("ds:");
     }
-    result.append(name).append("[").append(registers).append("]");
+    if (relativeToImageBase)
+        result.append("(").append(name).append(" - __ImageBase)");
+    else
+        result.append(name);
+    result.append("[").append(registers).append("]");
     result.append(operands.substr(suffix + static_cast<size_t>(length)));
     return result;
 }

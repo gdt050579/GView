@@ -30,6 +30,8 @@ struct X86OperandsInfo {
 
 X86Flow GetX86Flow(const cs_insn& insn);
 X86OperandsInfo GetX86OperandsInfo(const cs_insn& insn, bool is64);
+// x64: the general register of a register and of its parts (rax / eax / ax / al / ah: 0 ... r15: 15), -1 for the others
+int GetX64RegisterFamily(unsigned int reg);
 
 // The argument of the Windows x64 calling convention written by the instruction (its first operand): 0-3 for rcx / rdx / r8 / r9 (any size)
 // or xmm0-3, 4 and more for the stack slots [rsp + 0x20 + 8 * n]; none when it writes no argument.

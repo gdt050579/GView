@@ -206,6 +206,9 @@ struct DissasmCodeZone : public ParseZone {
     // ARM64 (deep scan): relative address of an instruction of an adrp pair (add / ldr / str [page + offset], br / blr through the slot read
     // before) -> the relative address it uses; the lines are decoded alone, the pair is known only by the sweep
     std::unordered_map<uint64, uint64> resolvedAddresses;
+    // x64 (MSVC): relative address of an instruction that reads a table through a register holding the image base ([rdx + rcx + 0x2d9f0],
+    // rdx = __ImageBase: the displacement is an RVA) -> the VA of the table
+    std::unordered_map<uint64, uint64> imageBaseTables;
     static uint8 MemoryOperandAccess(const cs_insn& insn)
     {
         if (insn.detail)

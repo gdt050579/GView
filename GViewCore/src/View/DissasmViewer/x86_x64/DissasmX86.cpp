@@ -653,6 +653,19 @@ static std::optional<std::string> GetX86SymbolicOperands(const cs_insn& insn, co
         const std::string name = GetDataOperandName(params, operands, address.value(), accessSize);
         return name.empty() ? std::nullopt : SubstituteX86MemoryOperand(insn.op_str, name, insn.id == X86_INS_LEA, is64);
     }
+    // x64 (MSVC): a table read through a register holding the image base, its displacement an RVA: ds:(byte_14002D9F0 - __ImageBase)[rdx + rcx]
+    if (const auto table = zone->imageBaseTables.find(insn.address); table != zone->imageBaseTables.end() && insn.detail) {
+        X86OperandsInfo slot;
+        slot.absoluteMemory    = table->second;
+        const std::string name = GetDataOperandName(params, slot, table->second, accessSize);
+        uint64 displacement    = 0;
+        for (uint8 index = 0; index < insn.detail->x86.op_count; index++)
+            if (insn.detail->x86.operands[index].type == X86_OP_MEM)
+                displacement = static_cast<uint64>(insn.detail->x86.operands[index].mem.disp);
+        if (!name.empty())
+            if (auto replaced = SubstituteX86TableOperand(insn.op_str, displacement, name, insn.id == X86_INS_LEA, is64, true))
+                return replaced;
+    }
     // a table at a fixed address indexed by registers: ds:dword_403000[eax*4] (the start of the table, the registers choose the entry)
     if (operands.tableMemory.has_value() && operands.tableMemory.value() >= 0x10000 &&
         TranslateOperandAddressToFileOffset(params.settings, operands.tableMemory.value(), true).has_value()) {
