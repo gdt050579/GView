@@ -2302,6 +2302,7 @@ void Instance::RefreshCursorLineNumbers()
     cursorLineNumbers.zone       = nullptr;
     cursorLineNumbers.numbers.clear();
     cursorLineNumbers.location.clear();
+    cursorLineNumbers.instruction.clear();
     cursorLineNumbers.operands.clear();
     cursorLineNumbers.operandColumns.clear();
 
@@ -2345,6 +2346,10 @@ void Instance::RefreshCursorLineNumbers()
     const bool isCollapsedZoneLine = asmLine.isCollapsedLine;
     if (!asmLine.op_str || asmLine.size == 0 || isCollapsedZoneLine || asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
         return;
+    // what the instruction does (explain on hover): the status bar
+    if (const auto help = DescribeInstruction(asmLine.mnemonic, std::string_view(asmLine.op_str, asmLine.op_str_size), zone->GetArchAt(asmLine.address));
+        !help.empty())
+        cursorLineNumbers.instruction = std::string(asmLine.mnemonic) + ": " + help;
 
     CharacterBuffer lineText; // drawn without the left margin: its columns have the same base as Cursor.offset
     std::vector<uint32> opStrColumns;
@@ -2447,6 +2452,16 @@ std::string Instance::GetCursorToken()
     while (end < operands.size() && IsTokenCharacter(static_cast<unsigned char>(operands[end])))
         end++;
     return operands.substr(start, end - start);
+}
+
+int Instance::PrintCursorInstructionInfo(int x, int y, Renderer& r)
+{
+    RefreshCursorLineNumbers();
+    if (cursorLineNumbers.instruction.empty())
+        return x;
+    r.WriteSingleLineText(x, y, "Op:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 4, y, cursorLineNumbers.instruction, this->ColorMan.Colors.CursorNormal);
+    return x + 4 + static_cast<int>(cursorLineNumbers.instruction.size()) + 1;
 }
 
 int Instance::PrintCursorLocationInfo(int x, int y, Renderer& r)

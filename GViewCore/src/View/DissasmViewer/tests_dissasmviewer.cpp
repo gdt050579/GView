@@ -4802,6 +4802,44 @@ TEST_CASE("FunctionApiCategories", "[Dissasm]Triage")
     REQUIRE(functions[1].apiCategories == API_NETWORK);
 }
 
+TEST_CASE("InstructionHelp", "[Dissasm]Help")
+{
+    const auto x64 = [](std::string_view mnemonic, std::string_view operands = {}) { return DescribeInstruction(mnemonic, operands, DissasmArch::X64); };
+    REQUIRE(x64("cmovne") == "move if not equal / not zero (ZF = 0)");
+    REQUIRE(x64("jae") == "jump if above or equal, unsigned >= (CF = 0)");
+    REQUIRE(x64("js") == "jump if sign: negative (SF = 1)");
+    REQUIRE(x64("setg") == "set the byte to 1 if greater, signed > (ZF = 0 and SF = OF), else 0");
+    REQUIRE(x64("jmp") == "jump");
+    REQUIRE(x64("notrack jmp") == "jump");
+    REQUIRE(x64("rep stosb").starts_with("repeated rcx times: store al to [rdi]"));
+    REQUIRE(x64("lock cmpxchg").starts_with("atomic: compare with rax"));
+    REQUIRE(x64("movsd", "xmm0, qword ptr [rax]") == "move a scalar double (64 bits)");
+    REQUIRE(x64("movsd").starts_with("copy a dword from [rsi]"));
+    REQUIRE(x64("addss", "xmm0, xmm1") == "add (a scalar float)");
+    REQUIRE(x64("vmovdqu", "ymm0, ymmword ptr [rcx]") == "move 128 bits (unaligned) (AVX)");
+    REQUIRE(x64("vaddps", "ymm0, ymm1, ymm2") == "add (packed floats) (AVX)");
+    REQUIRE(x64("cvttsd2si").starts_with("convert"));
+    REQUIRE(x64("fyl2x").empty());
+    REQUIRE(x64("").empty());
+
+    const auto arm64 = [](std::string_view mnemonic) { return DescribeInstruction(mnemonic, {}, DissasmArch::Arm64); };
+    REQUIRE(arm64("b.ne") == "branch if not equal (Z = 0)");
+    REQUIRE(arm64("adrp").find("4 KB page") != std::string::npos);
+    REQUIRE(arm64("csel").starts_with("select the first register"));
+    REQUIRE(arm64("bne").empty()); // no condition suffixes on ARM64
+
+    const auto thumb = [](std::string_view mnemonic) { return DescribeInstruction(mnemonic, {}, DissasmArch::Thumb); };
+    REQUIRE(thumb("bne") == "branch, if not equal (Z = 0)");
+    REQUIRE(thumb("moveq") == "copy a register / an immediate, if equal (Z = 1)");
+    REQUIRE(thumb("lsls") == "logical shift left, sets the flags");
+    REQUIRE(thumb("movs") == "copy a register / an immediate, sets the flags");
+    REQUIRE(thumb("bls") == "branch, if unsigned <= (C = 0 or Z = 1)");
+    REQUIRE(thumb("add.w") == "add");
+    REQUIRE(thumb("itete") == "if-then block: the next 1 to 4 instructions are conditional");
+    REQUIRE(thumb("bx").starts_with("branch to a register (bit 0: Thumb"));
+    REQUIRE(thumb("pop") == "load registers from the stack (with pc: return)");
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes

@@ -68,6 +68,11 @@ inline bool IsArmArch(DissasmArch arch)
 X86Flow GetArm32Flow(const cs_insn& insn);
 X86OperandsInfo GetArm32OperandsInfo(const cs_insn& insn, bool thumb, AppCUI::uint64 addressBase = 0);
 X86InstructionKind GetArm32InstructionKind(unsigned int id, std::string_view mnemonic);
+
+// What an instruction does, in a line (the status bar, x86_x64/InstructionHelp.cpp): "move if not equal / not zero (ZF = 0)" for cmovne,
+// the prefixes (rep, lock), the condition families (jcc / setcc / cmovcc, ARM b.cond and the condition suffixes), SSE / AVX, the common
+// ARM64 / ARM / Thumb instructions; `operands` tells the string movsd from the SSE one. Empty when it is not known
+std::string DescribeInstruction(std::string_view mnemonic, std::string_view operands, DissasmArch arch);
 X86Flow GetArm64Flow(const cs_insn& insn);
 X86OperandsInfo GetArm64OperandsInfo(const cs_insn& insn);
 X86InstructionKind GetArm64InstructionKind(unsigned int id, std::string_view mnemonic);

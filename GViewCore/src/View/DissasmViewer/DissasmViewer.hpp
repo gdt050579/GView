@@ -823,12 +823,14 @@ namespace View
                 uint64 address        = 0;
                 std::vector<CursorLineNumber> numbers;
                 std::string location;              // the function of the line and the offset in it, the file offset (status bar)
+                std::string instruction;           // the mnemonic and what it does (DescribeInstruction, status bar)
                 std::string operands;              // the operands of the instruction and their columns (the token under the cursor)
                 std::vector<uint32> operandColumns;
             } cursorLineNumbers;
             // the name / register / number under the cursor: all its occurrences are highlighted in the drawn lines (empty: none)
             std::string GetCursorToken();
             int PrintCursorLocationInfo(int x, int y, AppCUI::Graphics::Renderer& r);
+            int PrintCursorInstructionInfo(int x, int y, AppCUI::Graphics::Renderer& r); // Op: cmovne: move if not equal ...
             uint64 drawnLinesGeneration = 0; // changes every time the lines of a dissasm zone are recomputed
             DissasmCache cacheData;
             CommonInterfaces::QueryInterface* queryInterface;

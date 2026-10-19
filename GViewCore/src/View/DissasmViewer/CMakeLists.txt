@@ -45,6 +45,7 @@ target_sources(
 	x86_x64/X86InstructionInfo.cpp
 	x86_x64/Arm64InstructionInfo.cpp
 	x86_x64/Arm32InstructionInfo.cpp
+	x86_x64/InstructionHelp.cpp
 	x86_x64/X86SwitchTables.hpp
 	x86_x64/X86SwitchTables.cpp
 

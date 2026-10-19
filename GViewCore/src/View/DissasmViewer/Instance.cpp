@@ -343,12 +343,13 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
         x = PrintCursorPosInfo(x, 0, 16, false, renderer);
         x = PrintCursorLineInfo(x, 0, 16, false, renderer);
         x = PrintCursorValueInfo(x, 0, renderer); // the number under the cursor first: the location can be long
-        PrintCursorLocationInfo(x, 0, renderer);
+        x = PrintCursorLocationInfo(x, 0, renderer);
+        PrintCursorInstructionInfo(x, 0, renderer); // what the instruction does: the last, it is cut by the width
         break;
     default:
         x = std::max<int>(PrintCursorPosInfo(x, 0, 16, false, renderer), PrintCursorLineInfo(x, 1, 16, false, renderer));
         PrintCursorLocationInfo(x, 1, renderer);
-        PrintCursorValueInfo(x, 0, renderer);
+        PrintCursorInstructionInfo(PrintCursorValueInfo(x, 0, renderer), 0, renderer);
         break;
     }
 }
