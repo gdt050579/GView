@@ -140,9 +140,9 @@ void StaticSymbols::Update()
             item.SetText(6, tmp.Format("%s", GetValue(n, record.st_other).data()));
 
             auto sectionType = ELF::GetSectionSpecialIndexFromSymbolIndex(record.st_shndx);
-            if (sectionType == "")
+            if (sectionType == "" && record.st_shndx < elf->sectionNames.size()) // a damaged section table: no names
             {
-                sectionType = elf->sectionNames.at(record.st_shndx);
+                sectionType = elf->sectionNames[record.st_shndx];
             }
             item.SetText(7, tmp.Format("[%s] %s", sectionType.data(), GetValue(n, record.st_shndx).data()));
 
@@ -178,9 +178,9 @@ void StaticSymbols::Update()
             item.SetText(6, tmp.Format("%s", GetValue(n, record.st_other).data()));
 
             auto sectionType = ELF::GetSectionSpecialIndexFromSymbolIndex(record.st_shndx);
-            if (sectionType == "")
+            if (sectionType == "" && record.st_shndx < elf->sectionNames.size()) // a damaged section table: no names
             {
-                sectionType = elf->sectionNames.at(record.st_shndx);
+                sectionType = elf->sectionNames[record.st_shndx];
             }
             item.SetText(7, tmp.Format("[%s] %s", sectionType.data(), GetValue(n, record.st_shndx).data()));
 

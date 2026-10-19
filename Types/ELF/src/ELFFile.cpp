@@ -1,5 +1,7 @@
 #include "elf.hpp"
 
+#include <algorithm>
+
 using namespace GView::Type::ELF;
 
 ELFFile::ELFFile()
@@ -41,122 +43,72 @@ bool ELFFile::Update()
 
     isLittleEndian = (header32.e_ident[EI_DATA] == ELFDATA2LSB);
 
-    if (is64)
-    {
-        offset = header64.e_phoff;
-        for (auto i = 0; i < header64.e_phnum; i++)
+    // the program headers: the ones that can be read (a truncated table keeps its first entries)
+    const auto readProgramHeaders = [&](auto& segments, auto entry, uint64 tableOffset, uint32 count) {
+        for (uint32 index = 0; index < count; index++)
         {
-            Elf64_Phdr entry{};
-            CHECK(obj->GetData().Copy<Elf64_Phdr>(offset, entry), false, "");
+            if (!obj->GetData().Copy(tableOffset + static_cast<uint64>(index) * sizeof(entry), entry))
+                break;
             if ((entry.p_flags & PF_X) == PF_X)
-            {
                 executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_offset + entry.p_filesz });
-            }
-            segments64.emplace_back(entry);
-            offset += sizeof(entry);
+            segments.emplace_back(entry);
         }
-    }
+    };
+    if (is64)
+        readProgramHeaders(segments64, Elf64_Phdr{}, header64.e_phoff, header64.e_phnum);
     else
-    {
-        offset = header32.e_phoff;
-        for (auto i = 0; i < header32.e_phnum; i++)
+        readProgramHeaders(segments32, Elf32_Phdr{}, header32.e_phoff, header32.e_phnum);
+
+    // the section headers: ignored when their table is not in the file: a file stripped of them (sstrip) or whose headers were damaged
+    // on purpose is analyzed through its segments (a wrong e_shentsize is ignored: the entries have the size of the class). Every section
+    // has a name (empty when the string table is not known), read inside the string table
+    const auto readSectionHeaders = [&](auto& sections, const auto& segments, auto entry, uint64 tableOffset, uint32 count, uint32 namesIndex) {
+        const uint64 fileSize = obj->GetData().GetSize();
+        if (count == 0 || tableOffset == 0 || tableOffset >= fileSize ||
+            static_cast<uint64>(count) * sizeof(entry) > fileSize - tableOffset)
+            return;
+        for (uint32 index = 0; index < count; index++)
         {
-            Elf32_Phdr entry{};
-            CHECK(obj->GetData().Copy<Elf32_Phdr>(offset, entry), false, "");
-            if ((entry.p_flags & PF_X) == PF_X)
+            if (!obj->GetData().Copy(tableOffset + static_cast<uint64>(index) * sizeof(entry), entry))
             {
-                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_offset + entry.p_filesz });
+                sections.clear();
+                return;
             }
-            segments32.emplace_back(entry);
-            offset += sizeof(entry);
+            sections.emplace_back(entry);
         }
-    }
-
-    if (is64)
-    {
-        offset = header64.e_shoff;
-        for (auto i = 0; i < header64.e_shnum; i++)
-        {
-            auto& entry = sections64.emplace_back(Elf64_Shdr{});
-            CHECK(obj->GetData().Copy<Elf64_Shdr>(offset, entry), false, "");
-            offset += sizeof(entry);
-
-            auto& segmentIdx = sectionsToSegments.emplace_back(-1);
-            for (auto i = 0U; i < segments64.size(); i++)
+        sectionsToSegments.assign(sections.size(), static_cast<uint32>(-1));
+        for (size_t index = 0; index < sections.size(); index++)
+            for (uint32 segmentIndex = 0; segmentIndex < segments.size(); segmentIndex++)
             {
-                const auto& segment = segments64.at(i);
-                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
+                const auto& segment = segments[segmentIndex];
+                const auto& section = sections[index];
+                if (segment.p_vaddr != 0 && section.sh_addr >= segment.p_vaddr && section.sh_addr + section.sh_size <= segment.p_vaddr + segment.p_filesz)
                 {
-                    segmentIdx = i;
+                    sectionsToSegments[index] = segmentIndex;
                     break;
                 }
             }
-        }
-
-        sectionNames.reserve(header64.e_shnum);
-
-        if (header64.e_shstrndx != SHN_UNDEF && header64.e_shstrndx < SHN_LORESERVE)
-        {
-            const auto& shstrtab = sections64.at(header64.e_shstrndx);
-            auto buffer          = obj->GetData().CopyToBuffer(shstrtab.sh_offset, (uint32) shstrtab.sh_size);
-            if (buffer.IsValid())
-            {
-                for (const auto& section : sections64)
-                {
-                    const auto name = (char*) (buffer.GetData() + section.sh_name);
-                    sectionNames.emplace_back(name);
-                }
-            }
-        }
-        else if (header64.e_shstrndx >= SHN_LORESERVE)
-        {
-            // TODO:
-        }
-    }
+        sectionNames.assign(sections.size(), std::string());
+        if (namesIndex == SHN_UNDEF || namesIndex >= sections.size())
+            return;
+        constexpr uint64 MAX_NAMES_SIZE = 0x1000000;
+        const auto& namesSection        = sections[namesIndex];
+        if (namesSection.sh_size == 0 || namesSection.sh_size > MAX_NAMES_SIZE)
+            return;
+        const auto names = obj->GetData().CopyToBuffer(namesSection.sh_offset, static_cast<uint32>(namesSection.sh_size));
+        if (!names.IsValid())
+            return;
+        for (size_t index = 0; index < sections.size(); index++)
+            for (uint64 position = sections[index].sh_name; position < names.GetLength() && names.GetData()[position] != 0; position++)
+                sectionNames[index].push_back(static_cast<char>(names.GetData()[position]));
+    };
+    if (is64)
+        readSectionHeaders(sections64, segments64, Elf64_Shdr{}, header64.e_shoff, header64.e_shnum, header64.e_shstrndx);
     else
-    {
-        offset = header32.e_shoff;
-        for (auto i = 0; i < header32.e_shnum; i++)
-        {
-            auto& entry = sections32.emplace_back(Elf32_Shdr{});
-            CHECK(obj->GetData().Copy<Elf32_Shdr>(offset, entry), false, "");
-            offset += sizeof(entry);
+        readSectionHeaders(sections32, segments32, Elf32_Shdr{}, header32.e_shoff, header32.e_shnum, header32.e_shstrndx);
 
-            auto& segmentIdx = sectionsToSegments.emplace_back(-1);
-            for (auto i = 0U; i < segments32.size(); i++)
-            {
-                const auto& segment = segments32.at(i);
-                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
-                {
-                    segmentIdx = i;
-                    break;
-                }
-            }
-        }
-
-        sectionNames.reserve(header32.e_shnum);
-
-        if (header32.e_shstrndx != SHN_UNDEF && header32.e_shstrndx < SHN_LORESERVE)
-        {
-            const auto& shstrtab = sections32.at(header32.e_shstrndx);
-            auto buffer          = obj->GetData().CopyToBuffer(shstrtab.sh_offset, shstrtab.sh_size);
-            if (buffer.IsValid())
-            {
-                for (const auto& section : sections32)
-                {
-                    const auto name = (char*) (buffer.GetData() + section.sh_name);
-                    sectionNames.emplace_back(name);
-                }
-            }
-        }
-        else if (header32.e_shstrndx >= SHN_LORESERVE)
-        {
-            // TODO:
-        }
-    }
-
-    CHECK(ParseGoData(), false, "");
-    CHECK(ParseSymbols(), false, "");
+    ParseGoData(); // the Go metadata and the symbols are optional: a malformed table leaves its panel out
+    ParseSymbols();
     ParseDynamic(); // a malformed dynamic segment leaves the file as it is
 
     return true;
@@ -241,18 +193,41 @@ bool ELFFile::ParseDynamic()
     addTable(DT_ANDROID_RELA, DT_ANDROID_RELASZ, SHT_ANDROID_RELA);
     addTable(DT_ANDROID_RELR, DT_ANDROID_RELRSZ, SHT_ANDROID_RELR);
 
-    // the dynamic symbols, when no section holds them
-    if (!dynamicSymbolsNames.empty())
+    // the dynamic symbols, when no section holds them; their names, when the string table of their section is not known (a damaged
+    // sh_link: every name is empty)
+    const bool hasNames = std::any_of(dynamicSymbolsNames.begin(), dynamicSymbolsNames.end(), [](const std::string& name) { return !name.empty(); });
+    if (!dynamicSymbolsNames.empty() && hasNames)
         return true;
     const auto symbolTable = value(DT_SYMTAB);
     const auto stringTable = value(DT_STRTAB);
     const auto stringSize  = value(DT_STRSZ);
-    if (!symbolTable.has_value() || !stringTable.has_value() || !stringSize.has_value() || stringSize.value() > MAX_TABLE_SIZE)
+    if (!stringTable.has_value() || !stringSize.has_value() || stringSize.value() > MAX_TABLE_SIZE)
+        return false;
+    const uint64 stringsOffset = VAToFileOffset(stringTable.value());
+    if (stringsOffset == ELF_INVALID_ADDRESS)
+        return false;
+    const auto strings = obj->GetData().CopyToBuffer(stringsOffset, static_cast<uint32>(stringSize.value()));
+    if (!strings.IsValid())
+        return false;
+    const auto nameAt = [&strings](uint64 offset) {
+        std::string name;
+        for (uint64 position = offset; position < strings.GetLength() && strings.GetData()[position] != 0; position++)
+            name.push_back(static_cast<char>(strings.GetData()[position]));
+        String demangled;
+        return !name.empty() && GView::Utils::Demangle(name, demangled) ? std::string(demangled.GetText()) : name;
+    };
+    if (!dynamicSymbolsNames.empty())
+    {
+        for (size_t index = 0; index < dynamicSymbolsNames.size(); index++)
+            dynamicSymbolsNames[index] = nameAt(is64 ? (index < dynamicSymbols64.size() ? dynamicSymbols64[index].st_name : 0)
+                                                     : (index < dynamicSymbols32.size() ? dynamicSymbols32[index].st_name : 0));
+        return true;
+    }
+    if (!symbolTable.has_value())
         return false;
     const uint64 symbolSize    = is64 ? sizeof(Elf64_Sym) : sizeof(Elf32_Sym);
     const uint64 symbolsOffset = VAToFileOffset(symbolTable.value());
-    const uint64 stringsOffset = VAToFileOffset(stringTable.value());
-    if (symbolsOffset == ELF_INVALID_ADDRESS || stringsOffset == ELF_INVALID_ADDRESS)
+    if (symbolsOffset == ELF_INVALID_ADDRESS)
         return false;
     // the count: the chains of DT_HASH; the last chain of DT_GNU_HASH; else the symbols before the strings
     std::optional<uint64> count;
@@ -296,16 +271,8 @@ bool ELFFile::ParseDynamic()
     if (!count.has_value() || count.value() == 0 || count.value() > MAX_SYMBOLS)
         return false;
     const auto symbols = obj->GetData().CopyToBuffer(symbolsOffset, static_cast<uint32>(count.value() * symbolSize));
-    const auto strings = obj->GetData().CopyToBuffer(stringsOffset, static_cast<uint32>(stringSize.value()));
-    if (!symbols.IsValid() || !strings.IsValid())
+    if (!symbols.IsValid())
         return false;
-    const auto nameAt = [&strings](uint64 offset) {
-        std::string name;
-        for (uint64 position = offset; position < strings.GetLength() && strings.GetData()[position] != 0; position++)
-            name.push_back(static_cast<char>(strings.GetData()[position]));
-        String demangled;
-        return GView::Utils::Demangle(name, demangled) ? std::string(demangled.GetText()) : name;
-    };
     for (uint64 position = 0; position + symbolSize <= symbols.GetLength(); position += symbolSize)
     {
         if (is64)
@@ -399,7 +366,9 @@ bool ELFFile::ParseGoData()
                 bufferSize          = section.sh_size;
             }
 
-            CHECK(pcLnTab.Process(obj->GetData().CopyToBuffer(bufferOffset, (uint32) bufferSize), arch), false, "");
+            constexpr uint64 MAX_GO_TABLE_SIZE = 0x10000000;
+            if (bufferSize > MAX_GO_TABLE_SIZE || !pcLnTab.Process(obj->GetData().CopyToBuffer(bufferOffset, static_cast<uint32>(bufferSize)), arch))
+                panelsMask &= ~(1ULL << (uint8) Panels::IDs::GoInformation); // a malformed table: no Go panels
             break;
         }
     }
@@ -409,121 +378,43 @@ bool ELFFile::ParseGoData()
 
 bool ELFFile::ParseSymbols()
 {
-    if (is64)
-    {
-        for (auto i = 0U; i < sections64.size(); i++)
+    // the symbol tables (SHT_SYMTAB / SHT_DYNSYM) and their names: the entries that the table holds, the names inside their string table
+    // (sh_link); a table or a string table that is not in the file gives no symbols / empty names
+    constexpr uint64 MAX_TABLE_SIZE = 0x4000000;
+    const auto readTable = [&](const auto& sections, auto symbol, auto& symbols, std::vector<std::string>& names, uint32 tableType, Panels::IDs panel) {
+        for (const auto& section : sections)
         {
-            const auto& section = sections64.at(i);
-            if (section.sh_type == SHT_SYMTAB) /* Static symbol table */
+            if (section.sh_type != tableType || section.sh_size == 0 || section.sh_size > MAX_TABLE_SIZE)
+                continue;
+            const auto table = obj->GetData().CopyToBuffer(section.sh_offset, static_cast<uint32>(section.sh_size));
+            if (!table.IsValid())
+                continue;
+            Buffer strings;
+            if (section.sh_link < sections.size() && sections[section.sh_link].sh_size <= MAX_TABLE_SIZE)
+                strings = obj->GetData().CopyToBuffer(sections[section.sh_link].sh_offset, static_cast<uint32>(sections[section.sh_link].sh_size));
+            panelsMask |= (1ULL << (uint8) panel);
+            for (size_t position = 0; position + sizeof(symbol) <= table.GetLength(); position += sizeof(symbol))
             {
-                panelsMask |= (1ULL << (uint8) Panels::IDs::StaticSymbols);
-
-                const auto staticSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, (uint32) section.sh_size);
-
-                const auto& strtabSection = sections64.at(section.sh_link);
-                const auto strtabBuffer   = obj->GetData().CopyToBuffer(strtabSection.sh_offset, (uint32) strtabSection.sh_size);
-
-                auto offset = 0U;
-                while (offset < section.sh_size)
-                {
-                    const auto& sym = staticSymbols64.emplace_back(*(Elf64_Sym*) (staticSymbolsBuffer.GetData() + offset));
-                    offset += sizeof(Elf64_Sym);
-
-                    String demangled;
-                    const auto str = reinterpret_cast<char*>((char*) (strtabBuffer.GetData() + sym.st_name));
-                    if (GView::Utils::Demangle(str, demangled) == false)
-                    {
-                        demangled = str;
-                    }
-
-                    staticSymbolsNames.emplace_back(demangled.GetText());
-                }
-            }
-            else if (section.sh_type == SHT_DYNSYM) /* Dynamic symbol table */
-            {
-                panelsMask |= (1ULL << (uint8) Panels::IDs::DynamicSymbols);
-
-                const auto dynamicSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, (uint32) section.sh_size);
-
-                const auto& dstrtabSection = sections64.at(section.sh_link);
-                const auto dstrtabBuffer   = obj->GetData().CopyToBuffer(dstrtabSection.sh_offset, (uint32) dstrtabSection.sh_size);
-
-                auto offset = 0U;
-                while (offset < section.sh_size)
-                {
-                    const auto& sym = dynamicSymbols64.emplace_back(*(Elf64_Sym*) (dynamicSymbolsBuffer.GetData() + offset));
-                    offset += sizeof(Elf64_Sym);
-
-                    String demangled;
-                    const auto str = reinterpret_cast<char*>((char*) (dstrtabBuffer.GetData() + sym.st_name));
-                    if (GView::Utils::Demangle(str, demangled) == false)
-                    {
-                        demangled = str;
-                    }
-
-                    dynamicSymbolsNames.emplace_back(demangled.GetText());
-                }
+                memcpy(&symbol, table.GetData() + position, sizeof(symbol));
+                symbols.emplace_back(symbol);
+                std::string name;
+                for (uint64 character = symbol.st_name; strings.IsValid() && character < strings.GetLength() && strings.GetData()[character] != 0; character++)
+                    name.push_back(static_cast<char>(strings.GetData()[character]));
+                String demangled;
+                names.emplace_back(!name.empty() && GView::Utils::Demangle(name, demangled) ? std::string(demangled.GetText()) : name);
             }
         }
+    };
+    if (is64)
+    {
+        readTable(sections64, Elf64_Sym{}, staticSymbols64, staticSymbolsNames, SHT_SYMTAB, Panels::IDs::StaticSymbols);
+        readTable(sections64, Elf64_Sym{}, dynamicSymbols64, dynamicSymbolsNames, SHT_DYNSYM, Panels::IDs::DynamicSymbols);
     }
     else
     {
-        for (auto i = 0U; i < sections32.size(); i++)
-        {
-            const auto& section = sections32.at(i);
-            if (section.sh_type == SHT_SYMTAB) /* Static symbol table */
-            {
-                panelsMask |= (1ULL << (uint8) Panels::IDs::StaticSymbols);
-
-                const auto staticSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, section.sh_size);
-
-                const auto& strtabSection = sections32.at(section.sh_link);
-                const auto strtabBuffer   = obj->GetData().CopyToBuffer(strtabSection.sh_offset, strtabSection.sh_size);
-
-                auto offset = 0U;
-                while (offset < section.sh_size)
-                {
-                    const auto& sym = staticSymbols32.emplace_back(*(Elf32_Sym*) (staticSymbolsBuffer.GetData() + offset));
-                    offset += sizeof(Elf32_Sym);
-
-                    String demangled;
-                    const auto str = reinterpret_cast<char*>((char*) (strtabBuffer.GetData() + sym.st_name));
-                    if (GView::Utils::Demangle(str, demangled) == false)
-                    {
-                        demangled = str;
-                    }
-
-                    staticSymbolsNames.emplace_back(demangled.GetText());
-                }
-            }
-            else if (section.sh_type == SHT_DYNSYM) /* Dynamic symbol table */
-            {
-                panelsMask |= (1ULL << (uint8) Panels::IDs::DynamicSymbols);
-
-                const auto dynamicSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, section.sh_size);
-
-                const auto& dstrtabSection = sections32.at(section.sh_link);
-                const auto dstrtabBuffer   = obj->GetData().CopyToBuffer(dstrtabSection.sh_offset, dstrtabSection.sh_size);
-
-                auto offset = 0U;
-                while (offset < section.sh_size)
-                {
-                    const auto& sym = dynamicSymbols32.emplace_back(*(Elf32_Sym*) (dynamicSymbolsBuffer.GetData() + offset));
-                    offset += sizeof(Elf32_Sym);
-
-                    String demangled;
-                    const auto str = reinterpret_cast<char*>((char*) (dstrtabBuffer.GetData() + sym.st_name));
-                    if (GView::Utils::Demangle(str, demangled) == false)
-                    {
-                        demangled = str;
-                    }
-
-                    dynamicSymbolsNames.emplace_back(demangled.GetText());
-                }
-            }
-        }
+        readTable(sections32, Elf32_Sym{}, staticSymbols32, staticSymbolsNames, SHT_SYMTAB, Panels::IDs::StaticSymbols);
+        readTable(sections32, Elf32_Sym{}, dynamicSymbols32, dynamicSymbolsNames, SHT_DYNSYM, Panels::IDs::DynamicSymbols);
     }
-
     return true;
 }
 
@@ -596,8 +487,9 @@ namespace
 {
 // A section that contains the address wins: the end of a section is the start of the next one (lld places .text right after .rodata, at
 // another VA). The end of a section matches only when no section contains the address (an address right after the last byte)
+// A section whose bytes are not in the file (a damaged header: a huge sh_size) translates nothing.
 template <typename Section>
-uint64 TranslateBySections(const std::vector<Section>& sections, uint64 value, bool fromFileOffset)
+uint64 TranslateBySections(const std::vector<Section>& sections, uint64 value, bool fromFileOffset, uint64 fileSize)
 {
     for (int pass = 0; pass < 2; pass++)
     {
@@ -605,6 +497,8 @@ uint64 TranslateBySections(const std::vector<Section>& sections, uint64 value, b
         {
             if (section.sh_type == SHT_NOBITS && pass == 0)
                 continue; // no bytes in the file
+            if (section.sh_type != SHT_NOBITS && (section.sh_offset > fileSize || section.sh_size > fileSize - section.sh_offset))
+                continue; // a damaged header
             const uint64 from = fromFileOffset ? static_cast<uint64>(section.sh_offset) : static_cast<uint64>(section.sh_addr);
             const uint64 to   = fromFileOffset ? static_cast<uint64>(section.sh_addr) : static_cast<uint64>(section.sh_offset);
             if (!fromFileOffset && section.sh_addr == 0)
@@ -620,7 +514,8 @@ uint64 TranslateBySections(const std::vector<Section>& sections, uint64 value, b
 }
 } // namespace
 
-// the PT_LOAD segments: the addresses that no section holds (a file without section headers)
+// the PT_LOAD segments: the addresses that no (valid) section holds (a file without section headers, a damaged section header, the ELF
+// header at the start of the first segment)
 template <typename Segment>
 uint64 TranslateBySegments(const std::vector<Segment>& segments, uint64 value, bool fromFileOffset)
 {
@@ -638,16 +533,19 @@ uint64 TranslateBySegments(const std::vector<Segment>& segments, uint64 value, b
 
 uint64 ELFFile::FileOffsetToVA(uint64 fileOffset)
 {
-    const uint64 va = is64 ? TranslateBySections(sections64, fileOffset, true) : TranslateBySections(sections32, fileOffset, true);
-    if (va != ELF_INVALID_ADDRESS || (is64 ? !sections64.empty() : !sections32.empty()))
+    const uint64 fileSize = obj->GetData().GetSize();
+    const uint64 va = is64 ? TranslateBySections(sections64, fileOffset, true, fileSize) : TranslateBySections(sections32, fileOffset, true, fileSize);
+    if (va != ELF_INVALID_ADDRESS)
         return va;
     return is64 ? TranslateBySegments(segments64, fileOffset, true) : TranslateBySegments(segments32, fileOffset, true);
 }
 
 uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
 {
-    const uint64 offset = is64 ? TranslateBySections(sections64, virtualAddress, false) : TranslateBySections(sections32, virtualAddress, false);
-    if (offset != ELF_INVALID_ADDRESS || (is64 ? !sections64.empty() : !sections32.empty()))
+    const uint64 fileSize = obj->GetData().GetSize();
+    const uint64 offset   = is64 ? TranslateBySections(sections64, virtualAddress, false, fileSize)
+                                 : TranslateBySections(sections32, virtualAddress, false, fileSize);
+    if (offset != ELF_INVALID_ADDRESS)
         return offset;
     return is64 ? TranslateBySegments(segments64, virtualAddress, false) : TranslateBySegments(segments32, virtualAddress, false);
 }
