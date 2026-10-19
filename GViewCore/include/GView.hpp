@@ -1845,6 +1845,12 @@ namespace View
              */
             void AddDyldBindInfo(BufferView opcodes, const std::vector<uint64>& segmentAddresses, uint8 pointerSize, uint64 imageBase);
             /**
+             * \brief A pointer that the loader binds to a symbol of another module (ELF R_X86_64_64 / R_AARCH64_ABS64 / GLOB_DAT to an
+             * undefined symbol), at the RVA `rva`; `name` is its symbol, with the addend (_ZTVN10__cxxabiv117__class_type_infoE+0x10).
+             * The line of the pointer shows it even when a structure that starts there names the place (the vptr of a typeinfo).
+             */
+            void AddBoundSymbol(uint64 rva, std::string_view name);
+            /**
              * \brief A data zone without bytes in the file: the uninitialized data of the program at the VA `address` (ELF .bss, Mach-O
              * zero fill sections, the part of a PE section past its raw data). Its lines are the variables the code uses (dd ?), placed
              * after the end of the file.

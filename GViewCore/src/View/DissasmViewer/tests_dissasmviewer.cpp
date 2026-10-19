@@ -7005,6 +7005,29 @@ TEST_CASE("DyldBindOpcodes", "[Dissasm]MachO")
     REQUIRE(binds[1].address == 0x1004);
 }
 
+TEST_CASE("BoundSymbolsOfTheBinds", "[Dissasm]MachO")
+{
+    // the binds of the opcodes applied: an import slot named after the symbol, its line the symbol and the addend (the vptr of a typeinfo:
+    // the vtable of __class_type_info + 0x10), a pointer of the view (0: the loader writes it)
+    std::vector<unsigned char> file(0x200, 0x00);
+    file[0] = 0xC3;
+    DissasmTestInstance instance(file.data(), file.size());
+    TestIdentityTranslation translation;
+    SettingsData settings;
+    settings.offsetTranslateCallback = &translation;
+    std::vector<uint8> opcodes       = { 0x11, 0x60, 0x10, 0x40 }; // ordinal 1, addend 0x10, the symbol
+    for (const char c : std::string_view("_ZTVN10__cxxabiv117__class_type_infoE"))
+        opcodes.push_back(static_cast<uint8>(c));
+    opcodes.insert(opcodes.end(), { 0x00, 0x70, 0x80, 0x02, 0x90, 0x00 }); // segment 0 + 0x100, DO_BIND, DONE
+    settings.dyldBindInfos.push_back({ opcodes, { 0 }, 8, 0 });
+    ApplyChainedFixups(settings, &instance.objects[0]);
+    REQUIRE(settings.dyldBindInfos.empty());
+    REQUIRE(settings.memoryMappings.at(0x100).name == "vtable for __cxxabiv1::__class_type_info"); // demangled
+    REQUIRE(settings.memoryMappings.at(0x100).type == MemoryMappingType::FunctionMapping);
+    REQUIRE(settings.boundSymbols.at(0x100) == "vtable for __cxxabiv1::__class_type_info+0x10");
+    REQUIRE(settings.relocatedPointers.at(0x100) == 0);
+}
+
 TEST_CASE("BoundPointerOfAStructure", "[Dissasm]MachO")
 {
     // the isa of a metaclass (a pointer dyld binds to _OBJC_METACLASS_$_NSObject) at the start of the structure _OBJC_METACLASS_$_Dog: the
@@ -7102,6 +7125,8 @@ TEST_CASE("SymbolicOperandText", "[Dissasm]Operands")
     CHECK(SubstituteX86MemoryOperand("rcx, [rip + 0x2f45]", "aHelloWorld", true, true) == std::optional<std::string>("rcx, aHelloWorld"));
     CHECK(SubstituteX86MemoryOperand("rax, qword ptr gs:[0x30]", "unk_30", false, true) == std::nullopt);
     CHECK(SubstituteX86MemoryOperand("rax, qword ptr [rbx + 8]", "unk_30", false, true) == std::nullopt);
+    // ELF: the GOT slot of a variable is a pointer (IDA: mov rax, cs:stdout_ptr)
+    CHECK(SubstituteX86MemoryOperand("rax, qword ptr [rip + 0x10]", "stdout_ptr", false, true) == std::optional<std::string>("rax, cs:stdout_ptr"));
     // x86: the absolute address, ds:name; an off_ pointer of 4 bytes says the size
     CHECK(SubstituteX86MemoryOperand("eax, dword ptr [0x403000]", "off_403000", false, false) == std::optional<std::string>("eax, ds:off_403000"));
     CHECK(SubstituteX86MemoryOperand("eax, dword ptr [eax*4 + 0x403000]", "off_403000", false, false) == std::nullopt);

@@ -138,7 +138,7 @@ bool IsPointerName(std::string_view name)
     for (const std::string_view prefix : { "off_", "__imp_", "selRef_", "classRef_", "superRef_", "__security_cookie", "__guard_" })
         if (name.starts_with(prefix))
             return true;
-    return false;
+    return name.ends_with("_ptr"); // ELF: the GOT slot of a variable (stdout_ptr)
 }
 } // namespace
 

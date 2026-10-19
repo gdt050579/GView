@@ -134,6 +134,29 @@ GVIEW_PLUGIN_ENTRY_POINTS
         const auto machine     = elf->is64 ? elf->header64.e_machine : elf->header32.e_machine;
         constexpr unsigned R_ARM_GLOB_DAT  = 21;
         constexpr unsigned R_ARM_JUMP_SLOT = 22;
+        // a variable of another module (STT_OBJECT: stdout, environ, the vtables of __cxxabiv1): its slot is a pointer to it, counter_ptr
+        // (IDA), its line the variable; a function: an import slot (__imp_puts)
+        const auto isVariable = [&](uint64 symbolIndex) {
+            const uint8 info = elf->is64 ? (symbolIndex < elf->dynamicSymbols64.size() ? elf->dynamicSymbols64[symbolIndex].st_info : 0)
+                                         : (symbolIndex < elf->dynamicSymbols32.size() ? elf->dynamicSymbols32[symbolIndex].st_info : 0);
+            return (info & 0xF) == ELF::STT_OBJECT;
+        };
+        // the pointer at `slot` to the symbol (plus the addend): named after it, its line the symbol
+        const auto addImportPointer = [&](uint64 slot, uint64 symbolIndex, int64 addend) {
+            const std::string& name = elf->dynamicSymbolsNames[symbolIndex];
+            if (isVariable(symbolIndex))
+                settings.AddMemoryMapping(slot - imageBase, name + "_ptr", DissasmViewer::MemoryMappingType::TextMapping);
+            else
+                settings.AddMemoryMapping(slot - imageBase, name, DissasmViewer::MemoryMappingType::FunctionMapping);
+            std::string bound = name;
+            if (addend != 0)
+            {
+                char text[32];
+                snprintf(text, sizeof(text), addend > 0 ? "+0x%llx" : "-0x%llx", static_cast<unsigned long long>(addend > 0 ? addend : -addend));
+                bound += text;
+            }
+            settings.AddBoundSymbol(slot - imageBase, bound);
+        };
         auto addSlot           = [&](uint64 slot, uint64 symbolIndex, uint64 type) {
             // jump slots (PLT) and global data (GOT): the same numbers in x86 and x64, their own in AArch64 and in ARM
             bool isImport = type == ELF::R_X86_64_JUMP_SLOT || type == ELF::R_X86_64_GLOB_DAT;
@@ -145,7 +168,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 return;
             if (symbolIndex == 0 || symbolIndex >= elf->dynamicSymbolsNames.size() || elf->dynamicSymbolsNames[symbolIndex].empty() || slot < imageBase)
                 return;
-            settings.AddMemoryMapping(slot - imageBase, elf->dynamicSymbolsNames[symbolIndex], DissasmViewer::MemoryMappingType::FunctionMapping);
+            addImportPointer(slot, symbolIndex, 0);
         };
         // the pointers the loader writes (RELA: the bytes in the file are 0): R_*_RELATIVE / R_*_IRELATIVE (the image base, 0 here, plus the
         // addend; the resolver of an ifunc), a 64 bit pointer to a symbol of the file (its value plus the addend); a pointer to an import
@@ -185,7 +208,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
                     // a pointer to an import: named after it; its value (0) is not known
                     if (symbolIndex >= elf->dynamicSymbolsNames.size() || elf->dynamicSymbolsNames[symbolIndex].empty() || slot < imageBase)
                         return;
-                    settings.AddMemoryMapping(slot - imageBase, elf->dynamicSymbolsNames[symbolIndex], DissasmViewer::MemoryMappingType::FunctionMapping);
+                    // its line: the symbol and the addend (a typeinfo: vptr = the vtable of __class_type_info + 0x10)
+                    addImportPointer(slot, symbolIndex, addend);
                     value = 0;
                 }
                 else
@@ -196,6 +220,28 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 settings.AddRelocatedPointer(offset, value);
         };
         constexpr uint64 MAX_RELOCATIONS_SIZE = 0x1000000; // 16 MB of relocations
+        // 32 bit REL: a pointer to a symbol (R_386_32 / R_ARM_ABS32: a vtable entry, the vptr / the name of a typeinfo); the addend is the
+        // value in the file. A symbol of another module: named after it; a symbol of the file (preemptible in a shared object): its value
+        constexpr unsigned R_ARM_ABS32 = 2;
+        auto addPointer32              = [&](uint64 slot, uint64 symbolIndex, uint64 type) {
+            const bool isAbsolute = (machine == ELF::EM_386 && type == ELF::R_386_32) || (machine == ELF::EM_ARM && type == R_ARM_ABS32);
+            if (!isAbsolute || symbolIndex == 0 || symbolIndex >= elf->dynamicSymbols32.size() || slot < imageBase)
+                return;
+            const uint64 offset = elf->VAToFileOffset(slot);
+            uint32 addend       = 0;
+            if (offset == ELF::ELF_INVALID_ADDRESS || !obj->GetData().Copy<uint32>(offset, addend))
+                return;
+            const auto& symbol = elf->dynamicSymbols32[symbolIndex];
+            if (symbol.st_shndx != ELF::SHN_UNDEF)
+            {
+                settings.AddRelocatedPointer(offset, static_cast<uint32>(symbol.st_value + addend));
+                return;
+            }
+            if (symbolIndex >= elf->dynamicSymbolsNames.size() || elf->dynamicSymbolsNames[symbolIndex].empty())
+                return;
+            addImportPointer(slot, symbolIndex, static_cast<int32>(addend));
+            settings.AddRelocatedPointer(offset, 0); // its value is not known
+        };
         auto readRelocations                  = [&](uint64 offset, uint64 size, uint32 type) {
             if (size == 0 || size > MAX_RELOCATIONS_SIZE || offset >= obj->GetData().GetSize())
                 return;
@@ -224,6 +270,8 @@ GVIEW_PLUGIN_ENTRY_POINTS
                     memcpy(&relocation, data + position, sizeof(relocation));
                     addSlot(relocation.r_offset, ELF32_R_SYM(relocation.r_info), ELF32_R_TYPE(relocation.r_info));
                     addCopy(relocation.r_offset, ELF32_R_SYM(relocation.r_info), ELF32_R_TYPE(relocation.r_info));
+                    if (type == ELF::SHT_REL)
+                        addPointer32(relocation.r_offset, ELF32_R_SYM(relocation.r_info), ELF32_R_TYPE(relocation.r_info));
                 }
             }
         };

@@ -88,6 +88,12 @@ void Settings::AddDyldBindInfo(BufferView opcodes, const std::vector<uint64>& se
     INTERNAL_SETTINGS->dyldBindInfos.push_back({ std::vector<uint8>(opcodes.GetData(), opcodes.GetData() + opcodes.GetLength()), segmentAddresses, pointerSize, imageBase });
 }
 
+void Settings::AddBoundSymbol(uint64 rva, std::string_view name)
+{
+    if (!name.empty())
+        INTERNAL_SETTINGS->boundSymbols[rva] = std::string(name);
+}
+
 void Settings::AddUninitializedDataZone(uint64 address, uint64 size, DisassemblyLanguage lang, std::string_view name)
 {
     if (size == 0)

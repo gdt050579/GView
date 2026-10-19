@@ -401,7 +401,15 @@ void GView::View::DissasmViewer::ApplyChainedFixups(SettingsData& settings, Refe
 #ifndef DISSASM_DISABLE_API_CALLS
             settings.memoryMappings.insert({ fixup.address - imageBase, { name, MemoryMappingType::FunctionMapping } });
 #endif
-            settings.boundSymbols[fixup.address - imageBase] = name;
+            // the line of the pointer: the symbol and the addend (the vptr of a typeinfo: the vtable of __class_type_info + 0x10)
+            std::string bound = name;
+            if (fixup.addend != 0) {
+                char text[32];
+                snprintf(text, sizeof(text), fixup.addend > 0 ? "+0x%llx" : "-0x%llx",
+                         static_cast<unsigned long long>(fixup.addend > 0 ? fixup.addend : -fixup.addend));
+                bound += text;
+            }
+            settings.boundSymbols[fixup.address - imageBase] = std::move(bound);
         }
         settings.relocatedPointers.emplace(offset.value(), 0);
     }
