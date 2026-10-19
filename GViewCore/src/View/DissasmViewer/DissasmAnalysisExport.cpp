@@ -225,6 +225,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
             zones.push_back(ZoneToJson(*zone, settings.get(), initDatas[index]));
     }
     root["zones"] = std::move(zones);
-    json          = root.dump(2);
+    // the names come from the file: a damaged file has names that are not UTF-8 (U+FFFD in the document, dump would throw)
+    json          = root.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
     return true;
 }

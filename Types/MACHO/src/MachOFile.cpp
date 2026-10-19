@@ -342,9 +342,8 @@ bool MachOFile::SetDyldInfo()
 {
     for (const auto& lc : loadCommands) {
         if (lc.value.cmd == MAC::LoadCommandType::DYLD_INFO || lc.value.cmd == MAC::LoadCommandType::DYLD_INFO_ONLY) {
-            if (dyldInfo.has_value()) {
-                throw "Multiple LoadCommandType::DYLD_INFO or MAC::LoadCommandType::DYLD_INFO_ONLY found! Reimplement this!";
-            }
+            if (dyldInfo.has_value())
+                continue; // a second one (a damaged / crafted file): the first one is kept
 
             dyldInfo.emplace(MAC::dyld_info_command{});
             CHECK(obj->GetData().Copy<MAC::dyld_info_command>(lc.offset, *dyldInfo), false, "");
@@ -406,9 +405,8 @@ bool MachOFile::SetMain()
 {
     for (const auto& lc : loadCommands) {
         if (lc.value.cmd == MAC::LoadCommandType::MAIN) {
-            if (main.has_value()) {
-                throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
-            }
+            if (main.has_value())
+                continue; // a second entry point command: the first one is kept
 
             main.emplace(MAC::entry_point_command{});
             CHECK(obj->GetData().Copy<MAC::entry_point_command>(lc.offset, *main), false, "");
@@ -416,43 +414,38 @@ bool MachOFile::SetMain()
                 Swap(*main);
             }
         } else if (lc.value.cmd == MAC::LoadCommandType::UNIXTHREAD) {
-            if (main.has_value()) {
-                throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
-            }
+            if (main.has_value())
+                continue; // a second entry point command: the first one is kept
 
             main.emplace(MAC::entry_point_command{});
 
             main->cmd     = lc.value.cmd;
             main->cmdsize = lc.value.cmdsize;
             auto cmd      = obj->GetData().CopyToBuffer(lc.offset, main->cmdsize);
+            // the thread state after {cmd, cmdsize, flavor, count}: only when the command holds it
+            const auto readState = [&](auto state) -> std::optional<decltype(state)> {
+                if (!cmd.IsValid() || cmd.GetLength() < 16 + sizeof(state))
+                    return std::nullopt;
+                memcpy(&state, cmd.GetData() + 16, sizeof(state));
+                if (shouldSwapEndianess) {
+                    Swap(state);
+                }
+                return state;
+            };
 
             if (header.cputype == MAC::CPU_TYPE_I386) {
-                const auto registers = reinterpret_cast<MAC::i386_thread_state_t*>(cmd.GetData() + 16);
-                if (shouldSwapEndianess) {
-                    Swap(*registers);
-                }
-                main->entryoff = registers->eip;
+                if (const auto registers = readState(MAC::i386_thread_state_t{}); registers.has_value())
+                    main->entryoff = registers->eip;
             } else if (header.cputype == MAC::CPU_TYPE_X86_64) {
-                const auto registers = reinterpret_cast<MAC::x86_thread_state64_t*>(cmd.GetData() + 16);
-                if (shouldSwapEndianess) {
-                    Swap(*registers);
-                }
-                main->entryoff = registers->rip;
+                if (const auto registers = readState(MAC::x86_thread_state64_t{}); registers.has_value())
+                    main->entryoff = registers->rip;
             } else if (header.cputype == MAC::CPU_TYPE_POWERPC) {
-                const auto registers = reinterpret_cast<MAC::ppc_thread_state_t*>(cmd.GetData() + 16);
-                if (shouldSwapEndianess) {
-                    Swap(*registers);
-                }
-                main->entryoff = registers->srr0;
+                if (const auto registers = readState(MAC::ppc_thread_state_t{}); registers.has_value())
+                    main->entryoff = registers->srr0;
             } else if (header.cputype == MAC::CPU_TYPE_POWERPC64) {
-                const auto registers = reinterpret_cast<MAC::ppc_thread_state64_t*>(cmd.GetData() + 16);
-                if (shouldSwapEndianess) {
-                    Swap(*registers);
-                }
-                main->entryoff = registers->srr0;
-            } else {
-                throw "EP not handled for CPU from LoadCommandType::UNIXTHREAD!";
-            }
+                if (const auto registers = readState(MAC::ppc_thread_state64_t{}); registers.has_value())
+                    main->entryoff = registers->srr0;
+            } // another CPU: no entry point from the thread state
         }
     }
 
@@ -463,9 +456,8 @@ bool MachOFile::SetSymbols()
 {
     for (const auto& lc : loadCommands) {
         if (lc.value.cmd == MAC::LoadCommandType::SYMTAB) {
-            if (dySymTab.has_value()) {
-                throw "Got a second LoadCommandType::SYMTAB command!";
-            }
+            if (dySymTab.has_value())
+                continue; // a second symbol table: the first one is kept
 
             dySymTab.emplace(DySymTab{});
             CHECK(obj->GetData().Copy<MAC::symtab_command>(lc.offset, dySymTab->sc), false, "");
@@ -531,9 +523,8 @@ bool MachOFile::SetSourceVersion()
 {
     for (const auto& lc : loadCommands) {
         if (lc.value.cmd == MAC::LoadCommandType::SOURCE_VERSION) {
-            if (sourceVersion.has_value()) {
-                throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
-            }
+            if (sourceVersion.has_value())
+                continue;
 
             sourceVersion.emplace(MAC::source_version_command{});
             CHECK(obj->GetData().Copy<MAC::source_version_command>(lc.offset, *sourceVersion), false, "");
@@ -550,9 +541,8 @@ bool MachOFile::SetUUID()
 {
     for (const auto& lc : loadCommands) {
         if (lc.value.cmd == MAC::LoadCommandType::UUID) {
-            if (uuid.has_value()) {
-                throw "Multiple LoadCommandType::UUID found! Reimplement this!";
-            }
+            if (uuid.has_value())
+                continue;
 
             uuid.emplace(MAC::uuid_command{});
             CHECK(obj->GetData().Copy<MAC::uuid_command>(lc.offset, *uuid), false, "");
@@ -622,9 +612,31 @@ bool MachOFile::SetCodeSignature()
     // All fields are big endian (in case PPC ever makes a comeback)
     Swap(codeSignature->superBlob);
 
+    // a damaged signature: the strings, the hashes and the counts are read inside their blobs, an unknown blob is skipped
+    const auto stringAt = [](const Buffer& buffer, uint64 offset) {
+        std::string text;
+        for (uint64 position = offset; buffer.IsValid() && position < buffer.GetLength() && buffer.GetData()[position] != 0; position++)
+            text.push_back(static_cast<char>(buffer.GetData()[position]));
+        return text;
+    };
+    const auto hexAt = [](const Buffer& buffer, uint64 offset, uint32 size) {
+        LocalString<160> text;
+        if (buffer.IsValid() && offset <= buffer.GetLength() && size <= buffer.GetLength() - offset && size <= 64)
+            for (uint32 index = 0; index < size; index++)
+                text.AddFormat("%.2X", buffer.GetData()[offset + index]);
+        return std::string(text.GetText());
+    };
+    // log2 of the page of the hashes (0: one page for the code, as 0x1000 here); a shift of 31 and more is not a page
+    const auto pageSizeOf = [](uint8 shift) -> uint32 { return shift == 0 ? 0x1000U : (shift < 31 ? (1U << shift) : 0U); };
+    // the code slots that the code can hold (one hash per page of the file)
+    const auto slotsOf = [this](uint32 count, uint32 pageSize) {
+        return pageSize == 0 ? 0U : std::min<uint32>(count, static_cast<uint32>(std::min<uint64>(obj->GetData().GetSize() / pageSize + 1, 0x100000)));
+    };
+    constexpr uint32 MAX_SPECIAL_SLOTS = 64;
+
     const auto startBlobOffset = codeSignature->ledc.dataoff + sizeof(MAC::CS_SuperBlob);
     auto currentBlobOffset     = startBlobOffset;
-    for (auto i = 0U; i < codeSignature->superBlob.count; i++) {
+    for (auto i = 0U; i < std::min<uint32>(codeSignature->superBlob.count, 4096); i++) {
         MAC::CS_BlobIndex blob{};
 
         CHECK(obj->GetData().Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
@@ -643,41 +655,30 @@ bool MachOFile::SetCodeSignature()
             Swap(codeSignature->codeDirectory);
 
             const auto blobBuffer                  = obj->GetData().CopyToBuffer(csOffset, codeSignature->codeDirectory.length);
-            codeSignature->codeDirectoryIdentifier = (char*) blobBuffer.GetData() + codeSignature->codeDirectory.identOffset;
+            codeSignature->codeDirectoryIdentifier = stringAt(blobBuffer, codeSignature->codeDirectory.identOffset);
 
             const auto hashType = codeSignature->codeDirectory.hashType;
-            {
-                if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false) {
-                    throw std::runtime_error("Unable to validate!");
-                }
-            }
+            CHECK(ComputeHash(blobBuffer, hashType, codeSignature->cdHash), false, "unknown hash type");
 
-            ProgressStatus::Init(
-                  "Computing code directory slots hashes...", codeSignature->codeDirectory.nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
+            const auto pageSize = pageSizeOf(codeSignature->codeDirectory.pageSize);
+            const auto nCodeSlots = slotsOf(codeSignature->codeDirectory.nCodeSlots, pageSize);
+            ProgressStatus::Init("Computing code directory slots hashes...", nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
 
-            codeSignature->cdSlotsHashes.reserve(codeSignature->codeDirectory.nCodeSlots);
+            codeSignature->cdSlotsHashes.reserve(nCodeSlots);
 
-            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0x1000U;
             auto remaining      = codeSignature->codeDirectory.codeLimit;
             auto processed      = 0ULL;
-            for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++) {
-                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, codeSignature->codeDirectory.nCodeSlots)) == false, false, "");
+            for (auto slot = 0U; slot < nCodeSlots; slot++) {
+                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, nCodeSlots)) == false, false, "");
 
                 const auto size             = std::min<>(remaining, pageSize);
                 const auto hashOffset       = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
                 const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
 
                 std::string hashComputed;
-                if (ComputeHash(bufferToValidate, hashType, hashComputed) == false) {
-                    throw std::runtime_error("Unable to validate!");
-                }
+                ComputeHash(bufferToValidate, hashType, hashComputed);
 
-                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
-                LocalString<128> ls;
-                for (auto i = 0U; i < codeSignature->codeDirectory.hashSize; i++) {
-                    ls.AddFormat("%.2X", hash[i]);
-                }
-                std::string hashFound{ ls };
+                std::string hashFound = hexAt(blobBuffer, hashOffset, codeSignature->codeDirectory.hashSize);
 
                 codeSignature->cdSlotsHashes.emplace_back(HashPair{ .found{ hashFound }, .computed{ hashComputed } });
 
@@ -685,19 +686,14 @@ bool MachOFile::SetCodeSignature()
                 remaining -= size;
             }
 
-            for (auto slot = 1U; slot <= codeSignature->codeDirectory.nSpecialSlots; slot++) {
+            for (auto slot = 1U; slot <= std::min<uint32>(codeSignature->codeDirectory.nSpecialSlots, MAX_SPECIAL_SLOTS); slot++) {
                 const auto hashOffset = codeSignature->codeDirectory.hashOffset - codeSignature->codeDirectory.hashSize * slot;
 
                 const auto& [it, ok] = codeSignature->specialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
                 CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
                 auto& [k, v] = *it;
 
-                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
-                LocalString<128> ls;
-                for (auto i = 0U; i < codeSignature->codeDirectory.hashSize; i++) {
-                    ls.AddFormat("%.2X", hash[i]);
-                }
-                v.found = ls.GetText();
+                v.found = hexAt(blobBuffer, hashOffset, codeSignature->codeDirectory.hashSize);
             }
         } break;
         case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
@@ -706,8 +702,9 @@ bool MachOFile::SetCodeSignature()
             CHECK(obj->GetData().Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature->requirements.blob), false, "");
             Swap(codeSignature->requirements.blob);
 
-            codeSignature->requirements.data = obj->GetData().CopyToBuffer(
-                  csOffset + sizeof(MAC::CS_RequirementsBlob), codeSignature->requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
+            if (codeSignature->requirements.blob.length > sizeof(MAC::CS_RequirementsBlob))
+                codeSignature->requirements.data = obj->GetData().CopyToBuffer(
+                      csOffset + sizeof(MAC::CS_RequirementsBlob), codeSignature->requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
 
             // TODO: needs to parse requirements and translate them to human readable text...
             // MAC::CS_Requirement* r = (MAC::CS_Requirement*) codeSignature->requirements.data.GetData();
@@ -722,7 +719,8 @@ bool MachOFile::SetCodeSignature()
         case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS: {
             CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, codeSignature->entitlements.blob), false, "");
             Swap(codeSignature->entitlements.blob);
-            codeSignature->entitlements.data = obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
+            if (codeSignature->entitlements.blob.length > sizeof(blob))
+                codeSignature->entitlements.data = obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
         } break;
         case MAC::CodeSignMagic::CS_SUPPL_SIGNER_TYPE_TRUSTCACHE:
             break;
@@ -731,6 +729,7 @@ bool MachOFile::SetCodeSignature()
             CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, gblob), false, "");
             Swap(gblob);
 
+            CHECKBK(gblob.length > sizeof(gblob), "");
             codeSignature->signature.offset = csOffset + sizeof(gblob);
             codeSignature->signature.size   = gblob.length - sizeof(gblob);
 
@@ -749,45 +748,37 @@ bool MachOFile::SetCodeSignature()
             Swap(cd);
 
             const auto blobBuffer = obj->GetData().CopyToBuffer(csOffset, cd.length);
-            codeSignature->alternateDirectoriesIdentifiers.emplace_back((char*) blobBuffer.GetData() + cd.identOffset);
+            codeSignature->alternateDirectoriesIdentifiers.emplace_back(stringAt(blobBuffer, cd.identOffset));
 
             const auto hashType = cd.hashType;
             {
                 std::string cdHash;
-                if (ComputeHash(blobBuffer, hashType, cdHash) == false) {
-                    throw std::runtime_error("Unable to validate!");
-                }
+                ComputeHash(blobBuffer, hashType, cdHash); // an unknown type: no hash
                 codeSignature->acdHashes.emplace_back(cdHash);
             }
 
-            ProgressStatus::Init("Computing alternate code directory slots hashes...", cd.nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
+            const auto pageSize   = cd.pageSize ? pageSizeOf(cd.pageSize) : 0U;
+            const auto nCodeSlots = slotsOf(cd.nCodeSlots, pageSize);
+            ProgressStatus::Init("Computing alternate code directory slots hashes...", nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
 
             auto& cdSlotsHashes = codeSignature->acdSlotsHashes.emplace_back();
-            cdSlotsHashes.reserve(cd.nCodeSlots);
+            cdSlotsHashes.reserve(nCodeSlots);
 
             auto& cdSpecialSlotsHashes = codeSignature->alternateSpecialSlotsHashes.emplace_back();
 
-            const auto pageSize = cd.pageSize ? (1U << cd.pageSize) : 0U;
             auto remaining      = cd.codeLimit;
             auto processed      = 0ULL;
-            for (auto slot = 0U; slot < cd.nCodeSlots; slot++) {
-                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, cd.nCodeSlots)) == false, false, "");
+            for (auto slot = 0U; slot < nCodeSlots; slot++) {
+                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, nCodeSlots)) == false, false, "");
 
                 const auto size             = std::min<>(remaining, pageSize);
                 const auto hashOffset       = cd.hashOffset + cd.hashSize * slot;
                 const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
 
                 std::string hashComputed;
-                if (ComputeHash(bufferToValidate, hashType, hashComputed) == false) {
-                    throw std::runtime_error("Unable to validate!");
-                }
+                ComputeHash(bufferToValidate, hashType, hashComputed);
 
-                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
-                LocalString<128> ls;
-                for (auto i = 0U; i < cd.hashSize; i++) {
-                    ls.AddFormat("%.2X", hash[i]);
-                }
-                std::string hashFound{ ls };
+                std::string hashFound = hexAt(blobBuffer, hashOffset, cd.hashSize);
 
                 cdSlotsHashes.emplace_back(HashPair{ .found{ hashFound }, .computed{ hashComputed } });
 
@@ -795,31 +786,27 @@ bool MachOFile::SetCodeSignature()
                 remaining -= size;
             }
 
-            for (auto slot = 1U; slot <= cd.nSpecialSlots; slot++) {
+            for (auto slot = 1U; slot <= std::min<uint32>(cd.nSpecialSlots, MAX_SPECIAL_SLOTS); slot++) {
                 const auto hashOffset = cd.hashOffset - cd.hashSize * slot;
 
                 const auto& [it, ok] = cdSpecialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
                 CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
                 auto& [k, v] = *it;
 
-                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
-                LocalString<128> ls;
-                for (auto i = 0U; i < cd.hashSize; i++) {
-                    ls.AddFormat("%.2X", hash[i]);
-                }
-                v.found = ls.GetText();
+                v.found = hexAt(blobBuffer, hashOffset, cd.hashSize);
             }
         } break;
         default:
-            throw std::runtime_error("Slot type not supported!");
+            break; // a blob type that is not known: skipped
         }
     }
 
     const auto Compute = [&](uint8 hashType, MAC::CodeSignMagic blobType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map) {
+        const auto entry = map.find(blobType);
+        if (entry == map.end())
+            return; // no special slot for this blob (a damaged code directory)
         auto buffer = obj->GetData().CopyToBuffer(csOffset, blobLength);
-        if (ComputeHash(buffer, hashType, map.at(blobType).computed) == false) {
-            throw std::runtime_error("Unable to validate!");
-        }
+        ComputeHash(buffer, hashType, entry->second.computed);
     };
 
     const auto Process = [&](MAC::CodeSignMagic blobType, uint8 hashType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map) {
@@ -862,9 +849,8 @@ bool MachOFile::SetVersionMin()
     for (const auto& lc : loadCommands) {
         if (lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_IPHONEOS || lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_MACOSX ||
             lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_TVOS || lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_WATCHOS) {
-            if (versionMin.has_value()) {
-                throw "Version min command already set!";
-            }
+            if (versionMin.has_value())
+                continue;
 
             versionMin.emplace(MAC::version_min_command{});
             CHECK(obj->GetData().Copy<MAC::version_min_command>(lc.offset, *versionMin), false, "");
@@ -1041,7 +1027,7 @@ bool MachOFile::ParseGoBuildInfo()
     const uint8 ptrSize  = buildInfo[ptrOffset];
     const auto bigEndian = buildInfo[ptrOffset + 1] != 0;
     if (bigEndian) {
-        throw std::runtime_error("Not handled!");
+        return false; // not handled: no Go panels
     }
 
     uint64 runtimeBuildVersionVA = 0;
@@ -1101,7 +1087,7 @@ bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& o
 {
     switch (static_cast<MAC::CodeSignMagic>(hashType)) {
     case MAC::CodeSignMagic::CS_HASHTYPE_NO_HASH:
-        throw "What to do?";
+        return false;
     case MAC::CodeSignMagic::CS_HASHTYPE_SHA1: {
         GView::Hashes::OpenSSLHash sha1(GView::Hashes::OpenSSLHashKind::Sha1);
         CHECK(sha1.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
@@ -1143,7 +1129,7 @@ bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& o
         return true;
     }
     default:
-        throw "What to do?";
+        return false; // an unknown hash type (a damaged signature)
     }
 
     return false;

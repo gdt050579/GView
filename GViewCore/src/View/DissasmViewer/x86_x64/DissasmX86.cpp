@@ -1977,7 +1977,7 @@ void Instance::ExportAnnotations()
     if (!selectedPath.has_value())
         return;
 
-    const std::string text = BuildAnnotationsDocument(zones, std::string_view(reinterpret_cast<const char*>(fileName.data()), fileName.size())).dump(2) + "\n";
+    const std::string text = BuildAnnotationsDocument(zones, std::string_view(reinterpret_cast<const char*>(fileName.data()), fileName.size())).dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n";
     if (!WriteTextFile(selectedPath.value(), text, "annotations"))
         return;
     Dialogs::MessageBox::ShowNotification("Info", "The annotations were written (names, comments, variables, zones, suggestions).");
@@ -2048,7 +2048,7 @@ void Instance::CreateSignatures()
     const auto selectedPath = Dialogs::FileDialog::ShowSaveFileWindow(defaultName, "Signatures:json", filePath.parent_path());
     if (!selectedPath.has_value())
         return;
-    if (!WriteTextFile(selectedPath.value(), document.dump(2) + "\n", "signatures"))
+    if (!WriteTextFile(selectedPath.value(), document.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n", "signatures"))
         return;
     LocalString<128> summary;
     summary.SetFormat("Signatures written: %u (one for every named function long enough).", static_cast<uint32>(count));

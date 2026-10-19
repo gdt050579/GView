@@ -170,7 +170,7 @@ bool Instance::AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptio
         return false;
     if (!options.signaturesOutput.empty()) {
         std::ofstream stream(options.signaturesOutput, std::ios::binary);
-        if (!stream || !(stream << signaturesOutput.dump(2) << "\n")) {
+        if (!stream || !(stream << signaturesOutput.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) << "\n")) {
             error = "Unable to write the signatures file!";
             return false;
         }
