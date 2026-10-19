@@ -2989,7 +2989,7 @@ class FunctionsWindow : public AppCUI::Controls::Window
         list = Factory::ListView::Create(
               this,
               "l:1,t:1,r:1,b:3",
-              { "n:Name,w:50", "n:Address,w:20", "n:Size,w:12,a:r", "n:Xrefs,w:8,a:r", "n:Kind,w:18" },
+              { "n:Name,w:50", "n:Address,w:20", "n:Size,w:12,a:r", "n:Xrefs,w:8,a:r", "n:Kind,w:18", "n:Tags,w:30" },
               ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
         LocalString<32> address, size, xrefs;
         for (size_t index = 0; index < functions.size(); index++) {
@@ -3001,7 +3001,9 @@ class FunctionsWindow : public AppCUI::Controls::Window
             std::string kind(function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : "")));
             if (function.isNoReturn) // IDA: the noreturn attribute
                 kind += kind.empty() ? "noreturn" : ", noreturn";
-            auto item = list->AddItem({ std::string_view(function.name), address.ToStringView(), size.ToStringView(), xrefs.ToStringView(), std::string_view(kind) });
+            const std::string tags = FormatApiCategories(function.apiCategories); // the triage: net, crypto, proc, ...
+            auto item              = list->AddItem(
+                  { std::string_view(function.name), address.ToStringView(), size.ToStringView(), xrefs.ToStringView(), std::string_view(kind), std::string_view(tags) });
             item.SetData(static_cast<uint64>(index));
         }
         Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);

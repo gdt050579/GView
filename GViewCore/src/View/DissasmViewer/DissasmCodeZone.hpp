@@ -28,6 +28,7 @@ struct DissasmFunctionInfo {
     bool isEntryPoint = false;
     bool isNoReturn   = false; // never returns to its caller (DissasmCodeZone::noReturnFunctions)
     std::vector<std::pair<uint64, uint64>> chunks; // its chunks apart from it: relative start, end
+    uint32 apiCategories = 0;                      // what the APIs it calls do (DissasmApiCategory): the triage of the functions
 };
 
 // What the GoTo dialog accepts. A prefix chooses the kind (va:, rva:, off: / offset:, line:); otherwise the text is a label name, or else an
@@ -218,6 +219,8 @@ struct DissasmCodeZone : public ParseZone {
     uint64 GetFunctionEnd(uint64 functionStart) const;
     // the chunks of the functions (DissasmFunctionChunk), sorted by start; the chunk that contains an address
     std::vector<DissasmFunctionChunk> functionChunks;
+    // the categories of the APIs every function of functionStarts calls / jumps to directly (DissasmApiCategory, the same index)
+    std::vector<uint32> functionApiCategories;
     const DissasmFunctionChunk* FindChunkContaining(uint64 relativeAddress) const;
     // the code of a function: [start, end) (`end`: its next function, or functionEnds with `reachableEnd`) and its chunks, by address
     std::vector<std::pair<uint64, uint64>> GetFunctionRanges(uint64 functionStart, uint64 end) const;

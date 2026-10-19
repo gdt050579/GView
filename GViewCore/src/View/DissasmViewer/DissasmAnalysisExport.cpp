@@ -5,6 +5,7 @@
 #include "DissasmRtti.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmSignatures.hpp"
+#include "DissasmFunctionUtils.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
 
 #include <nlohmann/json.hpp>
@@ -82,6 +83,16 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
         item["kind"] = function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : "function"));
         if (function.isNoReturn)
             item["noreturn"] = true;
+        if (function.apiCategories != 0) { // the triage: "net", "crypto", ...
+            json tags        = json::array();
+            const auto names = FormatApiCategories(function.apiCategories);
+            for (size_t start = 0; start < names.size();) {
+                const size_t end = std::min(names.find(' ', start), names.size());
+                tags.push_back(names.substr(start, end - start));
+                start = end + 1;
+            }
+            item["tags"] = std::move(tags);
+        }
         if (!function.chunks.empty()) { // IDA: the function chunks (tails)
             json chunks = json::array();
             for (const auto& [chunkStart, chunkEnd] : function.chunks)

@@ -68,6 +68,110 @@ std::optional<std::string> QualifiedMangledName(std::string_view name)
 }
 } // namespace
 
+uint32_t GetApiCategories(std::string_view name)
+{
+    struct Entry {
+        std::string_view name;
+        uint32_t categories;
+        bool prefix; // the families of the Windows API: the A / W / Ex variants
+    };
+    static constexpr Entry ENTRIES[] = {
+        // the network
+        { "socket", API_NETWORK, false }, { "connect", API_NETWORK, false }, { "bind", API_NETWORK, false }, { "listen", API_NETWORK, false },
+        { "accept", API_NETWORK, false }, { "accept4", API_NETWORK, false }, { "send", API_NETWORK, false }, { "sendto", API_NETWORK, false },
+        { "sendmsg", API_NETWORK, false }, { "recv", API_NETWORK, false }, { "recvfrom", API_NETWORK, false }, { "recvmsg", API_NETWORK, false },
+        { "getaddrinfo", API_NETWORK, false }, { "gethostbyname", API_NETWORK, false }, { "inet_addr", API_NETWORK, false },
+        { "inet_pton", API_NETWORK, false }, { "WSAStartup", API_NETWORK, true }, { "WSASocket", API_NETWORK, true },
+        { "WSAConnect", API_NETWORK, true }, { "WSASend", API_NETWORK, true }, { "WSARecv", API_NETWORK, true }, { "WSAIoctl", API_NETWORK, true },
+        { "GetAddrInfo", API_NETWORK, true }, { "InternetOpen", API_NETWORK, true }, { "InternetConnect", API_NETWORK, true },
+        { "InternetReadFile", API_NETWORK, true }, { "InternetWriteFile", API_NETWORK, true }, { "HttpOpenRequest", API_NETWORK, true },
+        { "HttpSendRequest", API_NETWORK, true }, { "HttpQueryInfo", API_NETWORK, true }, { "WinHttpOpen", API_NETWORK, true },
+        { "WinHttpConnect", API_NETWORK, true }, { "WinHttpSendRequest", API_NETWORK, true }, { "WinHttpReceiveResponse", API_NETWORK, true },
+        { "WinHttpReadData", API_NETWORK, true }, { "URLDownloadToFile", API_NETWORK, true }, { "URLOpenStream", API_NETWORK, true },
+        { "DnsQuery", API_NETWORK, true }, { "curl_easy_", API_NETWORK, true }, { "SSL_connect", API_NETWORK, false }, { "SSL_read", API_NETWORK, false },
+        { "SSL_write", API_NETWORK, false },
+        // the crypto
+        { "Crypt", API_CRYPTO, true }, { "BCrypt", API_CRYPTO, true }, { "NCrypt", API_CRYPTO, true }, { "EVP_", API_CRYPTO, true },
+        { "AES_", API_CRYPTO, true }, { "RSA_", API_CRYPTO, true }, { "SHA1", API_CRYPTO, true }, { "SHA256", API_CRYPTO, true },
+        { "SHA512", API_CRYPTO, true }, { "MD5_", API_CRYPTO, true }, { "mbedtls_", API_CRYPTO, true }, { "CC_SHA", API_CRYPTO, true },
+        { "CC_MD5", API_CRYPTO, true }, { "CCCrypt", API_CRYPTO, true }, { "SecKey", API_CRYPTO, true },
+        // the processes
+        { "CreateProcess", API_PROCESS, true }, { "ShellExecute", API_PROCESS, true }, { "WinExec", API_PROCESS, false },
+        { "OpenProcess", API_PROCESS, false }, { "TerminateProcess", API_PROCESS, false }, { "NtCreateProcess", API_PROCESS, true },
+        { "NtCreateUserProcess", API_PROCESS, false }, { "RtlCreateUserProcess", API_PROCESS, false }, { "fork", API_PROCESS, false },
+        { "vfork", API_PROCESS, false }, { "execve", API_PROCESS, false }, { "execv", API_PROCESS, false }, { "execvp", API_PROCESS, false },
+        { "execl", API_PROCESS, false }, { "execlp", API_PROCESS, false }, { "execle", API_PROCESS, false }, { "posix_spawn", API_PROCESS, false },
+        { "posix_spawnp", API_PROCESS, false }, { "system", API_PROCESS, false }, { "popen", API_PROCESS, false },
+        // the memory and the threads of another process
+        { "VirtualAllocEx", API_INJECTION, true }, { "WriteProcessMemory", API_INJECTION, false }, { "ReadProcessMemory", API_INJECTION, false },
+        { "CreateRemoteThread", API_INJECTION, true }, { "NtCreateThreadEx", API_INJECTION, false }, { "RtlCreateUserThread", API_INJECTION, false },
+        { "QueueUserAPC", API_INJECTION, false }, { "NtQueueApcThread", API_INJECTION, true }, { "SetThreadContext", API_INJECTION, false },
+        { "NtMapViewOfSection", API_INJECTION, false }, { "NtUnmapViewOfSection", API_INJECTION, false }, { "ZwUnmapViewOfSection", API_INJECTION, false },
+        { "VirtualProtectEx", API_INJECTION, false }, { "SetWindowsHookEx", API_INJECTION, true }, { "ptrace", API_INJECTION | API_ANTIDEBUG, false },
+        { "process_vm_writev", API_INJECTION, false }, { "task_for_pid", API_INJECTION, false }, { "mach_vm_write", API_INJECTION, false },
+        // the files
+        { "CreateFile", API_FILE, true }, { "ReadFile", API_FILE, true }, { "WriteFile", API_FILE, true }, { "DeleteFile", API_FILE, true },
+        { "MoveFile", API_FILE, true }, { "CopyFile", API_FILE, true }, { "FindFirstFile", API_FILE, true }, { "FindNextFile", API_FILE, true },
+        { "SetFileAttributes", API_FILE, true }, { "NtCreateFile", API_FILE, false }, { "NtWriteFile", API_FILE, false }, { "fopen", API_FILE, false },
+        { "fopen64", API_FILE, false }, { "open", API_FILE, false }, { "open64", API_FILE, false }, { "openat", API_FILE, false },
+        { "creat", API_FILE, false }, { "unlink", API_FILE, false }, { "unlinkat", API_FILE, false }, { "rename", API_FILE, false },
+        { "remove", API_FILE, false },
+        // the registry
+        { "RegOpenKey", API_REGISTRY, true }, { "RegCreateKey", API_REGISTRY, true }, { "RegSetValue", API_REGISTRY, true },
+        { "RegSetKeyValue", API_REGISTRY, true }, { "RegQueryValue", API_REGISTRY, true }, { "RegGetValue", API_REGISTRY, true },
+        { "RegDeleteKey", API_REGISTRY, true }, { "RegDeleteValue", API_REGISTRY, true }, { "RegEnumKey", API_REGISTRY, true },
+        { "RegEnumValue", API_REGISTRY, true }, { "NtSetValueKey", API_REGISTRY, false }, { "ZwSetValueKey", API_REGISTRY, false },
+        { "NtOpenKey", API_REGISTRY, true }, { "ZwOpenKey", API_REGISTRY, true },
+        // the services
+        { "OpenSCManager", API_SERVICE, true }, { "CreateService", API_SERVICE, true }, { "OpenService", API_SERVICE, true },
+        { "StartService", API_SERVICE, true }, { "ControlService", API_SERVICE, true }, { "DeleteService", API_SERVICE, false },
+        { "ChangeServiceConfig", API_SERVICE, true },
+        // the code loaded at run time
+        { "LoadLibrary", API_LOADING, true }, { "GetProcAddress", API_LOADING, false }, { "LdrLoadDll", API_LOADING, false },
+        { "LdrGetProcedureAddress", API_LOADING, true }, { "dlopen", API_LOADING, false }, { "dlsym", API_LOADING, false },
+        { "NSCreateObjectFileImageFromMemory", API_LOADING, false },
+        // the debuggers
+        { "IsDebuggerPresent", API_ANTIDEBUG, false }, { "CheckRemoteDebuggerPresent", API_ANTIDEBUG, false },
+        { "NtQueryInformationProcess", API_ANTIDEBUG, false }, { "ZwQueryInformationProcess", API_ANTIDEBUG, false },
+        { "OutputDebugString", API_ANTIDEBUG, true }, { "NtSetInformationThread", API_ANTIDEBUG, false }, { "DebugActiveProcess", API_ANTIDEBUG, true },
+    };
+    // the import / thunk prefixes, the version / PLT / stdcall suffixes
+    for (bool stripped = true; stripped;) {
+        stripped = false;
+        for (const std::string_view prefix : { std::string_view("__imp_"), std::string_view("_imp__"), std::string_view("j_") })
+            if (name.size() > prefix.size() && name.starts_with(prefix)) {
+                name.remove_prefix(prefix.size());
+                stripped = true;
+            }
+    }
+    if (const auto at = name.find('@'); at != std::string_view::npos && at > 0)
+        name = name.substr(0, at);
+    const auto categoriesOf = [](std::string_view text) {
+        uint32_t categories = 0;
+        for (const auto& entry : ENTRIES)
+            if (entry.prefix ? text.starts_with(entry.name) : text == entry.name)
+                categories |= entry.categories;
+        return categories;
+    };
+    const uint32_t categories = categoriesOf(name);
+    if (categories != 0 || name.size() < 2 || name.front() != '_')
+        return categories;
+    return categoriesOf(name.substr(1)); // Mach-O / 32 bit Windows: _connect, _CreateFileA
+}
+
+std::string FormatApiCategories(uint32_t categories)
+{
+    static constexpr std::string_view NAMES[] = { "net", "crypto", "proc", "inject", "file", "reg", "service", "load", "antidebug" };
+    std::string text;
+    for (size_t index = 0; index < std::size(NAMES); index++)
+        if (categories & (1u << index)) {
+            if (!text.empty())
+                text += ' ';
+            text += NAMES[index];
+        }
+    return text;
+}
+
 bool IsNoReturnFunctionName(std::string_view name)
 {
     static const std::unordered_set<std::string_view> NAMES = {

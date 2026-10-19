@@ -4749,6 +4749,59 @@ TEST_CASE("FunctionChunks", "[Dissasm]NoReturn")
     REQUIRE(called.zone->functionChunks.empty());
 }
 
+TEST_CASE("ApiCategories", "[Dissasm]Triage")
+{
+    REQUIRE(GetApiCategories("CreateFileW") == API_FILE);
+    REQUIRE(GetApiCategories("__imp_CryptEncrypt") == API_CRYPTO);
+    REQUIRE(GetApiCategories("j_connect") == API_NETWORK);
+    REQUIRE(GetApiCategories("connect@GLIBC_2.2.5") == API_NETWORK);
+    REQUIRE(GetApiCategories("_socket") == API_NETWORK);       // Mach-O
+    REQUIRE(GetApiCategories("_CreateProcessA@40") == API_PROCESS); // 32 bit Windows
+    REQUIRE(GetApiCategories("RegSetValueExW") == API_REGISTRY);
+    REQUIRE(GetApiCategories("ptrace") == (API_INJECTION | API_ANTIDEBUG));
+    REQUIRE(GetApiCategories("GetProcAddress") == API_LOADING);
+    REQUIRE(GetApiCategories("RegisterClassW") == 0); // not a registry API
+    REQUIRE(GetApiCategories("bindtextdomain") == 0); // the POSIX names are exact
+    REQUIRE(GetApiCategories("OpenProcessToken") == 0);
+    REQUIRE(GetApiCategories("printf") == 0);
+    REQUIRE(GetApiCategories("") == 0);
+    REQUIRE(FormatApiCategories(API_NETWORK | API_CRYPTO | API_ANTIDEBUG) == "net crypto antidebug");
+    REQUIRE(FormatApiCategories(0).empty());
+}
+
+TEST_CASE("FunctionApiCategories", "[Dissasm]Triage")
+{
+    // the entry point calls CreateFileW (its slot) and download (0x20); download jumps to its thunk of connect (0x30); 0x40 is a function
+    // the plugin names socket (a static binary)
+    std::vector<unsigned char> file = {
+        0xFF, 0x15, 0x7A, 0x00, 0x00, 0x00, // 0x00: call qword ptr [rip + 0x7a] -> slot 0x80 (CreateFileW)
+        0xE8, 0x15, 0x00, 0x00, 0x00,       // 0x06: call 0x20
+        0xC3,                               // 0x0b: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0x1B, 0x00, 0x00, 0x00 }); // 0x20: call 0x40 (socket)
+    file.insert(file.end(), { 0xEB, 0x09 });                   // 0x25: jmp 0x30 (j_connect: a tail call)
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x52, 0x00, 0x00, 0x00 }); // 0x30: jmp qword ptr [rip + 0x52] -> slot 0x88 (connect)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x40: socket: xor eax, eax; ret
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "CreateFileW", MemoryMappingType::FunctionMapping } }, { 0x88, { "connect", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = { { 0x40, { "socket", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x30, 0x40 });
+    REQUIRE(zone.functionApiCategories == std::vector<uint32>{ API_FILE, API_NETWORK, API_NETWORK, 0 });
+    const auto functions = zone.GetFunctions(nullptr);
+    REQUIRE(functions[0].apiCategories == API_FILE); // not through the functions it calls (download)
+    REQUIRE(functions[1].apiCategories == API_NETWORK);
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes

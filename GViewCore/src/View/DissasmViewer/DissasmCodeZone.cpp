@@ -179,6 +179,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     };
     std::vector<FlowRecord> flowRecords;
     std::unordered_map<uint64, std::string> localImports;       // relative address of the instruction -> the import
+    std::unordered_map<uint64, uint32> importCallCategories;   // a call / jmp through an import slot -> what the import does (DissasmApiCategory)
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
     std::unordered_set<uint64> userReturns;    // the functions the user says return (USER_FUNCTION_RETURNS): never noreturn
@@ -230,6 +231,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<DissasmFunctionFrame> frames;
     std::vector<uint64> functionEnds; // ComputeFunctionEnds
     std::vector<DissasmFunctionChunk> chunks; // DetectFunctionChunks
+    std::vector<uint32> functionApiCategories; // ComputeApiCategories
     size_t labelIndex = 0; // the next label placed on its line
     uint32 extraLines = 0;
 
@@ -453,6 +455,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         previousAddress = 0;
         flowRecords.clear();
         localImports.clear();
+        importCallCategories.clear();
         noReturnStarts.clear();
         noReturnCalls.clear();
         linesToDecode = lines;
@@ -848,6 +851,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto* import = findImport(operands);
             if (import && import->type == MemoryMappingType::FunctionMapping && !import->name.empty()) {
                 record.noReturnImport = IsNoReturnFunctionName(import->name);
+                if (const uint32 categories = GetApiCategories(import->name); categories != 0)
+                    importCallCategories[insn->address] = categories; // call [__imp_connect]
                 if (!record.noReturnImport && localFunctionNames.contains(import->name)) { // call [rip + fatal@GOTPCREL] (-fno-plt)
                     record.localImport          = true;
                     localImports[insn->address] = import->name;
@@ -1027,6 +1032,55 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 callsMap[call.first] = true;
             }
         ComputeFunctionEnds(); // the functions before them reach further
+    }
+
+    // what the APIs every function calls / jumps to do (the triage: network, crypto, processes, ...): the imports through their slots, the
+    // thunks of the imports (j_connect, a PLT stub of another zone) and the functions the plugin names (a static binary: connect), in the
+    // code of the function (up to its end) and of its chunks; not through the functions it calls
+    void ComputeApiCategories()
+    {
+        functionApiCategories.assign(functionStarts.size(), 0);
+        if (functionEnds.size() != functionStarts.size())
+            return;
+        std::unordered_map<uint64, uint32> targetCategories; // relative target -> its categories (cached)
+        const auto categoriesOfTarget = [this, &targetCategories](uint64 target) {
+            if (const auto known = targetCategories.find(target); known != targetCategories.end())
+                return known->second;
+            uint32 categories = 0;
+            if (target < codeSize) {
+                if (const auto thunk = thunkImports.find(target); thunk != thunkImports.end())
+                    categories = GetApiCategories(thunk->second);
+                else if (functionEntries) {
+                    const auto entry = functionEntries->find(codeStart + target);
+                    if (entry != functionEntries->end() && !entry->second.name.empty())
+                        categories = GetApiCategories(entry->second.name);
+                }
+            } else if (const auto* other = zone->FindCodeZoneOfAddress((labelBase + target) & addressMask); other && other != zone) {
+                const uint64 start = ((labelBase + target) & addressMask) - other->labelAddressBase;
+                const auto thunk   = other->thunkImports.find(start);
+                categories         = GetApiCategories(thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(start));
+            }
+            targetCategories.emplace(target, categories);
+            return categories;
+        };
+        for (size_t index = 0; index < functionStarts.size(); index++) {
+            std::vector<std::pair<uint64, uint64>> ranges{ { functionStarts[index], functionEnds[index] } };
+            for (const auto& chunk : chunks)
+                if (chunk.function == functionStarts[index])
+                    ranges.emplace_back(chunk.start, chunk.end);
+            uint32 categories = 0;
+            for (const auto& [rangeStart, rangeEnd] : ranges)
+                for (size_t position = FirstRecordAt(rangeStart); position < flowRecords.size() && flowRecords[position].address < rangeEnd; position++) {
+                    const auto& record = flowRecords[position];
+                    if (record.kind != FlowKind::Call && record.kind != FlowKind::Jump)
+                        continue;
+                    if (const auto import = importCallCategories.find(record.address); import != importCallCategories.end())
+                        categories |= import->second;
+                    else if (record.target != NO_TARGET)
+                        categories |= categoriesOfTarget(record.target);
+                }
+            functionApiCategories[index] = categories;
+        }
     }
 
     // the functions that do not return: named so (noReturnStarts), or none of whose paths returns: every path ends with a call / a jump to
@@ -1922,6 +1976,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         FinishSweep();
         ComputeFunctionEnds();
         DetectFunctionChunks();
+        ComputeApiCategories();
         if (paddingReached && pendingRanges.empty()) {
             // the reached padding only: the lines are counted again, the instructions and the analysis stay
             recountedOffsets.clear();
@@ -1969,6 +2024,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->functionStarts            = std::move(functionStarts);
         zone->functionEnds              = std::move(functionEnds);
         zone->functionChunks            = std::move(chunks);
+        zone->functionApiCategories     = std::move(functionApiCategories);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);
@@ -2592,6 +2648,8 @@ std::vector<DissasmFunctionInfo> DissasmCodeZone::GetFunctions(const std::map<ui
         for (const auto& chunk : functionChunks)
             if (chunk.function == function.start)
                 function.chunks.emplace_back(chunk.start, chunk.end);
+        if (functionApiCategories.size() == functionStarts.size())
+            function.apiCategories = functionApiCategories[index];
         function.isEntryPoint    = codeStart + function.start == zoneDetails.entryPoint;
         if (functionEntries) {
             const auto entry = functionEntries->find(codeStart + function.start);

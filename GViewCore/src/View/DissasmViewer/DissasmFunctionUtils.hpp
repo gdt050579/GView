@@ -109,6 +109,24 @@ void HighlightTokenOccurrences(AppCUI::Graphics::CharacterBuffer& chars, AppCUI:
 // (_ZSt9terminatev, ?terminate@@YAXXZ) or demangled (void __cdecl std::terminate(void)) C++ name are accepted
 bool IsNoReturnFunctionName(std::string_view name);
 
+// What an API does, for the triage of the functions (beyond IDA: the functions that use the network, the crypto, ...): the categories of an
+// import / a function name (the prefixes of the Windows API families: CreateFileW, CryptEncrypt; the exact POSIX names: connect, fork),
+// matched through the import prefixes, the version suffixes and the underscore of Mach-O as IsNoReturnFunctionName. 0: none
+enum DissasmApiCategory : uint32_t {
+    API_NETWORK   = 1,
+    API_CRYPTO    = 2,
+    API_PROCESS   = 4,
+    API_INJECTION = 8, // the memory / the threads of another process
+    API_FILE      = 16,
+    API_REGISTRY  = 32,
+    API_SERVICE   = 64,
+    API_LOADING   = 128, // the code loaded at run time (LoadLibrary / GetProcAddress, dlopen / dlsym)
+    API_ANTIDEBUG = 256,
+};
+uint32_t GetApiCategories(std::string_view name);
+// "net crypto proc": the short names of the categories, in the order above
+std::string FormatApiCategories(uint32_t categories);
+
 // the text found at `offset`, quoted: "ascii" or L"utf-16" (printable characters, at least DISSASM_MINIMUM_STRING_PREVIEW of them, until a
 // NUL or the first non printable character); none when the bytes do not look like a string
 std::optional<std::string> TryExtractStringPreview(Reference<GView::Object> obj, AppCUI::uint64 offset);
