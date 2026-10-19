@@ -696,6 +696,26 @@ static std::optional<std::string> GetX86SymbolicOperands(const cs_insn& insn, co
             if (auto replaced = SubstituteX86TableOperand(insn.op_str, operands.tableMemory.value(), name, insn.id == X86_INS_LEA, is64))
                 return replaced;
     }
+    // 32 bit PIC: [ebx - 0x31c0] with the value of ebx known (resolvedAddresses): (aText - _GLOBAL_OFFSET_TABLE_)[ebx] (IDA); a value of
+    // ebx that is not the global offset table (call $+5; pop ebx alone) is written as a number
+    if (!is64 && operands.ripTarget.has_value() && insn.detail && zone->resolvedAddresses.contains(insn.address)) {
+        for (uint8 index = 0; index < insn.detail->x86.op_count; index++) {
+            const auto& op = insn.detail->x86.operands[index];
+            if (op.type != X86_OP_MEM || op.mem.base != X86_REG_EBX || op.mem.index != X86_REG_INVALID)
+                continue;
+            const uint64 target    = (zone->labelAddressBase + operands.ripTarget.value()) & 0xFFFFFFFFull;
+            const uint64 ebx       = (target - static_cast<uint64>(op.mem.disp)) & 0xFFFFFFFFull;
+            const std::string name = GetDataOperandName(params, operands, target, accessSize);
+            LocalString<24> base;
+            if (params.settings->globalOffsetTable == std::optional<uint64>(ebx))
+                base.Set("_GLOBAL_OFFSET_TABLE_");
+            else
+                base.SetFormat("0x%llx", static_cast<unsigned long long>(ebx));
+            if (!name.empty())
+                return SubstituteX86RelativeOperand(insn.op_str, "ebx", op.mem.disp, name, base.GetText(), insn.id == X86_INS_LEA);
+            break;
+        }
+    }
     if (is64)
         return {};
     for (const uint64 value : operands.immediates) { // push 0x403000 / mov ecx, 0x403000: small values are counters, sizes, flags
@@ -960,9 +980,19 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
     else {
         if (params.zone->IsArm64Code() && insn->id == ARM64_INS_ADRP) {
-            // adrp x0, page: the page of the VA (capstone decodes from the zone start)
+            // adrp x0, page: the page of the VA (capstone decodes from the zone start); the name of the place of its first pair (IDA: adrp
+            // x8, dword_220248@PAGE)
             const uint64 page = params.zone->labelAddressBase + GetArm64AdrpPage(*insn, params.zone->labelAddressBase);
-            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + FormatAddress(page)).c_str(), params.zone);
+            std::string target;
+            if (const auto pair = params.zone->adrpPages.find(insn->address); pair != params.zone->adrpPages.end()) {
+                X86OperandsInfo slot;
+                slot.ripTarget          = pair->second;
+                const uint64 pairTarget = params.zone->labelAddressBase + pair->second;
+                if ((pairTarget & ~0xFFFull) == page)
+                    if (const std::string name = GetDataOperandName(params, slot, pairTarget); !name.empty() && !name.starts_with("0x"))
+                        target = name + "@PAGE";
+            }
+            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (target.empty() ? FormatAddress(page) : target)).c_str(), params.zone);
         } else if (params.zone->IsArm64Code() && GetArm64OperandsInfo(*insn).ripTarget.has_value()) {
             // adr x0, label / ldr x0, label: capstone writes the address relative to the zone start, the listing shows the VA (its name)
             const std::string target = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());

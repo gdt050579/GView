@@ -178,6 +178,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, std::string> thunkImports;
     std::unordered_map<uint64, uint32> switchJumps;
     std::unordered_map<uint64, uint64> resolvedAddresses; // ARM64: the addresses of the adrp pairs
+    std::unordered_map<uint64, uint64> adrpPages;         // ARM64: the address of the first pair of each adrp
     std::unordered_map<uint64, uint64> imageBaseTables;   // x64: the tables read through a register holding the image base
     std::array<bool, 16> imageBaseRegisters{};            // x64: the registers that hold the image base (lea reg, __ImageBase), per function
     Arm64AdrpTracker adrpTracker;
@@ -380,6 +381,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         thunkImports.clear();
         switchJumps.clear();
         resolvedAddresses.clear();
+        adrpPages.clear();
         imageBaseTables.clear();
         imageBaseRegisters.fill(false);
         adrpTracker  = Arm64AdrpTracker(labelBase);
@@ -527,6 +529,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 pair.reset();
             if (pair.has_value()) {
                 resolvedAddresses[insn->address] = pair->address;
+                if (isArm64)
+                    adrpPages.emplace(pair->sequenceStart, pair->address); // the first pair names the adrp
                 pairOperands.ripTarget           = pair->address;
                 pairOperands.memoryAccess        = pair->memoryAccess;
                 // an import stub (j_Name): adrp x16, page; ldr x16, [x16, #off]; br x16 from a block start
@@ -1387,6 +1391,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->thunkImports              = std::move(thunkImports);
         zone->switchJumps               = std::move(switchJumps);
         zone->resolvedAddresses         = std::move(resolvedAddresses);
+        zone->adrpPages                 = std::move(adrpPages);
         zone->imageBaseTables           = std::move(imageBaseTables);
         zone->functionStarts            = std::move(functionStarts);
         zone->dissasmType.annotations   = std::move(annotations);

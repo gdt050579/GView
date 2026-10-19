@@ -237,6 +237,48 @@ std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, 
     return result;
 }
 
+std::optional<std::string> SubstituteX86RelativeOperand(
+      std::string_view operands, std::string_view baseRegister, int64 displacement, std::string_view name, std::string_view baseName, bool isLea)
+{
+    if (name.empty() || baseName.empty() || baseRegister.empty())
+        return {};
+    char text[48];
+    const unsigned long long magnitude = displacement < 0 ? 0ull - static_cast<unsigned long long>(displacement) : static_cast<unsigned long long>(displacement);
+    const int length = displacement == 0 ? snprintf(text, sizeof(text), "[%.*s]", static_cast<int>(baseRegister.size()), baseRegister.data())
+                                         : snprintf(text, sizeof(text), "[%.*s %c 0x%llx]", static_cast<int>(baseRegister.size()), baseRegister.data(),
+                                                    displacement < 0 ? '-' : '+', magnitude);
+    if (length <= 0 || static_cast<size_t>(length) >= sizeof(text))
+        return {};
+    const size_t open = operands.find(std::string_view(text, static_cast<size_t>(length)));
+    if (open == std::string_view::npos)
+        return {};
+    size_t start = open;
+    if (start >= 3 && operands[start - 1] == ':') {
+        if (operands.substr(start - 3, 2) != "ds")
+            return {}; // fs: / gs:
+        start -= 3;
+    }
+    std::string_view size;
+    size_t sizeStart = start;
+    if (start >= 5 && operands.substr(start - 5, 5) == " ptr ") {
+        sizeStart = operands.rfind(' ', start - 6);
+        sizeStart = sizeStart == std::string_view::npos ? 0 : sizeStart + 1;
+        size      = operands.substr(sizeStart, start - 5 - sizeStart);
+    }
+    std::string result(operands.substr(0, isLea ? start : sizeStart));
+    if (!isLea) {
+        // the size is said by the name (dword_, a pointer of 32 bits: __imp_ / off_)
+        const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
+                                                  (size == "dword" && IsPointerName(name)));
+        if (!size.empty() && !sizeInName)
+            result.append(size).append(" ptr ");
+        result.append("ds:");
+    }
+    result.append("(").append(name).append(" - ").append(baseName).append(")[").append(baseRegister).append("]");
+    result.append(operands.substr(open + static_cast<size_t>(length)));
+    return result;
+}
+
 std::optional<std::string> SubstituteX86Immediate(std::string_view operands, uint64 value, std::string_view name)
 {
     if (name.empty() || operands.find('[') != std::string_view::npos)

@@ -392,6 +392,7 @@ class DissasmTestInstance
         initData.dataFields          = &layout.dataFields;
         initData.instructionBoundaries = &layout.instructionBoundaries;
         initData.globalOffsetTable     = layout.globalOffsetTable;
+        settingsData.globalOffsetTable = layout.globalOffsetTable;
         if (!layout.imports.empty()) {
             auto* settings      = &settingsData;
             auto* codeZone      = zone.get();
@@ -4840,6 +4841,12 @@ TEST_CASE("Arm64AdrpPairs", "[Dissasm]Arm64")
     REQUIRE(zone.GetLabelNameAt(0x24) == "j_malloc");
     REQUIRE(listing.find("; 0x1008") != std::string::npos);         // str w1, [x9, #8]: the address written
     REQUIRE(listing.find("ldr    x8, [x8, #__imp_puts@PAGEOFF]") != std::string::npos); // ldr x8, [x8, #0x10]: the import of the slot
+    // the adrp named by its first pair (IDA: adrp x8, __imp_puts@PAGE); a pair to a place without a name keeps the page
+    REQUIRE(zone.adrpPages.at(0x08) == 0x1010);
+    REQUIRE(zone.adrpPages.at(0x18) == 0x1008);
+    REQUIRE(listing.find("adrp   x8, __imp_puts@PAGE") != std::string::npos);
+    REQUIRE(listing.find("adrp   x16, __imp_malloc@PAGE") != std::string::npos);
+    REQUIRE(listing.find("adrp   x9, 0x1000") != std::string::npos);
 
     // the cross references of the data
     const auto kindsTo = [&zone](uint64 address) {
@@ -6531,7 +6538,8 @@ TEST_CASE("X86PicGlobalOffsetTable", "[Dissasm]Pic")
         0x81, 0xC3, 0xFB, 0x0F, 0x00, 0x00, // 0x06: add ebx, 0xffb (0x2000: the table)
         0x8D, 0x83, 0x40, 0xF0, 0xFF, 0xFF, // 0x0c: lea eax, [ebx - 0xfc0] (0x1040: the string)
         0xE8, 0x09, 0x00, 0x00, 0x00,       // 0x12: call 0x20 (the stub)
-        0xC3,                               // 0x17: ret
+        0x8B, 0x83, 0x0C, 0x00, 0x00, 0x00, // 0x17: mov eax, dword ptr [ebx + 0xc] (the slot of puts)
+        0xC3,                               // 0x1d: ret
     };
     file.resize(0x20, 0xCC);
     file.insert(file.end(), { 0xFF, 0xA3, 0x0C, 0x00, 0x00, 0x00 }); // 0x20: jmp dword ptr [ebx + 0xc] (the PLT stub of puts)
@@ -6567,6 +6575,8 @@ TEST_CASE("X86PicGlobalOffsetTable", "[Dissasm]Pic")
     INFO(listing);
     REQUIRE(FindListingLine(listing, "call   $+5").size() > 0);
     REQUIRE(FindListingLine(listing, "call   j_puts").size() > 0);
+    // the slot relative to the table, as IDA writes it
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:(__imp_puts - _GLOBAL_OFFSET_TABLE_)[ebx]").size() > 0);
 }
 
 TEST_CASE("SelectionResizedLines", "[Dissasm]Selection")
@@ -7015,6 +7025,17 @@ TEST_CASE("SymbolicOperandText", "[Dissasm]Operands")
     CHECK(SubstituteX86Immediate("0x403000", 0x403000, "aText") == std::optional<std::string>("offset aText"));
     CHECK(SubstituteX86Immediate("ecx, 0x403000", 0x403000, "aText") == std::optional<std::string>("ecx, offset aText"));
     CHECK(SubstituteX86Immediate("ecx, 0x4030001", 0x403000, "aText") == std::nullopt); // another number
+    // 32 bit PIC: a slot relative to ebx (the global offset table)
+    CHECK(SubstituteX86RelativeOperand("eax, [ebx - 0x31c0]", "ebx", -0x31c0, "aText", "_GLOBAL_OFFSET_TABLE_", true) ==
+          std::optional<std::string>("eax, (aText - _GLOBAL_OFFSET_TABLE_)[ebx]"));
+    CHECK(SubstituteX86RelativeOperand("eax, dword ptr [ebx - 0x1004]", "ebx", -0x1004, "counter", "_GLOBAL_OFFSET_TABLE_", false) ==
+          std::optional<std::string>("eax, dword ptr ds:(counter - _GLOBAL_OFFSET_TABLE_)[ebx]"));
+    CHECK(SubstituteX86RelativeOperand("dword ptr [ebx + 0xc]", "ebx", 0xc, "__imp_puts", "_GLOBAL_OFFSET_TABLE_", false) ==
+          std::optional<std::string>("ds:(__imp_puts - _GLOBAL_OFFSET_TABLE_)[ebx]"));
+    CHECK(SubstituteX86RelativeOperand("dword ptr [ebx], 1", "ebx", 0, "dword_2000", "0x2000", false) ==
+          std::optional<std::string>("ds:(dword_2000 - 0x2000)[ebx], 1"));
+    CHECK(SubstituteX86RelativeOperand("eax, dword ptr [ebx - 0x1004]", "ebx", 0x1004, "counter", "_GLOBAL_OFFSET_TABLE_", false) == std::nullopt);
+    CHECK(SubstituteX86RelativeOperand("eax, dword ptr fs:[ebx + 4]", "ebx", 4, "counter", "_GLOBAL_OFFSET_TABLE_", false) == std::nullopt);
     // ARM: the literal of the pool, the offset in the page of an adrp pair
     CHECK(SubstituteArmLiteral("r0, [pc, #0x28]", "dword_30168") == std::optional<std::string>("r0, =dword_30168"));
     CHECK(SubstituteArmLiteral("r0, [r1]", "dword_30168") == std::nullopt);

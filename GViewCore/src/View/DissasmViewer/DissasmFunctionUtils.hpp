@@ -31,6 +31,10 @@ std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands,
 // relativeToImageBase: the displacement is an RVA (a register holds the image base): ds:(name - __ImageBase)[rdx + rcx]
 std::optional<std::string> SubstituteX86TableOperand(
       std::string_view operands, AppCUI::uint64 displacement, std::string_view name, bool isLea, bool is64, bool relativeToImageBase = false);
+// - x86: a slot relative to a base register (32 bit PIC: [ebx - 0x31c0] with ebx = the global offset table) becomes
+//   ds:(name - _GLOBAL_OFFSET_TABLE_)[ebx] (lea: (name - _GLOBAL_OFFSET_TABLE_)[ebx]); `baseName`: the value of the register
+std::optional<std::string> SubstituteX86RelativeOperand(
+      std::string_view operands, std::string_view baseRegister, AppCUI::int64 displacement, std::string_view name, std::string_view baseName, bool isLea);
 // - x86: an immediate (push 0x403000 / mov ecx, 0x403000) becomes "offset name"
 std::optional<std::string> SubstituteX86Immediate(std::string_view operands, AppCUI::uint64 value, std::string_view name);
 // - 32 bit ARM: the literal load ldr r0, [pc, #0x28] becomes ldr r0, =literal
