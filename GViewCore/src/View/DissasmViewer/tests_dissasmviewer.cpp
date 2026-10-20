@@ -8142,17 +8142,17 @@ TEST_CASE("InferredPrototypes", "[Dissasm]Help")
     REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x70, 0x80, 0xA0 });
     const auto* wrapper = zone.FindInferredPrototype(0x40);
     REQUIRE(wrapper != nullptr);
-    REQUIRE(std::string_view(wrapper->prototype) == "sub_40(HANDLE hObject)");
+    REQUIRE(std::string_view(wrapper->prototype) == "BOOL sub_40(HANDLE hObject)"); // it returns what CloseHandle returns
     const auto* second = zone.FindInferredPrototype(0x70);
     REQUIRE(second != nullptr);
-    REQUIRE(std::string_view(second->prototype) == "sub_70(a1, HANDLE hObject)");
-    REQUIRE(zone.FindInferredPrototype(0x80) == nullptr); // the two paths do not agree on rcx
-    REQUIRE(std::string_view(zone.FindInferredPrototype(0xA0)->prototype) == "sub_A0(HANDLE hObject)");
+    REQUIRE(std::string_view(second->prototype) == "BOOL sub_70(a1, HANDLE hObject)");
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x80)->prototype) == "BOOL sub_80()"); // the two paths do not agree on rcx
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0xA0)->prototype) == "BOOL sub_A0(HANDLE hObject)");
     REQUIRE(zone.FindFunctionPrototype(0x40) == wrapper);
 
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
-    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: sub_40(HANDLE hObject)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: BOOL sub_40(HANDLE hObject)") != std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rax").ends_with("; hObject")); // the calls to them name their arguments
     REQUIRE(FindListingLine(listing, "0x0000000c  mov    rdx, rax").ends_with("; hObject"));
     // the home slot of rcx keeps rbx in sub_A0: not named after the argument
@@ -8167,7 +8167,7 @@ TEST_CASE("InferredPrototypes", "[Dissasm]Help")
     REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
     REQUIRE(zone.FindInferredPrototype(0x40) == nullptr);
     REQUIRE(std::string_view(zone.FindFunctionPrototype(0x40)->prototype) == "void closeIt(HANDLE handle)");
-    REQUIRE(std::string_view(zone.FindInferredPrototype(0x70)->prototype) == "sub_70(a1, HANDLE handle)"); // from the user's
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x70)->prototype) == "sub_70(a1, HANDLE handle)"); // from the user's (void)
 }
 
 TEST_CASE("X86InferredPrototypes", "[Dissasm]Help")
@@ -8265,24 +8265,110 @@ TEST_CASE("X86InferredPrototypes", "[Dissasm]Help")
         const auto* prototype = zone.FindInferredPrototype(start);
         return prototype ? std::string(prototype->prototype) : std::string();
     };
-    REQUIRE(prototypeOf(0x40) == "sub_40(HANDLE hObject)");
-    REQUIRE(prototypeOf(0x60) == "sub_60(a1, HANDLE hObject)");
-    REQUIRE(prototypeOf(0x80).empty());
-    REQUIRE(prototypeOf(0xA0).empty());
-    REQUIRE(prototypeOf(0xC0) == "sub_C0(void* ptr, void* ptr_2)");
-    REQUIRE(prototypeOf(0x100) == "sub_100(HANDLE hFile, LARGE_INTEGER liDistanceToMove)");
+    REQUIRE(prototypeOf(0x40) == "BOOL sub_40(HANDLE hObject)"); // eax: what CloseHandle returns
+    REQUIRE(prototypeOf(0x60) == "BOOL sub_60(a1, HANDLE hObject)");
+    REQUIRE(prototypeOf(0x80) == "BOOL sub_80()"); // no argument
+    REQUIRE(prototypeOf(0xA0) == "BOOL sub_A0()");
+    REQUIRE(prototypeOf(0xC0) == "sub_C0(void* ptr, void* ptr_2)"); // free returns nothing
+    REQUIRE(prototypeOf(0x100) == "BOOL sub_100(HANDLE hFile, LARGE_INTEGER liDistanceToMove)");
     // the arguments of the frames, named after them
     REQUIRE(zone.localVariables.FindFunctionByStart(0x40)->FindVariable(8)->name == "hObject");
     REQUIRE(zone.localVariables.FindFunctionByStart(0x100)->FindVariable(0xC)->name == "liDistanceToMove");
 
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
-    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: sub_40(HANDLE hObject)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: BOOL sub_40(HANDLE hObject)") != std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000000  push   0x10").ends_with("; hObject")); // the calls to them name their arguments
     REQUIRE(FindListingLine(listing, "0x00000007  push   1").ends_with("; hObject"));
     REQUIRE(FindListingLine(listing, "0x00000020  push   6").ends_with("; ptr"));
     REQUIRE(FindListingLine(listing, "0x0000001e  push   5").ends_with("; ptr_2"));
     REQUIRE(FindListingLine(listing, "0x0000002e  push   7").ends_with("; hFile"));
+}
+
+TEST_CASE("InferredReturnValues", "[Dissasm]Help")
+{
+    // x64 Windows. sub_40 returns what CreateFileW returns (-1 on its error path: a constant): HANDLE sub_40(LPCWSTR lpFileName); sub_80 tail
+    // jumps to it: the same (a second round); sub_A0 returns CreateFileW on a path, GetProcessHeap on the other: no return type. The caller
+    // keeps what they return: File (HANDLE, the name of the API's return value), File_2, var_18 (nothing)
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    const auto relative = [&file](uint8 opcode, uint32 target) { // call / jmp rel32
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 5);
+        file.push_back(opcode);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    // 0x00: the caller
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x40 }); // push rbp; mov rbp, rsp; sub rsp, 0x40
+    relative(0xE8, 0x40);                                                        // call sub_40
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xF8 });                         // mov qword ptr [rbp - 8], rax
+    relative(0xE8, 0x80);                                                        // call sub_80
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xF0 });                         // mov qword ptr [rbp - 0x10], rax
+    relative(0xE8, 0xA0);                                                        // call sub_A0
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xE8 });                         // mov qword ptr [rbp - 0x18], rax
+    file.insert(file.end(), { 0x48, 0x89, 0xEC, 0x5D, 0xC3 });                   // mov rsp, rbp; pop rbp; ret
+    file.resize(0x40, 0xCC);
+    // 0x40: sub_40
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x38 });       // 0x40: sub rsp, 0x38
+    file.insert(file.end(), { 0x48, 0x85, 0xC9 });             // 0x44: test rcx, rcx
+    file.insert(file.end(), { 0x74, 0x0B });                   // 0x47: je 0x54
+    call(0x200);                                               // 0x49: call CreateFileW
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x38, 0xC3 }); // 0x4f: add rsp, 0x38; ret
+    file.insert(file.end(), { 0x48, 0x83, 0xC8, 0xFF });       // 0x54: or rax, -1
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x38, 0xC3 }); // 0x58: add rsp, 0x38; ret
+    file.resize(0x80, 0xCC);
+    // 0x80: sub_80
+    relative(0xE9, 0x40); // jmp sub_40
+    file.resize(0xA0, 0xCC);
+    // 0xa0: sub_A0
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // 0xa0: sub rsp, 0x28
+    file.insert(file.end(), { 0x85, 0xD2 });             // 0xa4: test edx, edx
+    file.insert(file.end(), { 0x74, 0x08 });             // 0xa6: je 0xb0
+    call(0x200);                                         // 0xa8: call CreateFileW
+    file.insert(file.end(), { 0xEB, 0x06 });             // 0xae: jmp 0xb6
+    call(0x208);                                         // 0xb0: call GetProcessHeap
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0xb6: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CreateFileW", MemoryMappingType::FunctionMapping } }, { 0x208, { "GetProcessHeap", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x80, 0xA0 });
+    const auto* wrapper = zone.FindInferredPrototype(0x40);
+    REQUIRE(wrapper != nullptr);
+    REQUIRE(std::string_view(wrapper->prototype).starts_with("HANDLE sub_40(LPCWSTR lpFileName, DWORD dwDesiredAccess, ")); // rcx .. r9 passed on
+    REQUIRE(wrapper->returnType == "HANDLE");
+    REQUIRE(GetReturnValueName(*wrapper) == "File"); // the name of the return value of CreateFileW
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x80)->prototype).starts_with("HANDLE sub_80(LPCWSTR lpFileName, "));
+    REQUIRE(GetReturnValueName(*zone.FindInferredPrototype(0x80)) == "File");
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0xA0)->prototype).starts_with("sub_A0(LPCWSTR lpFileName, ")); // two APIs: not one return
+
+    // the variables of the caller, named and typed after what the wrappers return
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto check = [frame](int32 offset, std::string_view name, std::string_view type, std::string_view origin) {
+        const auto* variable = frame->FindVariable(offset);
+        REQUIRE(variable != nullptr);
+        CHECK(variable->name == name);
+        CHECK(variable->type == type);
+        CHECK(variable->origin == origin);
+    };
+    check(-8, "File", "HANDLE", "returned by sub_40");
+    check(-0x10, "File_2", "HANDLE", "returned by sub_80");
+    check(-0x18, "var_18", "", "");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: HANDLE sub_40(LPCWSTR lpFileName, ") != std::string_view::npos);
 }
 
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")

@@ -2979,8 +2979,8 @@ void Instance::SetFunctionPrototype()
     if (const auto user = zone->userPrototypes.find(function.value()); user != zone->userPrototypes.end())
         text = user->second;
     else if (const auto* inferred = zone->FindInferredPrototype(function.value())) {
-        // the inferred one as a prototype: the parameters it does not know are int a1, a2, ...
-        text = "int " + name + "(";
+        // the inferred one as a prototype: the parameters it does not know are int a1, a2, ...; int when its return is not known
+        text = (inferred->returnType.empty() ? std::string("int") : std::string(inferred->returnType)) + " " + name + "(";
         for (size_t index = 0; index < inferred->params.size(); index++) {
             if (index > 0)
                 text += ", ";

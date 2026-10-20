@@ -392,6 +392,8 @@ namespace View
             std::vector<NameType> params;
             std::string_view prototype;  // "HANDLE CreateFileW(LPCWSTR lpFileName, ...)"
             std::string_view returnType; // "HANDLE"; empty for void
+            std::string_view returnName; // the name of a variable that holds its return value when not the one of its name (GetReturnValueName):
+                                         // an inferred wrapper, the one of the API it returns (File for the wrapper of CreateFileW)
         };
         // the prototypes of the common APIs (Windows, the C run-time / POSIX; DissasmApiPrototypes.cpp): by the name of an import / a function
         // (the import prefixes, the version / stdcall suffixes, the underscore of Mach-O, Zw for Nt); null when it is not known

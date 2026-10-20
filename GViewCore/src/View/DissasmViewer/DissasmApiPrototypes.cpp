@@ -614,6 +614,8 @@ std::string GView::View::DissasmViewer::GetPointedType(std::string_view type)
 
 std::string GView::View::DissasmViewer::GetReturnValueName(const AsmFunctionDetails& function)
 {
+    if (!function.returnName.empty())
+        return std::string(function.returnName);
     std::string_view name = function.functionName;
     // the A and the W functions of a line: the ending dropped (CreateFileW -> CreateFile)
     if (name.size() > 1 && (name.back() == 'A' || name.back() == 'W')) {

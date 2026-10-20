@@ -1931,6 +1931,53 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // the values of the registers / slots of the inference besides an incoming argument (0, 1, ...): nothing known, a constant (xor eax, eax /
+    // mov eax, -1 / push 1; pop eax), the return value of a callee with a return type (RETURNED_BY - k: the callee k of the function)
+    static constexpr int8 NO_VALUE = -1, CONSTANT_VALUE = -2, RETURNED_BY = -3;
+    static constexpr size_t MAX_RETURNING_CALLEES = 100;
+
+    // the value of the return value of a callee: a number for each of the callees of the function; none past MAX_RETURNING_CALLEES
+    static int8 ReturnedValueOf(std::vector<const AsmFunctionDetails*>& callees, const AsmFunctionDetails* callee)
+    {
+        if (!callee || callee->returnType.empty())
+            return NO_VALUE;
+        auto found = std::find(callees.begin(), callees.end(), callee);
+        if (found == callees.end()) {
+            if (callees.size() >= MAX_RETURNING_CALLEES)
+                return NO_VALUE;
+            found = callees.insert(callees.end(), callee);
+        }
+        return static_cast<int8>(RETURNED_BY - (found - callees.begin()));
+    }
+
+    // the value of a register at a branch target from two of the branches to it: the same one, a return value with a constant (xor eax, eax;
+    // jmp the epilogue: the error path) the return value; else nothing
+    static int8 MergedValue(int8 first, int8 second)
+    {
+        if (first == second)
+            return first;
+        if (first == CONSTANT_VALUE && second <= RETURNED_BY)
+            return second;
+        if (second == CONSTANT_VALUE && first <= RETURNED_BY)
+            return first;
+        return NO_VALUE;
+    }
+
+    // what the function returns: the callee whose return value every return of it holds (a constant too: NULL, -1 on an error path); none
+    // when a return holds something else / nothing known
+    static const AsmFunctionDetails* AgreedReturn(const std::vector<int8>& returns, const std::vector<const AsmFunctionDetails*>& callees)
+    {
+        std::optional<int8> agreed;
+        for (const int8 value : returns) {
+            if (value == CONSTANT_VALUE)
+                continue;
+            if (value > RETURNED_BY || (agreed.has_value() && agreed.value() != value))
+                return nullptr;
+            agreed = value;
+        }
+        return agreed.has_value() ? callees[RETURNED_BY - agreed.value()] : nullptr;
+    }
+
     std::shared_ptr<const DissasmUserPrototype> InferFunctionPrototype(uint64 start, uint64 end, DissasmArch arch)
     {
         constexpr uint32 MAX_STEPS     = 4096;
@@ -1973,6 +2020,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             uint64 address;
             uint32 writes;
             int8 copyTo, copyFrom;
+            int8 constantTo; // the register it sets to a constant (mov eax, 1 / xor eax, eax / mov w0, #0)
             StepKind kind;
             uint64 target; // a branch inside of the function (relative); NO_TARGET otherwise
             const AsmFunctionDetails* callee;
@@ -1986,7 +2034,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         size_t size        = data.GetLength();
         uint64 address     = start;
         while (steps.size() < MAX_STEPS && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
-            Step step{ insn->address, 0, -1, -1, StepKind::Other, NO_TARGET, nullptr };
+            Step step{ insn->address, 0, -1, -1, -1, StepKind::Other, NO_TARGET, nullptr };
             const auto flow = GetInstructionFlow(*insn, arch);
             const auto operands = GetInstructionOperands(*insn, arch, labelBase);
             const auto inside = [&](uint64 target) { return target >= start && target < end; };
@@ -2032,6 +2080,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             step.copyFrom = static_cast<int8>(registerIndex(from));
                         }
                     }
+                    // mov x0, #0 / mov w0, wzr / movn: a constant
+                    if (isArm64 && count == 2 && (insn->id == ARM64_INS_MOV || insn->id == ARM64_INS_MOVZ || insn->id == ARM64_INS_MOVN) &&
+                        (insn->detail->arm64.operands[1].type == ARM64_OP_IMM ||
+                         (insn->detail->arm64.operands[1].type == ARM64_OP_REG &&
+                          (insn->detail->arm64.operands[1].reg == ARM64_REG_WZR || insn->detail->arm64.operands[1].reg == ARM64_REG_XZR))))
+                        if (const int index = registerIndex(static_cast<unsigned int>(insn->detail->arm64.operands[0].reg)); index >= 0 && index < REGISTERS)
+                            step.constantTo = static_cast<int8>(index);
                 } else {
                     const cs_x86& x86 = insn->detail->x86;
                     for (uint8 i = 0; i < x86.op_count; i++)
@@ -2046,6 +2101,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         step.copyTo   = static_cast<int8>(registerIndex(x86.operands[0].reg));
                         step.copyFrom = static_cast<int8>(registerIndex(x86.operands[1].reg));
                     }
+                    if (const int index = x86.op_count > 0 && x86.operands[0].type == X86_OP_REG ? registerIndex(x86.operands[0].reg) : -1;
+                        index >= 0 && index < REGISTERS && IsX86ConstantWrite(*insn))
+                        step.constantTo = static_cast<int8>(index);
                 }
             }
             steps.push_back(step);
@@ -2080,6 +2138,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             state[argumentRegister(argument)] = static_cast<int8>(argument);
         std::unordered_map<size_t, State> snapshots; // the state at each branch (before it)
         std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(argumentsCount);
+        std::vector<const AsmFunctionDetails*> returningCallees; // the callees of RETURNED_BY - k
+        std::vector<int8> returns;                                // what each return / tail jump returns
         bool reachable = true; // the step before falls through
         for (size_t i = 0; i < steps.size(); i++) {
             const auto& step = steps[i];
@@ -2095,15 +2155,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     }
                     const auto& snapshot = snapshots.at(source);
                     for (int reg = 0; reg < REGISTERS; reg++)
-                        merged[reg] = first ? snapshot[reg] : (merged[reg] == snapshot[reg] ? merged[reg] : -1);
+                        merged[reg] = first ? snapshot[reg] : MergedValue(merged[reg], snapshot[reg]);
                     first = false;
                 }
                 if (first) // only branches back to it, after a ret / jmp: nothing is known
                     merged.fill(-1);
                 if (lastBack > 0)
                     for (int reg = 0; reg < REGISTERS; reg++)
-                        if (merged[reg] >= 0 && writtenIn(reg, i, lastBack))
-                            merged[reg] = -1;
+                        if (merged[reg] != NO_VALUE && writtenIn(reg, i, lastBack))
+                            merged[reg] = NO_VALUE;
                 state = merged;
             } else if (!reachable) {
                 state.fill(-1); // code after a ret / jmp that no branch of the function reaches
@@ -2119,17 +2179,27 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             if (step.target != NO_TARGET)
                 snapshots[i] = state;
+            // what the function returns: rax / x0 at a ret, the return value of the callee of a tail jump
+            if (step.kind == StepKind::Return)
+                returns.push_back(state[0]);
+            else if (step.kind == StepKind::TailCall)
+                returns.push_back(ReturnedValueOf(returningCallees, step.callee));
             if (step.copyTo >= 0 && step.copyTo < REGISTERS && step.copyFrom >= 0 && step.copyFrom < REGISTERS) {
                 state[step.copyTo] = state[step.copyFrom];
             } else {
                 for (int reg = 0; reg < REGISTERS; reg++)
                     if (step.writes & (1u << reg))
-                        state[reg] = -1;
+                        state[reg] = NO_VALUE;
             }
+            if (step.constantTo >= 0)
+                state[step.constantTo] = CONSTANT_VALUE;
+            if (step.kind == StepKind::Call)
+                state[0] = ReturnedValueOf(returningCallees, step.callee); // rax / x0 / r0
             reachable = step.kind != StepKind::Return && step.kind != StepKind::Jump && step.kind != StepKind::TailCall;
         }
 
-        return MakeInferredPrototype(start, parameters, {});
+        // ARM: the conditional returns (popne {r4, pc}, bxlt lr in an IT block) are not steps: not what it returns
+        return MakeInferredPrototype(start, parameters, {}, isArm32 ? nullptr : AgreedReturn(returns, returningCallees));
     }
 
     // 32 bit x86: the arguments are in the stack. The walk of InferFunctionPrototype follows esp and ebp from the esp of the entry (push /
@@ -2279,7 +2349,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         };
         const auto read = [&valueAt](const State& state, const std::optional<Location>& location) -> int8 {
             if (!location.has_value())
-                return -1;
+                return NO_VALUE;
             if (location->incoming) {
                 const int32 argument = (location->offset - 4) / 4;
                 return (location->offset - 4) % 4 == 0 && argument < MAX_ARGUMENTS && (state.intact & (1u << argument)) ? static_cast<int8>(argument) : -1;
@@ -2301,13 +2371,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 return;
             }
             state.slots.erase(slotAt(state.slots, location->offset - 3), slotAt(state.slots, location->offset + size));
-            if (size == 4 && value >= 0)
+            if (size == 4 && value != NO_VALUE)
                 setSlot(state, location->offset, value);
         };
         const auto merge = [&valueAt](State& into, const State& from) {
             for (int reg = 0; reg < REGISTERS; reg++)
-                if (into.registers[reg] != from.registers[reg])
-                    into.registers[reg] = -1;
+                into.registers[reg] = MergedValue(into.registers[reg], from.registers[reg]);
             into.intact &= from.intact;
             if (into.esp != from.esp)
                 into.esp.reset();
@@ -2327,6 +2396,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::vector<uint32> writtenIncoming(count, 0); // the first pass (only for a loop): the incoming slots each step writes
         std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(MAX_ARGUMENTS);
         std::vector<bool> secondHalves(MAX_ARGUMENTS); // the second slot of a 64 bit parameter
+        std::vector<const AsmFunctionDetails*> returningCallees; // the callees of RETURNED_BY - k
+        std::vector<int8> returns;                                // what each return / tail jump returns (the last pass)
         for (uint32 pass = hasLoop ? 0 : 1; pass < 2; pass++) {
             State state;
             state.registers.fill(-1);
@@ -2356,8 +2427,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         unknown(merged);
                     if (lastBack > 0) {
                         for (int reg = 0; reg < REGISTERS; reg++)
-                            if (merged.registers[reg] >= 0 && writtenIn(reg, i, lastBack))
-                                merged.registers[reg] = -1;
+                            if (merged.registers[reg] != NO_VALUE && writtenIn(reg, i, lastBack))
+                                merged.registers[reg] = NO_VALUE;
                         for (size_t loop = i; loop <= lastBack; loop++)
                             merged.intact &= ~writtenIncoming[loop];
                         merged.slots.clear();
@@ -2370,6 +2441,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (step.target != NO_TARGET)
                     snapshots[i] = state;
                 writtenNow = 0;
+                if (pass == 1 && step.kind == StepKind::Return)
+                    returns.push_back(state.registers[0]); // eax
+                else if (pass == 1 && step.kind == StepKind::TailCall)
+                    returns.push_back(ReturnedValueOf(returningCallees, step.callee));
 
                 // a call / tail jump with a prototype: the incoming arguments it is passed
                 if (pass == 1 && (step.kind == StepKind::Call || step.kind == StepKind::TailCall) && step.callee) {
@@ -2398,7 +2473,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const auto valueOf = [&](const cs_x86_op& op) -> int8 {
                     if (const int reg = reg32(op); reg >= 0 && reg < REGISTERS)
                         return state.registers[reg];
-                    return op.size == 4 ? read(state, memoryOf(op)) : -1;
+                    if (op.type == X86_OP_IMM)
+                        return CONSTANT_VALUE;
+                    return op.size == 4 ? read(state, memoryOf(op)) : NO_VALUE;
                 };
                 const bool twoOperands = x86.op_count == 2;
                 if (step.kind == StepKind::Call) {
@@ -2412,12 +2489,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     }
                     for (int reg = 0; reg < REGISTERS; reg++)
                         if (VOLATILE_MASK & (1u << reg))
-                            state.registers[reg] = -1;
+                            state.registers[reg] = NO_VALUE;
+                    state.registers[0] = ReturnedValueOf(returningCallees, step.callee); // eax
                 } else if (step.kind == StepKind::Other || step.kind == StepKind::ConditionalJump) {
                     if (step.id == X86_INS_PUSH && x86.op_count == 1) {
                         const int8 value = valueOf(x86.operands[0]);
                         shift(state, -4);
-                        if (value >= 0)
+                        if (value != NO_VALUE)
                             setSlot(state, 0, value);
                     } else if (step.id == X86_INS_POP && x86.op_count == 1) {
                         const int8 value = valueAt(state, 0);
@@ -2483,31 +2561,58 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             state.ebp.reset();
                         if (copied.has_value())
                             state.registers[reg32(x86.operands[0])] = copied.value();
+                        else if (const int reg = reg32(x86.operands[0]); reg >= 0 && reg < REGISTERS && x86.op_count == 2 && IsX86ConstantOperation(step.id, x86))
+                            state.registers[reg] = CONSTANT_VALUE; // xor eax, eax / or eax, -1
                     }
                 }
                 if (pass == 0)
                     writtenIncoming[i] = writtenNow;
             }
         }
-        return MakeInferredPrototype(start, parameters, secondHalves);
+        return MakeInferredPrototype(start, parameters, secondHalves, AgreedReturn(returns, returningCallees));
     }
 
-    // the prototype of an inferred function: the parameters up to the last one known, the others without a name (a1, a2, ...); a 64 bit
-    // parameter of 32 bit x86 takes two slots; a name given twice (two calls of memcmp) gets a number (buf1, buf1_2)
+    // an instruction that sets its first operand to a constant whatever it held: mov reg, imm, xor / sub reg, reg (0), or reg, -1, and
+    // reg, 0
+    static bool IsX86ConstantOperation(unsigned int id, const cs_x86& x86)
+    {
+        if (x86.op_count != 2 || x86.operands[0].type != X86_OP_REG)
+            return false;
+        const auto& source = x86.operands[1];
+        if ((id == X86_INS_XOR || id == X86_INS_SUB) && source.type == X86_OP_REG && source.reg == x86.operands[0].reg)
+            return true;
+        return source.type == X86_OP_IMM && (id == X86_INS_MOV || (id == X86_INS_OR && source.imm == -1) || (id == X86_INS_AND && source.imm == 0));
+    }
+    static bool IsX86ConstantWrite(const cs_insn& insn)
+    {
+        return insn.detail && IsX86ConstantOperation(insn.id, insn.detail->x86);
+    }
+
+    // the prototype of an inferred function: the type it returns (the one of the callee whose return value it returns), the parameters up to
+    // the last one known, the others without a name (a1, a2, ...); a 64 bit parameter of 32 bit x86 takes two slots; a name given twice (two
+    // calls of memcmp) gets a number (buf1, buf1_2)
     std::shared_ptr<const DissasmUserPrototype> MakeInferredPrototype(
-          uint64 start, const std::vector<std::optional<std::pair<std::string_view, std::string_view>>>& parameters, const std::vector<bool>& secondHalves)
+          uint64 start,
+          const std::vector<std::optional<std::pair<std::string_view, std::string_view>>>& parameters,
+          const std::vector<bool>& secondHalves,
+          const AsmFunctionDetails* returns)
     {
         size_t count = 0;
         for (size_t argument = 0; argument < parameters.size(); argument++)
             if (parameters[argument].has_value())
                 count = argument + 1;
-        if (count == 0)
+        if (count == 0 && !returns)
             return nullptr;
         auto prototype = std::make_shared<DissasmUserPrototype>();
         const auto label = std::lower_bound(
               callsFound.begin(), callsFound.end(), codeStart + start, [](const auto& item, uint64 value) { return item.first < value; });
         const std::string name = label != callsFound.end() && label->first == codeStart + start ? label->second : zone->GetLabelName("sub_", start);
         std::string text       = name + "(";
+        if (returns) { // HANDLE sub_X(...): the return value of the API it returns, its name for the variables of the callers (File)
+            prototype->details.returnType = prototype->strings.emplace_back(returns->returnType);
+            prototype->details.returnName = prototype->strings.emplace_back(GetReturnValueName(*returns));
+            text                          = std::string(returns->returnType) + " " + text;
+        }
         for (size_t argument = 0; argument < count; argument++) {
             if (argument < secondHalves.size() && secondHalves[argument])
                 continue;
