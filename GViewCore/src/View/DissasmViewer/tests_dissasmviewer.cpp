@@ -8005,6 +8005,74 @@ TEST_CASE("UserPrototypesX86Arguments", "[Dissasm]UserData")
     REQUIRE(FindListingLine(listing, "push   1").ends_with("; b"));
 }
 
+TEST_CASE("X86ArgumentsAcrossInnerCalls", "[Dissasm]Help")
+{
+    // 32 bit: the pushes of a call go past the calls made in between: GetProcessHeap (stdcall, no argument), _get_osfhandle (cdecl: pop ecx
+    // after it), sub_60 (ret 8: two pushes), the constant idiom push 2; pop eax (not an argument)
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push ebp
+        0x89, 0xE5,                         // 0x01: mov ebp, esp
+        0x83, 0xEC, 0x10,                   // 0x03: sub esp, 0x10
+        0xFF, 0x75, 0xF8,                   // 0x06: push dword ptr [ebp - 8]      (dwBytes)
+        0x6A, 0x08,                         // 0x09: push 8                        (dwFlags)
+        0xFF, 0x15, 0x00, 0x10, 0x40, 0x00, // 0x0b: call dword ptr [GetProcessHeap]
+        0x50,                               // 0x11: push eax                      (hHeap)
+        0xFF, 0x15, 0x04, 0x10, 0x40, 0x00, // 0x12: call dword ptr [HeapAlloc]
+        0x6A, 0x00,                         // 0x18: push 0                        (lpOverlapped)
+        0x8D, 0x45, 0xF4,                   // 0x1a: lea eax, [ebp - 0xc]
+        0x50,                               // 0x1d: push eax                      (lpNumberOfBytesRead)
+        0x6A, 0x40,                         // 0x1e: push 0x40                     (nNumberOfBytesToRead)
+        0x68, 0x00, 0x20, 0x40, 0x00,       // 0x20: push 0x402000                 (lpBuffer)
+        0xFF, 0x75, 0x08,                   // 0x25: push dword ptr [ebp + 8]      (the argument of _get_osfhandle)
+        0xFF, 0x15, 0x0C, 0x10, 0x40, 0x00, // 0x28: call dword ptr [_get_osfhandle]
+        0x59,                               // 0x2e: pop ecx
+        0x50,                               // 0x2f: push eax                      (hFile)
+        0xFF, 0x15, 0x08, 0x10, 0x40, 0x00, // 0x30: call dword ptr [ReadFile]
+        0x68, 0xE8, 0x03, 0x00, 0x00,       // 0x36: push 1000                     (dwMilliseconds)
+        0x6A, 0x01,                         // 0x3b: push 1                        (the arguments of sub_60)
+        0x6A, 0x02,                         // 0x3d: push 2
+        0xE8, 0x1C, 0x00, 0x00, 0x00,       // 0x3f: call 0x60                     (ret 8)
+        0x6A, 0x05,                         // 0x44: push 5
+        0x58,                               // 0x46: pop eax
+        0xFF, 0x15, 0x10, 0x10, 0x40, 0x00, // 0x47: call dword ptr [Sleep]
+        0x89, 0xEC,                         // 0x4d: mov esp, ebp
+        0x5D,                               // 0x4f: pop ebp
+        0xC3,                               // 0x50: ret
+    };
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x44, 0x24, 0x04, 0xC2, 0x08, 0x00 }); // 0x60: mov eax, dword ptr [esp + 4]; ret 8
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401000, { "GetProcessHeap", MemoryMappingType::FunctionMapping } },
+                          { 0x401004, { "HeapAlloc", MemoryMappingType::FunctionMapping } },
+                          { 0x401008, { "ReadFile", MemoryMappingType::FunctionMapping } },
+                          { 0x40100C, { "_get_osfhandle", MemoryMappingType::FunctionMapping } },
+                          { 0x401010, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.calleeStackPurges.contains(0x60));
+    REQUIRE(zone.calleeStackPurges.at(0x60) == 8);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000009  push   8").ends_with("; dwFlags"));
+    REQUIRE(FindListingLine(listing, "0x00000011  push   eax").ends_with("; hHeap"));
+    REQUIRE(FindListingLine(listing, "0x00000018  push   0").ends_with("; lpOverlapped"));
+    REQUIRE(FindListingLine(listing, "0x0000001e  push   0x40").ends_with("; nNumberOfBytesToRead"));
+    REQUIRE(FindListingLine(listing, "0x00000020  push   0x402000").ends_with("; lpBuffer"));
+    REQUIRE(FindListingLine(listing, "0x00000025  push").find(';') == std::string_view::npos); // the argument of _get_osfhandle
+    REQUIRE(FindListingLine(listing, "0x0000002f  push   eax").ends_with("; hFile"));
+    REQUIRE(FindListingLine(listing, "0x00000036  push   0x3e8").ends_with("; dwMilliseconds"));
+    REQUIRE(FindListingLine(listing, "0x00000044  push   5").find(';') == std::string_view::npos); // push 5; pop eax: a constant
+    // the variables: the value of var_8 is the dwBytes of HeapAlloc, &var_C the lpNumberOfBytesRead of ReadFile
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-8)->name == "dwBytes");
+    REQUIRE(frame->FindVariable(-0xc)->name == "NumberOfBytesRead");
+    REQUIRE(FindListingLine(listing, "0x00000006  push").ends_with("; dwBytes"));
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does

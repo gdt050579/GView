@@ -1007,8 +1007,13 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         const auto slot = GetArgumentSlot(*insn, params.zone->GetArchAt(insn->address), params.zone->systemVCalls);
         argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
     }
-    if (flow == X86Flow::Call)
+    calleePushes = NO_PUSHES;
+    if (flow == X86Flow::Call) {
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
+        if (operands.directTarget.has_value())
+            if (const auto purge = params.zone->calleeStackPurges.find(operands.directTarget.value()); purge != params.zone->calleeStackPurges.end())
+                calleePushes = static_cast<uint8>(std::min<uint32>(purge->second / 4, NO_PUSHES - 1u)); // ret 0x10: 4 pushes
+    }
     else if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump)
         flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
     else if (insn->id == X86_INS_PUSH && !params.zone->IsArmCode())

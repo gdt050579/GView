@@ -291,6 +291,9 @@ namespace View
             // the argument of the x64 calling convention written by the instruction (GetX64ArgumentSlot)
             static constexpr uint8 NO_ARGUMENT = 0xFF;
             uint8 argumentSlot                 = NO_ARGUMENT;
+            // 32 bit: a call to a function of the zone that pops its arguments (ret 8): the pushes it takes (DissasmCodeZone::calleeStackPurges)
+            static constexpr uint8 NO_PUSHES = 0xFF;
+            uint8 calleePushes               = NO_PUSHES;
 
             bool shouldAddButton = false;
             bool isZoneCollapsed = false;
@@ -368,6 +371,7 @@ namespace View
                 shouldAddButton        = other.shouldAddButton;
                 isZoneCollapsed        = other.isZoneCollapsed;
                 argumentSlot           = other.argumentSlot;
+                calleePushes           = other.calleePushes;
                 localVariableKind      = other.localVariableKind;
                 localVariableOffset    = other.localVariableOffset;
                 localVariableFunction  = other.localVariableFunction;
@@ -410,6 +414,11 @@ namespace View
             AsmFunctionDetails details;
         };
         std::shared_ptr<const DissasmUserPrototype> ParseUserPrototype(std::string_view text);
+        // a type of parameter that takes 8 bytes of the stack in 32 bit code (__int64, double, LARGE_INTEGER, ...): two pushes
+        bool IsWideX86Type(std::string_view type);
+        // 32 bit: the pushes a known API takes from the stack when it returns (stdcall: its parameters, 8 byte ones twice); none for the C
+        // run-time (cdecl: its caller removes them, the lowercase names but the Winsock ones) and the variadic ones
+        std::optional<uint32> GetX86StdcallPushes(const AsmFunctionDetails& prototype);
         // the structures the APIs take by address (STARTUPINFOW, WIN32_FIND_DATAW, PROCESS_INFORMATION, ...; DissasmApiStructures.cpp), laid
         // out for 32 or 64 bit code; null when it is not known
         const DissasmApiStructure* FindApiStructure(std::string_view name, bool is64);

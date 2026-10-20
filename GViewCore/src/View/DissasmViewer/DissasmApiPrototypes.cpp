@@ -1,4 +1,5 @@
 #include "DissasmViewer.hpp"
+#include "DissasmFunctionUtils.hpp"
 
 #include <algorithm>
 #include <deque>
@@ -543,6 +544,25 @@ void GView::View::DissasmViewer::ForEachApiPrototype(const std::function<void(co
 {
     for (const auto& details : GetPrototypeTable().functions)
         callback(details);
+}
+
+bool GView::View::DissasmViewer::IsWideX86Type(std::string_view type)
+{
+    static constexpr std::string_view WIDE_TYPES[] = { "__int64", "long long", "unsigned long long", "LONGLONG", "ULONGLONG", "DWORD64", "QWORD",
+                                                       "int64_t", "uint64_t", "double", "LARGE_INTEGER", "ULARGE_INTEGER" };
+    return std::find(std::begin(WIDE_TYPES), std::end(WIDE_TYPES), Trim(type)) != std::end(WIDE_TYPES);
+}
+
+std::optional<uint32> GView::View::DissasmViewer::GetX86StdcallPushes(const AsmFunctionDetails& prototype)
+{
+    const std::string_view name = prototype.functionName;
+    const bool lowercase        = std::all_of(name.begin(), name.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
+    if (prototype.prototype.find("...") != std::string_view::npos || (lowercase && (GetApiCategories(name) & API_NETWORK) == 0))
+        return std::nullopt;
+    uint32 pushes = 0;
+    for (const auto& parameter : prototype.params)
+        pushes += IsWideX86Type(parameter.type) ? 2u : 1u;
+    return pushes;
 }
 
 std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseUserPrototype(std::string_view text)

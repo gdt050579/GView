@@ -1728,6 +1728,32 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return result;
     }
 
+    // 32 bit: a function that reads nothing of the stack (no [esp + n] / [ebp + n] operand, no frame register) in its code (up to the next
+    // function, 4 KB at most): it takes no argument from the stack, whatever its ret (a __fastcall leaf with ecx / edx)
+    bool TakesNoStackArguments(uint64 start)
+    {
+        const auto nextFunction = std::upper_bound(functionStarts.begin(), functionStarts.end(), start);
+        const uint64 end        = std::min<uint64>({ codeSize, start + 0x1000, nextFunction != functionStarts.end() ? *nextFunction : codeSize });
+        const auto data         = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(end - start), false) : BufferView{};
+        cs_insn* insn           = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return false;
+        const uint8* bytes = data.GetData();
+        size_t size        = data.GetLength();
+        uint64 address     = start;
+        bool usesStack     = false;
+        while (!usesStack && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
+            const cs_x86& x86 = insn->detail->x86;
+            for (uint8 index = 0; index < x86.op_count && !usesStack; index++) {
+                const auto& op = x86.operands[index];
+                usesStack      = (op.type == X86_OP_MEM && (op.mem.base == X86_REG_ESP || op.mem.base == X86_REG_EBP)) ||
+                            (op.type == X86_OP_REG && op.reg == X86_REG_EBP && (op.access & CS_AC_WRITE));
+            }
+        }
+        cs_free(insn, 1);
+        return !usesStack && address > start;
+    }
+
     // 32 bit: a function of the zone that builds the ebp frame of its caller (MSVC __SEH_prolog4 / __EH_prolog3 / _EH_prolog): it stores
     // ebp in the stack (mov [esp + 0x10], ebp / mov [eax], ebp), points ebp into the stack (lea ebp, [esp + 0x10] / mov ebp, eax) and
     // returns without restoring it
@@ -1842,14 +1868,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const bool windows64 = functionArch == DissasmArch::X64 && !zone->systemVCalls;
         if (!isX86 && !windows64)
             return;
-        static constexpr std::string_view WIDE_TYPES[] = { "__int64", "long long", "unsigned long long", "LONGLONG", "ULONGLONG", "DWORD64", "QWORD",
-                                                           "int64_t", "uint64_t", "double", "LARGE_INTEGER", "ULARGE_INTEGER" };
         std::vector<uint32> offsets; // of each parameter, from the first one
         uint32 offset = 0;
         for (const auto& parameter : prototype.params) {
             offsets.push_back(offset);
-            const std::string_view type = parameter.type;
-            offset += windows64 || std::find(std::begin(WIDE_TYPES), std::end(WIDE_TYPES), type) != std::end(WIDE_TYPES) ? 8u : 4u;
+            offset += windows64 || IsWideX86Type(parameter.type) ? 8u : 4u;
         }
         for (auto& variable : frame.variables) {
             if (!variable.name.starts_with("arg_") || variable.name.size() <= 4)
@@ -2047,7 +2070,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 registers.fill(std::nullopt); // the callee changes the volatile registers; the arguments are consumed
                 returned.fill(nullptr);
                 stackArgs.fill(std::nullopt);
-                pushes.clear();
+                // x86: the pushes the callee takes (its ret n, a stdcall API: its parameters; cdecl: 0, its caller removes them after it);
+                // the ones pushed before for an outer call stay (push eax; push 0; call GetProcessHeap; push eax; call HeapAlloc)
+                std::optional<uint32> taken;
+                if (isX86) {
+                    if (const auto purge = CalleeStackPurge(current); purge.has_value())
+                        taken = purge.value() / 4;
+                    else if (prototype)
+                        taken = GetX86StdcallPushes(*prototype);
+                }
+                if (taken.has_value())
+                    pushes.resize(pushes.size() - std::min<size_t>(pushes.size(), taken.value()));
+                else
+                    pushes.clear();
                 if (prototype && !prototype->returnType.empty())
                     returned[0] = prototype; // rax / x0 / r0
                 continue;
@@ -2131,6 +2166,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             // x86 / x64
             const cs_x86& x86 = current.detail->x86;
+            // the clean up of a cdecl call: pop ecx / add esp, 8 removes the last pushes
+            if (isX86 && current.id == X86_INS_POP && !pushes.empty())
+                pushes.pop_back();
+            if (isX86 && current.id == X86_INS_ADD && x86.op_count == 2 && IsRegisterOperandOf(x86, 0, X86_REG_ESP) && x86.operands[1].type == X86_OP_IMM)
+                pushes.resize(pushes.size() - std::min<size_t>(pushes.size(), static_cast<size_t>(x86.operands[1].imm) / 4));
             if (current.id == X86_INS_PUSH && x86.op_count == 1) {
                 const auto& op = x86.operands[0];
                 if (op.type == X86_OP_REG) {
@@ -2465,6 +2505,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the results become the analysis of the zone; the number of lines added to the instructions (labels, local variables)
     uint32 Commit()
     {
+        // 32 bit: what every function takes from the stack of its caller (ret 8; a plain ret: 0 only when it reads no stack argument, else it
+        // may be a cdecl one cleaned up later); the listing leaves to such a call the pushes it takes when they are between the arguments of
+        // another call
+        zone->calleeStackPurges.clear();
+        if (!is64 && !zone->IsArmCode() && hasDetailHandle)
+            for (const uint64 start : functionStarts) {
+                auto known = calleePurges.find(start);
+                if (known == calleePurges.end())
+                    known = calleePurges.emplace(start, DecodeCalleePurge(start)).first;
+                if (!known->second.has_value() || known->second.value() > 0x400)
+                    continue;
+                if (known->second.value() > 0 || TakesNoStackArguments(start))
+                    zone->calleeStackPurges[start] = known->second.value();
+            }
         zone->xrefs                     = std::move(xrefs);
         zone->thunkImports              = std::move(thunkImports);
         zone->switchJumps               = std::move(switchJumps);

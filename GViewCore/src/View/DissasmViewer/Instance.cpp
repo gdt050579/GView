@@ -1816,20 +1816,72 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
         return;
     }
 
-    // x86: the pushes, the last one is the first argument; GCC stores them instead: mov dword ptr [esp + 4], ... is the second
-    constexpr uint32 MAX_LINE_DIFF = 10;
+    // x86: the pushes, the last one is the first argument; GCC stores them instead: mov dword ptr [esp + 4], ... is the second. The walk
+    // goes past the calls made while the arguments are pushed (push eax; push 0; call GetProcessHeap; push eax ; hHeap; call HeapAlloc):
+    // the pushes such a call takes are left to it, the arguments of a known stdcall API (its prototype) or the ones its caller removes
+    // after it (cdecl: pop ecx / add esp, 8 right after the call); a call that takes what is not known ends it, as a jmp / ret
+    constexpr uint32 MAX_LINE_DIFF = 32;
     uint32 pushIndex = 0, remaining = paramsCount;
+    uint32 taken           = 0;     // the pushes found later that a pop / add esp / a call took (they are not arguments of this call)
+    bool cleanedUpAfter    = false; // the call met next (walking back) is a cdecl one: its pushes are counted by its clean up
+    const auto calleeName  = [](const DissasmAsmPreCacheLine& line) -> std::string_view {
+        if (line.mapping)
+            return static_cast<const MemoryMappingEntry*>(line.mapping)->name; // call dword ptr [__imp_X]
+        if (!line.op_str)
+            return {};
+        const std::string_view operands(line.op_str, line.op_str_size); // call j_memset / call sub_401000
+        size_t start = operands.size();
+        while (start > 0 && (std::isalnum(static_cast<unsigned char>(operands[start - 1])) || operands[start - 1] == '_' || operands[start - 1] == '@'))
+            start--;
+        return operands.substr(start);
+    };
     std::vector<bool> named(paramsCount, false);
     for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
         const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
-        if (it->size != 0 && (kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return))
-            break; // the block of another call
+        if (it->size != 0 && (kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return))
+            break; // the block of another path
+        if (it->size != 0 && kind == X86InstructionKind::Call) {
+            if (cleanedUpAfter) {
+                cleanedUpAfter = false; // cdecl: the clean up counted its arguments
+                continue;
+            }
+            if (it->calleePushes != DissasmAsmPreCacheLine::NO_PUSHES) {
+                taken += it->calleePushes; // a function of the file: what it pops (ret 0x10), nothing for one that reads no stack argument
+                continue;
+            }
+            const auto* inner = FindApiPrototype(calleeName(*it));
+            const auto pushes = inner ? GetX86StdcallPushes(*inner) : std::nullopt; // stdcall: the callee takes its arguments
+            if (!pushes.has_value())
+                break; // what it takes is not known (a cdecl call cleaned up later, a function of the file)
+            taken += pushes.value();
+            continue;
+        }
+        if (it->size != 0 && it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag && it->op_str) {
+            // pop ecx / add esp, 0xc: the pushes before them are taken (the clean up of the call right before them)
+            const std::string_view operands(it->op_str, it->op_str_size);
+            uint32 removed = 0;
+            if (strcmp(it->mnemonic, "pop") == 0)
+                removed = 1;
+            else if (strcmp(it->mnemonic, "add") == 0 && operands.starts_with("esp, "))
+                removed = static_cast<uint32>(std::strtoul(std::string(operands.substr(5)).c_str(), nullptr, 0) / 4);
+            if (removed > 0) {
+                taken += removed;
+                const auto previous = std::next(it);
+                cleanedUpAfter      = previous != cachedAsmLines.rend() && previous->size != 0 &&
+                                 static_cast<X86InstructionKind>(previous->instructionKind) == X86InstructionKind::Call;
+                continue;
+            }
+        }
         uint32 slot = paramsCount;
-        if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
+        if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+            if (taken > 0) {
+                taken--; // an argument of a call made in between
+                continue;
+            }
             slot = pushIndex++;
-        else if (it->argumentSlot != DissasmAsmPreCacheLine::NO_ARGUMENT)
+        } else if (it->argumentSlot != DissasmAsmPreCacheLine::NO_ARGUMENT)
             slot = it->argumentSlot;
         if (slot >= paramsCount || named[slot])
             continue;

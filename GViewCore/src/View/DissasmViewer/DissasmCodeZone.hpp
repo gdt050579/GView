@@ -238,6 +238,9 @@ struct DissasmCodeZone : public ParseZone {
     std::vector<DissasmFunctionChunk> functionChunks;
     // the categories of the APIs every function of functionStarts calls / jumps to directly (DissasmApiCategory, the same index)
     std::vector<uint32> functionApiCategories;
+    // 32 bit x86: the bytes the functions take from the stack of their callers (ret 8 -> 8; 0: a function that reads no stack argument),
+    // by relative start; a plain ret of a function that reads its stack (cdecl) or a ret that is not found: not there
+    std::unordered_map<uint64, uint32> calleeStackPurges;
     const DissasmFunctionChunk* FindChunkContaining(uint64 relativeAddress) const;
     // the code of a function: [start, end) (`end`: its next function, or functionEnds with `reachableEnd`) and its chunks, by address
     std::vector<std::pair<uint64, uint64>> GetFunctionRanges(uint64 functionStart, uint64 end) const;
