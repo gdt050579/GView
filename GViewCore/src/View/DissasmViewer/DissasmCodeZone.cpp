@@ -1894,13 +1894,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (!hasDetailHandle || functionEnds.size() != functionStarts.size())
             return;
         // the first round: the functions that call a prototype (an import slot, a target, a function inferred before them in the round);
-        // the next ones: the functions that call one inferred by the round before or by this one (the others would give the same as before)
+        // the next ones: the functions that call one inferred / changed by the round before or by this one (the others would give the same
+        // as before), the ones inferred already too (they did not see the callees inferred after them: a function inferred from a known API
+        // gets the arguments it passes to a wrapper inferred later)
         std::unordered_set<uint64> inferredBefore;
         for (uint32 round = 0; round < 3; round++) {
             std::unordered_set<uint64> inferredNow;
             for (size_t index = 0; index < functionStarts.size(); index++) {
                 const uint64 start = functionStarts[index];
-                if (zone->userPrototypes.contains(start) || inferredPrototypes.contains(start))
+                if (zone->userPrototypes.contains(start) || (round == 0 && inferredPrototypes.contains(start)))
                     continue;
                 const auto arch = zone->GetArchAt(start);
                 bool candidate  = false;
@@ -1919,10 +1921,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 }
                 if (!candidate)
                     continue;
+                // inferred again: without its own prototype (a recursive call is not a callee that knows its arguments)
+                std::shared_ptr<const DissasmUserPrototype> previous;
+                if (const auto known = inferredPrototypes.find(start); known != inferredPrototypes.end()) {
+                    previous = std::move(known->second);
+                    inferredPrototypes.erase(known);
+                }
                 auto prototype = arch == DissasmArch::X86 ? InferX86FunctionPrototype(start, functionEnds[index]) : InferFunctionPrototype(start, functionEnds[index], arch);
-                if (prototype) {
+                if (prototype && (!previous || previous->details.prototype != prototype->details.prototype)) {
                     inferredPrototypes.emplace(start, std::move(prototype));
                     inferredNow.insert(start);
+                } else if (previous) {
+                    inferredPrototypes.emplace(start, std::move(previous)); // the same as before
                 }
             }
             if (inferredNow.empty())

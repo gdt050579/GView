@@ -5155,7 +5155,19 @@ TEST_CASE("InstructionHelp", "[Dissasm]Help")
 
 TEST_CASE("ApiPrototypes", "[Dissasm]Help")
 {
-    REQUIRE(GetApiPrototypesCount() > 450);
+    REQUIRE(GetApiPrototypesCount() > 800);
+    // every line of the table parsed: a name, its parameters named and typed
+    ForEachApiPrototype([](const AsmFunctionDetails& details) {
+        INFO(details.prototype);
+        const auto identifier = [](std::string_view text) {
+            return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; });
+        };
+        REQUIRE(identifier(details.functionName));
+        for (const auto& parameter : details.params) {
+            REQUIRE(identifier(parameter.name));
+            REQUIRE(!std::string_view(parameter.type).empty());
+        }
+    });
     const auto* createFile = FindApiPrototype("CreateFileW");
     REQUIRE(createFile != nullptr);
     REQUIRE(createFile->params.size() == 7);
@@ -5173,6 +5185,19 @@ TEST_CASE("ApiPrototypes", "[Dissasm]Help")
     REQUIRE(FindApiPrototype("ZwClose") == FindApiPrototype("NtClose"));
     REQUIRE(FindApiPrototype("Process32FirstW") != nullptr);
     REQUIRE(FindApiPrototype("_stricmp")->functionName == "_stricmp");
+    // the forwarders of the UCRT (api-ms-win-crt-private): _o__wcsicmp is _wcsicmp, _o_wcstol is wcstol
+    REQUIRE(FindApiPrototype("_o__wcsicmp") == FindApiPrototype("_wcsicmp"));
+    REQUIRE(FindApiPrototype("__imp__o_wcstol")->functionName == "wcstol");
+    REQUIRE(FindApiPrototype("j__o__get_osfhandle")->functionName == "_get_osfhandle");
+    // the window manager, the certificates, the kernel, the GNU C library
+    REQUIRE(std::string_view(FindApiPrototype("GetDlgItem")->params[1].name) == "nIDDlgItem");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("GetDlgItem")) == "DlgItem");
+    REQUIRE(FindApiPrototype("CertFindCertificateInStore")->params.size() == 6);
+    REQUIRE(FindApiPrototype("ExAcquireResourceExclusiveLite")->returnType == "BOOLEAN");
+    REQUIRE(FindApiPrototype("__errno_location@GLIBC_2.2.5") != nullptr);
+    // 32 bit: the 64 bit handles take two pushes (EventWriteTransfer: 7 pushes for 6 parameters)
+    REQUIRE(IsWideX86Type("REGHANDLE"));
+    REQUIRE(GetX86StdcallPushes(*FindApiPrototype("EventWriteTransfer")) == 7u);
     const auto* printfDetails = FindApiPrototype("printf");
     REQUIRE(printfDetails->params.size() == 1); // the ... is not an argument
     REQUIRE(std::string_view(printfDetails->params[0].type) == "const char*");
@@ -8061,7 +8086,7 @@ TEST_CASE("X86ArgumentsAcrossInnerCalls", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000018  push   0").ends_with("; lpOverlapped"));
     REQUIRE(FindListingLine(listing, "0x0000001e  push   0x40").ends_with("; nNumberOfBytesToRead"));
     REQUIRE(FindListingLine(listing, "0x00000020  push   0x402000").ends_with("; lpBuffer"));
-    REQUIRE(FindListingLine(listing, "0x00000025  push").find(';') == std::string_view::npos); // the argument of _get_osfhandle
+    REQUIRE(FindListingLine(listing, "0x00000025  push").ends_with("; fd")); // the argument of _get_osfhandle (cdecl: pop ecx after it)
     REQUIRE(FindListingLine(listing, "0x0000002f  push   eax").ends_with("; hFile"));
     REQUIRE(FindListingLine(listing, "0x00000036  push   0x3e8").ends_with("; dwMilliseconds"));
     REQUIRE(FindListingLine(listing, "0x00000044  push   5").find(';') == std::string_view::npos); // push 5; pop eax: a constant
