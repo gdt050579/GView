@@ -1775,14 +1775,70 @@ Instance::~Instance()
     }
 }
 
+// an immediate operand: 3, 0x80000000, -1, #0x10 (ARM)
+static std::optional<int64> ParseArgumentImmediate(std::string_view text)
+{
+    if (!text.empty() && text.front() == '#')
+        text.remove_prefix(1);
+    const bool negative = !text.empty() && text.front() == '-';
+    if (negative)
+        text.remove_prefix(1);
+    const bool hexadecimal = text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
+    if (hexadecimal)
+        text.remove_prefix(2);
+    if (text.empty() || text.size() > 16)
+        return std::nullopt;
+    uint64 value = 0;
+    for (const char c : text) {
+        uint32 digit;
+        if (c >= '0' && c <= '9')
+            digit = c - '0';
+        else if (hexadecimal && c >= 'a' && c <= 'f')
+            digit = c - 'a' + 10;
+        else if (hexadecimal && c >= 'A' && c <= 'F')
+            digit = c - 'A' + 10;
+        else
+            return std::nullopt; // a name (offset aText), a register, a memory operand
+        value = value * (hexadecimal ? 16 : 10) + digit;
+    }
+    return negative ? -static_cast<int64>(value) : static_cast<int64>(value);
+}
+
+// the constant an argument line gives: push 3, mov edx, 0x80000000, mov dword ptr [rsp + 0x20], 3, mov w1, #3; 0 for xor ecx, ecx /
+// and qword ptr [rsp + 0x30], 0; -1 for or eax, -1
+static std::optional<uint64> GetArgumentImmediate(const DissasmAsmPreCacheLine& line)
+{
+    if (!line.op_str || line.size == 0)
+        return std::nullopt;
+    const std::string_view mnemonic = line.mnemonic;
+    const std::string_view operands(line.op_str, line.op_str_size);
+    const auto comma              = operands.rfind(", ");
+    const std::string_view last   = comma == std::string_view::npos ? operands : operands.substr(comma + 2);
+    const std::string_view first  = operands.substr(0, operands.find(", "));
+    if ((mnemonic == "xor" || mnemonic == "sub") && comma != std::string_view::npos && first == last)
+        return 0u;
+    const auto immediate = ParseArgumentImmediate(last);
+    if (!immediate.has_value())
+        return std::nullopt;
+    if (comma == std::string_view::npos)
+        return mnemonic == "push" ? std::optional<uint64>(static_cast<uint64>(immediate.value())) : std::nullopt;
+    if (mnemonic == "mov" || mnemonic == "movz" || (mnemonic == "and" && immediate.value() == 0) || (mnemonic == "or" && immediate.value() == -1))
+        return static_cast<uint64>(immediate.value());
+    return std::nullopt;
+}
+
 void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments)
 {
     // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
         return;
-    // the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"
-    auto nameArgument = [](DissasmAsmPreCacheLine& line, const char* name) {
+    // the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"; a constant with its symbolic name:
+    // dwDesiredAccess = GENERIC_READ
+    auto nameArgument = [functionDetails](DissasmAsmPreCacheLine& line, const char* name) {
         std::string text = name;
+        if (const auto value = GetArgumentImmediate(line); value.has_value())
+            if (const auto constant = FormatApiConstant(functionDetails->functionName, name, value.value()); !constant.empty())
+                text += " = " + constant;
         if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
             text += ' ';
             text += line.autoComment;

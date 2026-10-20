@@ -407,6 +407,10 @@ namespace View
         // Find / Allocate (GetProcAddress -> ProcAddress, CreateFileW -> File: the A / W ending too, ExAllocatePoolWithTag -> PoolWithTag),
         // else the function and _result (malloc_result; a BOOL / NTSTATUS / HRESULT status: CreateProcess_result)
         std::string GetReturnValueName(const AsmFunctionDetails& function);
+        // the symbolic name of a constant passed to a parameter of an API (DissasmApiConstants.cpp, IDA's standard enumerations):
+        // GENERIC_READ | GENERIC_WRITE for the dwDesiredAccess of CreateFileW, OPEN_EXISTING, HKEY_LOCAL_MACHINE, MEM_COMMIT | MEM_RESERVE,
+        // a pool tag ('NtFs'), CTL_CODE(...) for an I/O control code; empty when the parameter / the value has no name
+        std::string FormatApiConstant(std::string_view function, std::string_view parameter, uint64 value);
         // a prototype the user writes for a function (IDA Y): "int decrypt(char* buf, int len)" parsed as the ones of the APIs; its texts are
         // kept with it. Null when it is not one: no parentheses, a name / a parameter name that is not an identifier, a parameter without a
         // name, a pointer to a function as a parameter, more than DISSASM_MAX_USER_PROTOTYPE_SIZE characters

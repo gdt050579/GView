@@ -3445,7 +3445,7 @@ TEST_CASE("ImportThunksX86", "[Dissasm]Thunks")
     REQUIRE(FindListingLine(listing, "push   3").ends_with("; hWnd"));
     REQUIRE(FindListingLine(listing, "push   2").ends_with("; lpText"));
     REQUIRE(FindListingLine(listing, "push   1").ends_with("; lpCaption"));
-    REQUIRE(FindListingLine(listing, "push   0").ends_with("; uType"));
+    REQUIRE(FindListingLine(listing, "push   0").ends_with("; uType = MB_OK"));
 }
 
 TEST_CASE("CallArgumentsX64", "[Dissasm]Thunks")
@@ -3494,7 +3494,7 @@ TEST_CASE("CallArgumentsX64", "[Dissasm]Thunks")
     REQUIRE(FindListingLine(listing, "xor    ecx, ecx").ends_with("; hWnd"));
     REQUIRE(FindListingLine(listing, "lea    rdx").find("; lpText") != std::string_view::npos);
     REQUIRE(FindListingLine(listing, "lea    r8").find("; lpCaption") != std::string_view::npos);
-    REQUIRE(FindListingLine(listing, "xor    r9d, r9d").ends_with("; uType"));
+    REQUIRE(FindListingLine(listing, "xor    r9d, r9d").ends_with("; uType = MB_OK"));
     REQUIRE(FindListingLine(listing, "sub    rsp, 0x28").find(';') == std::string_view::npos);
     // a call through the import slot
     REQUIRE(FindListingLine(listing, "mov    rcx, rbx").ends_with("; hObject"));
@@ -8081,7 +8081,7 @@ TEST_CASE("X86ArgumentsAcrossInnerCalls", "[Dissasm]Help")
     REQUIRE(zone.calleeStackPurges.at(0x60) == 8);
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
-    REQUIRE(FindListingLine(listing, "0x00000009  push   8").ends_with("; dwFlags"));
+    REQUIRE(FindListingLine(listing, "0x00000009  push   8").ends_with("; dwFlags = HEAP_ZERO_MEMORY"));
     REQUIRE(FindListingLine(listing, "0x00000011  push   eax").ends_with("; hHeap"));
     REQUIRE(FindListingLine(listing, "0x00000018  push   0").ends_with("; lpOverlapped"));
     REQUIRE(FindListingLine(listing, "0x0000001e  push   0x40").ends_with("; nNumberOfBytesToRead"));
@@ -8394,6 +8394,104 @@ TEST_CASE("InferredReturnValues", "[Dissasm]Help")
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
     REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: HANDLE sub_40(LPCWSTR lpFileName, ") != std::string_view::npos);
+}
+
+TEST_CASE("ApiConstants", "[Dissasm]Help")
+{
+    // the access rights: the generic ones, the ones of the object of the API (the A / W ending dropped), the combinations first
+    REQUIRE(FormatApiConstant("CreateFileW", "dwDesiredAccess", 0x80000000) == "GENERIC_READ");
+    REQUIRE(FormatApiConstant("CreateFileA", "dwDesiredAccess", 0xC0000000) == "GENERIC_READ | GENERIC_WRITE");
+    REQUIRE(FormatApiConstant("OpenProcess", "dwDesiredAccess", 0x1FFFFF) == "PROCESS_ALL_ACCESS");
+    REQUIRE(FormatApiConstant("OpenProcess", "dwDesiredAccess", 0x410) == "PROCESS_VM_READ | PROCESS_QUERY_INFORMATION");
+    REQUIRE(FormatApiConstant("RegOpenKeyExW", "samDesired", 0x20119) == "KEY_READ | KEY_WOW64_64KEY");
+    REQUIRE(FormatApiConstant("sub_401000", "dwDesiredAccess", 0x80000000) == "GENERIC_READ"); // an inferred prototype: the generic rights
+    // a 32 bit constant sign extended in a 64 bit register; not a 64 bit one
+    REQUIRE(FormatApiConstant("RegOpenKeyExW", "hKey", 0xFFFFFFFF80000001ull) == "HKEY_CURRENT_USER");
+    REQUIRE(FormatApiConstant("GetStdHandle", "nStdHandle", static_cast<uint64>(-11)) == "STD_OUTPUT_HANDLE");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0x100000001ull).empty());
+    // the fields (once each) and the flags; the bits without a name in hexadecimal; nothing when no bit has a name
+    REQUIRE(FormatApiConstant("MessageBoxW", "uType", 0x24) == "MB_YESNO | MB_ICONQUESTION");
+    REQUIRE(FormatApiConstant("MessageBoxA", "uType", 0x10) == "MB_OK | MB_ICONERROR");
+    REQUIRE(FormatApiConstant("open", "flags", 0x241) == "O_WRONLY | O_CREAT | O_TRUNC");
+    REQUIRE(FormatApiConstant("VirtualAlloc", "flProtect", 0x140) == "PAGE_EXECUTE_READWRITE | PAGE_GUARD");
+    REQUIRE(FormatApiConstant("VirtualAlloc", "flAllocationType", 0x3000) == "MEM_COMMIT | MEM_RESERVE");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0x9) == "FILE_SHARE_READ | 0x8");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0x8).empty());
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0).empty()); // no name for 0
+    REQUIRE(FormatApiConstant("CertOpenStore", "dwEncodingType", 0x10001) == "X509_ASN_ENCODING | PKCS_7_ASN_ENCODING");
+    // the value 0 of a set that names it; the combinations of the memory flags
+    REQUIRE(FormatApiConstant("LocalAlloc", "uFlags", 0) == "LMEM_FIXED");
+    REQUIRE(FormatApiConstant("LocalAlloc", "uFlags", 0x40) == "LPTR");
+    REQUIRE(FormatApiConstant("CoInitializeEx", "dwCoInit", 0) == "COINIT_MULTITHREADED");
+    REQUIRE(FormatApiConstant("CoInitializeEx", "dwCoInit", 6) == "COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE");
+    REQUIRE(FormatApiConstant("SetFilePointer", "dwMoveMethod", 0) == "FILE_BEGIN");
+    // the enumerations: the exact value only
+    REQUIRE(FormatApiConstant("WaitForSingleObject", "dwMilliseconds", 0xFFFFFFFF) == "INFINITE");
+    REQUIRE(FormatApiConstant("WaitForSingleObject", "dwMilliseconds", 1000).empty());
+    REQUIRE(FormatApiConstant("CryptCreateHash", "Algid", 0x800C) == "CALG_SHA_256");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwCreationDisposition", 3) == "OPEN_EXISTING");
+    // a parameter that means something else in every API: only by its function
+    REQUIRE(FormatApiConstant("sub_401000", "dwFlags", 8).empty());
+    REQUIRE(FormatApiConstant("HeapAlloc", "dwFlags", 8) == "HEAP_ZERO_MEMORY");
+    // a pool tag (memory order), an I/O control code
+    REQUIRE(FormatApiConstant("ExAllocatePoolWithTag", "Tag", 0x7346744E) == "'NtFs'");
+    REQUIRE(FormatApiConstant("ExAllocatePoolWithTag", "Tag", 0x00000001).empty());
+    REQUIRE(FormatApiConstant("DeviceIoControl", "dwIoControlCode", 0x222004) == "CTL_CODE(0x22, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)");
+
+    // the listing: the constants of the calls of CreateFileW, RegOpenKeyExW, VirtualAlloc (x64: the registers, the stack slots, xor, and)
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x48 });                         // sub rsp, 0x48
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });                               // mov rcx, rbx                 (lpFileName)
+    file.insert(file.end(), { 0xBA, 0x00, 0x00, 0x00, 0xC0 });                   // mov edx, 0xc0000000          (dwDesiredAccess)
+    file.insert(file.end(), { 0x41, 0xB8, 0x03, 0x00, 0x00, 0x00 });             // mov r8d, 3                   (dwShareMode)
+    file.insert(file.end(), { 0x45, 0x31, 0xC9 });                               // xor r9d, r9d                 (lpSecurityAttributes)
+    file.insert(file.end(), { 0xC7, 0x44, 0x24, 0x20, 0x03, 0x00, 0x00, 0x00 }); // mov dword ptr [rsp + 0x20], 3
+    file.insert(file.end(), { 0xC7, 0x44, 0x24, 0x28, 0x80, 0x00, 0x00, 0x00 }); // mov dword ptr [rsp + 0x28], 0x80
+    file.insert(file.end(), { 0x48, 0x83, 0x64, 0x24, 0x30, 0x00 });             // and qword ptr [rsp + 0x30], 0 (hTemplateFile)
+    call(0x200);                                                                 // call CreateFileW
+    file.insert(file.end(), { 0x48, 0xC7, 0xC1, 0x02, 0x00, 0x00, 0x80 });       // mov rcx, 0xffffffff80000002  (hKey)
+    file.insert(file.end(), { 0x48, 0x89, 0xDA });                               // mov rdx, rbx                 (lpSubKey)
+    file.insert(file.end(), { 0x45, 0x31, 0xC0 });                               // xor r8d, r8d                 (ulOptions)
+    file.insert(file.end(), { 0x41, 0xB9, 0x19, 0x00, 0x02, 0x00 });             // mov r9d, 0x20019             (samDesired)
+    file.insert(file.end(), { 0x48, 0x89, 0x5C, 0x24, 0x20 });                   // mov qword ptr [rsp + 0x20], rbx (phkResult)
+    call(0x208);                                                                 // call RegOpenKeyExW
+    file.insert(file.end(), { 0x31, 0xC9 });                                     // xor ecx, ecx                 (lpAddress)
+    file.insert(file.end(), { 0xBA, 0x00, 0x10, 0x00, 0x00 });                   // mov edx, 0x1000              (dwSize)
+    file.insert(file.end(), { 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00 });             // mov r8d, 0x3000              (flAllocationType)
+    file.insert(file.end(), { 0x41, 0xB9, 0x40, 0x00, 0x00, 0x00 });             // mov r9d, 0x40                (flProtect)
+    call(0x210);                                                                 // call VirtualAlloc
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x48, 0xC3 });                   // add rsp, 0x48; ret
+    REQUIRE(file.size() < 0x200);
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "RegOpenKeyExW", MemoryMappingType::FunctionMapping } },
+                                { 0x210, { "VirtualAlloc", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "mov    edx, 0xc0000000").ends_with("; dwDesiredAccess = GENERIC_READ | GENERIC_WRITE"));
+    REQUIRE(FindListingLine(listing, "mov    r8d, 3").ends_with("; dwShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE"));
+    REQUIRE(FindListingLine(listing, "xor    r9d, r9d").ends_with("; lpSecurityAttributes")); // no constant of it
+    REQUIRE(FindListingLine(listing, "0x00000015  mov").ends_with("; dwCreationDisposition = OPEN_EXISTING"));
+    REQUIRE(FindListingLine(listing, "0x0000001d  mov").ends_with("; dwFlagsAndAttributes = FILE_ATTRIBUTE_NORMAL"));
+    REQUIRE(FindListingLine(listing, "0x00000025  and").ends_with("; hTemplateFile"));
+    REQUIRE(FindListingLine(listing, "mov    rcx, 0xffffffff80000002").ends_with("; hKey = HKEY_LOCAL_MACHINE"));
+    REQUIRE(FindListingLine(listing, "xor    r8d, r8d").ends_with("; ulOptions"));
+    REQUIRE(FindListingLine(listing, "mov    r9d, 0x20019").ends_with("; samDesired = KEY_READ"));
+    REQUIRE(FindListingLine(listing, "mov    edx, 0x1000").ends_with("; dwSize"));
+    REQUIRE(FindListingLine(listing, "mov    r8d, 0x3000").ends_with("; flAllocationType = MEM_COMMIT | MEM_RESERVE"));
+    REQUIRE(FindListingLine(listing, "mov    r9d, 0x40").ends_with("; flProtect = PAGE_EXECUTE_READWRITE"));
 }
 
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
