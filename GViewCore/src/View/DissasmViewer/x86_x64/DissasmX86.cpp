@@ -882,6 +882,26 @@ static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn
         line.autoComment = std::move(text.value());
 }
 
+// the constants of the line: the one compared with the value an API returned (the deep scan: cmp eax, 0x102 ; WAIT_TIMEOUT), a status /
+// an HRESULT wherever it is (mov ebx, 0xc0000034 ; STATUS_OBJECT_NAME_NOT_FOUND: mov / push / cmp only, not the masks of and / test)
+static void AddConstantComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    if (!line.autoComment.empty())
+        return;
+    if (const auto compared = params.zone->returnValueConstants.find(insn.address); compared != params.zone->returnValueConstants.end()) {
+        line.autoComment = compared->second;
+        return;
+    }
+    if (params.zone->IsArmCode() || (insn.id != X86_INS_MOV && insn.id != X86_INS_PUSH && insn.id != X86_INS_CMP))
+        return;
+    for (const uint64 value : operands.immediates)
+        if (auto name = FormatDistinctiveConstant(value); !name.empty()) {
+            line.autoComment     = std::move(name);
+            line.constantComment = true;
+            return;
+        }
+}
+
 // ARM64: the operands before the last one, the address (cbz x0, / tbnz w1, #3, / adr x0,). Empty for x86 / x64
 static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const DissasmCodeZone* zone)
 {
@@ -1007,7 +1027,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         const auto slot = GetArgumentSlot(*insn, params.zone->GetArchAt(insn->address), params.zone->systemVCalls);
         argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
     }
-    calleePushes = NO_PUSHES;
+    calleePushes    = NO_PUSHES;
+    constantComment = false;
     if (flow == X86Flow::Call) {
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
         if (operands.directTarget.has_value())
@@ -1043,6 +1064,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         AddReferencedDataComment(*this, *insn, operands, params); // lea rcx, [rip + 0x...] / mov ecx, 0x403000
         DropCommentShownInOperands();
 #endif
+        AddConstantComment(*this, *insn, operands, params);
         return true;
     }
 
@@ -1083,6 +1105,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 #ifndef DISSASM_DISABLE_STRING_PREVIEW
         AddReferencedDataComment(*this, *insn, operands, params); // push offset aText
 #endif
+        AddConstantComment(*this, *insn, operands, params); // push 0x80070057
     }
 
     if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {

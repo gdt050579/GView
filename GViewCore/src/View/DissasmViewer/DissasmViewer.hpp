@@ -295,6 +295,9 @@ namespace View
             static constexpr uint8 NO_PUSHES = 0xFF;
             uint8 calleePushes               = NO_PUSHES;
 
+            // the comment is the name of a status / HRESULT of the operand (FormatDistinctiveConstant): an argument takes it as its value
+            bool constantComment = false;
+
             bool shouldAddButton = false;
             bool isZoneCollapsed = false;
 
@@ -372,6 +375,7 @@ namespace View
                 isZoneCollapsed        = other.isZoneCollapsed;
                 argumentSlot           = other.argumentSlot;
                 calleePushes           = other.calleePushes;
+                constantComment        = other.constantComment;
                 localVariableKind      = other.localVariableKind;
                 localVariableOffset    = other.localVariableOffset;
                 localVariableFunction  = other.localVariableFunction;
@@ -411,6 +415,12 @@ namespace View
         // GENERIC_READ | GENERIC_WRITE for the dwDesiredAccess of CreateFileW, OPEN_EXISTING, HKEY_LOCAL_MACHINE, MEM_COMMIT | MEM_RESERVE,
         // a pool tag ('NtFs'), CTL_CODE(...) for an I/O control code; empty when the parameter / the value has no name
         std::string FormatApiConstant(std::string_view function, std::string_view parameter, uint64 value);
+        // the symbolic name of a value an API returns, the one it is compared with (cmp eax, 0x102 after WaitForSingleObject: WAIT_TIMEOUT;
+        // GetLastError: ERROR_ALREADY_EXISTS; an HRESULT, an NTSTATUS, an LSTATUS, INVALID_HANDLE_VALUE); empty when it has none
+        std::string FormatApiReturnConstant(const AsmFunctionDetails& function, uint64 value);
+        // the name of a value that is a status wherever it is (an error NTSTATUS: STATUS_OBJECT_NAME_NOT_FOUND, an HRESULT error: E_INVALIDARG,
+        // HRESULT_FROM_WIN32(ERROR_NOT_FOUND)); empty for the other values
+        std::string FormatDistinctiveConstant(uint64 value);
         // a prototype the user writes for a function (IDA Y): "int decrypt(char* buf, int len)" parsed as the ones of the APIs; its texts are
         // kept with it. Null when it is not one: no parentheses, a name / a parameter name that is not an identifier, a parameter without a
         // name, a pointer to a function as a parameter, more than DISSASM_MAX_USER_PROTOTYPE_SIZE characters

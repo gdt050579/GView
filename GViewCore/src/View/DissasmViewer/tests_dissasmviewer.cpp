@@ -8494,6 +8494,99 @@ TEST_CASE("ApiConstants", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "mov    r9d, 0x40").ends_with("; flProtect = PAGE_EXECUTE_READWRITE"));
 }
 
+TEST_CASE("ApiReturnConstants", "[Dissasm]Help")
+{
+    // the values an API returns: by the function, else by the type it returns
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("WaitForSingleObject"), 0x102) == "WAIT_TIMEOUT");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("GetLastError"), 0xB7) == "ERROR_ALREADY_EXISTS");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CreateFileW"), UINT64_MAX) == "INVALID_HANDLE_VALUE"); // cmp rax, -1
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("GetFileAttributesW"), 0xFFFFFFFF) == "INVALID_FILE_ATTRIBUTES");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("RegOpenKeyExW"), 2) == "ERROR_FILE_NOT_FOUND"); // an LSTATUS
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CoCreateInstance"), 0x80040154) == "REGDB_E_CLASSNOTREG");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CoCreateInstance"), 0x80070490) == "HRESULT_FROM_WIN32(ERROR_NOT_FOUND)");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("NtCreateFile"), 0xC0000034) == "STATUS_OBJECT_NAME_NOT_FOUND");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("MessageBoxW"), 6) == "IDYES");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("connect"), UINT64_MAX).empty()); // POSIX too: not SOCKET_ERROR
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CreateFileW"), 0).empty());
+    // a status wherever it is: the error NTSTATUSes, the HRESULT errors; not the low HRESULTs / the masks
+    REQUIRE(FormatDistinctiveConstant(0xC0000022) == "STATUS_ACCESS_DENIED");
+    REQUIRE(FormatDistinctiveConstant(0xFFFFFFFFC0000034ull) == "STATUS_OBJECT_NAME_NOT_FOUND");
+    REQUIRE(FormatDistinctiveConstant(0x80070057) == "E_INVALIDARG");
+    REQUIRE(FormatDistinctiveConstant(0x80070002) == "HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)");
+    REQUIRE(FormatDistinctiveConstant(0x80000005).empty());
+    REQUIRE(FormatDistinctiveConstant(0xC0000000).empty());
+    REQUIRE(FormatDistinctiveConstant(0x102).empty());
+
+    // x64: the cmp after the calls (through a copy: mov esi, eax), a status of the code, a status passed to SetLastError
+    {
+        std::vector<unsigned char> file;
+        const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+            const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+            file.insert(file.end(), { 0xFF, 0x15 });
+            for (uint32 i = 0; i < 4; i++)
+                file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+        };
+        file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });             // 0x00: sub rsp, 0x28
+        call(0x200);                                                     // 0x04: call CreateFileW
+        file.insert(file.end(), { 0x48, 0x83, 0xF8, 0xFF });             // 0x0a: cmp rax, -1          (INVALID_HANDLE_VALUE)
+        file.insert(file.end(), { 0x48, 0x89, 0xC1 });                   // 0x0e: mov rcx, rax         (hHandle)
+        file.insert(file.end(), { 0xBA, 0xE8, 0x03, 0x00, 0x00 });       // 0x11: mov edx, 1000
+        call(0x208);                                                     // 0x16: call WaitForSingleObject
+        file.insert(file.end(), { 0x3D, 0x02, 0x01, 0x00, 0x00 });       // 0x1c: cmp eax, 0x102       (WAIT_TIMEOUT)
+        call(0x210);                                                     // 0x21: call GetLastError
+        file.insert(file.end(), { 0x89, 0xC6 });                         // 0x27: mov esi, eax
+        file.insert(file.end(), { 0x81, 0xFE, 0xB7, 0x00, 0x00, 0x00 }); // 0x29: cmp esi, 0xb7        (ERROR_ALREADY_EXISTS)
+        file.insert(file.end(), { 0xB9, 0x05, 0x40, 0x00, 0x80 });       // 0x2f: mov ecx, 0x80004005  (dwErrCode = E_FAIL)
+        call(0x218);                                                     // 0x34: call SetLastError
+        file.insert(file.end(), { 0xB8, 0x22, 0x00, 0x00, 0xC0 });       // 0x3a: mov eax, 0xc0000022  (STATUS_ACCESS_DENIED)
+        file.insert(file.end(), { 0x3D, 0x02, 0x01, 0x00, 0x00 });       // 0x3f: cmp eax, 0x102       (a constant: nothing)
+        file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 });       // 0x44: add rsp, 0x28; ret
+        file.resize(0x220, 0xCC);
+        ZoneLayout layout;
+        layout.size             = 0x200;
+        layout.entryPoint       = 0;
+        layout.language         = DisassemblyLanguage::x64;
+        layout.translateOffsets = true;
+        layout.imports          = { { 0x200, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                    { 0x208, { "WaitForSingleObject", MemoryMappingType::FunctionMapping } },
+                                    { 0x210, { "GetLastError", MemoryMappingType::FunctionMapping } },
+                                    { 0x218, { "SetLastError", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        auto& zone = *dissasmInstance.zone;
+        REQUIRE(zone.returnValueConstants.size() == 3);
+        REQUIRE(zone.returnValueConstants.at(0x0A) == "INVALID_HANDLE_VALUE");
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "0x0000000a  cmp").ends_with("; INVALID_HANDLE_VALUE"));
+        REQUIRE(FindListingLine(listing, "0x0000001c  cmp").ends_with("; WAIT_TIMEOUT"));
+        REQUIRE(FindListingLine(listing, "0x00000029  cmp").ends_with("; ERROR_ALREADY_EXISTS"));
+        REQUIRE(FindListingLine(listing, "0x0000002f  mov").ends_with("; dwErrCode = E_FAIL"));
+        REQUIRE(FindListingLine(listing, "0x0000003a  mov").ends_with("; STATUS_ACCESS_DENIED"));
+        REQUIRE(FindListingLine(listing, "0x0000003f  cmp").find(';') == std::string_view::npos);
+    }
+    // 32 bit: the walk of the stack (7e), the status pushed for SetLastError
+    {
+        std::vector<unsigned char> file = {
+            0xFF, 0x15, 0x00, 0x10, 0x40, 0x00, // 0x00: call dword ptr [GetLastError]
+            0x3D, 0xB7, 0x00, 0x00, 0x00,       // 0x06: cmp eax, 0xb7         (ERROR_ALREADY_EXISTS)
+            0x68, 0x57, 0x00, 0x07, 0x80,       // 0x0b: push 0x80070057       (dwErrCode = E_INVALIDARG)
+            0xFF, 0x15, 0x04, 0x10, 0x40, 0x00, // 0x10: call dword ptr [SetLastError]
+            0xC3,                               // 0x16: ret
+        };
+        file.resize(0x40, 0xCC);
+        ZoneLayout layout;
+        layout.size       = file.size();
+        layout.entryPoint = 0;
+        layout.imports    = { { 0x401000, { "GetLastError", MemoryMappingType::FunctionMapping } },
+                              { 0x401004, { "SetLastError", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "0x00000006  cmp").ends_with("; ERROR_ALREADY_EXISTS"));
+        REQUIRE(FindListingLine(listing, "0x0000000b  push").ends_with("; dwErrCode = E_INVALIDARG"));
+    }
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does

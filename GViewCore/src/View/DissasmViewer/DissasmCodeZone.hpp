@@ -382,6 +382,10 @@ struct DissasmCodeZone : public ParseZone {
     // have no name. Register conventions (x64 Windows / System V, ARM64, ARM); by start. Recomputed by the deep scan, not saved
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes;
     const AsmFunctionDetails* FindInferredPrototype(uint64 functionStart) const;
+    // the constants the value an API returned is compared with, named after the API (FormatApiReturnConstant: cmp eax, 0x102 after
+    // WaitForSingleObject -> WAIT_TIMEOUT, cmp eax, 0xb7 after GetLastError -> ERROR_ALREADY_EXISTS); by the address of the cmp. Recomputed by
+    // the deep scan (the walks of InferPrototypes), not saved
+    std::unordered_map<uint64, std::string> returnValueConstants;
     // the prototype of a function: the user's (Y), else the inferred one
     const AsmFunctionDetails* FindFunctionPrototype(uint64 functionStart) const;
     // Y: the prototypes before the change; `address` is the function

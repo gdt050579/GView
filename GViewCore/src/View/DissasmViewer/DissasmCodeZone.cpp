@@ -205,6 +205,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_set<uint64> knownPrototypeCalls;            // the calls through an import slot of an API with a prototype (FindApiPrototype)
     std::unordered_map<uint64, bool> knownPrototypeTargets;    // a direct target (relative) -> its name has a prototype (NameVariablesFromCalls)
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes; // InferPrototypes, by function start
+    std::vector<std::pair<uint64, std::string>> functionComparisons; // the walk of a function: its cmp of a returned value with a constant
+    std::unordered_map<uint64, std::vector<std::pair<uint64, std::string>>> comparisonsByFunction; // the last walk of each function
+    std::unordered_map<uint64, std::string> returnValueConstants;                                 // DissasmCodeZone::returnValueConstants
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
     std::unordered_set<uint64> userReturns;    // the functions the user says return (USER_FUNCTION_RETURNS): never noreturn
@@ -1891,6 +1894,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     void InferPrototypes()
     {
         inferredPrototypes.clear();
+        comparisonsByFunction.clear();
+        returnValueConstants.clear();
         if (!hasDetailHandle || functionEnds.size() != functionStarts.size())
             return;
         // the first round: the functions that call a prototype (an import slot, a target, a function inferred before them in the round);
@@ -1927,7 +1932,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     previous = std::move(known->second);
                     inferredPrototypes.erase(known);
                 }
+                functionComparisons.clear();
                 auto prototype = arch == DissasmArch::X86 ? InferX86FunctionPrototype(start, functionEnds[index]) : InferFunctionPrototype(start, functionEnds[index], arch);
+                comparisonsByFunction[start] = std::move(functionComparisons); // the walk that knew the most callees
                 if (prototype && (!previous || previous->details.prototype != prototype->details.prototype)) {
                     inferredPrototypes.emplace(start, std::move(prototype));
                     inferredNow.insert(start);
@@ -1939,6 +1946,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 break;
             inferredBefore = std::move(inferredNow);
         }
+        for (auto& [start, comparisons] : comparisonsByFunction)
+            for (auto& [address, text] : comparisons)
+                returnValueConstants.emplace(address, std::move(text));
+        comparisonsByFunction.clear();
+    }
+
+    // a cmp of a register with a constant (cmp eax, 0x102 / cmp w0, #0x102 / cmn x0, #1: -1) when the register holds the return value of a
+    // callee of the walk: the name of the constant after the callee (FormatApiReturnConstant)
+    void RecordReturnComparison(uint64 address, int8 value, const std::vector<const AsmFunctionDetails*>& callees, int64 constant)
+    {
+        if (value > RETURNED_BY || static_cast<size_t>(RETURNED_BY - value) >= callees.size())
+            return;
+        if (auto text = FormatApiReturnConstant(*callees[RETURNED_BY - value], static_cast<uint64>(constant)); !text.empty())
+            functionComparisons.emplace_back(address, std::move(text));
     }
 
     // the values of the registers / slots of the inference besides an incoming argument (0, 1, ...): nothing known, a constant (xor eax, eax /
@@ -2034,6 +2055,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             StepKind kind;
             uint64 target; // a branch inside of the function (relative); NO_TARGET otherwise
             const AsmFunctionDetails* callee;
+            int8 comparedRegister = -1; // cmp reg, imm: the register and the constant
+            int64 comparedValue   = 0;
         };
         std::vector<Step> steps;
         const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x10000)), false) : BufferView{};
@@ -2097,6 +2120,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                           (insn->detail->arm64.operands[1].reg == ARM64_REG_WZR || insn->detail->arm64.operands[1].reg == ARM64_REG_XZR))))
                         if (const int index = registerIndex(static_cast<unsigned int>(insn->detail->arm64.operands[0].reg)); index >= 0 && index < REGISTERS)
                             step.constantTo = static_cast<int8>(index);
+                    // cmp w0, #0x102 / cmn x0, #1
+                    if (isArm64 && count == 2 && (insn->id == ARM64_INS_CMP || insn->id == ARM64_INS_CMN) && insn->detail->arm64.operands[0].type == ARM64_OP_REG &&
+                        insn->detail->arm64.operands[1].type == ARM64_OP_IMM)
+                        if (const int index = registerIndex(static_cast<unsigned int>(insn->detail->arm64.operands[0].reg)); index >= 0 && index < REGISTERS) {
+                            step.comparedRegister = static_cast<int8>(index);
+                            step.comparedValue    = insn->id == ARM64_INS_CMN ? -insn->detail->arm64.operands[1].imm : insn->detail->arm64.operands[1].imm;
+                        }
                 } else {
                     const cs_x86& x86 = insn->detail->x86;
                     for (uint8 i = 0; i < x86.op_count; i++)
@@ -2114,6 +2144,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     if (const int index = x86.op_count > 0 && x86.operands[0].type == X86_OP_REG ? registerIndex(x86.operands[0].reg) : -1;
                         index >= 0 && index < REGISTERS && IsX86ConstantWrite(*insn))
                         step.constantTo = static_cast<int8>(index);
+                    if (insn->id == X86_INS_CMP && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[1].type == X86_OP_IMM)
+                        if (const int index = registerIndex(x86.operands[0].reg); index >= 0 && index < REGISTERS) {
+                            step.comparedRegister = static_cast<int8>(index);
+                            step.comparedValue    = x86.operands[1].imm;
+                        }
                 }
             }
             steps.push_back(step);
@@ -2189,6 +2224,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             if (step.target != NO_TARGET)
                 snapshots[i] = state;
+            if (step.comparedRegister >= 0)
+                RecordReturnComparison(step.address, state[step.comparedRegister], returningCallees, step.comparedValue);
             // what the function returns: rax / x0 at a ret, the return value of the callee of a tail jump
             if (step.kind == StepKind::Return)
                 returns.push_back(state[0]);
@@ -2241,6 +2278,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             bool frameHelper;
             unsigned int id;
             cs_x86 x86;
+            uint64 address;
         };
         std::vector<Step> steps;
         std::unordered_map<uint64, size_t> stepOfAddress;
@@ -2248,7 +2286,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         size_t size        = data.GetLength();
         uint64 address     = start;
         while (steps.size() < MAX_STEPS && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
-            auto& step = steps.emplace_back(Step{ StepKind::Other, NO_TARGET, 0, nullptr, std::nullopt, false, insn->id, insn->detail->x86 });
+            auto& step = steps.emplace_back(Step{ StepKind::Other, NO_TARGET, 0, nullptr, std::nullopt, false, insn->id, insn->detail->x86, insn->address });
             stepOfAddress.emplace(insn->address, steps.size() - 1);
             const auto flow     = GetInstructionFlow(*insn, DissasmArch::X86);
             const auto operands = GetInstructionOperands(*insn, DissasmArch::X86, labelBase);
@@ -2477,6 +2515,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
                 const cs_x86& x86 = step.x86;
                 const auto reg32  = [](const cs_x86_op& op) { return op.type == X86_OP_REG && op.size == 4 ? GetX64RegisterFamily(op.reg) : -1; };
+                if (pass == 1 && step.id == X86_INS_CMP && x86.op_count == 2 && x86.operands[1].type == X86_OP_IMM) // cmp eax, 0x102
+                    if (const int reg = reg32(x86.operands[0]); reg >= 0 && reg < REGISTERS)
+                        RecordReturnComparison(step.address, state.registers[reg], returningCallees, x86.operands[1].imm);
                 const auto memoryOf = [&](const cs_x86_op& op) -> std::optional<Location> {
                     return op.type == X86_OP_MEM && op.mem.index == X86_REG_INVALID ? locate(state, op.mem.base, op.mem.disp) : std::nullopt;
                 };
@@ -3376,6 +3417,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->functionChunks            = std::move(chunks);
         zone->functionApiCategories     = std::move(functionApiCategories);
         zone->inferredPrototypes        = std::move(inferredPrototypes);
+        zone->returnValueConstants      = std::move(returnValueConstants);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);

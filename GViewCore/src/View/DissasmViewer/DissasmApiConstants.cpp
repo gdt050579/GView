@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstdio>
+#include <optional>
 #include <span>
 #include <unordered_map>
 
@@ -318,6 +319,76 @@ constexpr ConstantName SEEK_ORIGINS[] = { { 0, "SEEK_SET" }, { 1, "SEEK_CUR" }, 
 constexpr ConstantName SIGNALS[]      = { { 1, "SIGHUP" },  { 2, "SIGINT" },  { 3, "SIGQUIT" }, { 4, "SIGILL" },  { 5, "SIGTRAP" },  { 6, "SIGABRT" },
                                           { 8, "SIGFPE" },  { 9, "SIGKILL" }, { 11, "SIGSEGV" }, { 13, "SIGPIPE" }, { 14, "SIGALRM" }, { 15, "SIGTERM" } };
 
+// the results of the APIs: the errors of GetLastError / the registry (LSTATUS), the HRESULTs, the NTSTATUSes, the results of the waits, of
+// a message box, of the file / drive types, the invalid values
+constexpr ConstantName WIN32_ERRORS[] = {
+    { 0, "ERROR_SUCCESS" },               { 1, "ERROR_INVALID_FUNCTION" },       { 2, "ERROR_FILE_NOT_FOUND" },        { 3, "ERROR_PATH_NOT_FOUND" },
+    { 5, "ERROR_ACCESS_DENIED" },         { 6, "ERROR_INVALID_HANDLE" },         { 8, "ERROR_NOT_ENOUGH_MEMORY" },     { 11, "ERROR_BAD_FORMAT" },
+    { 12, "ERROR_INVALID_ACCESS" },       { 13, "ERROR_INVALID_DATA" },          { 14, "ERROR_OUTOFMEMORY" },          { 15, "ERROR_INVALID_DRIVE" },
+    { 17, "ERROR_NOT_SAME_DEVICE" },      { 18, "ERROR_NO_MORE_FILES" },         { 19, "ERROR_WRITE_PROTECT" },        { 21, "ERROR_NOT_READY" },
+    { 24, "ERROR_BAD_LENGTH" },           { 31, "ERROR_GEN_FAILURE" },           { 32, "ERROR_SHARING_VIOLATION" },    { 33, "ERROR_LOCK_VIOLATION" },
+    { 38, "ERROR_HANDLE_EOF" },           { 50, "ERROR_NOT_SUPPORTED" },         { 53, "ERROR_BAD_NETPATH" },          { 64, "ERROR_NETNAME_DELETED" },
+    { 80, "ERROR_FILE_EXISTS" },          { 87, "ERROR_INVALID_PARAMETER" },     { 109, "ERROR_BROKEN_PIPE" },         { 120, "ERROR_CALL_NOT_IMPLEMENTED" },
+    { 121, "ERROR_SEM_TIMEOUT" },         { 122, "ERROR_INSUFFICIENT_BUFFER" },  { 123, "ERROR_INVALID_NAME" },        { 124, "ERROR_INVALID_LEVEL" },
+    { 126, "ERROR_MOD_NOT_FOUND" },       { 127, "ERROR_PROC_NOT_FOUND" },       { 145, "ERROR_DIR_NOT_EMPTY" },       { 160, "ERROR_BAD_ARGUMENTS" },
+    { 161, "ERROR_BAD_PATHNAME" },        { 170, "ERROR_BUSY" },                 { 183, "ERROR_ALREADY_EXISTS" },      { 193, "ERROR_BAD_EXE_FORMAT" },
+    { 203, "ERROR_ENVVAR_NOT_FOUND" },    { 206, "ERROR_FILENAME_EXCED_RANGE" }, { 234, "ERROR_MORE_DATA" },           { 259, "ERROR_NO_MORE_ITEMS" },
+    { 267, "ERROR_DIRECTORY" },           { 299, "ERROR_PARTIAL_COPY" },         { 487, "ERROR_INVALID_ADDRESS" },     { 534, "ERROR_ARITHMETIC_OVERFLOW" },
+    { 535, "ERROR_PIPE_CONNECTED" },      { 740, "ERROR_ELEVATION_REQUIRED" },   { 995, "ERROR_OPERATION_ABORTED" },   { 996, "ERROR_IO_INCOMPLETE" },
+    { 997, "ERROR_IO_PENDING" },          { 998, "ERROR_NOACCESS" },             { 1004, "ERROR_INVALID_FLAGS" },      { 1006, "ERROR_FILE_INVALID" },
+    { 1008, "ERROR_NO_TOKEN" },           { 1056, "ERROR_SERVICE_ALREADY_RUNNING" }, { 1060, "ERROR_SERVICE_DOES_NOT_EXIST" }, { 1062, "ERROR_SERVICE_NOT_ACTIVE" },
+    { 1113, "ERROR_NO_UNICODE_TRANSLATION" }, { 1114, "ERROR_DLL_INIT_FAILED" }, { 1168, "ERROR_NOT_FOUND" },           { 1223, "ERROR_CANCELLED" },
+    { 1314, "ERROR_PRIVILEGE_NOT_HELD" }, { 1332, "ERROR_NONE_MAPPED" },         { 1337, "ERROR_INVALID_SID" },        { 1359, "ERROR_INTERNAL_ERROR" },
+    { 1400, "ERROR_INVALID_WINDOW_HANDLE" }, { 1410, "ERROR_CLASS_ALREADY_EXISTS" }, { 1450, "ERROR_NO_SYSTEM_RESOURCES" }, { 1460, "ERROR_TIMEOUT" },
+    { 1784, "ERROR_INVALID_USER_BUFFER" }, { 1813, "ERROR_RESOURCE_TYPE_NOT_FOUND" }, { 1814, "ERROR_RESOURCE_NAME_NOT_FOUND" }, { 1816, "ERROR_NOT_ENOUGH_QUOTA" },
+    { 5010, "ERROR_OBJECT_ALREADY_EXISTS" }, { 5023, "ERROR_INVALID_STATE" }
+};
+constexpr ConstantName WSA_ERRORS[] = { { 10004, "WSAEINTR" },       { 10013, "WSAEACCES" },       { 10022, "WSAEINVAL" },     { 10035, "WSAEWOULDBLOCK" },
+                                        { 10036, "WSAEINPROGRESS" }, { 10038, "WSAENOTSOCK" },     { 10048, "WSAEADDRINUSE" }, { 10050, "WSAENETDOWN" },
+                                        { 10053, "WSAECONNABORTED" }, { 10054, "WSAECONNRESET" }, { 10057, "WSAENOTCONN" },   { 10060, "WSAETIMEDOUT" },
+                                        { 10061, "WSAECONNREFUSED" }, { 10065, "WSAEHOSTUNREACH" }, { 10093, "WSANOTINITIALISED" } };
+constexpr ConstantName HRESULTS[] = {
+    { 0x0, "S_OK" },                         { 0x1, "S_FALSE" },                      { 0x8000000A, "E_PENDING" },           { 0x8000000B, "E_BOUNDS" },
+    { 0x8000000E, "E_ILLEGAL_METHOD_CALL" }, { 0x80004001, "E_NOTIMPL" },            { 0x80004002, "E_NOINTERFACE" },       { 0x80004003, "E_POINTER" },
+    { 0x80004004, "E_ABORT" },               { 0x80004005, "E_FAIL" },               { 0x8000FFFF, "E_UNEXPECTED" },        { 0x80010106, "RPC_E_CHANGED_MODE" },
+    { 0x80020003, "DISP_E_MEMBERNOTFOUND" }, { 0x80020005, "DISP_E_TYPEMISMATCH" },  { 0x80030002, "STG_E_FILENOTFOUND" }, { 0x80040110, "CLASS_E_NOAGGREGATION" },
+    { 0x80040111, "CLASS_E_CLASSNOTAVAILABLE" }, { 0x80040154, "REGDB_E_CLASSNOTREG" }, { 0x800401F0, "CO_E_NOTINITIALIZED" }, { 0x80070005, "E_ACCESSDENIED" },
+    { 0x80070006, "E_HANDLE" },              { 0x8007000E, "E_OUTOFMEMORY" },        { 0x80070057, "E_INVALIDARG" }
+};
+constexpr ConstantName NTSTATUSES[] = {
+    { 0x0, "STATUS_SUCCESS" },                   { 0x101, "STATUS_ALERTED" },                 { 0x102, "STATUS_TIMEOUT" },
+    { 0x103, "STATUS_PENDING" },                 { 0x104, "STATUS_REPARSE" },                 { 0x105, "STATUS_MORE_ENTRIES" },
+    { 0x108, "STATUS_OPLOCK_BREAK_IN_PROGRESS" }, { 0x80000002, "STATUS_DATATYPE_MISALIGNMENT" }, { 0x80000005, "STATUS_BUFFER_OVERFLOW" },
+    { 0x80000006, "STATUS_NO_MORE_FILES" },      { 0x80000016, "STATUS_VERIFY_REQUIRED" },    { 0x8000001A, "STATUS_NO_MORE_ENTRIES" },
+    { 0xC0000001, "STATUS_UNSUCCESSFUL" },       { 0xC0000002, "STATUS_NOT_IMPLEMENTED" },    { 0xC0000003, "STATUS_INVALID_INFO_CLASS" },
+    { 0xC0000004, "STATUS_INFO_LENGTH_MISMATCH" }, { 0xC0000005, "STATUS_ACCESS_VIOLATION" }, { 0xC0000008, "STATUS_INVALID_HANDLE" },
+    { 0xC000000D, "STATUS_INVALID_PARAMETER" },  { 0xC000000F, "STATUS_NO_SUCH_FILE" },       { 0xC0000010, "STATUS_INVALID_DEVICE_REQUEST" },
+    { 0xC0000011, "STATUS_END_OF_FILE" },        { 0xC0000017, "STATUS_NO_MEMORY" },          { 0xC0000022, "STATUS_ACCESS_DENIED" },
+    { 0xC0000023, "STATUS_BUFFER_TOO_SMALL" },   { 0xC0000024, "STATUS_OBJECT_TYPE_MISMATCH" }, { 0xC0000033, "STATUS_OBJECT_NAME_INVALID" },
+    { 0xC0000034, "STATUS_OBJECT_NAME_NOT_FOUND" }, { 0xC0000035, "STATUS_OBJECT_NAME_COLLISION" }, { 0xC000003A, "STATUS_OBJECT_PATH_NOT_FOUND" },
+    { 0xC0000043, "STATUS_SHARING_VIOLATION" },  { 0xC0000054, "STATUS_FILE_LOCK_CONFLICT" }, { 0xC0000055, "STATUS_LOCK_NOT_GRANTED" },
+    { 0xC0000056, "STATUS_DELETE_PENDING" },     { 0xC0000061, "STATUS_PRIVILEGE_NOT_HELD" }, { 0xC000007F, "STATUS_DISK_FULL" },
+    { 0xC000009A, "STATUS_INSUFFICIENT_RESOURCES" }, { 0xC00000A3, "STATUS_DEVICE_NOT_READY" }, { 0xC00000BA, "STATUS_FILE_IS_A_DIRECTORY" },
+    { 0xC00000BB, "STATUS_NOT_SUPPORTED" },      { 0xC00000D8, "STATUS_CANT_WAIT" },          { 0xC00000E5, "STATUS_INTERNAL_ERROR" },
+    { 0xC00000E8, "STATUS_INVALID_USER_BUFFER" }, { 0xC0000101, "STATUS_DIRECTORY_NOT_EMPTY" }, { 0xC0000102, "STATUS_FILE_CORRUPT_ERROR" },
+    { 0xC0000103, "STATUS_NOT_A_DIRECTORY" },    { 0xC0000120, "STATUS_CANCELLED" },          { 0xC0000184, "STATUS_INVALID_DEVICE_STATE" },
+    { 0xC0000185, "STATUS_IO_DEVICE_ERROR" },    { 0xC0000225, "STATUS_NOT_FOUND" }
+};
+constexpr ConstantName WAIT_RESULTS[]   = { { 0x0, "WAIT_OBJECT_0" }, { 0x80, "WAIT_ABANDONED" }, { 0xC0, "WAIT_IO_COMPLETION" }, { 0x102, "WAIT_TIMEOUT" },
+                                            { 0xFFFFFFFF, "WAIT_FAILED" } };
+constexpr ConstantName DIALOG_RESULTS[] = { { 1, "IDOK" }, { 2, "IDCANCEL" }, { 3, "IDABORT" }, { 4, "IDRETRY" }, { 5, "IDIGNORE" }, { 6, "IDYES" }, { 7, "IDNO" },
+                                            { 10, "IDTRYAGAIN" }, { 11, "IDCONTINUE" } };
+constexpr ConstantName FILE_TYPES[]     = { { 0, "FILE_TYPE_UNKNOWN" }, { 1, "FILE_TYPE_DISK" }, { 2, "FILE_TYPE_CHAR" }, { 3, "FILE_TYPE_PIPE" } };
+constexpr ConstantName DRIVE_TYPES[]    = { { 0, "DRIVE_UNKNOWN" }, { 1, "DRIVE_NO_ROOT_DIR" }, { 2, "DRIVE_REMOVABLE" }, { 3, "DRIVE_FIXED" },
+                                            { 4, "DRIVE_REMOTE" },  { 5, "DRIVE_CDROM" },       { 6, "DRIVE_RAMDISK" } };
+constexpr ConstantName INVALID_HANDLES[]    = { { 0xFFFFFFFF, "INVALID_HANDLE_VALUE" } };
+constexpr ConstantName INVALID_SOCKETS[]    = { { 0xFFFFFFFF, "INVALID_SOCKET" } };
+constexpr ConstantName SOCKET_ERRORS[]      = { { 0xFFFFFFFF, "SOCKET_ERROR" } };
+constexpr ConstantName INVALID_ATTRIBUTES[] = { { 0xFFFFFFFF, "INVALID_FILE_ATTRIBUTES" } };
+constexpr ConstantName INVALID_POINTERS[]   = { { 0xFFFFFFFF, "INVALID_SET_FILE_POINTER" } };
+constexpr ConstantName INVALID_SIZES[]      = { { 0xFFFFFFFF, "INVALID_FILE_SIZE" } };
+constexpr ConstantName TLS_INDEXES[]        = { { 0xFFFFFFFF, "TLS_OUT_OF_INDEXES" } };
+
 template <size_t N>
 constexpr ConstantSet Enumeration(const ConstantName (&names)[N])
 {
@@ -510,23 +581,46 @@ std::string FormatConstant(const ConstantSet& set, uint32 value)
         text += " | " + Hex(remaining);
     return text;
 }
+// a 32 bit constant, sign extended in a 64 bit register (mov rcx, 0xffffffff80000002: HKEY_LOCAL_MACHINE); none for a 64 bit one
+std::optional<uint32> ConstantValue(uint64 value)
+{
+    if ((value >> 32) != 0 && (value >> 32) != 0xFFFFFFFF)
+        return std::nullopt;
+    return static_cast<uint32>(value);
+}
+
+// the A / W functions share their constants (CreateFileW -> CreateFile)
+std::string_view BaseFunctionName(std::string_view function)
+{
+    if (function.size() > 2 && (function.back() == 'A' || function.back() == 'W') && std::islower(static_cast<unsigned char>(function[function.size() - 2])))
+        function.remove_suffix(1);
+    return function;
+}
+
+std::string FormatHresult(uint32 value)
+{
+    if (auto text = FormatConstant(Enumeration(HRESULTS), value); !text.empty())
+        return text;
+    // HRESULT_FROM_WIN32(ERROR_X): 0x8007xxxx
+    if ((value & 0xFFFF0000) == 0x80070000 && (value & 0xFFFF) != 0)
+        if (const auto error = FormatConstant(Enumeration(WIN32_ERRORS), value & 0xFFFF); !error.empty())
+            return "HRESULT_FROM_WIN32(" + error + ")";
+    return {};
+}
 } // namespace
 
 std::string GView::View::DissasmViewer::FormatApiConstant(std::string_view function, std::string_view parameter, uint64 value)
 {
-    // a 32 bit constant, sign extended in a 64 bit register (mov rcx, 0xffffffff80000002: HKEY_LOCAL_MACHINE)
-    if ((value >> 32) != 0 && (value >> 32) != 0xFFFFFFFF)
+    const auto value32 = ConstantValue(value);
+    if (!value32.has_value())
         return {};
-    const auto constant = static_cast<uint32>(value);
+    const uint32 constant = value32.value();
     if (parameter == "Tag" || parameter == "PoolTag")
         return FormatPoolTag(constant);
     if (parameter == "dwIoControlCode" || parameter == "IoControlCode")
         return FormatControlCode(constant);
-    // the A / W functions share their constants (CreateFileW -> CreateFile)
-    std::string_view base = function;
-    if (base.size() > 2 && (base.back() == 'A' || base.back() == 'W') && std::islower(static_cast<unsigned char>(base[base.size() - 2])))
-        base.remove_suffix(1);
-    const auto& sets = GetConstantSets();
+    const std::string_view base = BaseFunctionName(function);
+    const auto& sets            = GetConstantSets();
     for (const std::string_view name : { function, base }) {
         const std::string key = std::string(name) + ":" + std::string(parameter);
         if (const auto found = sets.find(key); found != sets.end())
@@ -534,5 +628,64 @@ std::string GView::View::DissasmViewer::FormatApiConstant(std::string_view funct
     }
     if (const auto found = sets.find(parameter); found != sets.end())
         return FormatConstant(found->second, constant);
+    return {};
+}
+
+std::string GView::View::DissasmViewer::FormatApiReturnConstant(const AsmFunctionDetails& function, uint64 value)
+{
+    const auto constant = ConstantValue(value);
+    if (!constant.has_value())
+        return {};
+    // by the function
+    static const std::unordered_map<std::string_view, ConstantSet> byFunction = {
+        { "WaitForSingleObject", Enumeration(WAIT_RESULTS) },
+        { "WaitForSingleObjectEx", Enumeration(WAIT_RESULTS) },
+        { "WaitForMultipleObjects", Enumeration(WAIT_RESULTS) },
+        { "WaitForMultipleObjectsEx", Enumeration(WAIT_RESULTS) },
+        { "MsgWaitForMultipleObjects", Enumeration(WAIT_RESULTS) },
+        { "MsgWaitForMultipleObjectsEx", Enumeration(WAIT_RESULTS) },
+        { "SignalObjectAndWait", Enumeration(WAIT_RESULTS) },
+        { "MessageBox", Enumeration(DIALOG_RESULTS) },
+        { "MessageBoxEx", Enumeration(DIALOG_RESULTS) },
+        { "GetFileType", Enumeration(FILE_TYPES) },
+        { "GetDriveType", Enumeration(DRIVE_TYPES) },
+        { "GetFileAttributes", Enumeration(INVALID_ATTRIBUTES) },
+        { "SetFilePointer", Enumeration(INVALID_POINTERS) },
+        { "GetFileSize", Enumeration(INVALID_SIZES) },
+        { "TlsAlloc", Enumeration(TLS_INDEXES) },
+        { "GetLastError", Enumeration(WIN32_ERRORS) },
+        { "WSAGetLastError", Enumeration(WSA_ERRORS) },
+        // the sockets: only the functions of Winsock alone (connect / send of POSIX return a -1 that is not SOCKET_ERROR)
+        { "ioctlsocket", Enumeration(SOCKET_ERRORS) },
+        { "closesocket", Enumeration(SOCKET_ERRORS) },
+        { "WSASocket", Enumeration(INVALID_SOCKETS) },
+        { "WSAAccept", Enumeration(INVALID_SOCKETS) },
+    };
+    if (const auto found = byFunction.find(BaseFunctionName(function.functionName)); found != byFunction.end())
+        return FormatConstant(found->second, constant.value());
+    // by the type it returns (a wrapper inferred from an API too)
+    const std::string_view type = function.returnType;
+    if (type == "HRESULT" || type == "SECURITY_STATUS")
+        return FormatHresult(constant.value());
+    if (type == "NTSTATUS")
+        return FormatConstant(Enumeration(NTSTATUSES), constant.value());
+    if (type == "LSTATUS")
+        return FormatConstant(Enumeration(WIN32_ERRORS), constant.value());
+    if (type == "HANDLE")
+        return FormatConstant(Enumeration(INVALID_HANDLES), constant.value());
+    return {};
+}
+
+std::string GView::View::DissasmViewer::FormatDistinctiveConstant(uint64 value)
+{
+    const auto constant = ConstantValue(value);
+    if (!constant.has_value())
+        return {};
+    // an error NTSTATUS (0xC0000034), an HRESULT error out of the low ones (0x80004005, 0x80070057, HRESULT_FROM_WIN32(...)): not the
+    // values that are masks / flags as often (0x80000005, 0x8000000A)
+    if ((constant.value() & 0xF0000000) == 0xC0000000)
+        return FormatConstant(Enumeration(NTSTATUSES), constant.value());
+    if (constant.value() >= 0x80001000 && constant.value() < 0x80100000)
+        return FormatHresult(constant.value());
     return {};
 }

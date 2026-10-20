@@ -1836,9 +1836,17 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
     // dwDesiredAccess = GENERIC_READ
     auto nameArgument = [functionDetails](DissasmAsmPreCacheLine& line, const char* name) {
         std::string text = name;
+        std::string constant;
         if (const auto value = GetArgumentImmediate(line); value.has_value())
-            if (const auto constant = FormatApiConstant(functionDetails->functionName, name, value.value()); !constant.empty())
-                text += " = " + constant;
+            constant = FormatApiConstant(functionDetails->functionName, name, value.value());
+        if (line.constantComment) { // a status named on the line: the value of the argument (ExitStatus = STATUS_ACCESS_DENIED)
+            if (constant.empty())
+                constant = line.autoComment;
+            line.autoComment.clear();
+            line.constantComment = false;
+        }
+        if (!constant.empty())
+            text += " = " + constant;
         if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
             text += ' ';
             text += line.autoComment;
