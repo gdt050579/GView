@@ -98,6 +98,8 @@ Where <command> is on of:
                                                        (CreateSignatures)
                             --make-signatures <file.json>  writes the signatures
                                                        of the named functions
+                            --listing <file.asm>       writes the listing of the
+                                                       code (the F8 export)
 
 Remote mode (requires a build with -DGVIEW_ENABLE_REMOTE=ON):
    serve [files] [options]  Runs GView as a server: the analysis runs here and
@@ -199,6 +201,7 @@ std::string readFile(const std::filesystem::path& path)
 }
 
 // GView analyze <file> [--out <file.json>] [--type:<type>] [--annotations <file>] [--signatures <file>] [--make-signatures <file>]
+// [--listing <file.asm>]
 template <typename T>
 int ProcessAnalyzeCommand(int argc, T** argv)
 {
@@ -223,6 +226,10 @@ int ProcessAnalyzeCommand(int argc, T** argv)
             options.signaturesOutput = std::filesystem::path(argv[++index]);
             continue;
         }
+        if (argument == "--listing" && index + 1 < argc) {
+            options.listingOutput = std::filesystem::path(argv[++index]);
+            continue;
+        }
         if (argument.starts_with("--type:")) {
             type = argument.substr(7);
             continue;
@@ -238,7 +245,7 @@ int ProcessAnalyzeCommand(int argc, T** argv)
         file = std::filesystem::path(argv[index]);
     }
     if (file.empty()) {
-        std::cout << "Use: GView analyze <file> [--out <file.json>] [--type:<type>] [--annotations <file.json>] [--signatures <file.json>] [--make-signatures <file.json>]"
+        std::cout << "Use: GView analyze <file> [--out <file.json>] [--type:<type>] [--annotations <file.json>] [--signatures <file.json>] [--make-signatures <file.json>] [--listing <file.asm>]"
                   << std::endl;
         return 1;
     }
