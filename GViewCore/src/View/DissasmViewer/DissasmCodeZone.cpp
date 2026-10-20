@@ -204,6 +204,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, uint32> importCallCategories;   // a call / jmp through an import slot -> what the import does (DissasmApiCategory)
     std::unordered_set<uint64> knownPrototypeCalls;            // the calls through an import slot of an API with a prototype (FindApiPrototype)
     std::unordered_map<uint64, bool> knownPrototypeTargets;    // a direct target (relative) -> its name has a prototype (NameVariablesFromCalls)
+    std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes; // InferPrototypes, by function start
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
     std::unordered_set<uint64> userReturns;    // the functions the user says return (USER_FUNCTION_RETURNS): never noreturn
@@ -1854,20 +1855,741 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         const auto operands = GetInstructionOperands(call, functionArch, labelBase);
         if (operands.directTarget.has_value())
-            if (const uint64 target = operands.directTarget.value() & addressMask; target < codeSize)
+            if (const uint64 target = operands.directTarget.value() & addressMask; target < codeSize) {
                 if (const auto* user = zone->FindUserPrototype(target))
                     return user;
+                if (const auto inferred = inferredPrototypes.find(target); inferred != inferredPrototypes.end())
+                    return &inferred->second->details;
+            }
         return FindApiPrototype(CalleeName(call, functionArch));
     }
 
-    // the arguments of a function the user gave a prototype (Y): arg_0 .. are its parameters (x86: in the stack, 4 bytes a parameter, 8 for
-    // the 64 bit types; x64 Windows: the home space then the stack, 8 bytes a parameter); System V / ARM pass them in registers: none
-    void NameArgumentsFromPrototype(DissasmFunctionFrame& frame, const AsmFunctionDetails& prototype, DissasmArch functionArch)
+    // the name a direct target has for the prototypes: a thunk of an import, a label of the zone, a function of another zone
+    std::string TargetName(uint64 target)
+    {
+        if (target < codeSize) {
+            if (const auto thunk = thunkImports.find(target); thunk != thunkImports.end())
+                return thunk->second;
+            const auto label = std::lower_bound(
+                  callsFound.begin(), callsFound.end(), codeStart + target, [](const auto& item, uint64 value) { return item.first < value; });
+            return label != callsFound.end() && label->first == codeStart + target ? label->second : std::string();
+        }
+        if (const auto* other = zone->FindCodeZoneOfAddress((labelBase + target) & addressMask); other && other != zone) {
+            const uint64 otherStart = ((labelBase + target) & addressMask) - other->labelAddressBase;
+            const auto thunk        = other->thunkImports.find(otherStart);
+            return thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(otherStart);
+        }
+        return {};
+    }
+
+    // beyond IDA (its decompiler does it): the prototypes of the functions that pass their own arguments to a known prototype (an API, a
+    // function of the user, one inferred in a round before: the wrappers of the wrappers, 3 rounds). The code of a function is followed in its
+    // order with the incoming argument each register holds (rcx / rdx / r8 / r9, rdi / rsi / ..., x0 .. x7, r0 .. r3; copied by mov, kept by
+    // the callee saved registers across the calls); at a branch target the state is the one every branch to it agrees on (the forward ones,
+    // the fall through), a register written between the target and a branch back (a loop) is dropped. A call / tail jump with a prototype
+    // names the incoming arguments it is passed. Not the user's functions (their prototype wins). 32 bit x86: InferX86FunctionPrototype
+    void InferPrototypes()
+    {
+        inferredPrototypes.clear();
+        if (!hasDetailHandle || functionEnds.size() != functionStarts.size())
+            return;
+        // the first round: the functions that call a prototype (an import slot, a target, a function inferred before them in the round);
+        // the next ones: the functions that call one inferred by the round before or by this one (the others would give the same as before)
+        std::unordered_set<uint64> inferredBefore;
+        for (uint32 round = 0; round < 3; round++) {
+            std::unordered_set<uint64> inferredNow;
+            for (size_t index = 0; index < functionStarts.size(); index++) {
+                const uint64 start = functionStarts[index];
+                if (zone->userPrototypes.contains(start) || inferredPrototypes.contains(start))
+                    continue;
+                const auto arch = zone->GetArchAt(start);
+                bool candidate  = false;
+                for (size_t position = FirstRecordAt(start); position < flowRecords.size() && flowRecords[position].address < functionEnds[index] && !candidate;
+                     position++) {
+                    const auto& record = flowRecords[position];
+                    if (record.kind != FlowKind::Call && record.kind != FlowKind::Jump)
+                        continue;
+                    const bool outside = record.target != NO_TARGET && (record.target < start || record.target >= functionEnds[index]);
+                    if (round > 0)
+                        candidate = outside && (inferredBefore.contains(record.target) || inferredNow.contains(record.target));
+                    else
+                        candidate = knownPrototypeCalls.contains(record.address) ||
+                                    (outside && (inferredNow.contains(record.target) || zone->FindUserPrototype(record.target) ||
+                                                 FindApiPrototype(TargetName(record.target))));
+                }
+                if (!candidate)
+                    continue;
+                auto prototype = arch == DissasmArch::X86 ? InferX86FunctionPrototype(start, functionEnds[index]) : InferFunctionPrototype(start, functionEnds[index], arch);
+                if (prototype) {
+                    inferredPrototypes.emplace(start, std::move(prototype));
+                    inferredNow.insert(start);
+                }
+            }
+            if (inferredNow.empty())
+                break;
+            inferredBefore = std::move(inferredNow);
+        }
+    }
+
+    std::shared_ptr<const DissasmUserPrototype> InferFunctionPrototype(uint64 start, uint64 end, DissasmArch arch)
+    {
+        constexpr uint32 MAX_STEPS     = 4096;
+        constexpr int REGISTERS        = 32;
+        const bool isArm64             = arch == DissasmArch::Arm64;
+        const bool isArm32             = arch == DissasmArch::Arm || arch == DissasmArch::Thumb;
+        const bool systemV             = !isArm64 && !isArm32 && zone->systemVCalls;
+        static constexpr int WINDOWS[] = { 1, 2, 8, 9 }, SYSTEM_V[] = { 7, 6, 2, 1, 8, 9 };
+        const size_t argumentsCount    = isArm64 ? 8u : (isArm32 ? 4u : (systemV ? 6u : 4u));
+        const auto argumentRegister    = [&](size_t argument) -> int {
+            if (isArm64 || isArm32)
+                return static_cast<int>(argument);
+            return systemV ? SYSTEM_V[argument] : WINDOWS[argument];
+        };
+        const auto registerIndex = [&](unsigned int reg) -> int {
+            if (isArm64) {
+                if (reg >= ARM64_REG_X0 && reg <= ARM64_REG_X28)
+                    return static_cast<int>(reg - ARM64_REG_X0);
+                if (reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30)
+                    return static_cast<int>(reg - ARM64_REG_W0);
+                return -1;
+            }
+            if (isArm32)
+                return reg >= ARM_REG_R0 && reg <= ARM_REG_R12 ? static_cast<int>(reg - ARM_REG_R0) : -1;
+            return GetX64RegisterFamily(reg);
+        };
+        // the registers a call changes (the volatile ones of the convention)
+        uint32 volatileMask = 0;
+        if (isArm64)
+            volatileMask = (1u << 19) - 1u; // x0 .. x18
+        else if (isArm32)
+            volatileMask = 0xFu | (1u << 12); // r0 .. r3, r12
+        else
+            for (const int reg : systemV ? std::initializer_list<int>{ 0, 1, 2, 6, 7, 8, 9, 10, 11 } : std::initializer_list<int>{ 0, 1, 2, 8, 9, 10, 11 })
+                volatileMask |= 1u << reg;
+
+        // the code of the function, once: what every instruction writes, its copy, its branch
+        enum class StepKind : uint8 { Other, Call, TailCall, Jump, ConditionalJump, Return };
+        struct Step {
+            uint64 address;
+            uint32 writes;
+            int8 copyTo, copyFrom;
+            StepKind kind;
+            uint64 target; // a branch inside of the function (relative); NO_TARGET otherwise
+            const AsmFunctionDetails* callee;
+        };
+        std::vector<Step> steps;
+        const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x10000)), false) : BufferView{};
+        cs_insn* insn   = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return nullptr;
+        const uint8* bytes = data.GetData();
+        size_t size        = data.GetLength();
+        uint64 address     = start;
+        while (steps.size() < MAX_STEPS && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
+            Step step{ insn->address, 0, -1, -1, StepKind::Other, NO_TARGET, nullptr };
+            const auto flow = GetInstructionFlow(*insn, arch);
+            const auto operands = GetInstructionOperands(*insn, arch, labelBase);
+            const auto inside = [&](uint64 target) { return target >= start && target < end; };
+            const uint64 direct = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
+            if (flow == X86Flow::Call) {
+                step.kind   = StepKind::Call;
+                step.callee = CalleePrototype(*insn, arch);
+                step.writes = volatileMask;
+            } else if (flow == X86Flow::Jump) {
+                if (direct != NO_TARGET && inside(direct)) {
+                    step.kind   = StepKind::Jump;
+                    step.target = direct;
+                } else {
+                    step.kind   = StepKind::TailCall; // jmp sub_X / jmp [__imp_X] / b sub_X: the arguments are passed on
+                    step.callee = CalleePrototype(*insn, arch);
+                }
+            } else if (flow == X86Flow::ConditionalJump) {
+                step.kind   = StepKind::ConditionalJump;
+                step.target = direct != NO_TARGET && inside(direct) ? direct : NO_TARGET;
+            } else if (flow == X86Flow::Return) {
+                step.kind = StepKind::Return;
+            }
+            if (step.kind == StepKind::Other || step.kind == StepKind::ConditionalJump) {
+                // the registers written (the operands, the implicit ones), a copy reg <- reg
+                if (isArm64 || isArm32) {
+                    const uint8 count = isArm64 ? insn->detail->arm64.op_count : insn->detail->arm.op_count;
+                    for (uint8 i = 0; i < count; i++) {
+                        const bool isRegister = isArm64 ? insn->detail->arm64.operands[i].type == ARM64_OP_REG : insn->detail->arm.operands[i].type == ARM_OP_REG;
+                        const uint8 access    = isArm64 ? insn->detail->arm64.operands[i].access : insn->detail->arm.operands[i].access;
+                        const unsigned int reg = isArm64 ? static_cast<unsigned int>(insn->detail->arm64.operands[i].reg) : static_cast<unsigned int>(insn->detail->arm.operands[i].reg);
+                        if (const int index = isRegister ? registerIndex(reg) : -1; index >= 0 && index < REGISTERS && (access & CS_AC_WRITE))
+                            step.writes |= 1u << index;
+                    }
+                    // a conditional move (movne r0, r4: an IT block / an ARM condition) is a write, not a copy
+                    const bool conditional = isArm32 && insn->detail->arm.cc != ARM_CC_AL && insn->detail->arm.cc != ARM_CC_INVALID;
+                    const bool isMove      = (isArm64 ? insn->id == ARM64_INS_MOV : insn->id == ARM_INS_MOV) && !conditional;
+                    if (isMove && count == 2) {
+                        const bool registers = isArm64 ? insn->detail->arm64.operands[1].type == ARM64_OP_REG : insn->detail->arm.operands[1].type == ARM_OP_REG;
+                        const unsigned int to = isArm64 ? static_cast<unsigned int>(insn->detail->arm64.operands[0].reg) : static_cast<unsigned int>(insn->detail->arm.operands[0].reg);
+                        const unsigned int from = isArm64 ? static_cast<unsigned int>(insn->detail->arm64.operands[1].reg) : static_cast<unsigned int>(insn->detail->arm.operands[1].reg);
+                        if (registers && registerIndex(to) >= 0 && registerIndex(from) >= 0) {
+                            step.copyTo   = static_cast<int8>(registerIndex(to));
+                            step.copyFrom = static_cast<int8>(registerIndex(from));
+                        }
+                    }
+                } else {
+                    const cs_x86& x86 = insn->detail->x86;
+                    for (uint8 i = 0; i < x86.op_count; i++)
+                        if (x86.operands[i].type == X86_OP_REG && (x86.operands[i].access & CS_AC_WRITE))
+                            if (const int index = registerIndex(x86.operands[i].reg); index >= 0 && index < REGISTERS)
+                                step.writes |= 1u << index;
+                    for (uint8 i = 0; i < insn->detail->regs_write_count; i++)
+                        if (const int index = registerIndex(insn->detail->regs_write[i]); index >= 0 && index < REGISTERS)
+                            step.writes |= 1u << index;
+                    if (insn->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[1].type == X86_OP_REG &&
+                        x86.operands[0].size >= 4 && x86.operands[1].size >= 4 && registerIndex(x86.operands[0].reg) >= 0 && registerIndex(x86.operands[1].reg) >= 0) {
+                        step.copyTo   = static_cast<int8>(registerIndex(x86.operands[0].reg));
+                        step.copyFrom = static_cast<int8>(registerIndex(x86.operands[1].reg));
+                    }
+                }
+            }
+            steps.push_back(step);
+            if (step.kind == StepKind::Return && insn->address + insn->size >= end)
+                break;
+        }
+        cs_free(insn, 1);
+
+        // the branches inside of the function, by target: their steps (the state they bring)
+        std::unordered_map<uint64, size_t> stepOfAddress;
+        for (size_t i = 0; i < steps.size(); i++)
+            stepOfAddress.emplace(steps[i].address, i);
+        std::unordered_map<size_t, std::vector<size_t>> branchesTo; // step of the target -> the steps of the branches
+        for (size_t i = 0; i < steps.size(); i++)
+            if (steps[i].target != NO_TARGET)
+                if (const auto target = stepOfAddress.find(steps[i].target); target != stepOfAddress.end())
+                    branchesTo[target->second].push_back(i);
+        std::vector<std::vector<size_t>> writesOf(REGISTERS); // the steps that write each register (sorted)
+        for (size_t i = 0; i < steps.size(); i++)
+            for (int reg = 0; reg < REGISTERS; reg++)
+                if (steps[i].writes & (1u << reg))
+                    writesOf[reg].push_back(i);
+        const auto writtenIn = [&](int reg, size_t from, size_t to) { // a write in steps [from, to]
+            const auto found = std::lower_bound(writesOf[reg].begin(), writesOf[reg].end(), from);
+            return found != writesOf[reg].end() && *found <= to;
+        };
+
+        using State = std::array<int8, REGISTERS>; // the incoming argument each register holds, -1: none
+        State state;
+        state.fill(-1);
+        for (size_t argument = 0; argument < argumentsCount; argument++)
+            state[argumentRegister(argument)] = static_cast<int8>(argument);
+        std::unordered_map<size_t, State> snapshots; // the state at each branch (before it)
+        std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(argumentsCount);
+        bool reachable = true; // the step before falls through
+        for (size_t i = 0; i < steps.size(); i++) {
+            const auto& step = steps[i];
+            if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
+                // a branch target: what every branch to it agrees on; a register written up to a branch back to it is not known
+                State merged = state;
+                bool first   = !reachable;
+                size_t lastBack = 0;
+                for (const size_t source : branches->second) {
+                    if (source >= i) {
+                        lastBack = std::max(lastBack, source);
+                        continue;
+                    }
+                    const auto& snapshot = snapshots.at(source);
+                    for (int reg = 0; reg < REGISTERS; reg++)
+                        merged[reg] = first ? snapshot[reg] : (merged[reg] == snapshot[reg] ? merged[reg] : -1);
+                    first = false;
+                }
+                if (first) // only branches back to it, after a ret / jmp: nothing is known
+                    merged.fill(-1);
+                if (lastBack > 0)
+                    for (int reg = 0; reg < REGISTERS; reg++)
+                        if (merged[reg] >= 0 && writtenIn(reg, i, lastBack))
+                            merged[reg] = -1;
+                state = merged;
+            } else if (!reachable) {
+                state.fill(-1); // code after a ret / jmp that no branch of the function reaches
+            }
+            if ((step.kind == StepKind::Call || step.kind == StepKind::TailCall) && step.callee) {
+                const auto& params = step.callee->params;
+                for (size_t parameter = 0; parameter < params.size() && parameter < argumentsCount; parameter++) {
+                    const int8 incoming = state[argumentRegister(parameter)];
+                    if (incoming < 0 || parameters[incoming].has_value() || !params[parameter].name || !params[parameter].name[0])
+                        continue;
+                    parameters[incoming] = std::make_pair(std::string_view(params[parameter].name), std::string_view(params[parameter].type));
+                }
+            }
+            if (step.target != NO_TARGET)
+                snapshots[i] = state;
+            if (step.copyTo >= 0 && step.copyTo < REGISTERS && step.copyFrom >= 0 && step.copyFrom < REGISTERS) {
+                state[step.copyTo] = state[step.copyFrom];
+            } else {
+                for (int reg = 0; reg < REGISTERS; reg++)
+                    if (step.writes & (1u << reg))
+                        state[reg] = -1;
+            }
+            reachable = step.kind != StepKind::Return && step.kind != StepKind::Jump && step.kind != StepKind::TailCall;
+        }
+
+        return MakeInferredPrototype(start, parameters, {});
+    }
+
+    // 32 bit x86: the arguments are in the stack. The walk of InferFunctionPrototype follows esp and ebp from the esp of the entry (push /
+    // pop, sub / add esp, mov ebp, esp, leave, the bytes the callees pop, a frame helper: ebp = the esp of the entry - 4), the incoming
+    // argument slots ([esp + 4 + 4k] at the entry, [ebp + 8 + 4k] in a frame) while the function does not write them, what the registers and
+    // the slots above esp hold (push [ebp + 8], mov eax, [esp + 8]; push eax, mov [esp + 4], eax). A call with a prototype names the incoming
+    // arguments it is passed in [esp], [esp + 4], ... (8 bytes for the 64 bit types), a tail jump the ones in [esp + 4], ... Two passes: the
+    // first one finds the incoming slots each instruction writes (a loop that writes one: not its argument at the loop start)
+    std::shared_ptr<const DissasmUserPrototype> InferX86FunctionPrototype(uint64 start, uint64 end)
+    {
+        constexpr size_t MAX_STEPS     = 4096;
+        constexpr int32 MAX_ARGUMENTS  = 16;
+        constexpr int32 MAX_SLOT       = 0x1000; // the slots followed above esp
+        constexpr int REGISTERS        = 8;      // eax .. edi
+        constexpr uint32 VOLATILE_MASK = 0x7;    // eax, ecx, edx
+        const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x10000)), false) : BufferView{};
+        cs_insn* insn = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return nullptr;
+
+        // the code of the function, once: its branches, its calls, its operands
+        enum class StepKind : uint8 { Other, Call, TailCall, Jump, ConditionalJump, Return };
+        struct Step {
+            StepKind kind;
+            uint64 target; // a branch inside of the function (relative); NO_TARGET otherwise
+            uint32 writes; // the registers written
+            const AsmFunctionDetails* callee;
+            std::optional<uint32> purge; // a call: the bytes the callee pops
+            bool frameHelper;
+            unsigned int id;
+            cs_x86 x86;
+        };
+        std::vector<Step> steps;
+        std::unordered_map<uint64, size_t> stepOfAddress;
+        const uint8* bytes = data.GetData();
+        size_t size        = data.GetLength();
+        uint64 address     = start;
+        while (steps.size() < MAX_STEPS && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn)) {
+            auto& step = steps.emplace_back(Step{ StepKind::Other, NO_TARGET, 0, nullptr, std::nullopt, false, insn->id, insn->detail->x86 });
+            stepOfAddress.emplace(insn->address, steps.size() - 1);
+            const auto flow     = GetInstructionFlow(*insn, DissasmArch::X86);
+            const auto operands = GetInstructionOperands(*insn, DissasmArch::X86, labelBase);
+            const uint64 direct = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
+            const bool inside   = direct >= start && direct < end;
+            if (flow == X86Flow::Call) {
+                step.kind        = StepKind::Call;
+                step.callee      = CalleePrototype(*insn, DissasmArch::X86);
+                step.frameHelper = direct < codeSize && IsFrameHelper(direct);
+                step.purge       = CalleeStackPurge(*insn);
+                if (!step.purge.has_value() && step.callee)
+                    if (const auto pushes = GetX86StdcallPushes(*step.callee); pushes.has_value())
+                        step.purge = pushes.value() * 4;
+                step.writes = VOLATILE_MASK;
+            } else if (flow == X86Flow::Jump) {
+                step.kind   = inside ? StepKind::Jump : StepKind::TailCall;
+                step.target = inside ? direct : NO_TARGET;
+                step.callee = inside ? nullptr : CalleePrototype(*insn, DissasmArch::X86);
+            } else if (flow == X86Flow::ConditionalJump) {
+                step.kind   = StepKind::ConditionalJump;
+                step.target = inside ? direct : NO_TARGET;
+            } else if (flow == X86Flow::Return) {
+                step.kind = StepKind::Return;
+            }
+            const cs_x86& x86 = insn->detail->x86;
+            for (uint8 index = 0; index < x86.op_count; index++)
+                if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                    if (const int family = GetX64RegisterFamily(x86.operands[index].reg); family >= 0 && family < REGISTERS)
+                        step.writes |= 1u << family;
+            for (uint8 index = 0; index < insn->detail->regs_write_count; index++)
+                if (const int family = GetX64RegisterFamily(insn->detail->regs_write[index]); family >= 0 && family < REGISTERS)
+                    step.writes |= 1u << family;
+        }
+        cs_free(insn, 1);
+        const size_t count = steps.size();
+        std::unordered_map<size_t, std::vector<size_t>> branchesTo; // step of the target -> the steps of the branches
+        bool hasLoop = false;
+        for (size_t i = 0; i < count; i++)
+            if (steps[i].target != NO_TARGET)
+                if (const auto target = stepOfAddress.find(steps[i].target); target != stepOfAddress.end()) {
+                    branchesTo[target->second].push_back(i);
+                    hasLoop |= target->second <= i;
+                }
+        std::vector<std::vector<size_t>> writesOf(REGISTERS); // the steps that write each register (sorted)
+        for (size_t i = 0; i < count; i++)
+            for (int reg = 0; reg < REGISTERS; reg++)
+                if (steps[i].writes & (1u << reg))
+                    writesOf[reg].push_back(i);
+        const auto writtenIn = [&](int reg, size_t from, size_t to) { // a write in steps [from, to]
+            const auto found = std::lower_bound(writesOf[reg].begin(), writesOf[reg].end(), from);
+            return found != writesOf[reg].end() && *found <= to;
+        };
+
+        struct State {
+            std::array<int8, REGISTERS> registers; // the incoming argument each register holds, -1: none
+            uint32 intact;                         // the incoming argument slots not written (bit k: [esp of the entry + 4 + 4k])
+            std::optional<int32> esp, ebp;         // from the esp of the entry
+            std::vector<std::pair<int32, int8>> slots; // [esp + key]: the incoming argument it holds (sorted by key)
+        };
+        struct Location {
+            bool incoming;
+            int32 offset; // incoming: from the esp of the entry; else: from esp
+        };
+        const auto shift = [](State& state, int32 delta) { // esp += delta
+            if (state.esp.has_value())
+                state.esp = state.esp.value() + delta;
+            for (auto& slot : state.slots)
+                slot.first -= delta;
+            state.slots.erase(std::remove_if(state.slots.begin(), state.slots.end(), [](const auto& slot) { return slot.first < 0 || slot.first >= MAX_SLOT; }),
+                              state.slots.end());
+        };
+        const auto slotAt = [](auto& slots, int32 key) {
+            return std::lower_bound(slots.begin(), slots.end(), key, [](const auto& slot, int32 value) { return slot.first < value; });
+        };
+        const auto valueAt = [&slotAt](const State& state, int32 key) -> int8 {
+            const auto found = slotAt(state.slots, key);
+            return found != state.slots.end() && found->first == key ? found->second : -1;
+        };
+        const auto setSlot = [&slotAt](State& state, int32 key, int8 value) {
+            const auto found = slotAt(state.slots, key);
+            if (found != state.slots.end() && found->first == key)
+                found->second = value;
+            else
+                state.slots.insert(found, { key, value });
+        };
+        const auto forgetStack = [](State& state) {
+            state.esp.reset();
+            state.slots.clear();
+        };
+        const auto locate = [](const State& state, unsigned int base, int64 disp) -> std::optional<Location> {
+            if (disp <= -MAX_SLOT * 4 || disp >= MAX_SLOT * 4)
+                return std::nullopt;
+            std::optional<int32> entry, current;
+            if (base == X86_REG_ESP) {
+                current = static_cast<int32>(disp);
+                if (state.esp.has_value())
+                    entry = state.esp.value() + static_cast<int32>(disp);
+            } else if (base == X86_REG_EBP && state.ebp.has_value()) {
+                entry = state.ebp.value() + static_cast<int32>(disp);
+                if (state.esp.has_value())
+                    current = entry.value() - state.esp.value();
+            }
+            if (entry.has_value() && entry.value() >= 4) // above the return address: the incoming arguments
+                return Location{ true, entry.value() };
+            if (current.has_value() && current.value() >= 0 && current.value() < MAX_SLOT)
+                return Location{ false, current.value() };
+            return std::nullopt;
+        };
+        const auto read = [&valueAt](const State& state, const std::optional<Location>& location) -> int8 {
+            if (!location.has_value())
+                return -1;
+            if (location->incoming) {
+                const int32 argument = (location->offset - 4) / 4;
+                return (location->offset - 4) % 4 == 0 && argument < MAX_ARGUMENTS && (state.intact & (1u << argument)) ? static_cast<int8>(argument) : -1;
+            }
+            return valueAt(state, location->offset);
+        };
+        uint32 writtenNow = 0; // the incoming slots the current instruction writes
+        const auto write  = [&writtenNow, &slotAt, &setSlot](State& state, const std::optional<Location>& location, int32 size, int8 value) {
+            if (!location.has_value())
+                return;
+            if (location->incoming) {
+                for (int32 offset = location->offset & ~3; offset < location->offset + size; offset += 4)
+                    if (const int32 argument = (offset - 4) / 4; offset >= 4 && argument < MAX_ARGUMENTS) {
+                        state.intact &= ~(1u << argument);
+                        writtenNow |= 1u << argument;
+                    }
+                if (size == 4 && (location->offset - 4) % 4 == 0 && value == (location->offset - 4) / 4)
+                    state.intact |= 1u << value; // mov [ebp + 8], eax: the argument it held
+                return;
+            }
+            state.slots.erase(slotAt(state.slots, location->offset - 3), slotAt(state.slots, location->offset + size));
+            if (size == 4 && value >= 0)
+                setSlot(state, location->offset, value);
+        };
+        const auto merge = [&valueAt](State& into, const State& from) {
+            for (int reg = 0; reg < REGISTERS; reg++)
+                if (into.registers[reg] != from.registers[reg])
+                    into.registers[reg] = -1;
+            into.intact &= from.intact;
+            if (into.esp != from.esp)
+                into.esp.reset();
+            if (into.ebp != from.ebp)
+                into.ebp.reset();
+            into.slots.erase(std::remove_if(into.slots.begin(), into.slots.end(), [&](const auto& slot) { return valueAt(from, slot.first) != slot.second; }),
+                             into.slots.end());
+        };
+        const auto unknown = [](State& state) {
+            state.registers.fill(-1);
+            state.intact = 0;
+            state.esp.reset();
+            state.ebp.reset();
+            state.slots.clear();
+        };
+
+        std::vector<uint32> writtenIncoming(count, 0); // the first pass (only for a loop): the incoming slots each step writes
+        std::vector<std::optional<std::pair<std::string_view, std::string_view>>> parameters(MAX_ARGUMENTS);
+        std::vector<bool> secondHalves(MAX_ARGUMENTS); // the second slot of a 64 bit parameter
+        for (uint32 pass = hasLoop ? 0 : 1; pass < 2; pass++) {
+            State state;
+            state.registers.fill(-1);
+            state.intact = (1u << MAX_ARGUMENTS) - 1u;
+            state.esp    = 0;
+            std::unordered_map<size_t, State> snapshots; // the state at each branch (before it)
+            bool reachable = true;                       // the step before falls through
+            for (size_t i = 0; i < count; i++) {
+                const auto& step = steps[i];
+                if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
+                    // a branch target: what every branch to it agrees on; what a loop back to it writes is not known
+                    State merged    = state;
+                    bool first      = !reachable;
+                    size_t lastBack = 0;
+                    for (const size_t source : branches->second) {
+                        if (source >= i) {
+                            lastBack = std::max(lastBack, source);
+                            continue;
+                        }
+                        if (first)
+                            merged = snapshots.at(source);
+                        else
+                            merge(merged, snapshots.at(source));
+                        first = false;
+                    }
+                    if (first) // only branches back to it, after a ret / jmp: nothing is known
+                        unknown(merged);
+                    if (lastBack > 0) {
+                        for (int reg = 0; reg < REGISTERS; reg++)
+                            if (merged.registers[reg] >= 0 && writtenIn(reg, i, lastBack))
+                                merged.registers[reg] = -1;
+                        for (size_t loop = i; loop <= lastBack; loop++)
+                            merged.intact &= ~writtenIncoming[loop];
+                        merged.slots.clear();
+                    }
+                    state = std::move(merged);
+                } else if (!reachable) {
+                    unknown(state); // code after a ret / jmp that no branch of the function reaches
+                }
+                reachable = step.kind != StepKind::Return && step.kind != StepKind::Jump && step.kind != StepKind::TailCall;
+                if (step.target != NO_TARGET)
+                    snapshots[i] = state;
+                writtenNow = 0;
+
+                // a call / tail jump with a prototype: the incoming arguments it is passed
+                if (pass == 1 && (step.kind == StepKind::Call || step.kind == StepKind::TailCall) && step.callee) {
+                    int32 offset = step.kind == StepKind::TailCall ? 4 : 0; // a tail jump: the return address of the caller at [esp]
+                    for (const auto& parameter : step.callee->params) {
+                        const bool wide      = IsWideX86Type(parameter.type);
+                        const int8 incoming  = read(state, locate(state, X86_REG_ESP, offset));
+                        const bool named     = parameter.name && parameter.name[0];
+                        const bool secondOk  = !wide || (incoming >= 0 && incoming + 1 < MAX_ARGUMENTS &&
+                                                        read(state, locate(state, X86_REG_ESP, offset + 4)) == incoming + 1 &&
+                                                        !parameters[incoming + 1].has_value() && !secondHalves[incoming + 1]);
+                        if (named && incoming >= 0 && !parameters[incoming].has_value() && !secondHalves[incoming] && secondOk) {
+                            parameters[incoming] = std::make_pair(std::string_view(parameter.name), std::string_view(parameter.type));
+                            if (wide)
+                                secondHalves[incoming + 1] = true;
+                        }
+                        offset += wide ? 8 : 4;
+                    }
+                }
+
+                const cs_x86& x86 = step.x86;
+                const auto reg32  = [](const cs_x86_op& op) { return op.type == X86_OP_REG && op.size == 4 ? GetX64RegisterFamily(op.reg) : -1; };
+                const auto memoryOf = [&](const cs_x86_op& op) -> std::optional<Location> {
+                    return op.type == X86_OP_MEM && op.mem.index == X86_REG_INVALID ? locate(state, op.mem.base, op.mem.disp) : std::nullopt;
+                };
+                const auto valueOf = [&](const cs_x86_op& op) -> int8 {
+                    if (const int reg = reg32(op); reg >= 0 && reg < REGISTERS)
+                        return state.registers[reg];
+                    return op.size == 4 ? read(state, memoryOf(op)) : -1;
+                };
+                const bool twoOperands = x86.op_count == 2;
+                if (step.kind == StepKind::Call) {
+                    if (step.frameHelper) { // __SEH_prolog4: the frame of the caller
+                        forgetStack(state);
+                        state.ebp = -4;
+                    } else if (step.purge.has_value()) {
+                        shift(state, static_cast<int32>(step.purge.value()));
+                    } else {
+                        forgetStack(state);
+                    }
+                    for (int reg = 0; reg < REGISTERS; reg++)
+                        if (VOLATILE_MASK & (1u << reg))
+                            state.registers[reg] = -1;
+                } else if (step.kind == StepKind::Other || step.kind == StepKind::ConditionalJump) {
+                    if (step.id == X86_INS_PUSH && x86.op_count == 1) {
+                        const int8 value = valueOf(x86.operands[0]);
+                        shift(state, -4);
+                        if (value >= 0)
+                            setSlot(state, 0, value);
+                    } else if (step.id == X86_INS_POP && x86.op_count == 1) {
+                        const int8 value = valueAt(state, 0);
+                        shift(state, 4);
+                        if (const int reg = reg32(x86.operands[0]); reg >= 0 && reg < REGISTERS) {
+                            state.registers[reg] = value;
+                            if (reg == 5)
+                                state.ebp.reset();
+                            else if (reg == 4)
+                                forgetStack(state);
+                        } else {
+                            write(state, memoryOf(x86.operands[0]), x86.operands[0].size, -1);
+                        }
+                    } else if ((step.id == X86_INS_SUB || step.id == X86_INS_ADD) && twoOperands && IsRegisterOperandOf(x86, 0, X86_REG_ESP) &&
+                               x86.operands[1].type == X86_OP_IMM) {
+                        const int64 amount = step.id == X86_INS_SUB ? -x86.operands[1].imm : x86.operands[1].imm;
+                        if (amount > -MAX_SLOT * 16 && amount < MAX_SLOT * 16)
+                            shift(state, static_cast<int32>(amount));
+                        else
+                            forgetStack(state);
+                    } else if (step.id == X86_INS_MOV && twoOperands && IsRegisterOperandOf(x86, 0, X86_REG_EBP) && IsRegisterOperandOf(x86, 1, X86_REG_ESP)) {
+                        state.ebp          = state.esp;
+                        state.registers[5] = -1;
+                    } else if (step.id == X86_INS_MOV && twoOperands && IsRegisterOperandOf(x86, 0, X86_REG_ESP) && IsRegisterOperandOf(x86, 1, X86_REG_EBP)) {
+                        state.slots.clear();
+                        state.esp = state.ebp;
+                    } else if (step.id == X86_INS_LEAVE) {
+                        state.slots.clear();
+                        state.esp = state.ebp.has_value() ? std::optional<int32>(state.ebp.value() + 4) : std::nullopt;
+                        state.ebp.reset();
+                        state.registers[5] = -1;
+                    } else if (step.id == X86_INS_LEA && twoOperands && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.index == X86_REG_INVALID &&
+                               (IsRegisterOperandOf(x86, 0, X86_REG_ESP) || IsRegisterOperandOf(x86, 0, X86_REG_EBP))) {
+                        const auto& memory = x86.operands[1].mem;
+                        const auto disp    = static_cast<int32>(std::clamp<int64>(memory.disp, -MAX_SLOT * 16, MAX_SLOT * 16));
+                        const auto from    = memory.base == X86_REG_ESP ? state.esp : (memory.base == X86_REG_EBP ? state.ebp : std::nullopt);
+                        const auto value   = from.has_value() ? std::optional<int32>(from.value() + disp) : std::nullopt;
+                        if (IsRegisterOperandOf(x86, 0, X86_REG_EBP)) {
+                            state.ebp          = value;
+                            state.registers[5] = -1;
+                        } else if (memory.base == X86_REG_ESP) {
+                            shift(state, disp); // lea esp, [esp + 8]
+                        } else {
+                            state.slots.clear();
+                            state.esp = value; // lea esp, [ebp - 0x10]
+                        }
+                    } else {
+                        // the value written to a register (mov reg, reg / mov reg, [ebp + 8]) or to the stack (mov [esp + 4], eax), read before
+                        // the writes
+                        std::optional<int8> copied;
+                        if (step.id == X86_INS_MOV && twoOperands && reg32(x86.operands[0]) >= 0)
+                            copied = valueOf(x86.operands[1]);
+                        const int8 stored = step.id == X86_INS_MOV && twoOperands && x86.operands[0].type == X86_OP_MEM ? valueOf(x86.operands[1]) : -1;
+                        for (uint8 index = 0; index < x86.op_count; index++)
+                            if (x86.operands[index].type == X86_OP_MEM && (x86.operands[index].access & CS_AC_WRITE))
+                                write(state, memoryOf(x86.operands[index]), x86.operands[index].size, stored);
+                        for (int reg = 0; reg < REGISTERS; reg++)
+                            if (step.writes & (1u << reg))
+                                state.registers[reg] = -1;
+                        if (step.writes & (1u << 4))
+                            forgetStack(state); // xchg eax, esp / and esp, -8
+                        if (step.writes & (1u << 5))
+                            state.ebp.reset();
+                        if (copied.has_value())
+                            state.registers[reg32(x86.operands[0])] = copied.value();
+                    }
+                }
+                if (pass == 0)
+                    writtenIncoming[i] = writtenNow;
+            }
+        }
+        return MakeInferredPrototype(start, parameters, secondHalves);
+    }
+
+    // the prototype of an inferred function: the parameters up to the last one known, the others without a name (a1, a2, ...); a 64 bit
+    // parameter of 32 bit x86 takes two slots; a name given twice (two calls of memcmp) gets a number (buf1, buf1_2)
+    std::shared_ptr<const DissasmUserPrototype> MakeInferredPrototype(
+          uint64 start, const std::vector<std::optional<std::pair<std::string_view, std::string_view>>>& parameters, const std::vector<bool>& secondHalves)
+    {
+        size_t count = 0;
+        for (size_t argument = 0; argument < parameters.size(); argument++)
+            if (parameters[argument].has_value())
+                count = argument + 1;
+        if (count == 0)
+            return nullptr;
+        auto prototype = std::make_shared<DissasmUserPrototype>();
+        const auto label = std::lower_bound(
+              callsFound.begin(), callsFound.end(), codeStart + start, [](const auto& item, uint64 value) { return item.first < value; });
+        const std::string name = label != callsFound.end() && label->first == codeStart + start ? label->second : zone->GetLabelName("sub_", start);
+        std::string text       = name + "(";
+        for (size_t argument = 0; argument < count; argument++) {
+            if (argument < secondHalves.size() && secondHalves[argument])
+                continue;
+            if (!prototype->details.params.empty())
+                text += ", ";
+            if (parameters[argument].has_value()) {
+                std::string unique(parameters[argument]->first);
+                const auto taken = [&prototype](const std::string& candidate) {
+                    return std::any_of(prototype->details.params.begin(), prototype->details.params.end(), [&candidate](const auto& parameter) {
+                        return parameter.name && candidate == parameter.name;
+                    });
+                };
+                for (uint32 number = 2; taken(unique); number++)
+                    unique = std::string(parameters[argument]->first) + "_" + std::to_string(number);
+                text += std::string(parameters[argument]->second) + " " + unique;
+                const auto& parameterName = prototype->strings.emplace_back(std::move(unique));
+                const auto& parameterType = prototype->strings.emplace_back(parameters[argument]->second);
+                prototype->details.params.push_back({ parameterName.c_str(), parameterType.c_str() });
+            } else {
+                text += "a" + std::to_string(prototype->details.params.size() + 1);
+                const auto& empty = prototype->strings.emplace_back();
+                prototype->details.params.push_back({ empty.c_str(), empty.c_str() });
+            }
+        }
+        text += ")";
+        prototype->details.prototype    = prototype->strings.emplace_back(std::move(text));
+        prototype->details.functionName = prototype->strings.emplace_back(name);
+        return prototype;
+    }
+
+    // x64 Windows: the arguments the prologue keeps in their home space (mov [rsp + 8], rcx / mov [rbp + 0x10], rcx after push rbp; mov rbp,
+    // rsp), a bit for each of rcx, rdx, r8, r9. MSVC keeps the callee saved registers there too (mov [rsp + 8], rbx): not an argument
+    uint32 SpilledHomeArguments(const uint8* code, size_t codeLength, uint64 start)
+    {
+        static constexpr int HOME_REGISTERS[] = { 1, 2, 8, 9 }; // rcx, rdx, r8, r9
+        cs_insn* insn = code ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return 0;
+        uint32 spilled     = 0;
+        int64 delta        = 0; // rsp - the rsp of the entry
+        std::optional<int64> frameDelta; // rbp - the rsp of the entry
+        const uint8* data  = code;
+        size_t size        = codeLength;
+        uint64 address     = start;
+        for (uint32 decoded = 0; decoded < 16 && cs_disasm_iter(detailHandle, &data, &size, &address, insn); decoded++) {
+            const cs_x86& x86 = insn->detail->x86;
+            if (cs_insn_group(detailHandle, insn, CS_GRP_CALL) || cs_insn_group(detailHandle, insn, CS_GRP_JUMP) || cs_insn_group(detailHandle, insn, CS_GRP_RET))
+                break;
+            if (insn->id == X86_INS_PUSH)
+                delta -= 8;
+            else if (insn->id == X86_INS_SUB && x86.op_count == 2 && IsRegisterOperandOf(x86, 0, X86_REG_RSP) && x86.operands[1].type == X86_OP_IMM)
+                delta -= x86.operands[1].imm;
+            else if (insn->id == X86_INS_MOV && x86.op_count == 2 && IsRegisterOperandOf(x86, 0, X86_REG_RBP) && IsRegisterOperandOf(x86, 1, X86_REG_RSP))
+                frameDelta = delta;
+            else if (insn->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_MEM && x86.operands[1].type == X86_OP_REG &&
+                     x86.operands[0].mem.index == X86_REG_INVALID) {
+                const auto& memory = x86.operands[0].mem;
+                std::optional<int64> entry; // the offset from the rsp of the entry
+                if (memory.base == X86_REG_RSP)
+                    entry = memory.disp + delta;
+                else if (memory.base == X86_REG_RBP && frameDelta.has_value())
+                    entry = memory.disp + frameDelta.value();
+                const int family = GetX64RegisterFamily(x86.operands[1].reg);
+                for (int argument = 0; argument < 4 && entry.has_value(); argument++)
+                    if (family == HOME_REGISTERS[argument] && entry.value() == 8 + 8 * argument)
+                        spilled |= 1u << argument;
+            }
+        }
+        cs_free(insn, 1);
+        return spilled;
+    }
+
+    // the arguments of a function the user gave a prototype (Y), or one the analysis inferred: arg_0 .. are its parameters (x86: in the stack,
+    // 4 bytes a parameter, 8 for the 64 bit types; x64 Windows: the home space then the stack, 8 bytes a parameter, the home slots only where
+    // the prologue keeps their argument register); System V / ARM pass them in registers: none
+    void NameArgumentsFromPrototype(DissasmFunctionFrame& frame, const AsmFunctionDetails& prototype, DissasmArch functionArch, const uint8* code, size_t codeLength, uint64 start)
     {
         const bool isX86     = functionArch == DissasmArch::X86;
         const bool windows64 = functionArch == DissasmArch::X64 && !zone->systemVCalls;
         if (!isX86 && !windows64)
             return;
+        const uint32 spilled = windows64 ? SpilledHomeArguments(code, codeLength, start) : 0;
         std::vector<uint32> offsets; // of each parameter, from the first one
         uint32 offset = 0;
         for (const auto& parameter : prototype.params) {
@@ -1884,8 +2606,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto found = std::find(offsets.begin(), offsets.end(), static_cast<uint32>(argument));
             if (found == offsets.end())
                 continue;
+            if (const size_t index = found - offsets.begin(); windows64 && index < 4 && (spilled & (1u << index)) == 0)
+                continue; // a home slot that keeps something else (a callee saved register)
             const auto& parameter       = prototype.params[found - offsets.begin()];
             const std::string_view name = parameter.name;
+            if (name.empty())
+                continue; // a parameter an inferred prototype does not know
             if (variable.origin.empty()) {
                 variable.type   = parameter.type;
                 variable.origin = "argument of " + std::string(prototype.functionName);
@@ -1935,7 +2661,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const auto thunk        = other->thunkImports.find(otherStart);
                     name                    = thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(otherStart);
                 }
-                const bool userPrototype = record.target < codeSize && zone->FindUserPrototype(record.target) != nullptr; // Y
+                const bool userPrototype = record.target < codeSize && (zone->FindUserPrototype(record.target) != nullptr || inferredPrototypes.contains(record.target)); // Y, inferred
                 known = knownPrototypeTargets.emplace(record.target, userPrototype || (!name.empty() && FindApiPrototype(name) != nullptr)).first;
             }
             callsKnownApi = known->second;
@@ -2027,6 +2753,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         };
         const auto nameArguments = [&](const AsmFunctionDetails& prototype) {
             for (size_t index = 0; index < prototype.params.size(); index++) {
+                if (!prototype.params[index].name || !prototype.params[index].name[0])
+                    continue; // a parameter an inferred prototype does not know
                 std::optional<SlotValue> source;
                 if (const int reg = argumentRegister(index); reg >= 0 && reg < static_cast<int>(registers.size()))
                     source = registers[reg];
@@ -2323,7 +3051,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return;
         // the prototype the user gave the function (Y): its arguments first (the names of the calls do not replace them)
         if (const auto* prototype = zone->FindUserPrototype(relativeAddress))
-            NameArgumentsFromPrototype(frame, *prototype, functionArch);
+            NameArgumentsFromPrototype(frame, *prototype, functionArch, functionData.GetData(), functionData.GetLength(), relativeAddress);
+        else if (const auto inferred = inferredPrototypes.find(relativeAddress); inferred != inferredPrototypes.end())
+            NameArgumentsFromPrototype(frame, inferred->second->details, functionArch, functionData.GetData(), functionData.GetLength(), relativeAddress);
         NameVariablesFromCalls(frame, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch);
         // the structures the user gave (Alt+Q), over the variables and the structures of the analysis
         const auto& userStructures = zone->userVariableStructures;
@@ -2467,6 +3197,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         ComputeFunctionEnds();
         DetectFunctionChunks();
         ComputeApiCategories();
+        InferPrototypes();
         if (paddingReached && pendingRanges.empty()) {
             // the reached padding only: the lines are counted again, the instructions and the analysis stay
             recountedOffsets.clear();
@@ -2529,6 +3260,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->functionEnds              = std::move(functionEnds);
         zone->functionChunks            = std::move(chunks);
         zone->functionApiCategories     = std::move(functionApiCategories);
+        zone->inferredPrototypes        = std::move(inferredPrototypes);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);
@@ -4818,6 +5550,19 @@ const AsmFunctionDetails* DissasmCodeZone::FindUserPrototype(uint64 functionStar
     return parsed.second ? &parsed.second->details : nullptr;
 }
 
+const AsmFunctionDetails* DissasmCodeZone::FindInferredPrototype(uint64 functionStart) const
+{
+    const auto found = inferredPrototypes.find(functionStart);
+    return found != inferredPrototypes.end() && found->second ? &found->second->details : nullptr;
+}
+
+const AsmFunctionDetails* DissasmCodeZone::FindFunctionPrototype(uint64 functionStart) const
+{
+    if (const auto* user = FindUserPrototype(functionStart))
+        return user;
+    return FindInferredPrototype(functionStart);
+}
+
 void DissasmCodeZone::RecordUserPrototypesEdit(std::map<uint64, std::string> before, uint64 address)
 {
     DissasmEdit edit;
@@ -5185,6 +5930,8 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
             line.autoComment = "Attributes: " + attributes + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
         if (const auto* prototype = FindUserPrototype(line.address)) // IDA: the prototype of the function above it (Y)
             line.autoComment = std::string(prototype->prototype) + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
+        else if (const auto* inferred = FindInferredPrototype(line.address)) // inferred from what it passes to the APIs
+            line.autoComment = "inferred: " + std::string(inferred->prototype) + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
         if (const auto* chunk = FindChunkContaining(line.address); chunk && chunk->start == line.address) { // IDA: START OF FUNCTION CHUNK FOR
             std::string function = GetLabelNameAt(chunk->function);
             if (function.empty())

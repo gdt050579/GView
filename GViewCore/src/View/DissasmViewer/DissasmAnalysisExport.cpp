@@ -122,6 +122,11 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
         }
         item["callers"] = std::move(callers);
         item["callees"] = std::move(callees);
+        if (const auto* prototype = zone.FindFunctionPrototype(function.start)) { // the user's (Y) or the one inferred from its calls
+            item["prototype"] = std::string(prototype->prototype);
+            if (!zone.FindUserPrototype(function.start))
+                item["prototypeInferred"] = true;
+        }
         if (const auto name = zone.suggestedNames.find(function.start); name != zone.suggestedNames.end())
             item["suggestedName"] = name->second;
         functions.push_back(std::move(item));

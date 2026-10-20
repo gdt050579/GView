@@ -8073,6 +8073,218 @@ TEST_CASE("X86ArgumentsAcrossInnerCalls", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000006  push").ends_with("; dwBytes"));
 }
 
+TEST_CASE("InferredPrototypes", "[Dissasm]Help")
+{
+    // x64 Windows. sub_40 keeps its argument in rbx across Sleep and passes it to CloseHandle: sub_40(HANDLE hObject); sub_70 passes its
+    // second argument on to sub_40 by a tail jump: sub_70(a1, HANDLE hObject) (a second round); sub_80 passes rcx to CloseHandle only on one
+    // of two paths that meet (the other one writes rcx): nothing; sub_A0 keeps rbx in the home space of rcx: not an argument there
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    const auto relative = [&file](uint8 opcode, uint32 target) { // call / jmp rel32
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 5);
+        file.push_back(opcode);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    // 0x00: the entry point calls the three
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // sub rsp, 0x28
+    file.insert(file.end(), { 0x48, 0x89, 0xC1 });       // mov rcx, rax       (hObject)
+    relative(0xE8, 0x40);                                // call sub_40
+    file.insert(file.end(), { 0x48, 0x89, 0xC2 });       // mov rdx, rax       (hObject of sub_70)
+    relative(0xE8, 0x70);                                // call sub_70
+    relative(0xE8, 0x80);                                // call sub_80
+    relative(0xE8, 0xA0);                                // call sub_A0
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // add rsp, 0x28; ret
+    file.resize(0x40, 0xCC);
+    // 0x40: sub_40
+    file.insert(file.end(), { 0x53 });                         // push rbx
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x20 });       // sub rsp, 0x20
+    file.insert(file.end(), { 0x48, 0x89, 0xCB });             // mov rbx, rcx
+    file.insert(file.end(), { 0xB9, 0x64, 0x00, 0x00, 0x00 }); // mov ecx, 100
+    call(0x200);                                               // call Sleep
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });             // mov rcx, rbx
+    call(0x208);                                               // call CloseHandle
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x20, 0x5B, 0xC3 }); // add rsp, 0x20; pop rbx; ret
+    file.resize(0x70, 0xCC);
+    // 0x70: sub_70
+    file.insert(file.end(), { 0x48, 0x89, 0xD1 }); // mov rcx, rdx
+    relative(0xE9, 0x40);                          // jmp sub_40
+    file.resize(0x80, 0xCC);
+    // 0x80: sub_80
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // sub rsp, 0x28
+    file.insert(file.end(), { 0x85, 0xD2 });             // test edx, edx
+    file.insert(file.end(), { 0x74, 0x03 });             // je +3 (the call)
+    file.insert(file.end(), { 0x48, 0x89, 0xC1 });       // mov rcx, rax       (only on this path)
+    call(0x208);                                         // call CloseHandle
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // add rsp, 0x28; ret
+    file.resize(0xA0, 0xCC);
+    // 0xa0: sub_A0
+    file.insert(file.end(), { 0x48, 0x89, 0x5C, 0x24, 0x08 }); // mov qword ptr [rsp + 8], rbx (the home space of rcx)
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x20 });       // sub rsp, 0x20
+    file.insert(file.end(), { 0x48, 0x8B, 0x5C, 0x24, 0x28 }); // mov rbx, qword ptr [rsp + 0x28]
+    call(0x208);                                               // call CloseHandle (rcx: the argument)
+    file.insert(file.end(), { 0x48, 0x8B, 0x5C, 0x24, 0x28 }); // mov rbx, qword ptr [rsp + 0x28]
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x20, 0xC3 }); // add rsp, 0x20; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } }, { 0x208, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x70, 0x80, 0xA0 });
+    const auto* wrapper = zone.FindInferredPrototype(0x40);
+    REQUIRE(wrapper != nullptr);
+    REQUIRE(std::string_view(wrapper->prototype) == "sub_40(HANDLE hObject)");
+    const auto* second = zone.FindInferredPrototype(0x70);
+    REQUIRE(second != nullptr);
+    REQUIRE(std::string_view(second->prototype) == "sub_70(a1, HANDLE hObject)");
+    REQUIRE(zone.FindInferredPrototype(0x80) == nullptr); // the two paths do not agree on rcx
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0xA0)->prototype) == "sub_A0(HANDLE hObject)");
+    REQUIRE(zone.FindFunctionPrototype(0x40) == wrapper);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: sub_40(HANDLE hObject)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rax").ends_with("; hObject")); // the calls to them name their arguments
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    rdx, rax").ends_with("; hObject"));
+    // the home slot of rcx keeps rbx in sub_A0: not named after the argument
+    const auto* frame = zone.localVariables.FindFunctionByStart(0xA0);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(8) != nullptr);
+    REQUIRE(frame->FindVariable(8)->name == "arg_0");
+
+    // the user's prototype wins
+    zone.userPrototypes[0x40] = "void closeIt(HANDLE handle)";
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.FindInferredPrototype(0x40) == nullptr);
+    REQUIRE(std::string_view(zone.FindFunctionPrototype(0x40)->prototype) == "void closeIt(HANDLE handle)");
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x70)->prototype) == "sub_70(a1, HANDLE handle)"); // from the user's
+}
+
+TEST_CASE("X86InferredPrototypes", "[Dissasm]Help")
+{
+    // 32 bit x86: the arguments in the stack. sub_40 keeps [ebp + 8] in esi across Sleep and pushes it for CloseHandle: sub_40(HANDLE
+    // hObject); sub_60 (no frame) pushes its second argument [esp + 8] for sub_40: sub_60(a1, HANDLE hObject) (a second round); sub_80 writes
+    // its argument before it pushes it: nothing; sub_A0 writes it in a loop: nothing at the loop start; sub_C0 (cdecl, mov [esp], eax) gives
+    // both of its arguments to free: sub_C0(void* ptr, void* ptr_2); sub_100 passes a LARGE_INTEGER (two pushes) to SetFilePointerEx
+    std::vector<unsigned char> file;
+    const auto relative = [&file](uint32 target) { // call rel32
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 5);
+        file.push_back(0xE8);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    // 0x00: the entry point calls them
+    file.insert(file.end(), { 0x6A, 0x10 }); // 0x00: push 0x10                  (hObject)
+    relative(0x40);                          // 0x02: call sub_40
+    file.insert(file.end(), { 0x6A, 0x01 }); // 0x07: push 1                     (hObject of sub_60)
+    file.insert(file.end(), { 0x6A, 0x02 }); // 0x09: push 2
+    relative(0x60);                          // 0x0b: call sub_60
+    file.insert(file.end(), { 0x6A, 0x03 }); // 0x10: push 3
+    relative(0x80);                          // 0x12: call sub_80
+    file.insert(file.end(), { 0x6A, 0x04 }); // 0x17: push 4
+    relative(0xA0);                          // 0x19: call sub_A0
+    file.insert(file.end(), { 0x6A, 0x05 }); // 0x1e: push 5                     (ptr_2)
+    file.insert(file.end(), { 0x6A, 0x06 }); // 0x20: push 6                     (ptr)
+    relative(0xC0);                          // 0x22: call sub_C0
+    file.insert(file.end(), { 0x83, 0xC4, 0x08 }); // 0x27: add esp, 8
+    file.insert(file.end(), { 0x6A, 0x00 });       // 0x2a: push 0              (liDistanceToMove: high)
+    file.insert(file.end(), { 0x6A, 0x20 });       // 0x2c: push 0x20           (low)
+    file.insert(file.end(), { 0x6A, 0x07 });       // 0x2e: push 7              (hFile)
+    relative(0x100);                               // 0x30: call sub_100
+    file.push_back(0xC3);                          // 0x35: ret
+    file.resize(0x40, 0xCC);
+    // 0x40: sub_40
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                   // push ebp; mov ebp, esp
+    file.insert(file.end(), { 0x56, 0x8B, 0x75, 0x08 });             // push esi; mov esi, dword ptr [ebp + 8]
+    file.insert(file.end(), { 0x6A, 0x64 });                         // push 100
+    file.insert(file.end(), { 0xFF, 0x15, 0x00, 0x10, 0x40, 0x00 }); // call dword ptr [Sleep]
+    file.insert(file.end(), { 0x56 });                               // push esi
+    file.insert(file.end(), { 0xFF, 0x15, 0x04, 0x10, 0x40, 0x00 }); // call dword ptr [CloseHandle]
+    file.insert(file.end(), { 0x5E, 0x5D, 0xC2, 0x04, 0x00 });       // pop esi; pop ebp; ret 4
+    file.resize(0x60, 0xCC);
+    // 0x60: sub_60
+    file.insert(file.end(), { 0xFF, 0x74, 0x24, 0x08 }); // push dword ptr [esp + 8]
+    relative(0x40);                                      // call sub_40
+    file.insert(file.end(), { 0xC2, 0x08, 0x00 });       // ret 8
+    file.resize(0x80, 0xCC);
+    // 0x80: sub_80
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                         // push ebp; mov ebp, esp
+    file.insert(file.end(), { 0xC7, 0x45, 0x08, 0x00, 0x00, 0x00, 0x00 }); // mov dword ptr [ebp + 8], 0
+    file.insert(file.end(), { 0xFF, 0x75, 0x08 });                         // push dword ptr [ebp + 8]
+    file.insert(file.end(), { 0xFF, 0x15, 0x04, 0x10, 0x40, 0x00 });       // call dword ptr [CloseHandle]
+    file.insert(file.end(), { 0x5D, 0xC2, 0x04, 0x00 });                   // pop ebp; ret 4
+    file.resize(0xA0, 0xCC);
+    // 0xa0: sub_A0
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                   // 0xa0: push ebp; mov ebp, esp
+    file.insert(file.end(), { 0xFF, 0x75, 0x08 });                   // 0xa3: push dword ptr [ebp + 8]
+    file.insert(file.end(), { 0xFF, 0x15, 0x04, 0x10, 0x40, 0x00 }); // 0xa6: call dword ptr [CloseHandle]
+    file.insert(file.end(), { 0x83, 0x45, 0x08, 0x04 });             // 0xac: add dword ptr [ebp + 8], 4
+    file.insert(file.end(), { 0x83, 0x7D, 0x08, 0x00 });             // 0xb0: cmp dword ptr [ebp + 8], 0
+    file.insert(file.end(), { 0x75, 0xED });                         // 0xb4: jne 0xa3
+    file.insert(file.end(), { 0x5D, 0xC2, 0x04, 0x00 });             // 0xb6: pop ebp; ret 4
+    file.resize(0xC0, 0xCC);
+    // 0xc0: sub_C0
+    file.insert(file.end(), { 0x83, 0xEC, 0x1C });                   // sub esp, 0x1c
+    file.insert(file.end(), { 0x8B, 0x44, 0x24, 0x20 });             // mov eax, dword ptr [esp + 0x20]  (the first argument)
+    file.insert(file.end(), { 0x89, 0x04, 0x24 });                   // mov dword ptr [esp], eax
+    file.insert(file.end(), { 0xFF, 0x15, 0x08, 0x10, 0x40, 0x00 }); // call dword ptr [free]
+    file.insert(file.end(), { 0x8B, 0x44, 0x24, 0x24 });             // mov eax, dword ptr [esp + 0x24]  (the second one)
+    file.insert(file.end(), { 0x89, 0x04, 0x24 });                   // mov dword ptr [esp], eax
+    file.insert(file.end(), { 0xFF, 0x15, 0x08, 0x10, 0x40, 0x00 }); // call dword ptr [free]
+    file.insert(file.end(), { 0x83, 0xC4, 0x1C, 0xC3 });             // add esp, 0x1c; ret
+    file.resize(0x100, 0xCC);
+    // 0x100: sub_100
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                   // push ebp; mov ebp, esp
+    file.insert(file.end(), { 0x6A, 0x00, 0x6A, 0x00 });             // push 0; push 0  (dwMoveMethod, lpNewFilePointer)
+    file.insert(file.end(), { 0xFF, 0x75, 0x10, 0xFF, 0x75, 0x0C }); // push dword ptr [ebp + 0x10]; push dword ptr [ebp + 0xc]
+    file.insert(file.end(), { 0xFF, 0x75, 0x08 });                   // push dword ptr [ebp + 8]
+    file.insert(file.end(), { 0xFF, 0x15, 0x0C, 0x10, 0x40, 0x00 }); // call dword ptr [SetFilePointerEx]
+    file.insert(file.end(), { 0x5D, 0xC2, 0x0C, 0x00 });             // pop ebp; ret 0xc
+    file.resize(0x120, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401000, { "Sleep", MemoryMappingType::FunctionMapping } },
+                          { 0x401004, { "CloseHandle", MemoryMappingType::FunctionMapping } },
+                          { 0x401008, { "free", MemoryMappingType::FunctionMapping } },
+                          { 0x40100C, { "SetFilePointerEx", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0x100 });
+    const auto prototypeOf = [&zone](uint64 start) {
+        const auto* prototype = zone.FindInferredPrototype(start);
+        return prototype ? std::string(prototype->prototype) : std::string();
+    };
+    REQUIRE(prototypeOf(0x40) == "sub_40(HANDLE hObject)");
+    REQUIRE(prototypeOf(0x60) == "sub_60(a1, HANDLE hObject)");
+    REQUIRE(prototypeOf(0x80).empty());
+    REQUIRE(prototypeOf(0xA0).empty());
+    REQUIRE(prototypeOf(0xC0) == "sub_C0(void* ptr, void* ptr_2)");
+    REQUIRE(prototypeOf(0x100) == "sub_100(HANDLE hFile, LARGE_INTEGER liDistanceToMove)");
+    // the arguments of the frames, named after them
+    REQUIRE(zone.localVariables.FindFunctionByStart(0x40)->FindVariable(8)->name == "hObject");
+    REQUIRE(zone.localVariables.FindFunctionByStart(0x100)->FindVariable(0xC)->name == "liDistanceToMove");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: sub_40(HANDLE hObject)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000000  push   0x10").ends_with("; hObject")); // the calls to them name their arguments
+    REQUIRE(FindListingLine(listing, "0x00000007  push   1").ends_with("; hObject"));
+    REQUIRE(FindListingLine(listing, "0x00000020  push   6").ends_with("; ptr"));
+    REQUIRE(FindListingLine(listing, "0x0000001e  push   5").ends_with("; ptr_2"));
+    REQUIRE(FindListingLine(listing, "0x0000002e  push   7").ends_with("; hFile"));
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does

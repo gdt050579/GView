@@ -377,6 +377,13 @@ struct DissasmCodeZone : public ParseZone {
     std::map<uint64, std::string> userPrototypes;
     // the parsed prototype of a function of the user; null when it has none (or its text is not a prototype)
     const AsmFunctionDetails* FindUserPrototype(uint64 functionStart) const;
+    // the prototypes the analysis infers (beyond IDA, as its decompiler): a function that passes its own argument to a known prototype gets
+    // that parameter (sub_X: mov rbx, rcx; ...; mov rcx, rbx; call CloseHandle -> sub_X(HANDLE hObject)); the parameters it does not know
+    // have no name. Register conventions (x64 Windows / System V, ARM64, ARM); by start. Recomputed by the deep scan, not saved
+    std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes;
+    const AsmFunctionDetails* FindInferredPrototype(uint64 functionStart) const;
+    // the prototype of a function: the user's (Y), else the inferred one
+    const AsmFunctionDetails* FindFunctionPrototype(uint64 functionStart) const;
     // Y: the prototypes before the change; `address` is the function
     void RecordUserPrototypesEdit(std::map<uint64, std::string> before, uint64 address);
     // the repeatable comment of an address (empty: removed), an edit of the user (it can be undone); false when nothing changes

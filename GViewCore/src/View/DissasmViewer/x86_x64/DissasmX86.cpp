@@ -1112,8 +1112,8 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (shouldConsiderCall) {
             const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
-            if (const auto* user = params.zone->FindUserPrototype(operands.directTarget.value()))
-                AnnounceKnownFunctionCall(params, user); // the prototype the user gave (Y)
+            if (const auto* user = params.zone->FindFunctionPrototype(operands.directTarget.value()))
+                AnnounceKnownFunctionCall(params, user); // the prototype the user gave (Y), else the inferred one
             else if (thunk != params.zone->thunkImports.end())
                 AnnounceKnownFunctionCall(params, thunk->second);
             else if (!labelName.empty())
@@ -2406,6 +2406,8 @@ void Instance::RefreshCursorLineNumbers()
         asmLine.branchTarget.has_value())
         if (const auto* user = zone->FindUserPrototype(asmLine.branchTarget.value())) // the prototype the user gave (Y)
             cursorLineNumbers.instruction = std::string(user->prototype);
+        else if (const auto* inferred = zone->FindInferredPrototype(asmLine.branchTarget.value())) // the one inferred from its calls
+            cursorLineNumbers.instruction = std::string(inferred->prototype) + " (inferred)";
     if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump)) {
         // the last name of the operands: call CreateFileW / call cs:__imp_CreateFileW / jmp j_connect
         size_t end = lineOperands.size();
@@ -2976,6 +2978,17 @@ void Instance::SetFunctionPrototype()
     std::string text;
     if (const auto user = zone->userPrototypes.find(function.value()); user != zone->userPrototypes.end())
         text = user->second;
+    else if (const auto* inferred = zone->FindInferredPrototype(function.value())) {
+        // the inferred one as a prototype: the parameters it does not know are int a1, a2, ...
+        text = "int " + name + "(";
+        for (size_t index = 0; index < inferred->params.size(); index++) {
+            if (index > 0)
+                text += ", ";
+            const std::string_view parameter = inferred->params[index].name;
+            text += parameter.empty() ? "int a" + std::to_string(index + 1) : std::string(inferred->params[index].type) + " " + std::string(parameter);
+        }
+        text += ")";
+    }
     else if (const auto thunk = zone->thunkImports.find(function.value()); thunk != zone->thunkImports.end() && FindApiPrototype(thunk->second))
         text = std::string(FindApiPrototype(thunk->second)->prototype);
     else if (const auto* api = FindApiPrototype(name))

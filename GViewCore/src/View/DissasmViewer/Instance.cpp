@@ -1811,7 +1811,8 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
                 continue;
             named[slot] = true;
             remaining--;
-            nameArgument(*it, functionDetails->params[slot].name);
+            if (functionDetails->params[slot].name && functionDetails->params[slot].name[0]) // not a parameter an inferred prototype does not know
+                nameArgument(*it, functionDetails->params[slot].name);
         }
         return;
     }
@@ -1887,7 +1888,8 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
             continue;
         named[slot] = true;
         remaining--;
-        nameArgument(*it, functionDetails->params[slot].name);
+        if (functionDetails->params[slot].name && functionDetails->params[slot].name[0])
+            nameArgument(*it, functionDetails->params[slot].name);
     }
 }
 
