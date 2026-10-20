@@ -8,6 +8,7 @@
 #include "DissasmAssistantRequest.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmSignatures.hpp"
+#include <random>
 #include <atomic>
 #include <thread>
 #include <nlohmann/json.hpp>
@@ -1166,6 +1167,130 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         REQUIRE(restored.CheckLineText(62, legacy.GetLineText(60)));
         REQUIRE(restored.CheckComment(405, "c400")); // and 3 more of main
         REQUIRE(restored.CheckLineText(405, legacy.GetLineText(400)));
+    }
+}
+
+namespace
+{
+// a mutation of a record (the cache file is untrusted: a sample can come with its cache): bit flips, 4 / 8 byte fields at the values that
+// break the counts and the sizes, a truncation, inserted bytes, a duplicated chunk
+std::vector<std::byte> MutateRecord(const std::vector<std::byte>& record, std::mt19937& random)
+{
+    std::vector<std::byte> data = record;
+    const auto pick = [&random](size_t count) { return count == 0 ? size_t(0) : static_cast<size_t>(random() % count); };
+    static constexpr uint32 FIELDS[] = { 0, 1, 2, 0xFF, 0xFFFF, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF, 0xFFFFFFFE, 0x10000 };
+    switch (random() % 6) {
+    case 0:
+        for (uint32 count = 1 + random() % 8; count > 0 && !data.empty(); count--)
+            data[pick(data.size())] ^= static_cast<std::byte>(1u << (random() % 8));
+        break;
+    case 1:
+        for (uint32 count = 1 + random() % 3; count > 0 && data.size() >= 4; count--) {
+            const uint32 value = FIELDS[pick(std::size(FIELDS))];
+            memcpy(data.data() + pick(data.size() - 3), &value, sizeof(value));
+        }
+        break;
+    case 2:
+        if (data.size() >= 8) {
+            const uint64 value = (random() % 2) ? UINT64_MAX : 0x8000000000000000ull;
+            memcpy(data.data() + pick(data.size() - 7), &value, sizeof(value));
+        }
+        break;
+    case 3:
+        data.resize(pick(data.size()));
+        break;
+    case 4: {
+        const size_t at = pick(data.size() + 1);
+        for (uint32 count = 1 + random() % 32; count > 0; count--)
+            data.insert(data.begin() + at, static_cast<std::byte>(random() & 0xFF));
+        break;
+    }
+    default:
+        if (!data.empty()) {
+            const size_t from = pick(data.size()), length = std::min<size_t>(data.size() - from, 1 + random() % 64);
+            const std::vector<std::byte> chunk(data.begin() + from, data.begin() + from + length);
+            data.insert(data.begin() + pick(data.size() + 1), chunk.begin(), chunk.end());
+        }
+        break;
+    }
+    return data;
+}
+} // namespace
+
+TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
+{
+    // the records of a zone with every kind of user data: the current record (version 4), the line keyed records of the versions 1 and 2,
+    // the user data and the user functions records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    std::string_view labelName = "isPrime";
+    REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+    REQUIRE(edited.RenameLocalVariable(36, "count").ok);
+    REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+    REQUIRE(edited.AddOrUpdateComment(36, "on a variable"));
+    REQUIRE(edited.zone->AddCollapsibleZone(120, 130));
+    std::vector<std::byte> current, versionOne, versionTwo;
+    REQUIRE(edited.zone->ToBuffer(current));
+    WriteLineKeyedRecord(*edited.zone, 1, { { 50, "line 50" }, { 70, "line 70" } }, versionOne);
+    WriteLineKeyedRecord(*edited.zone, 2, { { 50, "line 50" } }, versionTwo);
+    std::vector<std::byte> userData, userFunctions;
+    const auto append = [](std::vector<std::byte>& buffer, const auto& value) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    append(userData, uint32{ 0x44554447 }), append(userData, uint32{ 1 }), append(userData, uint32{ 2 });
+    append(userData, uint64{ 0x10 }), append(userData, uint64{ 0x18 }), append(userData, uint8{ 4 });
+    append(userData, uint64{ 0x20 }), append(userData, uint64{ 0x30 }), append(userData, uint8{ 0 });
+    append(userFunctions, uint32{ 0x46554447 }), append(userFunctions, uint32{ 1 }), append(userFunctions, uint32{ 2 });
+    append(userFunctions, uint64{ 0x30 }), append(userFunctions, uint8{ USER_FUNCTION_CREATE });
+    append(userFunctions, uint64{ 0x5 }), append(userFunctions, uint8{ USER_FUNCTION_NORETURN });
+
+    // GVIEW_FUZZ_ROUNDS=<rounds> [GVIEW_FUZZ_SEED=<seed>]: a longer run with other mutants (a local fuzzing campaign)
+    const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
+    const char* seedText   = std::getenv("GVIEW_FUZZ_SEED");
+    const uint32 ROUNDS    = roundsText ? static_cast<uint32>(std::strtoul(roundsText, nullptr, 10)) : 150u;
+    std::mt19937 random(seedText ? static_cast<uint32>(std::strtoul(seedText, nullptr, 10)) : 0x6E5F1234u);
+    std::unique_ptr<DissasmTestInstance> restored;
+    uint32 loaded = 0;
+    for (const auto* seed : { &current, &versionOne, &versionTwo }) {
+        for (uint32 round = 0; round < ROUNDS; round++) {
+            if (round % 25 == 0) // a zone that the previous records changed is replaced from time to time
+                restored = std::make_unique<DissasmTestInstance>(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+            const auto mutant = MutateRecord(*seed, random);
+            DissasmCache cache;
+            cache.hasCache = true;
+            cache.AddRegion("DissasmParseZoneType.0", mutant.data(), static_cast<uint32>(mutant.size()));
+            bool zoneLinesChanged = false;
+            loaded += restored->zone->TryLoadDataFromCache(cache, zoneLinesChanged) ? 1 : 0;
+            // the zone stays usable: its lines are drawn
+            const uint32 lines = std::min<uint32>(restored->zone->GetExpandedLinesCount(), 200);
+            for (uint32 line = 0; line < lines; line += 7)
+                restored->GetLineText(line);
+        }
+    }
+    INFO(loaded);
+    REQUIRE(loaded > 0); // some mutants are still valid records (the parsers were reached)
+    if (roundsText)
+        WARN("cache record mutants loaded: " << loaded << " of " << 3 * ROUNDS);
+
+    // the user data / user functions records and the local variables
+    for (uint32 round = 0; round < 2000 + 10 * (roundsText ? ROUNDS : 0); round++) {
+        const auto data = MutateRecord(userData, random);
+        DissasmCache cache;
+        cache.AddRegion("DissasmUserData.0", data.data(), static_cast<uint32>(data.size()));
+        for (const auto& range : ReadUserDataRanges(cache, *edited.zone))
+            REQUIRE(range.start < range.end);
+        const auto functionsData = MutateRecord(userFunctions, random);
+        DissasmCache functionsCache;
+        functionsCache.AddRegion("DissasmUserFunctions.0", functionsData.data(), static_cast<uint32>(functionsData.size()));
+        for (const auto& [address, flags] : ReadUserFunctions(functionsCache, *edited.zone))
+            REQUIRE(((flags & ~USER_FUNCTION_ALL) == 0 && flags != 0 && address < edited.zone->zoneDetails.size));
+        std::vector<std::byte> variables;
+        edited.zone->localVariables.ToBuffer(variables);
+        const auto variablesData = MutateRecord(variables, random);
+        const std::byte* start   = variablesData.data();
+        DissasmLocalVariables parsed;
+        parsed.LoadFromBuffer(start, variablesData.data() + variablesData.size());
+        REQUIRE(start <= variablesData.data() + variablesData.size());
     }
 }
 
@@ -6971,6 +7096,68 @@ TEST_CASE("UntrustedDocumentsFieldTypes", "[Dissasm]UserData")
     signatures["format"] = nullptr;
     REQUIRE_NOTHROW(ApplySignaturesDocument(signatures, { &zone }, applied, error));
     REQUIRE_FALSE(ApplySignaturesDocument(signatures, { &zone }, applied, error));
+}
+
+TEST_CASE("UntrustedDocumentsFuzz", "[Dissasm]UserData")
+{
+    // the annotations and the signatures of a zone with every section, their values replaced by values of other types, their keys removed,
+    // their arrays repeated (a fixed seed; GVIEW_FUZZ_ROUNDS for a longer run): imported, never an exception
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.ApplyUserLabelName(0x10, "helper"));
+    zone.userComments.Set({ DissasmCommentAnchor::Kind::Instruction, 0x05, 0 }, "a comment");
+    zone.userDataRanges = { { 0x18, 0x1C, 4 } };
+    zone.userFunctions  = { { 0x20, USER_FUNCTION_CREATE }, { 0x30, USER_FUNCTION_NORETURN } };
+    const auto annotations = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    const auto signatures  = BuildSignaturesDocument({ &zone });
+
+    const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
+    const uint32 rounds    = roundsText ? static_cast<uint32>(std::strtoul(roundsText, nullptr, 10)) : 300u;
+    std::mt19937 random(0x1A2B3C4Du);
+    const std::vector<nlohmann::json> ODD = { nullptr, true, false, -1, 0, 1, UINT64_MAX, INT64_MIN, 1.5, -1e300, "", std::string(1000, 'x'), "0x",
+                                              "0xFFFFFFFFFFFFFFFF", "zz", nlohmann::json::array(), nlohmann::json::object(), nlohmann::json::array({ 1, 2 }) };
+    const auto mutate = [&](nlohmann::json document) {
+        for (uint32 count = 1 + random() % 4; count > 0; count--) {
+            const auto leaves = document.flatten();
+            if (leaves.empty())
+                break;
+            auto leaf = leaves.begin();
+            std::advance(leaf, random() % leaves.size());
+            const nlohmann::json::json_pointer pointer(leaf.key());
+            switch (random() % 4) {
+            case 0:
+            case 1:
+                document[pointer] = ODD[random() % ODD.size()];
+                break;
+            case 2: // the key / the item of the leaf removed
+                if (!pointer.empty() && document[pointer.parent_pointer()].is_object())
+                    document[pointer.parent_pointer()].erase(pointer.back());
+                break;
+            default: // the array of the leaf repeated
+                if (!pointer.empty() && document[pointer.parent_pointer()].is_array()) {
+                    auto& array = document[pointer.parent_pointer()];
+                    const auto copy = array;
+                    for (uint32 times = random() % 50; times > 0; times--)
+                        array.insert(array.end(), copy.begin(), copy.end());
+                }
+                break;
+            }
+        }
+        return document;
+    };
+    for (uint32 round = 0; round < rounds; round++) {
+        DissasmTestInstance target(file.data(), file.size(), false, layout);
+        DissasmAnnotationsImport result;
+        std::string error;
+        REQUIRE_NOTHROW(ImportAnnotationsDocument(mutate(annotations), { target.zone.get() }, result, error));
+        DissasmSignaturesApply applied;
+        REQUIRE_NOTHROW(ApplySignaturesDocument(mutate(signatures), { target.zone.get() }, applied, error));
+    }
 }
 
 TEST_CASE("UserDataRangesCache", "[Dissasm]UserData")
