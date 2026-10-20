@@ -306,6 +306,9 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_SET_STRUCTURE:
         SetVariableStructure();
         return true;
+    case COMMAND_SET_OPERAND_STRUCTURE:
+        SetOperandStructure();
+        return true;
     }
     return false;
 }

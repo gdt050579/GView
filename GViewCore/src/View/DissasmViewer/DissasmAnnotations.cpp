@@ -170,6 +170,13 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     if (!structures.empty())
         result["variableStructures"] = std::move(structures);
 
+    // the structure offsets of the operands (T)
+    json operands = json::array();
+    for (const auto& [address, structure] : zone.operandStructures)
+        operands.push_back({ { "address", Hex(base + address) }, { "structure", structure } });
+    if (!operands.empty())
+        result["operandStructures"] = std::move(operands);
+
     json names = json::array();
     for (const auto& [address, name] : zone.GetUserLabelNames())
         names.push_back({ { "address", Hex(base + address) }, { "name", name } });
@@ -300,6 +307,18 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
             if (std::find(result.zonesToReanalyze.begin(), result.zonesToReanalyze.end(), &zone) == result.zonesToReanalyze.end())
                 result.zonesToReanalyze.push_back(&zone);
         }
+    }
+
+    for (const auto& item : ArrayField(zoneJson, "operandStructures")) {
+        const auto address = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
+        const bool hasName = item.is_object() && item.contains("structure") && item["structure"].is_string();
+        const std::string name = hasName ? item["structure"].get<std::string>() : std::string();
+        if (!address.has_value() || name.empty() || !IsValidUserStructureName(name)) {
+            result.skipped++;
+            continue;
+        }
+        zone.operandStructures[address.value()] = name;
+        result.operandStructures++;
     }
 
     for (const auto& item : ArrayField(zoneJson, "names")) {

@@ -505,6 +505,51 @@ void GView::View::DissasmViewer::UserVariableStructuresToBuffer(const std::map<s
     }
 }
 
+constexpr uint32 DISSASM_OPERAND_STRUCTURES_MAGIC   = 0x4F554447; // "GDUO"
+constexpr uint32 DISSASM_OPERAND_STRUCTURES_VERSION = 1;
+
+static void FormatOperandStructuresRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmOperandStructures.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadOperandStructures(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> structures;
+    LocalString<64> name;
+    FormatOperandStructuresRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return structures;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_OPERAND_STRUCTURES_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_OPERAND_STRUCTURES_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return structures;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && !text.empty() && IsValidUserStructureName(text))
+            structures[address] = std::move(text);
+    }
+    return structures;
+}
+
+void GView::View::DissasmViewer::OperandStructuresToBuffer(const std::map<uint64, std::string>& structures, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_OPERAND_STRUCTURES_MAGIC);
+    append_bytes(buffer, DISSASM_OPERAND_STRUCTURES_VERSION);
+    append_bytes(buffer, static_cast<uint32>(structures.size()));
+    for (const auto& [address, structure] : structures) {
+        append_bytes(buffer, address);
+        append_string(buffer, structure);
+    }
+}
+
 static void UserFunctionsToBuffer(const std::map<uint64, uint8>& functions, std::vector<std::byte>& buffer)
 {
     buffer.clear();
@@ -583,6 +628,9 @@ void Instance::SaveCacheData()
         FormatUserStructuresRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
         if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
             keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatOperandStructuresRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
     }
     // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
     for (auto& [name, entry] : cacheData.zonesData) {
@@ -630,6 +678,12 @@ void Instance::SaveCacheData()
         if (!dissasmZone->userVariableStructures.empty()) {
             UserVariableStructuresToBuffer(dissasmZone->userVariableStructures, buffer);
             FormatUserStructuresRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->operandStructures.empty()) {
+            OperandStructuresToBuffer(dissasmZone->operandStructures, buffer);
+            FormatOperandStructuresRecordName(zoneName, *dissasmZone);
             if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
                 return;
         }

@@ -55,13 +55,13 @@ enum DissasmUserFunctionFlags : uint8 {
 
 // An edit of the user with what it replaced: it can be undone and redone (Ctrl+Z / Ctrl+Y)
 struct DissasmEdit {
-    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges, UserFunctions, VariableStructures };
+    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges, UserFunctions, VariableStructures, OperandStructure };
     Kind kind = Kind::Comment;
     DissasmCommentAnchor anchor;              // Comment
     uint64 address     = 0;                   // LabelName: the label; VariableName: the function; DecimalOperand: the instruction
     int32 frameOffset  = 0;                   // VariableName
     uint32 numberIndex = 0;                   // DecimalOperand
-    std::optional<std::string> before, after; // Comment (none: no comment), LabelName, VariableName
+    std::optional<std::string> before, after; // Comment (none: no comment), LabelName, VariableName, OperandStructure (none: no structure)
     DissasmCollapsibleZone zone;              // AddZone / RemoveZone
     std::vector<DissasmInstructionSet::DataRange> rangesBefore, rangesAfter; // DataRanges (address: the edited line)
     std::map<uint64, uint8> functionsBefore, functionsAfter;                 // UserFunctions (address: the function)
@@ -341,6 +341,12 @@ struct DissasmCodeZone : public ParseZone {
     // (FindApiStructure); empty: no structure (the one the analysis finds is not applied). Like userFunctions: a change needs a new analysis
     // (the variables inside the structure are its fields), saved in the cache and in the annotations
     std::map<std::pair<uint64, int32>, std::string> userVariableStructures;
+    // the structure offsets the user gave to the memory operands (IDA T): the relative address of an instruction -> the structure whose field
+    // its displacement is ([rbx + 0x3c] -> [rbx + STARTUPINFOW.dwFlags]). Only the drawing changes (as decimalOperands); saved in the cache
+    // and in the annotations
+    std::map<uint64, std::string> operandStructures;
+    // T: the structure of the operand of the instruction (empty: none), an edit of the user (it can be undone); false when nothing changes
+    bool SetOperandStructure(uint64 address, const std::string& structure);
     // a data zone: the places the code of the other zones refers to (relative, sorted) and the largest access there (0: an address taken)
     void CollectDataZoneTargets(std::vector<uint64>& targets, std::vector<uint8>& sizes) const;
     // the references to an address (VA) from this zone, then from the other code zones of the file

@@ -4694,6 +4694,29 @@ void DissasmCodeZone::RecordUserFunctionsEdit(std::map<uint64, uint8> before, ui
     RecordEdit(std::move(edit));
 }
 
+bool DissasmCodeZone::SetOperandStructure(uint64 address, const std::string& structure)
+{
+    const auto found = operandStructures.find(address);
+    std::optional<std::string> before;
+    if (found != operandStructures.end())
+        before = found->second;
+    const std::optional<std::string> after = structure.empty() ? std::nullopt : std::optional<std::string>(structure);
+    if (before == after)
+        return false;
+    if (after.has_value())
+        operandStructures[address] = after.value();
+    else
+        operandStructures.erase(address);
+    DissasmEdit edit;
+    edit.kind    = DissasmEdit::Kind::OperandStructure;
+    edit.address = address;
+    edit.before  = std::move(before);
+    edit.after   = after;
+    RecordEdit(std::move(edit));
+    ResetZoneCaching(); // the lines are drawn again with the field
+    return true;
+}
+
 void DissasmCodeZone::RecordUserVariableStructuresEdit(std::map<std::pair<uint64, int32>, std::string> before, uint64 address)
 {
     DissasmEdit edit;
@@ -4778,6 +4801,14 @@ bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
     case DissasmEdit::Kind::VariableStructures:
         userVariableStructures = forward ? edit.structuresAfter : edit.structuresBefore; // the caller analyzes the zone again
         break;
+    case DissasmEdit::Kind::OperandStructure: {
+        const auto& structure = forward ? edit.after : edit.before;
+        if (structure.has_value())
+            operandStructures[edit.address] = structure.value();
+        else
+            operandStructures.erase(edit.address);
+        break;
+    }
     case DissasmEdit::Kind::AddZone:
     case DissasmEdit::Kind::RemoveZone: {
         const bool add = (edit.kind == DissasmEdit::Kind::AddZone) == forward;

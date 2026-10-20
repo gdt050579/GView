@@ -541,6 +541,18 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     const uint32 decimalMask = zone ? zone->GetDecimalOperandsMask(address) : 0u;
 
     if (!variable) {
+        // T: the displacement of the memory operand as a field of the structure the user gave ([rbx + STARTUPINFOW.dwFlags])
+        const auto operandStructure = zone ? zone->operandStructures.find(address) : std::map<uint64, std::string>::const_iterator{};
+        if (zone && operandStructure != zone->operandStructures.end()) {
+            const auto arch       = zone->GetArchAt(address);
+            const auto* structure = FindApiStructure(operandStructure->second, arch == DissasmArch::X64 || arch == DissasmArch::Arm64);
+            const std::string numbers = decimalMask != 0 ? FormatOperandNumbers(text, decimalMask) : std::string(text);
+            if (const auto rewritten = structure ? ApplyOperandStructure(numbers, *structure, zone->IsArmCode()) : std::nullopt; rewritten.has_value()) {
+                op_str      = portable_strdup(rewritten->c_str());
+                op_str_size = static_cast<uint32>(rewritten->size());
+                return;
+            }
+        }
         if (decimalMask != 0) {
             const auto formatted = FormatOperandNumbers(text, decimalMask);
             op_str               = portable_strdup(formatted.c_str());
@@ -1541,6 +1553,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
         zone->userDataRanges = ReadUserDataRanges(cacheData, *zone);
         zone->userFunctions  = ReadUserFunctions(cacheData, *zone); // P / Delete function / noreturn
         zone->userVariableStructures = ReadUserVariableStructures(cacheData, *zone); // Alt+Q
+        zone->operandStructures      = ReadOperandStructures(cacheData, *zone);      // T
     }
 
     if (!zone->InitZone(initData))
@@ -2023,7 +2036,7 @@ void Instance::ImportAnnotations()
           result.names,
           result.comments,
           result.variables,
-          result.structures,
+          result.structures + result.operandStructures,
           result.decimalOperands,
           result.collapsibleZones,
           result.functions,
@@ -2617,7 +2630,8 @@ void Instance::EditUserFunction(UserFunctionEdit edit)
     }
 }
 
-// IDA Alt+Q: the structures of the code (their size), the search bar filters them; "(none)" removes the structure of the variable
+// IDA Alt+Q / T: the structures of the code (their size), the search bar filters them; "(none)" removes the structure of the variable /
+// the operand
 class StructuresWindow : public AppCUI::Controls::Window
 {
     static constexpr int BTN_OK     = 1;
@@ -2628,7 +2642,7 @@ class StructuresWindow : public AppCUI::Controls::Window
 
   public:
     StructuresWindow(std::string_view variable, std::string_view current, bool is64)
-        : Window("Structure of the variable", "d:c,w:70,h:80%", WindowFlags::Sizeable)
+        : Window("Structure", "d:c,w:70,h:80%", WindowFlags::Sizeable)
     {
         LocalString<128> text;
         text.SetFormat("The structure of %.*s (%s code):", static_cast<int>(variable.size()), variable.data(), is64 ? "64 bit" : "32 bit");
@@ -2714,6 +2728,52 @@ void Instance::SetVariableStructure()
     zone->userVariableStructures[{ functionStart, frameOffset }] = structure;
     zone->RecordUserVariableStructuresEdit(before, functionStart); // Ctrl+Z gives the previous structures back
     ReanalyzeZone(zone, functionStart, true); // the variables inside the structure become its fields
+}
+
+void Instance::SetOperandStructure()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.size == 0 || asmLine.isCollapsedLine || !asmLine.op_str) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select an instruction with a memory operand ([rbx + 0x3c])!");
+        return;
+    }
+    if (asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Reference) {
+        Dialogs::MessageBox::ShowNotification("Info", "The operand is a local variable: give it a structure with Alt+Q!");
+        return;
+    }
+    // the operand must take a field: a probe structure on the operands as they are drawn without one
+    const auto arch       = zone->GetArchAt(asmLine.address);
+    const bool is64       = arch == DissasmArch::X64 || arch == DissasmArch::Arm64;
+    const auto current    = zone->operandStructures.find(asmLine.address);
+    const auto* structure = current != zone->operandStructures.end() ? FindApiStructure(current->second, is64) : nullptr;
+    if (!structure) {
+        const auto* probe = FindApiStructure("FILETIME", is64);
+        if (!probe || !ApplyOperandStructure({ asmLine.op_str, asmLine.op_str_size }, *probe, zone->IsArmCode()).has_value()) {
+            Dialogs::MessageBox::ShowNotification("Info", "The instruction has no memory operand with a base register and a positive displacement!");
+            return;
+        }
+    }
+    LocalString<64> operand;
+    operand.SetFormat("the operand of 0x%llx", static_cast<unsigned long long>(zone->labelAddressBase + asmLine.address));
+    StructuresWindow window(operand.ToStringView(), structure ? std::string_view(structure->name) : std::string_view(), is64);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelected().has_value())
+        return;
+    if (zone->SetOperandStructure(asmLine.address, window.GetSelected().value())) // Ctrl+Z gives the previous one back
+        drawnLinesGeneration++;
 }
 
 bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background)

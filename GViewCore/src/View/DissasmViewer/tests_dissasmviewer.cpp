@@ -1220,7 +1220,7 @@ std::vector<std::byte> MutateRecord(const std::vector<std::byte>& record, std::m
 TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
 {
     // the records of a zone with every kind of user data: the current record (version 4), the line keyed records of the versions 1 and 2,
-    // the user data, the user functions and the user structures records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
+    // the user data, the user functions, the user structures and the operand structures records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
     DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
     std::string_view labelName = "isPrime";
     REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
@@ -1243,8 +1243,9 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
     append(userFunctions, uint32{ 0x46554447 }), append(userFunctions, uint32{ 1 }), append(userFunctions, uint32{ 2 });
     append(userFunctions, uint64{ 0x30 }), append(userFunctions, uint8{ USER_FUNCTION_CREATE });
     append(userFunctions, uint64{ 0x5 }), append(userFunctions, uint8{ USER_FUNCTION_NORETURN });
-    std::vector<std::byte> userStructures;
+    std::vector<std::byte> userStructures, operandStructures;
     UserVariableStructuresToBuffer({ { { 0x30, -0x20 }, "SYSTEMTIME" }, { { 0x5, -8 }, "" } }, userStructures);
+    OperandStructuresToBuffer({ { 0x30, "STARTUPINFOW" }, { 0x5, "FILETIME" } }, operandStructures);
 
     // GVIEW_FUZZ_ROUNDS=<rounds> [GVIEW_FUZZ_SEED=<seed>]: a longer run with other mutants (a local fuzzing campaign)
     const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
@@ -1291,6 +1292,11 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
         structuresCache.AddRegion("DissasmUserStructures.0", structuresData.data(), static_cast<uint32>(structuresData.size()));
         for (const auto& [key, structure] : ReadUserVariableStructures(structuresCache, *edited.zone))
             REQUIRE((key.first < edited.zone->zoneDetails.size && IsValidUserStructureName(structure)));
+        const auto operandsData = MutateRecord(operandStructures, random);
+        DissasmCache operandsCache;
+        operandsCache.AddRegion("DissasmOperandStructures.0", operandsData.data(), static_cast<uint32>(operandsData.size()));
+        for (const auto& [address, structure] : ReadOperandStructures(operandsCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && !structure.empty() && IsValidUserStructureName(structure)));
         std::vector<std::byte> variables;
         edited.zone->localVariables.ToBuffer(variables);
         const auto variablesData = MutateRecord(variables, random);
@@ -7515,6 +7521,96 @@ TEST_CASE("UserVariableStructures", "[Dissasm]UserData")
     REQUIRE(ReadUserVariableStructures(truncated, zone).empty());
 }
 
+TEST_CASE("OperandStructures", "[Dissasm]UserData")
+{
+    // the displacement of a memory operand as the field of a structure (IDA T)
+    const auto& startup64 = *FindApiStructure("STARTUPINFOW", true);
+    const auto apply      = [](std::string_view operands, const DissasmApiStructure& structure, bool isArm) {
+        return ApplyOperandStructure(operands, structure, isArm).value_or("<none>");
+    };
+    REQUIRE(apply("dword ptr [rbx + 0x3c], eax", startup64, false) == "dword ptr [rbx + STARTUPINFOW.dwFlags], eax");
+    REQUIRE(apply("eax, dword ptr [rbx]", startup64, false) == "eax, dword ptr [rbx + STARTUPINFOW.cb]");
+    REQUIRE(apply("rax, qword ptr [rbx + rcx*8 + 0x10]", startup64, false) == "rax, qword ptr [rbx + rcx*8 + STARTUPINFOW.lpDesktop]");
+    REQUIRE(apply("dword ptr [rbx + 60], 1", startup64, false) == "dword ptr [rbx + STARTUPINFOW.dwFlags], 1"); // decimal (H)
+    REQUIRE(apply("rax, qword ptr [rbx + 0x100]", startup64, false) == "rax, qword ptr [rbx + STARTUPINFOW+0x100]");
+    REQUIRE(apply("eax, dword ptr [rbx + 0x2c]", *FindApiStructure("STARTUPINFOW", false), false) == "eax, dword ptr [rbx + STARTUPINFOW.dwFlags]");
+    REQUIRE(apply("eax, dword ptr [rbx - 8]", startup64, false) == "<none>");
+    REQUIRE(apply("rax, qword ptr [rip + 0x100]", startup64, false) == "<none>");
+    REQUIRE(apply("eax, dword ptr fs:[0x30]", startup64, false) == "<none>");
+    REQUIRE(apply("eax, ecx", startup64, false) == "<none>");
+    REQUIRE(apply("w0, [x19, #0x3c]", startup64, true) == "w0, [x19, #STARTUPINFOW.dwFlags]");
+    REQUIRE(apply("x0, [x19]", startup64, true) == "x0, [x19, #STARTUPINFOW.cb]");
+    REQUIRE(apply("x0, [x19, #-8]", startup64, true) == "<none>");
+    REQUIRE(apply("x0, [x19, x1]", startup64, true) == "<none>");
+
+    // rcx is a STARTUPINFOW of the caller: its fields through the register
+    std::vector<unsigned char> file = {
+        0xC7, 0x41, 0x3C, 0x01, 0x00, 0x00, 0x00, // 0x00: mov dword ptr [rcx + 0x3c], 1
+        0x8B, 0x01,                               // 0x07: mov eax, dword ptr [rcx]
+        0x48, 0x8B, 0x51, 0x58,                   // 0x09: mov rdx, qword ptr [rcx + 0x58]
+        0xC3,                                     // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.SetOperandStructure(0x00, "STARTUPINFOW"));
+    REQUIRE(zone.SetOperandStructure(0x09, "STARTUPINFOW"));
+    REQUIRE_FALSE(zone.SetOperandStructure(0x09, "STARTUPINFOW")); // the same: nothing changes
+    const auto withFields = [&dissasmInstance]() {
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "mov    dword ptr [rcx + STARTUPINFOW.dwFlags], 1").size() > 0);
+        REQUIRE(FindListingLine(listing, "mov    rdx, qword ptr [rcx + STARTUPINFOW.hStdOutput]").size() > 0);
+        REQUIRE(FindListingLine(listing, "mov    eax, dword ptr [rcx]").size() > 0); // not given one
+    };
+    withFields();
+
+    // Ctrl+Z / Ctrl+Y (only the drawing changes: no new analysis)
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && !place->reanalyze && place->address == 0x09));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    rdx, qword ptr [rcx + 0x58]").size() > 0);
+    REQUIRE(zone.RedoEdit().has_value());
+    withFields();
+    // none: the operand as it is
+    REQUIRE(zone.SetOperandStructure(0x00, ""));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    dword ptr [rcx + 0x3c], 1").size() > 0);
+    REQUIRE(zone.UndoEdit().has_value());
+    withFields();
+
+    // a new analysis (P / D / Alt+Q) keeps them
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    withFields();
+
+    // the annotations: a new instance gets them; a bad name / none is skipped
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["operandStructures"].size() == 2);
+    document["zones"][0]["operandStructures"].push_back({ { "address", "0x7" }, { "structure", "" } });
+    document["zones"][0]["operandStructures"].push_back({ { "address", "0x7" }, { "structure", "no such name!" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.operandStructures == 2);
+    REQUIRE(result.skipped == 2);
+    REQUIRE(fresh.zone->operandStructures == zone.operandStructures);
+
+    // the cache record: read back; an empty name, a bad one, an address outside of the zone dropped
+    auto structures    = zone.operandStructures;
+    structures[0x07]   = "";
+    structures[0x0d]   = "a b";
+    structures[0x1000] = "FILETIME";
+    std::vector<std::byte> buffer;
+    OperandStructuresToBuffer(structures, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmOperandStructures.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadOperandStructures(cache, zone) == zone.operandStructures);
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does
@@ -7642,6 +7738,7 @@ TEST_CASE("UntrustedDocumentsFuzz", "[Dissasm]UserData")
     zone.userDataRanges = { { 0x18, 0x1C, 4 } };
     zone.userFunctions  = { { 0x20, USER_FUNCTION_CREATE }, { 0x30, USER_FUNCTION_NORETURN } };
     zone.userVariableStructures = { { { 0x00, -0x20 }, "SYSTEMTIME" }, { { 0x10, -8 }, "" } };
+    zone.operandStructures      = { { 0x05, "STARTUPINFOW" } };
     const auto annotations = BuildAnnotationsDocument({ &zone }, "sample.bin");
     const auto signatures  = BuildSignaturesDocument({ &zone });
 

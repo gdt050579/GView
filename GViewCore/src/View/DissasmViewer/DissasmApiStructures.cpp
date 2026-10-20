@@ -222,6 +222,43 @@ void GView::View::DissasmViewer::ForEachApiStructure(bool is64, const std::funct
         callback(structure);
 }
 
+std::optional<std::string> GView::View::DissasmViewer::ApplyOperandStructure(std::string_view operands, const DissasmApiStructure& structure, bool isArm)
+{
+    const auto open  = operands.find('[');
+    const auto close = open == std::string_view::npos ? std::string_view::npos : operands.find(']', open);
+    if (close == std::string_view::npos)
+        return std::nullopt;
+    const std::string_view inner = operands.substr(open + 1, close - open - 1);
+    if (inner.empty() || inner.starts_with("rip") || inner.starts_with("eip") || inner.starts_with("pc"))
+        return std::nullopt;
+    // the displacement: the last number of the operand (hexadecimal 0x.., decimal after H); none: 0
+    const std::string_view separator = isArm ? ", #" : " + ";
+    const auto split                 = inner.rfind(separator);
+    uint64 offset                    = 0;
+    std::string_view head            = inner;
+    if (split != std::string_view::npos) {
+        const std::string number(inner.substr(split + separator.size()));
+        char* end          = nullptr;
+        const bool isHex   = number.starts_with("0x");
+        const uint64 value = std::strtoull(number.c_str() + (isHex ? 2 : 0), &end, isHex ? 16 : 10);
+        if (!number.empty() && end && *end == 0 && end != number.c_str() + (isHex ? 2 : 0)) {
+            offset = value;
+            head   = inner.substr(0, split);
+        } else if (isArm)
+            return std::nullopt; // [x0, x1]: an index register
+    }
+    if (head.find(" - ") != std::string_view::npos || head.find("#-") != std::string_view::npos || offset > 0xFFFFFFFFull)
+        return std::nullopt; // a negative displacement: not a field
+    if (isArm && head.find(',') != std::string_view::npos)
+        return std::nullopt; // [x0, x1, lsl #3]
+    if (head.empty() || !std::isalpha(static_cast<unsigned char>(head.front())))
+        return std::nullopt; // fs:[0x30]: no base register
+    std::string text(operands.substr(0, open + 1));
+    text.append(head).append(separator).append(structure.name).append(FormatApiStructureMember(structure, static_cast<uint32>(offset), true));
+    text.append(operands.substr(close));
+    return text;
+}
+
 std::string GView::View::DissasmViewer::FormatApiStructureMember(const DissasmApiStructure& structure, uint32 offset, bool memoryAccess)
 {
     if (offset == 0 && !memoryAccess)

@@ -406,6 +406,10 @@ namespace View
         const DissasmApiStructure* FindApiStructure(std::string_view name, bool is64);
         size_t GetApiStructuresCount(bool is64);
         void ForEachApiStructure(bool is64, const std::function<void(const DissasmApiStructure&)>& callback);
+        // IDA T: the displacement of the memory operand of an instruction as the field of a structure: x86 [rbx + 0x3c] -> [rbx +
+        // STARTUPINFOW.dwFlags], [rbx] -> [rbx + STARTUPINFOW.cb]; ARM [x19, #0x3c] -> [x19, #STARTUPINFOW.dwFlags]. None when the operands
+        // have no memory operand with a base register and a positive displacement (rip / pc relative, an index register on ARM, [rbx - 8])
+        std::optional<std::string> ApplyOperandStructure(std::string_view operands, const DissasmApiStructure& structure, bool isArm);
         // the field at an offset of the structure, as IDA writes it after the variable: .dwFlags, .ftLastWriteTime.dwHighDateTime,
         // .cFileName+2, +0x46 (the padding); the offset 0 is the variable itself (lea), or its first field for an access of the memory (.cb)
         std::string FormatApiStructureMember(const DissasmApiStructure& structure, uint32 offset, bool memoryAccess = false);
@@ -664,6 +668,10 @@ namespace View
         std::map<std::pair<uint64, int32>, std::string> ReadUserVariableStructures(const DissasmCache& cache, const DissasmCodeZone& zone);
         // the bytes of the record (the cache, the tests)
         void UserVariableStructuresToBuffer(const std::map<std::pair<uint64, int32>, std::string>& structures, std::vector<std::byte>& buffer);
+        // the structure offsets of the operands of a code zone (DissasmCodeZone::operandStructures, IDA T), saved in the cache; the entries of a
+        // damaged record are dropped
+        std::map<uint64, std::string> ReadOperandStructures(const DissasmCache& cache, const DissasmCodeZone& zone);
+        void OperandStructuresToBuffer(const std::map<uint64, std::string>& structures, std::vector<std::byte>& buffer);
         // a name the record and the annotations accept: empty (no structure) or the name of a structure (letters, digits, _)
         bool IsValidUserStructureName(std::string_view name);
 
@@ -1017,6 +1025,8 @@ namespace View
             void EditUserFunction(UserFunctionEdit edit);
             // IDA Alt+Q: the structure of the variable of the cursor line (its line or an instruction that uses it), chosen in a list
             void SetVariableStructure();
+            // IDA T: the displacement of the memory operand of the cursor instruction as the field of a structure, chosen in the same list
+            void SetOperandStructure();
             // the zone analyzed again; the cursor goes back to `keepAddress` (relative) when given. background: a big zone shows its lines at
             // once and its deep scan continues in the frame updates (the annotations come back when it ends, EndDeepScan); otherwise the whole
             // analysis runs now (ReanalyzeCodeZone)
