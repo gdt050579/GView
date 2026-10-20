@@ -18,6 +18,7 @@ struct DissasmAnalysisOptions {
     const nlohmann::json* annotations = nullptr;
     const nlohmann::json* signatures  = nullptr;
     nlohmann::json* signaturesOutput  = nullptr; // set: receives the signatures of the named functions (BuildSignaturesDocument)
+    std::string* listingOutput        = nullptr; // set: receives the listing of every analyzed zone (BuildX86AsmListing), one after the other
 };
 bool BuildAnalysisJson(Reference<GView::Object> obj, Settings& settings, std::string& json, std::string& error, const DissasmAnalysisOptions& options = {});
 } // namespace GView::View::DissasmViewer

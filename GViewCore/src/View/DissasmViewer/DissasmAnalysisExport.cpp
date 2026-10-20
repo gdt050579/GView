@@ -256,6 +256,22 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
     }
     if (options.signaturesOutput)
         *options.signaturesOutput = BuildSignaturesDocument(analyzedZones);
+    // the listings (IDA's .asm of a batch run): the zones in the order of the file, with the names, the comments and the arguments of the
+    // known APIs (the known functions of the view: AddKnownFunctions) as the F8 export writes them
+    if (options.listingOutput) {
+        options.listingOutput->clear();
+        AsmData asmData;
+        AddKnownFunctions(asmData);
+        std::string listing;
+        for (const auto& parseZone : settings->parseZones) {
+            auto* zone = static_cast<DissasmCodeZone*>(parseZone.get());
+            if (std::find(analyzedZones.begin(), analyzedZones.end(), zone) == analyzedZones.end() ||
+                !DissasmCodeZone::IsNativeCodeLanguage(zone->zoneDetails.language) || !zone->CanReachAsmLines())
+                continue;
+            if (BuildX86AsmListing(*zone, obj, settings.get(), &asmData, listing))
+                options.listingOutput->append(listing).append("\n");
+        }
+    }
 
     nlohmann::json zones = nlohmann::json::array();
     for (size_t index = 0; index < settings->parseZones.size(); index++) {

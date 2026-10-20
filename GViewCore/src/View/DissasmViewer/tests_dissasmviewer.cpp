@@ -4269,6 +4269,42 @@ TEST_CASE("AssistantSuggestions", "[Dissasm]AI")
     REQUIRE_FALSE(zone.AcceptAISuggestion(leaveLine).ok);
 }
 
+TEST_CASE("HeadlessAnalysisListing", "[Dissasm]Analyze")
+{
+    // GView analyze --listing: the listing of every zone (the F8 export) next to the JSON
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret (the export "Worker")
+    file.resize(0x30, 0xCC);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Settings settings;
+    settings.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+    settings.AddFunctionEntry(0x20, "Worker", FunctionEntryType::Export);
+    std::string text, error, listing = "stale";
+    DissasmAnalysisOptions options;
+    options.listingOutput = &listing;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error, options));
+    INFO(listing);
+    REQUIRE(listing.starts_with("; GView disassembly listing (x64)"));
+    REQUIRE(listing.find("stale") == std::string::npos);
+    REQUIRE(listing.find("\nEntryPoint:") != std::string::npos);
+    REQUIRE(listing.find("call   Worker") != std::string::npos);
+    REQUIRE(listing.find("\nWorker:") != std::string::npos);
+    REQUIRE(listing.find("xor    eax, eax") != std::string::npos);
+    // the JSON is the same with or without the listing
+    Settings again;
+    again.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+    again.AddFunctionEntry(0x20, "Worker", FunctionEntryType::Export);
+    std::string plain;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], again, plain, error));
+    REQUIRE(nlohmann::json::parse(plain) == nlohmann::json::parse(text));
+}
+
 TEST_CASE("AssistantNameAnswers", "[Dissasm]AI")
 {
     REQUIRE(ParseAssistantSuggestedName("ParseHeader, ReadHeader, LoadHeader") == "ParseHeader");

@@ -124,6 +124,9 @@ bool Instance::AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptio
     }
     if (!options.signaturesOutput.empty())
         analysisOptions.signaturesOutput = &signaturesOutput;
+    std::string listing;
+    if (!options.listingOutput.empty())
+        analysisOptions.listingOutput = &listing;
     const std::string_view typeName = options.typeName;
     auto file = std::make_unique<AppCUI::OS::File>();
     if (!file->OpenRead(path)) {
@@ -172,6 +175,13 @@ bool Instance::AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptio
         std::ofstream stream(options.signaturesOutput, std::ios::binary);
         if (!stream || !(stream << signaturesOutput.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) << "\n")) {
             error = "Unable to write the signatures file!";
+            return false;
+        }
+    }
+    if (!options.listingOutput.empty()) {
+        std::ofstream stream(options.listingOutput, std::ios::binary);
+        if (!stream || !(stream << listing)) {
+            error = "Unable to write the listing file!";
             return false;
         }
     }

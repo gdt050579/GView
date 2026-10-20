@@ -1951,6 +1951,7 @@ namespace App
         std::filesystem::path annotations;      // a JSON annotations file (ExportAnnotations) added to the data of the user
         std::filesystem::path signatures;       // a JSON signatures file (CreateSignatures): the sub_ functions that match get their names
         std::filesystem::path signaturesOutput; // the signatures of the named functions are written to this file
+        std::filesystem::path listingOutput;    // the listing of every disassembly zone (the text of the F8 export) is written to this file
     };
     // the analysis of the disassembly of a file (functions, calls, strings, switches, the data of the user) as JSON, without a window;
     // Init must be called first
