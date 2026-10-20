@@ -5117,6 +5117,153 @@ TEST_CASE("VariableNamesFromApiArguments", "[Dissasm]Help")
     REQUIRE(document["zones"][0]["variables"][0]["name"] == "hRunKey");
 }
 
+TEST_CASE("ApiReturnAndPointedTypes", "[Dissasm]Help")
+{
+    // the return types of the prototypes (none for void)
+    REQUIRE(FindApiPrototype("CreateFileW")->returnType == "HANDLE");
+    REQUIRE(FindApiPrototype("getenv")->returnType == "char*");
+    REQUIRE(FindApiPrototype("strtoul")->returnType == "unsigned long");
+    REQUIRE(FindApiPrototype("srand")->returnType.empty());
+    REQUIRE(FindApiPrototype("GetSystemTimeAsFileTime")->returnType.empty()); // VOID
+    // the type a variable has when its address is passed
+    REQUIRE(GetPointedType("PHKEY") == "HKEY");
+    REQUIRE(GetPointedType("LPDWORD") == "DWORD");
+    REQUIRE(GetPointedType("HMODULE*") == "HMODULE");
+    REQUIRE(GetPointedType("LPVOID*") == "LPVOID");
+    REQUIRE(GetPointedType("void**") == "void*");
+    REQUIRE(GetPointedType("char* const*") == "char*");
+    REQUIRE(GetPointedType("const char*") == "char");
+    REQUIRE(GetPointedType("LPCWSTR") == "WCHAR");
+    REQUIRE(GetPointedType("LPSTR") == "CHAR");
+    REQUIRE(GetPointedType("REFIID") == "IID");
+    REQUIRE(GetPointedType("LPWIN32_FIND_DATAW") == "WIN32_FIND_DATAW");
+    REQUIRE(GetPointedType("LPVOID").empty());
+    REQUIRE(GetPointedType("const void*").empty());
+    REQUIRE(GetPointedType("DWORD").empty());
+    REQUIRE(GetPointedType("LPARAM").empty()); // not pointers
+    REQUIRE(GetPointedType("PROCESSINFOCLASS").empty());
+    // the names of the return values
+    REQUIRE(GetReturnValueName(*FindApiPrototype("CreateFileW")) == "File");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("GetProcAddress")) == "ProcAddress");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("LoadLibraryA")) == "Library");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("GetLastError")) == "LastError");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("ExAllocatePoolWithTag")) == "PoolWithTag");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("malloc")) == "malloc_result");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("VirtualAlloc")) == "VirtualAlloc_result");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("CreateProcessW")) == "CreateProcess_result"); // a BOOL is not the process
+    REQUIRE(GetReturnValueName(*FindApiPrototype("NtCreateFile")) == "NtCreateFile_result");
+}
+
+TEST_CASE("VariableTypesAndReturnValues", "[Dissasm]Help")
+{
+    // the value returned by GetProcessHeap kept in var_8: ProcessHeap (HANDLE); the one of CreateFileW copied to rbx then to var_10, then
+    // passed to CloseHandle: hObject (the argument names it), its type and origin from the return; &var_18 the lpSystemTimeAsFileTime of
+    // GetSystemTimeAsFileTime: FILETIME; the BOOL of CreateDirectoryW in var_20; eax overwritten (xor) before var_24: nothing
+    std::vector<unsigned char> file = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x40 }; // push rbp; mov rbp, rsp; sub rsp, 0x40
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    call(0x100);                                         // GetProcessHeap
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xF8 }); // mov qword ptr [rbp - 8], rax
+    call(0x108);                                         // CreateFileW
+    file.insert(file.end(), { 0x48, 0x89, 0xC3 });       // mov rbx, rax
+    file.insert(file.end(), { 0x48, 0x89, 0x5D, 0xF0 }); // mov qword ptr [rbp - 0x10], rbx
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xF0 }); // mov rcx, qword ptr [rbp - 0x10]
+    call(0x110);                                         // CloseHandle
+    file.insert(file.end(), { 0x48, 0x8D, 0x4D, 0xE8 }); // lea rcx, [rbp - 0x18]
+    call(0x118);                                         // GetSystemTimeAsFileTime
+    call(0x120);                                         // CreateDirectoryW
+    file.insert(file.end(), { 0x89, 0x45, 0xE0 });       // mov dword ptr [rbp - 0x20], eax
+    call(0x100);                                         // GetProcessHeap
+    file.insert(file.end(), { 0x31, 0xC0 });             // xor eax, eax
+    file.insert(file.end(), { 0x89, 0x45, 0xDC });       // mov dword ptr [rbp - 0x24], eax
+    file.insert(file.end(), { 0x48, 0x89, 0xEC, 0x5D, 0xC3 }); // mov rsp, rbp; pop rbp; ret
+    REQUIRE(file.size() < 0x100);
+    file.resize(0x130, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x100;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x100, { "GetProcessHeap", MemoryMappingType::FunctionMapping } },
+                                { 0x108, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                { 0x110, { "CloseHandle", MemoryMappingType::FunctionMapping } },
+                                { 0x118, { "GetSystemTimeAsFileTime", MemoryMappingType::FunctionMapping } },
+                                { 0x120, { "CreateDirectoryW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto check = [frame](int32 offset, std::string_view name, std::string_view type, std::string_view origin) {
+        const auto* variable = frame->FindVariable(offset);
+        REQUIRE(variable != nullptr);
+        CHECK(variable->name == name);
+        CHECK(variable->analysisName == name);
+        CHECK(variable->type == type);
+        CHECK(variable->origin == origin);
+    };
+    check(-8, "ProcessHeap", "HANDLE", "returned by GetProcessHeap");
+    check(-0x10, "hObject", "HANDLE", "returned by CreateFileW");
+    check(-0x18, "lpSystemTimeAsFileTime", "FILETIME", "lpSystemTimeAsFileTime of GetSystemTimeAsFileTime");
+    check(-0x20, "CreateDirectory_result", "BOOL", "returned by CreateDirectoryW");
+    check(-0x24, "var_24", "", "");
+    // the variable lines: the type and the origin as a comment; the names of the analysis are not the user's (not in the annotations)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "ProcessHeap = qword ptr -8").ends_with("; HANDLE, returned by GetProcessHeap"));
+    REQUIRE(FindListingLine(listing, "lpSystemTimeAsFileTime = byte ptr").ends_with("; FILETIME, lpSystemTimeAsFileTime of GetSystemTimeAsFileTime"));
+    REQUIRE(FindListingLine(listing, "mov    qword ptr [rbp + hObject], rbx").size() > 0);
+    REQUIRE(FindListingLine(listing, "var_24 = dword ptr").find(';') == std::string_view::npos);
+    REQUIRE_FALSE(BuildAnnotationsDocument({ &zone }, "sample.bin")["zones"][0].contains("variables"));
+    // a rename of the user keeps what the analysis knows of the value
+    auto* renamed = zone.localVariables.functions[0].FindVariable(-8);
+    renamed->name = "hHeap";
+    REQUIRE(FormatLocalVariableOrigin(*renamed) == "HANDLE, returned by GetProcessHeap");
+}
+
+TEST_CASE("VariableReturnValuesArm64", "[Dissasm]Help")
+{
+    // clang -O0: char* home = getenv(...); int fd = open(...): the slots of the two return values (stur after the bl)
+    std::vector<unsigned char> code;
+    const auto word = [&code](uint32 value) {
+        for (uint32 i = 0; i < 4; i++)
+            code.push_back(static_cast<unsigned char>(value >> (8 * i)));
+    };
+    word(0xD10083FF); // 0x00: sub sp, sp, #0x20
+    word(0xA9017BFD); // 0x04: stp x29, x30, [sp, #0x10]
+    word(0x910043FD); // 0x08: add x29, sp, #0x10
+    word(0x9400000D); // 0x0c: bl getenv (0x40)
+    word(0xF81F83A0); // 0x10: stur x0, [x29, #-8]
+    word(0x9400000D); // 0x14: bl open (0x48)
+    word(0xB81F43A0); // 0x18: stur w0, [x29, #-0xc]
+    word(0xA9417BFD); // 0x1c: ldp x29, x30, [sp, #0x10]
+    word(0x910083FF); // 0x20: add sp, sp, #0x20
+    word(0xD65F03C0); // 0x24: ret
+    while (code.size() < 0x40)
+        word(0xD503201F); // nop
+    word(0xD65F03C0); // 0x40: getenv: ret
+    word(0xD503201F);
+    word(0xD65F03C0); // 0x48: open: ret
+    word(0xD503201F);
+    ZoneLayout layout;
+    layout.size            = code.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x40, { "getenv", 0, true } }, { 0x48, { "open", 0, true } } };
+    DissasmTestInstance armInstance(code.data(), code.size(), true, layout);
+    const auto* frame = armInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-8) != nullptr);
+    CHECK(frame->FindVariable(-8)->name == "getenv_result");
+    CHECK(frame->FindVariable(-8)->type == "char*");
+    REQUIRE(frame->FindVariable(-0xc) != nullptr);
+    CHECK(frame->FindVariable(-0xc)->name == "open_result");
+    CHECK(frame->FindVariable(-0xc)->origin == "returned by open");
+}
+
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
 {
     // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes

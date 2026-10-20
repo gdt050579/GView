@@ -99,6 +99,15 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
                 chunks.push_back({ { "address", Hex(base + chunkStart) }, { "size", chunkEnd - chunkStart } });
             item["chunks"] = std::move(chunks);
         }
+        if (const auto* frame = zone.localVariables.FindFunctionByStart(function.start)) { // the variables the APIs tell something about
+            json variables = json::array();
+            for (const auto& variable : frame->variables)
+                if (!variable.origin.empty())
+                    variables.push_back(
+                          { { "name", variable.name }, { "frameOffset", variable.frameOffset }, { "type", variable.type }, { "origin", variable.origin } });
+            if (!variables.empty())
+                item["variables"] = std::move(variables);
+        }
         json callers = json::array();
         for (const auto& caller : zone.GetCallers(function.start))
             callers.push_back({ { "function", caller.function },

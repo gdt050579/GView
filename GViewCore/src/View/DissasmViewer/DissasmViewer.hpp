@@ -386,13 +386,21 @@ namespace View
 
             std::string_view functionName;
             std::vector<NameType> params;
-            std::string_view prototype; // "HANDLE CreateFileW(LPCWSTR lpFileName, ...)"
+            std::string_view prototype;  // "HANDLE CreateFileW(LPCWSTR lpFileName, ...)"
+            std::string_view returnType; // "HANDLE"; empty for void
         };
         // the prototypes of the common APIs (Windows, the C run-time / POSIX; DissasmApiPrototypes.cpp): by the name of an import / a function
         // (the import prefixes, the version / stdcall suffixes, the underscore of Mach-O, Zw for Nt); null when it is not known
         const AsmFunctionDetails* FindApiPrototype(std::string_view name);
         size_t GetApiPrototypesCount();
         void ForEachApiPrototype(const std::function<void(const AsmFunctionDetails&)>& callback);
+        // the type a pointer parameter points to (the variable whose address is passed): PHKEY / LPDWORD / HMODULE* / REFIID -> HKEY / DWORD /
+        // HMODULE / IID, LPCWSTR -> WCHAR; empty for void and for a type that is not a pointer
+        std::string GetPointedType(std::string_view type);
+        // the name of a variable that holds the value an API returns (the decompiler's): the verb dropped from Get / Create / Open / Load /
+        // Find / Allocate (GetProcAddress -> ProcAddress, CreateFileW -> File: the A / W ending too, ExAllocatePoolWithTag -> PoolWithTag),
+        // else the function and _result (malloc_result; a BOOL / NTSTATUS / HRESULT status: CreateProcess_result)
+        std::string GetReturnValueName(const AsmFunctionDetails& function);
 
         struct DissasmAsmPreCacheData {
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;

@@ -651,6 +651,13 @@ void GView::View::DissasmViewer::FormatLocalVariableDefinition(const DissasmLoca
     text += buffer;
 }
 
+std::string GView::View::DissasmViewer::FormatLocalVariableOrigin(const DissasmLocalVariable& variable)
+{
+    if (variable.type.empty() || variable.origin.empty())
+        return variable.type.empty() ? variable.origin : variable.type;
+    return variable.type + ", " + variable.origin;
+}
+
 bool GView::View::DissasmViewer::IsValidLocalVariableName(std::string_view name)
 {
     if (name.empty() || name.size() > DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE || !IsNameStartCharacter(name[0]))

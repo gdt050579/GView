@@ -862,7 +862,11 @@ static bool ApplyCachedZoneData(
             const auto freshVariable = freshFunction->FindVariable(cachedVariable.frameOffset);
             if (!freshVariable)
                 return false;
-            cachedVariable.size = freshVariable->size; // the analysis is the reference for everything but the name
+            // the analysis is the reference for everything but the name
+            cachedVariable.size         = freshVariable->size;
+            cachedVariable.analysisName = freshVariable->analysisName;
+            cachedVariable.type         = freshVariable->type;
+            cachedVariable.origin       = freshVariable->origin;
         }
     }
 

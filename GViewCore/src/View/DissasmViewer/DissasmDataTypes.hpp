@@ -260,6 +260,10 @@ namespace View
             // the name the analysis gave (var_8, or the argument of an API it is passed as: phkResult); empty: the default name. Not saved:
             // the analysis gives it again; a name different from it is the user's
             std::string analysisName;
+            // what the analysis knows of its value from the APIs (not saved either): its type (HKEY, HANDLE; empty when not known) and
+            // where it comes from ("phkResult of RegOpenKeyExW", "returned by CreateFileW")
+            std::string type;
+            std::string origin;
         };
 
         // Frame of a function that uses a frame pointer (push ebp; mov ebp, esp). Addresses use the same base as the instructions drawn

@@ -1,5 +1,6 @@
 #include "DissasmViewer.hpp"
 
+#include <algorithm>
 #include <deque>
 #include <memory>
 
@@ -445,6 +446,9 @@ void AddPrototype(PrototypeTable& table, const std::string& line)
     auto& details        = table.functions.emplace_back();
     details.functionName = name;
     details.prototype    = text;
+    if (const std::string_view returnType = Trim(head.substr(0, nameStart == std::string_view::npos ? 0 : nameStart + 1));
+        returnType != "void" && returnType != "VOID")
+        details.returnType = returnType;
     std::string_view parameters = std::string_view(text).substr(open + 1, close - open - 1);
     while (!parameters.empty()) {
         const auto comma          = parameters.find(',');
@@ -518,4 +522,70 @@ void GView::View::DissasmViewer::ForEachApiPrototype(const std::function<void(co
 {
     for (const auto& details : GetPrototypeTable().functions)
         callback(details);
+}
+
+std::string GView::View::DissasmViewer::GetPointedType(std::string_view type)
+{
+    // the P / LP types of the table that are not pointers
+    static constexpr std::string_view NOT_POINTERS[] = { "LPARAM", "POOL_TYPE", "PROCESSINFOCLASS" };
+    type = Trim(type);
+    std::string_view pointed;
+    if (!type.empty() && type.back() == '*') { // char* / HMODULE* / char* const*: the const of the pointer dropped
+        pointed = Trim(type.substr(0, type.size() - 1));
+        if (pointed.ends_with(" const"))
+            pointed = Trim(pointed.substr(0, pointed.size() - 6));
+    } else if (std::find(std::begin(NOT_POINTERS), std::end(NOT_POINTERS), type) != std::end(NOT_POINTERS)) {
+        return {};
+    } else {
+        // the Windows pointer types: REFIID, LPCWSTR, LPDWORD, PHKEY (a prefix, then the upper case name of the pointed type)
+        for (const std::string_view prefix : { std::string_view("REF"), std::string_view("LPC"), std::string_view("LP"), std::string_view("P") })
+            if (type.size() > prefix.size() && type.starts_with(prefix) && type[prefix.size()] >= 'A' && type[prefix.size()] <= 'Z') {
+                pointed = type.substr(prefix.size());
+                break;
+            }
+        if (pointed.empty() || std::any_of(type.begin(), type.end(), [](char c) { return c >= 'a' && c <= 'z'; }))
+            return {};
+        // the strings: their characters
+        if (pointed == "STR" || pointed == "CSTR" || pointed == "CH" || pointed == "CCH")
+            return "CHAR";
+        if (pointed == "WSTR" || pointed == "CWSTR" || pointed == "WCH" || pointed == "CWCH")
+            return "WCHAR";
+        if (pointed == "TSTR" || pointed == "CTSTR")
+            return "TCHAR";
+    }
+    if (pointed.starts_with("const "))
+        pointed.remove_prefix(6);
+    if (pointed.empty() || pointed == "void" || pointed == "VOID" || pointed == "CVOID")
+        return {};
+    return std::string(pointed);
+}
+
+std::string GView::View::DissasmViewer::GetReturnValueName(const AsmFunctionDetails& function)
+{
+    std::string_view name = function.functionName;
+    // the A and the W functions of a line: the ending dropped (CreateFileW -> CreateFile)
+    if (name.size() > 1 && (name.back() == 'A' || name.back() == 'W')) {
+        std::string other(name);
+        other.back() = name.back() == 'A' ? 'W' : 'A';
+        if (GetPrototypeTable().byName.contains(other))
+            name.remove_suffix(1);
+    }
+    // a status is not the object of the verb (CreateProcessW returns a BOOL, NtCreateFile an NTSTATUS): no name of an object
+    static constexpr std::string_view STATUS_TYPES[] = { "BOOL", "BOOLEAN", "NTSTATUS", "LSTATUS", "HRESULT" };
+    if (std::find(std::begin(STATUS_TYPES), std::end(STATUS_TYPES), function.returnType) != std::end(STATUS_TYPES))
+        return std::string(name) + "_result";
+    const auto startsWithWord = [](std::string_view text, std::string_view word) {
+        return text.size() > word.size() && text.starts_with(word) && text[word.size()] >= 'A' && text[word.size()] <= 'Z';
+    };
+    // the verb after the prefix of a kernel / native component: ExAllocatePoolWithTag -> PoolWithTag, MmGetSystemRoutineAddress
+    std::string_view verbs = name;
+    for (const std::string_view component : { "Ex", "Io", "Ke", "Mm", "Ob", "Ps", "Rtl", "Nt", "Zw" })
+        if (startsWithWord(name, component)) {
+            verbs = name.substr(component.size());
+            break;
+        }
+    for (const std::string_view verb : { "Get", "Create", "Open", "Load", "Find", "Allocate" })
+        if (startsWithWord(verbs, verb))
+            return std::string(verbs.substr(verb.size()));
+    return std::string(name) + "_result";
 }

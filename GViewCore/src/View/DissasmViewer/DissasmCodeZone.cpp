@@ -1805,7 +1805,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // [rbp + var_79] then the phkResult of RegOpenKeyExW -> phkResult; mov eax, [ebp + var_8]; push eax as the hFile of CloseHandle -> hFile.
     // The code of the function is followed in its order: the frame slot a register holds (its address or its value: lea / mov / ldr / add
     // x0, sp, #n), the arguments stored in the stack (mov [rsp + 0x20] / [esp + n], str [sp, #n]) and the pushes (x86), until the call;
-    // only a variable with its default name (var_ / arg_) is named, never two with the same name
+    // only a variable with its default name (var_ / arg_) is named, never two with the same name. The variable gets the type of the
+    // argument too (the pointed type when its address is passed: PHKEY -> HKEY). Beyond IDA (its decompiler does it): the value an API
+    // returns (rax / x0 / r0 after the call, copied by mov) stored in a slot gives the slot the type of the return and, when no argument
+    // names it, a name after the API (mov [rbp + var_8], rax after CreateFileW -> File). The first use of a slot in the code (passed or
+    // stored) gives its type, as the first call gives its name: a slot the compiler reuses for other values keeps one meaning
     void NameVariablesFromCalls(DissasmFunctionFrame& frame, const uint8* code, size_t codeLength, uint64 start, uint64 limit, DissasmArch functionArch)
     {
         // only a function that calls a known API is decoded again (its calls: the flow records of the sweep)
@@ -1847,9 +1851,26 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const bool isArm32 = functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb;
         const bool isX64   = functionArch == DissasmArch::X64;
         const bool isX86   = functionArch == DissasmArch::X86;
-        std::array<std::optional<int32>, 32> registers{};        // the frame slot (offset) a register holds: its address or its value
-        std::array<std::optional<int32>, MAX_SLOTS> stackArgs{}; // the arguments stored in the stack, by argument index
-        std::vector<std::optional<int32>> pushes;                 // x86: the pushed arguments, in their order
+        struct SlotValue {
+            int32 offset;
+            bool isAddress; // lea rax, [rbp - 8]: the address of the slot; mov rax, [rbp - 8]: its value
+        };
+        std::array<std::optional<SlotValue>, 32> registers{};        // the frame slot a register holds: its address or its value
+        std::array<const AsmFunctionDetails*, 32> returned{};         // the API whose return value a register holds
+        std::array<std::optional<SlotValue>, MAX_SLOTS> stackArgs{}; // the arguments stored in the stack, by argument index
+        std::vector<std::optional<SlotValue>> pushes;                 // x86: the pushed arguments, in their order
+        std::vector<std::pair<int32, const AsmFunctionDetails*>> returnStores; // the slots whose first use is a return value stored there
+        const auto slotValue = [](std::optional<int32> offset, bool isAddress) {
+            return offset.has_value() ? std::optional<SlotValue>(SlotValue{ offset.value(), isAddress }) : std::nullopt;
+        };
+        const auto storeReturn = [&](std::optional<int32> offset, const AsmFunctionDetails* function) {
+            auto* variable = offset.has_value() ? frame.FindVariable(offset.value()) : nullptr;
+            if (!variable || !variable->origin.empty())
+                return;
+            variable->type   = std::string(function->returnType);
+            variable->origin = "returned by " + std::string(function->functionName);
+            returnStores.emplace_back(offset.value(), function);
+        };
         const auto registerIndex = [&](unsigned int reg) -> int {
             if (isArm64) {
                 if (reg >= ARM64_REG_X0 && reg <= ARM64_REG_X28)
@@ -1904,7 +1925,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         };
         const auto nameArguments = [&](const AsmFunctionDetails& prototype) {
             for (size_t index = 0; index < prototype.params.size(); index++) {
-                std::optional<int32> source;
+                std::optional<SlotValue> source;
                 if (const int reg = argumentRegister(index); reg >= 0 && reg < static_cast<int>(registers.size()))
                     source = registers[reg];
                 else if (isX86 && index < pushes.size())
@@ -1913,8 +1934,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     source = stackArgs[index];
                 if (!source.has_value())
                     continue;
-                auto* variable           = frame.FindVariable(source.value());
+                auto* variable           = frame.FindVariable(source->offset);
                 const std::string_view name = prototype.params[index].name;
+                if (variable && variable->origin.empty()) { // the first call that passes it
+                    variable->type   = source->isAddress ? GetPointedType(prototype.params[index].type) : std::string(prototype.params[index].type);
+                    variable->origin = std::string(name) + " of " + std::string(prototype.functionName);
+                }
                 if (!variable || !(variable->name.starts_with("var_") || variable->name.starts_with("arg_")) || !IsValidLocalVariableName(name) ||
                     frame.HasVariableNamed(name))
                     continue;
@@ -1932,23 +1957,29 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const cs_insn& current = *insn;
             const auto flow        = GetInstructionFlow(current, functionArch);
             if (flow == X86Flow::Call) {
-                if (const auto* prototype = FindApiPrototype(CalleeName(current, functionArch)))
+                const auto* prototype = FindApiPrototype(CalleeName(current, functionArch));
+                if (prototype)
                     nameArguments(*prototype);
                 registers.fill(std::nullopt); // the callee changes the volatile registers; the arguments are consumed
+                returned.fill(nullptr);
                 stackArgs.fill(std::nullopt);
                 pushes.clear();
+                if (prototype && !prototype->returnType.empty())
+                    returned[0] = prototype; // rax / x0 / r0
                 continue;
             }
             if (flow == X86Flow::Jump || flow == X86Flow::Return) {
                 registers.fill(std::nullopt);
+                returned.fill(nullptr);
                 stackArgs.fill(std::nullopt);
                 pushes.clear();
                 continue;
             }
             // the register written by the instruction and what it holds then
             int destination = -1;
-            std::optional<int32> held;
-            bool knownEffect = false;
+            std::optional<SlotValue> held;
+            const AsmFunctionDetails* heldReturn = nullptr;
+            bool knownEffect                     = false;
             if (isArm64 || isArm32) {
                 const uint8 count = isArm64 ? current.detail->arm64.op_count : current.detail->arm.op_count;
                 if (count == 0)
@@ -1964,11 +1995,29 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const bool isMove  = isArm64 ? current.id == ARM64_INS_MOV : current.id == ARM_INS_MOV;
                 if (isStore && count == 2 && opType(1) == MEM) {
                     // str x1, [sp, #8]: an argument in the stack
-                    if (const auto slot = GetArgumentSlot(current, functionArch, false); slot.has_value() && slot.value() < MAX_SLOTS) {
-                        const int source       = registerIndex(opReg(0));
+                    const int source = registerIndex(opReg(0));
+                    if (const auto slot = GetArgumentSlot(current, functionArch, false); slot.has_value() && slot.value() < MAX_SLOTS)
                         stackArgs[slot.value()] = source >= 0 ? registers[source] : std::nullopt;
+                    // str x0, [x29, #-8] after the call: the return value kept in a variable
+                    if (source >= 0 && source < static_cast<int>(returned.size()) && returned[source]) {
+                        const unsigned int base = isArm64 ? static_cast<unsigned int>(current.detail->arm64.operands[1].mem.base)
+                                                          : static_cast<unsigned int>(current.detail->arm.operands[1].mem.base);
+                        const bool noIndex = isArm64 ? current.detail->arm64.operands[1].mem.index == ARM64_REG_INVALID
+                                                     : current.detail->arm.operands[1].mem.index == ARM_REG_INVALID;
+                        const int64 disp   = isArm64 ? current.detail->arm64.operands[1].mem.disp : current.detail->arm.operands[1].mem.disp;
+                        if (noIndex)
+                            storeReturn(frameOffsetOf(base, isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, disp, current.address), returned[source]);
                     }
                     continue;
+                }
+                // every register the instruction writes forgets what it held (ldp x0, x1 / ldm)
+                for (uint8 i = 0; i < count; i++) {
+                    const uint8 access = isArm64 ? current.detail->arm64.operands[i].access : current.detail->arm.operands[i].access;
+                    if (opType(i) == REG && (access & CS_AC_WRITE))
+                        if (const int reg = registerIndex(opReg(i)); reg >= 0 && reg < static_cast<int>(registers.size())) {
+                            registers[reg].reset();
+                            returned[reg] = nullptr;
+                        }
                 }
                 if (opType(0) == REG)
                     destination = registerIndex(opReg(0));
@@ -1977,20 +2026,23 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const auto& indexRegister = isArm64 ? static_cast<unsigned int>(current.detail->arm64.operands[1].mem.index) : static_cast<unsigned int>(current.detail->arm.operands[1].mem.index);
                     const int64 disp = isArm64 ? current.detail->arm64.operands[1].mem.disp : current.detail->arm.operands[1].mem.disp;
                     const bool noIndex = isArm64 ? indexRegister == ARM64_REG_INVALID : indexRegister == ARM_REG_INVALID;
-                    if (noIndex)
-                        held = frameOffsetOf(base, isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, disp, current.address); // the value of the slot
+                    if (noIndex) // the value of the slot
+                        held = slotValue(frameOffsetOf(base, isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, disp, current.address), false);
                     knownEffect = true;
                 } else if ((isAdd || isSub) && count == 3 && opType(1) == REG && opType(2) == IMM) {
                     const int64 value = isSub ? -opImm(2) : opImm(2);
-                    held              = frameOffsetOf(opReg(1), isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, value, current.address); // the address of the slot
-                    knownEffect       = true;
+                    held        = slotValue(frameOffsetOf(opReg(1), isArm64 ? ARM64_REG_INVALID : ARM_REG_INVALID, value, current.address), true); // its address
+                    knownEffect = true;
                 } else if (isMove && count == 2 && opType(1) == REG) {
                     const int source = registerIndex(opReg(1));
-                    held             = source >= 0 ? registers[source] : std::nullopt;
+                    held             = source >= 0 && source < static_cast<int>(registers.size()) ? registers[source] : std::nullopt;
+                    heldReturn       = source >= 0 && source < static_cast<int>(returned.size()) ? returned[source] : nullptr;
                     knownEffect      = true;
                 }
-                if (destination >= 0 && destination < static_cast<int>(registers.size()))
+                if (destination >= 0 && destination < static_cast<int>(registers.size())) {
                     registers[destination] = knownEffect ? held : std::nullopt;
+                    returned[destination]  = heldReturn;
+                }
                 continue;
             }
             // x86 / x64
@@ -2001,7 +2053,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const int source = registerIndex(op.reg);
                     pushes.push_back(source >= 0 ? registers[source] : std::nullopt);
                 } else if (op.type == X86_OP_MEM)
-                    pushes.push_back(frameOffsetOf(op.mem.base, op.mem.index, op.mem.disp, current.address));
+                    pushes.push_back(slotValue(frameOffsetOf(op.mem.base, op.mem.index, op.mem.disp, current.address), false));
                 else
                     pushes.push_back(std::nullopt);
                 continue;
@@ -2011,35 +2063,61 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const auto& from = x86.operands[1];
                 if (to.type == X86_OP_MEM) {
                     // mov [rsp + 0x20], rax / mov [esp + 4], eax: an argument in the stack
-                    if (const auto slot = GetArgumentSlot(current, functionArch, zone->systemVCalls); slot.has_value() && slot.value() < MAX_SLOTS) {
-                        const int source       = from.type == X86_OP_REG ? registerIndex(from.reg) : -1;
+                    const int source = from.type == X86_OP_REG ? registerIndex(from.reg) : -1;
+                    if (const auto slot = GetArgumentSlot(current, functionArch, zone->systemVCalls); slot.has_value() && slot.value() < MAX_SLOTS)
                         stackArgs[slot.value()] = source >= 0 ? registers[source] : std::nullopt;
-                    }
+                    // mov [rbp - 8], rax after the call: the return value kept in a variable
+                    if (source >= 0 && source < static_cast<int>(returned.size()) && returned[source])
+                        storeReturn(frameOffsetOf(to.mem.base, to.mem.index, to.mem.disp, current.address), returned[source]);
                     continue;
                 }
                 if (to.type == X86_OP_REG) {
                     destination = registerIndex(to.reg);
-                    if (from.type == X86_OP_MEM)
-                        held = frameOffsetOf(from.mem.base, from.mem.index, from.mem.disp, current.address); // lea: the address; mov: the value
+                    if (from.type == X86_OP_MEM) // lea: the address; mov: the value
+                        held = slotValue(frameOffsetOf(from.mem.base, from.mem.index, from.mem.disp, current.address), current.id == X86_INS_LEA);
                     else if (from.type == X86_OP_REG) {
                         const int source = registerIndex(from.reg);
-                        held             = source >= 0 ? registers[source] : std::nullopt;
+                        held             = source >= 0 && source < static_cast<int>(registers.size()) ? registers[source] : std::nullopt;
+                        heldReturn       = source >= 0 && source < static_cast<int>(returned.size()) ? returned[source] : nullptr;
                     }
-                    if (destination >= 0 && destination < static_cast<int>(registers.size()))
+                    if (destination >= 0 && destination < static_cast<int>(registers.size())) {
                         registers[destination] = held;
+                        returned[destination]  = heldReturn;
+                    }
                     continue;
                 }
             }
             // any other write forgets what the register held
+            const auto forget = [&](unsigned int reg) {
+                if (const int index = registerIndex(reg); index >= 0 && index < static_cast<int>(registers.size())) {
+                    registers[index].reset();
+                    returned[index] = nullptr;
+                }
+            };
             for (uint8 index = 0; index < x86.op_count; index++)
                 if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
-                    if (const int reg = registerIndex(x86.operands[index].reg); reg >= 0 && reg < static_cast<int>(registers.size()))
-                        registers[reg].reset();
+                    forget(x86.operands[index].reg);
             for (uint8 index = 0; index < current.detail->regs_write_count; index++)
-                if (const int reg = registerIndex(current.detail->regs_write[index]); reg >= 0 && reg < static_cast<int>(registers.size()))
-                    registers[reg].reset();
+                forget(current.detail->regs_write[index]);
         }
         cs_free(insn, 1);
+
+        // the variables of the return values that no argument named: a name after the API (a second variable of the same API: File_2)
+        for (const auto& [offset, function] : returnStores) {
+            auto* variable = frame.FindVariable(offset);
+            if (!variable || !(variable->name.starts_with("var_") || variable->name.starts_with("arg_")))
+                continue;
+            const std::string name = GetReturnValueName(*function);
+            for (uint32 copy = 1; copy <= 9; copy++) {
+                const std::string candidate = copy == 1 ? name : name + "_" + std::to_string(copy);
+                if (!IsValidLocalVariableName(candidate))
+                    break;
+                if (!frame.HasVariableNamed(candidate)) {
+                    variable->name = candidate;
+                    break;
+                }
+            }
+        }
     }
 
     // a label on the line of its instruction, the local variables of a function below its label
@@ -4460,7 +4538,10 @@ std::string DissasmCodeZone::BuildAssistantFunctionText(uint64 functionStart, Di
         if (asmLine.size == 0) {
             if (asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition) {
                 if (asmLine.op_str && sentLines < MAX_LINES_SENT) {
-                    text.append(asmLine.op_str, asmLine.op_str_size).append("\n");
+                    text.append(asmLine.op_str, asmLine.op_str_size);
+                    if (!asmLine.autoComment.empty()) // its type and where it comes from
+                        text.append(" ; ").append(asmLine.autoComment);
+                    text.append("\n");
                     sentLines++;
                 }
                 continue;
@@ -4793,6 +4874,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
             uint32 nameSize            = 0;
             if (variable) {
                 FormatLocalVariableDefinition(*variable, text, nameSize);
+                line.autoComment = FormatLocalVariableOrigin(*variable); // HKEY, phkResult of RegOpenKeyExW
                 line.localVariableKind     = DissasmAsmPreCacheLine::LocalVariableKind::Definition;
                 line.localVariableFunction = functionStart;
                 line.localVariableOffset   = frameOffset;

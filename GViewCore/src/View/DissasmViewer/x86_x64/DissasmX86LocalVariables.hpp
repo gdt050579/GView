@@ -57,6 +57,8 @@ bool AnalyzeX86StackFrame(
 void FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name);
 // "var_8 = dword ptr -8", `nameSize` receives the length of the name placed at the start of the text
 void FormatLocalVariableDefinition(const DissasmLocalVariable& variable, std::string& text, uint32& nameSize);
+// the comment of the variable line: its type and where it comes from ("HKEY, phkResult of RegOpenKeyExW"); empty when the APIs tell nothing
+std::string FormatLocalVariableOrigin(const DissasmLocalVariable& variable);
 bool IsValidLocalVariableName(std::string_view name);
 
 struct X86FrameOperand {
