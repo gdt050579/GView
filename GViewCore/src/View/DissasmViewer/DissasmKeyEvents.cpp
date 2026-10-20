@@ -303,6 +303,9 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_TOGGLE_NORETURN:
         EditUserFunction(UserFunctionEdit::ToggleNoReturn);
         return true;
+    case COMMAND_SET_STRUCTURE:
+        SetVariableStructure();
+        return true;
     }
     return false;
 }

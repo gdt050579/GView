@@ -451,6 +451,60 @@ std::map<uint64, uint8> GView::View::DissasmViewer::ReadUserFunctions(const Diss
     return functions;
 }
 
+constexpr uint32 DISSASM_USER_STRUCTURES_MAGIC   = 0x56554447; // "GDUV"
+constexpr uint32 DISSASM_USER_STRUCTURES_VERSION = 1;
+constexpr uint32 DISSASM_MAX_STRUCTURE_NAME_SIZE = 64;
+
+static void FormatUserStructuresRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmUserStructures.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+bool GView::View::DissasmViewer::IsValidUserStructureName(std::string_view name)
+{
+    return name.size() <= DISSASM_MAX_STRUCTURE_NAME_SIZE &&
+           std::all_of(name.begin(), name.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'; });
+}
+
+std::map<std::pair<uint64, int32>, std::string> GView::View::DissasmViewer::ReadUserVariableStructures(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<std::pair<uint64, int32>, std::string> structures;
+    LocalString<64> name;
+    FormatUserStructuresRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return structures;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_USER_STRUCTURES_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_USER_STRUCTURES_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return structures;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 function = 0;
+        int32 offset    = 0;
+        std::string text;
+        if (!read_primitive(start, end, function) || !read_primitive(start, end, offset) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (function < zone.zoneDetails.size && IsValidUserStructureName(text))
+            structures[{ function, offset }] = std::move(text);
+    }
+    return structures;
+}
+
+void GView::View::DissasmViewer::UserVariableStructuresToBuffer(const std::map<std::pair<uint64, int32>, std::string>& structures, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_USER_STRUCTURES_MAGIC);
+    append_bytes(buffer, DISSASM_USER_STRUCTURES_VERSION);
+    append_bytes(buffer, static_cast<uint32>(structures.size()));
+    for (const auto& [key, structure] : structures) {
+        append_bytes(buffer, key.first);
+        append_bytes(buffer, key.second);
+        append_string(buffer, structure);
+    }
+}
+
 static void UserFunctionsToBuffer(const std::map<uint64, uint8>& functions, std::vector<std::byte>& buffer)
 {
     buffer.clear();
@@ -526,6 +580,9 @@ void Instance::SaveCacheData()
         FormatUserFunctionsRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
         if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
             keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatUserStructuresRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
     }
     // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
     for (auto& [name, entry] : cacheData.zonesData) {
@@ -567,6 +624,12 @@ void Instance::SaveCacheData()
         if (!dissasmZone->userFunctions.empty()) {
             UserFunctionsToBuffer(dissasmZone->userFunctions, buffer);
             FormatUserFunctionsRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->userVariableStructures.empty()) {
+            UserVariableStructuresToBuffer(dissasmZone->userVariableStructures, buffer);
+            FormatUserStructuresRecordName(zoneName, *dissasmZone);
             if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
                 return;
         }

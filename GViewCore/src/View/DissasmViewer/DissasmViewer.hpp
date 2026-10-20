@@ -405,6 +405,7 @@ namespace View
         // out for 32 or 64 bit code; null when it is not known
         const DissasmApiStructure* FindApiStructure(std::string_view name, bool is64);
         size_t GetApiStructuresCount(bool is64);
+        void ForEachApiStructure(bool is64, const std::function<void(const DissasmApiStructure&)>& callback);
         // the field at an offset of the structure, as IDA writes it after the variable: .dwFlags, .ftLastWriteTime.dwHighDateTime,
         // .cFileName+2, +0x46 (the padding); the offset 0 is the variable itself (lea), or its first field for an access of the memory (.cb)
         std::string FormatApiStructureMember(const DissasmApiStructure& structure, uint32 offset, bool memoryAccess = false);
@@ -658,6 +659,13 @@ namespace View
         // the functions edited by the user in a code zone (DissasmCodeZone::userFunctions), saved in the cache (read before the zone is
         // analyzed)
         std::map<uint64, uint8> ReadUserFunctions(const DissasmCache& cache, const DissasmCodeZone& zone);
+        // the structures the user gave to the variables of a code zone (DissasmCodeZone::userVariableStructures), saved in the cache (read
+        // before the zone is analyzed); the entries of a damaged record are dropped
+        std::map<std::pair<uint64, int32>, std::string> ReadUserVariableStructures(const DissasmCache& cache, const DissasmCodeZone& zone);
+        // the bytes of the record (the cache, the tests)
+        void UserVariableStructuresToBuffer(const std::map<std::pair<uint64, int32>, std::string>& structures, std::vector<std::byte>& buffer);
+        // a name the record and the annotations accept: empty (no structure) or the name of a structure (letters, digits, _)
+        bool IsValidUserStructureName(std::string_view name);
 
         struct LayoutDissasm {
             uint32 visibleRows;
@@ -1007,6 +1015,8 @@ namespace View
             // functions of the user change, the zone is analyzed again
             enum class UserFunctionEdit : uint8 { Create, Delete, ToggleNoReturn };
             void EditUserFunction(UserFunctionEdit edit);
+            // IDA Alt+Q: the structure of the variable of the cursor line (its line or an instruction that uses it), chosen in a list
+            void SetVariableStructure();
             // the zone analyzed again; the cursor goes back to `keepAddress` (relative) when given. background: a big zone shows its lines at
             // once and its deep scan continues in the frame updates (the annotations come back when it ends, EndDeepScan); otherwise the whole
             // analysis runs now (ReanalyzeCodeZone)

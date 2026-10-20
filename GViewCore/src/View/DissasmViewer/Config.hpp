@@ -46,6 +46,7 @@ constexpr uint32 COMMAND_UNDEFINE              = 139;
 constexpr uint32 COMMAND_CREATE_FUNCTION       = 140;
 constexpr uint32 COMMAND_DELETE_FUNCTION       = 141;
 constexpr uint32 COMMAND_TOGGLE_NORETURN       = 142;
+constexpr uint32 COMMAND_SET_STRUCTURE         = 143;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -339,6 +340,10 @@ namespace View
             inline static KeyboardControl ToggleNoReturnCommand = {
                 Input::Key::Alt | Input::Key::P, "ToggleNoReturn", "Mark the function of the line as one that does not return (again: it returns)", COMMAND_TOGGLE_NORETURN
             };
+            // IDA Alt+Q (struct var)
+            inline static KeyboardControl SetStructureCommand = {
+                Input::Key::Alt | Input::Key::Q, "SetStructure", "Give the local variable of the line a structure (STARTUPINFOW, SYSTEMTIME, ...)", COMMAND_SET_STRUCTURE
+            };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
                 AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand, RemoveLocalVariableCommand
@@ -372,7 +377,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 29> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 30> KeyEventCommands = {
                 &AcceptAISuggestionCommand,
                 &DismissAISuggestionCommand,
                 &MoveDownCommand,
@@ -402,6 +407,7 @@ namespace View
                 &CreateFunctionCommand,
                 &DeleteFunctionCommand,
                 &ToggleNoReturnCommand,
+                &SetStructureCommand,
             };
             inline static Input::KeyMap Map;
 

@@ -35,6 +35,7 @@ struct DissasmAnnotationsImport {
     uint32 zones           = 0; // the zones of the document applied to a zone of the file
     uint32 dataRanges      = 0; // the data defined by the user (IDA D / A)
     uint32 functions       = 0; // the functions edited by the user (IDA P, Delete function, noreturn)
+    uint32 structures      = 0; // the structures the user gave to the variables (IDA Alt+Q)
     std::vector<DissasmCodeZone*> zonesToReanalyze; // their data ranges changed: a new analysis gives their lines
     std::vector<DissasmCodeZone*> zonesWithNewLines; // a collapsed zone was placed: the size of the zone changed
 };

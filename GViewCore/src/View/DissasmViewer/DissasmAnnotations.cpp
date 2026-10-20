@@ -163,6 +163,13 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     if (!functions.empty())
         result["functions"] = std::move(functions);
 
+    // the structures the user gave to the variables (Alt+Q; "": none, the one of the analysis is removed)
+    json structures = json::array();
+    for (const auto& [key, structure] : zone.userVariableStructures)
+        structures.push_back({ { "function", Hex(base + key.first) }, { "frameOffset", key.second }, { "structure", structure } });
+    if (!structures.empty())
+        result["variableStructures"] = std::move(structures);
+
     json names = json::array();
     for (const auto& [address, name] : zone.GetUserLabelNames())
         names.push_back({ { "address", Hex(base + address) }, { "name", name } });
@@ -269,6 +276,27 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
         }
         if (functions != zone.userFunctions) {
             zone.userFunctions = std::move(functions);
+            if (std::find(result.zonesToReanalyze.begin(), result.zonesToReanalyze.end(), &zone) == result.zonesToReanalyze.end())
+                result.zonesToReanalyze.push_back(&zone);
+        }
+    }
+
+    if (zoneJson.contains("variableStructures")) {
+        auto structures = zone.userVariableStructures;
+        for (const auto& item : ArrayField(zoneJson, "variableStructures")) {
+            const auto function  = item.is_object() && item.contains("function") ? rebase(item["function"]) : std::nullopt;
+            const bool hasOffset = item.is_object() && item.contains("frameOffset") && item["frameOffset"].is_number_integer();
+            const bool hasName   = item.is_object() && item.contains("structure") && item["structure"].is_string();
+            const std::string name = hasName ? item["structure"].get<std::string>() : std::string();
+            if (!function.has_value() || !hasOffset || !hasName || !IsValidUserStructureName(name)) {
+                result.skipped++;
+                continue;
+            }
+            structures[{ function.value(), item["frameOffset"].get<int32>() }] = name;
+            result.structures++;
+        }
+        if (structures != zone.userVariableStructures) {
+            zone.userVariableStructures = std::move(structures);
             if (std::find(result.zonesToReanalyze.begin(), result.zonesToReanalyze.end(), &zone) == result.zonesToReanalyze.end())
                 result.zonesToReanalyze.push_back(&zone);
         }
@@ -405,11 +433,13 @@ bool GView::View::DissasmViewer::ImportAnnotationsDocument(
             reanalyzed.push_back(zone);
     const uint32 dataRanges = result.dataRanges;
     const uint32 functions  = result.functions;
+    const uint32 structures = result.structures;
     result                  = {};
     if (!ImportAnnotationsDocument(document, zones, result, error))
         return false;
     result.dataRanges = dataRanges;
     result.functions  = functions;
+    result.structures = structures;
     for (auto* zone : reanalyzed)
         if (std::find(result.zonesWithNewLines.begin(), result.zonesWithNewLines.end(), zone) == result.zonesWithNewLines.end())
             result.zonesWithNewLines.push_back(zone); // its lines changed

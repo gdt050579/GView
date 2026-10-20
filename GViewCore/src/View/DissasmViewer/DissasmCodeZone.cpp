@@ -123,6 +123,28 @@ struct GView::View::DissasmViewer::DissasmLineCounter {
 // The jump tables found inside the code (MSVC x64, Thumb tbb / tbh) become data lines: the lines are counted again with them (Recount) and
 // the sweep starts again on the new lines (the bytes of a table decoded as instructions gave false labels and could hide the instructions
 // after it), until no new table is found (at most DISSASM_MAX_TABLE_PASSES sweeps).
+// the variable becomes the structure: the variables inside it are removed (its fields); not when it would cover the saved registers / the
+// return address (a local below 0 that ends above it), nor another structure (unless `overStructures`: the choice of the user)
+static bool ApplyFrameStructure(DissasmFunctionFrame& frame, DissasmLocalVariable& variable, const DissasmApiStructure* structure, bool overStructures)
+{
+    if (!structure)
+        return false;
+    const int64 start = variable.frameOffset, end = start + structure->size;
+    if (start < 0 && end > 0)
+        return false;
+    const auto first = std::upper_bound(
+          frame.variables.begin(), frame.variables.end(), variable.frameOffset, [](int32 offset, const DissasmLocalVariable& var) { return offset < var.frameOffset; });
+    auto last = first;
+    while (last != frame.variables.end() && last->frameOffset < end) {
+        if (last->structure && !overStructures)
+            return false;
+        ++last;
+    }
+    variable.structure = structure;
+    frame.variables.erase(first, last); // after the variable: its address stays valid
+    return true;
+}
+
 struct GView::View::DissasmViewer::DissasmDeepScan {
     static constexpr uint32 DISSASM_MAX_TABLE_PASSES = 3;
     enum class Phase : uint8 { Sweep, Recount, Labels, Done };
@@ -1865,26 +1887,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto slotValue = [](std::optional<int32> offset, bool isAddress) {
             return offset.has_value() ? std::optional<SlotValue>(SlotValue{ offset.value(), isAddress }) : std::nullopt;
         };
-        // the structure of the type of the variable: the variables inside it are removed (its fields); not when it would cover the saved
-        // registers / the return address (a local below 0 that ends above it) or another structure
+        // the structure of the type of the variable (ApplyFrameStructure); not for a variable the user gave a structure (or none) to
         const auto ApplyStructure = [&](DissasmLocalVariable& variable) {
-            const auto* structure = FindApiStructure(variable.type, functionArch == DissasmArch::X64 || functionArch == DissasmArch::Arm64);
-            if (!structure)
-                return;
-            const int64 start = variable.frameOffset, end = start + structure->size;
-            if (start < 0 && end > 0)
-                return;
-            const auto first = std::upper_bound(frame.variables.begin(), frame.variables.end(), variable.frameOffset, [](int32 offset, const DissasmLocalVariable& var) {
-                return offset < var.frameOffset;
-            });
-            auto last = first;
-            while (last != frame.variables.end() && last->frameOffset < end) {
-                if (last->structure)
-                    return;
-                ++last;
-            }
-            variable.structure = structure;
-            frame.variables.erase(first, last); // after the variable: its address stays valid
+            if (!zone->userVariableStructures.contains({ start, variable.frameOffset }))
+                ApplyFrameStructure(frame, variable, FindApiStructure(variable.type, functionArch == DissasmArch::X64 || functionArch == DissasmArch::Arm64), false);
         };
         const auto storeReturn = [&](std::optional<int32> offset, const AsmFunctionDetails* function) {
             auto* variable = offset.has_value() ? frame.FindVariable(offset.value()) : nullptr;
@@ -2226,6 +2232,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (!analyzed || frame.variables.empty())
             return;
         NameVariablesFromCalls(frame, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch);
+        // the structures the user gave (Alt+Q), over the variables and the structures of the analysis
+        const auto& userStructures = zone->userVariableStructures;
+        for (auto user = userStructures.lower_bound({ relativeAddress, INT32_MIN }); user != userStructures.end() && user->first.first == relativeAddress; ++user) {
+            auto* variable = frame.FindVariable(user->first.second);
+            const auto* structure =
+                  user->second.empty() ? nullptr : FindApiStructure(user->second, functionArch == DissasmArch::X64 || functionArch == DissasmArch::Arm64);
+            if (variable && structure && ApplyFrameStructure(frame, *variable, structure, true))
+                variable->type = structure->name;
+        }
         for (auto& variable : frame.variables)
             variable.analysisName = variable.name; // a name different from it is the user's (the annotations)
         // IDA like: the variables are listed right below the function label
@@ -4679,6 +4694,16 @@ void DissasmCodeZone::RecordUserFunctionsEdit(std::map<uint64, uint8> before, ui
     RecordEdit(std::move(edit));
 }
 
+void DissasmCodeZone::RecordUserVariableStructuresEdit(std::map<std::pair<uint64, int32>, std::string> before, uint64 address)
+{
+    DissasmEdit edit;
+    edit.kind             = DissasmEdit::Kind::VariableStructures;
+    edit.address          = address;
+    edit.structuresBefore = std::move(before);
+    edit.structuresAfter  = userVariableStructures;
+    RecordEdit(std::move(edit));
+}
+
 void DissasmCodeZone::RecordUserDataEdit(std::vector<DissasmInstructionSet::DataRange> before, uint64 address)
 {
     DissasmEdit edit;
@@ -4750,6 +4775,9 @@ bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
     case DissasmEdit::Kind::UserFunctions:
         userFunctions = forward ? edit.functionsAfter : edit.functionsBefore; // the caller analyzes the zone again
         break;
+    case DissasmEdit::Kind::VariableStructures:
+        userVariableStructures = forward ? edit.structuresAfter : edit.structuresBefore; // the caller analyzes the zone again
+        break;
     case DissasmEdit::Kind::AddZone:
     case DissasmEdit::Kind::RemoveZone: {
         const bool add = (edit.kind == DissasmEdit::Kind::AddZone) == forward;
@@ -4783,7 +4811,8 @@ static DissasmEditPlace GetEditPlace(const DissasmEdit& edit)
         place.address = edit.address;
     place.onLabel   = edit.kind == DissasmEdit::Kind::LabelName || edit.kind == DissasmEdit::Kind::VariableName ||
                     (edit.kind == DissasmEdit::Kind::Comment && edit.anchor.kind != DissasmCommentAnchor::Kind::Instruction);
-    place.reanalyze = edit.kind == DissasmEdit::Kind::DataRanges || edit.kind == DissasmEdit::Kind::UserFunctions;
+    place.reanalyze = edit.kind == DissasmEdit::Kind::DataRanges || edit.kind == DissasmEdit::Kind::UserFunctions ||
+                      edit.kind == DissasmEdit::Kind::VariableStructures;
     return place;
 }
 

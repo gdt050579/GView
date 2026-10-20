@@ -216,6 +216,12 @@ size_t GView::View::DissasmViewer::GetApiStructuresCount(bool is64)
     return GetStructureTable(is64).structures.size();
 }
 
+void GView::View::DissasmViewer::ForEachApiStructure(bool is64, const std::function<void(const DissasmApiStructure&)>& callback)
+{
+    for (const auto& structure : GetStructureTable(is64).structures)
+        callback(structure);
+}
+
 std::string GView::View::DissasmViewer::FormatApiStructureMember(const DissasmApiStructure& structure, uint32 offset, bool memoryAccess)
 {
     if (offset == 0 && !memoryAccess)

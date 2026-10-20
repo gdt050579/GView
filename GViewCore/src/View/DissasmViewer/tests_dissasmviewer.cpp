@@ -1220,7 +1220,7 @@ std::vector<std::byte> MutateRecord(const std::vector<std::byte>& record, std::m
 TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
 {
     // the records of a zone with every kind of user data: the current record (version 4), the line keyed records of the versions 1 and 2,
-    // the user data and the user functions records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
+    // the user data, the user functions and the user structures records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
     DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
     std::string_view labelName = "isPrime";
     REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
@@ -1243,6 +1243,8 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
     append(userFunctions, uint32{ 0x46554447 }), append(userFunctions, uint32{ 1 }), append(userFunctions, uint32{ 2 });
     append(userFunctions, uint64{ 0x30 }), append(userFunctions, uint8{ USER_FUNCTION_CREATE });
     append(userFunctions, uint64{ 0x5 }), append(userFunctions, uint8{ USER_FUNCTION_NORETURN });
+    std::vector<std::byte> userStructures;
+    UserVariableStructuresToBuffer({ { { 0x30, -0x20 }, "SYSTEMTIME" }, { { 0x5, -8 }, "" } }, userStructures);
 
     // GVIEW_FUZZ_ROUNDS=<rounds> [GVIEW_FUZZ_SEED=<seed>]: a longer run with other mutants (a local fuzzing campaign)
     const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
@@ -1284,6 +1286,11 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
         functionsCache.AddRegion("DissasmUserFunctions.0", functionsData.data(), static_cast<uint32>(functionsData.size()));
         for (const auto& [address, flags] : ReadUserFunctions(functionsCache, *edited.zone))
             REQUIRE(((flags & ~USER_FUNCTION_ALL) == 0 && flags != 0 && address < edited.zone->zoneDetails.size));
+        const auto structuresData = MutateRecord(userStructures, random);
+        DissasmCache structuresCache;
+        structuresCache.AddRegion("DissasmUserStructures.0", structuresData.data(), static_cast<uint32>(structuresData.size()));
+        for (const auto& [key, structure] : ReadUserVariableStructures(structuresCache, *edited.zone))
+            REQUIRE((key.first < edited.zone->zoneDetails.size && IsValidUserStructureName(structure)));
         std::vector<std::byte> variables;
         edited.zone->localVariables.ToBuffer(variables);
         const auto variablesData = MutateRecord(variables, random);
@@ -7399,6 +7406,115 @@ TEST_CASE("UserFunctions", "[Dissasm]UserData")
     REQUIRE_FALSE(zone.userFunctions.contains(0x20));
 }
 
+TEST_CASE("UserVariableStructures", "[Dissasm]UserData")
+{
+    // var_20 is filled field by field and passed to a function of the code: no structure from the analysis, the user says SYSTEMTIME; &var_30
+    // is the lpSystemTimeAsFileTime of GetSystemTimeAsFileTime: a FILETIME for the analysis, none for the user (var_2C comes back)
+    std::vector<unsigned char> file = {
+        0x55,                                     // 0x00: push rbp
+        0x48, 0x89, 0xE5,                         // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x40,                   // 0x04: sub rsp, 0x40
+        0x66, 0xC7, 0x45, 0xE0, 0x07, 0x00,       // 0x08: mov word ptr [rbp - 0x20], 7  (wYear)
+        0x66, 0xC7, 0x45, 0xE2, 0x01, 0x00,       // 0x0e: mov word ptr [rbp - 0x1e], 1  (wMonth)
+        0x66, 0xC7, 0x45, 0xE6, 0x03, 0x00,       // 0x14: mov word ptr [rbp - 0x1a], 3  (wDay)
+        0x48, 0x8D, 0x4D, 0xE0,                   // 0x1a: lea rcx, [rbp - 0x20]
+        0xE8, 0x2D, 0x00, 0x00, 0x00,             // 0x1e: call 0x50
+        0xC7, 0x45, 0xD4, 0x00, 0x00, 0x00, 0x00, // 0x23: mov dword ptr [rbp - 0x2c], 0
+        0x48, 0x8D, 0x4D, 0xD0,                   // 0x2a: lea rcx, [rbp - 0x30]
+        0xFF, 0x15, 0x4C, 0x00, 0x00, 0x00,       // 0x2e: call qword ptr [rip + 0x4c] -> slot 0x80 (GetSystemTimeAsFileTime)
+        0x48, 0x89, 0xEC,                         // 0x34: mov rsp, rbp
+        0x5D,                                     // 0x37: pop rbp
+        0xC3,                                     // 0x38: ret
+    };
+    file.resize(0x50, 0xCC);
+    file.push_back(0xC3); // 0x50: ret
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "GetSystemTimeAsFileTime", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone       = *dissasmInstance.zone;
+    const auto frame = [&zone]() { return zone.localVariables.FindFunctionByStart(0x00); };
+    const auto analysis = [&]() {
+        REQUIRE(frame() != nullptr);
+        REQUIRE(frame()->FindVariable(-0x20) != nullptr);
+        REQUIRE(frame()->FindVariable(-0x20)->structure == nullptr);
+        REQUIRE(frame()->FindVariable(-0x1E) != nullptr);
+        REQUIRE(frame()->FindVariable(-0x30)->structure == FindApiStructure("FILETIME", true));
+        REQUIRE(frame()->FindVariable(-0x2C) == nullptr);
+    };
+    analysis();
+
+    // Alt+Q: SYSTEMTIME for var_20, none for the FILETIME; a new analysis applies them
+    const auto before                    = zone.userVariableStructures;
+    zone.userVariableStructures[{ 0x00, -0x20 }] = "SYSTEMTIME";
+    zone.userVariableStructures[{ 0x00, -0x30 }] = "";
+    zone.RecordUserVariableStructuresEdit(before, 0x00);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const auto user = [&]() {
+        REQUIRE(frame() != nullptr);
+        REQUIRE(frame()->FindVariable(-0x20)->structure == FindApiStructure("SYSTEMTIME", true));
+        REQUIRE(frame()->FindVariable(-0x20)->type == "SYSTEMTIME");
+        REQUIRE(frame()->FindVariable(-0x1E) == nullptr);
+        REQUIRE(frame()->FindVariable(-0x1A) == nullptr);
+        REQUIRE(frame()->FindVariable(-0x30)->structure == nullptr);
+        REQUIRE(frame()->FindVariable(-0x2C) != nullptr);
+    };
+    user();
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "var_20 = SYSTEMTIME ptr -0x20").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + var_20.wYear], 7").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + var_20.wMonth], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + var_20.wDay], 3").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    dword ptr [rbp + var_2C], 0").size() > 0);
+
+    // Ctrl+Z: the structures of the analysis (a new analysis), Ctrl+Y: the user's again
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->reanalyze);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    analysis();
+    place = zone.RedoEdit();
+    REQUIRE((place.has_value() && place->reanalyze));
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    user();
+
+    // the annotations: a new analysis of the same file gets them; a name that is not one is skipped
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["variableStructures"].size() == 2);
+    document["zones"][0]["variableStructures"].push_back({ { "function", "0x0" }, { "frameOffset", -8 }, { "structure", "not a name!" } });
+    DissasmTestInstance fresh(file.data(), file.size(), true, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.structures == 2);
+    REQUIRE(result.skipped >= 1);
+    REQUIRE(fresh.zone->userVariableStructures == zone.userVariableStructures);
+    REQUIRE(fresh.zone->localVariables.FindFunctionByStart(0x00)->FindVariable(-0x20)->structure == FindApiStructure("SYSTEMTIME", true));
+
+    // the cache record: read back; a bad name, a function outside of the zone dropped; a damaged record gives nothing
+    std::vector<std::byte> buffer;
+    auto structures                   = zone.userVariableStructures;
+    structures[{ 0x10, -4 }]          = "bad name";
+    structures[{ 0x1000, -4 }]        = "SYSTEMTIME";
+    UserVariableStructuresToBuffer(structures, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserStructures.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserVariableStructures(cache, zone) == zone.userVariableStructures);
+    buffer.resize(buffer.size() - 3);
+    DissasmCache truncated;
+    REQUIRE(truncated.AddRegion("DissasmUserStructures.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserVariableStructures(truncated, zone).empty());
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does
@@ -7525,6 +7641,7 @@ TEST_CASE("UntrustedDocumentsFuzz", "[Dissasm]UserData")
     zone.userComments.Set({ DissasmCommentAnchor::Kind::Instruction, 0x05, 0 }, "a comment");
     zone.userDataRanges = { { 0x18, 0x1C, 4 } };
     zone.userFunctions  = { { 0x20, USER_FUNCTION_CREATE }, { 0x30, USER_FUNCTION_NORETURN } };
+    zone.userVariableStructures = { { { 0x00, -0x20 }, "SYSTEMTIME" }, { { 0x10, -8 }, "" } };
     const auto annotations = BuildAnnotationsDocument({ &zone }, "sample.bin");
     const auto signatures  = BuildSignaturesDocument({ &zone });
 

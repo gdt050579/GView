@@ -1540,6 +1540,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
     if (cacheData.hasCache) {
         zone->userDataRanges = ReadUserDataRanges(cacheData, *zone);
         zone->userFunctions  = ReadUserFunctions(cacheData, *zone); // P / Delete function / noreturn
+        zone->userVariableStructures = ReadUserVariableStructures(cacheData, *zone); // Alt+Q
     }
 
     if (!zone->InitZone(initData))
@@ -2018,10 +2019,11 @@ void Instance::ImportAnnotations()
     RefreshDrawnLines();
     LocalString<256> summary;
     summary.SetFormat(
-          "Imported: %u names, %u comments, %u variables, %u numbers in decimal, %u zones, %u functions, %u suggestions%s",
+          "Imported: %u names, %u comments, %u variables, %u structures, %u numbers in decimal, %u zones, %u functions, %u suggestions%s",
           result.names,
           result.comments,
           result.variables,
+          result.structures,
           result.decimalOperands,
           result.collapsibleZones,
           result.functions,
@@ -2613,6 +2615,105 @@ void Instance::EditUserFunction(UserFunctionEdit edit)
         text.SetFormat("%s %s", name.c_str(), flags != zone->userFunctions.end() && (flags->second & USER_FUNCTION_NORETURN) ? "does not return" : "returns");
         Dialogs::MessageBox::ShowNotification("Function", text.GetText());
     }
+}
+
+// IDA Alt+Q: the structures of the code (their size), the search bar filters them; "(none)" removes the structure of the variable
+class StructuresWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_OK     = 1;
+    static constexpr int BTN_CANCEL = 2;
+    Reference<ListView> list;
+    std::vector<std::string> names; // by the data of the items: "" for (none)
+    std::optional<std::string> selected;
+
+  public:
+    StructuresWindow(std::string_view variable, std::string_view current, bool is64)
+        : Window("Structure of the variable", "d:c,w:70,h:80%", WindowFlags::Sizeable)
+    {
+        LocalString<128> text;
+        text.SetFormat("The structure of %.*s (%s code):", static_cast<int>(variable.size()), variable.data(), is64 ? "64 bit" : "32 bit");
+        Factory::Label::Create(this, text.GetText(), "l:1,t:0,r:1,h:1");
+        list = Factory::ListView::Create(this, "l:1,t:1,r:1,b:3", { "n:Structure,w:40", "n:Size,w:12,a:r" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        names.emplace_back();
+        auto none = list->AddItem({ "(none)", "" });
+        none.SetData(0);
+        ListViewItem currentItem = none;
+        std::vector<const DissasmApiStructure*> structures;
+        ForEachApiStructure(is64, [&structures](const DissasmApiStructure& structure) { structures.push_back(&structure); });
+        std::sort(structures.begin(), structures.end(), [](const auto* a, const auto* b) { return a->name < b->name; });
+        LocalString<16> size;
+        for (const auto* structure : structures) {
+            size.SetFormat("0x%x", structure->size);
+            auto item = list->AddItem({ std::string_view(structure->name), size.ToStringView() });
+            item.SetData(static_cast<uint64>(names.size()));
+            names.push_back(structure->name);
+            if (structure->name == current)
+                currentItem = item;
+        }
+        list->SetCurrentItem(currentItem);
+        Factory::Button::Create(this, "&OK", "l:1,b:0,w:10", BTN_OK);
+        Factory::Button::Create(this, "&Cancel", "r:1,b:0,w:10", BTN_CANCEL);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_OK)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid() && item.GetData(UINT64_MAX) < names.size())
+                selected = names[static_cast<size_t>(item.GetData(UINT64_MAX))];
+            Exit(selected.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if ((eventType == Event::ButtonClicked && ID == BTN_CANCEL) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    const std::optional<std::string>& GetSelected() const
+    {
+        return selected;
+    }
+};
+
+void Instance::SetVariableStructure()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    // the variable: its line or an instruction that uses it (a field of a structure: the structure)
+    uint64 functionStart = 0;
+    int32 frameOffset    = 0;
+    const auto* frame    = zone->GetLocalVariableFromLine(zonesFound[0].startingLine - 2u, obj, functionStart, frameOffset)
+                                 ? zone->localVariables.FindFunctionByStart(functionStart)
+                                 : nullptr;
+    const auto* variable = frame ? frame->FindVariable(frameOffset) : nullptr;
+    if (!variable) {
+        Dialogs::MessageBox::ShowNotification("Info", "Please select a local variable (its line or an instruction that uses it)!");
+        return;
+    }
+    const auto arch = zone->GetArchAt(functionStart);
+    StructuresWindow window(variable->name, variable->structure ? std::string_view(variable->structure->name) : std::string_view(), arch == DissasmArch::X64 || arch == DissasmArch::Arm64);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelected().has_value())
+        return;
+    const std::string& structure = window.GetSelected().value();
+    const auto user              = zone->userVariableStructures.find({ functionStart, frameOffset });
+    if (user != zone->userVariableStructures.end() && user->second == structure)
+        return;
+    const auto before                                        = zone->userVariableStructures;
+    zone->userVariableStructures[{ functionStart, frameOffset }] = structure;
+    zone->RecordUserVariableStructuresEdit(before, functionStart); // Ctrl+Z gives the previous structures back
+    ReanalyzeZone(zone, functionStart, true); // the variables inside the structure become its fields
 }
 
 bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background)

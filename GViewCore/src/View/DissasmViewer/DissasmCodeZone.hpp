@@ -55,7 +55,7 @@ enum DissasmUserFunctionFlags : uint8 {
 
 // An edit of the user with what it replaced: it can be undone and redone (Ctrl+Z / Ctrl+Y)
 struct DissasmEdit {
-    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges, UserFunctions };
+    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges, UserFunctions, VariableStructures };
     Kind kind = Kind::Comment;
     DissasmCommentAnchor anchor;              // Comment
     uint64 address     = 0;                   // LabelName: the label; VariableName: the function; DecimalOperand: the instruction
@@ -65,6 +65,7 @@ struct DissasmEdit {
     DissasmCollapsibleZone zone;              // AddZone / RemoveZone
     std::vector<DissasmInstructionSet::DataRange> rangesBefore, rangesAfter; // DataRanges (address: the edited line)
     std::map<uint64, uint8> functionsBefore, functionsAfter;                 // UserFunctions (address: the function)
+    std::map<std::pair<uint64, int32>, std::string> structuresBefore, structuresAfter; // VariableStructures (address: the function)
 };
 // the edits that can be undone / redone
 struct DissasmEditHistory {
@@ -336,6 +337,10 @@ struct DissasmCodeZone : public ParseZone {
     bool CreateUserFunction(uint64 address);
     bool DeleteUserFunction(uint64 functionStart);
     bool ToggleUserNoReturn(uint64 functionStart);
+    // the structures the user gives to the variables (IDA Alt+Q): (function start, frame offset) -> the name of the structure
+    // (FindApiStructure); empty: no structure (the one the analysis finds is not applied). Like userFunctions: a change needs a new analysis
+    // (the variables inside the structure are its fields), saved in the cache and in the annotations
+    std::map<std::pair<uint64, int32>, std::string> userVariableStructures;
     // a data zone: the places the code of the other zones refers to (relative, sorted) and the largest access there (0: an address taken)
     void CollectDataZoneTargets(std::vector<uint64>& targets, std::vector<uint8>& sizes) const;
     // the references to an address (VA) from this zone, then from the other code zones of the file
@@ -390,6 +395,8 @@ struct DissasmCodeZone : public ParseZone {
     void RecordUserDataEdit(std::vector<DissasmInstructionSet::DataRange> before, uint64 address);
     // P / Delete function / the noreturn attribute: the functions of the user before the change; `address` is the function
     void RecordUserFunctionsEdit(std::map<uint64, uint8> before, uint64 address);
+    // Alt+Q: the structures of the variables before the change; `address` is the function
+    void RecordUserVariableStructuresEdit(std::map<std::pair<uint64, int32>, std::string> before, uint64 address);
     // a new analysis that continues in the background (BeginCodeZoneReanalysis): the annotations come back when its deep scan ends
     std::unique_ptr<DissasmReanalysis> pendingReanalysis;
     std::optional<uint64> pendingReanalysisAddress; // the line to show again then

@@ -99,10 +99,10 @@ json ZoneToJson(DissasmCodeZone& zone, SettingsData* settings, const DissasmCode
                 chunks.push_back({ { "address", Hex(base + chunkStart) }, { "size", chunkEnd - chunkStart } });
             item["chunks"] = std::move(chunks);
         }
-        if (const auto* frame = zone.localVariables.FindFunctionByStart(function.start)) { // the variables the APIs tell something about
+        if (const auto* frame = zone.localVariables.FindFunctionByStart(function.start)) { // the variables the APIs tell something about, the structures
             json variables = json::array();
             for (const auto& variable : frame->variables)
-                if (!variable.origin.empty())
+                if (!variable.origin.empty() || variable.structure)
                     variables.push_back(
                           { { "name", variable.name }, { "frameOffset", variable.frameOffset }, { "type", variable.type }, { "origin", variable.origin } });
             if (!variables.empty())
@@ -203,6 +203,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
         if (cache.hasCache) { // the data defined by the user (D / A): the lines are counted with them; the functions of the user (P)
             zone->userDataRanges = ReadUserDataRanges(cache, *zone);
             zone->userFunctions  = ReadUserFunctions(cache, *zone);
+            zone->userVariableStructures = ReadUserVariableStructures(cache, *zone);
         }
         if (!zone->InitZone(initData))
             continue;
@@ -233,6 +234,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
                                           { "suggestions", result.suggestedNames + result.aiComments },
                                           { "dataRanges", result.dataRanges },
                                           { "functions", result.functions },
+                                          { "variableStructures", result.structures },
                                           { "skipped", result.skipped } };
         else
             root["annotationsImport"] = { { "error", optionError } };
