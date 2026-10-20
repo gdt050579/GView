@@ -103,10 +103,12 @@ namespace View
         };
         struct DissasmXrefs {
             std::vector<DissasmXref> byTarget; // sorted by target, then by source (Finish)
+            std::vector<uint32> bySource;      // the indexes of byTarget, sorted by source (Finish)
 
             void Clear()
             {
                 byTarget.clear();
+                bySource.clear();
             }
             void Add(uint64 from, uint64 to, DissasmXrefKind kind, uint8 size = 0)
             {
@@ -116,6 +118,8 @@ namespace View
             void Finish();
             // the references to `target`, sorted by their source
             std::pair<std::vector<DissasmXref>::const_iterator, std::vector<DissasmXref>::const_iterator> To(uint64 target) const;
+            // the references made by the instruction at `from` (its targets), in the order of their targets
+            std::vector<const DissasmXref*> From(uint64 from) const;
         };
         // "call", "jmp", "read", ... (the short text of the xrefs list)
         std::string_view GetXrefKindName(DissasmXrefKind kind);

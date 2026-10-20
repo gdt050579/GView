@@ -38,6 +38,7 @@ struct DissasmAnnotationsImport {
     uint32 structures      = 0; // the structures the user gave to the variables (IDA Alt+Q)
     uint32 operandStructures = 0; // the structure offsets of the operands (IDA T)
     uint32 bookmarks         = 0; // the bookmarks of the user (IDA Alt+M)
+    uint32 repeatableComments = 0; // the repeatable comments (IDA ;)
     std::vector<DissasmCodeZone*> zonesToReanalyze; // their data ranges changed: a new analysis gives their lines
     std::vector<DissasmCodeZone*> zonesWithNewLines; // a collapsed zone was placed: the size of the zone changed
 };

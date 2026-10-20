@@ -55,13 +55,26 @@ enum DissasmUserFunctionFlags : uint8 {
 
 // An edit of the user with what it replaced: it can be undone and redone (Ctrl+Z / Ctrl+Y)
 struct DissasmEdit {
-    enum class Kind : uint8 { Comment, LabelName, VariableName, DecimalOperand, AddZone, RemoveZone, DataRanges, UserFunctions, VariableStructures, OperandStructure };
+    enum class Kind : uint8 {
+        Comment,
+        LabelName,
+        VariableName,
+        DecimalOperand,
+        AddZone,
+        RemoveZone,
+        DataRanges,
+        UserFunctions,
+        VariableStructures,
+        OperandStructure,
+        RepeatableComment,
+    };
     Kind kind = Kind::Comment;
     DissasmCommentAnchor anchor;              // Comment
     uint64 address     = 0;                   // LabelName: the label; VariableName: the function; DecimalOperand: the instruction
     int32 frameOffset  = 0;                   // VariableName
     uint32 numberIndex = 0;                   // DecimalOperand
-    std::optional<std::string> before, after; // Comment (none: no comment), LabelName, VariableName, OperandStructure (none: no structure)
+    // Comment / RepeatableComment (none: no comment), LabelName, VariableName, OperandStructure (none: no structure)
+    std::optional<std::string> before, after;
     DissasmCollapsibleZone zone;              // AddZone / RemoveZone
     std::vector<DissasmInstructionSet::DataRange> rangesBefore, rangesAfter; // DataRanges (address: the edited line)
     std::map<uint64, uint8> functionsBefore, functionsAfter;                 // UserFunctions (address: the function)
@@ -349,6 +362,16 @@ struct DissasmCodeZone : public ParseZone {
     // instruction) -> its description (DISSASM_MAX_BOOKMARK_SIZE at most). Saved in the cache and in the annotations, shown in the
     // navigation band
     std::map<uint64, std::string> bookmarks;
+    // the repeatable comments of the user (IDA ;): the relative address of a label / an instruction -> the text. Shown on its line (the
+    // label line when the address has a label) and on every instruction that refers to it (the calls, the jumps, the data references, of
+    // this zone and of the other zones of the file); saved in the cache and in the annotations
+    std::map<uint64, std::string> repeatableComments;
+    // the repeatable comment of an address (empty: removed), an edit of the user (it can be undone); false when nothing changes
+    bool SetRepeatableComment(uint64 address, const std::string& text);
+    // the repeatable comment shown on a line: its own, else the ones of the places it refers to (" ; " between them)
+    bool GetRepeatableComment(const DissasmAsmPreCacheLine& line, std::string& text) const;
+    // the line has the repeatable comment of its address (not the one of a place it refers to)
+    bool HasOwnRepeatableComment(const DissasmAsmPreCacheLine& line) const;
     // T: the structure of the operand of the instruction (empty: none), an edit of the user (it can be undone); false when nothing changes
     bool SetOperandStructure(uint64 address, const std::string& structure);
     // a data zone: the places the code of the other zones refers to (relative, sorted) and the largest access there (0: an address taken)

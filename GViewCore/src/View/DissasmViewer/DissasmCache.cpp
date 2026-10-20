@@ -595,6 +595,51 @@ void GView::View::DissasmViewer::BookmarksToBuffer(const std::map<uint64, std::s
     }
 }
 
+constexpr uint32 DISSASM_REPEATABLE_COMMENTS_MAGIC   = 0x52554447; // "GDUR"
+constexpr uint32 DISSASM_REPEATABLE_COMMENTS_VERSION = 1;
+
+static void FormatRepeatableCommentsRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmRepeatableComments.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadRepeatableComments(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> comments;
+    LocalString<64> name;
+    FormatRepeatableCommentsRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return comments;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_REPEATABLE_COMMENTS_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_REPEATABLE_COMMENTS_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return comments;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && !text.empty() && text.size() <= DISSASM_MAX_REPEATABLE_COMMENT_SIZE)
+            comments[address] = std::move(text);
+    }
+    return comments;
+}
+
+void GView::View::DissasmViewer::RepeatableCommentsToBuffer(const std::map<uint64, std::string>& comments, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_REPEATABLE_COMMENTS_MAGIC);
+    append_bytes(buffer, DISSASM_REPEATABLE_COMMENTS_VERSION);
+    append_bytes(buffer, static_cast<uint32>(comments.size()));
+    for (const auto& [address, text] : comments) {
+        append_bytes(buffer, address);
+        append_string(buffer, text);
+    }
+}
+
 static void UserFunctionsToBuffer(const std::map<uint64, uint8>& functions, std::vector<std::byte>& buffer)
 {
     buffer.clear();
@@ -679,6 +724,9 @@ void Instance::SaveCacheData()
         FormatBookmarksRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
         if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
             keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatRepeatableCommentsRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
     }
     // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
     for (auto& [name, entry] : cacheData.zonesData) {
@@ -738,6 +786,12 @@ void Instance::SaveCacheData()
         if (!dissasmZone->bookmarks.empty()) {
             BookmarksToBuffer(dissasmZone->bookmarks, buffer);
             FormatBookmarksRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->repeatableComments.empty()) {
+            RepeatableCommentsToBuffer(dissasmZone->repeatableComments, buffer);
+            FormatRepeatableCommentsRecordName(zoneName, *dissasmZone);
             if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
                 return;
         }

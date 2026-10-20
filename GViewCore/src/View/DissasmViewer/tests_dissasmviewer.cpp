@@ -1220,7 +1220,8 @@ std::vector<std::byte> MutateRecord(const std::vector<std::byte>& record, std::m
 TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
 {
     // the records of a zone with every kind of user data: the current record (version 4), the line keyed records of the versions 1 and 2,
-    // the user data, the user functions, the user structures, the operand structures and the bookmarks records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
+    // the user data, the user functions, the user structures, the operand structures, the bookmarks and the repeatable comments records;
+    // mutated (a fixed seed: the same mutants on every run) and loaded into a zone
     DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
     std::string_view labelName = "isPrime";
     REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
@@ -1246,8 +1247,9 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
     std::vector<std::byte> userStructures, operandStructures;
     UserVariableStructuresToBuffer({ { { 0x30, -0x20 }, "SYSTEMTIME" }, { { 0x5, -8 }, "" } }, userStructures);
     OperandStructuresToBuffer({ { 0x30, "STARTUPINFOW" }, { 0x5, "FILETIME" } }, operandStructures);
-    std::vector<std::byte> bookmarks;
+    std::vector<std::byte> bookmarks, repeatableComments;
     BookmarksToBuffer({ { 0x30, "the decryption loop" }, { 0x5, "x" } }, bookmarks);
+    RepeatableCommentsToBuffer({ { 0x30, "decrypts the configuration" }, { 0x5, "y" } }, repeatableComments);
 
     // GVIEW_FUZZ_ROUNDS=<rounds> [GVIEW_FUZZ_SEED=<seed>]: a longer run with other mutants (a local fuzzing campaign)
     const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
@@ -1304,6 +1306,11 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
         bookmarksCache.AddRegion("DissasmBookmarks.0", bookmarksData.data(), static_cast<uint32>(bookmarksData.size()));
         for (const auto& [address, description] : ReadBookmarks(bookmarksCache, *edited.zone))
             REQUIRE((address < edited.zone->zoneDetails.size && !description.empty() && description.size() <= DISSASM_MAX_BOOKMARK_SIZE));
+        const auto repeatableData = MutateRecord(repeatableComments, random);
+        DissasmCache repeatableCache;
+        repeatableCache.AddRegion("DissasmRepeatableComments.0", repeatableData.data(), static_cast<uint32>(repeatableData.size()));
+        for (const auto& [address, text] : ReadRepeatableComments(repeatableCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && !text.empty() && text.size() <= DISSASM_MAX_REPEATABLE_COMMENT_SIZE));
         std::vector<std::byte> variables;
         edited.zone->localVariables.ToBuffer(variables);
         const auto variablesData = MutateRecord(variables, random);
@@ -7671,6 +7678,67 @@ TEST_CASE("Bookmarks", "[Dissasm]UserData")
     REQUIRE(ReadBookmarks(cache, zone) == zone.bookmarks);
 }
 
+TEST_CASE("RepeatableComments", "[Dissasm]UserData")
+{
+    // IDA ;: a comment on sub_10 is shown on its label and on the call to it; one on the ret of sub_10 (no label) on that line
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    const auto targets = zone.xrefs.From(zone.labelAddressBase + 0x00); // the source index of the references
+    REQUIRE(targets.size() == 1);
+    REQUIRE(targets[0]->to == zone.labelAddressBase + 0x10);
+    REQUIRE(zone.SetRepeatableComment(0x10, "returns 0"));
+    REQUIRE(zone.SetRepeatableComment(0x12, "the end"));
+    REQUIRE_FALSE(zone.SetRepeatableComment(0x10, "returns 0")); // the same: nothing changes
+    const auto check = [&dissasmInstance](bool withEnd) {
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "sub_10:").find("; returns 0") != std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "call   sub_10").find("; returns 0") != std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "xor    eax, eax").find("returns 0") == std::string_view::npos); // its label shows it
+        REQUIRE(FindListingLine(listing, "call   sub_30").find(';') == std::string_view::npos);
+        REQUIRE((FindListingLine(listing, "0x00000012  ret").find("; the end") != std::string_view::npos) == withEnd);
+    };
+    check(true);
+
+    // Ctrl+Z / Ctrl+Y; Delete (no comment on the line): removed
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && place->address == 0x12 && !place->reanalyze));
+    check(false);
+    REQUIRE(zone.RedoEdit().has_value());
+    check(true);
+
+    // a new analysis keeps them; the annotations into a new instance (an empty text skipped)
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    check(true);
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["repeatableComments"].size() == 2);
+    document["zones"][0]["repeatableComments"].push_back({ { "address", "0x30" }, { "text", "" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.repeatableComments == 2);
+    REQUIRE(result.skipped == 1);
+    REQUIRE(fresh.zone->repeatableComments == zone.repeatableComments);
+
+    // the cache record: read back; an empty text, an address outside of the zone dropped
+    auto comments    = zone.repeatableComments;
+    comments[0x30]   = "";
+    comments[0x1000] = "outside";
+    std::vector<std::byte> buffer;
+    RepeatableCommentsToBuffer(comments, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmRepeatableComments.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadRepeatableComments(cache, zone) == zone.repeatableComments);
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does
@@ -7800,6 +7868,7 @@ TEST_CASE("UntrustedDocumentsFuzz", "[Dissasm]UserData")
     zone.userVariableStructures = { { { 0x00, -0x20 }, "SYSTEMTIME" }, { { 0x10, -8 }, "" } };
     zone.operandStructures      = { { 0x05, "STARTUPINFOW" } };
     zone.bookmarks              = { { 0x10, "the helper" } };
+    zone.repeatableComments     = { { 0x10, "returns 0" } };
     const auto annotations = BuildAnnotationsDocument({ &zone }, "sample.bin");
     const auto signatures  = BuildSignaturesDocument({ &zone });
 

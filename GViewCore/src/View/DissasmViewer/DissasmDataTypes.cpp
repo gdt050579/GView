@@ -124,6 +124,21 @@ void DissasmXrefs::Finish()
                                }),
                    byTarget.end());
     byTarget.shrink_to_fit();
+    bySource.resize(byTarget.size());
+    for (uint32 index = 0; index < bySource.size(); index++)
+        bySource[index] = index;
+    std::stable_sort(bySource.begin(), bySource.end(), [this](uint32 left, uint32 right) { return byTarget[left].from < byTarget[right].from; });
+}
+
+std::vector<const DissasmXref*> DissasmXrefs::From(uint64 from) const
+{
+    std::vector<const DissasmXref*> references;
+    if (bySource.size() != byTarget.size())
+        return references; // not finished
+    auto it = std::lower_bound(bySource.begin(), bySource.end(), from, [this](uint32 index, uint64 value) { return byTarget[index].from < value; });
+    for (; it != bySource.end() && byTarget[*it].from == from; ++it)
+        references.push_back(&byTarget[*it]);
+    return references;
 }
 
 std::pair<std::vector<DissasmXref>::const_iterator, std::vector<DissasmXref>::const_iterator> DissasmXrefs::To(uint64 target) const

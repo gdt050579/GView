@@ -371,6 +371,40 @@ void Instance::AddComment()
     }
 }
 
+void Instance::AddRepeatableComment()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine || asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a label or an instruction!");
+        return;
+    }
+    // the address of the line: its label, or the instruction (a label line and its instruction share it: the label shows it)
+    const auto existing = zone->repeatableComments.find(asmLine.address);
+    selection.Clear();
+    SingleLineEditWindow dialog(existing != zone->repeatableComments.end() ? existing->second : std::string(), "Repeatable comment");
+    if (dialog.Show() != Dialogs::Result::Ok)
+        return;
+    std::string text = dialog.GetResult();
+    if (text.size() > DISSASM_MAX_REPEATABLE_COMMENT_SIZE)
+        text.resize(DISSASM_MAX_REPEATABLE_COMMENT_SIZE);
+    if (zone->SetRepeatableComment(asmLine.address, text)) // Ctrl+Z gives the previous one back
+        RefreshDrawnLines();                                  // the lines that refer to it, in the other zones too
+}
+
 void Instance::RemoveComment()
 {
     // TODO: duplicate code -> maybe extract this?
@@ -399,6 +433,20 @@ void Instance::RemoveComment()
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     std::string existing     = {};
     convertedZone->GetComment(startingLine, existing);
+    if (existing.empty()) {
+        // no comment: the repeatable comment of the line (Delete removes it too)
+        DissasmInsnExtractLineParams params{};
+        params.obj         = obj;
+        params.zone        = convertedZone;
+        params.settings    = settings.get();
+        params.asmData     = &asmData;
+        const auto asmLine = convertedZone->GetCurrentAsmLine(startingLine, obj, &params);
+        if (convertedZone->HasOwnRepeatableComment(asmLine)) {
+            convertedZone->SetRepeatableComment(asmLine.address, {});
+            RefreshDrawnLines();
+            return;
+        }
+    }
     convertedZone->RemoveComment(startingLine);
     if (!existing.empty())
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::CommentRemove);

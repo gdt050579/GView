@@ -315,6 +315,9 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_SHOW_BOOKMARKS:
         ShowBookmarks();
         return true;
+    case COMMAND_ADD_REPEATABLE_COMMENT:
+        AddRepeatableComment();
+        return true;
     }
     return false;
 }
@@ -341,11 +344,14 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
         return true;
 
-    // the IDA profile: ; and : add a comment (they are characters, not keys of AppCUI)
+    // the IDA profile: : adds a comment, ; a repeatable one (they are characters, not keys of AppCUI)
     if (Config::ActiveKeyProfile == Config::KeyProfile::IDA && (charCode == ';' || charCode == ':') &&
         (keyCode & (Key::Ctrl | Key::Alt)) == Key::None) {
         FinishDeepScans();
-        AddComment();
+        if (charCode == ';')
+            AddRepeatableComment();
+        else
+            AddComment();
         return true;
     }
     if (keyCode == Key::Escape) {

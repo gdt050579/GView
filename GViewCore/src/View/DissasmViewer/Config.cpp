@@ -295,7 +295,8 @@ void GView::View::DissasmViewer::ApplyKeyProfile(Config::KeyProfile profile)
         { &Config::GoToAddressCommand, Key::G },
         { &Config::ShowXrefsCommand, Key::X },
         { &Config::AddZoneCommand, Key::Ctrl | Key::Shift | Key::X },
-        { &Config::AddOrEditCommentCommand, Key::None }, // ; and : (characters, they are not keys of AppCUI: OnKeyEvent)
+        { &Config::AddOrEditCommentCommand, Key::None },           // : (a character, not a key of AppCUI: OnKeyEvent)
+        { &Config::AddOrEditRepeatableCommentCommand, Key::None }, // ;
         { &Config::JumpBackCommand, Key::Escape },
         { &Config::JumpForwardCommand, Key::Ctrl | Key::Enter },
         { &Config::SpaceCommand, Key::Enter }, // follow the operand

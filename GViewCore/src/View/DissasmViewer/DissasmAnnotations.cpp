@@ -184,6 +184,13 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     if (!bookmarks.empty())
         result["bookmarks"] = std::move(bookmarks);
 
+    // the repeatable comments (;)
+    json repeatable = json::array();
+    for (const auto& [address, text] : zone.repeatableComments)
+        repeatable.push_back({ { "address", Hex(base + address) }, { "text", text } });
+    if (!repeatable.empty())
+        result["repeatableComments"] = std::move(repeatable);
+
     json names = json::array();
     for (const auto& [address, name] : zone.GetUserLabelNames())
         names.push_back({ { "address", Hex(base + address) }, { "name", name } });
@@ -326,6 +333,17 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
         }
         zone.operandStructures[address.value()] = name;
         result.operandStructures++;
+    }
+
+    for (const auto& item : ArrayField(zoneJson, "repeatableComments")) {
+        const auto address = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
+        const auto text    = item.is_object() ? StringField(item, "text", DISSASM_MAX_REPEATABLE_COMMENT_SIZE) : std::nullopt;
+        if (!address.has_value() || !text.has_value()) {
+            result.skipped++;
+            continue;
+        }
+        zone.repeatableComments[address.value()] = text.value();
+        result.repeatableComments++;
     }
 
     for (const auto& item : ArrayField(zoneJson, "bookmarks")) {

@@ -1427,7 +1427,12 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone), nullptr, &arrowsColumn);
     std::string comment, aiComment;
     const bool showComments   = !asmCacheLine->isCollapsedLine;
-    const bool hasUserComment = showComments && zone->GetComment(*asmCacheLine, comment);
+    bool hasUserComment = showComments && zone->GetComment(*asmCacheLine, comment);
+    // the repeatable comment of the line, or of what it refers to (IDA ;), after the comment of the user
+    if (std::string repeatable; showComments && zone->GetRepeatableComment(*asmCacheLine, repeatable)) {
+        comment        = hasUserComment ? comment + " ; " + repeatable : repeatable;
+        hasUserComment = true;
+    }
     const bool hasAutoComment = showComments && !asmCacheLine->autoComment.empty();
     // the suggestions of the assistant (Ctrl+Shift+A hides them): a comment, a name for a label
     const auto suggestedName = showAISuggestions ? zone->GetSuggestedName(*asmCacheLine) : std::nullopt;
@@ -1555,6 +1560,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
         zone->userVariableStructures = ReadUserVariableStructures(cacheData, *zone); // Alt+Q
         zone->operandStructures      = ReadOperandStructures(cacheData, *zone);      // T
         zone->bookmarks              = ReadBookmarks(cacheData, *zone);              // Alt+M
+        zone->repeatableComments     = ReadRepeatableComments(cacheData, *zone);     // ;
     }
 
     if (!zone->InitZone(initData))
@@ -1879,6 +1885,10 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
         }
 
         bool hasComment = !asmLine.isCollapsedLine && zone.GetComment(asmLine, comment);
+        if (std::string repeatable; !asmLine.isCollapsedLine && zone.GetRepeatableComment(asmLine, repeatable)) {
+            comment    = hasComment ? comment + " ; " + repeatable : repeatable;
+            hasComment = true;
+        }
         // the suggestions of the assistant, marked, after the comment of the user
         std::string aiComment;
         if (zone.GetAIComment(asmLine, aiComment))
@@ -2033,9 +2043,10 @@ void Instance::ImportAnnotations()
     RefreshDrawnLines();
     LocalString<256> summary;
     summary.SetFormat(
-          "Imported: %u names, %u comments, %u variables, %u structures, %u numbers in decimal, %u zones, %u functions, %u bookmarks, %u suggestions%s",
+          "Imported: %u names, %u comments (%u repeatable), %u variables, %u structures, %u numbers in decimal, %u zones, %u functions, %u bookmarks, %u suggestions%s",
           result.names,
           result.comments,
+          result.repeatableComments,
           result.variables,
           result.structures + result.operandStructures,
           result.decimalOperands,

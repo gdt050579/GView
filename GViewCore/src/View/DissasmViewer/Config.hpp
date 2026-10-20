@@ -50,6 +50,7 @@ constexpr uint32 COMMAND_SET_STRUCTURE         = 143;
 constexpr uint32 COMMAND_SET_OPERAND_STRUCTURE = 144;
 constexpr uint32 COMMAND_MARK_POSITION         = 145;
 constexpr uint32 COMMAND_SHOW_BOOKMARKS        = 146;
+constexpr uint32 COMMAND_ADD_REPEATABLE_COMMENT = 147;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -310,6 +311,10 @@ namespace View
                 Input::Key::Shift | Input::Key::A, "DismissAISuggestion", "Dismiss the suggestion of the assistant on the line", COMMAND_DISMISS_AI_SUGGESTION
             };
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
+            // IDA ; (the IDA profile: the character): shown at every place that refers to the line too
+            inline static KeyboardControl AddOrEditRepeatableCommentCommand = {
+                Input::Key::Shift | Input::Key::C, "AddOrEditRepeatableComment", "Add or edit the repeatable comment of the line (shown where it is used)", COMMAND_ADD_REPEATABLE_COMMENT
+            };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
             inline static KeyboardControl RenameLabelCommand      = {
                 Input::Key::N, "RenameLabel", "Rename label, function or local variable", COMMAND_RENAME_LABEL
@@ -391,7 +396,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 33> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 34> KeyEventCommands = {
                 &AcceptAISuggestionCommand,
                 &DismissAISuggestionCommand,
                 &MoveDownCommand,
@@ -425,6 +430,7 @@ namespace View
                 &SetOperandStructureCommand,
                 &MarkPositionCommand,
                 &ShowBookmarksCommand,
+                &AddOrEditRepeatableCommentCommand,
             };
             inline static Input::KeyMap Map;
 

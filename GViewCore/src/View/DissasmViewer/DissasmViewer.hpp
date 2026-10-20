@@ -676,6 +676,11 @@ namespace View
         // of the zone dropped
         std::map<uint64, std::string> ReadBookmarks(const DissasmCache& cache, const DissasmCodeZone& zone);
         void BookmarksToBuffer(const std::map<uint64, std::string>& bookmarks, std::vector<std::byte>& buffer);
+        // the repeatable comments of a code zone (DissasmCodeZone::repeatableComments), saved in the cache; an empty / too long text
+        // (DISSASM_MAX_REPEATABLE_COMMENT_SIZE) or an address outside of the zone dropped
+        std::map<uint64, std::string> ReadRepeatableComments(const DissasmCache& cache, const DissasmCodeZone& zone);
+        void RepeatableCommentsToBuffer(const std::map<uint64, std::string>& comments, std::vector<std::byte>& buffer);
+        constexpr size_t DISSASM_MAX_REPEATABLE_COMMENT_SIZE = 64 * 1024;
         // a name the record and the annotations accept: empty (no structure) or the name of a structure (letters, digits, _)
         bool IsValidUserStructureName(std::string_view name);
 
@@ -1034,6 +1039,8 @@ namespace View
             // IDA Alt+M / Ctrl+M: a bookmark on the cursor line (its description; again: edited), the list of the bookmarks of the file
             void MarkPosition();
             void ShowBookmarks();
+            // IDA ;: the repeatable comment of the label / the instruction of the cursor line (shown on the lines that refer to it too)
+            void AddRepeatableComment();
             // the zone analyzed again; the cursor goes back to `keepAddress` (relative) when given. background: a big zone shows its lines at
             // once and its deep scan continues in the frame updates (the annotations come back when it ends, EndDeepScan); otherwise the whole
             // analysis runs now (ReanalyzeCodeZone)

@@ -4269,6 +4269,8 @@ std::optional<uint32> DissasmCodeZone::FindText(std::string_view text, bool matc
         }
         if (GetComment(asmLine, comment))
             lineText.append(" ; ").append(comment);
+        if (GetRepeatableComment(asmLine, comment))
+            lineText.append(" ; ").append(comment);
         if (!asmLine.autoComment.empty())
             lineText.append(" ; ").append(asmLine.autoComment);
         if ((matchCase ? lineText : lower(lineText)).find(wanted) != std::string::npos)
@@ -4694,6 +4696,66 @@ void DissasmCodeZone::RecordUserFunctionsEdit(std::map<uint64, uint8> before, ui
     RecordEdit(std::move(edit));
 }
 
+bool DissasmCodeZone::SetRepeatableComment(uint64 address, const std::string& text)
+{
+    const auto found = repeatableComments.find(address);
+    std::optional<std::string> before;
+    if (found != repeatableComments.end())
+        before = found->second;
+    const std::optional<std::string> after = text.empty() ? std::nullopt : std::optional<std::string>(text);
+    if (before == after)
+        return false;
+    if (after.has_value())
+        repeatableComments[address] = after.value();
+    else
+        repeatableComments.erase(address);
+    DissasmEdit edit;
+    edit.kind    = DissasmEdit::Kind::RepeatableComment;
+    edit.address = address;
+    edit.before  = std::move(before);
+    edit.after   = after;
+    RecordEdit(std::move(edit));
+    ResetZoneCaching();
+    return true;
+}
+
+bool DissasmCodeZone::HasOwnRepeatableComment(const DissasmAsmPreCacheLine& line) const
+{
+    if (line.isCollapsedLine || line.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition || !repeatableComments.contains(line.address))
+        return false;
+    // a label line shows the comment of its address; the instruction only when the address has no label
+    return line.size == 0 || !labelLineOfAddress.contains(line.address);
+}
+
+bool DissasmCodeZone::GetRepeatableComment(const DissasmAsmPreCacheLine& line, std::string& text) const
+{
+    text.clear();
+    if (HasOwnRepeatableComment(line)) {
+        text = repeatableComments.at(line.address);
+        return true;
+    }
+    if (line.size == 0 || line.isCollapsedLine)
+        return false;
+    // the places the instruction refers to (a zone without repeatable comments is not looked at)
+    bool any = !repeatableComments.empty();
+    for (const auto* sibling : siblingZones)
+        any = any || !sibling->repeatableComments.empty();
+    if (!any)
+        return false;
+    for (const auto* xref : xrefs.From(labelAddressBase + line.address)) {
+        const auto* zone = FindCodeZoneOfAddress(xref->to);
+        if (!zone)
+            continue;
+        const auto comment = zone->repeatableComments.find(xref->to - zone->labelAddressBase);
+        if (comment == zone->repeatableComments.end() || text.find(comment->second) != std::string::npos)
+            continue;
+        if (!text.empty())
+            text += " ; ";
+        text += comment->second;
+    }
+    return !text.empty();
+}
+
 bool DissasmCodeZone::SetOperandStructure(uint64 address, const std::string& structure)
 {
     const auto found = operandStructures.find(address);
@@ -4801,6 +4863,14 @@ bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
     case DissasmEdit::Kind::VariableStructures:
         userVariableStructures = forward ? edit.structuresAfter : edit.structuresBefore; // the caller analyzes the zone again
         break;
+    case DissasmEdit::Kind::RepeatableComment: {
+        const auto& text = forward ? edit.after : edit.before;
+        if (text.has_value())
+            repeatableComments[edit.address] = text.value();
+        else
+            repeatableComments.erase(edit.address);
+        break;
+    }
     case DissasmEdit::Kind::OperandStructure: {
         const auto& structure = forward ? edit.after : edit.before;
         if (structure.has_value())

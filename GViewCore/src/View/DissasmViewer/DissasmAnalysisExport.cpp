@@ -206,6 +206,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
             zone->userVariableStructures = ReadUserVariableStructures(cache, *zone);
             zone->operandStructures      = ReadOperandStructures(cache, *zone);
             zone->bookmarks              = ReadBookmarks(cache, *zone);
+            zone->repeatableComments     = ReadRepeatableComments(cache, *zone);
         }
         if (!zone->InitZone(initData))
             continue;
@@ -239,6 +240,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
                                           { "variableStructures", result.structures },
                                           { "operandStructures", result.operandStructures },
                                           { "bookmarks", result.bookmarks },
+                                          { "repeatableComments", result.repeatableComments },
                                           { "skipped", result.skipped } };
         else
             root["annotationsImport"] = { { "error", optionError } };
