@@ -37,6 +37,7 @@ struct DissasmAnnotationsImport {
     uint32 functions       = 0; // the functions edited by the user (IDA P, Delete function, noreturn)
     uint32 structures      = 0; // the structures the user gave to the variables (IDA Alt+Q)
     uint32 operandStructures = 0; // the structure offsets of the operands (IDA T)
+    uint32 operandConstants  = 0; // the symbolic constants of the operands (IDA M)
     uint32 bookmarks         = 0; // the bookmarks of the user (IDA Alt+M)
     uint32 repeatableComments = 0; // the repeatable comments (IDA ;)
     uint32 prototypes         = 0; // the prototypes of the functions (IDA Y)

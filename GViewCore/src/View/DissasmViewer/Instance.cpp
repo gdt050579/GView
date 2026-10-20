@@ -1775,35 +1775,6 @@ Instance::~Instance()
     }
 }
 
-// an immediate operand: 3, 0x80000000, -1, #0x10 (ARM)
-static std::optional<int64> ParseArgumentImmediate(std::string_view text)
-{
-    if (!text.empty() && text.front() == '#')
-        text.remove_prefix(1);
-    const bool negative = !text.empty() && text.front() == '-';
-    if (negative)
-        text.remove_prefix(1);
-    const bool hexadecimal = text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
-    if (hexadecimal)
-        text.remove_prefix(2);
-    if (text.empty() || text.size() > 16)
-        return std::nullopt;
-    uint64 value = 0;
-    for (const char c : text) {
-        uint32 digit;
-        if (c >= '0' && c <= '9')
-            digit = c - '0';
-        else if (hexadecimal && c >= 'a' && c <= 'f')
-            digit = c - 'a' + 10;
-        else if (hexadecimal && c >= 'A' && c <= 'F')
-            digit = c - 'A' + 10;
-        else
-            return std::nullopt; // a name (offset aText), a register, a memory operand
-        value = value * (hexadecimal ? 16 : 10) + digit;
-    }
-    return negative ? -static_cast<int64>(value) : static_cast<int64>(value);
-}
-
 // the constant an argument line gives: push 3, mov edx, 0x80000000, mov dword ptr [rsp + 0x20], 3, mov w1, #3; 0 for xor ecx, ecx /
 // and qword ptr [rsp + 0x30], 0; -1 for or eax, -1
 static std::optional<uint64> GetArgumentImmediate(const DissasmAsmPreCacheLine& line)
@@ -1817,7 +1788,7 @@ static std::optional<uint64> GetArgumentImmediate(const DissasmAsmPreCacheLine& 
     const std::string_view first  = operands.substr(0, operands.find(", "));
     if ((mnemonic == "xor" || mnemonic == "sub") && comma != std::string_view::npos && first == last)
         return 0u;
-    const auto immediate = ParseArgumentImmediate(last);
+    const auto immediate = ParseOperandImmediate(last);
     if (!immediate.has_value())
         return std::nullopt;
     if (comma == std::string_view::npos)

@@ -1244,9 +1244,10 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
     append(userFunctions, uint32{ 0x46554447 }), append(userFunctions, uint32{ 1 }), append(userFunctions, uint32{ 2 });
     append(userFunctions, uint64{ 0x30 }), append(userFunctions, uint8{ USER_FUNCTION_CREATE });
     append(userFunctions, uint64{ 0x5 }), append(userFunctions, uint8{ USER_FUNCTION_NORETURN });
-    std::vector<std::byte> userStructures, operandStructures;
+    std::vector<std::byte> userStructures, operandStructures, operandConstants;
     UserVariableStructuresToBuffer({ { { 0x30, -0x20 }, "SYSTEMTIME" }, { { 0x5, -8 }, "" } }, userStructures);
     OperandStructuresToBuffer({ { 0x30, "STARTUPINFOW" }, { 0x5, "FILETIME" } }, operandStructures);
+    OperandConstantsToBuffer({ { 0x30, "ACCESS_RIGHTS" }, { 0x5, "HRESULTS" } }, operandConstants);
     std::vector<std::byte> bookmarks, repeatableComments, prototypes;
     BookmarksToBuffer({ { 0x30, "the decryption loop" }, { 0x5, "x" } }, bookmarks);
     UserPrototypesToBuffer({ { 0x30, "int decrypt(char* buffer, int size)" }, { 0x5, "void f()" } }, prototypes);
@@ -1302,6 +1303,11 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
         operandsCache.AddRegion("DissasmOperandStructures.0", operandsData.data(), static_cast<uint32>(operandsData.size()));
         for (const auto& [address, structure] : ReadOperandStructures(operandsCache, *edited.zone))
             REQUIRE((address < edited.zone->zoneDetails.size && !structure.empty() && IsValidUserStructureName(structure)));
+        const auto constantsData = MutateRecord(operandConstants, random);
+        DissasmCache constantsCache;
+        constantsCache.AddRegion("DissasmOperandConstants.0", constantsData.data(), static_cast<uint32>(constantsData.size()));
+        for (const auto& [address, set] : ReadOperandConstants(constantsCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && IsConstantSetName(set)));
         const auto bookmarksData = MutateRecord(bookmarks, random);
         DissasmCache bookmarksCache;
         bookmarksCache.AddRegion("DissasmBookmarks.0", bookmarksData.data(), static_cast<uint32>(bookmarksData.size()));
@@ -7739,6 +7745,97 @@ TEST_CASE("OperandStructures", "[Dissasm]UserData")
     DissasmCache cache;
     REQUIRE(cache.AddRegion("DissasmOperandStructures.0", buffer.data(), static_cast<uint32>(buffer.size())));
     REQUIRE(ReadOperandStructures(cache, zone) == zone.operandStructures);
+}
+
+TEST_CASE("OperandConstants", "[Dissasm]UserData")
+{
+    // IDA M: the sets, the immediate of the last operand replaced by its name
+    size_t sets = 0;
+    ForEachConstantSet([&sets](std::string_view id, std::string_view title) {
+        REQUIRE((!id.empty() && !title.empty() && IsConstantSetName(id)));
+        sets++;
+    });
+    REQUIRE(sets > 70);
+    REQUIRE_FALSE(IsConstantSetName("NO_SUCH_SET"));
+    REQUIRE(ApplyOperandConstant("edx, 0x80000000", "ACCESS_RIGHTS") == std::optional<std::string>("edx, GENERIC_READ"));
+    REQUIRE(ApplyOperandConstant("dword ptr [rsp + 0x20], 3", "DISPOSITIONS") == std::optional<std::string>("dword ptr [rsp + 0x20], OPEN_EXISTING"));
+    REQUIRE(ApplyOperandConstant("0x80070057", "HRESULTS") == std::optional<std::string>("E_INVALIDARG")); // push
+    REQUIRE(ApplyOperandConstant("w1, #0x3", "DISPOSITIONS") == std::optional<std::string>("w1, #OPEN_EXISTING"));
+    REQUIRE(ApplyOperandConstant("eax, ecx", "ACCESS_RIGHTS") == std::nullopt);
+    REQUIRE(ApplyOperandConstant("ecx, 0x5", "ACCESS_RIGHTS") == std::nullopt); // no name for it
+    REQUIRE(ApplyOperandConstant("ecx, 0x5", "NO_SUCH_SET") == std::nullopt);
+    REQUIRE(FormatConstantOfSet("POOL_TAG", 0x7346744E) == "'NtFs'");
+    REQUIRE(FormatConstantOfSet("WIN32_ERRORS", 0xB7) == "ERROR_ALREADY_EXISTS");
+    REQUIRE(GetLastOperandImmediate("eax, -1") == std::optional<uint64>(UINT64_MAX));
+
+    // a zone: the immediates of instructions that are not arguments of a known API
+    std::vector<unsigned char> file = {
+        0xBA, 0x00, 0x00, 0x00, 0x80, // 0x00: mov edx, 0x80000000
+        0x3D, 0xB7, 0x00, 0x00, 0x00, // 0x05: cmp eax, 0xb7
+        0x89, 0xC8,                   // 0x0a: mov eax, ecx
+        0xC3,                         // 0x0c: ret
+    };
+    file.resize(0x20, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.SetOperandConstant(0x00, "ACCESS_RIGHTS"));
+    REQUIRE(zone.SetOperandConstant(0x05, "WIN32_ERRORS"));
+    REQUIRE_FALSE(zone.SetOperandConstant(0x05, "WIN32_ERRORS")); // the same: nothing changes
+    const auto withNames = [&dissasmInstance]() {
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "mov    edx, GENERIC_READ").size() > 0);
+        REQUIRE(FindListingLine(listing, "cmp    eax, ERROR_ALREADY_EXISTS").size() > 0);
+    };
+    withNames();
+    // a set that does not name the value: the number stays
+    REQUIRE(zone.SetOperandConstant(0x0a, "ACCESS_RIGHTS"));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    eax, ecx").size() > 0);
+    REQUIRE(zone.UndoEdit().has_value());
+
+    // Ctrl+Z / Ctrl+Y (only the drawing changes)
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && !place->reanalyze && place->address == 0x05));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "cmp    eax, 0xb7").size() > 0);
+    REQUIRE(zone.RedoEdit().has_value());
+    withNames();
+    // none: the number
+    REQUIRE(zone.SetOperandConstant(0x00, ""));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    edx, 0x80000000").size() > 0);
+    REQUIRE(zone.UndoEdit().has_value());
+    withNames();
+
+    // a new analysis keeps them
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    withNames();
+
+    // the annotations: a new instance gets them; a set that does not exist is skipped
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["operandConstants"].size() == 2);
+    document["zones"][0]["operandConstants"].push_back({ { "address", "0xa" }, { "set", "NO_SUCH_SET" } });
+    document["zones"][0]["operandConstants"].push_back({ { "address", "0xa" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.operandConstants == 2);
+    REQUIRE(result.skipped == 2);
+    REQUIRE(fresh.zone->operandConstants == zone.operandConstants);
+
+    // the cache record: read back; a set that does not exist, an address outside of the zone dropped
+    auto constants    = zone.operandConstants;
+    constants[0x0a]   = "NO_SUCH_SET";
+    constants[0x1000] = "HRESULTS";
+    std::vector<std::byte> buffer;
+    OperandConstantsToBuffer(constants, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmOperandConstants.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadOperandConstants(cache, zone) == zone.operandConstants);
 }
 
 TEST_CASE("Bookmarks", "[Dissasm]UserData")

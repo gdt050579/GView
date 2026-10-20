@@ -177,6 +177,13 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     if (!operands.empty())
         result["operandStructures"] = std::move(operands);
 
+    // the symbolic constants of the operands (M)
+    json constants = json::array();
+    for (const auto& [address, set] : zone.operandConstants)
+        constants.push_back({ { "address", Hex(base + address) }, { "set", set } });
+    if (!constants.empty())
+        result["operandConstants"] = std::move(constants);
+
     // the bookmarks (Alt+M)
     json bookmarks = json::array();
     for (const auto& [address, description] : zone.bookmarks)
@@ -340,6 +347,18 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
         }
         zone.operandStructures[address.value()] = name;
         result.operandStructures++;
+    }
+
+    for (const auto& item : ArrayField(zoneJson, "operandConstants")) {
+        const auto address = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
+        const bool hasSet  = item.is_object() && item.contains("set") && item["set"].is_string();
+        const std::string set = hasSet ? item["set"].get<std::string>() : std::string();
+        if (!address.has_value() || !IsConstantSetName(set)) {
+            result.skipped++;
+            continue;
+        }
+        zone.operandConstants[address.value()] = set;
+        result.operandConstants++;
     }
 
     if (zoneJson.contains("prototypes")) {

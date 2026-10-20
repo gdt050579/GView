@@ -210,6 +210,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
             zone->userFunctions  = ReadUserFunctions(cache, *zone);
             zone->userVariableStructures = ReadUserVariableStructures(cache, *zone);
             zone->operandStructures      = ReadOperandStructures(cache, *zone);
+            zone->operandConstants       = ReadOperandConstants(cache, *zone);
             zone->bookmarks              = ReadBookmarks(cache, *zone);
             zone->repeatableComments     = ReadRepeatableComments(cache, *zone);
             zone->userPrototypes         = ReadUserPrototypes(cache, *zone);
@@ -245,6 +246,7 @@ bool GView::View::DissasmViewer::BuildAnalysisJson(
                                           { "functions", result.functions },
                                           { "variableStructures", result.structures },
                                           { "operandStructures", result.operandStructures },
+                                          { "operandConstants", result.operandConstants },
                                           { "bookmarks", result.bookmarks },
                                           { "repeatableComments", result.repeatableComments },
                                           { "prototypes", result.prototypes },

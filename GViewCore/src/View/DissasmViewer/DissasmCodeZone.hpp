@@ -66,6 +66,7 @@ struct DissasmEdit {
         UserFunctions,
         VariableStructures,
         OperandStructure,
+        OperandConstant,
         RepeatableComment,
         UserPrototypes,
     };
@@ -74,7 +75,8 @@ struct DissasmEdit {
     uint64 address     = 0;                   // LabelName: the label; VariableName: the function; DecimalOperand: the instruction
     int32 frameOffset  = 0;                   // VariableName
     uint32 numberIndex = 0;                   // DecimalOperand
-    // Comment / RepeatableComment (none: no comment), LabelName, VariableName, OperandStructure (none: no structure)
+    // Comment / RepeatableComment (none: no comment), LabelName, VariableName, OperandStructure (none: no structure), OperandConstant (none:
+    // the number)
     std::optional<std::string> before, after;
     DissasmCollapsibleZone zone;              // AddZone / RemoveZone
     std::vector<DissasmInstructionSet::DataRange> rangesBefore, rangesAfter; // DataRanges (address: the edited line)
@@ -363,6 +365,10 @@ struct DissasmCodeZone : public ParseZone {
     // its displacement is ([rbx + 0x3c] -> [rbx + STARTUPINFOW.dwFlags]). Only the drawing changes (as decimalOperands); saved in the cache
     // and in the annotations
     std::map<uint64, std::string> operandStructures;
+    // the symbolic constants the user gave to the immediates (IDA M): the relative address of an instruction -> the set (ForEachConstantSet)
+    // that names its last operand (mov edx, 0x80000000 -> mov edx, GENERIC_READ). Only the drawing changes; saved in the cache and in the
+    // annotations
+    std::map<uint64, std::string> operandConstants;
     // the bookmarks of the user (IDA Alt+M / Ctrl+M): the relative address of a line (an instruction; a label / a variable line: its
     // instruction) -> its description (DISSASM_MAX_BOOKMARK_SIZE at most). Saved in the cache and in the annotations, shown in the
     // navigation band
@@ -398,6 +404,9 @@ struct DissasmCodeZone : public ParseZone {
     bool HasOwnRepeatableComment(const DissasmAsmPreCacheLine& line) const;
     // T: the structure of the operand of the instruction (empty: none), an edit of the user (it can be undone); false when nothing changes
     bool SetOperandStructure(uint64 address, const std::string& structure);
+    // M: the set of constants of the immediate of the instruction (empty: the number), an edit of the user (it can be undone); false when
+    // nothing changes
+    bool SetOperandConstant(uint64 address, const std::string& set);
     // a data zone: the places the code of the other zones refers to (relative, sorted) and the largest access there (0: an address taken)
     void CollectDataZoneTargets(std::vector<uint64>& targets, std::vector<uint8>& sizes) const;
     // the references to an address (VA) from this zone, then from the other code zones of the file

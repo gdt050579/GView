@@ -495,7 +495,16 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         free(op_str);
         op_str = nullptr;
     }
-    const std::string_view text = operands ? operands : "";
+    std::string_view text = operands ? operands : "";
+    // M: the immediate as the symbolic constant the user chose (mov edx, GENERIC_READ)
+    std::string constantOperands;
+    if (zone)
+        if (const auto constant = zone->operandConstants.find(address); constant != zone->operandConstants.end())
+            if (auto rewritten = ApplyOperandConstant(text, constant->second); rewritten.has_value()) {
+                constantOperands = std::move(rewritten.value());
+                text             = constantOperands;
+                operands         = constantOperands.c_str();
+            }
 
     // [ebp - 8] -> [ebp + var_8] when the slot is a recognized variable of the function that contains the instruction
     const DissasmFunctionFrame* function = nullptr;
@@ -1594,6 +1603,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
         zone->userFunctions  = ReadUserFunctions(cacheData, *zone); // P / Delete function / noreturn
         zone->userVariableStructures = ReadUserVariableStructures(cacheData, *zone); // Alt+Q
         zone->operandStructures      = ReadOperandStructures(cacheData, *zone);      // T
+        zone->operandConstants       = ReadOperandConstants(cacheData, *zone);       // M
         zone->bookmarks              = ReadBookmarks(cacheData, *zone);              // Alt+M
         zone->repeatableComments     = ReadRepeatableComments(cacheData, *zone);     // ;
         zone->userPrototypes         = ReadUserPrototypes(cacheData, *zone);         // Y
@@ -2084,7 +2094,7 @@ void Instance::ImportAnnotations()
           result.comments,
           result.repeatableComments,
           result.variables,
-          result.structures + result.operandStructures,
+          result.structures + result.operandStructures + result.operandConstants,
           result.decimalOperands,
           result.collapsibleZones,
           result.functions,
@@ -2829,6 +2839,128 @@ void Instance::SetOperandStructure()
     if (window.Show() != Dialogs::Result::Ok || !window.GetSelected().has_value())
         return;
     if (zone->SetOperandStructure(asmLine.address, window.GetSelected().value())) // Ctrl+Z gives the previous one back
+        drawnLinesGeneration++;
+}
+
+// M: the sets of constants that name the value of an operand (the name in each), the current one selected; (none: the number) first
+class ConstantsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_OK     = 1;
+    static constexpr int BTN_CANCEL = 2;
+    Reference<ListView> list;
+    std::vector<std::string> sets; // by the data of the items: "" for (none)
+    std::optional<std::string> selected;
+
+  public:
+    ConstantsWindow(std::string_view operand, uint64 value, std::string_view current) : Window("Symbolic constant", "d:c,w:90,h:70%", WindowFlags::Sizeable)
+    {
+        LocalString<128> text;
+        text.SetFormat("The constant 0x%llX of %.*s:", static_cast<unsigned long long>(value), static_cast<int>(operand.size()), operand.data());
+        Factory::Label::Create(this, text.GetText(), "l:1,t:0,r:1,h:1");
+        list = Factory::ListView::Create(this, "l:1,t:1,r:1,b:3", { "n:Name,w:44", "n:Set,w:40" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        sets.emplace_back();
+        auto none = list->AddItem({ "(none: the number)", "" });
+        none.SetData(0);
+        ListViewItem currentItem = none;
+        // the single names first (OPEN_EXISTING for 3), then the combinations of flags (FILE_READ_DATA | FILE_WRITE_DATA)
+        std::vector<std::tuple<std::string, std::string_view, std::string_view>> choices; // the name, the set, its title
+        ForEachConstantSet([&](std::string_view id, std::string_view title) {
+            if (std::string name = FormatConstantOfSet(id, value); !name.empty())
+                choices.emplace_back(std::move(name), id, title);
+        });
+        std::stable_sort(choices.begin(), choices.end(), [](const auto& a, const auto& b) {
+            return (std::get<0>(a).find('|') == std::string::npos) > (std::get<0>(b).find('|') == std::string::npos);
+        });
+        for (const auto& [name, id, title] : choices) {
+            auto item = list->AddItem({ std::string_view(name), title });
+            item.SetData(static_cast<uint64>(sets.size()));
+            sets.emplace_back(id);
+            if (id == current)
+                currentItem = item;
+        }
+        list->SetCurrentItem(currentItem);
+        Factory::Button::Create(this, "&OK", "l:1,b:0,w:10", BTN_OK);
+        Factory::Button::Create(this, "&Cancel", "r:1,b:0,w:10", BTN_CANCEL);
+        list->SetFocus();
+    }
+
+    size_t GetChoicesCount() const
+    {
+        return sets.size() - 1u;
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_OK)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid() && item.GetData(UINT64_MAX) < sets.size())
+                selected = sets[static_cast<size_t>(item.GetData(UINT64_MAX))];
+            Exit(selected.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if ((eventType == Event::ButtonClicked && ID == BTN_CANCEL) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    const std::optional<std::string>& GetSelected() const
+    {
+        return selected;
+    }
+};
+
+void Instance::SetOperandConstant()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.zone     = zone;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.size == 0 || asmLine.isCollapsedLine || !asmLine.op_str) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select an instruction with an immediate operand (mov edx, 0x80000000)!");
+        return;
+    }
+    // the number: the line drawn without the constant of the user
+    const auto current = zone->operandConstants.find(asmLine.address);
+    std::string currentSet;
+    std::optional<uint64> value;
+    if (current != zone->operandConstants.end()) {
+        currentSet = current->second;
+        zone->operandConstants.erase(current);
+        const auto plainLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+        value                = plainLine.op_str ? GetLastOperandImmediate({ plainLine.op_str, plainLine.op_str_size }) : std::nullopt;
+        zone->operandConstants[asmLine.address] = currentSet;
+    } else {
+        value = GetLastOperandImmediate({ asmLine.op_str, asmLine.op_str_size });
+    }
+    if (!value.has_value()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The last operand of the instruction is not an immediate!");
+        return;
+    }
+    LocalString<64> operand;
+    operand.SetFormat("the instruction at 0x%llx", static_cast<unsigned long long>(zone->labelAddressBase + asmLine.address));
+    ConstantsWindow window(operand.ToStringView(), value.value(), currentSet);
+    if (window.GetChoicesCount() == 0 && currentSet.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "No set of constants names this value!");
+        return;
+    }
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelected().has_value())
+        return;
+    if (zone->SetOperandConstant(asmLine.address, window.GetSelected().value())) // Ctrl+Z gives the previous one back
         drawnLinesGeneration++;
 }
 

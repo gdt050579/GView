@@ -421,6 +421,16 @@ namespace View
         // the name of a value that is a status wherever it is (an error NTSTATUS: STATUS_OBJECT_NAME_NOT_FOUND, an HRESULT error: E_INVALIDARG,
         // HRESULT_FROM_WIN32(ERROR_NOT_FOUND)); empty for the other values
         std::string FormatDistinctiveConstant(uint64 value);
+        // an immediate operand (3, 0x80000000, -1, #0x10 of ARM); the one of the last operand of an instruction (edx, 0x80000000)
+        std::optional<int64> ParseOperandImmediate(std::string_view text);
+        std::optional<uint64> GetLastOperandImmediate(std::string_view operands);
+        // the sets of constants the user can give to an operand (IDA M): their names (ACCESS_RIGHTS, WIN32_ERRORS, HRESULTS, POOL_TAG ...) and
+        // titles; the name of a value in one (empty: none); the operands with the immediate of the last one replaced by its name in the set
+        // (edx, 0x80000000 -> edx, GENERIC_READ), none when it is not an immediate / the set does not name it
+        void ForEachConstantSet(const std::function<void(std::string_view id, std::string_view title)>& callback);
+        bool IsConstantSetName(std::string_view id);
+        std::string FormatConstantOfSet(std::string_view id, uint64 value);
+        std::optional<std::string> ApplyOperandConstant(std::string_view operands, std::string_view id);
         // a prototype the user writes for a function (IDA Y): "int decrypt(char* buf, int len)" parsed as the ones of the APIs; its texts are
         // kept with it. Null when it is not one: no parentheses, a name / a parameter name that is not an identifier, a parameter without a
         // name, a pointer to a function as a parameter, more than DISSASM_MAX_USER_PROTOTYPE_SIZE characters
@@ -706,6 +716,10 @@ namespace View
         // damaged record are dropped
         std::map<uint64, std::string> ReadOperandStructures(const DissasmCache& cache, const DissasmCodeZone& zone);
         void OperandStructuresToBuffer(const std::map<uint64, std::string>& structures, std::vector<std::byte>& buffer);
+        // the symbolic constants of the operands of a code zone (DissasmCodeZone::operandConstants, IDA M), saved in the cache; an entry with
+        // a set that does not exist dropped
+        std::map<uint64, std::string> ReadOperandConstants(const DissasmCache& cache, const DissasmCodeZone& zone);
+        void OperandConstantsToBuffer(const std::map<uint64, std::string>& constants, std::vector<std::byte>& buffer);
         // the bookmarks of a code zone (DissasmCodeZone::bookmarks), saved in the cache; an empty / too long description or an address outside
         // of the zone dropped
         std::map<uint64, std::string> ReadBookmarks(const DissasmCache& cache, const DissasmCodeZone& zone);
@@ -1081,6 +1095,8 @@ namespace View
             void SetVariableStructure();
             // IDA T: the displacement of the memory operand of the cursor instruction as the field of a structure, chosen in the same list
             void SetOperandStructure();
+            // IDA M: the immediate of the cursor instruction as a symbolic constant (GENERIC_READ), chosen among the sets that name its value
+            void SetOperandConstant();
             // IDA Alt+M / Ctrl+M: a bookmark on the cursor line (its description; again: edited), the list of the bookmarks of the file
             void MarkPosition();
             void ShowBookmarks();

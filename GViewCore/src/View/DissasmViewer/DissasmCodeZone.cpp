@@ -5790,6 +5790,29 @@ bool DissasmCodeZone::GetRepeatableComment(const DissasmAsmPreCacheLine& line, s
     return !text.empty();
 }
 
+bool DissasmCodeZone::SetOperandConstant(uint64 address, const std::string& set)
+{
+    const auto found = operandConstants.find(address);
+    std::optional<std::string> before;
+    if (found != operandConstants.end())
+        before = found->second;
+    const std::optional<std::string> after = set.empty() ? std::nullopt : std::optional<std::string>(set);
+    if (before == after)
+        return false;
+    if (after.has_value())
+        operandConstants[address] = after.value();
+    else
+        operandConstants.erase(address);
+    DissasmEdit edit;
+    edit.kind    = DissasmEdit::Kind::OperandConstant;
+    edit.address = address;
+    edit.before  = std::move(before);
+    edit.after   = after;
+    RecordEdit(std::move(edit));
+    ResetZoneCaching(); // the lines are drawn again with the name
+    return true;
+}
+
 bool DissasmCodeZone::SetOperandStructure(uint64 address, const std::string& structure)
 {
     const auto found = operandStructures.find(address);
@@ -5914,6 +5937,14 @@ bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
             operandStructures[edit.address] = structure.value();
         else
             operandStructures.erase(edit.address);
+        break;
+    }
+    case DissasmEdit::Kind::OperandConstant: {
+        const auto& set = forward ? edit.after : edit.before;
+        if (set.has_value())
+            operandConstants[edit.address] = set.value();
+        else
+            operandConstants.erase(edit.address);
         break;
     }
     case DissasmEdit::Kind::AddZone:

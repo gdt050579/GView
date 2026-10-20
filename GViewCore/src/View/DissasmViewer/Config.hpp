@@ -53,6 +53,7 @@ constexpr uint32 COMMAND_SHOW_BOOKMARKS        = 146;
 constexpr uint32 COMMAND_ADD_REPEATABLE_COMMENT = 147;
 constexpr uint32 COMMAND_SHOW_IMPORTS          = 148;
 constexpr uint32 COMMAND_SET_PROTOTYPE         = 149;
+constexpr uint32 COMMAND_SET_OPERAND_CONSTANT  = 150;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -362,6 +363,10 @@ namespace View
             inline static KeyboardControl SetOperandStructureCommand = {
                 Input::Key::T, "SetOperandStructure", "Show the displacement of the memory operand as a field of a structure ([rbx + STARTUPINFOW.dwFlags])", COMMAND_SET_OPERAND_STRUCTURE
             };
+            // IDA M (symbolic constant)
+            inline static KeyboardControl SetOperandConstantCommand = {
+                Input::Key::M, "SetOperandConstant", "Show the immediate of the instruction as a symbolic constant (GENERIC_READ, ERROR_ALREADY_EXISTS, WM_CLOSE)", COMMAND_SET_OPERAND_CONSTANT
+            };
             // IDA Y (set type of a function)
             inline static KeyboardControl SetPrototypeCommand = {
                 Input::Key::Y, "SetPrototype", "Set the prototype of the function of the line (its calls name their arguments)", COMMAND_SET_PROTOTYPE
@@ -406,7 +411,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 35> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 36> KeyEventCommands = {
                 &AcceptAISuggestionCommand,
                 &DismissAISuggestionCommand,
                 &MoveDownCommand,
@@ -438,6 +443,7 @@ namespace View
                 &ToggleNoReturnCommand,
                 &SetStructureCommand,
                 &SetOperandStructureCommand,
+                &SetOperandConstantCommand,
                 &MarkPositionCommand,
                 &ShowBookmarksCommand,
                 &AddOrEditRepeatableCommentCommand,

@@ -550,6 +550,51 @@ void GView::View::DissasmViewer::OperandStructuresToBuffer(const std::map<uint64
     }
 }
 
+constexpr uint32 DISSASM_OPERAND_CONSTANTS_MAGIC   = 0x4B554447; // "GDUK"
+constexpr uint32 DISSASM_OPERAND_CONSTANTS_VERSION = 1;
+
+static void FormatOperandConstantsRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmOperandConstants.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadOperandConstants(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> constants;
+    LocalString<64> name;
+    FormatOperandConstantsRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return constants;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_OPERAND_CONSTANTS_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_OPERAND_CONSTANTS_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return constants;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && IsConstantSetName(text))
+            constants[address] = std::move(text);
+    }
+    return constants;
+}
+
+void GView::View::DissasmViewer::OperandConstantsToBuffer(const std::map<uint64, std::string>& constants, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_OPERAND_CONSTANTS_MAGIC);
+    append_bytes(buffer, DISSASM_OPERAND_CONSTANTS_VERSION);
+    append_bytes(buffer, static_cast<uint32>(constants.size()));
+    for (const auto& [address, set] : constants) {
+        append_bytes(buffer, address);
+        append_string(buffer, set);
+    }
+}
+
 constexpr uint32 DISSASM_BOOKMARKS_MAGIC   = 0x42554447; // "GDUB"
 constexpr uint32 DISSASM_BOOKMARKS_VERSION = 1;
 
@@ -766,6 +811,9 @@ void Instance::SaveCacheData()
         FormatOperandStructuresRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
         if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
             keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatOperandConstantsRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
         FormatBookmarksRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
         if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
             keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
@@ -828,6 +876,12 @@ void Instance::SaveCacheData()
         if (!dissasmZone->operandStructures.empty()) {
             OperandStructuresToBuffer(dissasmZone->operandStructures, buffer);
             FormatOperandStructuresRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->operandConstants.empty()) {
+            OperandConstantsToBuffer(dissasmZone->operandConstants, buffer);
+            FormatOperandConstantsRecordName(zoneName, *dissasmZone);
             if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
                 return;
         }

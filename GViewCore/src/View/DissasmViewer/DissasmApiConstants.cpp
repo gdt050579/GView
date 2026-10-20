@@ -2,9 +2,11 @@
 
 #include <cctype>
 #include <cstdio>
+#include <functional>
 #include <optional>
 #include <span>
 #include <unordered_map>
+#include <vector>
 
 using namespace GView::View::DissasmViewer;
 
@@ -607,6 +609,107 @@ std::string FormatHresult(uint32 value)
             return "HRESULT_FROM_WIN32(" + error + ")";
     return {};
 }
+// the sets the user can give to an operand (IDA M), by their name; HRESULT, a pool tag, an I/O control code: their formats
+struct NamedConstantSet {
+    std::string_view id;
+    std::string_view title;
+    ConstantSet set;
+    std::string (*format)(uint32);
+};
+
+const std::vector<NamedConstantSet>& GetNamedConstantSets()
+{
+    static const std::vector<NamedConstantSet> sets = {
+        { "ACCESS_RIGHTS", "Access rights (GENERIC_*, the standard ones)", Flags(ACCESS_RIGHTS), nullptr },
+        { "FILE_RIGHTS", "File access rights (FILE_*)", Flags(FILE_RIGHTS), nullptr },
+        { "PROCESS_RIGHTS", "Process access rights (PROCESS_*)", Flags(PROCESS_RIGHTS), nullptr },
+        { "THREAD_RIGHTS", "Thread access rights (THREAD_*)", Flags(THREAD_RIGHTS), nullptr },
+        { "KEY_RIGHTS", "Registry key rights (KEY_*)", Flags(KEY_RIGHTS), nullptr },
+        { "SC_MANAGER_RIGHTS", "Service manager rights (SC_MANAGER_*)", Flags(SC_MANAGER_RIGHTS), nullptr },
+        { "SERVICE_RIGHTS", "Service rights (SERVICE_*)", Flags(SERVICE_RIGHTS), nullptr },
+        { "SHARE_MODES", "File share modes (FILE_SHARE_*)", Flags(SHARE_MODES), nullptr },
+        { "DISPOSITIONS", "File creation dispositions (OPEN_EXISTING ...)", Enumeration(DISPOSITIONS), nullptr },
+        { "FILE_ATTRIBUTES", "File attributes and flags (FILE_ATTRIBUTE_*, FILE_FLAG_*)", Flags(FILE_ATTRIBUTES), nullptr },
+        { "MOVE_METHODS", "File pointer moves (FILE_BEGIN ...)", Enumeration(MOVE_METHODS), nullptr },
+        { "MOVE_FILE_FLAGS", "MoveFileEx flags (MOVEFILE_*)", Flags(MOVE_FILE_FLAGS), nullptr },
+        { "STD_HANDLES", "Standard handles (STD_*_HANDLE)", Enumeration(STD_HANDLES), nullptr },
+        { "PAGE_PROTECTIONS", "Page protections (PAGE_*, SEC_*)", Flags(PAGE_PROTECTIONS), nullptr },
+        { "ALLOCATION_TYPES", "Allocation types (MEM_*)", Flags(ALLOCATION_TYPES), nullptr },
+        { "FREE_TYPES", "Free types (MEM_DECOMMIT, MEM_RELEASE)", Flags(FREE_TYPES), nullptr },
+        { "HEAP_FLAGS", "Heap flags (HEAP_*)", Flags(HEAP_FLAGS), nullptr },
+        { "LOCAL_FLAGS", "LocalAlloc flags (LMEM_*, LPTR)", Flags(LOCAL_FLAGS), nullptr },
+        { "GLOBAL_FLAGS", "GlobalAlloc flags (GMEM_*, GPTR)", Flags(GLOBAL_FLAGS), nullptr },
+        { "PREDEFINED_KEYS", "Predefined registry keys (HKEY_*)", Enumeration(PREDEFINED_KEYS), nullptr },
+        { "VALUE_TYPES", "Registry value types (REG_*)", Enumeration(VALUE_TYPES), nullptr },
+        { "KEY_OPTIONS", "Registry key options (REG_OPTION_*)", Flags(KEY_OPTIONS), nullptr },
+        { "PROCESS_CREATION_FLAGS", "Process creation flags (CREATE_*, *_PRIORITY_CLASS)", Flags(PROCESS_CREATION_FLAGS), nullptr },
+        { "THREAD_CREATION_FLAGS", "Thread creation flags (CREATE_SUSPENDED ...)", Flags(THREAD_CREATION_FLAGS), nullptr },
+        { "WAIT_TIMES", "Wait times (INFINITE)", Enumeration(WAIT_TIMES), nullptr },
+        { "WAIT_RESULTS", "Wait results (WAIT_*)", Enumeration(WAIT_RESULTS), nullptr },
+        { "DUPLICATE_OPTIONS", "DuplicateHandle options (DUPLICATE_*)", Flags(DUPLICATE_OPTIONS), nullptr },
+        { "SNAPSHOT_FLAGS", "Toolhelp snapshot flags (TH32CS_*)", Flags(SNAPSHOT_FLAGS), nullptr },
+        { "ERROR_MODES", "Error modes (SEM_*)", Flags(ERROR_MODES), nullptr },
+        { "LOAD_LIBRARY_FLAGS", "LoadLibraryEx flags (LOAD_LIBRARY_*)", Flags(LOAD_LIBRARY_FLAGS), nullptr },
+        { "MODULE_HANDLE_FLAGS", "GetModuleHandleEx flags", Flags(MODULE_HANDLE_FLAGS), nullptr },
+        { "FORMAT_MESSAGE_FLAGS", "FormatMessage flags (FORMAT_MESSAGE_*)", Flags(FORMAT_MESSAGE_FLAGS), nullptr },
+        { "CODE_PAGES", "Code pages (CP_*)", Enumeration(CODE_PAGES), nullptr },
+        { "LOCALES", "Locales (LOCALE_*)", Enumeration(LOCALES), nullptr },
+        { "MESSAGE_BOX_TYPES", "Message box types (MB_*)", Flags(MESSAGE_BOX_TYPES), nullptr },
+        { "DIALOG_RESULTS", "Dialog results (IDOK ...)", Enumeration(DIALOG_RESULTS), nullptr },
+        { "SHOW_COMMANDS", "Show commands (SW_*)", Enumeration(SHOW_COMMANDS), nullptr },
+        { "WINDOW_MESSAGES", "Window messages (WM_*, EM_*, BM_*)", Enumeration(WINDOW_MESSAGES), nullptr },
+        { "WINDOW_LONG_INDEXES", "Window long indexes (GWL_*, GWLP_*)", Enumeration(WINDOW_LONG_INDEXES), nullptr },
+        { "WINDOW_POSITION_FLAGS", "SetWindowPos flags (SWP_*)", Flags(WINDOW_POSITION_FLAGS), nullptr },
+        { "INSERT_AFTER", "Z order (HWND_TOP ...)", Enumeration(INSERT_AFTER), nullptr },
+        { "WINDOW_RELATIONS", "GetWindow relations (GW_*)", Enumeration(WINDOW_RELATIONS), nullptr },
+        { "MENU_FLAGS", "Menu flags (MF_*)", Flags(MENU_FLAGS), nullptr },
+        { "BUTTON_STATES", "Button states (BST_*)", Enumeration(BUTTON_STATES), nullptr },
+        { "HOOK_TYPES", "Hook types (WH_*)", Enumeration(HOOK_TYPES), nullptr },
+        { "BACKGROUND_MODES", "Background modes (TRANSPARENT, OPAQUE)", Enumeration(BACKGROUND_MODES), nullptr },
+        { "FOLDERS", "Shell folders (CSIDL_*)", Flags(FOLDERS), nullptr },
+        { "CLASS_CONTEXTS", "COM class contexts (CLSCTX_*)", Flags(CLASS_CONTEXTS), nullptr },
+        { "COM_INIT_FLAGS", "COM initialization (COINIT_*)", Flags(COM_INIT_FLAGS), nullptr },
+        { "SERVICE_TYPES", "Service types (SERVICE_*_DRIVER, SERVICE_WIN32_*)", Flags(SERVICE_TYPES), nullptr },
+        { "START_TYPES", "Service start types (SERVICE_*_START)", Enumeration(START_TYPES), nullptr },
+        { "ERROR_CONTROLS", "Service error controls (SERVICE_ERROR_*)", Enumeration(ERROR_CONTROLS), nullptr },
+        { "SERVICE_CONTROLS", "Service controls (SERVICE_CONTROL_*)", Enumeration(SERVICE_CONTROLS), nullptr },
+        { "ACCESS_TYPES", "Internet access types (INTERNET_OPEN_TYPE_*)", Enumeration(ACCESS_TYPES), nullptr },
+        { "INTERNET_SERVICES", "Internet services (INTERNET_SERVICE_*)", Enumeration(INTERNET_SERVICES), nullptr },
+        { "ADDRESS_FAMILIES", "Address families (AF_*)", Enumeration(ADDRESS_FAMILIES), nullptr },
+        { "SOCKET_TYPES", "Socket types (SOCK_*)", Enumeration(SOCKET_TYPES), nullptr },
+        { "PROTOCOLS", "IP protocols (IPPROTO_*)", Enumeration(PROTOCOLS), nullptr },
+        { "PROVIDER_TYPES", "Crypto provider types (PROV_*)", Enumeration(PROVIDER_TYPES), nullptr },
+        { "CONTEXT_FLAGS", "CryptAcquireContext flags (CRYPT_*)", Flags(CONTEXT_FLAGS), nullptr },
+        { "ALGORITHMS", "Crypto algorithms (CALG_*)", Enumeration(ALGORITHMS), nullptr },
+        { "ENCODING_TYPES", "Certificate encodings (X509_ASN_ENCODING ...)", Flags(ENCODING_TYPES), nullptr },
+        { "POOL_TYPES", "Pool types (NonPagedPool ...)", Enumeration(POOL_TYPES), nullptr },
+        { "WAIT_REASONS", "Wait reasons (Executive ...)", Enumeration(WAIT_REASONS), nullptr },
+        { "PROCESSOR_MODES", "Processor modes (KernelMode, UserMode)", Enumeration(PROCESSOR_MODES), nullptr },
+        { "EVENT_TYPES", "Event types (NotificationEvent ...)", Enumeration(EVENT_TYPES), nullptr },
+        { "OPEN_FLAGS", "POSIX open flags (O_*)", Flags(OPEN_FLAGS), nullptr },
+        { "PROTECTIONS", "POSIX memory protections (PROT_*)", Flags(PROTECTIONS), nullptr },
+        { "MAP_FLAGS", "POSIX mmap flags (MAP_*)", Flags(MAP_FLAGS), nullptr },
+        { "SEEK_ORIGINS", "Seek origins (SEEK_*)", Enumeration(SEEK_ORIGINS), nullptr },
+        { "SIGNALS", "Signals (SIG*)", Enumeration(SIGNALS), nullptr },
+        { "WIN32_ERRORS", "Win32 errors (ERROR_*)", Enumeration(WIN32_ERRORS), nullptr },
+        { "WSA_ERRORS", "Winsock errors (WSAE*)", Enumeration(WSA_ERRORS), nullptr },
+        { "NTSTATUSES", "NTSTATUS (STATUS_*)", Enumeration(NTSTATUSES), nullptr },
+        { "FILE_TYPES", "File types (FILE_TYPE_*)", Enumeration(FILE_TYPES), nullptr },
+        { "DRIVE_TYPES", "Drive types (DRIVE_*)", Enumeration(DRIVE_TYPES), nullptr },
+        { "HRESULTS", "HRESULT (S_OK, E_*, HRESULT_FROM_WIN32)", Enumeration(HRESULTS), FormatHresult },
+        { "POOL_TAG", "Pool tag ('NtFs')", Enumeration(HRESULTS), FormatPoolTag },
+        { "CTL_CODE", "I/O control code (CTL_CODE)", Enumeration(HRESULTS), FormatControlCode },
+    };
+    return sets;
+}
+
+const NamedConstantSet* FindNamedConstantSet(std::string_view id)
+{
+    for (const auto& set : GetNamedConstantSets())
+        if (set.id == id)
+            return &set;
+    return nullptr;
+}
 } // namespace
 
 std::string GView::View::DissasmViewer::FormatApiConstant(std::string_view function, std::string_view parameter, uint64 value)
@@ -688,4 +791,74 @@ std::string GView::View::DissasmViewer::FormatDistinctiveConstant(uint64 value)
     if (constant.value() >= 0x80001000 && constant.value() < 0x80100000)
         return FormatHresult(constant.value());
     return {};
+}
+
+std::optional<int64> GView::View::DissasmViewer::ParseOperandImmediate(std::string_view text)
+{
+    if (!text.empty() && text.front() == '#')
+        text.remove_prefix(1);
+    const bool negative = !text.empty() && text.front() == '-';
+    if (negative)
+        text.remove_prefix(1);
+    const bool hexadecimal = text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
+    if (hexadecimal)
+        text.remove_prefix(2);
+    if (text.empty() || text.size() > 16)
+        return std::nullopt;
+    uint64 value = 0;
+    for (const char c : text) {
+        uint32 digit;
+        if (c >= '0' && c <= '9')
+            digit = c - '0';
+        else if (hexadecimal && c >= 'a' && c <= 'f')
+            digit = c - 'a' + 10;
+        else if (hexadecimal && c >= 'A' && c <= 'F')
+            digit = c - 'A' + 10;
+        else
+            return std::nullopt; // a name (offset aText), a register, a memory operand
+        value = value * (hexadecimal ? 16 : 10) + digit;
+    }
+    return negative ? -static_cast<int64>(value) : static_cast<int64>(value);
+}
+
+std::optional<uint64> GView::View::DissasmViewer::GetLastOperandImmediate(std::string_view operands)
+{
+    const auto comma = operands.rfind(", ");
+    const auto value = ParseOperandImmediate(comma == std::string_view::npos ? operands : operands.substr(comma + 2));
+    return value.has_value() ? std::optional<uint64>(static_cast<uint64>(value.value())) : std::nullopt;
+}
+
+void GView::View::DissasmViewer::ForEachConstantSet(const std::function<void(std::string_view id, std::string_view title)>& callback)
+{
+    for (const auto& set : GetNamedConstantSets())
+        callback(set.id, set.title);
+}
+
+bool GView::View::DissasmViewer::IsConstantSetName(std::string_view id)
+{
+    return FindNamedConstantSet(id) != nullptr;
+}
+
+std::string GView::View::DissasmViewer::FormatConstantOfSet(std::string_view id, uint64 value)
+{
+    const auto* set      = FindNamedConstantSet(id);
+    const auto constant = ConstantValue(value);
+    if (!set || !constant.has_value())
+        return {};
+    return set->format ? set->format(constant.value()) : FormatConstant(set->set, constant.value());
+}
+
+std::optional<std::string> GView::View::DissasmViewer::ApplyOperandConstant(std::string_view operands, std::string_view id)
+{
+    const auto comma               = operands.rfind(", ");
+    const size_t start             = comma == std::string_view::npos ? 0 : comma + 2;
+    const std::string_view operand = operands.substr(start);
+    const auto value               = ParseOperandImmediate(operand);
+    if (!value.has_value())
+        return std::nullopt;
+    const std::string name = FormatConstantOfSet(id, static_cast<uint64>(value.value()));
+    if (name.empty())
+        return std::nullopt;
+    // ARM keeps its #: mov w1, #GENERIC_READ
+    return std::string(operands.substr(0, start)) + (operand.starts_with('#') ? "#" : "") + name;
 }
