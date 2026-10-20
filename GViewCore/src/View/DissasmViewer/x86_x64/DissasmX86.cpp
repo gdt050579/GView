@@ -1554,6 +1554,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
         zone->userFunctions  = ReadUserFunctions(cacheData, *zone); // P / Delete function / noreturn
         zone->userVariableStructures = ReadUserVariableStructures(cacheData, *zone); // Alt+Q
         zone->operandStructures      = ReadOperandStructures(cacheData, *zone);      // T
+        zone->bookmarks              = ReadBookmarks(cacheData, *zone);              // Alt+M
     }
 
     if (!zone->InitZone(initData))
@@ -2032,7 +2033,7 @@ void Instance::ImportAnnotations()
     RefreshDrawnLines();
     LocalString<256> summary;
     summary.SetFormat(
-          "Imported: %u names, %u comments, %u variables, %u structures, %u numbers in decimal, %u zones, %u functions, %u suggestions%s",
+          "Imported: %u names, %u comments, %u variables, %u structures, %u numbers in decimal, %u zones, %u functions, %u bookmarks, %u suggestions%s",
           result.names,
           result.comments,
           result.variables,
@@ -2040,6 +2041,7 @@ void Instance::ImportAnnotations()
           result.decimalOperands,
           result.collapsibleZones,
           result.functions,
+          result.bookmarks,
           result.suggestedNames + result.aiComments,
           result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
     Dialogs::MessageBox::ShowNotification("Annotations", summary.GetText());
@@ -2774,6 +2776,145 @@ void Instance::SetOperandStructure()
         return;
     if (zone->SetOperandStructure(asmLine.address, window.GetSelected().value())) // Ctrl+Z gives the previous one back
         drawnLinesGeneration++;
+}
+
+void Instance::MarkPosition()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please expand the collapsed zone first!");
+        return;
+    }
+    // a label / a variable line: the instruction it belongs to; the description proposed: the place (sub_401000+0x1A)
+    const uint64 address = asmLine.address;
+    const auto existing  = zone->bookmarks.find(address);
+    SingleLineEditWindow dialog(existing != zone->bookmarks.end() ? existing->second : zone->FormatCodeAddress(address), "Bookmark");
+    if (dialog.Show() != Dialogs::Result::Ok)
+        return;
+    std::string description = dialog.GetResult();
+    if (description.size() > DISSASM_MAX_BOOKMARK_SIZE)
+        description.resize(DISSASM_MAX_BOOKMARK_SIZE);
+    zone->bookmarks[address] = std::move(description);
+}
+
+// IDA Ctrl+M: the bookmarks of every code zone; Enter / Go jumps to one, Delete removes the selected one
+class BookmarksWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO     = 1;
+    static constexpr int BTN_DELETE = 2;
+    static constexpr int BTN_CLOSE  = 3;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+    std::function<void(size_t)> deleteRow;
+    const std::vector<std::array<std::string, 3>>& rows;
+    std::vector<bool> deleted;
+
+    // the list has no removal of one item: it is filled again without the deleted rows
+    void FillList()
+    {
+        list->DeleteAllItems();
+        for (size_t index = 0; index < rows.size(); index++)
+            if (!deleted[index]) {
+                auto item = list->AddItem({ std::string_view(rows[index][0]), std::string_view(rows[index][1]), std::string_view(rows[index][2]) });
+                item.SetData(static_cast<uint64>(index));
+            }
+    }
+
+  public:
+    BookmarksWindow(const std::vector<std::array<std::string, 3>>& rows, std::function<void(size_t)> onDelete)
+        : Window("Bookmarks", "d:c,w:90%,h:60%", WindowFlags::Sizeable), deleteRow(std::move(onDelete)), rows(rows), deleted(rows.size(), false)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:Description,w:50", "n:Address,w:20", "n:Location,w:40" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        FillList();
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Delete", "l:13,b:0,w:12", BTN_DELETE);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_DELETE) {
+            auto item = list->GetCurrentItem();
+            if (const size_t row = item.IsValid() ? static_cast<size_t>(item.GetData(UINT64_MAX)) : rows.size(); row < rows.size()) {
+                deleteRow(row);
+                deleted[row] = true;
+                FillList();
+            }
+            list->SetFocus();
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowBookmarks()
+{
+    struct Place {
+        DissasmCodeZone* zone;
+        uint64 address;
+    };
+    std::vector<Place> places;
+    std::vector<std::array<std::string, 3>> rows;
+    LocalString<32> address;
+    for (auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        auto* zone = static_cast<DissasmCodeZone*>(parseZone.get());
+        for (const auto& [relative, description] : zone->bookmarks) {
+            address.SetFormat("0x%016llx", static_cast<unsigned long long>(zone->labelAddressBase + relative));
+            rows.push_back({ description, std::string(address.ToStringView()), zone->FormatCodeAddress(relative) });
+            places.push_back({ zone, relative });
+        }
+    }
+    if (rows.empty()) {
+        Dialogs::MessageBox::ShowNotification("Bookmarks", "There is no bookmark: Alt+M bookmarks the line of the cursor!");
+        return;
+    }
+    BookmarksWindow window(rows, [&places](size_t row) {
+        if (row < places.size())
+            places[row].zone->bookmarks.erase(places[row].address);
+    });
+    const bool go = window.Show() == Dialogs::Result::Ok && window.GetSelectedRow().has_value();
+    navigationBandKey = 0; // the dots of the band
+    if (!go || window.GetSelectedRow().value() >= places.size())
+        return;
+    const auto& place = places[window.GetSelectedRow().value()];
+    if (place.zone->CanReachAsmLines())
+        MoveCursorToZoneFileOffset(place.zone, place.zone->cachedCodeOffsets[0].offset + place.address, true);
 }
 
 bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background)

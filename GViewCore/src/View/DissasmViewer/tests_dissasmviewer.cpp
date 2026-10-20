@@ -1220,7 +1220,7 @@ std::vector<std::byte> MutateRecord(const std::vector<std::byte>& record, std::m
 TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
 {
     // the records of a zone with every kind of user data: the current record (version 4), the line keyed records of the versions 1 and 2,
-    // the user data, the user functions, the user structures and the operand structures records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
+    // the user data, the user functions, the user structures, the operand structures and the bookmarks records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
     DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
     std::string_view labelName = "isPrime";
     REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
@@ -1246,6 +1246,8 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
     std::vector<std::byte> userStructures, operandStructures;
     UserVariableStructuresToBuffer({ { { 0x30, -0x20 }, "SYSTEMTIME" }, { { 0x5, -8 }, "" } }, userStructures);
     OperandStructuresToBuffer({ { 0x30, "STARTUPINFOW" }, { 0x5, "FILETIME" } }, operandStructures);
+    std::vector<std::byte> bookmarks;
+    BookmarksToBuffer({ { 0x30, "the decryption loop" }, { 0x5, "x" } }, bookmarks);
 
     // GVIEW_FUZZ_ROUNDS=<rounds> [GVIEW_FUZZ_SEED=<seed>]: a longer run with other mutants (a local fuzzing campaign)
     const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
@@ -1297,6 +1299,11 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
         operandsCache.AddRegion("DissasmOperandStructures.0", operandsData.data(), static_cast<uint32>(operandsData.size()));
         for (const auto& [address, structure] : ReadOperandStructures(operandsCache, *edited.zone))
             REQUIRE((address < edited.zone->zoneDetails.size && !structure.empty() && IsValidUserStructureName(structure)));
+        const auto bookmarksData = MutateRecord(bookmarks, random);
+        DissasmCache bookmarksCache;
+        bookmarksCache.AddRegion("DissasmBookmarks.0", bookmarksData.data(), static_cast<uint32>(bookmarksData.size()));
+        for (const auto& [address, description] : ReadBookmarks(bookmarksCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && !description.empty() && description.size() <= DISSASM_MAX_BOOKMARK_SIZE));
         std::vector<std::byte> variables;
         edited.zone->localVariables.ToBuffer(variables);
         const auto variablesData = MutateRecord(variables, random);
@@ -7611,6 +7618,59 @@ TEST_CASE("OperandStructures", "[Dissasm]UserData")
     REQUIRE(ReadOperandStructures(cache, zone) == zone.operandStructures);
 }
 
+TEST_CASE("Bookmarks", "[Dissasm]UserData")
+{
+    // IDA Alt+M: a bookmark inside helper (0x12, no label there) and one on the label of sub_30
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    zone.bookmarks = { { 0x12, "inside the helper" }, { 0x30, "the last one" } };
+
+    // the band: the row of the label of their function gets the flag, the color stays
+    zone.startLineIndex  = 0;
+    zone.isCollapsed     = false;
+    zone.endingLineIndex = 2 + zone.GetDisplayLinesCount();
+    const uint64 total   = zone.endingLineIndex;
+    const auto band      = BuildDissasmNavigationBand({ &zone }, total, static_cast<uint32>(total));
+    const auto lineOf    = [&zone](uint64 function) { return 2u + zone.GetLabelDisplayLine(function).value(); };
+    REQUIRE((band[lineOf(0x10)] & BAND_BOOKMARK) != 0);
+    REQUIRE((band[lineOf(0x30)] & BAND_BOOKMARK) != 0);
+    REQUIRE((band[lineOf(0x10)] & ~BAND_BOOKMARK) == BAND_FUNCTION);
+    REQUIRE((band[lineOf(0x00)] & BAND_BOOKMARK) == 0);
+    REQUIRE(std::count_if(band.begin(), band.end(), [](uint8 cell) { return (cell & BAND_BOOKMARK) != 0; }) == 2);
+
+    // a new analysis keeps them; the annotations into a new instance (an empty description skipped)
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.bookmarks.size() == 2);
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["bookmarks"].size() == 2);
+    document["zones"][0]["bookmarks"].push_back({ { "address", "0x20" }, { "description", "" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.bookmarks == 2);
+    REQUIRE(result.skipped == 1);
+    REQUIRE(fresh.zone->bookmarks == zone.bookmarks);
+
+    // the cache record: read back; an empty / too long description, an address outside of the zone dropped
+    auto bookmarks    = zone.bookmarks;
+    bookmarks[0x20]   = "";
+    bookmarks[0x21]   = std::string(DISSASM_MAX_BOOKMARK_SIZE + 1, 'x');
+    bookmarks[0x1000] = "outside";
+    std::vector<std::byte> buffer;
+    BookmarksToBuffer(bookmarks, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmBookmarks.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadBookmarks(cache, zone) == zone.bookmarks);
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does
@@ -7739,6 +7799,7 @@ TEST_CASE("UntrustedDocumentsFuzz", "[Dissasm]UserData")
     zone.userFunctions  = { { 0x20, USER_FUNCTION_CREATE }, { 0x30, USER_FUNCTION_NORETURN } };
     zone.userVariableStructures = { { { 0x00, -0x20 }, "SYSTEMTIME" }, { { 0x10, -8 }, "" } };
     zone.operandStructures      = { { 0x05, "STARTUPINFOW" } };
+    zone.bookmarks              = { { 0x10, "the helper" } };
     const auto annotations = BuildAnnotationsDocument({ &zone }, "sample.bin");
     const auto signatures  = BuildSignaturesDocument({ &zone });
 

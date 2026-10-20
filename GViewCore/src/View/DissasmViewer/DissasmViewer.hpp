@@ -672,6 +672,10 @@ namespace View
         // damaged record are dropped
         std::map<uint64, std::string> ReadOperandStructures(const DissasmCache& cache, const DissasmCodeZone& zone);
         void OperandStructuresToBuffer(const std::map<uint64, std::string>& structures, std::vector<std::byte>& buffer);
+        // the bookmarks of a code zone (DissasmCodeZone::bookmarks), saved in the cache; an empty / too long description or an address outside
+        // of the zone dropped
+        std::map<uint64, std::string> ReadBookmarks(const DissasmCache& cache, const DissasmCodeZone& zone);
+        void BookmarksToBuffer(const std::map<uint64, std::string>& bookmarks, std::vector<std::byte>& buffer);
         // a name the record and the annotations accept: empty (no structure) or the name of a structure (letters, digits, _)
         bool IsValidUserStructureName(std::string_view name);
 
@@ -1027,6 +1031,9 @@ namespace View
             void SetVariableStructure();
             // IDA T: the displacement of the memory operand of the cursor instruction as the field of a structure, chosen in the same list
             void SetOperandStructure();
+            // IDA Alt+M / Ctrl+M: a bookmark on the cursor line (its description; again: edited), the list of the bookmarks of the file
+            void MarkPosition();
+            void ShowBookmarks();
             // the zone analyzed again; the cursor goes back to `keepAddress` (relative) when given. background: a big zone shows its lines at
             // once and its deep scan continues in the frame updates (the annotations come back when it ends, EndDeepScan); otherwise the whole
             // analysis runs now (ReanalyzeCodeZone)

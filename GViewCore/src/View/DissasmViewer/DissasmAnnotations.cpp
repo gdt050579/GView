@@ -177,6 +177,13 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     if (!operands.empty())
         result["operandStructures"] = std::move(operands);
 
+    // the bookmarks (Alt+M)
+    json bookmarks = json::array();
+    for (const auto& [address, description] : zone.bookmarks)
+        bookmarks.push_back({ { "address", Hex(base + address) }, { "description", description } });
+    if (!bookmarks.empty())
+        result["bookmarks"] = std::move(bookmarks);
+
     json names = json::array();
     for (const auto& [address, name] : zone.GetUserLabelNames())
         names.push_back({ { "address", Hex(base + address) }, { "name", name } });
@@ -319,6 +326,17 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
         }
         zone.operandStructures[address.value()] = name;
         result.operandStructures++;
+    }
+
+    for (const auto& item : ArrayField(zoneJson, "bookmarks")) {
+        const auto address     = item.is_object() && item.contains("address") ? rebase(item["address"]) : std::nullopt;
+        const auto description = item.is_object() ? StringField(item, "description", DISSASM_MAX_BOOKMARK_SIZE) : std::nullopt;
+        if (!address.has_value() || !description.has_value() || description->empty()) {
+            result.skipped++;
+            continue;
+        }
+        zone.bookmarks[address.value()] = description.value();
+        result.bookmarks++;
     }
 
     for (const auto& item : ArrayField(zoneJson, "names")) {

@@ -5331,5 +5331,19 @@ std::vector<uint8> GView::View::DissasmViewer::BuildDissasmNavigationBand(const 
         if (previous.has_value())
             mark(previous.value(), std::max<uint64>(previous.value() + 1, zone->endingLineIndex), previousCell);
     }
+    // the bookmarks, once the cells are known (the flag is above every cell)
+    for (const auto* zone : zones) {
+        const auto* code = zone && zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone ? static_cast<const DissasmCodeZone*>(zone) : nullptr;
+        if (!code || code->isCollapsed || !code->isInit || code->bookmarks.empty())
+            continue;
+        for (const auto& [address, description] : code->bookmarks) {
+            auto line = code->GetLabelDisplayLine(address);
+            if (!line.has_value())
+                if (const auto function = code->GetFunctionContaining(address); function.has_value())
+                    line = code->GetLabelDisplayLine(function.value());
+            if (line.has_value())
+                band[rowOf(zone->startLineIndex + 2ull + line.value())] |= BAND_BOOKMARK;
+        }
+    }
     return band;
 }

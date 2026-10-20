@@ -48,6 +48,8 @@ constexpr uint32 COMMAND_DELETE_FUNCTION       = 141;
 constexpr uint32 COMMAND_TOGGLE_NORETURN       = 142;
 constexpr uint32 COMMAND_SET_STRUCTURE         = 143;
 constexpr uint32 COMMAND_SET_OPERAND_STRUCTURE = 144;
+constexpr uint32 COMMAND_MARK_POSITION         = 145;
+constexpr uint32 COMMAND_SHOW_BOOKMARKS        = 146;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -349,6 +351,13 @@ namespace View
             inline static KeyboardControl SetOperandStructureCommand = {
                 Input::Key::T, "SetOperandStructure", "Show the displacement of the memory operand as a field of a structure ([rbx + STARTUPINFOW.dwFlags])", COMMAND_SET_OPERAND_STRUCTURE
             };
+            // IDA Alt+M / Ctrl+M (marked positions)
+            inline static KeyboardControl MarkPositionCommand = {
+                Input::Key::Alt | Input::Key::M, "MarkPosition", "Bookmark the line with a description (again: edit it)", COMMAND_MARK_POSITION
+            };
+            inline static KeyboardControl ShowBookmarksCommand = {
+                Input::Key::Ctrl | Input::Key::M, "ShowBookmarks", "Show the bookmarks: go to one, delete one", COMMAND_SHOW_BOOKMARKS
+            };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
                 AddOrEditCommentCommand, RemoveCommentCommand, RenameLabelCommand, RemoveLocalVariableCommand
@@ -382,7 +391,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 31> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 33> KeyEventCommands = {
                 &AcceptAISuggestionCommand,
                 &DismissAISuggestionCommand,
                 &MoveDownCommand,
@@ -414,6 +423,8 @@ namespace View
                 &ToggleNoReturnCommand,
                 &SetStructureCommand,
                 &SetOperandStructureCommand,
+                &MarkPositionCommand,
+                &ShowBookmarksCommand,
             };
             inline static Input::KeyMap Map;
 

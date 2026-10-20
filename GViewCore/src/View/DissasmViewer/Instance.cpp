@@ -1493,6 +1493,8 @@ void Instance::PaintNavigationBand(AppCUI::Graphics::Renderer& renderer)
         if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone) {
             const auto* code = static_cast<const DissasmCodeZone*>(zone.get());
             key              = key * 1000003ull + code->functionStarts.size() * 31ull + code->functionApiCategories.size() + (code->isInit ? 1u : 0u);
+            for (const auto& [address, description] : code->bookmarks)
+                key = key * 31ull + address + 1u;
         }
     }
     if (key != navigationBandKey || navigationBand.size() != rows) {
@@ -1504,10 +1506,12 @@ void Instance::PaintNavigationBand(AppCUI::Graphics::Renderer& renderer)
     const uint32 first  = rowOf(Cursor.startViewLine);
     const uint32 last   = rowOf(std::min<uint64>(total - 1, static_cast<uint64>(Cursor.startViewLine) + rows - 1));
     for (uint32 row = 0; row < rows; row++) {
-        const uint8 cell       = navigationBand[row];
+        const uint8 cell       = navigationBand[row] & ~BAND_BOOKMARK;
         const ColorPair color  = { Color::White, cell == BAND_EMPTY ? ColorMan.Colors.Normal.Background : GetDissasmBandColor(cell) };
         if (row >= first && row <= last)
             renderer.WriteSpecialCharacter(x, static_cast<int>(row) + 1, SpecialChars::TriangleLeft, color);
+        else if (navigationBand[row] & BAND_BOOKMARK) // a bookmark (Alt+M) in the row
+            renderer.WriteSpecialCharacter(x, static_cast<int>(row) + 1, SpecialChars::CircleFilled, color);
         else
             renderer.WriteCharacter(x, static_cast<int>(row) + 1, ' ', color);
     }

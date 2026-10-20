@@ -309,6 +309,12 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_SET_OPERAND_STRUCTURE:
         SetOperandStructure();
         return true;
+    case COMMAND_MARK_POSITION:
+        MarkPosition();
+        return true;
+    case COMMAND_SHOW_BOOKMARKS:
+        ShowBookmarks();
+        return true;
     }
     return false;
 }

@@ -345,6 +345,10 @@ struct DissasmCodeZone : public ParseZone {
     // its displacement is ([rbx + 0x3c] -> [rbx + STARTUPINFOW.dwFlags]). Only the drawing changes (as decimalOperands); saved in the cache
     // and in the annotations
     std::map<uint64, std::string> operandStructures;
+    // the bookmarks of the user (IDA Alt+M / Ctrl+M): the relative address of a line (an instruction; a label / a variable line: its
+    // instruction) -> its description (DISSASM_MAX_BOOKMARK_SIZE at most). Saved in the cache and in the annotations, shown in the
+    // navigation band
+    std::map<uint64, std::string> bookmarks;
     // T: the structure of the operand of the instruction (empty: none), an edit of the user (it can be undone); false when nothing changes
     bool SetOperandStructure(uint64 address, const std::string& structure);
     // a data zone: the places the code of the other zones refers to (relative, sorted) and the largest access there (0: an address taken)
@@ -683,9 +687,12 @@ enum DissasmBandCell : uint8 {
     BAND_ANTIDEBUG,
     BAND_INJECTION,
 };
+constexpr uint8 BAND_BOOKMARK              = 0x80; // a flag on the cell: a bookmark of the user is in the row
+constexpr size_t DISSASM_MAX_BOOKMARK_SIZE = 256;
 DissasmBandCell GetDissasmBandCellOfCategory(uint32 category);
 // the band of `rows` rows for the lines [0, totalLines) of the view: the zones, the functions of the code zones (from their label line to
-// the label of the next one) with their categories; a collapsed zone / function is its line
+// the label of the next one) with their categories; a collapsed zone / function is its line. The rows of the bookmarks (the row of their
+// label, else of the label of their function) get BAND_BOOKMARK
 std::vector<uint8> BuildDissasmNavigationBand(const std::vector<const ParseZone*>& zones, uint64 totalLines, uint32 rows);
 
 } // namespace GView::View::DissasmViewer
