@@ -658,6 +658,18 @@ uint32 GetCodeZoneLinesCount(const DissasmCodeZone& zone);
 bool BuildX86AsmListing(DissasmCodeZone& zone, Reference<GView::Object> obj, SettingsData* settings, AsmData* asmData, std::string& listing);
 // the import (memory mapping, keyed by the RVA of its slot) used by the operands: [rip + 0x...] on x64, the VA of the slot ([0x402010]) on x86
 const MemoryMappingEntry* FindX86OperandsImport(SettingsData* settings, const DissasmCodeZone* zone, const X86OperandsInfo& operands);
+// An import of the file and the places that use it (the Imports window): its slots (the function mappings of the plugin) and its thunks
+// (jmp [slot], a PLT stub: DissasmCodeZone::thunkImports) by their VAs; the uses are the references to them, but the ones made from its
+// thunks (an endbr64 / a PLT push before the jmp [slot]: the whole thunk)
+struct DissasmImportUse {
+    std::string name;
+    std::vector<uint64> targets;                      // the slots, then the thunks
+    std::vector<uint64> thunks;                       // their starts
+    std::vector<std::pair<uint64, uint64>> thunkCode; // [start, end) of each thunk
+    uint32 uses = 0;
+};
+// the imports of the analyzed code zones, sorted by name (an import with a slot and a thunk once)
+std::vector<DissasmImportUse> CollectImportUses(SettingsData* settings, const std::vector<DissasmCodeZone*>& zones);
 // the init data of a code zone of the viewer settings (the addresses of the labels, the file translation, the imports, the function entries)
 void PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> obj, DissasmCodeZone* zone, DissasmCodeZoneInitData& initData);
 

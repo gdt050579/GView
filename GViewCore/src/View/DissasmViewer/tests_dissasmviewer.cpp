@@ -4954,6 +4954,55 @@ TEST_CASE("FunctionApiCategories", "[Dissasm]Triage")
     REQUIRE(functions[1].apiCategories == API_NETWORK);
 }
 
+TEST_CASE("ImportUses", "[Dissasm]Triage")
+{
+    // CreateFileW called through its slot twice; connect through its thunk (0x30: endbr64, then jmp [slot] at 0x34) by a tail jump: the
+    // jmp of the thunk is not a use; ExitProcess is imported, never used
+    std::vector<unsigned char> file = {
+        0xFF, 0x15, 0x7A, 0x00, 0x00, 0x00, // 0x00: call qword ptr [rip + 0x7a] -> slot 0x80 (CreateFileW)
+        0xE8, 0x15, 0x00, 0x00, 0x00,       // 0x06: call 0x20
+        0xC3,                               // 0x0b: ret
+    };
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x15, 0x6A, 0x00, 0x00, 0x00 }); // 0x10: call qword ptr [rip + 0x6a] -> slot 0x80 (CreateFileW)
+    file.insert(file.end(), { 0xC3 });                               // 0x16: ret
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0xEB, 0xFF, 0xFF, 0xFF }); // 0x20: call 0x10
+    file.insert(file.end(), { 0xEB, 0x09 });                   // 0x25: jmp 0x30 (j_connect)
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xF3, 0x0F, 0x1E, 0xFA });             // 0x30: endbr64
+    file.insert(file.end(), { 0xFF, 0x25, 0x4E, 0x00, 0x00, 0x00 }); // 0x34: jmp qword ptr [rip + 0x4e] -> slot 0x88 (connect)
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                { 0x88, { "connect", MemoryMappingType::FunctionMapping } },
+                                { 0x90, { "ExitProcess", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.thunkImports.contains(0x30));
+    const auto imports = CollectImportUses(&dissasmInstance.settingsData, { &zone });
+    REQUIRE(imports.size() == 3);
+    const uint64 base = zone.labelAddressBase;
+    REQUIRE(imports[0].name == "CreateFileW");
+    REQUIRE(imports[0].targets == std::vector<uint64>{ base + 0x80 });
+    REQUIRE(imports[0].uses == 2);
+    REQUIRE(imports[1].name == "ExitProcess");
+    REQUIRE(imports[1].uses == 0);
+    REQUIRE(imports[2].name == "connect");
+    REQUIRE(imports[2].targets == std::vector<uint64>{ base + 0x88, base + 0x30 }); // the slot, then the thunk
+    REQUIRE(imports[2].thunks == std::vector<uint64>{ base + 0x30 });
+    REQUIRE(imports[2].thunkCode.size() == 1);
+    REQUIRE(imports[2].thunkCode[0].first == base + 0x30);
+    REQUIRE(imports[2].thunkCode[0].second > base + 0x34);
+    REQUIRE(imports[2].uses == 1); // the tail jump to the thunk, not its jmp [slot]
+    // no analyzed zone: nothing
+    REQUIRE(CollectImportUses(&dissasmInstance.settingsData, {}).empty());
+}
+
 TEST_CASE("NavigationBand", "[Dissasm]Triage")
 {
     // the most telling category of a function

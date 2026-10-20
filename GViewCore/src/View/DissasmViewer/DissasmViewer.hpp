@@ -974,6 +974,13 @@ namespace View
             void ShowXrefs();
             // the instructions that use `target` (address space of the labels); the selected one gets the cursor
             void ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::string& targetName);
+            // the references to several places (an import: its slots and its thunks), but the ones made from `ignored` ([start, end): its thunks)
+            void ShowXrefsTo(DissasmCodeZone* zone,
+                             const std::vector<uint64>& targets,
+                             const std::vector<std::pair<uint64, uint64>>& ignored,
+                             const std::string& targetName);
+            // the imports of the file (IDA's Imports, beyond: the category of each, its prototype, the places that use it); Enter: the uses
+            void ShowImports();
             void ShowStrings();
             DissasmCodeZone* GetCursorOrFirstCodeZone();
             void UndoOrRedo(bool redo); // Ctrl+Z / Ctrl+Y: the edits of the zone of the cursor

@@ -51,6 +51,7 @@ constexpr uint32 COMMAND_SET_OPERAND_STRUCTURE = 144;
 constexpr uint32 COMMAND_MARK_POSITION         = 145;
 constexpr uint32 COMMAND_SHOW_BOOKMARKS        = 146;
 constexpr uint32 COMMAND_ADD_REPEATABLE_COMMENT = 147;
+constexpr uint32 COMMAND_SHOW_IMPORTS          = 148;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -265,6 +266,9 @@ namespace View
             inline static KeyboardControl ShowFunctionsCommand = {
                 Input::Key::Shift | Input::Key::F3, "ShowFunctions", "Show the functions found by the analysis", COMMAND_SHOW_FUNCTIONS
             };
+            inline static KeyboardControl ShowImportsCommand = {
+                Input::Key::Shift | Input::Key::F4, "ShowImports", "Show the imports: their categories, prototypes and the places that use them", COMMAND_SHOW_IMPORTS
+            };
 
             inline static KeyboardControl ShowXrefsCommand = {
                 Input::Key::Ctrl | Input::Key::X, "ShowXrefs", "Show the cross references to the label / target of the line", COMMAND_SHOW_XREFS
@@ -278,7 +282,7 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 22> CommandBarCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 23> CommandBarCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
                 GoToAddressCommand,
                 FindCommand,
@@ -292,6 +296,7 @@ namespace View
                 CommandPaletteCommand,
                 ShowXrefsCommand,
                 ShowFunctionsCommand,
+                ShowImportsCommand,
                 ShowStringsCommand,
                 FindNextCommand,
                 ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
@@ -434,7 +439,7 @@ namespace View
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 32> AllKeyboardCommands = {
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 33> AllKeyboardCommands = {
                 /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
                 ExportAnnotationsCommand,
                 ImportAnnotationsCommand,
@@ -452,6 +457,7 @@ namespace View
                 CommandPaletteCommand,
                 ShowXrefsCommand,
                 ShowFunctionsCommand,
+                ShowImportsCommand,
                 ShowStringsCommand,
                 FindNextCommand,
                 ShowOnlyDissasmCommand,

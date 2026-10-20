@@ -396,6 +396,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_SHOW_FUNCTIONS:
             ShowFunctions();
             return true;
+        case COMMAND_SHOW_IMPORTS:
+            ShowImports();
+            return true;
         case COMMAND_SHOW_STRINGS:
             ShowStrings();
             return true;

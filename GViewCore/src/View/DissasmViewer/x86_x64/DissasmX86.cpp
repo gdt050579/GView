@@ -3273,8 +3273,20 @@ void Instance::ShowXrefs()
 
 void Instance::ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::string& targetName)
 {
+    ShowXrefsTo(zone, std::vector<uint64>{ target }, {}, targetName);
+}
+
+void Instance::ShowXrefsTo(
+      DissasmCodeZone* zone, const std::vector<uint64>& targets, const std::vector<std::pair<uint64, uint64>>& ignored, const std::string& targetName)
+{
     // the references from this zone and from the other code zones of the file (the other executable sections)
-    const auto references = zone->GetXrefsTo(target);
+    std::vector<DissasmZoneXref> references;
+    for (const uint64 target : targets)
+        for (const auto& reference : zone->GetXrefsTo(target))
+            if (std::none_of(ignored.begin(), ignored.end(), [&reference](const auto& range) {
+                    return reference.xref->from >= range.first && reference.xref->from < range.second;
+                }))
+                references.push_back(reference);
     if (references.empty()) {
         Dialogs::MessageBox::ShowNotification("Info", "There are no cross references to " + targetName);
         return;
@@ -3324,6 +3336,135 @@ void Instance::ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::stri
         const auto& row = rows[selected.value()];
         MoveCursorToZoneFileOffset(row.zone, row.zone->cachedCodeOffsets[0].offset + row.from, false);
     }
+}
+
+std::vector<DissasmImportUse> GView::View::DissasmViewer::CollectImportUses(SettingsData* settings, const std::vector<DissasmCodeZone*>& zones)
+{
+    std::map<std::string, DissasmImportUse> imports;
+    const DissasmCodeZone* reference = nullptr; // a zone to turn the RVAs of the slots into VAs (the zones share the image base)
+    for (const auto* zone : zones)
+        if (!reference && zone->CanReachAsmLines() && !zone->cachedCodeOffsets.empty())
+            reference = zone;
+    if (!reference)
+        return {};
+    // the slots: RVAs with an offset translation, VAs without
+    const bool translated   = settings->offsetTranslateCallback.IsValid();
+    const uint64 codeRVA    = translated ? GetCodeStartRVA(settings, reference) : 0;
+    const uint64 addressMask = reference->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+    for (const auto& [key, mapping] : settings->memoryMappings) {
+        if (mapping.type != MemoryMappingType::FunctionMapping || mapping.name.empty())
+            continue;
+        auto& import = imports[mapping.name];
+        import.name  = mapping.name;
+        import.targets.push_back(translated ? (reference->labelAddressBase + key - codeRVA) & addressMask : key);
+    }
+    for (const auto* zone : zones)
+        for (const auto& [relative, name] : zone->thunkImports) {
+            auto& import = imports[name];
+            import.name  = name;
+            import.thunks.push_back(zone->labelAddressBase + relative);
+            import.thunkCode.emplace_back(zone->labelAddressBase + relative, zone->labelAddressBase + std::max(relative + 1, zone->GetFunctionEnd(relative)));
+        }
+    std::vector<DissasmImportUse> result;
+    result.reserve(imports.size());
+    for (auto& [name, import] : imports) {
+        std::sort(import.targets.begin(), import.targets.end());
+        std::sort(import.thunks.begin(), import.thunks.end());
+        import.targets.insert(import.targets.end(), import.thunks.begin(), import.thunks.end());
+        for (const uint64 target : import.targets)
+            for (const auto& use : reference->GetXrefsTo(target))
+                if (std::none_of(import.thunkCode.begin(), import.thunkCode.end(), [&use](const auto& code) {
+                        return use.xref->from >= code.first && use.xref->from < code.second;
+                    }))
+                    import.uses++;
+        result.push_back(std::move(import));
+    }
+    return result;
+}
+
+// The imports (IDA's Imports, and beyond: the category of the API, the places that use it, its prototype); the search bar filters them,
+// Enter / Uses shows the instructions that use the selected one
+class ImportsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_USES  = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    ImportsWindow(const std::vector<DissasmImportUse>& imports) : Window("Imports", "d:c,w:95%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this,
+              "l:1,t:1,r:1,b:3",
+              { "n:Name,w:36", "n:Uses,w:7,a:r", "n:Tags,w:22", "n:Address,w:20", "n:Prototype,w:120" },
+              ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        LocalString<32> uses, address;
+        for (size_t index = 0; index < imports.size(); index++) {
+            const auto& import = imports[index];
+            uses.SetFormat("%6u", import.uses); // padded: the columns are sorted by their text
+            if (!import.targets.empty())
+                address.SetFormat("0x%016llx", static_cast<unsigned long long>(import.targets.front()));
+            else
+                address.Clear();
+            const uint32 categories = GetApiCategories(import.name);
+            const std::string tags  = FormatApiCategories(categories);
+            const auto* prototype   = FindApiPrototype(import.name);
+            auto item               = list->AddItem({ std::string_view(import.name),
+                                                      uses.ToStringView(),
+                                                      std::string_view(tags),
+                                                      address.ToStringView(),
+                                                      prototype ? prototype->prototype : std::string_view() });
+            item.SetData(static_cast<uint64>(index));
+            // the colors of the triage, as in the Functions window and the navigation band
+            if (const uint32 category = GetMainApiCategory(categories); category != 0)
+                item.SetColor(ColorPair{ GetDissasmBandColor(GetDissasmBandCellOfCategory(category)), Color::Transparent });
+        }
+        Factory::Button::Create(this, "&Uses", "l:1,b:0,w:10", BTN_USES);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_USES)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowImports()
+{
+    std::vector<DissasmCodeZone*> zones;
+    for (auto& parseZone : settings->parseZones)
+        if (parseZone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(parseZone.get())->CanReachAsmLines())
+            zones.push_back(static_cast<DissasmCodeZone*>(parseZone.get()));
+    const auto imports = CollectImportUses(settings.get(), zones);
+    if (imports.empty()) {
+        Dialogs::MessageBox::ShowNotification("Imports", "No import is known (the plugin gives none, or the disassembly zone is not shown)!");
+        return;
+    }
+    ImportsWindow window(imports);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value() || window.GetSelectedRow().value() >= imports.size())
+        return;
+    const auto& import = imports[window.GetSelectedRow().value()];
+    ShowXrefsTo(zones.front(), import.targets, import.thunkCode, import.name);
 }
 
 // The functions of the analysis (IDA Shift+F3): name, address, size, references; the search bar filters them, Enter / Go jumps to one
