@@ -652,4 +652,27 @@ std::optional<DissasmSearchHit> SearchCodeZones(
       const DissasmSearch& search,
       const std::function<DissasmInsnExtractLineParams*(DissasmCodeZone*)>& makeParams);
 
+// A row of the navigation band (Instance::PaintNavigationBand; IDA's navigation band, and beyond it the functions colored by the most
+// telling category of the APIs they call, GetMainApiCategory): what the lines of the row hold, the most telling last (a row with several
+// lines gets the largest)
+enum DissasmBandCell : uint8 {
+    BAND_EMPTY,
+    BAND_DATA,     // a data zone, a structure, a text zone
+    BAND_CODE,     // the code of a code zone outside of the functions (before the first one)
+    BAND_FUNCTION, // a function that calls none of the categorized APIs
+    BAND_FILE,
+    BAND_LOADING,
+    BAND_REGISTRY,
+    BAND_SERVICE,
+    BAND_CRYPTO,
+    BAND_NETWORK,
+    BAND_PROCESS,
+    BAND_ANTIDEBUG,
+    BAND_INJECTION,
+};
+DissasmBandCell GetDissasmBandCellOfCategory(uint32 category);
+// the band of `rows` rows for the lines [0, totalLines) of the view: the zones, the functions of the code zones (from their label line to
+// the label of the next one) with their categories; a collapsed zone / function is its line
+std::vector<uint8> BuildDissasmNavigationBand(const std::vector<const ParseZone*>& zones, uint64 totalLines, uint32 rows);
+
 } // namespace GView::View::DissasmViewer

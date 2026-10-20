@@ -127,6 +127,8 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
 
 void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
+    if (button == MouseButton::Left && ShowNavigationBandRow(x, y, true))
+        return;
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
@@ -163,6 +165,8 @@ void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Ke
 
 bool Instance::OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
+    if (button == MouseButton::Left && ShowNavigationBandRow(x, y, false))
+        return true;
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location

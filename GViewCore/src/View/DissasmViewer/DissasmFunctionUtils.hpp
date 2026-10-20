@@ -126,6 +126,9 @@ enum DissasmApiCategory : uint32_t {
 uint32_t GetApiCategories(std::string_view name);
 // "net crypto proc": the short names of the categories, in the order above
 std::string FormatApiCategories(uint32_t categories);
+// the most telling of the categories, for the triage colors (the Functions window, the navigation band): injection, anti-debug, process,
+// network, crypto, service, registry, loading, file; 0 for none
+uint32_t GetMainApiCategory(uint32_t categories);
 
 // the text found at `offset`, quoted: "ascii" or L"utf-16" (printable characters, at least DISSASM_MINIMUM_STRING_PREVIEW of them, until a
 // NUL or the first non printable character); none when the bytes do not look like a string

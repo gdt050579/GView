@@ -3044,6 +3044,9 @@ class FunctionsWindow : public AppCUI::Controls::Window
             auto item              = list->AddItem(
                   { std::string_view(function.name), address.ToStringView(), size.ToStringView(), xrefs.ToStringView(), std::string_view(kind), std::string_view(tags) });
             item.SetData(static_cast<uint64>(index));
+            // the color of its most telling category, as in the navigation band (the injection red, the network aqua, ...)
+            if (const uint32 category = GetMainApiCategory(function.apiCategories); category != 0)
+                item.SetColor(ColorPair{ GetDissasmBandColor(GetDissasmBandCellOfCategory(category)), Color::Transparent });
         }
         Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
         Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);

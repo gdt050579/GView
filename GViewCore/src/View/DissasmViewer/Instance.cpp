@@ -1440,6 +1440,97 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         for (const auto& bullet : MyLine.bullets)
             renderer.WriteSpecialCharacter(bullet.x, bullet.y, SpecialChars::CircleFilled, bullet.color);
     }
+    PaintNavigationBand(renderer);
+}
+
+AppCUI::Graphics::Color GView::View::DissasmViewer::GetDissasmBandColor(uint8 cell)
+{
+    switch (cell) {
+    case BAND_DATA:
+        return Color::Gray;
+    case BAND_CODE:
+        return Color::DarkGreen;
+    case BAND_FILE:
+        return Color::Blue;
+    case BAND_LOADING:
+        return Color::Green;
+    case BAND_REGISTRY:
+        return Color::Olive;
+    case BAND_SERVICE:
+        return Color::Teal;
+    case BAND_CRYPTO:
+        return Color::Yellow;
+    case BAND_NETWORK:
+        return Color::Aqua;
+    case BAND_PROCESS:
+        return Color::Magenta;
+    case BAND_ANTIDEBUG:
+        return Color::Pink;
+    case BAND_INJECTION:
+        return Color::Red;
+    case BAND_FUNCTION:
+        return Color::DarkBlue;
+    default:
+        return Color::Black;
+    }
+}
+
+void Instance::PaintNavigationBand(AppCUI::Graphics::Renderer& renderer)
+{
+    // the last column is outside of the lines (totalCharactersPerLine is the width - 1); the rows of the lines are 1 .. visibleRows
+    const int x         = static_cast<int>(Layout.totalCharactersPerLine);
+    const uint32 rows   = Layout.visibleRows;
+    const uint64 total  = Layout.totalLinesSize;
+    if (rows < 2 || total == 0 || x <= 0 || x >= GetWidth())
+        return;
+    // built again when what it shows changes: its size, the lines of the zones, the functions of the analysis and their categories
+    uint64 key = (static_cast<uint64>(rows) << 40) ^ total;
+    std::vector<const ParseZone*> zones;
+    zones.reserve(settings->parseZones.size());
+    for (const auto& zone : settings->parseZones) {
+        zones.push_back(zone.get());
+        key = key * 1000003ull + (static_cast<uint64>(zone->startLineIndex) << 32 | zone->endingLineIndex) + (zone->isCollapsed ? 7u : 0u);
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone) {
+            const auto* code = static_cast<const DissasmCodeZone*>(zone.get());
+            key              = key * 1000003ull + code->functionStarts.size() * 31ull + code->functionApiCategories.size() + (code->isInit ? 1u : 0u);
+        }
+    }
+    if (key != navigationBandKey || navigationBand.size() != rows) {
+        navigationBand    = BuildDissasmNavigationBand(zones, total, rows);
+        navigationBandKey = key;
+    }
+    // the lines shown now: a triangle on their rows
+    const auto rowOf    = [&](uint64 line) { return static_cast<uint32>(std::min<uint64>(rows - 1u, line * rows / total)); };
+    const uint32 first  = rowOf(Cursor.startViewLine);
+    const uint32 last   = rowOf(std::min<uint64>(total - 1, static_cast<uint64>(Cursor.startViewLine) + rows - 1));
+    for (uint32 row = 0; row < rows; row++) {
+        const uint8 cell       = navigationBand[row];
+        const ColorPair color  = { Color::White, cell == BAND_EMPTY ? ColorMan.Colors.Normal.Background : GetDissasmBandColor(cell) };
+        if (row >= first && row <= last)
+            renderer.WriteSpecialCharacter(x, static_cast<int>(row) + 1, SpecialChars::TriangleLeft, color);
+        else
+            renderer.WriteCharacter(x, static_cast<int>(row) + 1, ' ', color);
+    }
+}
+
+bool Instance::ShowNavigationBandRow(int x, int y, bool recordJump)
+{
+    const uint32 rows  = Layout.visibleRows;
+    const uint64 total = Layout.totalLinesSize;
+    if (x != static_cast<int>(Layout.totalCharactersPerLine) || y < 1 || y > static_cast<int>(rows) || total == 0 || rows < 2)
+        return false;
+    // the first line of the row (the inverse of the row of a line: line * rows / total), a few lines below the top of the view
+    const uint64 row  = static_cast<uint64>(y - 1);
+    const uint64 line = std::min<uint64>(total - 1, (row * total + rows - 1) / rows);
+    if (line == static_cast<uint64>(Cursor.startViewLine) + Cursor.lineInView)
+        return true;
+    const auto from      = SaveCursorState();
+    Cursor.lineInView    = static_cast<uint32>(std::min<uint64>(std::min<uint32>(5, rows / 2), line));
+    Cursor.startViewLine = static_cast<uint32>(line - Cursor.lineInView);
+    Cursor.hasMovedView  = true;
+    if (recordJump)
+        RecordJump(from);
+    return true;
 }
 
 bool Instance::ShowGoToDialog()

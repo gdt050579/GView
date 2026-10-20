@@ -172,6 +172,15 @@ std::string FormatApiCategories(uint32_t categories)
     return text;
 }
 
+uint32_t GetMainApiCategory(uint32_t categories)
+{
+    static constexpr uint32_t ORDER[] = { API_INJECTION, API_ANTIDEBUG, API_PROCESS, API_NETWORK, API_CRYPTO, API_SERVICE, API_REGISTRY, API_LOADING, API_FILE };
+    for (const uint32_t category : ORDER)
+        if (categories & category)
+            return category;
+    return 0;
+}
+
 bool IsNoReturnFunctionName(std::string_view name)
 {
     static const std::unordered_set<std::string_view> NAMES = {

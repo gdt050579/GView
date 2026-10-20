@@ -408,6 +408,9 @@ namespace View
         // the field at an offset of the structure, as IDA writes it after the variable: .dwFlags, .ftLastWriteTime.dwHighDateTime,
         // .cFileName+2, +0x46 (the padding); the offset 0 is the variable itself (lea), or its first field for an access of the memory (.cb)
         std::string FormatApiStructureMember(const DissasmApiStructure& structure, uint32 offset, bool memoryAccess = false);
+        // the color of a cell of the navigation band (DissasmBandCell), the one of the rows of the Functions window for a category: the
+        // injection red, the anti-debug pink, the processes magenta, the network aqua, the crypto yellow, ... the other functions dark blue
+        AppCUI::Graphics::Color GetDissasmBandColor(uint8 cell);
 
         struct DissasmAsmPreCacheData {
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
@@ -1030,6 +1033,12 @@ namespace View
             virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
+            // IDA's navigation band in the last column of the view (the functions colored by what their APIs do, the shown lines marked); a
+            // click / a drag on it shows the lines of the row (a click is a jump: Ctrl+Q comes back)
+            void PaintNavigationBand(AppCUI::Graphics::Renderer& renderer);
+            bool ShowNavigationBandRow(int x, int y, bool recordJump);
+            std::vector<uint8> navigationBand; // BuildDissasmNavigationBand, built again when navigationBandKey changes
+            uint64 navigationBandKey = 0;
             virtual void OnAfterResize(int newWidth, int newHeight) override;
             virtual void OnStart() override;
 

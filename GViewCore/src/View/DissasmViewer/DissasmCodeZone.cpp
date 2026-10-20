@@ -5203,3 +5203,73 @@ void DissasmCodeZone::ToggleDecimalOperand(uint64 address, uint32 numberIndex)
     edit.numberIndex = numberIndex;
     RecordEdit(std::move(edit));
 }
+
+DissasmBandCell GView::View::DissasmViewer::GetDissasmBandCellOfCategory(uint32 category)
+{
+    switch (category) {
+    case API_INJECTION:
+        return BAND_INJECTION;
+    case API_ANTIDEBUG:
+        return BAND_ANTIDEBUG;
+    case API_PROCESS:
+        return BAND_PROCESS;
+    case API_NETWORK:
+        return BAND_NETWORK;
+    case API_CRYPTO:
+        return BAND_CRYPTO;
+    case API_SERVICE:
+        return BAND_SERVICE;
+    case API_REGISTRY:
+        return BAND_REGISTRY;
+    case API_LOADING:
+        return BAND_LOADING;
+    case API_FILE:
+        return BAND_FILE;
+    default:
+        return BAND_FUNCTION;
+    }
+}
+
+std::vector<uint8> GView::View::DissasmViewer::BuildDissasmNavigationBand(const std::vector<const ParseZone*>& zones, uint64 totalLines, uint32 rows)
+{
+    std::vector<uint8> band(rows, BAND_EMPTY);
+    if (rows == 0 || totalLines == 0)
+        return band;
+    const auto rowOf = [&](uint64 line) { return static_cast<uint32>(std::min<uint64>(rows - 1u, line * rows / totalLines)); };
+    const auto mark  = [&](uint64 from, uint64 to, uint8 cell) { // the lines [from, to)
+        if (to <= from)
+            return;
+        for (uint32 row = rowOf(from), last = rowOf(to - 1); row <= last; row++)
+            band[row] = std::max(band[row], cell);
+    };
+    for (const auto* zone : zones) {
+        if (!zone || zone->endingLineIndex <= zone->startLineIndex)
+            continue;
+        const auto* code = zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone ? static_cast<const DissasmCodeZone*>(zone) : nullptr;
+        if (!code || code->zoneDetails.isData) {
+            mark(zone->startLineIndex, zone->endingLineIndex, BAND_DATA);
+            continue;
+        }
+        mark(zone->startLineIndex, zone->endingLineIndex, BAND_CODE);
+        if (code->isCollapsed || !code->isInit)
+            continue;
+        // a function from its label to the label of the next one (a hidden label: inside a collapsed zone, the function goes on)
+        const uint64 linesStart = zone->startLineIndex + 2ull; // the title and the header of the columns
+        std::optional<uint64> previous;
+        uint8 previousCell = BAND_FUNCTION;
+        for (size_t index = 0; index < code->functionStarts.size(); index++) {
+            const auto line = code->GetLabelDisplayLine(code->functionStarts[index]);
+            if (!line.has_value() || (previous.has_value() && linesStart + line.value() < previous.value()))
+                continue;
+            const uint64 absolute = linesStart + line.value();
+            if (previous.has_value())
+                mark(previous.value(), absolute, previousCell);
+            previous               = absolute;
+            const uint32 categories = index < code->functionApiCategories.size() ? code->functionApiCategories[index] : 0u;
+            previousCell           = GetDissasmBandCellOfCategory(GetMainApiCategory(categories));
+        }
+        if (previous.has_value())
+            mark(previous.value(), std::max<uint64>(previous.value() + 1, zone->endingLineIndex), previousCell);
+    }
+    return band;
+}

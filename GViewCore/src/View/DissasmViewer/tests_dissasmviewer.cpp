@@ -4927,6 +4927,76 @@ TEST_CASE("FunctionApiCategories", "[Dissasm]Triage")
     REQUIRE(functions[1].apiCategories == API_NETWORK);
 }
 
+TEST_CASE("NavigationBand", "[Dissasm]Triage")
+{
+    // the most telling category of a function
+    REQUIRE(GetMainApiCategory(API_NETWORK | API_INJECTION | API_FILE) == API_INJECTION);
+    REQUIRE(GetMainApiCategory(API_FILE | API_CRYPTO) == API_CRYPTO);
+    REQUIRE(GetMainApiCategory(API_ANTIDEBUG | API_PROCESS) == API_ANTIDEBUG);
+    REQUIRE(GetMainApiCategory(0) == 0);
+    REQUIRE(GetDissasmBandCellOfCategory(API_NETWORK) == BAND_NETWORK);
+    REQUIRE(GetDissasmBandCellOfCategory(0) == BAND_FUNCTION);
+
+    // the entry point calls CreateRemoteThread (injection) and 0x20; 0x20 calls 0x40 and jumps to the thunk of connect (network, as the thunk); 0x40 calls
+    // nothing; a data zone after the code
+    std::vector<unsigned char> file = {
+        0xFF, 0x15, 0x7A, 0x00, 0x00, 0x00, // 0x00: call qword ptr [rip + 0x7a] -> slot 0x80 (CreateRemoteThread)
+        0xE8, 0x15, 0x00, 0x00, 0x00,       // 0x06: call 0x20
+        0xC3,                               // 0x0b: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0x1B, 0x00, 0x00, 0x00 }); // 0x20: call 0x40
+    file.insert(file.end(), { 0xEB, 0x09 });                   // 0x25: jmp 0x30 (j_connect)
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x52, 0x00, 0x00, 0x00 }); // 0x30: jmp qword ptr [rip + 0x52] -> slot 0x88 (connect)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x40: xor eax, eax; ret
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports = { { 0x80, { "CreateRemoteThread", MemoryMappingType::FunctionMapping } }, { 0x88, { "connect", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x30, 0x40 });
+    REQUIRE(zone.functionApiCategories == std::vector<uint32>{ API_INJECTION, API_NETWORK, API_NETWORK, 0 }); // 0x20: its tail call
+
+    struct TestZone : public ParseZone {
+    } data{};
+    zone.startLineIndex    = 0;
+    zone.isCollapsed       = false; // set by the view (BuildDissasmParseZones)
+    zone.endingLineIndex   = 2 + zone.GetDisplayLinesCount(); // the title and the header of the columns, then the lines
+    data.zoneType          = DissasmParseZoneType::StructureParseZone;
+    data.startLineIndex    = zone.endingLineIndex;
+    data.endingLineIndex   = zone.endingLineIndex + 4;
+    const uint64 total     = data.endingLineIndex;
+    const std::vector<const ParseZone*> zones = { &zone, &data };
+    const auto lineOf = [&zone](uint64 function) { return 2u + zone.GetLabelDisplayLine(function).value(); };
+
+    // a row for each line: the title is code, every function from its label to the next one, the data zone
+    const auto band = BuildDissasmNavigationBand(zones, total, static_cast<uint32>(total));
+    REQUIRE(band.size() == total);
+    REQUIRE(band[0] == BAND_CODE);
+    REQUIRE(band[lineOf(0x00)] == BAND_INJECTION);
+    REQUIRE(band[lineOf(0x20) - 1] == BAND_INJECTION); // the padding after the entry point: still its function
+    REQUIRE(band[lineOf(0x20)] == BAND_NETWORK);
+    REQUIRE(band[lineOf(0x30)] == BAND_NETWORK);
+    REQUIRE(band[lineOf(0x40)] == BAND_FUNCTION);
+    REQUIRE(band[total - 1] == BAND_DATA);
+    // fewer rows than lines: a row gets the most telling of its lines
+    REQUIRE(BuildDissasmNavigationBand(zones, total, 1) == std::vector<uint8>{ BAND_INJECTION });
+    const auto two = BuildDissasmNavigationBand(zones, total, 2);
+    REQUIRE(two[0] == BAND_INJECTION);
+    REQUIRE(two[1] >= BAND_FUNCTION);
+    REQUIRE(BuildDissasmNavigationBand(zones, 0, 3) == std::vector<uint8>(3, BAND_EMPTY));
+    // a collapsed code zone is its line (the code before the functions)
+    zone.isCollapsed = true;
+    REQUIRE(BuildDissasmNavigationBand(zones, total, 1) == std::vector<uint8>{ BAND_CODE });
+    zone.isCollapsed = false;
+}
+
 TEST_CASE("InstructionHelp", "[Dissasm]Help")
 {
     const auto x64 = [](std::string_view mnemonic, std::string_view operands = {}) { return DescribeInstruction(mnemonic, operands, DissasmArch::X64); };
