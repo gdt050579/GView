@@ -894,12 +894,17 @@ static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const Dissa
 
 // a call to a known API (FindApiPrototype): its arguments are named on the lines prepared before the call (x86 / x64 calling
 // conventions); not when the lines are built without the known functions (asmData.functions empty: the cursor line)
+static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, const AsmFunctionDetails* details)
+{
+    if (params.asmData->functions.empty() || !details)
+        return;
+    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]
+    params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode() || params.zone->IsArmCode());
+}
+
 static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
 {
-    if (params.asmData->functions.empty())
-        return;
-    if (const auto* details = FindApiPrototype(functionName)) // x64 / ARM: the registers; x86: the pushes and mov [esp + n]
-        params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode() || params.zone->IsArmCode());
+    AnnounceKnownFunctionCall(params, FindApiPrototype(functionName));
 }
 
 // the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
@@ -1102,7 +1107,9 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (shouldConsiderCall) {
             const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
-            if (thunk != params.zone->thunkImports.end())
+            if (const auto* user = params.zone->FindUserPrototype(operands.directTarget.value()))
+                AnnounceKnownFunctionCall(params, user); // the prototype the user gave (Y)
+            else if (thunk != params.zone->thunkImports.end())
                 AnnounceKnownFunctionCall(params, thunk->second);
             else if (!labelName.empty())
                 AnnounceKnownFunctionCall(params, labelName); // a function of the file named so (a static binary: getenv)
@@ -1561,6 +1568,7 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
         zone->operandStructures      = ReadOperandStructures(cacheData, *zone);      // T
         zone->bookmarks              = ReadBookmarks(cacheData, *zone);              // Alt+M
         zone->repeatableComments     = ReadRepeatableComments(cacheData, *zone);     // ;
+        zone->userPrototypes         = ReadUserPrototypes(cacheData, *zone);         // Y
     }
 
     if (!zone->InitZone(initData))
@@ -2043,7 +2051,7 @@ void Instance::ImportAnnotations()
     RefreshDrawnLines();
     LocalString<256> summary;
     summary.SetFormat(
-          "Imported: %u names, %u comments (%u repeatable), %u variables, %u structures, %u numbers in decimal, %u zones, %u functions, %u bookmarks, %u suggestions%s",
+          "Imported: %u names, %u comments (%u repeatable), %u variables, %u structures, %u numbers in decimal, %u zones, %u functions (%u prototypes), %u bookmarks, %u suggestions%s",
           result.names,
           result.comments,
           result.repeatableComments,
@@ -2052,6 +2060,7 @@ void Instance::ImportAnnotations()
           result.decimalOperands,
           result.collapsibleZones,
           result.functions,
+          result.prototypes,
           result.bookmarks,
           result.suggestedNames + result.aiComments,
           result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
@@ -2388,6 +2397,10 @@ void Instance::RefreshCursorLineNumbers()
     // what the instruction does (explain on hover): the status bar; a call / jmp to a known API: its prototype
     const std::string_view lineOperands(asmLine.op_str, asmLine.op_str_size);
     const auto lineKind = static_cast<X86InstructionKind>(asmLine.instructionKind);
+    if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump) &&
+        asmLine.branchTarget.has_value())
+        if (const auto* user = zone->FindUserPrototype(asmLine.branchTarget.value())) // the prototype the user gave (Y)
+            cursorLineNumbers.instruction = std::string(user->prototype);
     if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump)) {
         // the last name of the operands: call CreateFileW / call cs:__imp_CreateFileW / jmp j_connect
         size_t end = lineOperands.size();
@@ -2926,6 +2939,62 @@ void Instance::ShowBookmarks()
     const auto& place = places[window.GetSelectedRow().value()];
     if (place.zone->CanReachAsmLines())
         MoveCursorToZoneFileOffset(place.zone, place.zone->cachedCodeOffsets[0].offset + place.address, true);
+}
+
+void Instance::SetFunctionPrototype()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    const auto function = asmLine.isCollapsedLine ? std::nullopt : zone->GetFunctionContaining(asmLine.address);
+    if (!function.has_value()) {
+        Dialogs::MessageBox::ShowNotification("Warning", "This line is not inside a function!");
+        return;
+    }
+    // the text proposed: the prototype of the user, the one of the API the function is (a thunk, a function of a static binary), else an
+    // empty one with the name of the function
+    std::string name = zone->GetLabelNameAt(function.value());
+    if (name.empty())
+        name = zone->GetLabelName("sub_", function.value());
+    std::string text;
+    if (const auto user = zone->userPrototypes.find(function.value()); user != zone->userPrototypes.end())
+        text = user->second;
+    else if (const auto thunk = zone->thunkImports.find(function.value()); thunk != zone->thunkImports.end() && FindApiPrototype(thunk->second))
+        text = std::string(FindApiPrototype(thunk->second)->prototype);
+    else if (const auto* api = FindApiPrototype(name))
+        text = std::string(api->prototype);
+    else
+        text = "int " + name + "()";
+    for (;;) {
+        SingleLineEditWindow dialog(text, "Function prototype (empty: none)", true);
+        if (dialog.Show() != Dialogs::Result::Ok)
+            return;
+        text = dialog.GetResult();
+        if (text.empty() || ParseUserPrototype(text))
+            break;
+        Dialogs::MessageBox::ShowError("Prototype", "Expecting a prototype: int decrypt(char* buffer, int size) (named parameters)!");
+    }
+    const auto before = zone->userPrototypes;
+    if (text.empty())
+        zone->userPrototypes.erase(function.value());
+    else
+        zone->userPrototypes[function.value()] = text;
+    if (zone->userPrototypes == before)
+        return;
+    zone->RecordUserPrototypesEdit(before, function.value()); // Ctrl+Z gives the previous prototype back
+    ReanalyzeZone(zone, asmLine.address, true);                // the variables named after the arguments
 }
 
 bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background)

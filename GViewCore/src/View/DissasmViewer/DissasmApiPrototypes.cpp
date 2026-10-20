@@ -430,26 +430,35 @@ std::string ReplaceAll(std::string text, std::string_view from, std::string_view
     return text;
 }
 
-// "HANDLE CreateFileW(LPCWSTR lpFileName, ...)": the function, its parameters (the name after the last space or *, the type before it)
-void AddPrototype(PrototypeTable& table, const std::string& line)
+bool IsIdentifier(std::string_view text)
+{
+    if (text.empty() || !(std::isalpha(static_cast<unsigned char>(text.front())) || text.front() == '_'))
+        return false;
+    return std::all_of(text.begin(), text.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; });
+}
+
+// "HANDLE CreateFileW(LPCWSTR lpFileName, ...)": the function, its parameters (the name after the last space or *, the type before it); the
+// texts are kept in `strings` (stable addresses). `strict` (a prototype of the user): every name an identifier, every parameter named
+bool ParsePrototypeText(std::deque<std::string>& strings, const std::string& line, AsmFunctionDetails& details, bool strict)
 {
     const auto open  = line.find('(');
     const auto close = line.rfind(')');
-    if (open == std::string::npos || close == std::string::npos || close < open)
-        return;
-    const auto& text = table.strings.emplace_back(line);
+    if (open == std::string::npos || close == std::string::npos || close < open || (strict && Trim(std::string_view(line).substr(close + 1)) != ""))
+        return false;
+    const auto& text = strings.emplace_back(line);
     const std::string_view head = Trim(std::string_view(text).substr(0, open));
     const auto nameStart        = head.find_last_of(" *");
     const std::string_view name = nameStart == std::string_view::npos ? head : head.substr(nameStart + 1);
-    if (name.empty() || table.byName.contains(name))
-        return;
-    auto& details        = table.functions.emplace_back();
+    if (name.empty() || (strict && !IsIdentifier(name)))
+        return false;
     details.functionName = name;
     details.prototype    = text;
     if (const std::string_view returnType = Trim(head.substr(0, nameStart == std::string_view::npos ? 0 : nameStart + 1));
         returnType != "void" && returnType != "VOID")
         details.returnType = returnType;
     std::string_view parameters = std::string_view(text).substr(open + 1, close - open - 1);
+    if (strict && (parameters.find('(') != std::string_view::npos || parameters.find(')') != std::string_view::npos))
+        return false; // a pointer to a function as a parameter: not split by the commas
     while (!parameters.empty()) {
         const auto comma          = parameters.find(',');
         const std::string_view parameter = Trim(parameters.substr(0, comma));
@@ -457,13 +466,25 @@ void AddPrototype(PrototypeTable& table, const std::string& line)
         if (parameter.empty() || parameter == "void" || parameter == "...")
             continue;
         const auto split = parameter.find_last_of(" *");
-        if (split == std::string_view::npos)
+        if (split == std::string_view::npos || (strict && (!IsIdentifier(parameter.substr(split + 1)) || Trim(parameter.substr(0, split + 1)).empty()))) {
+            if (strict)
+                return false;
             continue;
-        const auto& parameterName = table.strings.emplace_back(parameter.substr(split + 1));
-        const auto& parameterType = table.strings.emplace_back(Trim(parameter.substr(0, split + 1)));
+        }
+        const auto& parameterName = strings.emplace_back(parameter.substr(split + 1));
+        const auto& parameterType = strings.emplace_back(Trim(parameter.substr(0, split + 1)));
         details.params.push_back({ parameterName.c_str(), parameterType.c_str() });
     }
-    table.byName.emplace(name, &details);
+    return true;
+}
+
+void AddPrototype(PrototypeTable& table, const std::string& line)
+{
+    AsmFunctionDetails details;
+    if (!ParsePrototypeText(table.strings, line, details, false) || table.byName.contains(details.functionName))
+        return;
+    const auto& added = table.functions.emplace_back(std::move(details));
+    table.byName.emplace(added.functionName, &added);
 }
 
 const PrototypeTable& GetPrototypeTable()
@@ -522,6 +543,17 @@ void GView::View::DissasmViewer::ForEachApiPrototype(const std::function<void(co
 {
     for (const auto& details : GetPrototypeTable().functions)
         callback(details);
+}
+
+std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseUserPrototype(std::string_view text)
+{
+    const std::string_view trimmed = Trim(text);
+    if (trimmed.empty() || trimmed.size() > DISSASM_MAX_USER_PROTOTYPE_SIZE)
+        return nullptr;
+    auto prototype = std::make_shared<DissasmUserPrototype>();
+    if (!ParsePrototypeText(prototype->strings, std::string(trimmed), prototype->details, true))
+        return nullptr;
+    return prototype;
 }
 
 std::string GView::View::DissasmViewer::GetPointedType(std::string_view type)

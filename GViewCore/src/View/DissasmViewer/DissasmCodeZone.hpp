@@ -67,6 +67,7 @@ struct DissasmEdit {
         VariableStructures,
         OperandStructure,
         RepeatableComment,
+        UserPrototypes,
     };
     Kind kind = Kind::Comment;
     DissasmCommentAnchor anchor;              // Comment
@@ -79,6 +80,7 @@ struct DissasmEdit {
     std::vector<DissasmInstructionSet::DataRange> rangesBefore, rangesAfter; // DataRanges (address: the edited line)
     std::map<uint64, uint8> functionsBefore, functionsAfter;                 // UserFunctions (address: the function)
     std::map<std::pair<uint64, int32>, std::string> structuresBefore, structuresAfter; // VariableStructures (address: the function)
+    std::map<uint64, std::string> prototypesBefore, prototypesAfter;                   // UserPrototypes (address: the function)
 };
 // the edits that can be undone / redone
 struct DissasmEditHistory {
@@ -366,6 +368,14 @@ struct DissasmCodeZone : public ParseZone {
     // label line when the address has a label) and on every instruction that refers to it (the calls, the jumps, the data references, of
     // this zone and of the other zones of the file); saved in the cache and in the annotations
     std::map<uint64, std::string> repeatableComments;
+    // the prototypes the user gives to the functions (IDA Y): the function start -> the text ("int decrypt(char* buf, int len)",
+    // ParseUserPrototype). Its calls name their arguments, the variables passed / the value returned are named after it, its own arguments
+    // too (x86, x64 Windows); a change needs a new analysis. Saved in the cache and in the annotations
+    std::map<uint64, std::string> userPrototypes;
+    // the parsed prototype of a function of the user; null when it has none (or its text is not a prototype)
+    const AsmFunctionDetails* FindUserPrototype(uint64 functionStart) const;
+    // Y: the prototypes before the change; `address` is the function
+    void RecordUserPrototypesEdit(std::map<uint64, std::string> before, uint64 address);
     // the repeatable comment of an address (empty: removed), an edit of the user (it can be undone); false when nothing changes
     bool SetRepeatableComment(uint64 address, const std::string& text);
     // the repeatable comment shown on a line: its own, else the ones of the places it refers to (" ; " between them)
@@ -648,6 +658,8 @@ struct DissasmCodeZone : public ParseZone {
     bool linesReady  = false;
     std::vector<uint32> annotationLines;                // the sorted lines of dissasmType.annotations
     std::unordered_map<uint64, uint32> labelLineOfAddress; // relative address of a label -> its line (expanded layout)
+    // FindUserPrototype: the text parsed and the prototype, by function start (parsed again when the text changes)
+    mutable std::map<uint64, std::pair<std::string, std::shared_ptr<const DissasmUserPrototype>>> parsedUserPrototypes;
     std::vector<uint64> sortedLabelAddresses;               // the same addresses, sorted (a data zone names an address after its label)
 };
 

@@ -318,6 +318,9 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_ADD_REPEATABLE_COMMENT:
         AddRepeatableComment();
         return true;
+    case COMMAND_SET_PROTOTYPE:
+        SetFunctionPrototype();
+        return true;
     }
     return false;
 }

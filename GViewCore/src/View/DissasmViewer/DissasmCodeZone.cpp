@@ -1823,6 +1823,55 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return import && import->type == MemoryMappingType::FunctionMapping ? import->name : std::string();
     }
 
+    // the prototype of the callee of a call: the one the user gave to a function of the zone (Y), else the one of the API it is
+    const AsmFunctionDetails* CalleePrototype(const cs_insn& call, DissasmArch functionArch)
+    {
+        const auto operands = GetInstructionOperands(call, functionArch, labelBase);
+        if (operands.directTarget.has_value())
+            if (const uint64 target = operands.directTarget.value() & addressMask; target < codeSize)
+                if (const auto* user = zone->FindUserPrototype(target))
+                    return user;
+        return FindApiPrototype(CalleeName(call, functionArch));
+    }
+
+    // the arguments of a function the user gave a prototype (Y): arg_0 .. are its parameters (x86: in the stack, 4 bytes a parameter, 8 for
+    // the 64 bit types; x64 Windows: the home space then the stack, 8 bytes a parameter); System V / ARM pass them in registers: none
+    void NameArgumentsFromPrototype(DissasmFunctionFrame& frame, const AsmFunctionDetails& prototype, DissasmArch functionArch)
+    {
+        const bool isX86     = functionArch == DissasmArch::X86;
+        const bool windows64 = functionArch == DissasmArch::X64 && !zone->systemVCalls;
+        if (!isX86 && !windows64)
+            return;
+        static constexpr std::string_view WIDE_TYPES[] = { "__int64", "long long", "unsigned long long", "LONGLONG", "ULONGLONG", "DWORD64", "QWORD",
+                                                           "int64_t", "uint64_t", "double", "LARGE_INTEGER", "ULARGE_INTEGER" };
+        std::vector<uint32> offsets; // of each parameter, from the first one
+        uint32 offset = 0;
+        for (const auto& parameter : prototype.params) {
+            offsets.push_back(offset);
+            const std::string_view type = parameter.type;
+            offset += windows64 || std::find(std::begin(WIDE_TYPES), std::end(WIDE_TYPES), type) != std::end(WIDE_TYPES) ? 8u : 4u;
+        }
+        for (auto& variable : frame.variables) {
+            if (!variable.name.starts_with("arg_") || variable.name.size() <= 4)
+                continue;
+            char* end           = nullptr;
+            const auto argument = std::strtoul(variable.name.c_str() + 4, &end, 16); // arg_8: 8 bytes after the first argument
+            if (!end || *end != 0)
+                continue;
+            const auto found = std::find(offsets.begin(), offsets.end(), static_cast<uint32>(argument));
+            if (found == offsets.end())
+                continue;
+            const auto& parameter       = prototype.params[found - offsets.begin()];
+            const std::string_view name = parameter.name;
+            if (variable.origin.empty()) {
+                variable.type   = parameter.type;
+                variable.origin = "argument of " + std::string(prototype.functionName);
+            }
+            if (IsValidLocalVariableName(name) && !frame.HasVariableNamed(name))
+                variable.name = std::string(name);
+        }
+    }
+
     // IDA (its type libraries): a variable of the frame passed to a known API (FindApiPrototype) gets the name of that argument: lea rax,
     // [rbp + var_79] then the phkResult of RegOpenKeyExW -> phkResult; mov eax, [ebp + var_8]; push eax as the hFile of CloseHandle -> hFile.
     // The code of the function is followed in its order: the frame slot a register holds (its address or its value: lea / mov / ldr / add
@@ -1863,7 +1912,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const auto thunk        = other->thunkImports.find(otherStart);
                     name                    = thunk != other->thunkImports.end() ? thunk->second : other->GetLabelNameAt(otherStart);
                 }
-                known = knownPrototypeTargets.emplace(record.target, !name.empty() && FindApiPrototype(name) != nullptr).first;
+                const bool userPrototype = record.target < codeSize && zone->FindUserPrototype(record.target) != nullptr; // Y
+                known = knownPrototypeTargets.emplace(record.target, userPrototype || (!name.empty() && FindApiPrototype(name) != nullptr)).first;
             }
             callsKnownApi = known->second;
         }
@@ -1991,7 +2041,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const cs_insn& current = *insn;
             const auto flow        = GetInstructionFlow(current, functionArch);
             if (flow == X86Flow::Call) {
-                const auto* prototype = FindApiPrototype(CalleeName(current, functionArch));
+                const auto* prototype = CalleePrototype(current, functionArch);
                 if (prototype)
                     nameArguments(*prototype);
                 registers.fill(std::nullopt); // the callee changes the volatile registers; the arguments are consumed
@@ -2231,6 +2281,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         if (!analyzed || frame.variables.empty())
             return;
+        // the prototype the user gave the function (Y): its arguments first (the names of the calls do not replace them)
+        if (const auto* prototype = zone->FindUserPrototype(relativeAddress))
+            NameArgumentsFromPrototype(frame, *prototype, functionArch);
         NameVariablesFromCalls(frame, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch);
         // the structures the user gave (Alt+Q), over the variables and the structures of the analysis
         const auto& userStructures = zone->userVariableStructures;
@@ -4696,6 +4749,31 @@ void DissasmCodeZone::RecordUserFunctionsEdit(std::map<uint64, uint8> before, ui
     RecordEdit(std::move(edit));
 }
 
+const AsmFunctionDetails* DissasmCodeZone::FindUserPrototype(uint64 functionStart) const
+{
+    if (userPrototypes.empty())
+        return nullptr;
+    const auto text = userPrototypes.find(functionStart);
+    if (text == userPrototypes.end())
+        return nullptr;
+    auto& parsed = parsedUserPrototypes[functionStart];
+    if (parsed.first != text->second || (!parsed.second && parsed.first.empty())) {
+        parsed.first  = text->second;
+        parsed.second = ParseUserPrototype(text->second);
+    }
+    return parsed.second ? &parsed.second->details : nullptr;
+}
+
+void DissasmCodeZone::RecordUserPrototypesEdit(std::map<uint64, std::string> before, uint64 address)
+{
+    DissasmEdit edit;
+    edit.kind             = DissasmEdit::Kind::UserPrototypes;
+    edit.address          = address;
+    edit.prototypesBefore = std::move(before);
+    edit.prototypesAfter  = userPrototypes;
+    RecordEdit(std::move(edit));
+}
+
 bool DissasmCodeZone::SetRepeatableComment(uint64 address, const std::string& text)
 {
     const auto found = repeatableComments.find(address);
@@ -4863,6 +4941,9 @@ bool DissasmCodeZone::ApplyEdit(const DissasmEdit& edit, bool forward)
     case DissasmEdit::Kind::VariableStructures:
         userVariableStructures = forward ? edit.structuresAfter : edit.structuresBefore; // the caller analyzes the zone again
         break;
+    case DissasmEdit::Kind::UserPrototypes:
+        userPrototypes = forward ? edit.prototypesAfter : edit.prototypesBefore; // the caller analyzes the zone again
+        break;
     case DissasmEdit::Kind::RepeatableComment: {
         const auto& text = forward ? edit.after : edit.before;
         if (text.has_value())
@@ -4913,7 +4994,7 @@ static DissasmEditPlace GetEditPlace(const DissasmEdit& edit)
     place.onLabel   = edit.kind == DissasmEdit::Kind::LabelName || edit.kind == DissasmEdit::Kind::VariableName ||
                     (edit.kind == DissasmEdit::Kind::Comment && edit.anchor.kind != DissasmCommentAnchor::Kind::Instruction);
     place.reanalyze = edit.kind == DissasmEdit::Kind::DataRanges || edit.kind == DissasmEdit::Kind::UserFunctions ||
-                      edit.kind == DissasmEdit::Kind::VariableStructures;
+                      edit.kind == DissasmEdit::Kind::VariableStructures || edit.kind == DissasmEdit::Kind::UserPrototypes;
     return place;
 }
 
@@ -5048,6 +5129,8 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
         line.autoComment = FormatXrefsSummary(line.address); // who uses it
         if (const auto attributes = FormatFunctionAttributes(line.address); !attributes.empty()) // IDA: ; Attributes: noreturn
             line.autoComment = "Attributes: " + attributes + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
+        if (const auto* prototype = FindUserPrototype(line.address)) // IDA: the prototype of the function above it (Y)
+            line.autoComment = std::string(prototype->prototype) + (line.autoComment.empty() ? std::string() : "; " + line.autoComment);
         if (const auto* chunk = FindChunkContaining(line.address); chunk && chunk->start == line.address) { // IDA: START OF FUNCTION CHUNK FOR
             std::string function = GetLabelNameAt(chunk->function);
             if (function.empty())

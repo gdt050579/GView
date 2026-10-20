@@ -1220,8 +1220,8 @@ std::vector<std::byte> MutateRecord(const std::vector<std::byte>& record, std::m
 TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
 {
     // the records of a zone with every kind of user data: the current record (version 4), the line keyed records of the versions 1 and 2,
-    // the user data, the user functions, the user structures, the operand structures, the bookmarks and the repeatable comments records;
-    // mutated (a fixed seed: the same mutants on every run) and loaded into a zone
+    // the user data, the user functions, the user structures, the operand structures, the bookmarks, the repeatable comments and the
+    // prototypes records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
     DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
     std::string_view labelName = "isPrime";
     REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
@@ -1247,8 +1247,9 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
     std::vector<std::byte> userStructures, operandStructures;
     UserVariableStructuresToBuffer({ { { 0x30, -0x20 }, "SYSTEMTIME" }, { { 0x5, -8 }, "" } }, userStructures);
     OperandStructuresToBuffer({ { 0x30, "STARTUPINFOW" }, { 0x5, "FILETIME" } }, operandStructures);
-    std::vector<std::byte> bookmarks, repeatableComments;
+    std::vector<std::byte> bookmarks, repeatableComments, prototypes;
     BookmarksToBuffer({ { 0x30, "the decryption loop" }, { 0x5, "x" } }, bookmarks);
+    UserPrototypesToBuffer({ { 0x30, "int decrypt(char* buffer, int size)" }, { 0x5, "void f()" } }, prototypes);
     RepeatableCommentsToBuffer({ { 0x30, "decrypts the configuration" }, { 0x5, "y" } }, repeatableComments);
 
     // GVIEW_FUZZ_ROUNDS=<rounds> [GVIEW_FUZZ_SEED=<seed>]: a longer run with other mutants (a local fuzzing campaign)
@@ -1311,6 +1312,11 @@ TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
         repeatableCache.AddRegion("DissasmRepeatableComments.0", repeatableData.data(), static_cast<uint32>(repeatableData.size()));
         for (const auto& [address, text] : ReadRepeatableComments(repeatableCache, *edited.zone))
             REQUIRE((address < edited.zone->zoneDetails.size && !text.empty() && text.size() <= DISSASM_MAX_REPEATABLE_COMMENT_SIZE));
+        const auto prototypesData = MutateRecord(prototypes, random);
+        DissasmCache prototypesCache;
+        prototypesCache.AddRegion("DissasmUserPrototypes.0", prototypesData.data(), static_cast<uint32>(prototypesData.size()));
+        for (const auto& [address, text] : ReadUserPrototypes(prototypesCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && ParseUserPrototype(text) != nullptr));
         std::vector<std::byte> variables;
         edited.zone->localVariables.ToBuffer(variables);
         const auto variablesData = MutateRecord(variables, random);
@@ -7788,6 +7794,181 @@ TEST_CASE("RepeatableComments", "[Dissasm]UserData")
     REQUIRE(ReadRepeatableComments(cache, zone) == zone.repeatableComments);
 }
 
+TEST_CASE("UserPrototypes", "[Dissasm]UserData")
+{
+    // the text of a prototype
+    REQUIRE(ParseUserPrototype("int decrypt(char* buffer, int size)") != nullptr);
+    const auto parsed = ParseUserPrototype("  unsigned long long __fastcall hash(const unsigned char* data, size_t length, ...)  ");
+    REQUIRE(parsed != nullptr);
+    REQUIRE(parsed->details.functionName == "hash");
+    REQUIRE(parsed->details.returnType == "unsigned long long __fastcall"); // the convention is a word of the type
+    REQUIRE(parsed->details.params.size() == 2);
+    REQUIRE(std::string_view(parsed->details.params[0].type) == "const unsigned char*");
+    REQUIRE(std::string_view(parsed->details.params[1].name) == "length");
+    REQUIRE(ParseUserPrototype("void init(void)")->details.params.empty());
+    REQUIRE(ParseUserPrototype("int f(int)") == nullptr);                   // a parameter without a name
+    REQUIRE(ParseUserPrototype("int f(int a, void (*cb)(int))") == nullptr); // a pointer to a function
+    REQUIRE(ParseUserPrototype("int 9f(int a)") == nullptr);
+    REQUIRE(ParseUserPrototype("int f int a") == nullptr);
+    REQUIRE(ParseUserPrototype("int f(int a) trailing") == nullptr);
+    REQUIRE(ParseUserPrototype("") == nullptr);
+    REQUIRE(ParseUserPrototype("int f(" + std::string(600, 'a') + " b)") == nullptr); // too long
+
+    // x64 (Windows): the caller passes 5 and &var_10 to sub_40 and keeps what it returns in var_4; sub_40 keeps its arguments in the home space
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x30,       // 0x04: sub rsp, 0x30
+        0x48, 0x8D, 0x55, 0xF0,       // 0x08: lea rdx, [rbp - 0x10]
+        0xB9, 0x05, 0x00, 0x00, 0x00, // 0x0c: mov ecx, 5
+        0xE8, 0x2A, 0x00, 0x00, 0x00, // 0x11: call 0x40
+        0x89, 0x45, 0xFC,             // 0x16: mov dword ptr [rbp - 4], eax
+        0x48, 0x89, 0xEC,             // 0x19: mov rsp, rbp
+        0x5D,                         // 0x1c: pop rbp
+        0xC3,                         // 0x1d: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,                   // 0x40: push rbp
+                                  0x48, 0x89, 0xE5,       // 0x41: mov rbp, rsp
+                                  0x89, 0x4D, 0x10,       // 0x44: mov dword ptr [rbp + 0x10], ecx
+                                  0x48, 0x89, 0x55, 0x18, // 0x47: mov qword ptr [rbp + 0x18], rdx
+                                  0x8B, 0x45, 0x10,       // 0x4b: mov eax, dword ptr [rbp + 0x10]
+                                  0x5D,                   // 0x4e: pop rbp
+                                  0xC3,                   // 0x4f: ret
+                            });
+    file.resize(0x60, 0xCC);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40 });
+    const auto variable = [&zone](uint64 function, int32 offset) {
+        const auto* frame = zone.localVariables.FindFunctionByStart(function);
+        REQUIRE(frame != nullptr);
+        const auto* found = frame->FindVariable(offset);
+        REQUIRE(found != nullptr);
+        return *found;
+    };
+    const auto analysis = [&]() {
+        REQUIRE(variable(0x00, -0x10).name == "var_10");
+        REQUIRE(variable(0x00, -4).name == "var_4");
+        REQUIRE(variable(0x40, 0x10).name == "arg_0");
+    };
+    analysis();
+
+    // Y on sub_40, a new analysis
+    const auto before        = zone.userPrototypes;
+    zone.userPrototypes[0x40] = "int decrypt(int count, char* buffer)";
+    zone.RecordUserPrototypesEdit(before, 0x40);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const auto user = [&]() {
+        // its arguments (the home space), the variables of the caller passed to it and the value it returns
+        REQUIRE(variable(0x40, 0x10).name == "count");
+        REQUIRE(variable(0x40, 0x10).type == "int");
+        REQUIRE(variable(0x40, 0x10).origin == "argument of decrypt");
+        REQUIRE(variable(0x40, 0x18).name == "buffer");
+        REQUIRE(variable(0x00, -0x10).name == "buffer");
+        REQUIRE(variable(0x00, -0x10).type == "char");
+        REQUIRE(variable(0x00, -4).name == "decrypt_result");
+        REQUIRE(variable(0x00, -4).type == "int");
+    };
+    user();
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("int decrypt(int count, char* buffer)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "mov    ecx, 5").ends_with("; count"));
+    REQUIRE(FindListingLine(listing, "lea    rdx, [rbp + buffer]").ends_with("; buffer"));
+    REQUIRE(variable(0x40, 0x10).analysisName == "count"); // the analysis: not a rename of the user
+    REQUIRE_FALSE(BuildAnnotationsDocument({ &zone }, "sample.bin")["zones"][0].contains("variables"));
+
+    // Ctrl+Z / Ctrl+Y: a new analysis each time
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && place->reanalyze));
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    analysis();
+    place = zone.RedoEdit();
+    REQUIRE((place.has_value() && place->reanalyze));
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    user();
+
+    // the annotations into a new instance (a text that is not a prototype skipped)
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["prototypes"].size() == 1);
+    document["zones"][0]["prototypes"].push_back({ { "function", "0x0" }, { "prototype", "not a prototype" } });
+    DissasmTestInstance fresh(file.data(), file.size(), true, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.prototypes == 1);
+    REQUIRE(result.skipped >= 1);
+    REQUIRE(fresh.zone->userPrototypes == zone.userPrototypes);
+    REQUIRE(fresh.zone->localVariables.FindFunctionByStart(0x00)->FindVariable(-4)->name == "decrypt_result");
+
+    // the cache record: a text that is not a prototype, a function outside of the zone dropped
+    auto texts    = zone.userPrototypes;
+    texts[0x00]   = "int f int";
+    texts[0x1000] = "int g(int a)";
+    std::vector<std::byte> buffer;
+    UserPrototypesToBuffer(texts, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserPrototypes.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserPrototypes(cache, zone) == zone.userPrototypes);
+}
+
+TEST_CASE("UserPrototypesX86Arguments", "[Dissasm]UserData")
+{
+    // 32 bit: the arguments in the stack: arg_0, arg_4 then a 64 bit one (arg_8, 8 bytes), arg_10
+    std::vector<unsigned char> file = {
+        0x6A, 0x04,                   // 0x00: push 4
+        0x6A, 0x03,                   // 0x02: push 3
+        0x6A, 0x02,                   // 0x04: push 2
+        0x6A, 0x01,                   // 0x06: push 1
+        0x6A, 0x00,                   // 0x08: push 0
+        0xE8, 0x11, 0x00, 0x00, 0x00, // 0x0a: call 0x20
+        0x83, 0xC4, 0x14,             // 0x0f: add esp, 0x14
+        0xC3,                         // 0x12: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,             // 0x20: push ebp
+                                  0x89, 0xE5,       // 0x21: mov ebp, esp
+                                  0x8B, 0x45, 0x08, // 0x23: mov eax, dword ptr [ebp + 8]   (arg_0)
+                                  0x03, 0x45, 0x0C, // 0x26: add eax, dword ptr [ebp + 0xc] (arg_4)
+                                  0x03, 0x45, 0x10, // 0x29: add eax, dword ptr [ebp + 0x10] (arg_8)
+                                  0x03, 0x45, 0x18, // 0x2c: add eax, dword ptr [ebp + 0x18] (arg_10)
+                                  0x5D,             // 0x2f: pop ebp
+                                  0xC3,             // 0x30: ret
+                            });
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone              = *dissasmInstance.zone;
+    zone.userPrototypes[0x20] = "int sum(int a, int b, __int64 wide, int last)";
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x20);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(8)->name == "a");
+    REQUIRE(frame->FindVariable(0xc)->name == "b");
+    REQUIRE(frame->FindVariable(0x10)->name == "wide");
+    REQUIRE(frame->FindVariable(0x18)->name == "last");
+    // the pushes of the call name the arguments (the last push is the first argument)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "push   0").ends_with("; a"));
+    REQUIRE(FindListingLine(listing, "push   1").ends_with("; b"));
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does
@@ -7918,6 +8099,7 @@ TEST_CASE("UntrustedDocumentsFuzz", "[Dissasm]UserData")
     zone.operandStructures      = { { 0x05, "STARTUPINFOW" } };
     zone.bookmarks              = { { 0x10, "the helper" } };
     zone.repeatableComments     = { { 0x10, "returns 0" } };
+    zone.userPrototypes         = { { 0x10, "int helper(char* text, int size)" } };
     const auto annotations = BuildAnnotationsDocument({ &zone }, "sample.bin");
     const auto signatures  = BuildSignaturesDocument({ &zone });
 

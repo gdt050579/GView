@@ -401,6 +401,15 @@ namespace View
         // Find / Allocate (GetProcAddress -> ProcAddress, CreateFileW -> File: the A / W ending too, ExAllocatePoolWithTag -> PoolWithTag),
         // else the function and _result (malloc_result; a BOOL / NTSTATUS / HRESULT status: CreateProcess_result)
         std::string GetReturnValueName(const AsmFunctionDetails& function);
+        // a prototype the user writes for a function (IDA Y): "int decrypt(char* buf, int len)" parsed as the ones of the APIs; its texts are
+        // kept with it. Null when it is not one: no parentheses, a name / a parameter name that is not an identifier, a parameter without a
+        // name, a pointer to a function as a parameter, more than DISSASM_MAX_USER_PROTOTYPE_SIZE characters
+        constexpr size_t DISSASM_MAX_USER_PROTOTYPE_SIZE = 512;
+        struct DissasmUserPrototype {
+            std::deque<std::string> strings;
+            AsmFunctionDetails details;
+        };
+        std::shared_ptr<const DissasmUserPrototype> ParseUserPrototype(std::string_view text);
         // the structures the APIs take by address (STARTUPINFOW, WIN32_FIND_DATAW, PROCESS_INFORMATION, ...; DissasmApiStructures.cpp), laid
         // out for 32 or 64 bit code; null when it is not known
         const DissasmApiStructure* FindApiStructure(std::string_view name, bool is64);
@@ -680,6 +689,10 @@ namespace View
         // (DISSASM_MAX_REPEATABLE_COMMENT_SIZE) or an address outside of the zone dropped
         std::map<uint64, std::string> ReadRepeatableComments(const DissasmCache& cache, const DissasmCodeZone& zone);
         void RepeatableCommentsToBuffer(const std::map<uint64, std::string>& comments, std::vector<std::byte>& buffer);
+        // the prototypes the user gave to the functions of a code zone (DissasmCodeZone::userPrototypes, Y), saved in the cache; a text that is
+        // not a prototype or a function outside of the zone dropped
+        std::map<uint64, std::string> ReadUserPrototypes(const DissasmCache& cache, const DissasmCodeZone& zone);
+        void UserPrototypesToBuffer(const std::map<uint64, std::string>& prototypes, std::vector<std::byte>& buffer);
         constexpr size_t DISSASM_MAX_REPEATABLE_COMMENT_SIZE = 64 * 1024;
         // a name the record and the annotations accept: empty (no structure) or the name of a structure (letters, digits, _)
         bool IsValidUserStructureName(std::string_view name);
@@ -1048,6 +1061,8 @@ namespace View
             void ShowBookmarks();
             // IDA ;: the repeatable comment of the label / the instruction of the cursor line (shown on the lines that refer to it too)
             void AddRepeatableComment();
+            // IDA Y: the prototype of the function of the cursor line (empty: none), then a new analysis of the zone
+            void SetFunctionPrototype();
             // the zone analyzed again; the cursor goes back to `keepAddress` (relative) when given. background: a big zone shows its lines at
             // once and its deep scan continues in the frame updates (the annotations come back when it ends, EndDeepScan); otherwise the whole
             // analysis runs now (ReanalyzeCodeZone)
@@ -1138,10 +1153,11 @@ namespace View
             std::string data;
             Reference<TextField> textField;
 
+            bool allowEmpty = false; // an empty text is a valid answer (it removes what the text was)
             void Validate();
 
           public:
-            SingleLineEditWindow(std::string initialText, const char* title);
+            SingleLineEditWindow(std::string initialText, const char* title, bool allowEmptyText = false);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline std::string GetResult() const
             {

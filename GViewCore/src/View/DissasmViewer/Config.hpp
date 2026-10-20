@@ -52,6 +52,7 @@ constexpr uint32 COMMAND_MARK_POSITION         = 145;
 constexpr uint32 COMMAND_SHOW_BOOKMARKS        = 146;
 constexpr uint32 COMMAND_ADD_REPEATABLE_COMMENT = 147;
 constexpr uint32 COMMAND_SHOW_IMPORTS          = 148;
+constexpr uint32 COMMAND_SET_PROTOTYPE         = 149;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -361,6 +362,10 @@ namespace View
             inline static KeyboardControl SetOperandStructureCommand = {
                 Input::Key::T, "SetOperandStructure", "Show the displacement of the memory operand as a field of a structure ([rbx + STARTUPINFOW.dwFlags])", COMMAND_SET_OPERAND_STRUCTURE
             };
+            // IDA Y (set type of a function)
+            inline static KeyboardControl SetPrototypeCommand = {
+                Input::Key::Y, "SetPrototype", "Set the prototype of the function of the line (its calls name their arguments)", COMMAND_SET_PROTOTYPE
+            };
             // IDA Alt+M / Ctrl+M (marked positions)
             inline static KeyboardControl MarkPositionCommand = {
                 Input::Key::Alt | Input::Key::M, "MarkPosition", "Bookmark the line with a description (again: edit it)", COMMAND_MARK_POSITION
@@ -401,7 +406,7 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 34> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 35> KeyEventCommands = {
                 &AcceptAISuggestionCommand,
                 &DismissAISuggestionCommand,
                 &MoveDownCommand,
@@ -436,6 +441,7 @@ namespace View
                 &MarkPositionCommand,
                 &ShowBookmarksCommand,
                 &AddOrEditRepeatableCommentCommand,
+                &SetPrototypeCommand,
             };
             inline static Input::KeyMap Map;
 

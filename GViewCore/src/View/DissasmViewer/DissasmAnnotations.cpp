@@ -191,6 +191,13 @@ json GView::View::DissasmViewer::ExportZoneAnnotations(DissasmCodeZone& zone)
     if (!repeatable.empty())
         result["repeatableComments"] = std::move(repeatable);
 
+    // the prototypes of the functions (Y)
+    json prototypes = json::array();
+    for (const auto& [address, text] : zone.userPrototypes)
+        prototypes.push_back({ { "function", Hex(base + address) }, { "prototype", text } });
+    if (!prototypes.empty())
+        result["prototypes"] = std::move(prototypes);
+
     json names = json::array();
     for (const auto& [address, name] : zone.GetUserLabelNames())
         names.push_back({ { "address", Hex(base + address) }, { "name", name } });
@@ -333,6 +340,25 @@ void GView::View::DissasmViewer::ImportZoneAnnotations(DissasmCodeZone& zone, co
         }
         zone.operandStructures[address.value()] = name;
         result.operandStructures++;
+    }
+
+    if (zoneJson.contains("prototypes")) {
+        auto prototypes = zone.userPrototypes;
+        for (const auto& item : ArrayField(zoneJson, "prototypes")) {
+            const auto function = item.is_object() && item.contains("function") ? rebase(item["function"]) : std::nullopt;
+            const auto text     = item.is_object() ? StringField(item, "prototype", DISSASM_MAX_USER_PROTOTYPE_SIZE) : std::nullopt;
+            if (!function.has_value() || !text.has_value() || !ParseUserPrototype(text.value())) {
+                result.skipped++;
+                continue;
+            }
+            prototypes[function.value()] = text.value();
+            result.prototypes++;
+        }
+        if (prototypes != zone.userPrototypes) {
+            zone.userPrototypes = std::move(prototypes);
+            if (std::find(result.zonesToReanalyze.begin(), result.zonesToReanalyze.end(), &zone) == result.zonesToReanalyze.end())
+                result.zonesToReanalyze.push_back(&zone);
+        }
     }
 
     for (const auto& item : ArrayField(zoneJson, "repeatableComments")) {
@@ -489,12 +515,14 @@ bool GView::View::DissasmViewer::ImportAnnotationsDocument(
     const uint32 dataRanges = result.dataRanges;
     const uint32 functions  = result.functions;
     const uint32 structures = result.structures;
+    const uint32 prototypes = result.prototypes;
     result                  = {};
     if (!ImportAnnotationsDocument(document, zones, result, error))
         return false;
     result.dataRanges = dataRanges;
     result.functions  = functions;
     result.structures = structures;
+    result.prototypes = prototypes;
     for (auto* zone : reanalyzed)
         if (std::find(result.zonesWithNewLines.begin(), result.zonesWithNewLines.end(), zone) == result.zonesWithNewLines.end())
             result.zonesWithNewLines.push_back(zone); // its lines changed
