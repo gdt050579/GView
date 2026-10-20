@@ -634,7 +634,7 @@ void GView::View::DissasmViewer::FormatLocalVariableDefinition(const DissasmLoca
     text     = variable.name;
     nameSize = static_cast<uint32>(variable.name.size());
     text += " = ";
-    text += GetOperandSizeName(variable.size);
+    text += variable.structure ? std::string_view(variable.structure->name) : GetOperandSizeName(variable.size); // StartupInfo = STARTUPINFOW ptr
     text += " ptr ";
 
     // same number format as the capstone operands ([ebp - 8], [ebp - 0x44])
@@ -653,8 +653,8 @@ void GView::View::DissasmViewer::FormatLocalVariableDefinition(const DissasmLoca
 
 std::string GView::View::DissasmViewer::FormatLocalVariableOrigin(const DissasmLocalVariable& variable)
 {
-    if (variable.type.empty() || variable.origin.empty())
-        return variable.type.empty() ? variable.origin : variable.type;
+    if (variable.type.empty() || variable.origin.empty() || variable.structure) // a structure: its type is on the line already
+        return variable.type.empty() || variable.structure ? variable.origin : variable.type;
     return variable.type + ", " + variable.origin;
 }
 

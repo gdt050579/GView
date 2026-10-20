@@ -1809,7 +1809,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // argument too (the pointed type when its address is passed: PHKEY -> HKEY). Beyond IDA (its decompiler does it): the value an API
     // returns (rax / x0 / r0 after the call, copied by mov) stored in a slot gives the slot the type of the return and, when no argument
     // names it, a name after the API (mov [rbp + var_8], rax after CreateFileW -> File). The first use of a slot in the code (passed or
-    // stored) gives its type, as the first call gives its name: a slot the compiler reuses for other values keeps one meaning
+    // stored) gives its type, as the first call gives its name: a slot the compiler reuses for other values keeps one meaning. A slot
+    // whose address is passed loses the lp of the argument (IDA: lpNumberOfBytesRead -> NumberOfBytesRead); when the argument points to a
+    // structure (FindApiStructure: lpStartupInfo -> STARTUPINFOW), the slot is that structure and the slots inside it are its fields
     void NameVariablesFromCalls(DissasmFunctionFrame& frame, const uint8* code, size_t codeLength, uint64 start, uint64 limit, DissasmArch functionArch)
     {
         // only a function that calls a known API is decoded again (its calls: the flow records of the sweep)
@@ -1862,6 +1864,27 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::vector<std::pair<int32, const AsmFunctionDetails*>> returnStores; // the slots whose first use is a return value stored there
         const auto slotValue = [](std::optional<int32> offset, bool isAddress) {
             return offset.has_value() ? std::optional<SlotValue>(SlotValue{ offset.value(), isAddress }) : std::nullopt;
+        };
+        // the structure of the type of the variable: the variables inside it are removed (its fields); not when it would cover the saved
+        // registers / the return address (a local below 0 that ends above it) or another structure
+        const auto ApplyStructure = [&](DissasmLocalVariable& variable) {
+            const auto* structure = FindApiStructure(variable.type, functionArch == DissasmArch::X64 || functionArch == DissasmArch::Arm64);
+            if (!structure)
+                return;
+            const int64 start = variable.frameOffset, end = start + structure->size;
+            if (start < 0 && end > 0)
+                return;
+            const auto first = std::upper_bound(frame.variables.begin(), frame.variables.end(), variable.frameOffset, [](int32 offset, const DissasmLocalVariable& var) {
+                return offset < var.frameOffset;
+            });
+            auto last = first;
+            while (last != frame.variables.end() && last->frameOffset < end) {
+                if (last->structure)
+                    return;
+                ++last;
+            }
+            variable.structure = structure;
+            frame.variables.erase(first, last); // after the variable: its address stays valid
         };
         const auto storeReturn = [&](std::optional<int32> offset, const AsmFunctionDetails* function) {
             auto* variable = offset.has_value() ? frame.FindVariable(offset.value()) : nullptr;
@@ -1934,11 +1957,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     source = stackArgs[index];
                 if (!source.has_value())
                     continue;
-                auto* variable           = frame.FindVariable(source->offset);
-                const std::string_view name = prototype.params[index].name;
+                auto* variable                 = frame.FindVariable(source->offset);
+                const std::string_view argument = prototype.params[index].name;
+                std::string_view name           = argument;
+                if (source->isAddress && name.size() > 2 && name.starts_with("lp") && std::isalpha(static_cast<unsigned char>(name[2])))
+                    name.remove_prefix(2); // the variable is what the argument points to
                 if (variable && variable->origin.empty()) { // the first call that passes it
                     variable->type   = source->isAddress ? GetPointedType(prototype.params[index].type) : std::string(prototype.params[index].type);
-                    variable->origin = std::string(name) + " of " + std::string(prototype.functionName);
+                    variable->origin = std::string(argument) + " of " + std::string(prototype.functionName);
+                    if (source->isAddress)
+                        ApplyStructure(*variable);
                 }
                 if (!variable || !(variable->name.starts_with("var_") || variable->name.starts_with("arg_")) || !IsValidLocalVariableName(name) ||
                     frame.HasVariableNamed(name))

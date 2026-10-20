@@ -511,12 +511,12 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
               zone->IsArm64Code() ? std::string_view("x29") : (function && function->frameRegister == 11 ? std::string_view("fp") : std::string_view("r7"));
         if (function && FindArmFrameOperand(text, frameRegister, slot) && (slot.isStackPointerBased || function->usesFrameRegister)) {
             frameOperand = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + function->stackOffset : slot.displacement };
-            variable     = function->FindVariable(frameOperand.frameOffset);
+            variable     = function->FindVariableContaining(frameOperand.frameOffset);
             joiner       = slot.needsSeparator ? std::string_view(", #") : std::string_view();
         }
     } else if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
         function = zone->FindFrameOfAddress(address); // a chunk: the frame of its function
-        variable = function && function->usesFrameRegister ? function->FindVariable(frameOperand.frameOffset) : nullptr;
+        variable = function && function->usesFrameRegister ? function->FindVariableContaining(frameOperand.frameOffset) : nullptr;
     } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
                stackFunction && !stackFunction->usesFrameRegister &&
                (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp") ||
@@ -528,7 +528,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         const auto delta   = viaCopy ? std::optional<int32>(function->stackAliasDelta) : function->StackDeltaAt(address);
         if (delta.has_value()) {
             frameOperand.frameOffset += delta.value();
-            variable = function->FindVariable(frameOperand.frameOffset);
+            variable = function->FindVariableContaining(frameOperand.frameOffset);
             if (delta.value() != 0) {
                 char depth[24];
                 snprintf(depth, sizeof(depth), " + 0x%x + ", static_cast<unsigned int>(-delta.value()));
@@ -552,12 +552,18 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         return;
     }
 
+    // a field of a structure: [rbp + StartupInfo.dwFlags], the first one for an access at its start ([rbp + StartupInfo.cb]; lea: the
+    // structure). The line refers to the structure: a rename renames it
+    std::string name = variable->name;
+    if (variable->structure)
+        name += FormatApiStructureMember(
+              *variable->structure, static_cast<uint32>(frameOperand.frameOffset - variable->frameOffset), strcmp(mnemonic, "lea") != 0);
     std::string rewritten;
-    rewritten.reserve(text.size() + variable->name.size() + 3u);
+    rewritten.reserve(text.size() + name.size() + 3u);
     rewritten.append(text.substr(0, frameOperand.replaceStart));
     rewritten.append(joiner);
     localVariableNameStart = static_cast<uint32>(rewritten.size());
-    rewritten.append(variable->name);
+    rewritten.append(name);
     rewritten.append(text.substr(frameOperand.replaceEnd));
     if (decimalMask != 0)
         rewritten = FormatOperandNumbers(rewritten, decimalMask, &localVariableNameStart);
@@ -566,8 +572,8 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     op_str_size           = static_cast<uint32>(rewritten.size());
     localVariableKind     = LocalVariableKind::Reference;
     localVariableFunction = function->startAddress;
-    localVariableOffset   = frameOperand.frameOffset;
-    localVariableNameSize = static_cast<uint32>(variable->name.size());
+    localVariableOffset   = variable->frameOffset;
+    localVariableNameSize = static_cast<uint32>(name.size());
 }
 
 const MemoryMappingEntry* GView::View::DissasmViewer::FindX86OperandsImport(SettingsData* settings, const DissasmCodeZone* zone, const X86OperandsInfo& operands)

@@ -35,6 +35,7 @@ target_sources(
 	DissasmSignatures.hpp
 	DissasmSignatures.cpp
 	DissasmApiPrototypes.cpp
+	DissasmApiStructures.cpp
 	DissasmAssistantRequest.cpp
 	DissasmIOHelpers.hpp
 

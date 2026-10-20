@@ -5,6 +5,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmIOHelpers.hpp"
 #include "DissasmFunctionUtils.hpp"
+#include "x86_x64/DissasmX86LocalVariables.hpp"
 
 #include <algorithm>
 #include <map>
@@ -763,7 +764,20 @@ bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer)
     append_bytes(buffer, DISSASM_CODE_ZONE_CACHE_VERSION);
     userComments.ToBuffer(buffer);
     LabelNamesToBuffer(GetUserLabelNames(), buffer);
-    localVariables.ToBuffer(buffer);
+    // the variables the user did not rename are saved with their default names (var_8): the next analysis names them again, a name that a
+    // newer version gives (6s: File, 6t: NumberOfBytesRead) is not taken back from the cache as a rename of the user. The name of the
+    // analysis stays when the default one is the name the user gave to another variable of the function
+    DissasmLocalVariables variables = localVariables;
+    std::string defaultName;
+    for (auto& function : variables.functions)
+        for (auto& variable : function.variables) {
+            if (variable.analysisName.empty() || variable.name != variable.analysisName)
+                continue;
+            FormatDefaultLocalVariableName(variable.frameOffset, Is64BitCode(), defaultName);
+            if (!function.HasVariableNamed(defaultName))
+                variable.name = defaultName;
+        }
+    variables.ToBuffer(buffer);
     DecimalOperandsToBuffer(decimalOperands, buffer);
     CollapsibleZonesToBuffer(GetCollapsibleZoneAnchors(), buffer);
     aiComments.ToBuffer(buffer);
@@ -784,11 +798,15 @@ static void ApplyAddressKeyedVariables(DissasmCodeZone& zone, const DissasmLocal
         if (cachedFunction && !cachedFunction->FindVariable(GetLocalVariableAnnotationOffset(details.second)))
             removedLines.push_back(line); // sorted: the annotations are ordered by line
     }
+    std::string defaultName;
     for (const auto& cachedFunction : variables.functions) {
         auto freshFunction = zone.localVariables.FindFunctionByStart(cachedFunction.startAddress);
         if (!freshFunction)
             continue;
         for (const auto& cachedVariable : cachedFunction.variables) {
+            FormatDefaultLocalVariableName(cachedVariable.frameOffset, zone.Is64BitCode(), defaultName);
+            if (cachedVariable.name == defaultName)
+                continue; // not renamed by the user: the name of the analysis
             auto freshVariable = freshFunction->FindVariable(cachedVariable.frameOffset);
             if (freshVariable && freshVariable->name != cachedVariable.name && !freshFunction->HasVariableNamed(cachedVariable.name))
                 freshVariable->name = cachedVariable.name;
@@ -867,6 +885,7 @@ static bool ApplyCachedZoneData(
             cachedVariable.analysisName = freshVariable->analysisName;
             cachedVariable.type         = freshVariable->type;
             cachedVariable.origin       = freshVariable->origin;
+            cachedVariable.structure    = freshVariable->structure;
         }
     }
 

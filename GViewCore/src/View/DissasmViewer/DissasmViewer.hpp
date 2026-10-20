@@ -401,6 +401,13 @@ namespace View
         // Find / Allocate (GetProcAddress -> ProcAddress, CreateFileW -> File: the A / W ending too, ExAllocatePoolWithTag -> PoolWithTag),
         // else the function and _result (malloc_result; a BOOL / NTSTATUS / HRESULT status: CreateProcess_result)
         std::string GetReturnValueName(const AsmFunctionDetails& function);
+        // the structures the APIs take by address (STARTUPINFOW, WIN32_FIND_DATAW, PROCESS_INFORMATION, ...; DissasmApiStructures.cpp), laid
+        // out for 32 or 64 bit code; null when it is not known
+        const DissasmApiStructure* FindApiStructure(std::string_view name, bool is64);
+        size_t GetApiStructuresCount(bool is64);
+        // the field at an offset of the structure, as IDA writes it after the variable: .dwFlags, .ftLastWriteTime.dwHighDateTime,
+        // .cFileName+2, +0x46 (the padding); the offset 0 is the variable itself (lea), or its first field for an access of the memory (.cb)
+        std::string FormatApiStructureMember(const DissasmApiStructure& structure, uint32 offset, bool memoryAccess = false);
 
         struct DissasmAsmPreCacheData {
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;

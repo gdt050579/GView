@@ -249,6 +249,22 @@ namespace View
             bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
 
+        // a structure of the Windows / C API (STARTUPINFOW, WIN32_FIND_DATAW; FindApiStructure), laid out for 32 or 64 bit code
+        struct DissasmApiStructure {
+            struct Field {
+                std::string name;
+                std::string type;
+                uint32 offset      = 0;
+                uint32 elementSize = 0; // the size of the type (of one element of an array)
+                uint32 count       = 1; // the elements of an array (cFileName[260])
+                const DissasmApiStructure* structure = nullptr; // a field that is a structure of the table (FILETIME)
+            };
+            std::string name;
+            uint32 size      = 0;
+            uint32 alignment = 1;
+            std::vector<Field> fields; // in their order
+        };
+
         constexpr uint32 DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION = 512;
         constexpr uint32 DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE     = 128;
 
@@ -264,6 +280,8 @@ namespace View
             // where it comes from ("phkResult of RegOpenKeyExW", "returned by CreateFileW")
             std::string type;
             std::string origin;
+            // a structure the APIs fill (its address passed as lpStartupInfo): the slots inside it are its fields, not variables (not saved)
+            const DissasmApiStructure* structure = nullptr;
         };
 
         // Frame of a function that uses a frame pointer (push ebp; mov ebp, esp). Addresses use the same base as the instructions drawn
@@ -292,6 +310,8 @@ namespace View
             DissasmLocalVariable* FindVariable(int32 frameOffset);
             const DissasmLocalVariable* FindVariable(int32 frameOffset) const;
             bool HasVariableNamed(std::string_view name) const;
+            // the variable of a slot: the one at the offset, or the structure that contains it ([rbp - 0x64] in StartupInfo at -0x70)
+            const DissasmLocalVariable* FindVariableContaining(int32 frameOffset) const;
         };
 
         struct DissasmLocalVariables {

@@ -5158,7 +5158,8 @@ TEST_CASE("VariableTypesAndReturnValues", "[Dissasm]Help")
 {
     // the value returned by GetProcessHeap kept in var_8: ProcessHeap (HANDLE); the one of CreateFileW copied to rbx then to var_10, then
     // passed to CloseHandle: hObject (the argument names it), its type and origin from the return; &var_18 the lpSystemTimeAsFileTime of
-    // GetSystemTimeAsFileTime: FILETIME; the BOOL of CreateDirectoryW in var_20; eax overwritten (xor) before var_24: nothing
+    // GetSystemTimeAsFileTime: the FILETIME SystemTimeAsFileTime (its address: without lp); the BOOL of CreateDirectoryW in var_20; eax
+    // overwritten (xor) before var_24: nothing
     std::vector<unsigned char> file = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x40 }; // push rbp; mov rbp, rsp; sub rsp, 0x40
     const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
         const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
@@ -5207,14 +5208,15 @@ TEST_CASE("VariableTypesAndReturnValues", "[Dissasm]Help")
     };
     check(-8, "ProcessHeap", "HANDLE", "returned by GetProcessHeap");
     check(-0x10, "hObject", "HANDLE", "returned by CreateFileW");
-    check(-0x18, "lpSystemTimeAsFileTime", "FILETIME", "lpSystemTimeAsFileTime of GetSystemTimeAsFileTime");
+    check(-0x18, "SystemTimeAsFileTime", "FILETIME", "lpSystemTimeAsFileTime of GetSystemTimeAsFileTime");
+    CHECK(frame->FindVariable(-0x18)->structure == FindApiStructure("FILETIME", true));
     check(-0x20, "CreateDirectory_result", "BOOL", "returned by CreateDirectoryW");
     check(-0x24, "var_24", "", "");
     // the variable lines: the type and the origin as a comment; the names of the analysis are not the user's (not in the annotations)
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
     REQUIRE(FindListingLine(listing, "ProcessHeap = qword ptr -8").ends_with("; HANDLE, returned by GetProcessHeap"));
-    REQUIRE(FindListingLine(listing, "lpSystemTimeAsFileTime = byte ptr").ends_with("; FILETIME, lpSystemTimeAsFileTime of GetSystemTimeAsFileTime"));
+    REQUIRE(FindListingLine(listing, "SystemTimeAsFileTime = FILETIME ptr -0x18").ends_with("; lpSystemTimeAsFileTime of GetSystemTimeAsFileTime"));
     REQUIRE(FindListingLine(listing, "mov    qword ptr [rbp + hObject], rbx").size() > 0);
     REQUIRE(FindListingLine(listing, "var_24 = dword ptr").find(';') == std::string_view::npos);
     REQUIRE_FALSE(BuildAnnotationsDocument({ &zone }, "sample.bin")["zones"][0].contains("variables"));
@@ -5222,6 +5224,29 @@ TEST_CASE("VariableTypesAndReturnValues", "[Dissasm]Help")
     auto* renamed = zone.localVariables.functions[0].FindVariable(-8);
     renamed->name = "hHeap";
     REQUIRE(FormatLocalVariableOrigin(*renamed) == "HANDLE, returned by GetProcessHeap");
+
+    // the cache: the rename of the user comes back; a name of the analysis is saved as the default name, the next analysis names the
+    // variable again (an older version named it oldName: not a rename of the user)
+    auto* older         = zone.localVariables.functions[0].FindVariable(-0x10);
+    older->name         = "oldName";
+    older->analysisName = "oldName";
+    std::vector<std::byte> buffer;
+    REQUIRE(zone.ToBuffer(buffer));
+    const std::string saved(reinterpret_cast<const char*>(buffer.data()), buffer.size());
+    REQUIRE(saved.find("hHeap") != std::string::npos);
+    REQUIRE(saved.find("oldName") == std::string::npos);
+    REQUIRE(saved.find("var_10") != std::string::npos);
+    DissasmTestInstance restored(file.data(), file.size(), true, layout);
+    auto cache      = std::make_unique<DissasmCache>();
+    cache->hasCache = true;
+    cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+    bool zoneLinesChanged = false;
+    REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+    const auto* restoredFrame = restored.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(restoredFrame->FindVariable(-8)->name == "hHeap");
+    REQUIRE(restoredFrame->FindVariable(-0x10)->name == "hObject");
+    REQUIRE(restoredFrame->FindVariable(-0x20)->name == "CreateDirectory_result");
+    REQUIRE(restoredFrame->FindVariable(-0x24)->name == "var_24");
 }
 
 TEST_CASE("VariableReturnValuesArm64", "[Dissasm]Help")
@@ -5262,6 +5287,176 @@ TEST_CASE("VariableReturnValuesArm64", "[Dissasm]Help")
     REQUIRE(frame->FindVariable(-0xc) != nullptr);
     CHECK(frame->FindVariable(-0xc)->name == "open_result");
     CHECK(frame->FindVariable(-0xc)->origin == "returned by open");
+}
+
+TEST_CASE("ApiStructureLayouts", "[Dissasm]Help")
+{
+    // the sizes of the SDK, 32 and 64 bit
+    const auto sizeOf = [](std::string_view name, bool is64) {
+        const auto* structure = FindApiStructure(name, is64);
+        INFO(name << (is64 ? " 64" : " 32"));
+        REQUIRE(structure != nullptr);
+        return structure->size;
+    };
+    const std::pair<std::string_view, std::pair<uint32, uint32>> SIZES[] = {
+        { "FILETIME", { 8, 8 } },
+        { "SYSTEMTIME", { 16, 16 } },
+        { "STARTUPINFOW", { 68, 104 } },
+        { "STARTUPINFOA", { 68, 104 } },
+        { "PROCESS_INFORMATION", { 16, 24 } },
+        { "WIN32_FIND_DATAW", { 592, 592 } },
+        { "WIN32_FIND_DATAA", { 320, 320 } },
+        { "PROCESSENTRY32", { 296, 304 } },
+        { "PROCESSENTRY32W", { 556, 568 } },
+        { "MODULEENTRY32", { 548, 568 } },
+        { "MODULEENTRY32W", { 1064, 1080 } },
+        { "THREADENTRY32", { 28, 28 } },
+        { "MEMORY_BASIC_INFORMATION", { 28, 48 } },
+        { "SYSTEM_INFO", { 36, 48 } },
+        { "MSG", { 28, 48 } },
+        { "SECURITY_ATTRIBUTES", { 12, 24 } },
+        { "OVERLAPPED", { 20, 32 } },
+        { "CRITICAL_SECTION", { 24, 40 } },
+        { "SHELLEXECUTEINFOW", { 60, 112 } },
+        { "WSADATA", { 400, 408 } },
+        { "TOKEN_PRIVILEGES", { 16, 16 } },
+        { "UNICODE_STRING", { 8, 16 } },
+        { "OBJECT_ATTRIBUTES", { 24, 48 } },
+        { "IO_STATUS_BLOCK", { 8, 16 } },
+        { "sockaddr", { 16, 16 } },
+    };
+    for (const auto& [name, sizes] : SIZES) {
+        CHECK(sizeOf(name, false) == sizes.first);
+        CHECK(sizeOf(name, true) == sizes.second);
+    }
+    REQUIRE(FindApiStructure("CONTEXT", true) == nullptr);
+    REQUIRE(GetApiStructuresCount(true) == GetApiStructuresCount(false));
+    // the fields as IDA writes them after the variable
+    const auto& findData = *FindApiStructure("WIN32_FIND_DATAW", true);
+    REQUIRE(FormatApiStructureMember(findData, 0).empty());
+    REQUIRE(FormatApiStructureMember(findData, 0, true) == ".dwFileAttributes"); // an access of the memory: the first field
+    REQUIRE(FormatApiStructureMember(findData, 0x14) == ".ftLastWriteTime.dwLowDateTime");
+    REQUIRE(FormatApiStructureMember(findData, 0x18) == ".ftLastWriteTime.dwHighDateTime");
+    REQUIRE(FormatApiStructureMember(findData, 0x2c) == ".cFileName");
+    REQUIRE(FormatApiStructureMember(findData, 0x2e) == ".cFileName+2");
+    REQUIRE(FormatApiStructureMember(findData, 0x234) == ".cAlternateFileName");
+    REQUIRE(FormatApiStructureMember(findData, 0x260) == "+0x260"); // past the end
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("STARTUPINFOW", true), 0x3c) == ".dwFlags");
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("STARTUPINFOW", false), 0x2c) == ".dwFlags");
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("STARTUPINFOW", true), 4) == "+4"); // the padding before lpReserved
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("TOKEN_PRIVILEGES", true), 0xc) == ".Privileges.Attributes");
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("PROCESS_INFORMATION", true), 0x10) == ".dwProcessId");
+    // the A / W structures of the prototypes
+    REQUIRE(GetPointedType(FindApiPrototype("FindFirstFileW")->params[1].type) == "WIN32_FIND_DATAW");
+    REQUIRE(GetPointedType(FindApiPrototype("CreateProcessA")->params[8].type) == "STARTUPINFOA");
+}
+
+TEST_CASE("FrameStructuresFromApis", "[Dissasm]Help")
+{
+    // x64: &var_80 is the lpStartupInfo of CreateProcessW ([rsp + 0x40]) and &var_18 its lpProcessInformation ([rsp + 0x48]): the
+    // structures StartupInfo and ProcessInformation, the slots inside them are their fields (cb, dwFlags, wShowWindow, hThread, dwProcessId)
+    std::vector<unsigned char> file = {
+        0x55,                                     // 0x00: push rbp
+        0x48, 0x89, 0xE5,                         // 0x01: mov rbp, rsp
+        0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00, // 0x04: sub rsp, 0xa0
+        0xC7, 0x45, 0x80, 0x68, 0x00, 0x00, 0x00, // mov dword ptr [rbp - 0x80], 0x68  (cb)
+        0xC7, 0x45, 0xBC, 0x01, 0x00, 0x00, 0x00, // mov dword ptr [rbp - 0x44], 1     (dwFlags)
+        0x66, 0xC7, 0x45, 0xC0, 0x00, 0x00,       // mov word ptr [rbp - 0x40], 0      (wShowWindow)
+        0x48, 0x8D, 0x45, 0xE8,                   // lea rax, [rbp - 0x18]
+        0x48, 0x89, 0x44, 0x24, 0x48,             // mov qword ptr [rsp + 0x48], rax   (lpProcessInformation)
+        0x48, 0x8D, 0x45, 0x80,                   // lea rax, [rbp - 0x80]
+        0x48, 0x89, 0x44, 0x24, 0x40,             // mov qword ptr [rsp + 0x40], rax   (lpStartupInfo)
+    };
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    call(0x100);                                         // CreateProcessW
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xE8 }); // mov rcx, qword ptr [rbp - 0x18] (hProcess)
+    call(0x108);                                         // CloseHandle
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xF0 }); // mov rcx, qword ptr [rbp - 0x10] (hThread)
+    call(0x108);                                         // CloseHandle
+    file.insert(file.end(), { 0x8B, 0x45, 0xF8 });       // mov eax, dword ptr [rbp - 8] (dwProcessId)
+    file.insert(file.end(), { 0x48, 0x89, 0xEC, 0x5D, 0xC3 }); // mov rsp, rbp; pop rbp; ret
+    REQUIRE(file.size() < 0x100);
+    file.resize(0x110, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x100;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x100, { "CreateProcessW", MemoryMappingType::FunctionMapping } }, { 0x108, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    std::vector<std::string> names;
+    for (const auto& variable : frame->variables)
+        names.push_back(variable.name);
+    REQUIRE(names == std::vector<std::string>{ "StartupInfo", "ProcessInformation" });
+    REQUIRE(frame->variables[0].frameOffset == -0x80);
+    REQUIRE(frame->variables[0].structure == FindApiStructure("STARTUPINFOW", true));
+    REQUIRE(frame->FindVariableContaining(-0x44) == &frame->variables[0]);
+    REQUIRE(frame->FindVariableContaining(-0x19) == &frame->variables[0]); // the end of StartupInfo
+    REQUIRE(frame->FindVariableContaining(-0x18) == &frame->variables[1]);
+    REQUIRE(frame->FindVariableContaining(-0x81) == nullptr);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "StartupInfo = STARTUPINFOW ptr -0x80").ends_with("; lpStartupInfo of CreateProcessW"));
+    REQUIRE(FindListingLine(listing, "ProcessInformation = PROCESS_INFORMATION ptr -0x18").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    dword ptr [rbp + StartupInfo.cb], 0x68").size() > 0);
+    REQUIRE(FindListingLine(listing, "lea    rax, [rbp + StartupInfo]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    rcx, qword ptr [rbp + ProcessInformation.hProcess]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    dword ptr [rbp + StartupInfo.dwFlags], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + StartupInfo.wShowWindow], 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    rcx, qword ptr [rbp + ProcessInformation.hThread]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, dword ptr [rbp + ProcessInformation.dwProcessId]").size() > 0);
+    REQUIRE(listing.find("var_44") == std::string::npos);
+
+    // a rename of the structure (its definition line or a field of an instruction) renames its fields too
+    REQUIRE(zone.RenameLocalVariable(0x00, -0x80, "si").ok);
+    const std::string renamed = dissasmInstance.GetListing();
+    INFO(renamed);
+    REQUIRE(FindListingLine(renamed, "mov    dword ptr [rbp + si.dwFlags], 1").size() > 0);
+}
+
+TEST_CASE("FrameStructuresX86", "[Dissasm]Help")
+{
+    // 32 bit: the address of the slot pushed as the lpFindFileData of FindFirstFileW: FindFileData (WIN32_FIND_DATAW, 0x250 bytes) and its
+    // fields, the nested FILETIME of ftLastWriteTime
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push ebp
+        0x89, 0xE5,                         // 0x01: mov ebp, esp
+        0x81, 0xEC, 0x50, 0x02, 0x00, 0x00, // 0x03: sub esp, 0x250
+        0x8D, 0x85, 0xB0, 0xFD, 0xFF, 0xFF, // 0x09: lea eax, [ebp - 0x250]
+        0x50,                               // 0x0f: push eax
+        0xFF, 0x75, 0x08,                   // 0x10: push dword ptr [ebp + 8]
+        0xFF, 0x15, 0x80, 0x10, 0x40, 0x00, // 0x13: call dword ptr [0x401080] (FindFirstFileW)
+        0x8D, 0x8D, 0xDC, 0xFD, 0xFF, 0xFF, // 0x19: lea ecx, [ebp - 0x224] (cFileName)
+        0x8B, 0x85, 0xC8, 0xFD, 0xFF, 0xFF, // 0x1f: mov eax, dword ptr [ebp - 0x238] (ftLastWriteTime.dwHighDateTime)
+        0x89, 0xEC,                         // 0x25: mov esp, ebp
+        0x5D,                               // 0x27: pop ebp
+        0xC3,                               // 0x28: ret
+    };
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "FindFirstFileW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x250) != nullptr);
+    REQUIRE(frame->FindVariable(-0x250)->name == "FindFileData");
+    REQUIRE(frame->FindVariable(-0x250)->structure == FindApiStructure("WIN32_FIND_DATAW", false));
+    REQUIRE(frame->FindVariable(8)->name == "lpFileName"); // a value: the name of the argument
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "lea    ecx, [ebp + FindFileData.cFileName]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, dword ptr [ebp + FindFileData.ftLastWriteTime.dwHighDateTime]").size() > 0);
 }
 
 TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")

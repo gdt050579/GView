@@ -305,6 +305,18 @@ const DissasmLocalVariable* DissasmFunctionFrame::FindVariable(int32 frameOffset
     return const_cast<DissasmFunctionFrame*>(this)->FindVariable(frameOffset);
 }
 
+const DissasmLocalVariable* DissasmFunctionFrame::FindVariableContaining(int32 frameOffset) const
+{
+    auto it = std::upper_bound(
+          variables.begin(), variables.end(), frameOffset, [](int32 offset, const DissasmLocalVariable& var) { return offset < var.frameOffset; });
+    if (it == variables.begin())
+        return nullptr;
+    --it;
+    if (it->frameOffset == frameOffset)
+        return &(*it);
+    return it->structure && static_cast<int64>(frameOffset) < static_cast<int64>(it->frameOffset) + it->structure->size ? &(*it) : nullptr;
+}
+
 bool DissasmFunctionFrame::HasVariableNamed(std::string_view name) const
 {
     for (const auto& var : variables)
