@@ -311,6 +311,9 @@ namespace View
                 std::optional<uint64> frameOf;
             };
             std::vector<StackAlias> stackAliases;
+            // a chunk of a function (its cold code: Settings::AddFunctionChunk): its slots are the variables of that function (by start), its
+            // stack deltas in the offsets of that frame; it has no variable of its own. Recomputed by the deep scan
+            std::optional<uint64> variablesOf;
             std::optional<int32> StackDeltaAt(uint64 address) const
             {
                 const auto next = std::upper_bound(

@@ -221,6 +221,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     };
     std::vector<FuncletLink> funcletLinks;
     std::unordered_multimap<uint64, size_t> funcletsOfParent; // the funclets of a function (their top function), by its start
+    std::vector<DissasmFunctionFrame> pendingChunkFrames;      // AddChunkFrames: the frames of the chunks, until Commit
     std::unordered_map<uint64, std::vector<DissasmCodeZone::ExceptionMark>> exceptionMarks; // DissasmCodeZone::exceptionMarks
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
@@ -1015,15 +1016,32 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the function (DissasmCodeZone::functionChunks), the ends of the functions are computed again
     void DetectFunctionChunks()
     {
-        if (functionStarts.size() < 2 || functionEnds.size() != functionStarts.size())
+        if (functionStarts.empty() || functionEnds.size() != functionStarts.size())
             return;
         const auto containing = [this](uint64 address) -> std::optional<size_t> {
             const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), address);
             return next == functionStarts.begin() ? std::nullopt : std::optional<size_t>(static_cast<size_t>(next - functionStarts.begin()) - 1);
         };
+        // the chunks the plugin gives (x64 chained unwind data), exact: before the ones the jumps tell
+        if (functionEntries)
+            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+                for (const auto& [chunk, size] : it->second.chunks) {
+                    const uint64 function = it->first - codeStart;
+                    if (chunk < codeStart || chunk - codeStart >= codeSize || size == 0 || chunk == it->first ||
+                        !std::binary_search(functionStarts.begin(), functionStarts.end(), function))
+                        continue;
+                    chunks.push_back({ chunk - codeStart, std::min<uint64>(chunk - codeStart + size, codeSize), function });
+                }
+        std::sort(chunks.begin(), chunks.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
+        const auto inPluginChunk = [this](uint64 address) {
+            const auto next = std::upper_bound(chunks.begin(), chunks.end(), address, [](uint64 value, const auto& chunk) { return value < chunk.start; });
+            return next != chunks.begin() && address < (next - 1)->end;
+        };
         std::unordered_map<size_t, size_t> parentOf; // index of a chunk -> index of its function
         for (size_t index = 0; index < functionStarts.size(); index++) {
             const uint64 start = functionStarts[index];
+            if (inPluginChunk(start))
+                continue;
             if ((zone->zoneDetails.HasEntryPoint() && codeStart + start == zone->zoneDetails.entryPoint) ||
                 (functionEntries && functionEntries->contains(codeStart + start)) || thunkImports.contains(start))
                 continue;
@@ -1059,7 +1077,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (jumpsBack)
                 parentOf[index] = parent.value();
         }
-        if (parentOf.empty())
+        if (parentOf.empty() && chunks.empty())
             return;
         // a chunk of a chunk belongs to the function at the end of the chain
         for (const auto& [index, parent] : parentOf) {
@@ -1593,12 +1611,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     AddFunctionStart(codeStart + target);
         }
         // the __except blocks of x64 SEH (reached by the unwinding only, after the jmp that ends their __try): a label, as IDA
+        // the chunks of the functions (x64 chained unwind data) as well
         if (functionEntries)
-            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it) {
                 for (const auto& scope : it->second.exceptionScopes)
                     if (scope.target >= codeStart && scope.target - codeStart < blockStarts.size() && blockStarts[scope.target - codeStart] &&
                         callsMap.insert({ scope.target, true }).second)
                         callsFound.emplace_back(scope.target, zone->GetLabelName("loc_", scope.target - codeStart));
+                for (const auto& chunk : it->second.chunks)
+                    if (chunk.first >= codeStart && chunk.first - codeStart < blockStarts.size() && blockStarts[chunk.first - codeStart] &&
+                        callsMap.insert({ chunk.first, true }).second)
+                        callsFound.emplace_back(chunk.first, zone->GetLabelName("loc_", chunk.first - codeStart));
+            }
         // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
         if (zone->zoneDetails.HasEntryPoint()) {
             callsFound.erase(
@@ -1840,6 +1864,52 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         alias->delta   = static_cast<int32>(alias->delta + establisher.value());
         alias->frameOf = link.parent;
         return alias;
+    }
+
+    // the chunks of a function without a frame register (its cold code: the chained unwind data elsewhere): their stack from the depth of
+    // its body (after its prologue), its callee saved aliases there (lea rbp, [rsp - 0x5f]); their slots are its variables. Their frames
+    // (no variable of their own: DissasmFunctionFrame::variablesOf) join the frames in Commit
+    void AddChunkFrames(DissasmFunctionFrame& frame, const DissasmFunctionEntry& entry)
+    {
+        const uint64 prologEnd = frame.startAddress + entry.prologSize;
+        const auto bodyDelta   = frame.StackDeltaAt(prologEnd);
+        if (!bodyDelta.has_value() || prologEnd >= frame.endAddress)
+            return;
+        std::vector<DissasmFunctionFrame::StackAlias> aliases;
+        for (const auto& alias : frame.stackAliases)
+            if (!alias.frameOf.has_value() && alias.start <= prologEnd && prologEnd < alias.end)
+                aliases.push_back(alias);
+        for (const auto& [chunkOffset, chunkSize] : entry.chunks) {
+            if (chunkOffset < codeStart || chunkOffset - codeStart >= codeSize || chunkSize == 0)
+                continue;
+            const uint64 start = chunkOffset - codeStart;
+            const uint64 size  = std::min<uint64>({ chunkSize, codeSize - start, DISSASM_MAX_ANALYZED_FUNCTION_SIZE });
+            const auto bytes   = obj->GetData().CopyToBuffer(chunkOffset, static_cast<uint32>(size), false);
+            if (!bytes.IsValid())
+                continue;
+            DissasmFunctionFrame chunkFrame{};
+            if (!AnalyzeX64ChunkFrame(detailHandle, bytes.GetData(), bytes.GetLength(), start, start + size, bodyDelta.value(), aliases, chunkFrame,
+                                      [this](const cs_insn& call) { return noReturnCalls.contains(call.address); }))
+                continue;
+            MergeFrameVariables(frame, std::move(chunkFrame.variables));
+            chunkFrame.variables.clear();
+            chunkFrame.variablesOf = frame.startAddress;
+            pendingChunkFrames.push_back(std::move(chunkFrame));
+        }
+    }
+
+    // the frames of the chunks (AddChunkFrames) among the frames (sorted, never overlapping)
+    void MergeChunkFrames()
+    {
+        std::sort(pendingChunkFrames.begin(), pendingChunkFrames.end(), [](const auto& left, const auto& right) { return left.startAddress < right.startAddress; });
+        const auto byStart = [](const DissasmFunctionFrame& frame, uint64 value) { return frame.startAddress < value; };
+        for (auto& chunk : pendingChunkFrames) {
+            const auto next = std::lower_bound(frames.begin(), frames.end(), chunk.startAddress, byStart);
+            if ((next != frames.end() && next->startAddress < chunk.endAddress) || (next != frames.begin() && (next - 1)->endAddress > chunk.startAddress))
+                continue;
+            frames.insert(next, std::move(chunk));
+        }
+        pendingChunkFrames.clear();
     }
 
     // the slots the funclets of the function use (through the establisher frame) are variables of its frame
@@ -3700,9 +3770,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                       is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); }),
                       [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
         }
+        bool readOtherCode = false;
         if (analyzed && functionArch == DissasmArch::X64 && funcletsOfParent.contains(relativeAddress)) {
             AddFuncletSlots(frame); // x64 SEH / C++ EH: the slots of the frame only the funclets use
-            // the bytes of the funclets were read through the same cache: the view of the function is read again
+            readOtherCode = true;
+        }
+        if (analyzed && functionArch == DissasmArch::X64 && !frame.usesFrameRegister && functionEntries)
+            if (const auto entry = functionEntries->find(callValue); entry != functionEntries->end() && !entry->second.chunks.empty()) {
+                AddChunkFrames(frame, entry->second); // x64: the chunks of the function (its cold code), on its frame
+                readOtherCode = true;
+            }
+        if (readOtherCode) { // the bytes of the funclets / chunks were read through the same cache: the view of the function is read again
             functionData = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
             if (!functionData.IsValid())
                 return;
@@ -3928,6 +4006,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);
         zone->dissasmType.annotations   = std::move(annotations);
+        MergeChunkFrames();
         LinkFuncletFrames();
         zone->localVariables.functions  = std::move(frames);
         zone->exceptionMarks            = std::move(exceptionMarks);
@@ -5810,6 +5889,15 @@ std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
         }
         text.SetFormat("0x%llx", static_cast<unsigned long long>(labelAddressBase + relativeAddress));
         return text.GetText();
+    }
+    // a chunk: the function it belongs to (IDA: sub_X+0x4D5B2; a chunk placed before its function: sub_X-0x120)
+    if (const auto* chunk = FindChunkContaining(relativeAddress)) {
+        std::string name = GetLabelNameAt(chunk->function);
+        if (name.empty())
+            name = GetLabelName("sub_", chunk->function);
+        const bool before = relativeAddress < chunk->function;
+        text.SetFormat(before ? "-0x%llX" : "+0x%llX", static_cast<unsigned long long>(before ? chunk->function - relativeAddress : relativeAddress - chunk->function));
+        return name + text.GetText();
     }
     // the function that contains the address: the last function start placed before it
     const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);

@@ -536,7 +536,9 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         // [rbp + 0xf] -> [rbp + 0x5f + var_50])
         // a funclet of x64 SEH: rbp is the establisher frame of its function, the slots are the variables of the function
         std::optional<int32> delta;
-        const DissasmFunctionFrame* owner = stackFunction;
+        // a chunk of a function (its cold code): the variables of the function
+        const DissasmFunctionFrame* owner =
+              stackFunction->variablesOf.has_value() ? zone->localVariables.FindFunctionByStart(stackFunction->variablesOf.value()) : stackFunction;
         if (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp"))
             delta = stackFunction->StackDeltaAt(address);
         else

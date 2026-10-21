@@ -1861,6 +1861,12 @@ namespace View
              */
             void AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionFunclet>& funclets);
             /**
+             * \brief A chunk of the function at `functionFileOffset` (its cold code elsewhere: x64 chained unwind data): `size` bytes at
+             * `chunkFileOffset`. The chunk runs on the frame of the function after its prologue (`functionPrologSize` bytes): its stack
+             * slots are the variables of the function.
+             */
+            void AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize);
+            /**
              * rief Adds a file offset where an instruction starts (the start of a code section): the disassembly never decodes an
              * instruction across it (the padding between two sections does not hide the code that follows). The function entries are
              * boundaries as well.

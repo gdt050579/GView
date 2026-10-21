@@ -8943,6 +8943,60 @@ TEST_CASE("X64ExceptionScopes", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000089  mov    dword ptr [rbp - 0x10 + var_4], 0").size() > 0);
 }
 
+TEST_CASE("X64FunctionChunks", "[Dissasm]Help")
+{
+    // x64 chained unwind data elsewhere: a chunk of the function (its cold code, reached by a jcc, jumping back), on the frame of the
+    // function after its prologue: rsp at -0x50, the biased rbp (-0x20) live; its slots are variables of the function
+    std::vector<unsigned char> file = {
+        0x53,                                           // 0x00: push rbx
+        0x55,                                           // 0x01: push rbp
+        0x48, 0x8D, 0x6C, 0x24, 0xF0,                   // 0x02: lea rbp, [rsp - 0x10]      (rbp: -0x20)
+        0x48, 0x83, 0xEC, 0x40,                         // 0x07: sub rsp, 0x40              (the body: -0x50)
+        0xC7, 0x44, 0x24, 0x30, 0x00, 0x00, 0x00, 0x00, // 0x0b: mov dword ptr [rsp + 0x30], 0 (the slot -0x20)
+        0x85, 0xC9,                                     // 0x13: test ecx, ecx
+        0x0F, 0x85, 0x65, 0x00, 0x00, 0x00,             // 0x15: jne 0x80                   (the chunk)
+        0x8B, 0x44, 0x24, 0x30,                         // 0x1b: mov eax, dword ptr [rsp + 0x30]
+        0x48, 0x83, 0xC4, 0x40,                         // 0x1f: add rsp, 0x40
+        0x5D,                                           // 0x23: pop rbp
+        0x5B,                                           // 0x24: pop rbx
+        0xC3,                                           // 0x25: ret
+    };
+    file.resize(0x80, 0xCC);
+    const std::vector<unsigned char> chunk = {
+        0xC7, 0x44, 0x24, 0x28, 0x01, 0x00, 0x00, 0x00, // 0x80: mov dword ptr [rsp + 0x28], 1 (the slot -0x28: only the chunk)
+        0xC7, 0x45, 0x10, 0x02, 0x00, 0x00, 0x00,       // 0x88: mov dword ptr [rbp + 0x10], 2 (the slot -0x10: only the chunk)
+        0xE9, 0x87, 0xFF, 0xFF, 0xFF,                   // 0x8f: jmp 0x1b
+        0xC7, 0x44, 0x24, 0x28, 0x03, 0x00, 0x00, 0x00, // 0x94: mov dword ptr [rsp + 0x28], 3 (another part: the depth of the body)
+        0xE9, 0x7A, 0xFF, 0xFF, 0xFF,                   // 0x9c: jmp 0x1b
+    };
+    file.insert(file.end(), chunk.begin(), chunk.end());
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0x00;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.functionEntries  = { { 0x00, { "", 0x26, false, {}, 0x0b, 0, 0, {}, { { 0x80, 0x21 } } } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    const auto* found = zone.FindChunkContaining(0x88);
+    REQUIRE(found != nullptr);
+    REQUIRE(found->function == 0x00);
+    REQUIRE(found->start == 0x80);
+    REQUIRE(zone.FormatCodeAddress(0x88) == zone.GetLabelNameAt(0x00) + "+0x88"); // an address of the chunk: in its function
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x28) != nullptr);
+    REQUIRE(frame->FindVariable(-0x10) != nullptr);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("var_28 = dword ptr -0x28") != std::string::npos);
+    REQUIRE(FindListingLine(listing, "0x00000080  mov    dword ptr [rsp + 0x50 + var_28], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000088  mov    dword ptr [rbp + 0x20 + var_10], 2").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000001b  mov    eax, dword ptr [rsp + 0x50 + var_20]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000094  mov    dword ptr [rsp + 0x50 + var_28], 3").size() > 0);
+}
+
 TEST_CASE("X64CppExceptionFunclets", "[Dissasm]Help")
 {
     // the C++ exception handling of x64 (FuncInfo of __CxxFrameHandler4): a catch block of a try, an unwind funclet, a catch block of a try

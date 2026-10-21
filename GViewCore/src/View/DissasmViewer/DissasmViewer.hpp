@@ -595,6 +595,7 @@ namespace View
             uint8 frameRegister = 0;
             uint8 frameOffset   = 0;
             std::vector<ExceptionFunclet> exceptionFunclets; // the C++ exception handling (Settings::AddExceptionFunclets)
+            std::vector<std::pair<uint64, uint64>> chunks;   // its chunks (Settings::AddFunctionChunk): file offset, size
         };
 
         struct DissasmCodeZoneInitData {

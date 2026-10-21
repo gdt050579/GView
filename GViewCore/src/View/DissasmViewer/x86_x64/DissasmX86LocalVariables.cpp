@@ -270,6 +270,12 @@ enum StackPushReading : uint8 {
     LATE_SAVES_ARE_ARGUMENTS   = 2, // push esi after a call (esi not written yet): an argument instead of a saved register (shrink wrapping)
 };
 
+// a chunk of a function (AnalyzeX64ChunkFrame): the depth of the stack at its start, the aliases of the stack pointer live there
+struct ChunkEntry {
+    int64 delta;
+    const std::vector<DissasmFunctionFrame::StackAlias>* aliases;
+};
+
 // AnalyzeX86StackFrame with a reading of the ambiguous pushes; `ambiguousPushes` receives the readings that the function needs
 StackFrameResult AnalyzeStackPointerFrame(
       csh detailHandle,
@@ -282,7 +288,8 @@ StackFrameResult AnalyzeStackPointerFrame(
       const X86CalleeStackPurge& calleePurge,
       const X86CallNoReturn& callNoReturn,
       uint8 reading,
-      uint8& ambiguousPushes)
+      uint8& ambiguousPushes,
+      const ChunkEntry* chunk = nullptr)
 {
     frame.startAddress      = codeAddress;
     frame.endAddress        = codeAddress;
@@ -304,11 +311,11 @@ StackFrameResult AnalyzeStackPointerFrame(
     uint64 address              = codeAddress;
     uint64 furthestBranchTarget = 0;
     uint32 decodedInstructions  = 0;
-    int64 delta                 = 0; // the stack pointer - the one of the entry
-    int64 deepest               = 0;
-    int64 bodyDelta             = 0;     // the depth after the prologue (the saved registers, sub esp)
+    int64 delta                 = chunk ? chunk->delta : 0; // the stack pointer - the one of the entry
+    int64 deepest               = delta;
+    int64 bodyDelta             = delta; // the depth after the prologue (the saved registers, sub esp)
     bool calledYet              = false; // __chkstk is the first call; push esi after a call may be an argument
-    bool leadingPushes          = true;  // the pushes at the entry (push ecx: a local, not an argument)
+    bool leadingPushes          = !chunk; // the pushes at the entry (push ecx: a local, not an argument)
     uint32 writtenFamilies      = 0;     // the registers written so far (a saved register is pushed before it is written)
     int64 pushedArguments       = 0;     // 32 bit: the bytes pushed since the previous call (the arguments of the next call)
     std::optional<int64> unknownPurge;   // 32 bit: the arguments of a call to an unknown callee, popped unless the caller cleans up
@@ -334,7 +341,7 @@ StackFrameResult AnalyzeStackPointerFrame(
     std::map<uint64, int64> branchDeltas; // the depth at the targets of the forward branches
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
-    frame.stackDeltas.emplace_back(codeAddress, 0);
+    frame.stackDeltas.emplace_back(codeAddress, static_cast<int32>(delta));
     const auto setDelta = [&](uint64 at, int64 value) {
         delta = value;
         if (frame.stackDeltas.back().first == at)
@@ -349,6 +356,22 @@ StackFrameResult AnalyzeStackPointerFrame(
         return reg == X86_REG_EBX || reg == X86_REG_EBP || reg == X86_REG_ESI || reg == X86_REG_EDI;
     };
 
+    // a chunk: the callee saved aliases of its function (a volatile one does not survive the jumps to the chunk), at its start and at
+    // every part of it after a ret / jmp (each part is reached from the body of the function)
+    std::vector<ActiveAlias> chunkAliases;
+    if (chunk && chunk->aliases && is64)
+        for (const auto& alias : *chunk->aliases)
+            for (const x86_reg reg : { X86_REG_RBX, X86_REG_RBP, X86_REG_RSI, X86_REG_RDI, X86_REG_R12, X86_REG_R13, X86_REG_R14, X86_REG_R15 })
+                if (alias.reg == cs_reg_name(detailHandle, reg))
+                    chunkAliases.push_back({ reg, alias.delta, 0 });
+    const auto openAliases = [&](const std::vector<ActiveAlias>& opened, uint64 at) {
+        for (const auto& alias : opened)
+            if (!aliasOf(alias.reg) && frame.stackAliases.size() < MAX_STACK_ALIASES) {
+                aliases.push_back({ alias.reg, alias.delta, frame.stackAliases.size() });
+                frame.stackAliases.push_back({ cs_reg_name(detailHandle, alias.reg), static_cast<int32>(alias.delta), at, at });
+            }
+    };
+    openAliases(chunkAliases, codeAddress);
     while (decodedInstructions < MAX_FUNCTION_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
         decodedInstructions++;
         const cs_insn* current   = insn.get();
@@ -364,15 +387,14 @@ StackFrameResult AnalyzeStackPointerFrame(
         // the depth before this instruction: after a ret / jmp the one of a branch to it, after a call to an unknown callee its arguments
         // are popped (stdcall) unless the caller cleans up (cdecl: add esp, 8)
         if (flowEnded) {
+            // a chunk: the next part is reached from the body of the function, with its depth
             const auto known = branchDeltas.find(current->address);
-            setDelta(current->address, known != branchDeltas.end() ? known->second : (is64 ? deepest : bodyDelta));
+            setDelta(current->address, known != branchDeltas.end() ? known->second : chunk ? chunk->delta : (is64 ? deepest : bodyDelta));
             // the aliases of the branch to it (the body after an early epilogue: pop rbp; ret ended rbp)
             if (const auto saved = branchAliases.find(current->address); saved != branchAliases.end())
-                for (const auto& alias : saved->second)
-                    if (!aliasOf(alias.reg) && frame.stackAliases.size() < MAX_STACK_ALIASES) {
-                        aliases.push_back({ alias.reg, alias.delta, frame.stackAliases.size() });
-                        frame.stackAliases.push_back({ cs_reg_name(detailHandle, alias.reg), static_cast<int32>(alias.delta), current->address, current->address });
-                    }
+                openAliases(saved->second, current->address);
+            else if (chunk)
+                openAliases(chunkAliases, current->address);
             flowEnded = false;
             unknownPurge.reset();
             pushedArguments = 0;
@@ -596,14 +618,14 @@ StackFrameResult AnalyzeStackPointerFrame(
             break;
         }
         if (endsFlow) {
-            if (furthestBranchTarget < nextAddress)
+            if (furthestBranchTarget < nextAddress && !chunk) // a chunk: its parts up to its end
                 break;
             flowEnded = true; // the code after an epilogue: reached through a branch of the body
         }
     }
     if (!is64 && !reachedRet)
         return StackFrameResult::Rejected; // no ret: the depth of the entry is not the one of a function (a chunk of another one)
-    if (accesses.empty() || !CompactAccesses(accesses))
+    if ((accesses.empty() && !chunk) || !CompactAccesses(accesses)) // a chunk without slots: its aliases, its depths
         return StackFrameResult::Rejected;
     frame.stackOffset = static_cast<int32>(deepest);
     frame.variables.reserve(accesses.size());
@@ -638,6 +660,41 @@ bool GView::View::DissasmViewer::AnalyzeX86StackFrame(
         if ((reading & ~firstAmbiguousPushes) == 0)
             result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, reading, ambiguousPushes);
     return result == StackFrameResult::Accepted;
+}
+
+bool GView::View::DissasmViewer::AnalyzeX64ChunkFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      int32 entryDelta,
+      const std::vector<DissasmFunctionFrame::StackAlias>& entryAliases,
+      DissasmFunctionFrame& frame,
+      const X86CallNoReturn& callNoReturn)
+{
+    uint8 ambiguousPushes = 0;
+    const ChunkEntry chunk{ entryDelta, &entryAliases };
+    return AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, true, frame, {}, callNoReturn, 0, ambiguousPushes, &chunk) ==
+           StackFrameResult::Accepted;
+}
+
+bool GView::View::DissasmViewer::MergeFrameVariables(DissasmFunctionFrame& frame, std::vector<DissasmLocalVariable>&& variables)
+{
+    bool added = false;
+    for (auto& variable : variables) {
+        if (frame.variables.size() >= DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION)
+            return false;
+        if (frame.FindVariableContaining(variable.frameOffset) || frame.HasVariableNamed(variable.name))
+            continue;
+        frame.variables.push_back(std::move(variable));
+        added = true;
+    }
+    if (added)
+        std::sort(frame.variables.begin(), frame.variables.end(), [](const DissasmLocalVariable& a, const DissasmLocalVariable& b) {
+            return a.frameOffset < b.frameOffset;
+        });
+    return true;
 }
 
 std::optional<DissasmFunctionFrame::StackAlias> GView::View::DissasmViewer::FindX64EstablisherFrameAlias(
@@ -728,21 +785,16 @@ bool GView::View::DissasmViewer::AddX64FuncletSlots(
         return true;
     if (!CompactAccesses(accesses))
         return false;
-    bool added = false;
+    std::vector<DissasmLocalVariable> variables;
+    variables.reserve(accesses.size());
     for (const auto& access : accesses) {
-        if (frame.FindVariableContaining(access.frameOffset) || frame.variables.size() >= DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION)
-            continue;
         DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
         // the names of the frame: from rbp (arg_0 at 0x10), from the stack pointer of the entry (arg_0 at 8)
         FormatDefaultLocalVariableName(
               frame.usesFrameRegister || access.frameOffset < 8 ? access.frameOffset : access.frameOffset + 8, true, variable.name);
-        frame.variables.push_back(std::move(variable));
-        added = true;
+        variables.push_back(std::move(variable));
     }
-    if (added)
-        std::sort(frame.variables.begin(), frame.variables.end(), [](const DissasmLocalVariable& a, const DissasmLocalVariable& b) {
-            return a.frameOffset < b.frameOffset;
-        });
+    MergeFrameVariables(frame, std::move(variables));
     return true;
 }
 

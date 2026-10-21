@@ -76,6 +76,13 @@ void Settings::AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize,
     entry.frameOffset       = frameOffset;
 }
 
+void Settings::AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize)
+{
+    auto& entry      = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.prologSize = functionPrologSize;
+    entry.chunks.emplace_back(chunkFileOffset, size);
+}
+
 void Settings::AddInstructionBoundary(uint64 fileOffset)
 {
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);

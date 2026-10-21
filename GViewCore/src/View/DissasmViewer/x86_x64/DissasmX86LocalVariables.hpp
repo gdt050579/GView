@@ -61,6 +61,22 @@ std::optional<DissasmFunctionFrame::StackAlias> FindX64EstablisherFrameAlias(csh
 // the frame of the function of the funclet) added to the variables of `frame` that it does not have (a slot only the catch block or the
 // __finally uses: the exception code a filter keeps, an object its unwind funclet destroys). False when the frame would have too many
 bool AddX64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, const DissasmFunctionFrame::StackAlias& alias, DissasmFunctionFrame& frame);
+// a chunk of an x64 function without a frame register (its cold code: the chained unwind data elsewhere): its stack from `entryDelta` (the
+// depth of the body of the function), with the callee saved aliases of the function live there (`entryAliases`: the biased rbp of MSVC);
+// frame.variables receives its slots (in the offsets of the frame of the function, named as the ones of the function). False when its
+// stack pointer is not followed
+bool AnalyzeX64ChunkFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      int32 entryDelta,
+      const std::vector<DissasmFunctionFrame::StackAlias>& entryAliases,
+      DissasmFunctionFrame& frame,
+      const X86CallNoReturn& callNoReturn = {});
+// the variables of `variables` that no variable of `frame` covers, added to it (sorted); false when the frame has too many already
+bool MergeFrameVariables(DissasmFunctionFrame& frame, std::vector<DissasmLocalVariable>&& variables);
 
 // IDA like names: [ebp - 0x4C] -> var_4C, [ebp + 8] -> arg_0 (x86) / [rbp + 0x10] -> arg_0 (x64)
 void FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name);

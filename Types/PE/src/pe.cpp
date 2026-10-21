@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 
 using namespace AppCUI;
@@ -508,6 +509,12 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
         constexpr uint8 UNW_FLAG_HANDLERS      = 0x3; // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER: a language specific handler and its data
         std::vector<RuntimeFunction> handled;         // the functions with a handler (their scope tables are read after the loop)
         std::unordered_set<uint32> functionStarts;    // the funclets of the scopes are functions of .pdata
+        std::vector<std::pair<RuntimeFunction, uint32>> chained; // a chained entry, the start of the entry it chains to
+        struct PrimaryFunction {
+            uint32 end;
+            uint8 prologSize;
+        };
+        std::unordered_map<uint32, PrimaryFunction> primaries; // the function entries, by start
         const auto& exceptionDir               = pe->GetDirectory(PE::DirectoryType::Exception);
         const auto start                       = exceptionDir.VirtualAddress != 0 ? pe->RVAToFA(exceptionDir.VirtualAddress) : PE_INVALID_ADDRESS;
         const uint32 count = start != PE_INVALID_ADDRESS ? std::min<uint32>(exceptionDir.Size / sizeof(RuntimeFunction), MAX_RUNTIME_FUNCTIONS) : 0;
@@ -517,13 +524,25 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
                 break;
             if (function.BeginAddress == 0 || function.EndAddress <= function.BeginAddress)
                 continue;
-            // a chained entry (or an indirect one, odd unwind address) is a part of the function of another entry, not a function start
-            if (function.UnwindInfoAddress & 1)
+            // a chained entry (or an indirect one, odd unwind address) is a part of the function of another entry, not a function start:
+            // the entry of that function is the one after its unwind codes (indirect: at the unwind address)
+            RuntimeFunction primary;
+            if (function.UnwindInfoAddress & 1) {
+                const auto at = pe->RVAToFA(function.UnwindInfoAddress & ~1u);
+                if (at != PE_INVALID_ADDRESS && data.Copy<RuntimeFunction>(at, primary))
+                    chained.emplace_back(function, primary.BeginAddress);
                 continue;
-            uint8 versionAndFlags = 0;
+            }
+            uint8 versionAndFlags = 0, prologSize = 0, codeCount = 0;
             const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
-            if (unwindInfo != PE_INVALID_ADDRESS && data.Copy<uint8>(unwindInfo, versionAndFlags) && ((versionAndFlags >> 3) & UNW_FLAG_CHAININFO))
+            if (unwindInfo != PE_INVALID_ADDRESS && data.Copy<uint8>(unwindInfo, versionAndFlags) && ((versionAndFlags >> 3) & UNW_FLAG_CHAININFO)) {
+                if (data.Copy<uint8>(unwindInfo + 2, codeCount) && data.Copy<RuntimeFunction>(unwindInfo + 4 + 2ull * ((codeCount + 1u) & ~1u), primary))
+                    chained.emplace_back(function, primary.BeginAddress);
                 continue;
+            }
+            if (unwindInfo != PE_INVALID_ADDRESS)
+                data.Copy<uint8>(unwindInfo + 1, prologSize);
+            primaries[function.BeginAddress] = { function.EndAddress, prologSize };
             const auto fa = pe->RVAToFA(function.BeginAddress);
             if (fa != PE_INVALID_ADDRESS)
                 settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, function.EndAddress - function.BeginAddress);
@@ -531,6 +550,52 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             if (unwindInfo != PE_INVALID_ADDRESS && ((versionAndFlags >> 3) & UNW_FLAG_HANDLERS))
                 handled.push_back(function);
         }
+        // the chained entries: a part of the function of their primary entry (followed through the chained ones). Right after it (the
+        // padding between them) it is the rest of the function (its size), elsewhere a chunk of it (its cold code: AddFunctionChunk), the
+        // parts that follow each other one chunk
+        std::sort(chained.begin(), chained.end(), [](const auto& left, const auto& right) { return left.first.BeginAddress < right.first.BeginAddress; });
+        std::unordered_map<uint32, uint32> chainedTo;
+        for (const auto& [part, parent] : chained)
+            chainedTo.emplace(part.BeginAddress, parent);
+        std::unordered_map<uint32, uint32> functionEnds; // the extended ones
+        struct Chunk {
+            uint32 begin, end, function;
+        };
+        std::vector<Chunk> chunks;
+        constexpr uint32 MAX_PADDING = 16;
+        for (const auto& [part, parent] : chained) {
+            uint32 root = parent;
+            for (uint32 steps = 0; steps < 32 && !primaries.contains(root); steps++) {
+                const auto next = chainedTo.find(root);
+                if (next == chainedTo.end())
+                    break;
+                root = next->second;
+            }
+            const auto primary = primaries.find(root);
+            if (primary == primaries.end() || root == part.BeginAddress)
+                continue;
+            auto& end = functionEnds.try_emplace(root, primary->second.end).first->second;
+            if (part.BeginAddress >= end && part.BeginAddress - end < MAX_PADDING) {
+                end = part.EndAddress;
+                continue;
+            }
+            if (!chunks.empty() && chunks.back().function == root && part.BeginAddress >= chunks.back().end && part.BeginAddress - chunks.back().end < MAX_PADDING)
+                chunks.back().end = part.EndAddress;
+            else
+                chunks.push_back({ part.BeginAddress, part.EndAddress, root });
+        }
+        for (const auto& [root, end] : functionEnds) {
+            const auto fa = pe->RVAToFA(root);
+            if (fa != PE_INVALID_ADDRESS && end > primaries[root].end)
+                settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, end - root);
+        }
+        for (const auto& chunk : chunks) {
+            const auto fa         = pe->RVAToFA(chunk.begin);
+            const auto functionFa = pe->RVAToFA(chunk.function);
+            if (fa != PE_INVALID_ADDRESS && functionFa != PE_INVALID_ADDRESS)
+                settings.AddFunctionChunk(fa, chunk.end - chunk.begin, functionFa, primaries[chunk.function].prologSize);
+        }
+
         // the scope tables of __C_specific_handler (the language specific data after the handler RVA): a count, then the scopes
         // { begin, end, handler, target } (RVAs); the data of another handler (C++ FuncInfo, the GS cookie) fails the checks: every scope
         // inside the function, its handler EXCEPTION_EXECUTE_HANDLER (1) or a funclet of .pdata, its target 0 (__finally) or in the function
