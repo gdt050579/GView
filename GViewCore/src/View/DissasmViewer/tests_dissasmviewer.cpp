@@ -8760,6 +8760,34 @@ TEST_CASE("ComInterfaces", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x0000003c  call").ends_with("; IWbemLocator::ConnectServer"));
     REQUIRE(FindListingLine(listing, "0x0000004e  call").ends_with("; IWbemServices::ExecQuery"));
     REQUIRE(FindListingLine(listing, "0x00000062  call").find(';') == std::string_view::npos);
+
+    // the prototypes of the methods: the arguments of their calls named (This, the 8th in the stack), the variables that receive an
+    // interface typed and named after it
+    const auto* connect = FindComMethodPrototype("IWbemLocator::ConnectServer");
+    REQUIRE(connect != nullptr);
+    REQUIRE(connect->prototype.starts_with("HRESULT IWbemLocator::ConnectServer(IWbemLocator* This, const BSTR strNetworkResource"));
+    REQUIRE(connect->params.size() == 9);
+    REQUIRE(std::string_view(connect->params[8].name) == "ppNamespace");
+    REQUIRE(FindComMethodPrototype("IWbemServices::Release")->returnType == "ULONG");
+    REQUIRE(std::string_view(FindComMethodPrototype("IWbemServices::QueryInterface")->params[0].type) == "IWbemServices*");
+    REQUIRE(FindComMethodPrototype("ITaskService::Connect") == nullptr); // a VARIANT by value: no prototype
+    REQUIRE(FindComMethodPrototype("IWbemServices::NoSuchMethod") == nullptr);
+    REQUIRE(FindListingLine(listing, "0x0000002a  mov").ends_with("; This"));
+    REQUIRE(FindListingLine(listing, "0x00000034  mov").ends_with("; ppNamespace"));
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto variableNamed = [frame](std::string_view name) -> const DissasmLocalVariable* {
+        for (const auto& variable : frame->variables)
+            if (variable.name == name)
+                return &variable;
+        return nullptr;
+    };
+    INFO(frame->variables.size());
+    REQUIRE(variableNamed("pWbemLocator") != nullptr);
+    REQUIRE(variableNamed("pWbemLocator")->type == "IWbemLocator*");
+    REQUIRE(variableNamed("pWbemServices") != nullptr);
+    REQUIRE(variableNamed("pWbemServices")->type == "IWbemServices*");
+    REQUIRE(variableNamed("This") == nullptr);
 }
 
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")

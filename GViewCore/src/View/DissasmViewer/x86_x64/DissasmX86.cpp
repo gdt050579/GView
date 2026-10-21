@@ -1050,8 +1050,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
         // the method of a COM interface (TrackComInterfaces): call [rax + 0x18], call esi, the CFG dispatch (call cs:__guard_dispatch_icall_fptr
         // or its thunk: a direct call)
-        if (const auto method = params.zone->interfaceCalls.find(address); method != params.zone->interfaceCalls.end())
+        if (const auto method = params.zone->interfaceCalls.find(address); method != params.zone->interfaceCalls.end()) {
             autoComment = method->second;
+            AnnounceKnownFunctionCall(params, FindComMethodPrototype(method->second)); // its arguments: This, strNetworkResource, ...
+        }
         if (operands.directTarget.has_value())
             if (const auto purge = params.zone->calleeStackPurges.find(operands.directTarget.value()); purge != params.zone->calleeStackPurges.end())
                 calleePushes = static_cast<uint8>(std::min<uint32>(purge->second / 4, NO_PUSHES - 1u)); // ret 0x10: 4 pushes

@@ -429,6 +429,7 @@ namespace View
             int8 outParameter;           // the parameter (after this, from 0) of the interface it gives; -1: none
             std::string_view outInterface; // its interface, else the IID of riidParameter says which
             int8 riidParameter;          // -1: none
+            const char* parameters;      // its parameters after This ("REFIID riid, void** ppvObject"); null: no prototype
         };
         struct DissasmComProducer {
             int8 riidParameter;      // the parameter of the IID of the interface (-1: always outInterface)
@@ -440,6 +441,9 @@ namespace View
         bool IsComInterface(std::string_view name);
         std::optional<std::pair<std::string_view, DissasmComMethod>> FindComMethod(std::string_view interfaceName, uint32 index);
         const DissasmComProducer* FindComProducer(std::string_view function);
+        // the prototype of a method by its qualified name ("IWbemLocator::ConnectServer"): HRESULT IWbemLocator::ConnectServer(IWbemLocator*
+        // This, const BSTR strNetworkResource, ...); null when it is not known
+        const AsmFunctionDetails* FindComMethodPrototype(std::string_view qualifiedName);
         // an immediate operand (3, 0x80000000, -1, #0x10 of ARM); the one of the last operand of an instruction (edx, 0x80000000)
         std::optional<int64> ParseOperandImmediate(std::string_view text);
         std::optional<uint64> GetLastOperandImmediate(std::string_view operands);
@@ -459,6 +463,8 @@ namespace View
             AsmFunctionDetails details;
         };
         std::shared_ptr<const DissasmUserPrototype> ParseUserPrototype(std::string_view text);
+        // a prototype of the tables (the COM methods: IWbemLocator::ConnectServer), parsed as the ones of the APIs (not strict)
+        std::shared_ptr<const DissasmUserPrototype> ParseApiPrototype(std::string_view text);
         // a type of parameter that takes 8 bytes of the stack in 32 bit code (__int64, double, LARGE_INTEGER, ...): two pushes
         bool IsWideX86Type(std::string_view type);
         // 32 bit: the pushes a known API takes from the stack when it returns (stdcall: its parameters, 8 byte ones twice); none for the C

@@ -1879,6 +1879,9 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
         if (it->size != 0 && (kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return))
             break; // the block of another path
         if (it->size != 0 && kind == X86InstructionKind::Call) {
+            // the CFG check of a call through a pointer (mov ecx, esi; call __guard_check_icall_fptr; call esi): it takes nothing
+            if (calleeName(*it).find("guard_check_icall") != std::string_view::npos)
+                continue;
             if (cleanedUpAfter) {
                 cleanedUpAfter = false; // cdecl: the clean up counted its arguments
                 continue;

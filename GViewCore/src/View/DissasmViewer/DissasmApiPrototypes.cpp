@@ -931,6 +931,14 @@ std::optional<uint32> GView::View::DissasmViewer::GetX86StdcallPushes(const AsmF
     return pushes;
 }
 
+std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseApiPrototype(std::string_view text)
+{
+    auto prototype = std::make_shared<DissasmUserPrototype>();
+    if (!ParsePrototypeText(prototype->strings, std::string(Trim(text)), prototype->details, false))
+        return nullptr;
+    return prototype;
+}
+
 std::shared_ptr<const DissasmUserPrototype> GView::View::DissasmViewer::ParseUserPrototype(std::string_view text)
 {
     const std::string_view trimmed = Trim(text);

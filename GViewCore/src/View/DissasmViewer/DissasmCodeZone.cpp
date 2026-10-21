@@ -204,6 +204,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, uint32> importCallCategories;   // a call / jmp through an import slot -> what the import does (DissasmApiCategory)
     std::unordered_set<uint64> comProducerCalls;               // the calls of an API that gives a COM interface (FindComProducer)
     std::unordered_map<uint64, std::string> interfaceCalls;    // TrackComInterfaces: DissasmCodeZone::interfaceCalls
+    std::unordered_map<uint64, std::pair<size_t, std::string_view>> comOutputs; // a call: its parameter that receives an interface, which one
+    std::unordered_set<uint64> cfgCheckCalls;                  // x86: the CFG checks of the calls of the methods (they take no argument)
     std::unordered_set<uint64> knownPrototypeCalls;            // the calls through an import slot of an API with a prototype (FindApiPrototype)
     std::unordered_map<uint64, bool> knownPrototypeTargets;    // a direct target (relative) -> its name has a prototype (NameVariablesFromCalls)
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes; // InferPrototypes, by function start
@@ -1864,6 +1866,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the prototype of the callee of a call: the one the user gave to a function of the zone (Y), else the one of the API it is
     const AsmFunctionDetails* CalleePrototype(const cs_insn& call, DissasmArch functionArch)
     {
+        if (const auto method = interfaceCalls.find(call.address); method != interfaceCalls.end()) // a COM method (TrackComInterfaces)
+            if (const auto* prototype = FindComMethodPrototype(method->second))
+                return prototype;
         const auto operands = GetInstructionOperands(call, functionArch, labelBase);
         if (operands.directTarget.has_value())
             if (const uint64 target = operands.directTarget.value() & addressMask; target < codeSize) {
@@ -1987,6 +1992,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     void TrackComInterfaces()
     {
         interfaceCalls.clear();
+        comOutputs.clear();
+        cfgCheckCalls.clear();
         if (!hasDetailHandle || functionEnds.size() != functionStarts.size() || zone->IsArmCode() || zone->systemVCalls || comProducerCalls.empty())
             return;
         std::unordered_set<uint64> producerTargets; // the thunks / functions of the file named after a producer
@@ -2094,8 +2101,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     method = std::make_pair(registers[family(target.reg)].interfaceName, registers[family(target.reg)].method);
                 else if (is64 && registers[0].kind == ComValue::Kind::Method)
                     method = std::make_pair(registers[0].interfaceName, registers[0].method); // the CFG dispatch: call cs:__guard_dispatch_icall_fptr / its thunk
-                else if (!is64 && target.type == X86_OP_MEM && registers[1].kind == ComValue::Kind::Method)
+                else if (!is64 && target.type == X86_OP_MEM && registers[1].kind == ComValue::Kind::Method) {
+                    cfgCheckCalls.insert(insn->address);
                     continue; // the CFG check of x86 (mov ecx, esi; call __guard_check_icall_fptr): it keeps the registers, the pushes are the method's
+                }
                 if (method.has_value()) {
                     if (const auto found = FindComMethod(method->first, method->second); found.has_value()) {
                         interfaceCalls[insn->address] = std::string(found->first) + "::" + std::string(found->second.name);
@@ -2106,6 +2115,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             if (given.empty() && described.riidParameter >= 0)
                                 given = readGuidInterface(argument(1u + described.riidParameter));
                             giveInterface(argument(1u + described.outParameter), given);
+                            if (!given.empty())
+                                comOutputs[insn->address] = { 1u + described.outParameter, given }; // This is the parameter 0
                         }
                     }
                 } else if (comProducerCalls.contains(insn->address)) {
@@ -2116,6 +2127,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             given = readGuidInterface(argument(producer->riidParameter));
                         if (producer->outParameter >= 0)
                             giveInterface(argument(producer->outParameter), given);
+                        if (producer->outParameter >= 0 && !given.empty())
+                            comOutputs[insn->address] = { static_cast<size_t>(producer->outParameter), given };
                         clobberVolatile();
                         pushes.clear();
                         if (producer->outParameter < 0 && !given.empty())
@@ -3140,10 +3153,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     return static_cast<int32>(disp + delta.value());
             return {};
         };
+        uint64 callAddress         = 0;
         const auto nameArguments = [&](const AsmFunctionDetails& prototype) {
+            // the variable that receives an interface (TrackComInterfaces): typed and named after it (pWbemLocator, IWbemLocator*)
+            const auto output = comOutputs.find(callAddress);
             for (size_t index = 0; index < prototype.params.size(); index++) {
                 if (!prototype.params[index].name || !prototype.params[index].name[0])
                     continue; // a parameter an inferred prototype does not know
+                if (std::string_view(prototype.params[index].name) == "This")
+                    continue; // the object of a method: not named after it
                 std::optional<SlotValue> source;
                 if (const int reg = argumentRegister(index); reg >= 0 && reg < static_cast<int>(registers.size()))
                     source = registers[reg];
@@ -3158,8 +3176,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 std::string_view name           = argument;
                 if (source->isAddress && name.size() > 2 && name.starts_with("lp") && std::isalpha(static_cast<unsigned char>(name[2])))
                     name.remove_prefix(2); // the variable is what the argument points to
+                const bool receivesInterface = source->isAddress && output != comOutputs.end() && output->second.first == index;
+                std::string interfaceVariable;
+                if (receivesInterface) {
+                    interfaceVariable = "p" + std::string(output->second.second.substr(output->second.second.starts_with('I') ? 1 : 0));
+                    name              = interfaceVariable;
+                }
                 if (variable && variable->origin.empty()) { // the first call that passes it
-                    variable->type   = source->isAddress ? GetPointedType(prototype.params[index].type) : std::string(prototype.params[index].type);
+                    variable->type   = receivesInterface ? std::string(output->second.second) + "*"
+                                       : source->isAddress ? GetPointedType(prototype.params[index].type) : std::string(prototype.params[index].type);
                     variable->origin = std::string(argument) + " of " + std::string(prototype.functionName);
                     if (source->isAddress)
                         ApplyStructure(*variable);
@@ -3181,6 +3206,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const cs_insn& current = *insn;
             const auto flow        = GetInstructionFlow(current, functionArch);
             if (flow == X86Flow::Call) {
+                if (cfgCheckCalls.contains(current.address))
+                    continue; // the CFG check of the call of a method: the registers and the pushes stay
+                callAddress           = current.address;
                 const auto* prototype = CalleePrototype(current, functionArch);
                 if (prototype)
                     nameArguments(*prototype);

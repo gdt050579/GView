@@ -1,6 +1,8 @@
 #include "DissasmViewer.hpp"
 
 #include <array>
+#include <memory>
+#include <string>
 #include <cctype>
 #include <unordered_map>
 
@@ -120,97 +122,98 @@ struct InterfaceDefinition {
     std::vector<DissasmComMethod> methods;
 };
 
-DissasmComMethod Method(std::string_view name)
+// the parameters after This (null: no prototype, a VARIANT by value takes 4 pushes in 32 bit code)
+DissasmComMethod Method(std::string_view name, const char* parameters)
 {
-    return { name, -1, {}, -1 };
+    return { name, -1, {}, -1, parameters };
 }
-DissasmComMethod Gives(std::string_view name, int8 outParameter, std::string_view outInterface)
+DissasmComMethod Gives(std::string_view name, int8 outParameter, std::string_view outInterface, const char* parameters)
 {
-    return { name, outParameter, outInterface, -1 };
+    return { name, outParameter, outInterface, -1, parameters };
 }
-DissasmComMethod GivesIid(std::string_view name, int8 riidParameter, int8 outParameter)
+DissasmComMethod GivesIid(std::string_view name, int8 riidParameter, int8 outParameter, const char* parameters)
 {
-    return { name, outParameter, {}, riidParameter };
+    return { name, outParameter, {}, riidParameter, parameters };
 }
 
 const std::vector<InterfaceDefinition>& GetInterfaceDefinitions()
 {
     static const std::vector<InterfaceDefinition> interfaces = {
-        { "IUnknown", "", { GivesIid("QueryInterface", 0, 1), Method("AddRef"), Method("Release") } },
-        { "IClassFactory", "IUnknown", { GivesIid("CreateInstance", 1, 2), Method("LockServer") } },
-        { "IDispatch", "IUnknown", { Method("GetTypeInfoCount"), Method("GetTypeInfo"), Method("GetIDsOfNames"), Method("Invoke") } },
-        { "ISequentialStream", "IUnknown", { Method("Read"), Method("Write") } },
+        { "IUnknown", "", { GivesIid("QueryInterface", 0, 1, "REFIID riid, void** ppvObject"), Method("AddRef", ""), Method("Release", "") } },
+        { "IClassFactory", "IUnknown", { GivesIid("CreateInstance", 1, 2, "IUnknown* pUnkOuter, REFIID riid, void** ppvObject"), Method("LockServer", "BOOL fLock") } },
+        { "IDispatch", "IUnknown", { Method("GetTypeInfoCount", "UINT* pctinfo"), Method("GetTypeInfo", "UINT iTInfo, LCID lcid, ITypeInfo** ppTInfo"), Method("GetIDsOfNames", "REFIID riid, LPOLESTR* rgszNames, UINT cNames, LCID lcid, DISPID* rgDispId"), Method("Invoke", "DISPID dispIdMember, REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS* pDispParams, VARIANT* pVarResult, EXCEPINFO* pExcepInfo, UINT* puArgErr") } },
+        { "ISequentialStream", "IUnknown", { Method("Read", "void* pv, ULONG cb, ULONG* pcbRead"), Method("Write", "const void* pv, ULONG cb, ULONG* pcbWritten") } },
         { "IStream",
           "ISequentialStream",
-          { Method("Seek"), Method("SetSize"), Method("CopyTo"), Method("Commit"), Method("Revert"), Method("LockRegion"), Method("UnlockRegion"), Method("Stat"),
-            Gives("Clone", 0, "IStream") } },
-        { "IPersist", "IUnknown", { Method("GetClassID") } },
-        { "IPersistFile", "IPersist", { Method("IsDirty"), Method("Load"), Method("Save"), Method("SaveCompleted"), Method("GetCurFile") } },
-        { "IServiceProvider", "IUnknown", { GivesIid("QueryService", 1, 2) } },
-        { "IObjectWithSite", "IUnknown", { Method("SetSite"), GivesIid("GetSite", 0, 1) } },
+          { Method("Seek", "LARGE_INTEGER dlibMove, DWORD dwOrigin, ULARGE_INTEGER* plibNewPosition"), Method("SetSize", "ULARGE_INTEGER libNewSize"), Method("CopyTo", "IStream* pstm, ULARGE_INTEGER cb, ULARGE_INTEGER* pcbRead, ULARGE_INTEGER* pcbWritten"), Method("Commit", "DWORD grfCommitFlags"), Method("Revert", ""), Method("LockRegion", "ULARGE_INTEGER libOffset, ULARGE_INTEGER cb, DWORD dwLockType"), Method("UnlockRegion", "ULARGE_INTEGER libOffset, ULARGE_INTEGER cb, DWORD dwLockType"), Method("Stat", "STATSTG* pstatstg, DWORD grfStatFlag"),
+            Gives("Clone", 0, "IStream", "IStream** ppstm") } },
+        { "IPersist", "IUnknown", { Method("GetClassID", "CLSID* pClassID") } },
+        { "IPersistFile", "IPersist", { Method("IsDirty", ""), Method("Load", "LPCOLESTR pszFileName, DWORD dwMode"), Method("Save", "LPCOLESTR pszFileName, BOOL fRemember"), Method("SaveCompleted", "LPCOLESTR pszFileName"), Method("GetCurFile", "LPOLESTR* ppszFileName") } },
+        { "IServiceProvider", "IUnknown", { GivesIid("QueryService", 1, 2, "REFGUID guidService, REFIID riid, void** ppvObject") } },
+        { "IObjectWithSite", "IUnknown", { Method("SetSite", "IUnknown* pUnkSite"), GivesIid("GetSite", 0, 1, "REFIID riid, void** ppvSite") } },
         { "IShellLinkW",
           "IUnknown",
-          { Method("GetPath"), Method("GetIDList"), Method("SetIDList"), Method("GetDescription"), Method("SetDescription"), Method("GetWorkingDirectory"),
-            Method("SetWorkingDirectory"), Method("GetArguments"), Method("SetArguments"), Method("GetHotkey"), Method("SetHotkey"), Method("GetShowCmd"),
-            Method("SetShowCmd"), Method("GetIconLocation"), Method("SetIconLocation"), Method("SetRelativePath"), Method("Resolve"), Method("SetPath") } },
+          { Method("GetPath", "LPWSTR pszFile, int cch, WIN32_FIND_DATAW* pfd, DWORD fFlags"), Method("GetIDList", "PIDLIST_ABSOLUTE* ppidl"), Method("SetIDList", "PCIDLIST_ABSOLUTE pidl"), Method("GetDescription", "LPWSTR pszName, int cch"), Method("SetDescription", "LPCWSTR pszName"), Method("GetWorkingDirectory", "LPWSTR pszDir, int cch"),
+            Method("SetWorkingDirectory", "LPCWSTR pszDir"), Method("GetArguments", "LPWSTR pszArgs, int cch"), Method("SetArguments", "LPCWSTR pszArgs"), Method("GetHotkey", "WORD* pwHotkey"), Method("SetHotkey", "WORD wHotkey"), Method("GetShowCmd", "int* piShowCmd"),
+            Method("SetShowCmd", "int iShowCmd"), Method("GetIconLocation", "LPWSTR pszIconPath, int cch, int* piIcon"), Method("SetIconLocation", "LPCWSTR pszIconPath, int iIcon"), Method("SetRelativePath", "LPCWSTR pszPathRel, DWORD dwReserved"), Method("Resolve", "HWND hwnd, DWORD fFlags"), Method("SetPath", "LPCWSTR pszFile") } },
         { "IShellLinkA", "IShellLinkW", {} }, // the same methods, with the ANSI strings
         { "IShellItem",
           "IUnknown",
-          { GivesIid("BindToHandler", 2, 3), Gives("GetParent", 0, "IShellItem"), Method("GetDisplayName"), Method("GetAttributes"), Method("Compare") } },
-        { "IPropertyStore", "IUnknown", { Method("GetCount"), Method("GetAt"), Method("GetValue"), Method("SetValue"), Method("Commit") } },
+          { GivesIid("BindToHandler", 2, 3, "IBindCtx* pbc, REFGUID bhid, REFIID riid, void** ppv"), Gives("GetParent", 0, "IShellItem", "IShellItem** ppsi"), Method("GetDisplayName", "SIGDN sigdnName, LPWSTR* ppszName"), Method("GetAttributes", "SFGAOF sfgaoMask, SFGAOF* psfgaoAttribs"), Method("Compare", "IShellItem* psi, SICHINTF hint, int* piOrder") } },
+        { "IPropertyStore", "IUnknown", { Method("GetCount", "DWORD* cProps"), Method("GetAt", "DWORD iProp, PROPERTYKEY* pkey"), Method("GetValue", "REFPROPERTYKEY key, PROPVARIANT* pv"), Method("SetValue", "REFPROPERTYKEY key, REFPROPVARIANT propvar"), Method("Commit", "") } },
         { "IFileOperation",
           "IUnknown",
-          { Method("Advise"), Method("Unadvise"), Method("SetOperationFlags"), Method("SetProgressMessage"), Method("SetProgressDialog"), Method("SetProperties"),
-            Method("SetOwnerWindow"), Method("ApplyPropertiesToItem"), Method("ApplyPropertiesToItems"), Method("RenameItem"), Method("RenameItems"),
-            Method("MoveItem"), Method("MoveItems"), Method("CopyItem"), Method("CopyItems"), Method("DeleteItem"), Method("DeleteItems"), Method("NewItem"),
-            Method("PerformOperations"), Method("GetAnyOperationsAborted") } },
+          { Method("Advise", "IFileOperationProgressSink* pfops, DWORD* pdwCookie"), Method("Unadvise", "DWORD dwCookie"), Method("SetOperationFlags", "DWORD dwOperationFlags"), Method("SetProgressMessage", "LPCWSTR pszMessage"), Method("SetProgressDialog", "IOperationsProgressDialog* popd"), Method("SetProperties", "IPropertyChangeArray* pproparray"),
+            Method("SetOwnerWindow", "HWND hwndOwner"), Method("ApplyPropertiesToItem", "IShellItem* psiItem"), Method("ApplyPropertiesToItems", "IUnknown* punkItems"), Method("RenameItem", "IShellItem* psiItem, LPCWSTR pszNewName, IFileOperationProgressSink* pfopsItem"), Method("RenameItems", "IUnknown* pUnkItems, LPCWSTR pszNewName"),
+            Method("MoveItem", "IShellItem* psiItem, IShellItem* psiDestinationFolder, LPCWSTR pszNewName, IFileOperationProgressSink* pfopsItem"), Method("MoveItems", "IUnknown* punkItems, IShellItem* psiDestinationFolder"), Method("CopyItem", "IShellItem* psiItem, IShellItem* psiDestinationFolder, LPCWSTR pszCopyName, IFileOperationProgressSink* pfopsItem"), Method("CopyItems", "IUnknown* punkItems, IShellItem* psiDestinationFolder"), Method("DeleteItem", "IShellItem* psiItem, IFileOperationProgressSink* pfopsItem"), Method("DeleteItems", "IUnknown* punkItems"), Method("NewItem", "IShellItem* psiDestinationFolder, DWORD dwFileAttributes, LPCWSTR pszName, LPCWSTR pszTemplateName, IFileOperationProgressSink* pfopsItem"),
+            Method("PerformOperations", ""), Method("GetAnyOperationsAborted", "BOOL* pfAnyOperationsAborted") } },
         { "IKnownFolderManager",
           "IUnknown",
-          { Method("FolderIdFromCsidl"), Method("FolderIdToCsidl"), Method("GetFolderIds"), Method("GetFolder"), Method("GetFolderByName"),
-            Method("RegisterFolder"), Method("UnregisterFolder"), Method("FindFolderFromPath"), Method("FindFolderFromIDList"), Method("Redirect") } },
-        { "IWbemLocator", "IUnknown", { Gives("ConnectServer", 7, "IWbemServices") } },
+          { Method("FolderIdFromCsidl", "int nCsidl, KNOWNFOLDERID* pfid"), Method("FolderIdToCsidl", "REFKNOWNFOLDERID rfid, int* pnCsidl"), Method("GetFolderIds", "KNOWNFOLDERID** ppKFId, UINT* pCount"), Method("GetFolder", "REFKNOWNFOLDERID rfid, IKnownFolder** ppkf"), Method("GetFolderByName", "LPCWSTR pszCanonicalName, IKnownFolder** ppkf"),
+            Method("RegisterFolder", "REFKNOWNFOLDERID rfid, const KNOWNFOLDER_DEFINITION* pKFD"), Method("UnregisterFolder", "REFKNOWNFOLDERID rfid"), Method("FindFolderFromPath", "LPCWSTR pszPath, FFFP_MODE mode, IKnownFolder** ppkf"), Method("FindFolderFromIDList", "PCIDLIST_ABSOLUTE pidl, IKnownFolder** ppkf"), Method("Redirect", "REFKNOWNFOLDERID rfid, HWND hwnd, KF_REDIRECT_FLAGS flags, LPCWSTR pszTargetPath, UINT cFolders, const KNOWNFOLDERID* pExclusion, LPWSTR* ppszError") } },
+        { "IWbemLocator", "IUnknown", { Gives("ConnectServer", 7, "IWbemServices", "const BSTR strNetworkResource, const BSTR strUser, const BSTR strPassword, const BSTR strLocale, long lSecurityFlags, const BSTR strAuthority, IWbemContext* pCtx, IWbemServices** ppNamespace") } },
         { "IWbemServices",
           "IUnknown",
-          { Gives("OpenNamespace", 3, "IWbemServices"), Method("CancelAsyncCall"), Method("QueryObjectSink"), Gives("GetObject", 3, "IWbemClassObject"),
-            Method("GetObjectAsync"), Method("PutClass"), Method("PutClassAsync"), Method("DeleteClass"), Method("DeleteClassAsync"),
-            Gives("CreateClassEnum", 3, "IEnumWbemClassObject"), Method("CreateClassEnumAsync"), Method("PutInstance"), Method("PutInstanceAsync"),
-            Method("DeleteInstance"), Method("DeleteInstanceAsync"), Gives("CreateInstanceEnum", 3, "IEnumWbemClassObject"), Method("CreateInstanceEnumAsync"),
-            Gives("ExecQuery", 4, "IEnumWbemClassObject"), Method("ExecQueryAsync"), Gives("ExecNotificationQuery", 4, "IEnumWbemClassObject"),
-            Method("ExecNotificationQueryAsync"), Gives("ExecMethod", 5, "IWbemClassObject"), Method("ExecMethodAsync") } },
-        { "IEnumWbemClassObject", "IUnknown", { Method("Reset"), Gives("Next", 2, "IWbemClassObject"), Method("NextAsync"), Gives("Clone", 0, "IEnumWbemClassObject"), Method("Skip") } },
+          { Gives("OpenNamespace", 3, "IWbemServices", "const BSTR strNamespace, long lFlags, IWbemContext* pCtx, IWbemServices** ppWorkingNamespace, IWbemCallResult** ppResult"), Method("CancelAsyncCall", "IWbemObjectSink* pSink"), Method("QueryObjectSink", "long lFlags, IWbemObjectSink** ppResponseHandler"), Gives("GetObject", 3, "IWbemClassObject", "const BSTR strObjectPath, long lFlags, IWbemContext* pCtx, IWbemClassObject** ppObject, IWbemCallResult** ppCallResult"),
+            Method("GetObjectAsync", "const BSTR strObjectPath, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"), Method("PutClass", "IWbemClassObject* pObject, long lFlags, IWbemContext* pCtx, IWbemCallResult** ppCallResult"), Method("PutClassAsync", "IWbemClassObject* pObject, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"), Method("DeleteClass", "const BSTR strClass, long lFlags, IWbemContext* pCtx, IWbemCallResult** ppCallResult"), Method("DeleteClassAsync", "const BSTR strClass, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"),
+            Gives("CreateClassEnum", 3, "IEnumWbemClassObject", "const BSTR strSuperclass, long lFlags, IWbemContext* pCtx, IEnumWbemClassObject** ppEnum"), Method("CreateClassEnumAsync", "const BSTR strSuperclass, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"), Method("PutInstance", "IWbemClassObject* pInst, long lFlags, IWbemContext* pCtx, IWbemCallResult** ppCallResult"), Method("PutInstanceAsync", "IWbemClassObject* pInst, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"),
+            Method("DeleteInstance", "const BSTR strObjectPath, long lFlags, IWbemContext* pCtx, IWbemCallResult** ppCallResult"), Method("DeleteInstanceAsync", "const BSTR strObjectPath, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"), Gives("CreateInstanceEnum", 3, "IEnumWbemClassObject", "const BSTR strFilter, long lFlags, IWbemContext* pCtx, IEnumWbemClassObject** ppEnum"), Method("CreateInstanceEnumAsync", "const BSTR strFilter, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"),
+            Gives("ExecQuery", 4, "IEnumWbemClassObject", "const BSTR strQueryLanguage, const BSTR strQuery, long lFlags, IWbemContext* pCtx, IEnumWbemClassObject** ppEnum"), Method("ExecQueryAsync", "const BSTR strQueryLanguage, const BSTR strQuery, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"), Gives("ExecNotificationQuery", 4, "IEnumWbemClassObject", "const BSTR strQueryLanguage, const BSTR strQuery, long lFlags, IWbemContext* pCtx, IEnumWbemClassObject** ppEnum"),
+            Method("ExecNotificationQueryAsync", "const BSTR strQueryLanguage, const BSTR strQuery, long lFlags, IWbemContext* pCtx, IWbemObjectSink* pResponseHandler"), Gives("ExecMethod", 5, "IWbemClassObject", "const BSTR strObjectPath, const BSTR strMethodName, long lFlags, IWbemContext* pCtx, IWbemClassObject* pInParams, IWbemClassObject** ppOutParams, IWbemCallResult** ppCallResult"), Method("ExecMethodAsync", "const BSTR strObjectPath, const BSTR strMethodName, long lFlags, IWbemContext* pCtx, IWbemClassObject* pInParams, IWbemObjectSink* pResponseHandler") } },
+        { "IEnumWbemClassObject", "IUnknown", { Method("Reset", ""), Gives("Next", 2, "IWbemClassObject", "long lTimeout, ULONG uCount, IWbemClassObject** apObjects, ULONG* puReturned"), Method("NextAsync", "ULONG uCount, IWbemObjectSink* pSink"), Gives("Clone", 0, "IEnumWbemClassObject", "IEnumWbemClassObject** ppEnum"), Method("Skip", "long lTimeout, ULONG nCount") } },
         { "IWbemClassObject",
           "IUnknown",
-          { Method("GetQualifierSet"), Method("Get"), Method("Put"), Method("Delete"), Method("GetNames"), Method("BeginEnumeration"), Method("Next"),
-            Method("EndEnumeration"), Method("GetPropertyQualifierSet"), Gives("Clone", 0, "IWbemClassObject"), Method("GetObjectText"),
-            Gives("SpawnDerivedClass", 1, "IWbemClassObject"), Gives("SpawnInstance", 1, "IWbemClassObject"), Method("CompareTo"), Method("GetPropertyOrigin"),
-            Method("InheritsFrom"), Gives("GetMethod", 2, "IWbemClassObject"), Method("PutMethod"), Method("DeleteMethod"), Method("BeginMethodEnumeration"),
-            Method("NextMethod"), Method("EndMethodEnumeration"), Method("GetMethodQualifierSet"), Method("GetMethodOrigin") } },
+          { Method("GetQualifierSet", "IWbemQualifierSet** ppQualSet"), Method("Get", "LPCWSTR wszName, long lFlags, VARIANT* pVal, CIMTYPE* pType, long* plFlavor"), Method("Put", "LPCWSTR wszName, long lFlags, VARIANT* pVal, CIMTYPE Type"), Method("Delete", "LPCWSTR wszName"), Method("GetNames", "LPCWSTR wszQualifierName, long lFlags, VARIANT* pQualifierVal, SAFEARRAY** pNames"), Method("BeginEnumeration", "long lEnumFlags"), Method("Next", "long lFlags, BSTR* strName, VARIANT* pVal, CIMTYPE* pType, long* plFlavor"),
+            Method("EndEnumeration", ""), Method("GetPropertyQualifierSet", "LPCWSTR wszProperty, IWbemQualifierSet** ppQualSet"), Gives("Clone", 0, "IWbemClassObject", "IWbemClassObject** ppCopy"), Method("GetObjectText", "long lFlags, BSTR* pstrObjectText"),
+            Gives("SpawnDerivedClass", 1, "IWbemClassObject", "long lFlags, IWbemClassObject** ppNewClass"), Gives("SpawnInstance", 1, "IWbemClassObject", "long lFlags, IWbemClassObject** ppNewInstance"), Method("CompareTo", "long lFlags, IWbemClassObject* pCompareTo"), Method("GetPropertyOrigin", "LPCWSTR wszName, BSTR* pstrClassName"),
+            Method("InheritsFrom", "LPCWSTR strAncestor"), Gives("GetMethod", 2, "IWbemClassObject", "LPCWSTR wszName, long lFlags, IWbemClassObject** ppInSignature, IWbemClassObject** ppOutSignature"), Method("PutMethod", "LPCWSTR wszName, long lFlags, IWbemClassObject* pInSignature, IWbemClassObject* pOutSignature"), Method("DeleteMethod", "LPCWSTR wszName"), Method("BeginMethodEnumeration", "long lEnumFlags"),
+            Method("NextMethod", "long lFlags, BSTR* pstrName, IWbemClassObject** ppInSignature, IWbemClassObject** ppOutSignature"), Method("EndMethodEnumeration", ""), Method("GetMethodQualifierSet", "LPCWSTR wszMethod, IWbemQualifierSet** ppQualSet"), Method("GetMethodOrigin", "LPCWSTR wszMethodName, BSTR* pstrClassName") } },
         { "ITaskService",
           "IDispatch",
-          { Gives("GetFolder", 1, "ITaskFolder"), Method("GetRunningTasks"), Gives("NewTask", 1, "ITaskDefinition"), Method("Connect"), Method("get_Connected"),
-            Method("get_TargetServer"), Method("get_ConnectedUser"), Method("get_ConnectedDomain"), Method("get_HighestVersion") } },
+          { Gives("GetFolder", 1, "ITaskFolder", "BSTR path, ITaskFolder** ppFolder"), Method("GetRunningTasks", "LONG flags, IRunningTaskCollection** ppRunningTasks"), Gives("NewTask", 1, "ITaskDefinition", "DWORD flags, ITaskDefinition** ppDefinition"), Method("Connect", nullptr), Method("get_Connected", "VARIANT_BOOL* pConnected"),
+            Method("get_TargetServer", "BSTR* pServer"), Method("get_ConnectedUser", "BSTR* pUser"), Method("get_ConnectedDomain", "BSTR* pDomain"), Method("get_HighestVersion", "DWORD* pVersion") } },
         { "ITaskFolder",
           "IDispatch",
-          { Method("get_Name"), Method("get_Path"), Gives("GetFolder", 1, "ITaskFolder"), Method("GetFolders"), Gives("CreateFolder", 2, "ITaskFolder"),
-            Method("DeleteFolder"), Gives("GetTask", 1, "IRegisteredTask"), Method("GetTasks"), Method("DeleteTask"), Gives("RegisterTask", 7, "IRegisteredTask"),
-            Gives("RegisterTaskDefinition", 7, "IRegisteredTask"), Method("GetSecurityDescriptor"), Method("SetSecurityDescriptor") } },
+          { Method("get_Name", "BSTR* pName"), Method("get_Path", "BSTR* pPath"), Gives("GetFolder", 1, "ITaskFolder", "BSTR path, ITaskFolder** ppFolder"), Method("GetFolders", "LONG flags, ITaskFolderCollection** ppFolders"), Gives("CreateFolder", 2, "ITaskFolder", nullptr),
+            Method("DeleteFolder", "BSTR subFolderName, LONG flags"), Gives("GetTask", 1, "IRegisteredTask", "BSTR path, IRegisteredTask** ppTask"), Method("GetTasks", "LONG flags, IRegisteredTaskCollection** ppTasks"), Method("DeleteTask", "BSTR name, LONG flags"), Gives("RegisterTask", 7, "IRegisteredTask", nullptr),
+            Gives("RegisterTaskDefinition", 7, "IRegisteredTask", nullptr), Method("GetSecurityDescriptor", "LONG securityInformation, BSTR* pSddl"), Method("SetSecurityDescriptor", "BSTR sddl, LONG flags") } },
         { "ITaskDefinition",
           "IDispatch",
-          { Method("get_RegistrationInfo"), Method("put_RegistrationInfo"), Method("get_Triggers"), Method("put_Triggers"), Method("get_Settings"),
-            Method("put_Settings"), Method("get_Data"), Method("put_Data"), Method("get_Principal"), Method("put_Principal"), Method("get_Actions"),
-            Method("put_Actions"), Method("get_XmlText"), Method("put_XmlText") } },
+          { Method("get_RegistrationInfo", "IRegistrationInfo** ppRegistrationInfo"), Method("put_RegistrationInfo", "IRegistrationInfo* pRegistrationInfo"), Method("get_Triggers", "ITriggerCollection** ppTriggers"), Method("put_Triggers", "ITriggerCollection* pTriggers"), Method("get_Settings", "ITaskSettings** ppSettings"),
+            Method("put_Settings", "ITaskSettings* pSettings"), Method("get_Data", "BSTR* pData"), Method("put_Data", "BSTR data"), Method("get_Principal", "IPrincipal** ppPrincipal"), Method("put_Principal", "IPrincipal* pPrincipal"), Method("get_Actions", "IActionCollection** ppActions"),
+            Method("put_Actions", "IActionCollection* pActions"), Method("get_XmlText", "BSTR* pXml"), Method("put_XmlText", "BSTR xml") } },
         { "IRegisteredTask", "IDispatch", {} },
         { "IBackgroundCopyManager",
           "IUnknown",
-          { Gives("CreateJob", 3, "IBackgroundCopyJob"), Gives("GetJob", 1, "IBackgroundCopyJob"), Method("EnumJobs"), Method("GetErrorDescription") } },
+          { Gives("CreateJob", 3, "IBackgroundCopyJob", "LPCWSTR DisplayName, BG_JOB_TYPE Type, GUID* pJobId, IBackgroundCopyJob** ppJob"), Gives("GetJob", 1, "IBackgroundCopyJob", "REFGUID jobID, IBackgroundCopyJob** ppJob"), Method("EnumJobs", "DWORD dwFlags, IEnumBackgroundCopyJobs** ppEnum"), Method("GetErrorDescription", "HRESULT hResult, DWORD LanguageId, LPWSTR* pErrorDescription") } },
         { "IBackgroundCopyJob",
           "IUnknown",
-          { Method("AddFileSet"), Method("AddFile"), Method("EnumFiles"), Method("Suspend"), Method("Resume"), Method("Cancel"), Method("Complete"),
-            Method("GetId"), Method("GetType"), Method("GetProgress"), Method("GetTimes"), Method("GetState"), Method("GetError"), Method("GetOwner"),
-            Method("SetDisplayName"), Method("GetDisplayName"), Method("SetDescription"), Method("GetDescription"), Method("SetPriority"), Method("GetPriority"),
-            Method("SetNotifyFlags"), Method("GetNotifyFlags"), Method("SetNotifyInterface"), Method("GetNotifyInterface"), Method("SetMinimumRetryDelay"),
-            Method("GetMinimumRetryDelay"), Method("SetNoProgressTimeout"), Method("GetNoProgressTimeout"), Method("GetErrorCount"), Method("SetProxySettings"),
-            Method("GetProxySettings"), Method("TakeOwnership") } },
+          { Method("AddFileSet", "ULONG cFileCount, BG_FILE_INFO* pFileSet"), Method("AddFile", "LPCWSTR RemoteUrl, LPCWSTR LocalName"), Method("EnumFiles", "IEnumBackgroundCopyFiles** pEnum"), Method("Suspend", ""), Method("Resume", ""), Method("Cancel", ""), Method("Complete", ""),
+            Method("GetId", "GUID* pVal"), Method("GetType", "BG_JOB_TYPE* pVal"), Method("GetProgress", "BG_JOB_PROGRESS* pVal"), Method("GetTimes", "BG_JOB_TIMES* pVal"), Method("GetState", "BG_JOB_STATE* pVal"), Method("GetError", "IBackgroundCopyError** ppError"), Method("GetOwner", "LPWSTR* pVal"),
+            Method("SetDisplayName", "LPCWSTR Val"), Method("GetDisplayName", "LPWSTR* pVal"), Method("SetDescription", "LPCWSTR Val"), Method("GetDescription", "LPWSTR* pVal"), Method("SetPriority", "BG_JOB_PRIORITY Val"), Method("GetPriority", "BG_JOB_PRIORITY* pVal"),
+            Method("SetNotifyFlags", "ULONG Val"), Method("GetNotifyFlags", "ULONG* pVal"), Method("SetNotifyInterface", "IUnknown* Val"), Method("GetNotifyInterface", "IUnknown** pVal"), Method("SetMinimumRetryDelay", "ULONG Seconds"),
+            Method("GetMinimumRetryDelay", "ULONG* Seconds"), Method("SetNoProgressTimeout", "ULONG Seconds"), Method("GetNoProgressTimeout", "ULONG* Seconds"), Method("GetErrorCount", "ULONG* Errors"), Method("SetProxySettings", "BG_JOB_PROXY_USAGE ProxyUsage, const WCHAR* ProxyList, const WCHAR* ProxyBypassList"),
+            Method("GetProxySettings", "BG_JOB_PROXY_USAGE* pProxyUsage, LPWSTR* pProxyList, LPWSTR* pProxyBypassList"), Method("TakeOwnership", "") } },
         // the other interfaces of the GUIDs: their methods are not known (the ones of IUnknown / IDispatch are)
         { "IMarshal", "IUnknown", {} },
         { "IStorage", "IUnknown", {} },
@@ -376,6 +379,37 @@ std::optional<std::pair<std::string_view, DissasmComMethod>> GView::View::Dissas
         first += static_cast<uint32>(methods.size());
     }
     return std::nullopt;
+}
+
+const AsmFunctionDetails* GView::View::DissasmViewer::FindComMethodPrototype(std::string_view qualifiedName)
+{
+    static std::unordered_map<std::string, std::shared_ptr<const DissasmUserPrototype>> prototypes; // the parsed ones (null: none)
+    const auto separator = qualifiedName.find("::");
+    if (separator == std::string_view::npos)
+        return nullptr;
+    const std::string key(qualifiedName);
+    if (const auto known = prototypes.find(key); known != prototypes.end())
+        return known->second ? &known->second->details : nullptr;
+    const std::string_view interfaceName = qualifiedName.substr(0, separator);
+    const std::string_view methodName    = qualifiedName.substr(separator + 2);
+    std::shared_ptr<const DissasmUserPrototype> parsed;
+    for (uint32 index = 0; index < 256; index++) {
+        const auto method = FindComMethod(interfaceName, index);
+        if (!method.has_value())
+            break;
+        if (method->second.name != methodName)
+            continue;
+        if (method->second.parameters) {
+            const bool counted   = methodName == "AddRef" || methodName == "Release"; // ULONG: the count of the references
+            std::string text     = std::string(counted ? "ULONG " : "HRESULT ") + key + "(" + std::string(interfaceName) + "* This";
+            if (method->second.parameters[0])
+                text += std::string(", ") + method->second.parameters;
+            parsed = ParseApiPrototype(text + ")");
+        }
+        break;
+    }
+    prototypes.emplace(key, parsed);
+    return parsed ? &parsed->details : nullptr;
 }
 
 const DissasmComProducer* GView::View::DissasmViewer::FindComProducer(std::string_view function)

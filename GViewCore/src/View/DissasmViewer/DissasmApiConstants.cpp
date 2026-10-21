@@ -304,6 +304,13 @@ constexpr ConstantName ALGORITHMS[]        = { { 0x8001, "CALG_MD2" },     { 0x8
                                                { 0x660F, "CALG_AES_192" }, { 0x6610, "CALG_AES_256" }, { 0xA400, "CALG_RSA_KEYX" }, { 0x2400, "CALG_RSA_SIGN" } };
 constexpr ConstantName ENCODING_TYPES[]    = { { 0x1, "X509_ASN_ENCODING" }, { 0x10000, "PKCS_7_ASN_ENCODING" } };
 
+// COM: WMI, BITS
+constexpr ConstantName WBEM_QUERY_FLAGS[]   = { { 0x10, "WBEM_FLAG_RETURN_IMMEDIATELY" }, { 0x20, "WBEM_FLAG_FORWARD_ONLY" }, { 0x20000, "WBEM_FLAG_USE_AMENDED_QUALIFIERS" } };
+constexpr ConstantName WBEM_CONNECT_FLAGS[] = { { 0x80, "WBEM_FLAG_CONNECT_USE_MAX_WAIT" } };
+constexpr ConstantName WBEM_TIMEOUTS[]      = { { 0xFFFFFFFF, "WBEM_INFINITE" }, { 0, "WBEM_NO_WAIT" } };
+constexpr ConstantName BITS_JOB_TYPES[]     = { { 0, "BG_JOB_TYPE_DOWNLOAD" }, { 1, "BG_JOB_TYPE_UPLOAD" }, { 2, "BG_JOB_TYPE_UPLOAD_REPLY" } };
+constexpr ConstantName BITS_PRIORITIES[]    = { { 0, "BG_JOB_PRIORITY_FOREGROUND" }, { 1, "BG_JOB_PRIORITY_HIGH" }, { 2, "BG_JOB_PRIORITY_NORMAL" }, { 3, "BG_JOB_PRIORITY_LOW" } };
+
 // the kernel
 constexpr ConstantName POOL_TYPES[]    = { { 0, "NonPagedPool" },  { 1, "PagedPool" }, { 2, "NonPagedPoolMustSucceed" }, { 4, "NonPagedPoolCacheAligned" },
                                            { 5, "PagedPoolCacheAligned" }, { 0x200, "NonPagedPoolNx" } };
@@ -494,6 +501,16 @@ const std::unordered_map<std::string_view, ConstantSet>& GetConstantSets()
         { "WaitMode", Enumeration(PROCESSOR_MODES) },
         { "AccessMode", Enumeration(PROCESSOR_MODES) },
         { "KeInitializeEvent:Type", Enumeration(EVENT_TYPES) },
+        { "IWbemServices::ExecQuery:lFlags", Flags(WBEM_QUERY_FLAGS) },
+        { "IWbemServices::ExecNotificationQuery:lFlags", Flags(WBEM_QUERY_FLAGS) },
+        { "IWbemServices::CreateInstanceEnum:lFlags", Flags(WBEM_QUERY_FLAGS) },
+        { "IWbemServices::CreateClassEnum:lFlags", Flags(WBEM_QUERY_FLAGS) },
+        { "IWbemLocator::ConnectServer:lSecurityFlags", Flags(WBEM_CONNECT_FLAGS) },
+        { "IEnumWbemClassObject::Next:lTimeout", Enumeration(WBEM_TIMEOUTS) },
+        { "IBackgroundCopyManager::CreateJob:Type", Enumeration(BITS_JOB_TYPES) },
+        { "IBackgroundCopyJob::SetPriority:Val", Enumeration(BITS_PRIORITIES) },
+        { "IShellLinkW::SetShowCmd:iShowCmd", Enumeration(SHOW_COMMANDS) },
+        { "IShellLinkA::SetShowCmd:iShowCmd", Enumeration(SHOW_COMMANDS) },
         { "open:flags", Flags(OPEN_FLAGS) },
         { "openat:flags", Flags(OPEN_FLAGS) },
         { "mmap:prot", Flags(PROTECTIONS) },
