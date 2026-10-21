@@ -329,6 +329,8 @@ StackFrameResult AnalyzeStackPointerFrame(
                 return &alias;
         return nullptr;
     };
+    std::map<uint64, std::vector<ActiveAlias>> branchAliases; // the aliases at the targets of the forward branches
+    constexpr size_t MAX_STACK_ALIASES = 64;                   // a few per function (the reopened ones counted)
     std::map<uint64, int64> branchDeltas; // the depth at the targets of the forward branches
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
@@ -364,6 +366,13 @@ StackFrameResult AnalyzeStackPointerFrame(
         if (flowEnded) {
             const auto known = branchDeltas.find(current->address);
             setDelta(current->address, known != branchDeltas.end() ? known->second : (is64 ? deepest : bodyDelta));
+            // the aliases of the branch to it (the body after an early epilogue: pop rbp; ret ended rbp)
+            if (const auto saved = branchAliases.find(current->address); saved != branchAliases.end())
+                for (const auto& alias : saved->second)
+                    if (!aliasOf(alias.reg) && frame.stackAliases.size() < MAX_STACK_ALIASES) {
+                        aliases.push_back({ alias.reg, alias.delta, frame.stackAliases.size() });
+                        frame.stackAliases.push_back({ cs_reg_name(detailHandle, alias.reg), static_cast<int32>(alias.delta), current->address, current->address });
+                    }
             flowEnded = false;
             unknownPurge.reset();
             pushedArguments = 0;
@@ -523,15 +532,19 @@ StackFrameResult AnalyzeStackPointerFrame(
                 ++alias;
             }
         }
-        // mov r11, rsp (a copy), lea rbp, [rsp - 0x5f] (the biased frame pointer of MSVC x64: a callee saved register); a few per function
-        constexpr size_t MAX_STACK_ALIASES = 8;
+        // mov rax, rsp (a copy), lea rbp, [rsp - 0x5f] / lea rbp, [rax - 0x5f] (the biased frame pointer of MSVC x64: a callee saved
+        // register), lea r11, [rsp + 0x80] (the epilogue of MSVC x64: mov rsp, r11)
         const bool copiesStack = current->id == X86_INS_MOV && x86.op_count == 2 && IsRegisterOperand(x86, 1, stackRegister);
+        const auto* biasBase   = current->id == X86_INS_LEA && x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM &&
+                                       x86.operands[1].mem.index == X86_REG_INVALID && x86.operands[1].mem.base != stackRegister
+                                     ? aliasOf(x86.operands[1].mem.base)
+                                     : nullptr;
         const bool biasesStack = current->id == X86_INS_LEA && x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM &&
-                                 x86.operands[1].mem.base == stackRegister && x86.operands[1].mem.index == X86_REG_INVALID;
+                                 x86.operands[1].mem.index == X86_REG_INVALID && (x86.operands[1].mem.base == stackRegister || biasBase);
         if ((copiesStack || biasesStack) && x86.operands[0].type == X86_OP_REG && x86.operands[0].size == pointerSize &&
             x86.operands[0].reg != stackRegister && !aliasOf(x86.operands[0].reg) && frame.stackAliases.size() < MAX_STACK_ALIASES &&
-            (copiesStack || isCalleeSaved(x86.operands[0].reg))) {
-            const int64 aliasDelta = delta + (biasesStack ? x86.operands[1].mem.disp : 0);
+            (copiesStack || isCalleeSaved(x86.operands[0].reg) || x86.operands[0].reg == X86_REG_R11)) {
+            const int64 aliasDelta = (biasBase ? biasBase->delta : delta) + (biasesStack ? x86.operands[1].mem.disp : 0);
             aliases.push_back({ x86.operands[0].reg, aliasDelta, frame.stackAliases.size() });
             frame.stackAliases.push_back({ cs_reg_name(detailHandle, x86.operands[0].reg), static_cast<int32>(aliasDelta), nextAddress, nextAddress });
         }
@@ -561,6 +574,8 @@ StackFrameResult AnalyzeStackPointerFrame(
             if (target > current->address && target < limitAddress) {
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
                 branchDeltas.emplace(target, delta);
+                if (!aliases.empty())
+                    branchAliases.emplace(target, aliases);
             }
         }
         bool endsFlow = false;

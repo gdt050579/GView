@@ -8834,6 +8834,36 @@ TEST_CASE("X86BiasedFramePointer", "[Dissasm]Help")
     INFO(listing);
     REQUIRE(FindListingLine(listing, "0x00000012  mov    qword ptr [rbp + 0x27 + var_18], rax").size() > 0);
     REQUIRE(FindListingLine(listing, "0x0000001c  mov    rax, qword ptr [rbp + 0x27 + arg_50]").size() > 0);
+
+    // the frame pointer from a copy of rsp (mov rax, rsp; lea rbp, [rax - 0x5f]), the epilogue of MSVC through r11 (lea r11, [rsp + 0xa0];
+    // mov rsp, r11), the body after an early epilogue (pop rbp; ret: the branch to it keeps rbp)
+    std::vector<unsigned char> chained = {
+        0x48, 0x8B, 0xC4,                               // 0x00: mov rax, rsp
+        0x48, 0x89, 0x58, 0x08,                         // 0x03: mov [rax + 8], rbx
+        0x55,                                           // 0x07: push rbp
+        0x48, 0x8D, 0x68, 0xA1,                         // 0x08: lea rbp, [rax - 0x5f]
+        0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00,       // 0x0c: sub rsp, 0xa0
+        0x85, 0xC9,                                     // 0x13: test ecx, ecx
+        0x75, 0x0E,                                     // 0x15: jne 0x25
+        0x4C, 0x8D, 0x9C, 0x24, 0xA0, 0x00, 0x00, 0x00, // 0x17: lea r11, [rsp + 0xa0]
+        0x49, 0x8B, 0xE3,                               // 0x1f: mov rsp, r11
+        0x5D,                                           // 0x22: pop rbp
+        0xC3,                                           // 0x23: ret
+        0xCC,                                           // 0x24: int3
+        0x48, 0x89, 0x45, 0x10,                         // 0x25: mov [rbp + 0x10], rax  (the slot -0x4f)
+        0x4C, 0x8D, 0x9C, 0x24, 0xA0, 0x00, 0x00, 0x00, // 0x29: lea r11, [rsp + 0xa0]
+        0x49, 0x8B, 0xE3,                               // 0x31: mov rsp, r11
+        0x5D,                                           // 0x34: pop rbp
+        0xC3,                                           // 0x35: ret
+    };
+    DissasmFunctionFrame chainedFrame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, chained.data(), chained.size(), 0, chained.size(), true, chainedFrame));
+    REQUIRE(chainedFrame.FindVariable(-0x4f) != nullptr);
+    REQUIRE(chainedFrame.StackDeltaAt(0x22) == -8); // mov rsp, r11
+    bool rbpAfterEpilogue = false;
+    for (const auto& alias : chainedFrame.stackAliases)
+        rbpAfterEpilogue |= alias.reg == "rbp" && alias.delta == -0x5f && alias.start <= 0x25 && alias.end > 0x25;
+    REQUIRE(rbpAfterEpilogue);
 }
 
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
