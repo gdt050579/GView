@@ -1536,10 +1536,11 @@ TEST_CASE("LocalVariablesStackPointerFrames", "[Dissasm]LocalVariables")
     REQUIRE(frame.stackDeltas == deltas);
     REQUIRE(frame.StackDeltaAt(0x10) == -0x38);
     REQUIRE(frame.StackDeltaAt(0x24) == -8);
-    REQUIRE(frame.stackAlias == "r11");
-    REQUIRE(frame.stackAliasDelta == 0);
-    REQUIRE(frame.stackAliasStart == 3);
-    REQUIRE(frame.stackAliasEnd == 0x19);
+    REQUIRE(frame.stackAliases.size() == 1);
+    REQUIRE(frame.stackAliases[0].reg == "r11");
+    REQUIRE(frame.stackAliases[0].delta == 0);
+    REQUIRE(frame.stackAliases[0].start == 3);
+    REQUIRE(frame.stackAliases[0].end == 0x19);
 
     // rsp written by something else than push / pop / sub / add / lea: not followed (push rbp; mov rbp, rsp; and rsp, -0x10; ...)
     const std::vector<uint8> aligned = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xE4, 0xF0, 0x89, 0x44, 0x24, 0x20, 0xC9, 0xC3 };
@@ -8788,6 +8789,51 @@ TEST_CASE("ComInterfaces", "[Dissasm]Help")
     REQUIRE(variableNamed("pWbemServices") != nullptr);
     REQUIRE(variableNamed("pWbemServices")->type == "IWbemServices*");
     REQUIRE(variableNamed("This") == nullptr);
+}
+
+TEST_CASE("X86BiasedFramePointer", "[Dissasm]Help")
+{
+    // MSVC x64: the frame pointer set after the saves, biased (lea rbp, [rsp - 0x1f]: the rsp of the entry - 0x27), kept by the calls (a
+    // callee saved register), the epilogue restores rsp from it (lea rsp, [rbp + 0x1f])
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0x5C, 0x24, 0x08,             // 0x00: mov [rsp + 8], rbx
+        0x55,                                     // 0x05: push rbp
+        0x48, 0x8D, 0x6C, 0x24, 0xE1,             // 0x06: lea rbp, [rsp - 0x1f]
+        0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00, // 0x0b: sub rsp, 0xd0
+        0x48, 0x89, 0x45, 0x0F,                   // 0x12: mov [rbp + 0xf], rax      (the slot -0x18)
+        0xFF, 0x15, 0xE4, 0x01, 0x00, 0x00,       // 0x16: call qword ptr [rip + 0x1e4] (Sleep: 0x200)
+        0x48, 0x8B, 0x45, 0x7F,                   // 0x1c: mov rax, [rbp + 0x7f]     (the 0x58: the 10th argument)
+        0x48, 0x8D, 0x65, 0x1F,                   // 0x20: lea rsp, [rbp + 0x1f]
+        0x5D,                                     // 0x24: pop rbp
+        0xC3,                                     // 0x25: ret
+    };
+    DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, file.data(), file.size(), 0, file.size(), true, frame));
+    REQUIRE(!frame.usesFrameRegister);
+    REQUIRE(frame.stackAliases.size() == 1);
+    REQUIRE(frame.stackAliases[0].reg == "rbp");
+    REQUIRE(frame.stackAliases[0].delta == -0x27);
+    REQUIRE(frame.stackAliases[0].start == 0x0b);
+    REQUIRE(frame.stackAliases[0].end == 0x24); // pop rbp
+    REQUIRE(frame.FindVariable(-0x18) != nullptr);
+    REQUIRE(frame.FindVariable(0x58) != nullptr);
+    REQUIRE(frame.StackDeltaAt(0x24) == -8); // lea rsp, [rbp + 0x1f]
+    REQUIRE(frame.StackDeltaAt(0x25) == 0);
+
+    // the listing: the slots through rbp named (IDA: [rbp+27h+var_18])
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    qword ptr [rbp + 0x27 + var_18], rax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000001c  mov    rax, qword ptr [rbp + 0x27 + arg_50]").size() > 0);
 }
 
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")

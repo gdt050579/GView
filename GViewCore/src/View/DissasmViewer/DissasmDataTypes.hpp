@@ -300,10 +300,14 @@ namespace View
             // x64 without a frame register: rsp - the rsp of the entry from an address on (push / pop / sub / add rsp), sorted; the slots
             // ([rsp + 0x20]) are kept in offsets from the rsp of the entry (the return address at 0). Recomputed by the deep scan
             std::vector<std::pair<uint64, int32>> stackDeltas;
-            // x64: a copy of rsp (mov r11, rsp at the entry: [r11 - 0x28]) in [stackAliasStart, stackAliasEnd), with rsp - entry = stackAliasDelta
-            std::string stackAlias;
-            int32 stackAliasDelta  = 0;
-            uint64 stackAliasStart = 0, stackAliasEnd = 0;
+            // the registers that hold the stack pointer in [start, end): a copy (mov r11, rsp at the entry: [r11 - 0x28]), the biased frame
+            // pointer of MSVC x64 (lea rbp, [rsp - 0x5f] after the saves: [rbp + 0xf]); the register - the rsp of the entry = delta
+            struct StackAlias {
+                std::string reg;
+                int32 delta  = 0;
+                uint64 start = 0, end = 0;
+            };
+            std::vector<StackAlias> stackAliases;
             std::optional<int32> StackDeltaAt(uint64 address) const
             {
                 const auto next = std::upper_bound(

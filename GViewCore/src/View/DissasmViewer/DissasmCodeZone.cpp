@@ -3151,6 +3151,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!frame.usesFrameRegister && (base == X86_REG_RSP || base == X86_REG_ESP))
                 if (const auto delta = frame.StackDeltaAt(address); delta.has_value())
                     return static_cast<int32>(disp + delta.value());
+            // an alias of the stack pointer (mov r11, rsp / the biased rbp of MSVC x64: lea rbp, [rsp - 0x5f])
+            if (!frame.usesFrameRegister && !frame.stackAliases.empty())
+                if (const char* name = cs_reg_name(detailHandle, static_cast<x86_reg>(base)))
+                    for (const auto& alias : frame.stackAliases)
+                        if (address >= alias.start && address < alias.end && alias.reg == name)
+                            return static_cast<int32>(disp + alias.delta);
             return {};
         };
         uint64 callAddress         = 0;

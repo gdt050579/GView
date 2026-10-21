@@ -290,9 +290,7 @@ StackFrameResult AnalyzeStackPointerFrame(
     frame.stackOffset       = 0;
     frame.variables.clear();
     frame.stackDeltas.clear();
-    frame.stackAlias.clear();
-    frame.stackAliasDelta = 0;
-    frame.stackAliasStart = frame.stackAliasEnd = 0;
+    frame.stackAliases.clear();
     if (!code || codeSize == 0 || limitAddress <= codeAddress)
         return StackFrameResult::Rejected;
     const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
@@ -318,8 +316,19 @@ StackFrameResult AnalyzeStackPointerFrame(
     bool accumulatorAfterCall = false;
     bool flowEnded            = false;
     bool reachedRet           = false; // 32 bit: a function chunk (the cold code of a function, reached by a jcc) has no ret
-    x86_reg alias             = X86_REG_INVALID; // mov r11, rsp: a copy of the stack pointer, until it is written
-    int64 aliasDelta          = 0;
+    // the registers that hold the stack pointer (mov r11, rsp / lea rbp, [rsp - 0x5f]), until they are written (a volatile one: until a call)
+    struct ActiveAlias {
+        x86_reg reg;
+        int64 delta;
+        size_t index; // in frame.stackAliases
+    };
+    std::vector<ActiveAlias> aliases;
+    const auto aliasOf = [&aliases](unsigned int reg) -> const ActiveAlias* {
+        for (const auto& alias : aliases)
+            if (alias.reg == reg)
+                return &alias;
+        return nullptr;
+    };
     std::map<uint64, int64> branchDeltas; // the depth at the targets of the forward branches
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
@@ -394,14 +403,14 @@ StackFrameResult AnalyzeStackPointerFrame(
         const bool setsAccumulator = current->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG &&
                                      GetX64RegisterFamily(x86.operands[0].reg) == 0 && x86.operands[0].size >= 4 && immediate(1).has_value();
 
-        // the slots: [rsp + n] with the stack pointer before this instruction, [r11 - n] with the one of the copy
+        // the slots: [rsp + n] with the stack pointer before this instruction, [r11 - n] / [rbp + n] with the one of the alias
         for (uint8 index = 0; index < x86.op_count; index++) {
             const cs_x86_op& op = x86.operands[index];
-            const bool viaAlias = alias != X86_REG_INVALID && op.type == X86_OP_MEM && op.mem.base == alias;
+            const auto* viaAlias = op.type == X86_OP_MEM ? aliasOf(op.mem.base) : nullptr;
             if (op.type != X86_OP_MEM || (op.mem.base != stackRegister && !viaAlias) || op.mem.index != X86_REG_INVALID ||
                 (op.mem.segment != X86_REG_INVALID && op.mem.segment != X86_REG_SS))
                 continue;
-            const int64 offset = op.mem.disp + (viaAlias ? aliasDelta : delta);
+            const int64 offset = op.mem.disp + (viaAlias ? viaAlias->delta : delta);
             if ((offset >= 0 && offset < pointerSize) || offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
                 continue; // the return address
             accesses.push_back({ static_cast<int32>(offset), static_cast<uint16>(current->id == X86_INS_LEA ? 0 : op.size) });
@@ -451,9 +460,19 @@ StackFrameResult AnalyzeStackPointerFrame(
             break;
         case X86_INS_LEA:
             if (IsRegisterOperand(x86, 0, stackRegister)) {
-                if (x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.base == stackRegister &&
-                    x86.operands[1].mem.index == X86_REG_INVALID)
+                const bool plain = x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.index == X86_REG_INVALID;
+                if (plain && x86.operands[1].mem.base == stackRegister)
                     change = x86.operands[1].mem.disp;
+                else if (const auto* restored = plain ? aliasOf(x86.operands[1].mem.base) : nullptr)
+                    change = restored->delta + x86.operands[1].mem.disp - delta; // the epilogue: lea rsp, [rbp + 0x50]
+                else
+                    writesStack = true;
+            }
+            break;
+        case X86_INS_MOV:
+            if (IsRegisterOperand(x86, 0, stackRegister)) {
+                if (const auto* restored = x86.op_count == 2 && x86.operands[1].type == X86_OP_REG ? aliasOf(x86.operands[1].reg) : nullptr)
+                    change = restored->delta - delta; // mov rsp, rbp: the stack pointer of the alias
                 else
                     writesStack = true;
             }
@@ -487,28 +506,34 @@ StackFrameResult AnalyzeStackPointerFrame(
         // a ret, or a jmp with the stack of the entry (a tail call: jmp __CxxFrameHandler3); a chunk jumps back with its pushes
         reachedRet |= current->id == X86_INS_RET || current->id == X86_INS_RETF || (current->id == X86_INS_JMP && delta == 0);
 
-        // the copy of the stack pointer: mov r11, rsp sets it (once), any write of its register ends it
-        if (alias != X86_REG_INVALID) {
-            bool writesAlias = false;
+        // the aliases of the stack pointer: any write of their register ends them, a call the volatile ones (r11)
+        for (auto alias = aliases.begin(); alias != aliases.end();) {
+            bool writesAlias = current->id == X86_INS_CALL && !isCalleeSaved(alias->reg);
             for (uint8 index = 0; index < x86.op_count; index++)
                 if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
-                    GetX64RegisterFamily(x86.operands[index].reg) == GetX64RegisterFamily(alias))
+                    GetX64RegisterFamily(x86.operands[index].reg) == GetX64RegisterFamily(alias->reg))
                     writesAlias = true;
             for (uint8 index = 0; index < current->detail->regs_write_count; index++)
-                writesAlias |= GetX64RegisterFamily(current->detail->regs_write[index]) == GetX64RegisterFamily(alias);
-            if (writesAlias || current->id == X86_INS_CALL) {
-                frame.stackAliasEnd = current->address;
-                alias               = X86_REG_INVALID;
-            } else
-                frame.stackAliasEnd = nextAddress;
-        } else if (frame.stackAlias.empty() && current->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG &&
-                   x86.operands[0].size == pointerSize && IsRegisterOperand(x86, 1, stackRegister)) {
-            alias                 = x86.operands[0].reg;
-            aliasDelta            = delta;
-            frame.stackAlias      = cs_reg_name(detailHandle, alias);
-            frame.stackAliasDelta = static_cast<int32>(delta);
-            frame.stackAliasStart = nextAddress;
-            frame.stackAliasEnd   = nextAddress;
+                writesAlias |= GetX64RegisterFamily(current->detail->regs_write[index]) == GetX64RegisterFamily(alias->reg);
+            if (writesAlias) {
+                frame.stackAliases[alias->index].end = current->address;
+                alias                                = aliases.erase(alias);
+            } else {
+                frame.stackAliases[alias->index].end = nextAddress;
+                ++alias;
+            }
+        }
+        // mov r11, rsp (a copy), lea rbp, [rsp - 0x5f] (the biased frame pointer of MSVC x64: a callee saved register); a few per function
+        constexpr size_t MAX_STACK_ALIASES = 8;
+        const bool copiesStack = current->id == X86_INS_MOV && x86.op_count == 2 && IsRegisterOperand(x86, 1, stackRegister);
+        const bool biasesStack = current->id == X86_INS_LEA && x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM &&
+                                 x86.operands[1].mem.base == stackRegister && x86.operands[1].mem.index == X86_REG_INVALID;
+        if ((copiesStack || biasesStack) && x86.operands[0].type == X86_OP_REG && x86.operands[0].size == pointerSize &&
+            x86.operands[0].reg != stackRegister && !aliasOf(x86.operands[0].reg) && frame.stackAliases.size() < MAX_STACK_ALIASES &&
+            (copiesStack || isCalleeSaved(x86.operands[0].reg))) {
+            const int64 aliasDelta = delta + (biasesStack ? x86.operands[1].mem.disp : 0);
+            aliases.push_back({ x86.operands[0].reg, aliasDelta, frame.stackAliases.size() });
+            frame.stackAliases.push_back({ cs_reg_name(detailHandle, x86.operands[0].reg), static_cast<int32>(aliasDelta), nextAddress, nextAddress });
         }
         if (change.has_value()) {
             setDelta(nextAddress, delta + change.value());

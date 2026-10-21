@@ -523,24 +523,33 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
             variable     = function->FindVariableContaining(frameOperand.frameOffset);
             joiner       = slot.needsSeparator ? std::string_view(", #") : std::string_view();
         }
-    } else if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
-        function = zone->FindFrameOfAddress(address); // a chunk: the frame of its function
-        variable = function && function->usesFrameRegister ? function->FindVariableContaining(frameOperand.frameOffset) : nullptr;
+    } else if (const auto* framed = zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)
+                                         ? zone->FindFrameOfAddress(address) // a chunk: the frame of its function
+                                         : nullptr;
+               framed && framed->usesFrameRegister) {
+        function = framed;
+        variable = function->FindVariableContaining(frameOperand.frameOffset);
     } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
-               stackFunction && !stackFunction->usesFrameRegister &&
-               (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp") ||
-                (address >= stackFunction->stackAliasStart && address < stackFunction->stackAliasEnd && FindX86StackOperand(text, frameOperand, stackFunction->stackAlias)))) {
-        // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; a copy of
-        // it (mov r11, rsp): [r11 - 0x28] -> [r11 + var_28]
-        function           = stackFunction;
-        const bool viaCopy = text.find(zone->Is64BitCode() ? "[rsp" : "[esp") == std::string_view::npos;
-        const auto delta   = viaCopy ? std::optional<int32>(function->stackAliasDelta) : function->StackDeltaAt(address);
+               stackFunction && !stackFunction->usesFrameRegister) {
+        // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; an alias of
+        // it: a copy (mov r11, rsp: [r11 - 0x28] -> [r11 + var_28]), the biased frame pointer of MSVC x64 (lea rbp, [rsp - 0x5f]:
+        // [rbp + 0xf] -> [rbp + 0x5f + var_50])
+        std::optional<int32> delta;
+        if (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp"))
+            delta = stackFunction->StackDeltaAt(address);
+        else
+            for (const auto& alias : stackFunction->stackAliases)
+                if (address >= alias.start && address < alias.end && FindX86StackOperand(text, frameOperand, alias.reg)) {
+                    delta = alias.delta;
+                    break;
+                }
         if (delta.has_value()) {
+            function = stackFunction;
             frameOperand.frameOffset += delta.value();
             variable = function->FindVariableContaining(frameOperand.frameOffset);
             if (delta.value() != 0) {
                 char depth[24];
-                snprintf(depth, sizeof(depth), " + 0x%x + ", static_cast<unsigned int>(-delta.value()));
+                snprintf(depth, sizeof(depth), delta.value() < 0 ? " + 0x%x + " : " - 0x%x + ", static_cast<unsigned int>(delta.value() < 0 ? -delta.value() : delta.value()));
                 stackJoiner = depth;
                 joiner      = stackJoiner;
             }
