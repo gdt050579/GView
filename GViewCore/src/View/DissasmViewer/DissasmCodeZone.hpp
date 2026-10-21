@@ -397,6 +397,19 @@ struct DissasmCodeZone : public ParseZone {
     // its vtable and the slot of the call (call [rax + 0x18], the CFG dispatch) -> "IWbemLocator::ConnectServer"; by the address of the
     // call. Recomputed by the deep scan (TrackComInterfaces), not saved
     std::unordered_map<uint64, std::string> interfaceCalls;
+    // x64 structured exception handling (Settings::AddExceptionScopes, as IDA): the __try scopes marked on their first instruction
+    // (__try { // __except at loc_X / __try { // __finally(sub_X$fin$0)), their last one (} // starts at sub_X+0x24) and the __except block
+    // (__except(sub_X$filt$0) // owned by sub_X+0x24); by relative address. Recomputed by the deep scan, not saved
+    struct ExceptionMark {
+        enum class Kind : uint8 { TryBegin, TryEnd, Except };
+        Kind kind;
+        uint64 begin;                  // the first instruction of the scope
+        std::optional<uint64> handler; // the filter / the __finally funclet; none: the constant filter EXCEPTION_EXECUTE_HANDLER
+        std::optional<uint64> target;  // the __except block; none: a __finally
+    };
+    std::unordered_map<uint64, std::vector<ExceptionMark>> exceptionMarks;
+    // the marks of the instruction at the relative address as a comment; empty without one
+    std::string FormatExceptionMarks(uint64 relativeAddress) const;
     // the prototype of a function: the user's (Y), else the inferred one
     const AsmFunctionDetails* FindFunctionPrototype(uint64 functionStart) const;
     // Y: the prototypes before the change; `address` is the function

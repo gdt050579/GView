@@ -640,6 +640,60 @@ bool GView::View::DissasmViewer::AnalyzeX86StackFrame(
     return result == StackFrameResult::Accepted;
 }
 
+std::optional<DissasmFunctionFrame::StackAlias> GView::View::DissasmViewer::FindX64EstablisherFrameAlias(
+      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress)
+{
+    constexpr uint32 MAX_SETUP_INSTRUCTIONS = 16; // the prologue of the funclet: the saves, sub rsp
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail || !code || codeSize == 0)
+        return std::nullopt;
+    const auto writes = [&insn](int family) {
+        const cs_x86& x86 = insn->detail->x86;
+        for (uint8 index = 0; index < x86.op_count; index++)
+            if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) && GetX64RegisterFamily(x86.operands[index].reg) == family)
+                return true;
+        for (uint8 index = 0; index < insn->detail->regs_write_count; index++)
+            if (GetX64RegisterFamily(insn->detail->regs_write[index]) == family)
+                return true;
+        return false;
+    };
+    const int rbpFamily = GetX64RegisterFamily(X86_REG_RBP);
+    const int rdxFamily = GetX64RegisterFamily(X86_REG_RDX);
+    const uint8* data   = code;
+    size_t size         = codeSize;
+    uint64 address      = codeAddress;
+    uint32 decoded      = 0;
+    std::optional<DissasmFunctionFrame::StackAlias> alias;
+    while (decoded < MAX_FUNCTION_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
+        decoded++;
+        const cs_x86& x86        = insn->detail->x86;
+        const uint64 nextAddress = insn->address + insn->size;
+        if (alias.has_value()) {
+            if (writes(rbpFamily)) { // pop rbp: the epilogue of the funclet
+                alias->end = insn->address;
+                return alias;
+            }
+            alias->end = nextAddress;
+            continue;
+        }
+        const bool setsRbp = x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[0].reg == X86_REG_RBP;
+        if (setsRbp && insn->id == X86_INS_MOV && x86.operands[1].type == X86_OP_REG && x86.operands[1].reg == X86_REG_RDX) {
+            alias = DissasmFunctionFrame::StackAlias{ "rbp", 0, nextAddress, nextAddress };
+            continue;
+        }
+        if (setsRbp && insn->id == X86_INS_LEA && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.base == X86_REG_RDX &&
+            x86.operands[1].mem.index == X86_REG_INVALID && x86.operands[1].mem.segment == X86_REG_INVALID) {
+            alias = DissasmFunctionFrame::StackAlias{ "rbp", static_cast<int32>(x86.operands[1].mem.disp), nextAddress, nextAddress };
+            continue;
+        }
+        // rdx or rbp written before, a branch, a call (rdx is volatile): not the establisher frame
+        if (decoded >= MAX_SETUP_INSTRUCTIONS || writes(rdxFamily) || writes(rbpFamily) || cs_insn_group(detailHandle, insn.get(), CS_GRP_JUMP) ||
+            cs_insn_group(detailHandle, insn.get(), CS_GRP_CALL) || cs_insn_group(detailHandle, insn.get(), CS_GRP_RET))
+            return std::nullopt;
+    }
+    return alias;
+}
+
 bool GView::View::DissasmViewer::FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std::string_view stackRegister)
 {
     const std::string base = "[" + std::string(stackRegister);

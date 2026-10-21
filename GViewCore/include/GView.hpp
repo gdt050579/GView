@@ -1795,6 +1795,15 @@ namespace View
         // offset from the field itself (the relative method lists of Objective-C), a C string
         enum class DataFieldType : uint8 { Value, Pointer, RVA, Relative, String };
         enum class FunctionEntryType : uint8 { Export, ExceptionData, TlsCallback, Symbol }; // Symbol: a symbol table (an export name wins)
+        // a __try scope of x64 structured exception handling (the scope table of __C_specific_handler), file offsets: the guarded code
+        // [begin, end), the filter or the __finally funclet (handler; 0: the constant filter EXCEPTION_EXECUTE_HANDLER), the __except block
+        // (target; 0: a __finally)
+        struct ExceptionScope {
+            uint64 begin;
+            uint64 end;
+            uint64 handler;
+            uint64 target;
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
         // the entry point of a code zone that has none (an executable section that is not the one of the entry point)
@@ -1827,6 +1836,14 @@ namespace View
              * \param size The size of the function in bytes when it is known (exception data); 0: unknown.
              */
             void AddFunctionEntry(uint64 fileOffset, std::string_view name, FunctionEntryType type, uint64 size = 0);
+            /**
+             * \brief x64 structured exception handling: the __try scopes of the function at `functionFileOffset` (the scope table of
+             * __C_specific_handler in its unwind data) and its frame from the unwind data (the size of the prologue, the frame register and
+             * its scaled offset: the establisher frame its filters / __finally funclets receive in rdx). The viewer marks the scopes and
+             * names the funclets after the function (sub_X$fin$0, sub_X$filt$0); their accesses to the frame of the function use its
+             * variables.
+             */
+            void AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionScope>& scopes);
             /**
              * rief Adds a file offset where an instruction starts (the start of a code section): the disassembly never decodes an
              * instruction across it (the padding between two sections does not hide the code that follows). The function entries are

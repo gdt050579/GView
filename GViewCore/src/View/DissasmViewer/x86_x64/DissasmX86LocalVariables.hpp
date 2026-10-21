@@ -53,6 +53,11 @@ bool AnalyzeX86StackFrame(
       const X86CalleeStackPurge& calleePurge = {},
       const X86CallNoReturn& callNoReturn    = {});
 
+// x64 structured exception handling: a filter / a __finally funclet receives the establisher frame of its function in rdx and keeps it in
+// rbp (mov rbp, rdx / lea rbp, [rdx + 0x20], in its prologue, before rdx is written): the alias of rbp from there until rbp is written
+// (pop rbp), its delta the displacement from the establisher frame; none when the funclet does not
+std::optional<DissasmFunctionFrame::StackAlias> FindX64EstablisherFrameAlias(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress);
+
 // IDA like names: [ebp - 0x4C] -> var_4C, [ebp + 8] -> arg_0 (x86) / [rbp + 0x10] -> arg_0 (x64)
 void FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name);
 // "var_8 = dword ptr -8", `nameSize` receives the length of the name placed at the start of the text

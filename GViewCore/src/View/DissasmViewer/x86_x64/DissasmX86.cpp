@@ -534,17 +534,21 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; an alias of
         // it: a copy (mov r11, rsp: [r11 - 0x28] -> [r11 + var_28]), the biased frame pointer of MSVC x64 (lea rbp, [rsp - 0x5f]:
         // [rbp + 0xf] -> [rbp + 0x5f + var_50])
+        // a funclet of x64 SEH: rbp is the establisher frame of its function, the slots are the variables of the function
         std::optional<int32> delta;
+        const DissasmFunctionFrame* owner = stackFunction;
         if (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp"))
             delta = stackFunction->StackDeltaAt(address);
         else
             for (const auto& alias : stackFunction->stackAliases)
                 if (address >= alias.start && address < alias.end && FindX86StackOperand(text, frameOperand, alias.reg)) {
                     delta = alias.delta;
+                    if (alias.frameOf.has_value())
+                        owner = zone->localVariables.FindFunctionByStart(alias.frameOf.value());
                     break;
                 }
-        if (delta.has_value()) {
-            function = stackFunction;
+        if (delta.has_value() && owner) {
+            function = owner;
             frameOperand.frameOffset += delta.value();
             variable = function->FindVariableContaining(frameOperand.frameOffset);
             if (delta.value() != 0) {

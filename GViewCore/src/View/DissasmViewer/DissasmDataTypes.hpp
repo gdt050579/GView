@@ -306,6 +306,9 @@ namespace View
                 std::string reg;
                 int32 delta  = 0;
                 uint64 start = 0, end = 0;
+                // the slots are the ones of the frame of another function (by start): a funclet of x64 SEH keeps the establisher frame of
+                // its function in rbp (mov rbp, rdx), the delta is then in the offsets of that frame
+                std::optional<uint64> frameOf;
             };
             std::vector<StackAlias> stackAliases;
             std::optional<int32> StackDeltaAt(uint64 address) const

@@ -212,6 +212,15 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<std::pair<uint64, std::string>> functionComparisons; // the walk of a function: its cmp of a returned value with a constant
     std::unordered_map<uint64, std::vector<std::pair<uint64, std::string>>> comparisonsByFunction; // the last walk of each function
     std::unordered_map<uint64, std::string> returnValueConstants;                                 // DissasmCodeZone::returnValueConstants
+    // x64 structured exception handling (CollectExceptionScopes): the funclets with the frame of their function (relative starts; the
+    // unwind data of the function: its prologue size, its frame register and offset / 16), the marks of the scopes
+    struct FuncletLink {
+        uint64 funclet, parent;
+        uint64 size; // of the funclet (its .pdata entry), 0: unknown
+        uint8 prologSize, frameRegister, frameOffset;
+    };
+    std::vector<FuncletLink> funcletLinks;
+    std::unordered_map<uint64, std::vector<DissasmCodeZone::ExceptionMark>> exceptionMarks; // DissasmCodeZone::exceptionMarks
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
     std::unordered_set<uint64> userReturns;    // the functions the user says return (USER_FUNCTION_RETURNS): never noreturn
@@ -1582,6 +1591,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (target < blockStarts.size() && blockStarts[target] && !insideFunctions.contains(target) && LooksLikeCode(target))
                     AddFunctionStart(codeStart + target);
         }
+        // the __except blocks of x64 SEH (reached by the unwinding only, after the jmp that ends their __try): a label, as IDA
+        if (functionEntries)
+            for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+                for (const auto& scope : it->second.exceptionScopes)
+                    if (scope.target >= codeStart && scope.target - codeStart < blockStarts.size() && blockStarts[scope.target - codeStart] &&
+                        callsMap.insert({ scope.target, true }).second)
+                        callsFound.emplace_back(scope.target, zone->GetLabelName("loc_", scope.target - codeStart));
         // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
         if (zone->zoneDetails.HasEntryPoint()) {
             callsFound.erase(
@@ -1646,6 +1662,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (usedNames.insert(name).second)
                     call->second = std::move(name);
             }
+            if (hasFunctionEntries && !IsArmArch(arch))
+                CollectExceptionScopes(usedNames, namedByPlugin);
         }
 
         // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
@@ -1655,6 +1673,132 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 cs_close(&detailHandle);
                 hasDetailHandle = false;
             }
+        }
+    }
+
+    // x64 structured exception handling (Settings::AddExceptionScopes): the funclets named after their function as IDA (sub_X$fin$0: a
+    // __finally, sub_X$filt$0: a filter), the marks of the scopes on their instructions (DissasmCodeZone::exceptionMarks), the funclets
+    // that receive the frame of their function (LinkFuncletFrames)
+    void CollectExceptionScopes(std::unordered_set<std::string>& usedNames, const std::unordered_set<uint64>& namedByPlugin)
+    {
+        constexpr uint32 MAX_SCOPE_INSTRUCTIONS = 0x10000;
+        const auto labelOf = [this](uint64 fileOffset) -> std::pair<uint64, std::string>* {
+            const auto call = std::lower_bound(
+                  callsFound.begin(), callsFound.end(), fileOffset, [](const auto& item, uint64 value) { return item.first < value; });
+            return call != callsFound.end() && call->first == fileOffset ? &*call : nullptr;
+        };
+        const auto inCode = [this](uint64 fileOffset) { return fileOffset >= codeStart && fileOffset - codeStart < codeSize; };
+        std::unordered_set<uint64> linkedFunclets;
+        for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it) {
+            const auto& entry  = it->second;
+            const auto* parent = entry.exceptionScopes.empty() ? nullptr : labelOf(it->first);
+            if (!parent)
+                continue;
+            const std::string parentName = parent->second;
+            uint32 filters = 0, finallies = 0;
+            for (const auto& scope : entry.exceptionScopes) {
+                if (!inCode(scope.begin) || scope.end <= scope.begin || !inCode(scope.end - 1) || (scope.handler != 0 && !inCode(scope.handler)) ||
+                    (scope.target != 0 && !inCode(scope.target)))
+                    continue;
+                DissasmCodeZone::ExceptionMark mark{ DissasmCodeZone::ExceptionMark::Kind::TryBegin, scope.begin - codeStart, std::nullopt, std::nullopt };
+                if (scope.handler != 0)
+                    mark.handler = scope.handler - codeStart;
+                if (scope.target != 0)
+                    mark.target = scope.target - codeStart;
+                exceptionMarks[mark.begin].push_back(mark);
+                // the last instruction of the scope: } // starts at
+                DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, mark.begin, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+                std::optional<uint64> last;
+                for (uint32 count = 0; count < MAX_SCOPE_INSTRUCTIONS && probe.Next(insn) && insn->address < scope.end - codeStart; count++)
+                    last = insn->address;
+                if (last.has_value()) {
+                    auto end = mark;
+                    end.kind = DissasmCodeZone::ExceptionMark::Kind::TryEnd;
+                    exceptionMarks[last.value()].push_back(end);
+                }
+                // the __except block (once: the scopes of a __try split by MSVC share it)
+                if (mark.target.has_value()) {
+                    auto& marks = exceptionMarks[mark.target.value()];
+                    if (std::none_of(marks.begin(), marks.end(), [&mark](const auto& other) {
+                            return other.kind == DissasmCodeZone::ExceptionMark::Kind::Except && other.handler == mark.handler;
+                        })) {
+                        auto handler = mark;
+                        handler.kind = DissasmCodeZone::ExceptionMark::Kind::Except;
+                        marks.push_back(handler);
+                    }
+                }
+                // the funclet (once: the same __finally may guard several scopes)
+                if (scope.handler == 0 || !linkedFunclets.insert(scope.handler).second)
+                    continue;
+                auto* funclet           = labelOf(scope.handler);
+                const auto funcletEntry = functionEntries->find(scope.handler);
+                if (!funclet || funcletEntry == functionEntries->end())
+                    continue;
+                if (GetLabelType(funclet->second) == SUB && !namedByPlugin.contains(scope.handler)) {
+                    std::string name = parentName + (scope.target != 0 ? "$filt$" + std::to_string(filters++) : "$fin$" + std::to_string(finallies++));
+                    if (usedNames.insert(name).second)
+                        funclet->second = std::move(name);
+                }
+                if (is64)
+                    funcletLinks.push_back(
+                          { scope.handler - codeStart, it->first - codeStart, funcletEntry->second.size, entry.prologSize, entry.frameRegister, entry.frameOffset });
+            }
+        }
+    }
+
+    // the funclets of x64 SEH (a filter / a __finally gets the establisher frame of its function in rdx: mov rbp, rdx / lea rbp, [rdx + 0x20]):
+    // rbp is an alias of the frame of the function there, its slots are the variables of the function (sub_X$fin$0: mov rcx, qword ptr
+    // [rbp + 0x98 + var_68]). The establisher frame: the rsp after the prologue (no frame register), the frame register - 16 * its offset
+    void LinkFuncletFrames()
+    {
+        constexpr uint8 UNWIND_RBP = 5; // the number of rbp in the unwind data
+        if (!hasDetailHandle || funcletLinks.empty())
+            return;
+        const auto byStart = [](const DissasmFunctionFrame& frame, uint64 value) { return frame.startAddress < value; };
+        for (const auto& link : funcletLinks) {
+            const auto parent = std::lower_bound(frames.begin(), frames.end(), link.parent, byStart);
+            if (parent == frames.end() || parent->startAddress != link.parent)
+                continue;
+            // the establisher frame: - the rsp of the entry (a frame without a frame register), - rbp (a frame register function)
+            std::optional<int64> establisher;
+            const uint64 prologEnd = link.parent + link.prologSize;
+            if (link.frameRegister == 0 && !parent->usesFrameRegister)
+                establisher = parent->StackDeltaAt(prologEnd);
+            else if (link.frameRegister == UNWIND_RBP && parent->usesFrameRegister)
+                establisher = -16 * static_cast<int64>(link.frameOffset);
+            else if (link.frameRegister == UNWIND_RBP)
+                for (const auto& alias : parent->stackAliases)
+                    if (alias.reg == "rbp" && !alias.frameOf.has_value() && alias.start <= prologEnd && prologEnd < alias.end) {
+                        establisher = alias.delta - 16 * static_cast<int64>(link.frameOffset);
+                        break;
+                    }
+            if (!establisher.has_value() || link.funclet >= codeSize)
+                continue;
+            const uint64 bytesToRead = std::min<uint64>(link.size > 0 ? link.size : codeSize - link.funclet, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
+            const auto functionData  = obj->GetData().Get(codeStart + link.funclet, static_cast<uint32>(std::min<uint64>(bytesToRead, codeSize - link.funclet)), false);
+            if (!functionData.IsValid())
+                continue;
+            auto alias = FindX64EstablisherFrameAlias(detailHandle, functionData.GetData(), functionData.GetLength(), link.funclet);
+            if (!alias.has_value() || alias->end <= alias->start)
+                continue;
+            alias->delta   = static_cast<int32>(alias->delta + establisher.value());
+            alias->frameOf = link.parent;
+            // the frame of the funclet: the one of its own slots, or one for the alias (a funclet without slots of its own)
+            auto funcletFrame = std::lower_bound(frames.begin(), frames.end(), link.funclet, byStart);
+            if (funcletFrame != frames.end() && funcletFrame->startAddress == link.funclet) {
+                if (!funcletFrame->usesFrameRegister)
+                    funcletFrame->stackAliases.push_back(std::move(alias.value()));
+                continue;
+            }
+            if ((funcletFrame != frames.end() && funcletFrame->startAddress < alias->end) ||
+                (funcletFrame != frames.begin() && (funcletFrame - 1)->endAddress > link.funclet))
+                continue; // the ranges of the frames never overlap
+            DissasmFunctionFrame frame{};
+            frame.startAddress      = link.funclet;
+            frame.endAddress        = alias->end;
+            frame.usesFrameRegister = false;
+            frame.stackAliases.push_back(std::move(alias.value()));
+            frames.insert(funcletFrame, std::move(frame));
         }
     }
 
@@ -3155,7 +3299,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!frame.usesFrameRegister && !frame.stackAliases.empty())
                 if (const char* name = cs_reg_name(detailHandle, static_cast<x86_reg>(base)))
                     for (const auto& alias : frame.stackAliases)
-                        if (address >= alias.start && address < alias.end && alias.reg == name)
+                        if (address >= alias.start && address < alias.end && alias.reg == name && !alias.frameOf.has_value())
                             return static_cast<int32>(disp + alias.delta);
             return {};
         };
@@ -3691,7 +3835,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);
         zone->dissasmType.annotations   = std::move(annotations);
+        LinkFuncletFrames();
         zone->localVariables.functions  = std::move(frames);
+        zone->exceptionMarks            = std::move(exceptionMarks);
         // the tables that became data lines: their entries show the names of their cases
         zone->tableEntries.clear();
         for (const auto& [entry, target] : tableEntries)
@@ -5591,6 +5737,35 @@ std::string DissasmCodeZone::FormatCodeAddress(uint64 relativeAddress) const
     return name + text.GetText();
 }
 
+std::string DissasmCodeZone::FormatExceptionMarks(uint64 relativeAddress) const
+{
+    const auto marks = exceptionMarks.find(relativeAddress);
+    if (marks == exceptionMarks.end())
+        return {};
+    const auto nameOf = [this](uint64 address) {
+        std::string name = GetLabelNameAt(address);
+        return name.empty() ? FormatCodeAddress(address) : name;
+    };
+    std::string text;
+    for (const auto& mark : marks->second) {
+        if (!text.empty())
+            text += "; ";
+        const std::string handler = mark.handler.has_value() ? nameOf(mark.handler.value()) : std::string("EXCEPTION_EXECUTE_HANDLER");
+        switch (mark.kind) {
+        case ExceptionMark::Kind::TryBegin:
+            text += mark.target.has_value() ? "__try { // __except at " + nameOf(mark.target.value()) : "__try { // __finally(" + handler + ")";
+            break;
+        case ExceptionMark::Kind::TryEnd:
+            text += "} // starts at " + FormatCodeAddress(mark.begin);
+            break;
+        case ExceptionMark::Kind::Except:
+            text += "__except(" + handler + ") // owned by " + FormatCodeAddress(mark.begin);
+            break;
+        }
+    }
+    return text;
+}
+
 std::string DissasmCodeZone::FormatXrefsSummary(uint64 relativeAddress) const
 {
     constexpr size_t SHOWN_XREFS = 2;
@@ -6407,6 +6582,11 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
     paramsPtr->zone                         = this;
     [[maybe_unused]] const bool decoded     = line.TryGetDataFromInsn(*paramsPtr);
     assert(decoded);
+    if (!exceptionMarks.empty()) // x64 SEH: the __try scopes (__try { // __except at loc_X)
+        if (auto marks = FormatExceptionMarks(line.address); !marks.empty()) {
+            line.autoComment     = line.autoComment.empty() ? std::move(marks) : marks + "; " + line.autoComment;
+            line.constantComment = false; // the comment is not only the constant (the value of an argument) any more
+        }
     lastDrawnLine = instructionIndex;
     return line;
 }

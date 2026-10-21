@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <set>
+#include <unordered_set>
 
 using namespace AppCUI;
 using namespace AppCUI::Input;
@@ -191,6 +192,9 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
         };
         constexpr uint32 MAX_RUNTIME_FUNCTIONS = 0x100000;
         constexpr uint8 UNW_FLAG_CHAININFO     = 0x4;
+        constexpr uint8 UNW_FLAG_HANDLERS      = 0x3; // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER: a language specific handler and its data
+        std::vector<RuntimeFunction> handled;         // the functions with a handler (their scope tables are read after the loop)
+        std::unordered_set<uint32> functionStarts;    // the funclets of the scopes are functions of .pdata
         const auto& exceptionDir               = pe->GetDirectory(PE::DirectoryType::Exception);
         const auto start                       = exceptionDir.VirtualAddress != 0 ? pe->RVAToFA(exceptionDir.VirtualAddress) : PE_INVALID_ADDRESS;
         const uint32 count = start != PE_INVALID_ADDRESS ? std::min<uint32>(exceptionDir.Size / sizeof(RuntimeFunction), MAX_RUNTIME_FUNCTIONS) : 0;
@@ -210,6 +214,55 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             const auto fa = pe->RVAToFA(function.BeginAddress);
             if (fa != PE_INVALID_ADDRESS)
                 settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, function.EndAddress - function.BeginAddress);
+            functionStarts.insert(function.BeginAddress);
+            if (unwindInfo != PE_INVALID_ADDRESS && ((versionAndFlags >> 3) & UNW_FLAG_HANDLERS))
+                handled.push_back(function);
+        }
+        // the scope tables of __C_specific_handler (the language specific data after the handler RVA): a count, then the scopes
+        // { begin, end, handler, target } (RVAs); the data of another handler (C++ FuncInfo, the GS cookie) fails the checks: every scope
+        // inside the function, its handler EXCEPTION_EXECUTE_HANDLER (1) or a funclet of .pdata, its target 0 (__finally) or in the function
+        struct ScopeRecord {
+            uint32 BeginAddress;
+            uint32 EndAddress;
+            uint32 HandlerAddress;
+            uint32 JumpTarget;
+        };
+        constexpr uint32 MAX_SCOPES = 64;
+        for (const auto& function : handled) {
+            const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
+            struct UnwindHeader {
+                uint8 versionAndFlags, prologSize, codeCount, frame; // frame: the register (low 4 bits), its offset / 16 (high 4 bits)
+            } header;
+            if (!data.Copy<UnwindHeader>(unwindInfo, header))
+                continue;
+            const uint64 handlerData = unwindInfo + 4 + 2ull * ((header.codeCount + 1u) & ~1u) + 4; // the codes (an even count), the handler RVA
+            uint32 scopeCount        = 0;
+            if (!data.Copy<uint32>(handlerData, scopeCount) || scopeCount == 0 || scopeCount > MAX_SCOPES)
+                continue;
+            std::vector<DissasmViewer::ExceptionScope> scopes;
+            bool valid = true;
+            for (uint32 index = 0; index < scopeCount && valid; index++) {
+                ScopeRecord scope;
+                if (!data.Copy<ScopeRecord>(handlerData + 4 + static_cast<uint64>(index) * sizeof(ScopeRecord), scope)) {
+                    valid = false;
+                    break;
+                }
+                valid = scope.BeginAddress >= function.BeginAddress && scope.BeginAddress < scope.EndAddress && scope.EndAddress <= function.EndAddress + 1 &&
+                        (scope.HandlerAddress == 1 || functionStarts.contains(scope.HandlerAddress)) &&
+                        (scope.JumpTarget == 0 ? scope.HandlerAddress != 1 : scope.JumpTarget >= function.BeginAddress && scope.JumpTarget < function.EndAddress);
+                if (!valid)
+                    break;
+                const auto begin   = pe->RVAToFA(scope.BeginAddress);
+                const auto end     = pe->RVAToFA(scope.EndAddress - 1);
+                const auto handler = scope.HandlerAddress == 1 ? 0 : pe->RVAToFA(scope.HandlerAddress);
+                const auto target  = scope.JumpTarget == 0 ? 0 : pe->RVAToFA(scope.JumpTarget);
+                valid = begin != PE_INVALID_ADDRESS && end != PE_INVALID_ADDRESS && handler != PE_INVALID_ADDRESS && target != PE_INVALID_ADDRESS;
+                if (valid)
+                    scopes.push_back({ begin, end + 1, handler, target });
+            }
+            const auto fa = pe->RVAToFA(function.BeginAddress);
+            if (valid && fa != PE_INVALID_ADDRESS)
+                settings.AddExceptionScopes(fa, header.prologSize, header.frame & 0xF, header.frame >> 4, scopes);
         }
     }
 

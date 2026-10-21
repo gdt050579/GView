@@ -8866,6 +8866,83 @@ TEST_CASE("X86BiasedFramePointer", "[Dissasm]Help")
     REQUIRE(rbpAfterEpilogue);
 }
 
+TEST_CASE("X64ExceptionScopes", "[Dissasm]Help")
+{
+    // x64 SEH (the scope table of __C_specific_handler): a __try / __except with a filter funclet (no frame register: the establisher
+    // frame is the rsp after the prologue), a __try / __finally of a frame register function (the funclet: lea rbp, [rdx + 0x10])
+    std::vector<unsigned char> file = {
+        0x53,                                           // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x30,                         // 0x01: sub rsp, 0x30
+        0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00, // 0x05: mov dword ptr [rsp + 0x20], 0   (__try; the slot -0x18)
+        0xFF, 0x15, 0xED, 0x01, 0x00, 0x00,             // 0x0d: call qword ptr [rip + 0x1ed]   (Sleep: 0x200)
+        0xEB, 0x05,                                     // 0x13: jmp 0x1a
+        0xB8, 0x01, 0x00, 0x00, 0x00,                   // 0x15: mov eax, 1                     (__except)
+        0x8B, 0x44, 0x24, 0x20,                         // 0x1a: mov eax, dword ptr [rsp + 0x20]
+        0x48, 0x83, 0xC4, 0x30,                         // 0x1e: add rsp, 0x30
+        0x5B,                                           // 0x22: pop rbx
+        0xC3,                                           // 0x23: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x30: push rbp                       (the filter)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x31: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x35: mov rbp, rdx                   (the establisher frame)
+        0x8B, 0x45, 0x20,                               // 0x38: mov eax, dword ptr [rbp + 0x20] (the slot -0x18 of 0x00)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x3b: add rsp, 0x20
+        0x5D,                                           // 0x3f: pop rbp
+        0xC3,                                           // 0x40: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x50: push rbp
+        0x48, 0x8B, 0xEC,                               // 0x51: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x20,                         // 0x54: sub rsp, 0x20
+        0xC7, 0x45, 0xFC, 0x01, 0x00, 0x00, 0x00,       // 0x58: mov dword ptr [rbp - 4], 1     (__try)
+        0xFF, 0x15, 0x9B, 0x01, 0x00, 0x00,             // 0x5f: call qword ptr [rip + 0x19b]   (Sleep)
+        0xB9, 0x00, 0x00, 0x00, 0x00,                   // 0x65: mov ecx, 0
+        0x48, 0x8B, 0xD5,                               // 0x6a: mov rdx, rbp
+        0xE8, 0x0E, 0x00, 0x00, 0x00,                   // 0x6d: call 0x80                      (the __finally)
+        0x8B, 0x45, 0xFC,                               // 0x72: mov eax, dword ptr [rbp - 4]
+        0x48, 0x8B, 0xE5,                               // 0x75: mov rsp, rbp
+        0x5D,                                           // 0x78: pop rbp
+        0xC3,                                           // 0x79: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x80: push rbp                       (the __finally)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x81: sub rsp, 0x20
+        0x48, 0x8D, 0x6A, 0x10,                         // 0x85: lea rbp, [rdx + 0x10]
+        0xC7, 0x45, 0xEC, 0x00, 0x00, 0x00, 0x00,       // 0x89: mov dword ptr [rbp - 0x14], 0  (the slot -4 of 0x50)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x90: add rsp, 0x20
+        0x5D,                                           // 0x94: pop rbp
+        0xC3,                                           // 0x95: ret
+    };
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0x50;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = {
+        { 0x00, { "", 0x24, false, { { 0x05, 0x13, 0x30, 0x15 } }, 5, 0, 0 } }, // no frame register, the prologue: push rbx; sub rsp, 0x30
+        { 0x30, { "", 0x11, false } },
+        { 0x50, { "", 0x2a, false, { { 0x58, 0x6d, 0x80, 0 } }, 8, 5, 0 } }, // rbp, offset 0
+        { 0x80, { "", 0x16, false } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    // the funclets named after their function, a label at the __except block
+    REQUIRE(zone.GetLabelNameAt(0x30) == zone.GetLabelNameAt(0x00) + "$filt$0");
+    REQUIRE(zone.GetLabelNameAt(0x80) == zone.GetLabelNameAt(0x50) + "$fin$0");
+    REQUIRE(zone.GetLabelNameAt(0x15).starts_with("loc_"));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const std::string filter = zone.GetLabelNameAt(0x30);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov").find("__try { // __except at " + zone.GetLabelNameAt(0x15)) != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000d  call").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000015  mov").find("__except(" + filter + ") // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000058  mov").find("__try { // __finally(" + zone.GetLabelNameAt(0x80) + ")") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000006a  mov").find("} // starts at ") != std::string_view::npos);
+    // the slots of the funclets through rbp: the variables of their function
+    REQUIRE(FindListingLine(listing, "0x00000038  mov    eax, dword ptr [rbp + 0x38 + var_18]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000089  mov    dword ptr [rbp - 0x10 + var_4], 0").size() > 0);
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does

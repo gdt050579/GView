@@ -588,6 +588,12 @@ namespace View
             std::string name;      // empty: an automatic name (sub_...)
             uint64 size   = 0;     // 0: unknown
             bool isExport = false; // the name is the name of an export
+            // x64 structured exception handling (Settings::AddExceptionScopes): the __try scopes of the function and its frame in the
+            // unwind data (the prologue size, the frame register and its offset / 16)
+            std::vector<ExceptionScope> exceptionScopes;
+            uint8 prologSize    = 0;
+            uint8 frameRegister = 0;
+            uint8 frameOffset   = 0;
         };
 
         struct DissasmCodeZoneInitData {

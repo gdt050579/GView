@@ -58,6 +58,15 @@ void Settings::AddFunctionEntry(uint64 fileOffset, std::string_view name, Functi
         entry.size = size;
 }
 
+void Settings::AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionScope>& scopes)
+{
+    auto& entry           = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.exceptionScopes = scopes;
+    entry.prologSize      = prologSize;
+    entry.frameRegister   = frameRegister;
+    entry.frameOffset     = frameOffset;
+}
+
 void Settings::AddInstructionBoundary(uint64 fileOffset)
 {
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);
