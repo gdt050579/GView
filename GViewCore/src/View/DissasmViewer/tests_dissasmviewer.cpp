@@ -8684,6 +8684,84 @@ TEST_CASE("ApiReturnConstants", "[Dissasm]Help")
     }
 }
 
+TEST_CASE("ComInterfaces", "[Dissasm]Help")
+{
+    // the GUIDs (their bytes: Data1, Data2, Data3 little endian), the interfaces, the vtables
+    const uint8 locatorIid[16]   = { 0x87, 0xA6, 0x12, 0xDC, 0x7F, 0x73, 0xCF, 0x11, 0x88, 0x4D, 0x00, 0xAA, 0x00, 0x4B, 0x2E, 0x24 };
+    const uint8 locatorClsid[16] = { 0x11, 0xF8, 0x90, 0x45, 0x3A, 0x1D, 0xD0, 0x11, 0x89, 0x1F, 0x00, 0xAA, 0x00, 0x4B, 0x2E, 0x24 };
+    const uint8 unknownIid[16]   = { 0, 0, 0, 0, 0, 0, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46 };
+    REQUIRE(FindGuidName(locatorIid) == "IID_IWbemLocator");
+    REQUIRE(FindGuidName(locatorClsid) == "CLSID_WbemLocator");
+    REQUIRE(FindInterfaceOfIid(locatorIid) == "IWbemLocator");
+    REQUIRE(FindInterfaceOfIid(locatorClsid).empty()); // a CLSID is not an interface
+    REQUIRE(FindInterfaceOfIid(unknownIid) == "IUnknown");
+    REQUIRE(FindComMethod("IWbemServices", 2)->second.name == "Release");
+    REQUIRE(FindComMethod("IWbemServices", 2)->first == "IWbemServices");
+    REQUIRE(FindComMethod("IWbemServices", 20)->second.name == "ExecQuery");
+    REQUIRE(FindComMethod("ITaskService", 10)->second.name == "Connect"); // after the 7 of IDispatch
+    REQUIRE(FindComMethod("IShellLinkA", 20)->second.name == "SetPath");
+    REQUIRE_FALSE(FindComMethod("IWbemLocator", 4).has_value());
+    REQUIRE(FindComProducer("CoCreateInstance")->riidParameter == 3);
+    REQUIRE(FindComProducer("CreateFileW") == nullptr);
+
+    // x64: CoCreateInstance(CLSID_WbemLocator, 0, 1, IID_IWbemLocator, &locator); locator->ConnectServer(..., &services) (its 8th
+    // parameter, in the stack); services->ExecQuery through the CFG dispatch (mov rax, [rax + 0xa0]; call [dispatch]); services->Release
+    std::vector<unsigned char> file;
+    const auto ripOperand = [&file](std::initializer_list<unsigned char> opcode, uint32 target, uint32 after) {
+        file.insert(file.end(), opcode);
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 4 + after);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x48 });             // 0x00: sub rsp, 0x48
+    file.insert(file.end(), { 0x48, 0x8D, 0x44, 0x24, 0x30 });       // 0x04: lea rax, [rsp + 0x30]   (&locator)
+    file.insert(file.end(), { 0x48, 0x89, 0x44, 0x24, 0x20 });       // 0x09: mov [rsp + 0x20], rax   (ppv)
+    ripOperand({ 0x4C, 0x8D, 0x0D }, 0x100, 0);                      // 0x0e: lea r9, IID_IWbemLocator
+    file.insert(file.end(), { 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00 }); // 0x15: mov r8d, 1
+    file.insert(file.end(), { 0x31, 0xD2 });                         // 0x1b: xor edx, edx
+    ripOperand({ 0x48, 0x8D, 0x0D }, 0x110, 0);                      // 0x1d: lea rcx, CLSID_WbemLocator
+    ripOperand({ 0xFF, 0x15 }, 0x200, 0);                            // 0x24: call CoCreateInstance
+    file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x30 });       // 0x2a: mov rcx, [rsp + 0x30]   (locator)
+    file.insert(file.end(), { 0x48, 0x8D, 0x44, 0x24, 0x38 });       // 0x2f: lea rax, [rsp + 0x38]   (&services)
+    file.insert(file.end(), { 0x48, 0x89, 0x44, 0x24, 0x40 });       // 0x34: mov [rsp + 0x40], rax   (ppNamespace: the 8th)
+    file.insert(file.end(), { 0x48, 0x8B, 0x01 });                   // 0x39: mov rax, [rcx]
+    file.insert(file.end(), { 0xFF, 0x50, 0x18 });                   // 0x3c: call [rax + 0x18]       (IWbemLocator::ConnectServer)
+    file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x38 });       // 0x3f: mov rcx, [rsp + 0x38]   (services)
+    file.insert(file.end(), { 0x48, 0x8B, 0x01 });                   // 0x44: mov rax, [rcx]
+    file.insert(file.end(), { 0x48, 0x8B, 0x80, 0xA0, 0x00, 0x00, 0x00 }); // 0x47: mov rax, [rax + 0xa0]
+    ripOperand({ 0xFF, 0x15 }, 0x208, 0);                            // 0x4e: call [dispatch]         (IWbemServices::ExecQuery)
+    file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x38 });       // 0x54: mov rcx, [rsp + 0x38]
+    file.insert(file.end(), { 0x48, 0x8B, 0x01 });                   // 0x59: mov rax, [rcx]
+    file.insert(file.end(), { 0xFF, 0x50, 0x10 });                   // 0x5c: call [rax + 0x10]       (IWbemServices::Release)
+    file.insert(file.end(), { 0x48, 0x8B, 0x19 });                   // 0x5f: mov rbx, [rcx]          (rcx: written by the call)
+    file.insert(file.end(), { 0xFF, 0x53, 0x10 });                   // 0x62: call [rbx + 0x10]       (nothing)
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x48, 0xC3 });       // 0x65: add rsp, 0x48; ret
+    file.resize(0x100, 0xCC);
+    file.insert(file.end(), std::begin(locatorIid), std::end(locatorIid));     // 0x100
+    file.insert(file.end(), std::begin(locatorClsid), std::end(locatorClsid)); // 0x110
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CoCreateInstance", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    INFO(zone.interfaceCalls.size());
+    REQUIRE(zone.interfaceCalls.size() == 3);
+    REQUIRE(zone.interfaceCalls.at(0x3C) == "IWbemLocator::ConnectServer");
+    REQUIRE(zone.interfaceCalls.at(0x4E) == "IWbemServices::ExecQuery");
+    REQUIRE(zone.interfaceCalls.at(0x5C) == "IWbemServices::Release");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000e  lea    r9, IID_IWbemLocator").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000001d  lea    rcx, CLSID_WbemLocator").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000003c  call").ends_with("; IWbemLocator::ConnectServer"));
+    REQUIRE(FindListingLine(listing, "0x0000004e  call").ends_with("; IWbemServices::ExecQuery"));
+    REQUIRE(FindListingLine(listing, "0x00000062  call").find(';') == std::string_view::npos);
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does

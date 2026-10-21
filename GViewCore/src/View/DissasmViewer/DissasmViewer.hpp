@@ -421,6 +421,25 @@ namespace View
         // the name of a value that is a status wherever it is (an error NTSTATUS: STATUS_OBJECT_NAME_NOT_FOUND, an HRESULT error: E_INVALIDARG,
         // HRESULT_FROM_WIN32(ERROR_NOT_FOUND)); empty for the other values
         std::string FormatDistinctiveConstant(uint64 value);
+        // COM (DissasmComInterfaces.cpp): the name of a known GUID (16 bytes: IID_IWbemLocator, CLSID_ShellLink, FOLDERID_Startup); the
+        // interface of an IID; the methods of the interfaces by their index in the vtable (the ones of the bases first: IUnknown::Release is
+        // 2), with the parameter that receives the interface a method gives; the APIs that give one (CoCreateInstance: by its IID)
+        struct DissasmComMethod {
+            std::string_view name;
+            int8 outParameter;           // the parameter (after this, from 0) of the interface it gives; -1: none
+            std::string_view outInterface; // its interface, else the IID of riidParameter says which
+            int8 riidParameter;          // -1: none
+        };
+        struct DissasmComProducer {
+            int8 riidParameter;      // the parameter of the IID of the interface (-1: always outInterface)
+            int8 outParameter;       // the parameter that receives it; -1: the return value
+            std::string_view outInterface;
+        };
+        std::string_view FindGuidName(const uint8* bytes);
+        std::string_view FindInterfaceOfIid(const uint8* bytes);
+        bool IsComInterface(std::string_view name);
+        std::optional<std::pair<std::string_view, DissasmComMethod>> FindComMethod(std::string_view interfaceName, uint32 index);
+        const DissasmComProducer* FindComProducer(std::string_view function);
         // an immediate operand (3, 0x80000000, -1, #0x10 of ARM); the one of the last operand of an instruction (edx, 0x80000000)
         std::optional<int64> ParseOperandImmediate(std::string_view text);
         std::optional<uint64> GetLastOperandImmediate(std::string_view operands);

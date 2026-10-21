@@ -654,6 +654,14 @@ static std::string GetDataOperandName(DissasmInsnExtractLineParams& params, cons
 {
     if (const auto* import = FindX86OperandsImport(params.settings, params.zone, operands); import && !import->name.empty())
         return import->type == MemoryMappingType::FunctionMapping ? "__imp_" + import->name : import->name; // selRef_alloc
+    // a known GUID first: in a code zone it can have a label (the .rdata merged in .text of 32 bit programs: push offset loc_40F6E0)
+    if (const auto zone = params.zone->FindCodeZoneOfAddress(address); zone && !zone->zoneDetails.isData)
+        if (const auto offset = zone->GetFileOffsetOfAddress(address - zone->labelAddressBase); offset.has_value()) {
+            const auto bytes = params.obj->GetData().Get(offset.value(), 16, true);
+            if (bytes.IsValid() && bytes.GetLength() == 16)
+                if (const std::string_view guid = FindGuidName(bytes.GetData()); !guid.empty())
+                    return std::string(guid); // IID_IShellLinkW
+        }
     std::string name = FormatDataAddress(params.zone, address);
     if (!name.starts_with("0x"))
         return name;
@@ -1040,6 +1048,10 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     constantComment = false;
     if (flow == X86Flow::Call) {
         flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
+        // the method of a COM interface (TrackComInterfaces): call [rax + 0x18], call esi, the CFG dispatch (call cs:__guard_dispatch_icall_fptr
+        // or its thunk: a direct call)
+        if (const auto method = params.zone->interfaceCalls.find(address); method != params.zone->interfaceCalls.end())
+            autoComment = method->second;
         if (operands.directTarget.has_value())
             if (const auto purge = params.zone->calleeStackPurges.find(operands.directTarget.value()); purge != params.zone->calleeStackPurges.end())
                 calleePushes = static_cast<uint8>(std::min<uint32>(purge->second / 4, NO_PUSHES - 1u)); // ret 0x10: 4 pushes

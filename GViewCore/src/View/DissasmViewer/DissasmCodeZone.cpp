@@ -202,6 +202,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<FlowRecord> flowRecords;
     std::unordered_map<uint64, std::string> localImports;       // relative address of the instruction -> the import
     std::unordered_map<uint64, uint32> importCallCategories;   // a call / jmp through an import slot -> what the import does (DissasmApiCategory)
+    std::unordered_set<uint64> comProducerCalls;               // the calls of an API that gives a COM interface (FindComProducer)
+    std::unordered_map<uint64, std::string> interfaceCalls;    // TrackComInterfaces: DissasmCodeZone::interfaceCalls
     std::unordered_set<uint64> knownPrototypeCalls;            // the calls through an import slot of an API with a prototype (FindApiPrototype)
     std::unordered_map<uint64, bool> knownPrototypeTargets;    // a direct target (relative) -> its name has a prototype (NameVariablesFromCalls)
     std::map<uint64, std::shared_ptr<const DissasmUserPrototype>> inferredPrototypes; // InferPrototypes, by function start
@@ -395,6 +397,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             name.push_back(c);
                         else if (name.back() != '_')
                             name.push_back('_');
+                } else if (const auto guid = GetZoneBytes(obj, codeStart + target, 16); guid.IsValid() && guid.GetLength() == 16 && target + 16 <= codeSize &&
+                                                                                                  !FindGuidName(guid.GetData()).empty()) {
+                    name = FindGuidName(guid.GetData()); // IID_IWbemLocator, CLSID_ShellLink, FOLDERID_Startup (IDA names the known GUIDs)
                 } else {
                     // IDA: the type of what the code reads / writes there (byte_, word_, dword_, qword_, xmmword_), off_ for pointers
                     const uint8 size   = targetSizes[targetIndex];
@@ -485,6 +490,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         localImports.clear();
         importCallCategories.clear();
         knownPrototypeCalls.clear();
+        comProducerCalls.clear();
         noReturnStarts.clear();
         noReturnCalls.clear();
         linesToDecode = lines;
@@ -884,6 +890,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     importCallCategories[insn->address] = categories; // call [__imp_connect]
                 if (kind == FlowKind::Call && FindApiPrototype(import->name))
                     knownPrototypeCalls.insert(insn->address);
+                if (kind == FlowKind::Call && FindComProducer(import->name))
+                    comProducerCalls.insert(insn->address);
                 if (!record.noReturnImport && localFunctionNames.contains(import->name)) { // call [rip + fatal@GOTPCREL] (-fno-plt)
                     record.localImport          = true;
                     localImports[insn->address] = import->name;
@@ -1960,6 +1968,231 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return;
         if (auto text = FormatApiReturnConstant(*callees[RETURNED_BY - value], static_cast<uint64>(constant)); !text.empty())
             functionComparisons.emplace_back(address, std::move(text));
+    }
+
+    // beyond IDA (its decompiler with the types): the methods of the COM interfaces. A function that calls an API giving an interface
+    // (FindComProducer: CoCreateInstance and its IID) is followed in its order (x86 / x64 Windows): the registers / the variables of the
+    // frame hold an address of data (lea rdx, IID_X / push offset IID_X), the address of a variable (lea r9, [rbp + var_8]: the ppv), an
+    // object of an interface, its vtable (mov rax, [rcx]) or one of its methods (mov rax, [rax + 0x18]: the CFG dispatch, call esi). A call
+    // through the vtable names the method (FindComMethod), the interface it gives goes to the variable of its parameter (QueryInterface by
+    // its IID, ConnectServer -> IWbemServices). An IID that is not known: IUnknown (QueryInterface, AddRef, Release are always known)
+    struct ComValue {
+        enum class Kind : uint8 { None, Data, SlotAddress, Object, Vtable, Method };
+        Kind kind = Kind::None;
+        uint64 data = 0;                    // Data: the VA; SlotAddress: the key of the variable
+        std::string_view interfaceName;     // Object / Vtable / Method
+        uint32 method = 0;                  // Method: its index
+    };
+
+    void TrackComInterfaces()
+    {
+        interfaceCalls.clear();
+        if (!hasDetailHandle || functionEnds.size() != functionStarts.size() || zone->IsArmCode() || zone->systemVCalls || comProducerCalls.empty())
+            return;
+        std::unordered_set<uint64> producerTargets; // the thunks / functions of the file named after a producer
+        for (size_t index = 0; index < functionStarts.size(); index++) {
+            const uint64 start = functionStarts[index];
+            bool candidate     = false;
+            for (size_t position = FirstRecordAt(start); position < flowRecords.size() && flowRecords[position].address < functionEnds[index] && !candidate;
+                 position++) {
+                const auto& record = flowRecords[position];
+                candidate          = record.kind == FlowKind::Call && comProducerCalls.contains(record.address);
+            }
+            if (candidate)
+                TrackComInterfacesOf(start, functionEnds[index]);
+        }
+    }
+
+    void TrackComInterfacesOf(uint64 start, uint64 end)
+    {
+        constexpr uint32 MAX_INSTRUCTIONS = 8192;
+        const uint32 pointerSize          = is64 ? 8 : 4;
+        const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x20000)), false) : BufferView{};
+        cs_insn* insn   = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        if (!insn)
+            return;
+        std::array<ComValue, 16> registers{};
+        std::map<uint64, ComValue> slots; // the variables of the frame: (base register, displacement)
+        std::vector<ComValue> pushes;     // x86: the pushed arguments, in their order
+        const auto slotKey = [this](const x86_op_mem& memory) -> std::optional<uint64> {
+            if (memory.index != X86_REG_INVALID || memory.segment != X86_REG_INVALID)
+                return std::nullopt;
+            uint64 baseId = 0;
+            if (memory.base == X86_REG_RBP || memory.base == X86_REG_EBP)
+                baseId = 1;
+            else if (memory.base == X86_REG_RSP && is64) // x86: esp moves with the pushes
+                baseId = 2;
+            else
+                return std::nullopt;
+            return (baseId << 48) | (static_cast<uint64>(memory.disp) & 0xFFFFFFFFFFFFull);
+        };
+        const auto family = [](unsigned int reg) { return GetX64RegisterFamily(reg); };
+        const auto readGuidInterface = [this](const ComValue& value) -> std::string_view {
+            if (value.kind != ComValue::Kind::Data)
+                return {};
+            // the file offset of the VA; inside of this zone without the translation of the plugin
+            std::optional<uint64> offset = addressToFileOffset ? addressToFileOffset(value.data) : std::nullopt;
+            if (!offset.has_value() && value.data >= labelBase && value.data - labelBase + 16 <= codeSize)
+                offset = codeStart + (value.data - labelBase);
+            if (!offset.has_value())
+                return {};
+            const auto bytes = obj->GetData().Get(offset.value(), 16, true);
+            if (!bytes.IsValid() || bytes.GetLength() < 16)
+                return {};
+            const std::string_view known = FindInterfaceOfIid(bytes.GetData());
+            return known.empty() ? std::string_view("IUnknown") : known; // an IID: a COM object at least
+        };
+        // the argument of a call (x64: rcx, rdx, r8, r9, then the stack; x86: the pushes, the last one first)
+        const auto argument = [&](uint32 index) -> ComValue {
+            if (is64) {
+                static constexpr int REGISTERS[] = { 1, 2, 8, 9 };
+                if (index < 4)
+                    return registers[REGISTERS[index]];
+                const auto slot = slots.find((2ull << 48) | ((0x20ull + 8ull * (index - 4)) & 0xFFFFFFFFFFFFull));
+                return slot != slots.end() ? slot->second : ComValue{};
+            }
+            return index < pushes.size() ? pushes[pushes.size() - 1 - index] : ComValue{};
+        };
+        const auto giveInterface = [&](const ComValue& out, std::string_view interfaceName) {
+            if (out.kind == ComValue::Kind::SlotAddress && !interfaceName.empty())
+                slots[out.data] = ComValue{ ComValue::Kind::Object, 0, interfaceName, 0 };
+        };
+        const auto valueOfOperand = [&](const cs_x86_op& op) -> ComValue {
+            if (op.type == X86_OP_REG) {
+                const int reg = family(op.reg);
+                return reg >= 0 && reg < 16 ? registers[reg] : ComValue{};
+            }
+            if (op.type == X86_OP_IMM && !is64 && isFileAddress && isFileAddress(static_cast<uint64>(op.imm) & 0xFFFFFFFFull))
+                return ComValue{ ComValue::Kind::Data, static_cast<uint64>(op.imm) & 0xFFFFFFFFull, {}, 0 }; // push offset IID_X
+            if (op.type == X86_OP_MEM)
+                if (const auto key = slotKey(op.mem); key.has_value())
+                    if (const auto slot = slots.find(key.value()); slot != slots.end())
+                        return slot->second;
+            return {};
+        };
+        const auto clobberVolatile = [&]() {
+            for (const int reg : is64 ? std::initializer_list<int>{ 0, 1, 2, 8, 9, 10, 11 } : std::initializer_list<int>{ 0, 1, 2 })
+                registers[reg] = {};
+        };
+
+        const uint8* bytes = data.GetData();
+        size_t size        = data.GetLength();
+        uint64 address     = start;
+        for (uint32 decoded = 0; decoded < MAX_INSTRUCTIONS && cs_disasm_iter(detailHandle, &bytes, &size, &address, insn); decoded++) {
+            const cs_x86& x86 = insn->detail->x86;
+            const auto flow   = GetInstructionFlow(*insn, is64 ? DissasmArch::X64 : DissasmArch::X86);
+            if (flow == X86Flow::Call) {
+                // the method of a vtable: call [rax + 0x18] / call rax / call esi, or the CFG dispatch of x64 (the target in rax)
+                std::optional<std::pair<std::string_view, uint32>> method;
+                const auto& target = x86.operands[0];
+                if (x86.op_count == 1 && target.type == X86_OP_MEM && target.mem.index == X86_REG_INVALID && family(target.mem.base) >= 0 &&
+                    family(target.mem.base) < 16 && registers[family(target.mem.base)].kind == ComValue::Kind::Vtable && target.mem.disp >= 0 &&
+                    target.mem.disp % pointerSize == 0)
+                    method = std::make_pair(registers[family(target.mem.base)].interfaceName, static_cast<uint32>(target.mem.disp / pointerSize));
+                else if (x86.op_count == 1 && target.type == X86_OP_REG && family(target.reg) >= 0 && family(target.reg) < 16 &&
+                         registers[family(target.reg)].kind == ComValue::Kind::Method)
+                    method = std::make_pair(registers[family(target.reg)].interfaceName, registers[family(target.reg)].method);
+                else if (is64 && registers[0].kind == ComValue::Kind::Method)
+                    method = std::make_pair(registers[0].interfaceName, registers[0].method); // the CFG dispatch: call cs:__guard_dispatch_icall_fptr / its thunk
+                else if (!is64 && target.type == X86_OP_MEM && registers[1].kind == ComValue::Kind::Method)
+                    continue; // the CFG check of x86 (mov ecx, esi; call __guard_check_icall_fptr): it keeps the registers, the pushes are the method's
+                if (method.has_value()) {
+                    if (const auto found = FindComMethod(method->first, method->second); found.has_value()) {
+                        interfaceCalls[insn->address] = std::string(found->first) + "::" + std::string(found->second.name);
+                        // the interface it gives (this is the argument 0 of the call)
+                        const auto& described = found->second;
+                        if (described.outParameter >= 0) {
+                            std::string_view given = described.outInterface;
+                            if (given.empty() && described.riidParameter >= 0)
+                                given = readGuidInterface(argument(1u + described.riidParameter));
+                            giveInterface(argument(1u + described.outParameter), given);
+                        }
+                    }
+                } else if (comProducerCalls.contains(insn->address)) {
+                    // CoCreateInstance / QueryService ...: the API by its name
+                    if (const auto* producer = FindComProducer(CalleeName(*insn, is64 ? DissasmArch::X64 : DissasmArch::X86))) {
+                        std::string_view given = producer->outInterface;
+                        if (given.empty() && producer->riidParameter >= 0)
+                            given = readGuidInterface(argument(producer->riidParameter));
+                        if (producer->outParameter >= 0)
+                            giveInterface(argument(producer->outParameter), given);
+                        clobberVolatile();
+                        pushes.clear();
+                        if (producer->outParameter < 0 && !given.empty())
+                            registers[0] = ComValue{ ComValue::Kind::Object, 0, given, 0 }; // SHCreateMemStream: in rax / eax
+                        continue;
+                    }
+                }
+                clobberVolatile();
+                pushes.clear();
+                continue;
+            }
+            if (flow == X86Flow::Jump || flow == X86Flow::Return) {
+                registers.fill(ComValue{}); // the code after it comes from elsewhere; the variables stay
+                pushes.clear();
+                continue;
+            }
+            const auto destination = x86.op_count > 0 && x86.operands[0].type == X86_OP_REG ? family(x86.operands[0].reg) : -1;
+            if (insn->id == X86_INS_PUSH && x86.op_count == 1) {
+                pushes.push_back(valueOfOperand(x86.operands[0]));
+                continue;
+            }
+            if (insn->id == X86_INS_LEA && x86.op_count == 2 && destination >= 0 && destination < 16) {
+                const auto& memory = x86.operands[1].mem;
+                ComValue value;
+                if (const auto key = slotKey(memory); key.has_value())
+                    value = ComValue{ ComValue::Kind::SlotAddress, key.value(), {}, 0 }; // lea r9, [rbp + var_8]
+                else if (memory.base == X86_REG_RIP && memory.index == X86_REG_INVALID)
+                    value = ComValue{ ComValue::Kind::Data, (labelBase + insn->address + insn->size + static_cast<uint64>(memory.disp)) & addressMask, {}, 0 };
+                else if (!is64 && memory.base == X86_REG_INVALID && memory.index == X86_REG_INVALID)
+                    value = ComValue{ ComValue::Kind::Data, static_cast<uint64>(memory.disp) & 0xFFFFFFFFull, {}, 0 };
+                registers[destination] = value;
+                continue;
+            }
+            if (insn->id == X86_INS_MOV && x86.op_count == 2) {
+                const auto& to   = x86.operands[0];
+                const auto& from = x86.operands[1];
+                if (to.type == X86_OP_MEM) { // a variable written: what it holds now
+                    if (const auto key = slotKey(to.mem); key.has_value()) {
+                        const ComValue value = valueOfOperand(from);
+                        if (value.kind == ComValue::Kind::None)
+                            slots.erase(key.value());
+                        else
+                            slots[key.value()] = value;
+                    }
+                    continue;
+                }
+                if (destination >= 0 && destination < 16) {
+                    ComValue value;
+                    if (from.type == X86_OP_MEM && from.mem.index == X86_REG_INVALID && family(from.mem.base) >= 0 && family(from.mem.base) < 16 &&
+                        !slotKey(from.mem).has_value()) {
+                        const auto& baseValue = registers[family(from.mem.base)];
+                        if (baseValue.kind == ComValue::Kind::Object && from.mem.disp == 0)
+                            value = ComValue{ ComValue::Kind::Vtable, 0, baseValue.interfaceName, 0 }; // mov rax, [rcx]
+                        else if (baseValue.kind == ComValue::Kind::Vtable && from.mem.disp >= 0 && from.mem.disp % pointerSize == 0)
+                            value = ComValue{ ComValue::Kind::Method, 0, baseValue.interfaceName, static_cast<uint32>(from.mem.disp / pointerSize) };
+                    } else {
+                        value = valueOfOperand(from);
+                    }
+                    registers[destination] = value;
+                    continue;
+                }
+            }
+            // any other write: the register / the variable holds nothing known
+            for (uint8 i = 0; i < x86.op_count; i++) {
+                const auto& op = x86.operands[i];
+                if (op.type == X86_OP_REG && (op.access & CS_AC_WRITE))
+                    if (const int reg = family(op.reg); reg >= 0 && reg < 16)
+                        registers[reg] = {};
+                if (op.type == X86_OP_MEM && (op.access & CS_AC_WRITE))
+                    if (const auto key = slotKey(op.mem); key.has_value())
+                        slots.erase(key.value());
+            }
+            for (uint8 i = 0; i < insn->detail->regs_write_count; i++)
+                if (const int reg = family(insn->detail->regs_write[i]); reg >= 0 && reg < 16)
+                    registers[reg] = {};
+        }
+        cs_free(insn, 1);
     }
 
     // the values of the registers / slots of the inference besides an incoming argument (0, 1, ...): nothing known, a constant (xor eax, eax /
@@ -3354,6 +3587,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         DetectFunctionChunks();
         ComputeApiCategories();
         InferPrototypes();
+        TrackComInterfaces();
         if (paddingReached && pendingRanges.empty()) {
             // the reached padding only: the lines are counted again, the instructions and the analysis stay
             recountedOffsets.clear();
@@ -3418,6 +3652,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->functionApiCategories     = std::move(functionApiCategories);
         zone->inferredPrototypes        = std::move(inferredPrototypes);
         zone->returnValueConstants      = std::move(returnValueConstants);
+        zone->interfaceCalls            = std::move(interfaceCalls);
         zone->noReturnFunctions.assign(noReturnStarts.begin(), noReturnStarts.end());
         std::sort(zone->noReturnFunctions.begin(), zone->noReturnFunctions.end());
         zone->noReturnCalls = std::move(noReturnCalls);
