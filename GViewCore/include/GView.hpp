@@ -1804,6 +1804,15 @@ namespace View
             uint64 handler;
             uint64 target;
         };
+        // a funclet of the C++ exception handling of x64 (the FuncInfo of __CxxFrameHandler3 / 4), file offsets: a catch block (the type
+        // it catches: "std::bad_alloc &", "..."; the code its try guards, one range or several) or an unwind funclet (the destructors of
+        // the objects of a state: no type, no range)
+        struct ExceptionFunclet {
+            uint64 fileOffset;
+            bool isCatch;
+            std::string catchType;
+            std::vector<std::pair<uint64, uint64>> tryRanges; // [begin, end)
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
         // the entry point of a code zone that has none (an executable section that is not the one of the entry point)
@@ -1844,6 +1853,13 @@ namespace View
              * variables.
              */
             void AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionScope>& scopes);
+            /**
+             * \brief The C++ exception handling of x64 (the FuncInfo of __CxxFrameHandler3 / __CxxFrameHandler4): the catch blocks and the
+             * unwind funclets of the function at `functionFileOffset`, its frame from the unwind data (as AddExceptionScopes). The viewer
+             * marks the try ranges and the catch blocks (catch(std::bad_alloc &)), names the funclets after the function (sub_X$catch$0,
+             * sub_X$dtor$0); their accesses to the frame of the function use its variables.
+             */
+            void AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionFunclet>& funclets);
             /**
              * rief Adds a file offset where an instruction starts (the start of a code section): the disassembly never decodes an
              * instruction across it (the padding between two sections does not hide the code that follows). The function entries are

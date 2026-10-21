@@ -67,6 +67,15 @@ void Settings::AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, u
     entry.frameOffset     = frameOffset;
 }
 
+void Settings::AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionFunclet>& funclets)
+{
+    auto& entry             = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.exceptionFunclets = funclets;
+    entry.prologSize        = prologSize;
+    entry.frameRegister     = frameRegister;
+    entry.frameOffset       = frameOffset;
+}
+
 void Settings::AddInstructionBoundary(uint64 fileOffset)
 {
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);

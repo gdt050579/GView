@@ -594,6 +594,7 @@ namespace View
             uint8 prologSize    = 0;
             uint8 frameRegister = 0;
             uint8 frameOffset   = 0;
+            std::vector<ExceptionFunclet> exceptionFunclets; // the C++ exception handling (Settings::AddExceptionFunclets)
         };
 
         struct DissasmCodeZoneInitData {

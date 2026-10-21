@@ -8943,6 +8943,79 @@ TEST_CASE("X64ExceptionScopes", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000089  mov    dword ptr [rbp - 0x10 + var_4], 0").size() > 0);
 }
 
+TEST_CASE("X64CppExceptionFunclets", "[Dissasm]Help")
+{
+    // the C++ exception handling of x64 (FuncInfo of __CxxFrameHandler4): a catch block of a try, an unwind funclet, a catch block of a try
+    // inside the catch block (its establisher frame is the one of the function too); no frame register: the rsp after the prologue
+    std::vector<unsigned char> file = {
+        0x53,                                           // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x40,                         // 0x01: sub rsp, 0x40
+        0xC7, 0x44, 0x24, 0x30, 0x00, 0x00, 0x00, 0x00, // 0x05: mov dword ptr [rsp + 0x30], 0   (try; the slot -0x18)
+        0xFF, 0x15, 0xED, 0x01, 0x00, 0x00,             // 0x0d: call qword ptr [rip + 0x1ed]   (Sleep: 0x200)
+        0x8B, 0x44, 0x24, 0x30,                         // 0x13: mov eax, dword ptr [rsp + 0x30]
+        0x48, 0x83, 0xC4, 0x40,                         // 0x17: add rsp, 0x40
+        0x5B,                                           // 0x1b: pop rbx
+        0xC3,                                           // 0x1c: ret
+        0xCC, 0xCC, 0xCC,
+        0x48, 0x89, 0x54, 0x24, 0x10,                   // 0x20: mov [rsp + 0x10], rdx           (the catch block)
+        0x55,                                           // 0x25: push rbp
+        0x48, 0x83, 0xEC, 0x20,                         // 0x26: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x2a: mov rbp, rdx
+        0xC7, 0x45, 0x30, 0x01, 0x00, 0x00, 0x00,       // 0x2d: mov dword ptr [rbp + 0x30], 1  (the try inside it)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x34: add rsp, 0x20
+        0x5D,                                           // 0x38: pop rbp
+        0xC3,                                           // 0x39: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x40: push rbp                       (the unwind funclet)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x41: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x45: mov rbp, rdx
+        0x8B, 0x4D, 0x30,                               // 0x48: mov ecx, dword ptr [rbp + 0x30]
+        0x48, 0x83, 0xC4, 0x20,                         // 0x4b: add rsp, 0x20
+        0x5D,                                           // 0x4f: pop rbp
+        0xC3,                                           // 0x50: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x60: push rbp                       (the catch block of the try of 0x20)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x61: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x65: mov rbp, rdx
+        0xC7, 0x45, 0x28, 0x02, 0x00, 0x00, 0x00,       // 0x68: mov dword ptr [rbp + 0x28], 2  (a slot only the funclet uses: -0x20)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x6f: add rsp, 0x20
+        0x5D,                                           // 0x73: pop rbp
+        0xC3,                                           // 0x74: ret
+    };
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0x00;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = {
+        { 0x00, { "", 0x1d, false, {}, 5, 0, 0, { { 0x40, false, "", {} }, { 0x20, true, "std::bad_alloc &", { { 0x05, 0x13 } } } } } },
+        { 0x20, { "", 0x1a, false, {}, 0xd, 0, 0, { { 0x60, true, "...", { { 0x2d, 0x34 } } } } } },
+        { 0x40, { "", 0x11, false } },
+        { 0x60, { "", 0x15, false } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x20) == zone.GetLabelNameAt(0x00) + "$catch$0");
+    REQUIRE(zone.GetLabelNameAt(0x40) == zone.GetLabelNameAt(0x00) + "$dtor$0");
+    REQUIRE(zone.GetLabelNameAt(0x60) == zone.GetLabelNameAt(0x20) + "$catch$0");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov").find("try {") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000d  call").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000020  mov").find("catch(std::bad_alloc &) // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000060  push").find("catch(...) // owned by " + zone.GetLabelNameAt(0x20) + "+0xD") != std::string_view::npos);
+    // the slots of the funclets through rbp, the nested one too: the variables of the function
+    REQUIRE(FindListingLine(listing, "0x0000002d  mov    dword ptr [rbp + 0x48 + var_18], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000048  mov    ecx, dword ptr [rbp + 0x48 + var_18]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000068  mov    dword ptr [rbp + 0x48 + var_20], 2").size() > 0);
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x20) != nullptr); // a variable of the function, its line below the label
+    REQUIRE(listing.find("var_20 = dword ptr -0x20") != std::string::npos);
+}
+
 TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
 {
     // a function named exit by the plugin does not return; the user says it does

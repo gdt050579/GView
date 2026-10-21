@@ -399,13 +399,17 @@ struct DissasmCodeZone : public ParseZone {
     std::unordered_map<uint64, std::string> interfaceCalls;
     // x64 structured exception handling (Settings::AddExceptionScopes, as IDA): the __try scopes marked on their first instruction
     // (__try { // __except at loc_X / __try { // __finally(sub_X$fin$0)), their last one (} // starts at sub_X+0x24) and the __except block
-    // (__except(sub_X$filt$0) // owned by sub_X+0x24); by relative address. Recomputed by the deep scan, not saved
+    // (__except(sub_X$filt$0) // owned by sub_X+0x24); the C++ ones (Settings::AddExceptionFunclets): a range of a try (try {, } // starts
+    // at) and its catch blocks on their funclet (catch(std::bad_alloc &) // owned by sub_X+0x24); by relative address. Recomputed by the
+    // deep scan, not saved
     struct ExceptionMark {
-        enum class Kind : uint8 { TryBegin, TryEnd, Except };
+        enum class Kind : uint8 { TryBegin, TryEnd, Except, CppTryBegin, Catch };
         Kind kind;
-        uint64 begin;                  // the first instruction of the scope
+        uint64 begin;                  // the first instruction of the scope (of the first range of the try of a catch)
         std::optional<uint64> handler; // the filter / the __finally funclet; none: the constant filter EXCEPTION_EXECUTE_HANDLER
         std::optional<uint64> target;  // the __except block; none: a __finally
+        std::string catchType;         // a catch: the type it takes ("..." for all)
+        bool owned = true;             // a catch: false when its try has no range in the function (no owner shown)
     };
     std::unordered_map<uint64, std::vector<ExceptionMark>> exceptionMarks;
     // the marks of the instruction at the relative address as a comment; empty without one

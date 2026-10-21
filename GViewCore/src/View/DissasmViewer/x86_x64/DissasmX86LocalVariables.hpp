@@ -57,6 +57,10 @@ bool AnalyzeX86StackFrame(
 // rbp (mov rbp, rdx / lea rbp, [rdx + 0x20], in its prologue, before rdx is written): the alias of rbp from there until rbp is written
 // (pop rbp), its delta the displacement from the establisher frame; none when the funclet does not
 std::optional<DissasmFunctionFrame::StackAlias> FindX64EstablisherFrameAlias(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress);
+// the slots a funclet (code at `codeAddress`) uses through its alias of the establisher frame (`alias`: its delta in the offsets of `frame`,
+// the frame of the function of the funclet) added to the variables of `frame` that it does not have (a slot only the catch block or the
+// __finally uses: the exception code a filter keeps, an object its unwind funclet destroys). False when the frame would have too many
+bool AddX64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, const DissasmFunctionFrame::StackAlias& alias, DissasmFunctionFrame& frame);
 
 // IDA like names: [ebp - 0x4C] -> var_4C, [ebp + 8] -> arg_0 (x86) / [rbp + 0x10] -> arg_0 (x64)
 void FormatDefaultLocalVariableName(int32 frameOffset, bool is64, std::string& name);

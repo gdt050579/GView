@@ -132,6 +132,319 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PE:
 }
 
 // The known starts of functions: the deep scan of the disassembly labels them even when nothing calls them directly
+namespace
+{
+// the compressed integers of the FuncInfo of __CxxFrameHandler4: the low bits of the first byte give the length (0: 1 byte, 01: 2 bytes,
+// 011: 3 bytes, 0111: 4 bytes, the value shifted by the length; 1111: the 4 bytes after it), the RVAs are 4 bytes
+struct CompressedReader {
+    GView::Utils::DataCache& data;
+    uint64 offset;
+    bool failed = false;
+
+    uint8 Byte()
+    {
+        uint8 value = 0;
+        if (failed) // an offset past a failed read is not followed
+            return 0;
+        failed |= !data.Copy<uint8>(offset, value);
+        offset++;
+        return value;
+    }
+    int32 Int()
+    {
+        int32 value = 0;
+        if (failed)
+            return 0;
+        failed |= !data.Copy<int32>(offset, value);
+        offset += 4;
+        return value;
+    }
+    uint32 Unsigned()
+    {
+        uint8 first = 0;
+        if (failed || !data.Copy<uint8>(offset, first)) {
+            failed = true;
+            return 0;
+        }
+        if ((first & 0xF) == 0xF) {
+            offset++;
+            return static_cast<uint32>(Int());
+        }
+        const uint32 length = (first & 1) == 0 ? 1 : (first & 3) == 1 ? 2 : (first & 7) == 3 ? 3 : 4;
+        uint32 value        = 0;
+        for (uint32 index = 0; index < length; index++)
+            value |= static_cast<uint32>(Byte()) << (8 * index);
+        return value >> length;
+    }
+};
+
+// the name of a type of the RTTI (the TypeDescriptor of a catch): ".?AVbad_alloc@std@@" -> "std::bad_alloc", ".PEAVCItem@@" ->
+// "CItem *"; the other forms (templates, the basic types) as they are
+std::string DemangleCatchType(std::string_view name)
+{
+    std::string_view rest = name.starts_with('.') ? name.substr(1) : name;
+    std::string suffix;
+    if (rest.starts_with("PEA") || rest.starts_with("PEB")) {
+        suffix = rest[2] == 'B' ? " const *" : " *";
+        rest.remove_prefix(3);
+    } else if (rest.starts_with('?'))
+        rest.remove_prefix(1);
+    if (!(rest.starts_with("AV") || rest.starts_with("AU")) || !rest.ends_with("@@"))
+        return std::string(name);
+    rest = rest.substr(2, rest.size() - 4);
+    std::vector<std::string_view> parts;
+    while (!rest.empty()) {
+        const auto at = rest.find('@');
+        parts.push_back(rest.substr(0, at));
+        rest = at == std::string_view::npos ? std::string_view() : rest.substr(at + 1);
+    }
+    std::string result;
+    for (auto part = parts.rbegin(); part != parts.rend(); ++part) {
+        if (part->empty() || part->front() == '?')
+            return std::string(name); // a template (?$vector@...), a nested anonymous name
+        if (!result.empty())
+            result += "::";
+        result += *part;
+    }
+    return result + suffix;
+}
+
+// the type a catch takes (HandlerType: adjectives, the RVA of a TypeDescriptor whose name is after the vtable pointer and the spare)
+std::string FormatCatchType(Reference<PE::PEFile> pe, GView::Utils::DataCache& data, uint32 adjectives, int32 typeDescriptor)
+{
+    constexpr uint32 HT_IS_CONST = 1, HT_IS_REFERENCE = 8, HT_IS_STD_DOT_DOT = 0x40;
+    if (typeDescriptor == 0 || (adjectives & HT_IS_STD_DOT_DOT))
+        return "...";
+    const auto fa = pe->RVAToFA(static_cast<uint32>(typeDescriptor) + 16);
+    if (fa == PE_INVALID_ADDRESS)
+        return "?";
+    std::string name;
+    for (uint32 index = 0; index < 256; index++) {
+        uint8 c = 0;
+        if (!data.Copy<uint8>(fa + index, c) || c == 0)
+            break;
+        if (c < 0x20 || c > 0x7E)
+            return "?";
+        name += static_cast<char>(c);
+    }
+    std::string text = (adjectives & HT_IS_CONST) ? "const " : "";
+    text += DemangleCatchType(name);
+    if (adjectives & HT_IS_REFERENCE)
+        text += " &";
+    return text;
+}
+
+// the C++ exception data of an x64 function (the language specific data of __CxxFrameHandler3 / 4, or of the GS checks that call them:
+// the RVA of a FuncInfo, `funcInfo`), [begin, end): RVAs. The funclets are the catch handlers and the unwind actions that are functions of
+// .pdata (an unwind action can be another function: a thunk); the try ranges from the IP-to-state map. The data of another handler fails
+// the checks: the magic of FuncInfo (FH3), the IP-to-state map inside the function with the states of the unwind map, the counts
+bool ReadCppExceptionFunclets(
+      Reference<PE::PEFile> pe,
+      GView::Utils::DataCache& data,
+      uint32 begin,
+      uint32 end,
+      uint32 funcInfo,
+      const std::unordered_set<uint32>& functionStarts,
+      std::vector<DissasmViewer::ExceptionFunclet>& funclets)
+{
+    constexpr uint32 MAX_STATES = 0x4000, MAX_TRY_BLOCKS = 0x400, MAX_CATCHES = 64, MAX_IP_ENTRIES = 0x10000;
+    const auto fa = pe->RVAToFA(funcInfo);
+    if (funcInfo == 0 || fa == PE_INVALID_ADDRESS)
+        return false;
+    struct TryBlock {
+        int32 low, high;
+        std::vector<std::pair<int32, std::string>> catches; // the RVA of the funclet, the type
+    };
+    std::vector<TryBlock> tryBlocks;
+    std::vector<int32> unwindFunclets;
+    std::vector<std::pair<uint32, int32>> ipStates; // the RVA from which a state holds
+    int32 stateCount = 0;
+    const auto rvaFa = [&pe](int32 rva) { return rva > 0 ? pe->RVAToFA(static_cast<uint32>(rva)) : PE_INVALID_ADDRESS; };
+    // the item `index` of a table of `size` bytes items at an RVA
+    const auto itemFa = [&rvaFa](int32 table, uint64 index, uint64 size) {
+        const auto start = rvaFa(table);
+        return start == PE_INVALID_ADDRESS ? PE_INVALID_ADDRESS : start + index * size;
+    };
+
+    uint32 magic = 0;
+    if (!data.Copy<uint32>(fa, magic))
+        return false;
+    if ((magic & 0x1FFFFFFF) >= 0x19930520 && (magic & 0x1FFFFFFF) <= 0x19930522) {
+        // __CxxFrameHandler3: FuncInfo { magic, maxState, dispUnwindMap, nTryBlocks, dispTryBlockMap, nIPMapEntries, dispIPToStateMap }
+        struct FuncInfo3 {
+            uint32 magic;
+            int32 maxState, unwindMap;
+            uint32 tryBlockCount;
+            int32 tryBlockMap;
+            uint32 ipCount;
+            int32 ipMap;
+        } info;
+        if (!data.Copy<FuncInfo3>(fa, info) || info.maxState < 0 || static_cast<uint32>(info.maxState) > MAX_STATES || info.tryBlockCount > MAX_TRY_BLOCKS ||
+            info.ipCount > MAX_IP_ENTRIES)
+            return false;
+        stateCount = info.maxState;
+        for (int32 state = 0; state < info.maxState; state++) {
+            int32 entry[2]; // toState, action
+            if (!data.Copy(itemFa(info.unwindMap, state, 8), entry))
+                return false;
+            if (entry[1] != 0)
+                unwindFunclets.push_back(entry[1]);
+        }
+        for (uint32 index = 0; index < info.ipCount; index++) {
+            int32 entry[2]; // ip, state
+            if (!data.Copy(itemFa(info.ipMap, index, 8), entry))
+                return false;
+            if (static_cast<uint32>(entry[0]) >= begin && static_cast<uint32>(entry[0]) < end) // the map has the IPs of the funclets too
+                ipStates.emplace_back(static_cast<uint32>(entry[0]), entry[1]);
+        }
+        for (uint32 index = 0; index < info.tryBlockCount; index++) {
+            int32 entry[5]; // tryLow, tryHigh, catchHigh, nCatches, dispHandlerArray
+            if (!data.Copy(itemFa(info.tryBlockMap, index, 20), entry) || entry[3] < 0 || static_cast<uint32>(entry[3]) > MAX_CATCHES)
+                return false;
+            TryBlock block{ entry[0], entry[1], {} };
+            for (int32 handler = 0; handler < entry[3]; handler++) {
+                int32 type[5]; // adjectives, dispType, dispCatchObj, dispOfHandler, dispFrame
+                if (!data.Copy(itemFa(entry[4], handler, 20), type))
+                    return false;
+                block.catches.emplace_back(type[3], FormatCatchType(pe, data, static_cast<uint32>(type[0]), type[1]));
+            }
+            tryBlocks.push_back(std::move(block));
+        }
+    } else {
+        // __CxxFrameHandler4: a header byte, then the maps (RVAs) and compressed integers
+        CompressedReader reader{ data, fa };
+        const uint8 header = reader.Byte();
+        if (header & 0x80) // reserved
+            return false;
+        if (header & 4) // BBT flags
+            reader.Unsigned();
+        const int32 unwindMap   = (header & 8) ? reader.Int() : 0;
+        const int32 tryBlockMap = (header & 16) ? reader.Int() : 0;
+        int32 ipMap             = reader.Int();
+        if (reader.failed)
+            return false;
+        if (header & 2) { // separated code: the IP-to-state map of each part, the one of this function
+            CompressedReader parts{ data, rvaFa(ipMap) };
+            const uint32 count = parts.Unsigned();
+            ipMap              = 0;
+            for (uint32 index = 0; index < count && index < 64 && !parts.failed; index++) {
+                const int32 start = parts.Int(), map = parts.Int();
+                if (static_cast<uint32>(start) == begin)
+                    ipMap = map;
+            }
+            if (parts.failed)
+                return false;
+        }
+        if (unwindMap != 0) {
+            CompressedReader unwind{ data, rvaFa(unwindMap) };
+            const uint32 count = unwind.Unsigned();
+            if (count > MAX_STATES)
+                return false;
+            stateCount = static_cast<int32>(count);
+            for (uint32 index = 0; index < count && !unwind.failed; index++) {
+                const uint32 type = unwind.Unsigned() & 3; // the next offset (>> 2), the type: none, a destructor with an object, an RVA
+                if (type == 1 || type == 2) {
+                    unwind.Int();
+                    unwind.Unsigned();
+                } else if (type == 3)
+                    unwindFunclets.push_back(unwind.Int());
+            }
+            if (unwind.failed)
+                return false;
+        }
+        if (tryBlockMap != 0) {
+            CompressedReader tries{ data, rvaFa(tryBlockMap) };
+            const uint32 count = tries.Unsigned();
+            if (count > MAX_TRY_BLOCKS)
+                return false;
+            for (uint32 index = 0; index < count && !tries.failed; index++) {
+                TryBlock block{};
+                block.low = static_cast<int32>(tries.Unsigned());
+                block.high = static_cast<int32>(tries.Unsigned());
+                tries.Unsigned(); // catchHigh
+                CompressedReader handlers{ data, rvaFa(tries.Int()) };
+                const uint32 handlerCount = handlers.Unsigned();
+                if (handlerCount > MAX_CATCHES)
+                    return false;
+                for (uint32 handler = 0; handler < handlerCount && !handlers.failed; handler++) {
+                    const uint8 flags        = handlers.Byte(); // adjectives, dispType, dispCatchObj, contIsRVA, the count of continuations
+                    const uint32 adjectives  = (flags & 1) ? handlers.Unsigned() : 0;
+                    const int32 type         = (flags & 2) ? handlers.Int() : 0;
+                    if (flags & 4)
+                        handlers.Unsigned();
+                    const int32 funclet = handlers.Int();
+                    for (uint32 continuation = 0; continuation < ((flags >> 4) & 3u); continuation++) { // RVAs or offsets in the function
+                        if (flags & 8)
+                            handlers.Int();
+                        else
+                            handlers.Unsigned();
+                    }
+                    block.catches.emplace_back(funclet, FormatCatchType(pe, data, adjectives, type));
+                }
+                if (handlers.failed)
+                    return false;
+                tryBlocks.push_back(std::move(block));
+            }
+            if (tries.failed)
+                return false;
+        }
+        if (ipMap != 0) {
+            CompressedReader states{ data, rvaFa(ipMap) };
+            const uint32 count = states.Unsigned();
+            if (count > MAX_IP_ENTRIES)
+                return false;
+            uint32 ip = begin;
+            for (uint32 index = 0; index < count && !states.failed; index++) {
+                ip += states.Unsigned();
+                ipStates.emplace_back(ip, static_cast<int32>(states.Unsigned()) - 1);
+            }
+            if (states.failed)
+                return false;
+        }
+    }
+
+    // the checks: the IP-to-state map in the function, in order, with the states of the unwind map; the try blocks on these states
+    for (size_t index = 0; index < ipStates.size(); index++)
+        if (ipStates[index].first < begin || ipStates[index].first > end || ipStates[index].second < -1 || ipStates[index].second >= std::max(stateCount, 1) ||
+            (index > 0 && ipStates[index].first < ipStates[index - 1].first))
+            return false;
+    for (const auto& block : tryBlocks)
+        if (block.low < 0 || block.high < block.low || block.high >= stateCount)
+            return false;
+
+    // the funclets: the unwind actions and the catch handlers that are functions of .pdata (once each)
+    std::unordered_set<int32> added;
+    for (const int32 funclet : unwindFunclets) {
+        const auto funcletFa = rvaFa(funclet);
+        if (functionStarts.contains(static_cast<uint32>(funclet)) && funcletFa != PE_INVALID_ADDRESS && added.insert(funclet).second)
+            funclets.push_back({ funcletFa, false, {}, {} });
+    }
+    for (const auto& block : tryBlocks) {
+        // the code of the try: the runs of the IP-to-state map whose state is one of the try block
+        std::vector<std::pair<uint64, uint64>> ranges;
+        for (size_t index = 0; index < ipStates.size(); index++) {
+            if (ipStates[index].second < block.low || ipStates[index].second > block.high)
+                continue;
+            const uint32 runEnd   = index + 1 < ipStates.size() ? ipStates[index + 1].first : end;
+            const auto rangeBegin = pe->RVAToFA(ipStates[index].first);
+            const auto rangeLast  = runEnd > ipStates[index].first ? pe->RVAToFA(runEnd - 1) : PE_INVALID_ADDRESS;
+            if (rangeBegin == PE_INVALID_ADDRESS || rangeLast == PE_INVALID_ADDRESS)
+                continue;
+            if (!ranges.empty() && ranges.back().second == rangeBegin)
+                ranges.back().second = rangeLast + 1;
+            else
+                ranges.emplace_back(rangeBegin, rangeLast + 1);
+        }
+        for (const auto& [funclet, type] : block.catches) {
+            const auto funcletFa = rvaFa(funclet);
+            if (functionStarts.contains(static_cast<uint32>(funclet)) && funcletFa != PE_INVALID_ADDRESS && added.insert(funclet).second)
+                funclets.push_back({ funcletFa, true, type, ranges });
+        }
+    }
+    return !funclets.empty();
+}
+} // namespace
+
 void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
 {
     if (pe->dirs == nullptr)
@@ -236,11 +549,12 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             if (!data.Copy<UnwindHeader>(unwindInfo, header))
                 continue;
             const uint64 handlerData = unwindInfo + 4 + 2ull * ((header.codeCount + 1u) & ~1u) + 4; // the codes (an even count), the handler RVA
+            const auto fa            = pe->RVAToFA(function.BeginAddress);
             uint32 scopeCount        = 0;
-            if (!data.Copy<uint32>(handlerData, scopeCount) || scopeCount == 0 || scopeCount > MAX_SCOPES)
+            if (fa == PE_INVALID_ADDRESS || !data.Copy<uint32>(handlerData, scopeCount))
                 continue;
             std::vector<DissasmViewer::ExceptionScope> scopes;
-            bool valid = true;
+            bool valid = scopeCount > 0 && scopeCount <= MAX_SCOPES;
             for (uint32 index = 0; index < scopeCount && valid; index++) {
                 ScopeRecord scope;
                 if (!data.Copy<ScopeRecord>(handlerData + 4 + static_cast<uint64>(index) * sizeof(ScopeRecord), scope)) {
@@ -260,9 +574,14 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
                 if (valid)
                     scopes.push_back({ begin, end + 1, handler, target });
             }
-            const auto fa = pe->RVAToFA(function.BeginAddress);
-            if (valid && fa != PE_INVALID_ADDRESS)
+            if (valid) {
                 settings.AddExceptionScopes(fa, header.prologSize, header.frame & 0xF, header.frame >> 4, scopes);
+                continue;
+            }
+            // not a scope table: the C++ exception handling (the same word is the RVA of its FuncInfo)
+            std::vector<DissasmViewer::ExceptionFunclet> funclets;
+            if (ReadCppExceptionFunclets(pe, data, function.BeginAddress, function.EndAddress, scopeCount, functionStarts, funclets))
+                settings.AddExceptionFunclets(fa, header.prologSize, header.frame & 0xF, header.frame >> 4, funclets);
         }
     }
 

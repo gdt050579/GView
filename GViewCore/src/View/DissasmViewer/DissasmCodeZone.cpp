@@ -220,6 +220,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         uint8 prologSize, frameRegister, frameOffset;
     };
     std::vector<FuncletLink> funcletLinks;
+    std::unordered_multimap<uint64, size_t> funcletsOfParent; // the funclets of a function (their top function), by its start
     std::unordered_map<uint64, std::vector<DissasmCodeZone::ExceptionMark>> exceptionMarks; // DissasmCodeZone::exceptionMarks
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
@@ -1691,11 +1692,70 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::unordered_set<uint64> linkedFunclets;
         for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it) {
             const auto& entry  = it->second;
-            const auto* parent = entry.exceptionScopes.empty() ? nullptr : labelOf(it->first);
+            const auto* parent = entry.exceptionScopes.empty() && entry.exceptionFunclets.empty() ? nullptr : labelOf(it->first);
             if (!parent)
                 continue;
             const std::string parentName = parent->second;
-            uint32 filters = 0, finallies = 0;
+            uint32 filters = 0, finallies = 0, catches = 0, unwinds = 0;
+            // the funclet (once: the same __finally may guard several scopes): its name after the function, its link to the frame
+            const auto addFunclet = [&](uint64 fileOffset, std::string_view kind, uint32& counter) {
+                if (!linkedFunclets.insert(fileOffset).second)
+                    return;
+                auto* funclet           = labelOf(fileOffset);
+                const auto funcletEntry = functionEntries->find(fileOffset);
+                if (!funclet || funcletEntry == functionEntries->end())
+                    return;
+                if (GetLabelType(funclet->second) == SUB && !namedByPlugin.contains(fileOffset)) {
+                    std::string name = parentName + std::string(kind) + std::to_string(counter++);
+                    if (usedNames.insert(name).second)
+                        funclet->second = std::move(name);
+                }
+                if (is64)
+                    funcletLinks.push_back(
+                          { fileOffset - codeStart, it->first - codeStart, funcletEntry->second.size, entry.prologSize, entry.frameRegister, entry.frameOffset });
+            };
+            // a mark, not twice the same one (the ranges shared by the try blocks of a function)
+            const auto addMark = [this](uint64 address, const DissasmCodeZone::ExceptionMark& mark) {
+                auto& marks = exceptionMarks[address];
+                if (std::none_of(marks.begin(), marks.end(), [&mark](const auto& other) {
+                        return other.kind == mark.kind && other.begin == mark.begin && other.handler == mark.handler && other.target == mark.target &&
+                               other.catchType == mark.catchType;
+                    }))
+                    marks.push_back(mark);
+            };
+            // the last instruction of [begin, end) (relative): } // starts at
+            const auto lastInstruction = [this](uint64 begin, uint64 end) {
+                DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, begin, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+                std::optional<uint64> last;
+                for (uint32 count = 0; count < MAX_SCOPE_INSTRUCTIONS && probe.Next(insn) && insn->address < end; count++)
+                    last = insn->address;
+                return last;
+            };
+            for (const auto& funclet : entry.exceptionFunclets) {
+                if (!inCode(funclet.fileOffset))
+                    continue;
+                if (!funclet.isCatch) {
+                    addFunclet(funclet.fileOffset, "$dtor$", unwinds);
+                    continue;
+                }
+                DissasmCodeZone::ExceptionMark catchMark{ DissasmCodeZone::ExceptionMark::Kind::Catch, 0, std::nullopt, std::nullopt, funclet.catchType, false };
+                for (const auto& [begin, end] : funclet.tryRanges) {
+                    if (!inCode(begin) || end <= begin || !inCode(end - 1))
+                        continue;
+                    DissasmCodeZone::ExceptionMark mark{ DissasmCodeZone::ExceptionMark::Kind::CppTryBegin, begin - codeStart, std::nullopt, std::nullopt, {}, true };
+                    addMark(mark.begin, mark);
+                    if (const auto last = lastInstruction(mark.begin, end - codeStart); last.has_value()) {
+                        mark.kind = DissasmCodeZone::ExceptionMark::Kind::TryEnd;
+                        addMark(last.value(), mark);
+                    }
+                    if (!catchMark.owned) {
+                        catchMark.begin = mark.begin;
+                        catchMark.owned = true;
+                    }
+                }
+                addMark(funclet.fileOffset - codeStart, catchMark);
+                addFunclet(funclet.fileOffset, "$catch$", catches);
+            }
             for (const auto& scope : entry.exceptionScopes) {
                 if (!inCode(scope.begin) || scope.end <= scope.begin || !inCode(scope.end - 1) || (scope.handler != 0 && !inCode(scope.handler)) ||
                     (scope.target != 0 && !inCode(scope.target)))
@@ -1706,12 +1766,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (scope.target != 0)
                     mark.target = scope.target - codeStart;
                 exceptionMarks[mark.begin].push_back(mark);
-                // the last instruction of the scope: } // starts at
-                DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, mark.begin, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
-                std::optional<uint64> last;
-                for (uint32 count = 0; count < MAX_SCOPE_INSTRUCTIONS && probe.Next(insn) && insn->address < scope.end - codeStart; count++)
-                    last = insn->address;
-                if (last.has_value()) {
+                if (const auto last = lastInstruction(mark.begin, scope.end - codeStart); last.has_value()) {
                     auto end = mark;
                     end.kind = DissasmCodeZone::ExceptionMark::Kind::TryEnd;
                     exceptionMarks[last.value()].push_back(end);
@@ -1727,22 +1782,74 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         marks.push_back(handler);
                     }
                 }
-                // the funclet (once: the same __finally may guard several scopes)
-                if (scope.handler == 0 || !linkedFunclets.insert(scope.handler).second)
-                    continue;
-                auto* funclet           = labelOf(scope.handler);
-                const auto funcletEntry = functionEntries->find(scope.handler);
-                if (!funclet || funcletEntry == functionEntries->end())
-                    continue;
-                if (GetLabelType(funclet->second) == SUB && !namedByPlugin.contains(scope.handler)) {
-                    std::string name = parentName + (scope.target != 0 ? "$filt$" + std::to_string(filters++) : "$fin$" + std::to_string(finallies++));
-                    if (usedNames.insert(name).second)
-                        funclet->second = std::move(name);
-                }
-                if (is64)
-                    funcletLinks.push_back(
-                          { scope.handler - codeStart, it->first - codeStart, funcletEntry->second.size, entry.prologSize, entry.frameRegister, entry.frameOffset });
+                if (scope.handler != 0)
+                    addFunclet(scope.handler, scope.target != 0 ? "$filt$" : "$fin$", scope.target != 0 ? filters : finallies);
             }
+        }
+        // a funclet of a funclet (a try inside a catch block): it gets the establisher frame of the function of the outer one
+        std::unordered_map<uint64, size_t> linkOfFunclet;
+        for (size_t index = 0; index < funcletLinks.size(); index++)
+            linkOfFunclet.emplace(funcletLinks[index].funclet, index);
+        const auto links = funcletLinks;
+        for (auto& link : funcletLinks) {
+            for (uint32 depth = 0; depth < 8; depth++) {
+                const auto outer = linkOfFunclet.find(link.parent);
+                if (outer == linkOfFunclet.end() || links[outer->second].parent == link.parent)
+                    break;
+                const auto& outerLink = links[outer->second];
+                link.parent           = outerLink.parent;
+                link.prologSize       = outerLink.prologSize;
+                link.frameRegister    = outerLink.frameRegister;
+                link.frameOffset      = outerLink.frameOffset;
+            }
+            funcletsOfParent.emplace(link.parent, &link - funcletLinks.data());
+        }
+    }
+
+    // the establisher frame of a funclet in the offsets of the frame of its function: - the rsp of the entry (a frame without a frame
+    // register: the rsp after the prologue), - rbp (a frame register function: the frame register - 16 * its offset); none when the frame
+    // does not tell
+    static std::optional<int64> EstablisherFrameDelta(const DissasmFunctionFrame& parent, const FuncletLink& link)
+    {
+        constexpr uint8 UNWIND_RBP = 5; // the number of rbp in the unwind data
+        const uint64 prologEnd     = link.parent + link.prologSize;
+        if (link.frameRegister == 0 && !parent.usesFrameRegister)
+            return parent.StackDeltaAt(prologEnd);
+        if (link.frameRegister == UNWIND_RBP && parent.usesFrameRegister)
+            return -16 * static_cast<int64>(link.frameOffset);
+        if (link.frameRegister == UNWIND_RBP)
+            for (const auto& alias : parent.stackAliases)
+                if (alias.reg == "rbp" && !alias.frameOf.has_value() && alias.start <= prologEnd && prologEnd < alias.end)
+                    return alias.delta - 16 * static_cast<int64>(link.frameOffset);
+        return std::nullopt;
+    }
+
+    // the alias of the establisher frame in a funclet (mov rbp, rdx), its delta in the offsets of the frame of its function
+    std::optional<DissasmFunctionFrame::StackAlias> FuncletAlias(const DissasmFunctionFrame& parent, const FuncletLink& link, Buffer& functionData)
+    {
+        const auto establisher = EstablisherFrameDelta(parent, link);
+        if (!establisher.has_value() || link.funclet >= codeSize)
+            return std::nullopt;
+        const uint64 bytesToRead = std::min<uint64>(link.size > 0 ? link.size : codeSize - link.funclet, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
+        functionData = obj->GetData().CopyToBuffer(codeStart + link.funclet, static_cast<uint32>(std::min<uint64>(bytesToRead, codeSize - link.funclet)), false);
+        if (!functionData.IsValid())
+            return std::nullopt;
+        auto alias = FindX64EstablisherFrameAlias(detailHandle, functionData.GetData(), functionData.GetLength(), link.funclet);
+        if (!alias.has_value() || alias->end <= alias->start)
+            return std::nullopt;
+        alias->delta   = static_cast<int32>(alias->delta + establisher.value());
+        alias->frameOf = link.parent;
+        return alias;
+    }
+
+    // the slots the funclets of the function use (through the establisher frame) are variables of its frame
+    void AddFuncletSlots(DissasmFunctionFrame& frame)
+    {
+        const auto [first, last] = funcletsOfParent.equal_range(frame.startAddress);
+        for (auto it = first; it != last; ++it) {
+            Buffer functionData;
+            if (const auto alias = FuncletAlias(frame, funcletLinks[it->second], functionData); alias.has_value())
+                AddX64FuncletSlots(detailHandle, functionData.GetData(), functionData.GetLength(), funcletLinks[it->second].funclet, alias.value(), frame);
         }
     }
 
@@ -1751,7 +1858,6 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // [rbp + 0x98 + var_68]). The establisher frame: the rsp after the prologue (no frame register), the frame register - 16 * its offset
     void LinkFuncletFrames()
     {
-        constexpr uint8 UNWIND_RBP = 5; // the number of rbp in the unwind data
         if (!hasDetailHandle || funcletLinks.empty())
             return;
         const auto byStart = [](const DissasmFunctionFrame& frame, uint64 value) { return frame.startAddress < value; };
@@ -1759,30 +1865,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto parent = std::lower_bound(frames.begin(), frames.end(), link.parent, byStart);
             if (parent == frames.end() || parent->startAddress != link.parent)
                 continue;
-            // the establisher frame: - the rsp of the entry (a frame without a frame register), - rbp (a frame register function)
-            std::optional<int64> establisher;
-            const uint64 prologEnd = link.parent + link.prologSize;
-            if (link.frameRegister == 0 && !parent->usesFrameRegister)
-                establisher = parent->StackDeltaAt(prologEnd);
-            else if (link.frameRegister == UNWIND_RBP && parent->usesFrameRegister)
-                establisher = -16 * static_cast<int64>(link.frameOffset);
-            else if (link.frameRegister == UNWIND_RBP)
-                for (const auto& alias : parent->stackAliases)
-                    if (alias.reg == "rbp" && !alias.frameOf.has_value() && alias.start <= prologEnd && prologEnd < alias.end) {
-                        establisher = alias.delta - 16 * static_cast<int64>(link.frameOffset);
-                        break;
-                    }
-            if (!establisher.has_value() || link.funclet >= codeSize)
+            Buffer functionData;
+            auto alias = FuncletAlias(*parent, link, functionData);
+            if (!alias.has_value())
                 continue;
-            const uint64 bytesToRead = std::min<uint64>(link.size > 0 ? link.size : codeSize - link.funclet, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
-            const auto functionData  = obj->GetData().Get(codeStart + link.funclet, static_cast<uint32>(std::min<uint64>(bytesToRead, codeSize - link.funclet)), false);
-            if (!functionData.IsValid())
-                continue;
-            auto alias = FindX64EstablisherFrameAlias(detailHandle, functionData.GetData(), functionData.GetLength(), link.funclet);
-            if (!alias.has_value() || alias->end <= alias->start)
-                continue;
-            alias->delta   = static_cast<int32>(alias->delta + establisher.value());
-            alias->frameOf = link.parent;
             // the frame of the funclet: the one of its own slots, or one for the alias (a funclet without slots of its own)
             auto funcletFrame = std::lower_bound(frames.begin(), frames.end(), link.funclet, byStart);
             if (funcletFrame != frames.end() && funcletFrame->startAddress == link.funclet) {
@@ -3567,7 +3653,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (const auto table = instructionSet.NextDataRangeStart(relativeAddress); table.has_value() && table.value() < limit)
             limit = table.value(); // the jump table after the code of the function
         const uint64 bytesToRead = std::min<uint64>(limit - relativeAddress, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
-        const auto functionData  = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
+        auto functionData        = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
         if (!functionData.IsValid())
             return;
 
@@ -3613,6 +3699,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                       frame,
                       is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); }),
                       [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
+        }
+        if (analyzed && functionArch == DissasmArch::X64 && funcletsOfParent.contains(relativeAddress)) {
+            AddFuncletSlots(frame); // x64 SEH / C++ EH: the slots of the frame only the funclets use
+            // the bytes of the funclets were read through the same cache: the view of the function is read again
+            functionData = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
+            if (!functionData.IsValid())
+                return;
         }
         if (!analyzed || frame.variables.empty())
             return;
@@ -5760,6 +5853,12 @@ std::string DissasmCodeZone::FormatExceptionMarks(uint64 relativeAddress) const
             break;
         case ExceptionMark::Kind::Except:
             text += "__except(" + handler + ") // owned by " + FormatCodeAddress(mark.begin);
+            break;
+        case ExceptionMark::Kind::CppTryBegin:
+            text += "try {";
+            break;
+        case ExceptionMark::Kind::Catch:
+            text += "catch(" + mark.catchType + ")" + (mark.owned ? " // owned by " + FormatCodeAddress(mark.begin) : std::string());
             break;
         }
     }

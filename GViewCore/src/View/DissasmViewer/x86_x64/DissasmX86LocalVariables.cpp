@@ -694,6 +694,58 @@ std::optional<DissasmFunctionFrame::StackAlias> GView::View::DissasmViewer::Find
     return alias;
 }
 
+bool GView::View::DissasmViewer::AddX64FuncletSlots(
+      csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, const DissasmFunctionFrame::StackAlias& alias, DissasmFunctionFrame& frame)
+{
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail || !code || codeSize == 0 || alias.reg != "rbp")
+        return false;
+    const uint8* data = code;
+    size_t size       = static_cast<size_t>(std::min<uint64>(codeSize, alias.end > codeAddress ? alias.end - codeAddress : 0));
+    uint64 address    = codeAddress;
+    uint32 decoded    = 0;
+    std::vector<FrameAccess> accesses;
+    while (decoded < MAX_FUNCTION_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
+        decoded++;
+        if (insn->address < alias.start)
+            continue;
+        const cs_x86& x86 = insn->detail->x86;
+        for (uint8 index = 0; index < x86.op_count; index++) {
+            const cs_x86_op& op = x86.operands[index];
+            if (op.type != X86_OP_MEM || op.mem.base != X86_REG_RBP || op.mem.index != X86_REG_INVALID ||
+                (op.mem.segment != X86_REG_INVALID && op.mem.segment != X86_REG_SS))
+                continue;
+            const int64 offset = op.mem.disp + alias.delta;
+            // the return address (and the saved rbp of a frame register function)
+            if ((offset >= 0 && offset < (frame.usesFrameRegister ? 16 : 8)) || offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
+                continue;
+            accesses.push_back({ static_cast<int32>(offset), static_cast<uint16>(insn->id == X86_INS_LEA ? 0 : op.size) });
+            if (accesses.size() >= ACCESSES_COMPACT_THRESHOLD && !CompactAccesses(accesses))
+                return false;
+        }
+    }
+    if (accesses.empty())
+        return true;
+    if (!CompactAccesses(accesses))
+        return false;
+    bool added = false;
+    for (const auto& access : accesses) {
+        if (frame.FindVariableContaining(access.frameOffset) || frame.variables.size() >= DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION)
+            continue;
+        DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
+        // the names of the frame: from rbp (arg_0 at 0x10), from the stack pointer of the entry (arg_0 at 8)
+        FormatDefaultLocalVariableName(
+              frame.usesFrameRegister || access.frameOffset < 8 ? access.frameOffset : access.frameOffset + 8, true, variable.name);
+        frame.variables.push_back(std::move(variable));
+        added = true;
+    }
+    if (added)
+        std::sort(frame.variables.begin(), frame.variables.end(), [](const DissasmLocalVariable& a, const DissasmLocalVariable& b) {
+            return a.frameOffset < b.frameOffset;
+        });
+    return true;
+}
+
 bool GView::View::DissasmViewer::FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std::string_view stackRegister)
 {
     const std::string base = "[" + std::string(stackRegister);
