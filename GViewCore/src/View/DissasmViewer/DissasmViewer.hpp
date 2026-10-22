@@ -691,6 +691,9 @@ namespace View
             std::unordered_map<uint64, std::string> boundSymbols;
             // the fields of the structures of the data (AddDataField and the parsers of the metadata), by VA
             std::map<uint64, DissasmDataField> dataFields;
+            // the export names by ordinal of the DLLs of the imports by ordinal (Settings::GetImportOrdinalName), by DLL name in lower case
+            // and the bitness of the image ("certcli.dll|32"); empty for a DLL not found
+            std::map<std::string, std::unordered_map<uint32, std::string>> exportNamesByOrdinal;
             // the file offset (from DISSASM_UNINITIALIZED_ZONES_BASE) of a VA of an uninitialized data zone
             std::optional<uint64> GetUninitializedFileOffset(uint64 address) const
             {

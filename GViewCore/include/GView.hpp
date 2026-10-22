@@ -1882,6 +1882,13 @@ namespace View
              */
             void AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize);
             /**
+             * \brief The name of an import by ordinal (Ordinal:357 of certcli.dll): the name the DLL exports that ordinal under, from its
+             * export table. The DLL is the one in the folder of the file (`filePath`), else the one of the system (Windows: SysWOW64 for a
+             * 32 bit image on a 64 bit Windows, System32): the names of another version of the DLL may differ. Empty when the DLL is not
+             * found or does not name the ordinal. The export tables read are kept by the settings.
+             */
+            std::string GetImportOrdinalName(std::string_view dllName, uint32 ordinal, std::u16string_view filePath, bool is32BitImage);
+            /**
              * rief Adds a file offset where an instruction starts (the start of a code section): the disassembly never decodes an
              * instruction across it (the padding between two sections does not hide the code that follows). The function entries are
              * boundaries as well.

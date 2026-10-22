@@ -29,6 +29,8 @@ target_sources(
 	DissasmObjC.cpp
 	DissasmRtti.hpp
 	DissasmRtti.cpp
+	DissasmImportOrdinals.hpp
+	DissasmImportOrdinals.cpp
 	DissasmAssistantRequest.hpp
 	DissasmAnnotations.hpp
 	DissasmAnnotations.cpp

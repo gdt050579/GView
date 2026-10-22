@@ -768,7 +768,28 @@ static bool ReadImagePointer(GView::Utils::DataCache& data, uint64 offset, bool 
 // The delay loaded imports (IMAGE_DELAYLOAD_DESCRIPTOR): the code calls them through their own IAT (call [__imp_Name]), whose slots hold
 // the address of a load thunk until the first call (__imp_load_Name: lea rax, [__imp_Name]; jmp __tailMerge_dll). The slots are named
 // like the imports, the load thunks and the __tailMerge_ helpers of every DLL are functions (IDA names).
-void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+// an import by ordinal (Ordinal:357): the name its DLL exports the ordinal under (certcli.dll: CSPrintErrorLineFile), demangled as the
+// other imports; empty when the DLL is not found or does not name it
+static std::string ResolveOrdinalImport(
+      DissasmViewer::Settings& settings, std::string_view dllName, std::string_view importName, std::u16string_view filePath, bool is32BitImage)
+{
+    constexpr std::string_view ORDINAL_PREFIX = "Ordinal:";
+    if (importName.size() <= ORDINAL_PREFIX.size() || importName.substr(0, ORDINAL_PREFIX.size()) != ORDINAL_PREFIX)
+        return {};
+    uint32 ordinal = 0;
+    for (const char c : importName.substr(ORDINAL_PREFIX.size())) {
+        if (c < '0' || c > '9' || ordinal > 0xFFFF)
+            return {};
+        ordinal = ordinal * 10 + static_cast<uint32>(c - '0');
+    }
+    auto name = settings.GetImportOrdinalName(dllName, ordinal, filePath, is32BitImage);
+    String demangled;
+    if (!name.empty() && GView::Utils::Demangle(name.c_str(), demangled))
+        return demangled.GetText();
+    return name;
+}
+
+void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data, std::u16string_view filePath)
 {
     struct DelayLoadDescriptor {
         uint32 Attributes; // bit 0: the fields are RVAs (VC 6 used VAs)
@@ -826,16 +847,20 @@ void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEF
                 break;
             const uint64 slot = iat + static_cast<uint64>(index) * pointerSize;
             std::string rawName;
+            std::string ordinalName; // the name of the export of the ordinal in the DLL (its slot and its thunk named after it)
             if (nameEntry & ordinalFlag) {
                 text.SetFormat("Ordinal:%u", static_cast<uint32>(nameEntry & 0xFFFF));
-                rawName = text.GetText();
+                rawName     = text.GetText();
+                ordinalName = ResolveOrdinalImport(settings, dllName, rawName, filePath, !is64);
             } else
                 rawName = std::string(pe->ReadString(static_cast<uint32>(toRVA(static_cast<uint32>(nameEntry)) + 2), MAX_NAME_SIZE)); // after the hint
             if (rawName.empty())
                 continue;
             // the slot, named like a regular import (demangled C++ names); Demangle adds to its output: a new string for every name
             String demangled;
-            if (GView::Utils::Demangle(rawName.c_str(), demangled))
+            if (!ordinalName.empty())
+                settings.AddMemoryMapping(slot, ordinalName, DissasmViewer::MemoryMappingType::FunctionMapping);
+            else if (GView::Utils::Demangle(rawName.c_str(), demangled))
                 settings.AddMemoryMapping(slot, demangled.GetText(), DissasmViewer::MemoryMappingType::FunctionMapping);
             else
                 settings.AddMemoryMapping(slot, rawName, DissasmViewer::MemoryMappingType::FunctionMapping);
@@ -848,7 +873,9 @@ void AddDissasmDelayImports(DissasmViewer::Settings& settings, Reference<PE::PEF
             const auto thunkFa = pe->RVAToFA(thunkVA - pe->imageBase);
             if (thunkFa == PE_INVALID_ADDRESS || !namedFunctions.insert(thunkFa).second)
                 continue;
-            const std::string thunkName = (nameEntry & ordinalFlag) ? ordinalPrefix + std::to_string(nameEntry & 0xFFFF) : "__imp_load_" + rawName;
+            const std::string thunkName = !ordinalName.empty()         ? "__imp_load_" + ordinalName
+                                          : (nameEntry & ordinalFlag) ? ordinalPrefix + std::to_string(nameEntry & 0xFFFF)
+                                                                      : "__imp_load_" + rawName;
             settings.AddFunctionEntry(thunkFa, thunkName, DissasmViewer::FunctionEntryType::Symbol);
 
             // the helper the thunk jumps to: x64 lea rax, [rip + slot]; jmp rel32 - x86 mov eax, slot; jmp rel32
@@ -1378,12 +1405,20 @@ UInt16 e_res[4];)");
 
     // LocalString<128> processedName;
 
+    // the imports by ordinal named after the export of their DLL (the prototypes and the names of the arguments of the APIs apply)
+    const std::u16string_view filePath = win->GetObject()->GetPath();
     for (const auto& [RVA, dllIndex, Name] : pe->impFunc) {
         // processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
-        settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
+        const auto ordinalName = dllIndex < pe->impDLL.size()
+                                       ? ResolveOrdinalImport(settings, pe->impDLL[dllIndex].Name.GetText(), Name.ToStringView(), filePath, !pe->hdr64)
+                                       : std::string();
+        if (!ordinalName.empty())
+            settings.AddMemoryMapping(RVA, ordinalName, DissasmViewer::MemoryMappingType::FunctionMapping);
+        else
+            settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
     }
     AddDissasmFunctionEntries(settings, pe, win->GetObject()->GetData());
-    AddDissasmDelayImports(settings, pe, win->GetObject()->GetData());
+    AddDissasmDelayImports(settings, pe, win->GetObject()->GetData(), filePath);
     AddDissasmLoadConfig(settings, pe, win->GetObject()->GetData());
     AddDissasmDirectoryFields(settings, pe, win->GetObject()->GetData());
 

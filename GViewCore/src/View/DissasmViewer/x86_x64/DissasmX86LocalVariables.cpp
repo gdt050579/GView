@@ -298,11 +298,19 @@ StackFrameResult AnalyzeStackPointerFrame(
     frame.variables.clear();
     frame.stackDeltas.clear();
     frame.stackAliases.clear();
+    frame.savedRegistersOffset = 0;
+    frame.savedRegistersSize   = 0;
+    frame.alignedStack         = false;
     if (!code || codeSize == 0 || limitAddress <= codeAddress)
         return StackFrameResult::Rejected;
     const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
     if (!insn || !insn->detail)
         return StackFrameResult::Rejected;
+
+    // the saved registers: the pushes of the prologue from the entry on (push rbp; mov rbp, rsp; push rbx: the movs between them), until
+    // the first other change of the stack pointer / branch / call
+    bool inPrologue      = !chunk;
+    uint32 prologueSaves = 0;
 
     const x86_reg stackRegister = is64 ? X86_REG_RSP : X86_REG_ESP;
     const int64 pointerSize     = is64 ? 8 : 4;
@@ -323,6 +331,14 @@ StackFrameResult AnalyzeStackPointerFrame(
     bool accumulatorAfterCall = false;
     bool flowEnded            = false;
     bool reachedRet           = false; // 32 bit: a function chunk (the cold code of a function, reached by a jcc) has no ret
+    // a dynamic allocation (alloca: sub rsp, rax; the probing loop of GCC: sub rsp, 0x1000 until rsp reaches its end): the depth is not
+    // known until the stack pointer is restored from a callee saved alias (lea rsp, [rbp - 0x28]); the slots through rsp are not read there
+    bool unknownDepth                  = false;
+    constexpr int64 UNKNOWN_DEPTH      = INT64_MIN;
+    constexpr uint32 MAX_PROBING_LOOPS = 16; // one per allocation
+    uint32 probingLoops                = 0;
+    uint64 pageAllocation              = 0;     // the last sub rsp, 0x1000 (a page of the probing loop)
+    bool unknownBranches               = false; // a branch with an unknown depth was seen (its target joins the paths)
     // the registers that hold the stack pointer (mov r11, rsp / lea rbp, [rsp - 0x5f]), until they are written (a volatile one: until a call)
     struct ActiveAlias {
         x86_reg reg;
@@ -338,16 +354,24 @@ StackFrameResult AnalyzeStackPointerFrame(
     };
     std::map<uint64, std::vector<ActiveAlias>> branchAliases; // the aliases at the targets of the forward branches
     constexpr size_t MAX_STACK_ALIASES = 64;                   // a few per function (the reopened ones counted)
-    std::map<uint64, int64> branchDeltas; // the depth at the targets of the forward branches
+    std::map<uint64, std::pair<int64, uint64>> branchDeltas; // the depth at the targets of the forward branches (or UNKNOWN_DEPTH), the branch
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
     frame.stackDeltas.emplace_back(codeAddress, static_cast<int32>(delta));
-    const auto setDelta = [&](uint64 at, int64 value) {
-        delta = value;
+    const auto recordDelta = [&frame](uint64 at, int32 value) {
         if (frame.stackDeltas.back().first == at)
-            frame.stackDeltas.back().second = static_cast<int32>(value);
+            frame.stackDeltas.back().second = value;
         else if (frame.stackDeltas.back().second != value)
-            frame.stackDeltas.emplace_back(at, static_cast<int32>(value));
+            frame.stackDeltas.emplace_back(at, value);
+    };
+    const auto setDelta = [&](uint64 at, int64 value) {
+        delta        = value;
+        unknownDepth = false;
+        recordDelta(at, static_cast<int32>(value));
+    };
+    const auto setUnknownDepth = [&](uint64 at) {
+        unknownDepth = true;
+        recordDelta(at, DISSASM_UNKNOWN_STACK_DELTA);
     };
     const auto isCalleeSaved = [is64](x86_reg reg) {
         if (is64)
@@ -386,10 +410,18 @@ StackFrameResult AnalyzeStackPointerFrame(
 
         // the depth before this instruction: after a ret / jmp the one of a branch to it, after a call to an unknown callee its arguments
         // are popped (stdcall) unless the caller cleans up (cdecl: add esp, 8)
+        if (flowEnded && current->id == X86_INS_NOP && branchDeltas.count(current->address) == 0)
+            continue; // the padding after a ret / jmp (GCC: nop word ptr cs:[rax + rax]): the code after it is reached by a branch
+        if (!flowEnded && !unknownDepth && unknownBranches)
+            if (const auto known = branchDeltas.find(current->address); known != branchDeltas.end() && known->second.first == UNKNOWN_DEPTH)
+                setUnknownDepth(current->address); // the code after an allocation joins this path (an __except block falls through to it)
         if (flowEnded) {
             // a chunk: the next part is reached from the body of the function, with its depth
             const auto known = branchDeltas.find(current->address);
-            setDelta(current->address, known != branchDeltas.end() ? known->second : chunk ? chunk->delta : (is64 ? deepest : bodyDelta));
+            if (known != branchDeltas.end() && known->second.first == UNKNOWN_DEPTH)
+                setUnknownDepth(current->address);
+            else
+                setDelta(current->address, known != branchDeltas.end() ? known->second.first : chunk ? chunk->delta : (is64 ? deepest : bodyDelta));
             // the aliases of the branch to it (the body after an early epilogue: pop rbp; ret ended rbp)
             if (const auto saved = branchAliases.find(current->address); saved != branchAliases.end())
                 openAliases(saved->second, current->address);
@@ -414,7 +446,7 @@ StackFrameResult AnalyzeStackPointerFrame(
             for (uint8 index = 0; index < x86.op_count && !usesStack; index++)
                 usesStack = (x86.operands[index].type == X86_OP_MEM && x86.operands[index].mem.base == stackRegister) ||
                             (x86.operands[index].type == X86_OP_REG && x86.operands[index].reg == stackRegister);
-            if (callerCleans)
+            if (callerCleans || unknownDepth)
                 unknownPurge.reset();
             else if (usesStack) {
                 setDelta(current->address, delta + unknownPurge.value());
@@ -441,6 +473,10 @@ StackFrameResult AnalyzeStackPointerFrame(
             if (op.type != X86_OP_MEM || (op.mem.base != stackRegister && !viaAlias) || op.mem.index != X86_REG_INVALID ||
                 (op.mem.segment != X86_REG_INVALID && op.mem.segment != X86_REG_SS))
                 continue;
+            // the depth is not known; or byte ptr [rsp + 0xff8], 0: the probe of a page of the stack, not a variable (lock or [rsp], 0: a
+            // memory barrier, its slot named as IDA does)
+            if (!viaAlias && (unknownDepth || (current->id == X86_INS_OR && immediate(1) == 0 && x86.prefix[0] != X86_PREFIX_LOCK)))
+                continue;
             const int64 offset = op.mem.disp + (viaAlias ? viaAlias->delta : delta);
             if ((offset >= 0 && offset < pointerSize) || offset < -MAX_FRAME_DISPLACEMENT || offset > MAX_FRAME_DISPLACEMENT)
                 continue; // the return address
@@ -452,6 +488,7 @@ StackFrameResult AnalyzeStackPointerFrame(
         // the changes of the stack pointer
         std::optional<int64> change;
         bool writesStack = false;
+        bool restores    = false; // the stack pointer from an alias: known again after a dynamic allocation
         switch (current->id) {
         case X86_INS_PUSH:
         case X86_INS_PUSHFD:
@@ -479,9 +516,11 @@ StackFrameResult AnalyzeStackPointerFrame(
         case X86_INS_SUB:
         case X86_INS_ADD:
             if (adjustsStack) {
-                if (const auto value = immediate(1); value.has_value())
+                if (const auto value = immediate(1); value.has_value()) {
                     change = current->id == X86_INS_SUB ? -value.value() : value.value();
-                else if (current->id == X86_INS_SUB && accumulator.has_value() && x86.op_count == 2 && x86.operands[1].type == X86_OP_REG &&
+                    if (current->id == X86_INS_SUB && value.value() == 0x1000)
+                        pageAllocation = current->address;
+                } else if (current->id == X86_INS_SUB && accumulator.has_value() && x86.op_count == 2 && x86.operands[1].type == X86_OP_REG &&
                          GetX64RegisterFamily(x86.operands[1].reg) == 0)
                     change = -accumulator.value(); // mov eax, 0x2000; call __chkstk; sub rsp, rax
                 else
@@ -494,17 +533,19 @@ StackFrameResult AnalyzeStackPointerFrame(
                 const bool plain = x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM && x86.operands[1].mem.index == X86_REG_INVALID;
                 if (plain && x86.operands[1].mem.base == stackRegister)
                     change = x86.operands[1].mem.disp;
-                else if (const auto* restored = plain ? aliasOf(x86.operands[1].mem.base) : nullptr)
-                    change = restored->delta + x86.operands[1].mem.disp - delta; // the epilogue: lea rsp, [rbp + 0x50]
-                else
+                else if (const auto* restored = plain ? aliasOf(x86.operands[1].mem.base) : nullptr) {
+                    change   = restored->delta + x86.operands[1].mem.disp - delta; // the epilogue: lea rsp, [rbp + 0x50]
+                    restores = true;
+                } else
                     writesStack = true;
             }
             break;
         case X86_INS_MOV:
             if (IsRegisterOperand(x86, 0, stackRegister)) {
-                if (const auto* restored = x86.op_count == 2 && x86.operands[1].type == X86_OP_REG ? aliasOf(x86.operands[1].reg) : nullptr)
-                    change = restored->delta - delta; // mov rsp, rbp: the stack pointer of the alias
-                else
+                if (const auto* restored = x86.op_count == 2 && x86.operands[1].type == X86_OP_REG ? aliasOf(x86.operands[1].reg) : nullptr) {
+                    change   = restored->delta - delta; // mov rsp, rbp: the stack pointer of the alias
+                    restores = true;
+                } else
                     writesStack = true;
             }
             break;
@@ -520,6 +561,7 @@ StackFrameResult AnalyzeStackPointerFrame(
                         change = alias->delta + pointerSize - delta;
                         break;
                     }
+            restores = change.has_value();
             break;
         }
         case X86_INS_AND:
@@ -529,9 +571,10 @@ StackFrameResult AnalyzeStackPointerFrame(
                 auto mask = immediate(1);
                 if (mask.has_value() && !is64)
                     mask = static_cast<int32>(static_cast<uint32>(mask.value())); // and esp, 0xfffffff8
-                if (mask.has_value() && mask.value() < 0 && mask.value() >= -0x1000 && (mask.value() & (-mask.value() - 1)) == 0 && !aliases.empty())
-                    change = 0;
-                else
+                if (mask.has_value() && mask.value() < 0 && mask.value() >= -0x1000 && (mask.value() & (-mask.value() - 1)) == 0 && !aliases.empty()) {
+                    change             = 0;
+                    frame.alignedStack = true;
+                } else
                     writesStack = true;
             }
             break;
@@ -557,12 +600,20 @@ StackFrameResult AnalyzeStackPointerFrame(
                     writesStack = true;
             break;
         }
-        if (writesStack)
-            return StackFrameResult::Rejected; // mov esp, ebp / and esp, -0x10: the stack pointer is not followed (a frame register function)
-        if (!is64 && (current->id == X86_INS_RET || current->id == X86_INS_RETF) && delta != 0)
+        // mov esp, ebx / sub rsp, rax: the stack pointer is not followed; with a callee saved alias that keeps it (the frame pointer: the
+        // epilogue restores it from there) its depth is not known until then, without one the frame is rejected
+        const auto aliasKeepsStack = [&aliases, &isCalleeSaved]() {
+            return std::any_of(aliases.begin(), aliases.end(), [&isCalleeSaved](const ActiveAlias& alias) { return isCalleeSaved(alias.reg); });
+        };
+        if (writesStack && !aliasKeepsStack())
+            return StackFrameResult::Rejected;
+        const bool returns = current->id == X86_INS_RET || current->id == X86_INS_RETF;
+        if (returns && unknownDepth)
+            return StackFrameResult::Rejected; // a ret before the stack pointer is restored: the walk did not follow it
+        if (!is64 && returns && delta != 0)
             return StackFrameResult::Unbalanced; // a ret with an unbalanced stack: a callee that pops something else than what was guessed
         // a ret, or a jmp with the stack of the entry (a tail call: jmp __CxxFrameHandler3); a chunk jumps back with its pushes
-        reachedRet |= current->id == X86_INS_RET || current->id == X86_INS_RETF || (current->id == X86_INS_JMP && delta == 0);
+        reachedRet |= returns || (current->id == X86_INS_JMP && delta == 0 && !unknownDepth);
 
         // the aliases of the stack pointer: any write of their register ends them, a call the volatile ones (r11)
         for (auto alias = aliases.begin(); alias != aliases.end();) {
@@ -583,13 +634,14 @@ StackFrameResult AnalyzeStackPointerFrame(
         }
         // mov rax, rsp (a copy), lea rbp, [rsp - 0x5f] / lea rbp, [rax - 0x5f] (the biased frame pointer of MSVC x64: a callee saved
         // register), lea r11, [rsp + 0x80] (the epilogue of MSVC x64: mov rsp, r11)
-        const bool copiesStack = current->id == X86_INS_MOV && x86.op_count == 2 && IsRegisterOperand(x86, 1, stackRegister);
+        const bool copiesStack = current->id == X86_INS_MOV && x86.op_count == 2 && IsRegisterOperand(x86, 1, stackRegister) && !unknownDepth;
         const auto* biasBase   = current->id == X86_INS_LEA && x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM &&
                                        x86.operands[1].mem.index == X86_REG_INVALID && x86.operands[1].mem.base != stackRegister
                                      ? aliasOf(x86.operands[1].mem.base)
                                      : nullptr;
         const bool biasesStack = current->id == X86_INS_LEA && x86.op_count == 2 && x86.operands[1].type == X86_OP_MEM &&
-                                 x86.operands[1].mem.index == X86_REG_INVALID && (x86.operands[1].mem.base == stackRegister || biasBase);
+                                 x86.operands[1].mem.index == X86_REG_INVALID &&
+                                 ((x86.operands[1].mem.base == stackRegister && !unknownDepth) || biasBase);
         if ((copiesStack || biasesStack) && x86.operands[0].type == X86_OP_REG && x86.operands[0].size == pointerSize &&
             x86.operands[0].reg != stackRegister && !aliasOf(x86.operands[0].reg) && frame.stackAliases.size() < MAX_STACK_ALIASES &&
             (copiesStack || isCalleeSaved(x86.operands[0].reg) || x86.operands[0].reg == X86_REG_R11)) {
@@ -597,7 +649,16 @@ StackFrameResult AnalyzeStackPointerFrame(
             aliases.push_back({ x86.operands[0].reg, aliasDelta, frame.stackAliases.size() });
             frame.stackAliases.push_back({ cs_reg_name(detailHandle, x86.operands[0].reg), static_cast<int32>(aliasDelta), nextAddress, nextAddress });
         }
-        if (change.has_value()) {
+        if (inPrologue) {
+            if (savesRegister && !unknownDepth && delta == -static_cast<int64>(prologueSaves) * pointerSize)
+                prologueSaves++;
+            else if (change.has_value() || writesStack || cs_insn_group(detailHandle, current, CS_GRP_JUMP) ||
+                     cs_insn_group(detailHandle, current, CS_GRP_CALL) || cs_insn_group(detailHandle, current, CS_GRP_RET))
+                inPrologue = false;
+        }
+        if (writesStack)
+            setUnknownDepth(nextAddress);
+        else if (change.has_value() && (!unknownDepth || restores)) { // a push / sub rsp, 0x20 after an allocation: still not known
             setDelta(nextAddress, delta + change.value());
             deepest = std::min(deepest, delta);
             if (savesRegister || (!calledYet && (allocatesLocal || (adjustsStack && current->id == X86_INS_SUB))))
@@ -622,9 +683,33 @@ StackFrameResult AnalyzeStackPointerFrame(
             const uint64 target = static_cast<uint64>(x86.operands[0].imm);
             if (target > current->address && target < limitAddress) {
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
-                branchDeltas.emplace(target, delta);
+                // a target reached with an unknown depth stays unknown (whatever the other branches to it)
+                const auto [branch, added] = branchDeltas.emplace(target, std::pair<int64, uint64>(unknownDepth ? UNKNOWN_DEPTH : delta, current->address));
+                if (!added && unknownDepth)
+                    branch->second = { UNKNOWN_DEPTH, current->address };
+                unknownBranches |= unknownDepth;
                 if (!aliases.empty())
                     branchAliases.emplace(target, aliases);
+            } else if (target > codeAddress && target <= pageAllocation && is64 && !unknownDepth && aliasKeepsStack() &&
+                       probingLoops < MAX_PROBING_LOOPS) {
+                // the probing loop of a dynamic allocation (GCC -fstack-clash-protection: sub rsp, 0x1000; or [rsp + 0xff8], 0; jmp to
+                // its start): a page allocated in the loop, the stack pointer deeper at the jump back than at its target; its depth not
+                // known from the target on
+                if (const auto atTarget = frame.StackDeltaAt(target); atTarget.has_value() && atTarget.value() > delta) {
+                    probingLoops++;
+                    while (frame.stackDeltas.size() > 1 && frame.stackDeltas.back().first >= target)
+                        frame.stackDeltas.pop_back();
+                    setUnknownDepth(target);
+                    for (auto& branch : branchDeltas) // the branches out of the loop
+                        if (branch.second.second >= target) {
+                            branch.second.first = UNKNOWN_DEPTH;
+                            unknownBranches     = true;
+                        }
+                    deepest = chunk ? chunk->delta : 0;
+                    for (const auto& known : frame.stackDeltas)
+                        if (known.second != DISSASM_UNKNOWN_STACK_DELTA)
+                            deepest = std::min<int64>(deepest, known.second);
+                }
             }
         }
         bool endsFlow = false;
@@ -654,9 +739,13 @@ StackFrameResult AnalyzeStackPointerFrame(
         return StackFrameResult::Rejected; // no ret: the depth of the entry is not the one of a function (a chunk of another one)
     if ((accesses.empty() && !chunk) || !CompactAccesses(accesses)) // a chunk without slots: its aliases, its depths
         return StackFrameResult::Rejected;
-    frame.stackOffset = static_cast<int32>(deepest);
+    frame.stackOffset          = static_cast<int32>(deepest);
+    frame.savedRegistersOffset = -static_cast<int32>(prologueSaves * pointerSize);
+    frame.savedRegistersSize   = static_cast<uint32>(prologueSaves * pointerSize);
     frame.variables.reserve(accesses.size());
     for (const auto& access : accesses) {
+        if (frame.IsSavedRegisterSlot(access.frameOffset))
+            continue; // the epilogue of MSVC x64: lea r11, [rsp + 0x80] (var_s0); GCC: mov rbx, [rbp - 8]
         DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
         // the arguments from the return address: [entry + 8] / [entry + 4] is arg_0 (FormatDefaultLocalVariableName counts them from the
         // saved frame register)
@@ -721,10 +810,19 @@ bool GView::View::DissasmViewer::MergeStackPointerSlots(DissasmFunctionFrame& fr
             return false;
     // the walk of the stack pointer goes on after an early epilogue (the code reached by a branch): the end of the frame too
     frame.endAddress = std::max(frame.endAddress, stackFrame.endAddress);
+    // the saved registers in the offsets of the frame register (push rbp; mov rbp, rsp; push rbx: [rbp - 8] is var_s0, [rbp] var_s8):
+    // the slots the walk of the frame register made variables are not
+    frame.savedRegistersOffset = stackFrame.savedRegistersOffset - base;
+    frame.savedRegistersSize   = stackFrame.savedRegistersSize;
+    frame.alignedStack         = stackFrame.alignedStack;
+    frame.variables.erase(
+          std::remove_if(
+                frame.variables.begin(), frame.variables.end(), [&frame](const DissasmLocalVariable& variable) { return frame.IsSavedRegisterSlot(variable.frameOffset); }),
+          frame.variables.end());
     frame.stackDeltas.clear();
     frame.stackDeltas.reserve(stackFrame.stackDeltas.size());
     for (const auto& [address, delta] : stackFrame.stackDeltas)
-        frame.stackDeltas.emplace_back(address, delta - base);
+        frame.stackDeltas.emplace_back(address, delta == DISSASM_UNKNOWN_STACK_DELTA ? delta : delta - base);
     const int32 pointerSize = is64 ? 8 : 4;
     std::vector<DissasmLocalVariable> variables;
     variables.reserve(stackFrame.variables.size());
@@ -746,7 +844,7 @@ bool GView::View::DissasmViewer::MergeFrameVariables(DissasmFunctionFrame& frame
     for (auto& variable : variables) {
         if (frame.variables.size() >= DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION)
             return false;
-        if (frame.FindVariableContaining(variable.frameOffset) || frame.HasVariableNamed(variable.name))
+        if (frame.FindVariableContaining(variable.frameOffset) || frame.HasVariableNamed(variable.name) || frame.IsSavedRegisterSlot(variable.frameOffset))
             continue;
         frame.variables.push_back(std::move(variable));
         added = true;

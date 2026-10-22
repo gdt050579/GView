@@ -271,6 +271,9 @@ namespace View
 
         constexpr uint32 DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION = 1024; // the frames of the large functions of ntfs have 562 slots
         constexpr uint32 DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE     = 128;
+        // a depth of DissasmFunctionFrame::stackDeltas that is not known: after a dynamic allocation (alloca: sub rsp, rax), until the
+        // stack pointer is restored from an alias (lea rsp, [rbp - 0x28] / mov rsp, rbp / leave)
+        constexpr int32 DISSASM_UNKNOWN_STACK_DELTA = INT32_MIN;
 
         // A stack slot addressed through the frame register ([ebp - 8] / [rbp + 0x10]) inside a function.
         struct DissasmLocalVariable {
@@ -314,11 +317,26 @@ namespace View
             // a chunk of a function (its cold code: Settings::AddFunctionChunk): its slots are the variables of that function (by start), its
             // stack deltas in the offsets of that frame; it has no variable of its own. Recomputed by the deep scan
             std::optional<uint64> variablesOf;
+            // the slots of the registers the prologue saves by its pushes (push rbp; push rbx: the saved registers of the caller), in the
+            // offsets of the frame: not variables, their operands named as IDA does (var_s0 the lowest, var_s8, ...). Recomputed by the
+            // deep scan
+            int32 savedRegistersOffset = 0;
+            uint32 savedRegistersSize  = 0;
+            // and esp, -8 (an aligned frame of a frame register function): the depths of the stack pointer are not the ones of the frame
+            // register above the alignment (a local through esp may fall on the saved registers / the return address)
+            bool alignedStack = false;
+            bool IsSavedRegisterSlot(int32 frameOffset) const
+            {
+                return savedRegistersSize != 0 && frameOffset >= savedRegistersOffset &&
+                       static_cast<int64>(frameOffset) - savedRegistersOffset < static_cast<int64>(savedRegistersSize);
+            }
             std::optional<int32> StackDeltaAt(uint64 address) const
             {
                 const auto next = std::upper_bound(
                       stackDeltas.begin(), stackDeltas.end(), address, [](uint64 value, const std::pair<uint64, int32>& change) { return value < change.first; });
-                return next == stackDeltas.begin() ? std::nullopt : std::optional<int32>((next - 1)->second);
+                if (next == stackDeltas.begin() || (next - 1)->second == DISSASM_UNKNOWN_STACK_DELTA)
+                    return std::nullopt;
+                return (next - 1)->second;
             }
 
             DissasmLocalVariable* FindVariable(int32 frameOffset);

@@ -512,6 +512,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     X86FrameOperand frameOperand{};
     std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]; x64 without a frame register: [rsp + 0x38 + var_18]
     std::string stackJoiner;
+    bool alignedStackOffset = false; // through esp in an aligned frame (and esp, -8): not the saved registers / the return address
     if (zone && !zone->localVariables.Empty() && zone->IsArmCode()) {
         // ARM: [x29, #var_8] / [fp, #var_8] / [r7, #var_8] / [sp, #var_10] / [sp] -> [sp, #var_18]
         function = zone->FindFrameOfAddress(address); // a chunk: the frame of its function
@@ -540,9 +541,10 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         // a chunk of a function (its cold code): the variables of the function
         const DissasmFunctionFrame* owner =
               stackFunction->variablesOf.has_value() ? zone->localVariables.FindFunctionByStart(stackFunction->variablesOf.value()) : stackFunction;
-        if (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp"))
-            delta = stackFunction->StackDeltaAt(address);
-        else
+        if (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp")) {
+            delta              = stackFunction->StackDeltaAt(address);
+            alignedStackOffset = stackFunction->usesFrameRegister && stackFunction->alignedStack;
+        } else
             for (const auto& alias : stackFunction->stackAliases)
                 if (address >= alias.start && address < alias.end && FindX86StackOperand(text, frameOperand, alias.reg)) {
                     delta = alias.delta;
@@ -566,12 +568,17 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     const uint32 decimalMask = zone ? zone->GetDecimalOperandsMask(address) : 0u;
 
     // the return address of the function (IDA: retaddr; wil logs _ReturnAddress(): mov rcx, [rsp + 0x28]): not a variable of the frame,
-    // its slot named; at the stack pointer of the entry, above the saved frame register
-    if (!variable && function && zone && !zone->IsArmCode() && decimalMask == 0 &&
-        frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0)) {
+    // its slot named; at the stack pointer of the entry, above the saved frame register. The slots of the registers the prologue pushed
+    // (IDA: var_s0 the lowest, var_s8): not variables either (the epilogue of MSVC x64: lea r11, [rsp + 0x80 + var_s0]; GCC: mov rbx,
+    // qword ptr [rbp + var_s0])
+    const bool namesSlot = !variable && function && zone && !zone->IsArmCode() && decimalMask == 0 && !alignedStackOffset;
+    char savedSlot[24]   = {};
+    if (namesSlot && function->IsSavedRegisterSlot(frameOperand.frameOffset))
+        snprintf(savedSlot, sizeof(savedSlot), "var_s%X", static_cast<unsigned int>(frameOperand.frameOffset - function->savedRegistersOffset));
+    if (namesSlot && (savedSlot[0] != 0 || frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0))) {
         std::string rewritten(text.substr(0, frameOperand.replaceStart));
         rewritten.append(joiner);
-        rewritten.append("retaddr");
+        rewritten.append(savedSlot[0] != 0 ? savedSlot : "retaddr");
         rewritten.append(text.substr(frameOperand.replaceEnd));
         op_str      = portable_strdup(rewritten.c_str());
         op_str_size = static_cast<uint32>(rewritten.size());

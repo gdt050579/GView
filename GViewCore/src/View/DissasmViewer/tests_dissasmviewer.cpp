@@ -8,6 +8,7 @@
 #include "DissasmAssistantRequest.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmSignatures.hpp"
+#include "DissasmImportOrdinals.hpp"
 #include <random>
 #include <atomic>
 #include <thread>
@@ -16,6 +17,8 @@
 #include "x86_x64/X86InstructionInfo.hpp"
 #include <catch.hpp>
 #include <array>
+#include <filesystem>
+#include <fstream>
 
 using namespace GView::View::DissasmViewer;
 
@@ -9267,6 +9270,265 @@ TEST_CASE("X86ReturnAddressSlot", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing32, "0x00000006  mov    ecx, dword ptr [ebp + arg_0]").size() > 0);
 }
 
+TEST_CASE("X64AllocaFrames", "[Dissasm]Help")
+{
+    // a dynamic allocation (alloca: sub rsp, rax) in a function whose rbp keeps the stack pointer: the frame is kept, the depth of rsp is
+    // not known from the allocation until rsp is restored from rbp (lea rsp, [rbp - 8]); the body after an early epilogue and its padding
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x49, 0x89, 0xCA,             // 0x01: mov r10, rcx
+        0x48, 0x89, 0xE5,             // 0x04: mov rbp, rsp                (rbp: -8)
+        0x53,                         // 0x07: push rbx
+        0x48, 0x83, 0xEC, 0x28,       // 0x08: sub rsp, 0x28               (-0x38)
+        0x48, 0x89, 0x7D, 0xE8,       // 0x0c: mov qword ptr [rbp - 0x18], rdi (the slot -0x20)
+        0x48, 0x89, 0x74, 0x24, 0x08, // 0x10: mov qword ptr [rsp + 8], rsi    (the slot -0x30)
+        0x85, 0xC9,                   // 0x15: test ecx, ecx
+        0x75, 0x0C,                   // 0x17: jne 0x25
+        0x48, 0x8B, 0x5D, 0xF8,       // 0x19: mov rbx, qword ptr [rbp - 8]    (the saved rbx: var_s0)
+        0xC9,                         // 0x1d: leave
+        0xC3,                         // 0x1e: ret
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00, // 0x1f: nop word ptr [rax + rax] (the padding of GCC)
+        0x48, 0x8D, 0x42, 0x0F,       // 0x25: lea rax, [rdx + 0xf]
+        0x25, 0xF0, 0x0F, 0x00, 0x00, // 0x29: and eax, 0xff0
+        0x48, 0x29, 0xC4,             // 0x2e: sub rsp, rax                (not known)
+        0x48, 0x89, 0x54, 0x24, 0x08, // 0x31: mov qword ptr [rsp + 8], rdx    (not a slot)
+        0x48, 0x89, 0x45, 0xE0,       // 0x36: mov qword ptr [rbp - 0x20], rax (the slot -0x28)
+        0x48, 0x8D, 0x65, 0xF8,       // 0x3a: lea rsp, [rbp - 8]          (-0x10: the saved rbx)
+        0x5B,                         // 0x3e: pop rbx
+        0x5D,                         // 0x3f: pop rbp
+        0xC3,                         // 0x40: ret
+    };
+    DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, file.data(), file.size(), 0, file.size(), true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -0x30, 8, "var_30" }, { -0x28, 8, "var_28" }, { -0x20, 8, "var_20" } }));
+    REQUIRE(frame.savedRegistersOffset == -0x10); // push rbp; push rbx
+    REQUIRE(frame.savedRegistersSize == 0x10);
+    REQUIRE(frame.StackDeltaAt(0x10) == -0x38);
+    REQUIRE(frame.StackDeltaAt(0x25) == -0x38); // the target of the jne after the padding: its depth, its rbp
+    REQUIRE(frame.StackDeltaAt(0x2e) == -0x38);
+    REQUIRE(!frame.StackDeltaAt(0x31).has_value());
+    REQUIRE(!frame.StackDeltaAt(0x3a).has_value());
+    REQUIRE(frame.StackDeltaAt(0x3e) == -0x10);
+    REQUIRE(frame.StackDeltaAt(0x40) == 0);
+
+    // without a register that keeps the stack pointer the allocation is not followed; an allocation never restored before the ret neither
+    const std::vector<unsigned char> noAlias = { 0x48, 0x83, 0xEC, 0x20, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x48, 0x29, 0xC4, 0xC3 };
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, noAlias.data(), noAlias.size(), 0, noAlias.size(), true, frame));
+    const std::vector<unsigned char> notRestored = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x48, 0x29, 0xC4, 0x5D, 0xC3 };
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, notRestored.data(), notRestored.size(), 0, notRestored.size(), true, frame));
+
+    // the probing loop of GCC (-fstack-clash-protection) in a frame register function: a page a turn until rsp reaches the end of the
+    // allocation; its probe is not a variable, the depth not known from the loop on, leave restores it
+    const std::vector<unsigned char> probing = {
+        0x55,                                                 // 0x80: push rbp
+        0x48, 0x89, 0xE5,                                     // 0x81: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x20,                               // 0x84: sub rsp, 0x20
+        0x48, 0x89, 0x4C, 0x24, 0x08,                         // 0x88: mov qword ptr [rsp + 8], rcx (var_18)
+        0x48, 0x8D, 0x42, 0x17,                               // 0x8d: lea rax, [rdx + 0x17]
+        0x48, 0x89, 0xE1,                                     // 0x91: mov rcx, rsp
+        0x48, 0x25, 0x00, 0xF0, 0xFF, 0xFF,                   // 0x94: and rax, 0xfffffffffffff000
+        0x48, 0x29, 0xC1,                                     // 0x9a: sub rcx, rax
+        0x48, 0x39, 0xCC,                                     // 0x9d: cmp rsp, rcx
+        0x74, 0x12,                                           // 0xa0: je 0xb4
+        0x48, 0x81, 0xEC, 0x00, 0x10, 0x00, 0x00,             // 0xa2: sub rsp, 0x1000
+        0x48, 0x83, 0x8C, 0x24, 0xF8, 0x0F, 0x00, 0x00, 0x00, // 0xa9: or qword ptr [rsp + 0xff8], 0 (the probe)
+        0xEB, 0xE9,                                           // 0xb2: jmp 0x9d
+        0x48, 0x89, 0x45, 0xF0,                               // 0xb4: mov qword ptr [rbp - 0x10], rax (var_10)
+        0x48, 0x89, 0x44, 0x24, 0x08,                         // 0xb8: mov qword ptr [rsp + 8], rax (not a slot)
+        0xC9,                                                 // 0xbd: leave
+        0xC3,                                                 // 0xbe: ret
+    };
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, probing.data(), probing.size(), 0x80, 0x80 + probing.size(), true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -0x20, 8, "var_20" }, { -0x18, 8, "var_18" } })); // from the entry: [rsp + 8], [rbp - 0x10]
+    REQUIRE(frame.StackDeltaAt(0x9d) == std::nullopt);
+    REQUIRE(frame.StackDeltaAt(0xb8) == std::nullopt);
+    REQUIRE(frame.StackDeltaAt(0xbe) == 0);
+
+    // the listing: the slots through rbp everywhere, through rsp where the depth is known
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), probing.begin(), probing.end());
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = 0x200;
+    layout.entryPoint      = 0x00;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x80, { "", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    qword ptr [rbp + 0x8 + var_20], rdi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    qword ptr [rsp + 0x38 + var_30], rsi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000031  mov    qword ptr [rsp + 8], rdx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000036  mov    qword ptr [rbp + 0x8 + var_28], rax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000003a  lea    rsp, [rbp + 0x8 + var_s0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000088  mov    qword ptr [rsp + 0x20 + var_18], rcx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x000000a9  or     qword ptr [rsp + 0xff8], 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x000000b4  mov    qword ptr [rbp + var_10], rax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x000000b8  mov    qword ptr [rsp + 8], rax").size() > 0);
+}
+
+TEST_CASE("X86SavedRegisterSlots", "[Dissasm]Help")
+{
+    // the slots of the registers the prologue pushes: not variables, named as IDA does (var_s0 the lowest); the saves in the home space
+    // of MSVC x64 stay arguments (arg_0)
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0x5C, 0x24, 0x08, // 0x00: mov qword ptr [rsp + 8], rbx (arg_0)
+        0x56,                         // 0x05: push rsi                     (var_s8)
+        0x57,                         // 0x06: push rdi                     (var_s0)
+        0x48, 0x83, 0xEC, 0x20,       // 0x07: sub rsp, 0x20
+        0x89, 0x4C, 0x24, 0x10,       // 0x0b: mov dword ptr [rsp + 0x10], ecx (var_20)
+        0x4C, 0x8D, 0x5C, 0x24, 0x20, // 0x0f: lea r11, [rsp + 0x20]        (the epilogue of MSVC: var_s0)
+        0x49, 0x8B, 0x5B, 0x18,       // 0x14: mov rbx, qword ptr [r11 + 0x18] (arg_0)
+        0x49, 0x8B, 0xE3,             // 0x18: mov rsp, r11
+        0x5F,                         // 0x1b: pop rdi
+        0x5E,                         // 0x1c: pop rsi
+        0xC3,                         // 0x1d: ret
+    };
+    file.resize(0x40, 0xCC);
+    const std::vector<unsigned char> frameRegister = {
+        0x55,                   // 0x40: push rbp
+        0x48, 0x89, 0xE5,       // 0x41: mov rbp, rsp
+        0x53,                   // 0x44: push rbx                    (rbp - 8: var_s0)
+        0x48, 0x83, 0xEC, 0x18, // 0x45: sub rsp, 0x18
+        0x89, 0x7D, 0xF0,       // 0x49: mov dword ptr [rbp - 0x10], edi (var_10)
+        0x48, 0x8B, 0x5D, 0xF8, // 0x4c: mov rbx, qword ptr [rbp - 8]
+        0xC9,                   // 0x50: leave
+        0xC3,                   // 0x51: ret
+    };
+    file.insert(file.end(), frameRegister.begin(), frameRegister.end());
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = 0x200;
+    layout.entryPoint      = 0x00;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x40, { "", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->savedRegistersOffset == -0x10);
+    REQUIRE(frame->savedRegistersSize == 0x10);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x20, 4, "var_20" }, { 8, 8, "arg_0" } }));
+    const auto* framed = dissasmInstance.zone->localVariables.FindFunctionByStart(0x40);
+    REQUIRE(framed != nullptr);
+    REQUIRE(framed->usesFrameRegister);
+    REQUIRE(framed->savedRegistersOffset == -8); // push rbx at rbp - 8, the saved rbp at rbp
+    REQUIRE(framed->FindVariable(-8) == nullptr);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000b  mov    dword ptr [rsp + 0x30 + var_20], ecx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000f  lea    r11, [rsp + 0x30 + var_s0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000014  mov    rbx, qword ptr [r11 + 0x10 + arg_0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000049  mov    dword ptr [rbp + var_10], edi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000004c  mov    rbx, qword ptr [rbp + var_s0]").size() > 0);
+    REQUIRE(listing.find("var_s0 = ") == std::string::npos); // not a variable of the frame
+
+    // 32 bit without a frame register: a pushed register read back through esp
+    std::vector<unsigned char> x86 = {
+        0x56,                   // 0x00: push esi                  (var_s4)
+        0x57,                   // 0x01: push edi                  (var_s0)
+        0x8B, 0x44, 0x24, 0x0C, // 0x02: mov eax, dword ptr [esp + 0xc] (arg_0)
+        0x8B, 0x74, 0x24, 0x04, // 0x06: mov esi, dword ptr [esp + 4]   (the saved esi)
+        0x5F,                   // 0x0a: pop edi
+        0x5E,                   // 0x0b: pop esi
+        0xC3,                   // 0x0c: ret
+    };
+    x86.resize(0x200, 0xCC);
+    layout.language        = DisassemblyLanguage::x86;
+    layout.functionEntries = {};
+    DissasmTestInstance x86Instance(x86.data(), x86.size(), true, layout);
+    const std::string listing32 = x86Instance.GetListing();
+    INFO(listing32);
+    REQUIRE(FindListingLine(listing32, "0x00000002  mov    eax, dword ptr [esp + 0x8 + arg_0]").size() > 0);
+    REQUIRE(FindListingLine(listing32, "0x00000006  mov    esi, dword ptr [esp + 0x8 + var_s4]").size() > 0);
+}
+
+TEST_CASE("ImportOrdinalNames", "[Dissasm]Imports")
+{
+    // a DLL that exports the ordinals 5 (Alpha), 6 (no name), 7 (Gamma): its export table, read from memory and from a folder
+    std::vector<uint8> image(0x400, 0);
+    const auto put16 = [](std::vector<uint8>& to, size_t offset, uint16 value) { memcpy(to.data() + offset, &value, sizeof(value)); };
+    const auto put32 = [](std::vector<uint8>& to, size_t offset, uint32 value) { memcpy(to.data() + offset, &value, sizeof(value)); };
+    put16(image, 0, 0x5A4D);
+    put32(image, 0x3C, 0x40);
+    put32(image, 0x40, 0x4550);  // PE
+    put16(image, 0x44, 0x14C);   // i386
+    put16(image, 0x46, 1);       // one section
+    put16(image, 0x54, 0xE0);    // the size of the optional header
+    put16(image, 0x58, 0x10B);   // PE32
+    put32(image, 0xB4, 16);      // NumberOfRvaAndSizes
+    put32(image, 0xB8, 0x1000);  // the export directory
+    put32(image, 0xBC, 0x100);
+    put32(image, 0x140, 0x200);  // the section: VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData
+    put32(image, 0x144, 0x1000);
+    put32(image, 0x148, 0x200);
+    put32(image, 0x14C, 0x200);
+    put32(image, 0x210, 5);      // Base
+    put32(image, 0x214, 3);      // NumberOfFunctions
+    put32(image, 0x218, 2);      // NumberOfNames
+    put32(image, 0x220, 0x1050); // AddressOfNames
+    put32(image, 0x224, 0x1060); // AddressOfNameOrdinals
+    put32(image, 0x250, 0x1070); // "Alpha"
+    put32(image, 0x254, 0x1078); // "Gamma"
+    put16(image, 0x260, 0);      // the functions 0 (ordinal 5), 2 (ordinal 7)
+    put16(image, 0x262, 2);
+    memcpy(image.data() + 0x270, "Alpha", 6);
+    memcpy(image.data() + 0x278, "Gamma", 6);
+    std::unordered_map<uint32, std::string> names;
+    REQUIRE(ReadPeExportNamesByOrdinal(image.data(), image.size(), names));
+    REQUIRE(names == std::unordered_map<uint32, std::string>{ { 5, "Alpha" }, { 7, "Gamma" } });
+
+    // malformed: truncated before the ordinals of the names, counts past the end (the names read are kept), a name out of the sections, a
+    // name with a control character, a function index past the functions, no PE
+    names.clear();
+    REQUIRE(!ReadPeExportNamesByOrdinal(image.data(), 0x260, names));
+    REQUIRE(names.empty());
+    auto broken = image;
+    put32(broken, 0x218, 0xFFFFFFFF);
+    REQUIRE(!ReadPeExportNamesByOrdinal(broken.data(), broken.size(), names));
+    REQUIRE(names.size() == 2);
+    broken = image;
+    put32(broken, 0x250, 0x9000);
+    broken[0x27A] = 0x07; // "Gamma"
+    names.clear();
+    REQUIRE(ReadPeExportNamesByOrdinal(broken.data(), broken.size(), names));
+    REQUIRE(names.empty());
+    broken = image;
+    put16(broken, 0x260, 3);
+    put16(broken, 0x262, 0xFFFF);
+    REQUIRE(ReadPeExportNamesByOrdinal(broken.data(), broken.size(), names));
+    REQUIRE(names.empty());
+    REQUIRE(!ReadPeExportNamesByOrdinal(image.data() + 1, image.size() - 1, names));
+    REQUIRE(!ReadPeExportNamesByOrdinal(nullptr, 0, names));
+
+    // the names of the import tables are file names, never paths
+    REQUIRE(IsPlainDllName("certcli.dll"));
+    REQUIRE(IsPlainDllName("api-ms-win-core-path-l1-1-0.dll"));
+    REQUIRE(!IsPlainDllName("..\\certcli.dll"));
+    REQUIRE(!IsPlainDllName("C:certcli.dll"));
+    REQUIRE(!IsPlainDllName("a/b.dll"));
+    REQUIRE(!IsPlainDllName(".."));
+    REQUIRE(!IsPlainDllName(""));
+
+    // the DLL in the folder of the file: the name of an ordinal, none for an ordinal without a name; kept once read
+    const auto folder = std::filesystem::temp_directory_path() / "gview_import_ordinals_test";
+    std::filesystem::create_directories(folder);
+    const auto dll = folder / "gvordtest.dll";
+    {
+        std::ofstream file(dll, std::ios::binary);
+        file.write(reinterpret_cast<const char*>(image.data()), static_cast<std::streamsize>(image.size()));
+    }
+    const std::u16string filePath = (folder / "sample.exe").u16string();
+    Settings settings;
+    REQUIRE(settings.GetImportOrdinalName("gvordtest.dll", 7, filePath, true) == "Gamma");
+    REQUIRE(settings.GetImportOrdinalName("gvordtest.dll", 6, filePath, true).empty());
+    REQUIRE(settings.GetImportOrdinalName("..\\gview_import_ordinals_test\\gvordtest.dll", 5, filePath, true).empty());
+    REQUIRE(settings.GetImportOrdinalName("gvordmissing.dll", 5, filePath, true).empty());
+    std::filesystem::remove(dll);
+    REQUIRE(settings.GetImportOrdinalName("GVORDTEST.DLL", 5, filePath, true) == "Alpha");
+    std::filesystem::remove(folder);
+}
+
 TEST_CASE("X64FunctionChunks", "[Dissasm]Help")
 {
     // x64 chained unwind data elsewhere: a chunk of the function (its cold code, reached by a jcc, jumping back), on the frame of the
@@ -9288,7 +9550,7 @@ TEST_CASE("X64FunctionChunks", "[Dissasm]Help")
     file.resize(0x80, 0xCC);
     const std::vector<unsigned char> chunk = {
         0xC7, 0x44, 0x24, 0x28, 0x01, 0x00, 0x00, 0x00, // 0x80: mov dword ptr [rsp + 0x28], 1 (the slot -0x28: only the chunk)
-        0xC7, 0x45, 0x10, 0x02, 0x00, 0x00, 0x00,       // 0x88: mov dword ptr [rbp + 0x10], 2 (the slot -0x10: only the chunk)
+        0xC7, 0x45, 0x08, 0x02, 0x00, 0x00, 0x00,       // 0x88: mov dword ptr [rbp + 8], 2    (the slot -0x18: only the chunk)
         0xE9, 0x87, 0xFF, 0xFF, 0xFF,                   // 0x8f: jmp 0x1b
         0xC7, 0x44, 0x24, 0x28, 0x03, 0x00, 0x00, 0x00, // 0x94: mov dword ptr [rsp + 0x28], 3 (another part: the depth of the body)
         0xE9, 0x7A, 0xFF, 0xFF, 0xFF,                   // 0x9c: jmp 0x1b
@@ -9311,12 +9573,12 @@ TEST_CASE("X64FunctionChunks", "[Dissasm]Help")
     const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
     REQUIRE(frame != nullptr);
     REQUIRE(frame->FindVariable(-0x28) != nullptr);
-    REQUIRE(frame->FindVariable(-0x10) != nullptr);
+    REQUIRE(frame->FindVariable(-0x18) != nullptr);
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
     REQUIRE(listing.find("var_28 = dword ptr -0x28") != std::string::npos);
     REQUIRE(FindListingLine(listing, "0x00000080  mov    dword ptr [rsp + 0x50 + var_28], 1").size() > 0);
-    REQUIRE(FindListingLine(listing, "0x00000088  mov    dword ptr [rbp + 0x20 + var_10], 2").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000088  mov    dword ptr [rbp + 0x20 + var_18], 2").size() > 0);
     REQUIRE(FindListingLine(listing, "0x0000001b  mov    eax, dword ptr [rsp + 0x50 + var_20]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000094  mov    dword ptr [rsp + 0x50 + var_28], 3").size() > 0);
 }

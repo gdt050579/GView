@@ -4433,8 +4433,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!functionData.IsValid())
                 return;
         }
-        if (!analyzed || frame.variables.empty())
+        if (!analyzed || (frame.variables.empty() && frame.savedRegistersSize == 0))
             return;
+        if (frame.variables.empty()) { // a frame with saved registers only (their var_s0): nothing to name
+            frames.push_back(std::move(frame));
+            return;
+        }
         // the prototype the user gave the function (Y): its arguments first (the names of the calls do not replace them)
         if (const auto* prototype = zone->FindUserPrototype(relativeAddress))
             NameArgumentsFromPrototype(frame, *prototype, functionArch, functionData.GetData(), functionData.GetLength(), relativeAddress);
@@ -5526,7 +5530,7 @@ std::string DissasmCodeZone::FormatFunctionAttributes(uint64 relativeAddress) co
     if (std::binary_search(noReturnFunctions.begin(), noReturnFunctions.end(), relativeAddress))
         add("noreturn");
     const auto* frame = localVariables.FindFunctionByStart(relativeAddress);
-    if (frame && frame->usesFrameRegister && !frame->variables.empty())
+    if (frame && frame->usesFrameRegister && (!frame->variables.empty() || frame->savedRegistersSize != 0))
         add("bp-based frame");
     return text;
 }
