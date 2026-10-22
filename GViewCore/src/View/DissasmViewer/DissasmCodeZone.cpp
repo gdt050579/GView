@@ -844,8 +844,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::sort(fields.begin(), fields.end(), [](const auto& left, const auto& right) { return left.address < right.address; });
         uint64 position = first;
         const auto addGap = [this](uint64 from, uint64 to) { // dwords at the addresses (VA) aligned on 4
-            const uint64 aligned = std::min(to, ((labelBase + from + 3) & ~3ull) - labelBase);
-            const uint64 end4    = std::max(aligned, ((labelBase + to) & ~3ull) - labelBase);
+            const uint64 aligned = std::min<uint64>(to, ((labelBase + from + 3) & ~3ull) - labelBase);
+            const uint64 end4    = std::max<uint64>(aligned, ((labelBase + to) & ~3ull) - labelBase);
             if (from < aligned)
                 AddDataCandidate(from, aligned, 1);
             if (aligned < end4)
