@@ -1140,6 +1140,54 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         REQUIRE(restoredV2.CheckLineText(36, "var_44 = dword ptr -0x44"));
     }
 
+    SECTION("a variable the record does not have is a variable a newer analysis found, not a removal")
+    {
+        // the record of an older analysis that did not find var_C of main (the user removed var_8 only)
+        REQUIRE(edited.zone->removedLocalVariables.size() == 1);
+        uint64 mainStart = 0;
+        int32 offset     = 0;
+        REQUIRE(edited.zone->GetLocalVariableFromLine(361, &edited.objects[0], mainStart, offset));
+        REQUIRE(offset == -0xc);
+        auto* main           = edited.zone->localVariables.FindFunctionByStart(mainStart);
+        const auto* variable = main->FindVariable(-0xc);
+        REQUIRE(variable != nullptr);
+        main->variables.erase(main->variables.begin() + (variable - main->variables.data()));
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cache            = makeCache(buffer);
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckLineText(36, "count = dword ptr -0x44"));
+        REQUIRE(restored.CheckLineText(361, "var_C = dword ptr -0xc")); // kept
+        REQUIRE(restored.CheckLineText(362, "var_4 = dword ptr -4"));   // var_8: removed by the user
+        REQUIRE(restored.zone->removedLocalVariables == edited.zone->removedLocalVariables);
+
+        // a version 5 record (no removals in it): the renames, no variable removed
+        std::vector<std::byte> version5 = buffer;
+        const uint32 five               = 5;
+        memcpy(version5.data() + sizeof(uint32), &five, sizeof(five));
+        version5.resize(version5.size() - (sizeof(uint32) + (sizeof(uint64) + sizeof(int32)) * edited.zone->removedLocalVariables.size()));
+        DissasmTestInstance restoredV5(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cacheV5     = makeCache(version5);
+        zoneLinesChanged = false;
+        REQUIRE(restoredV5.zone->TryLoadDataFromCache(*cacheV5, zoneLinesChanged));
+        REQUIRE(restoredV5.CheckLineText(36, "count = dword ptr -0x44"));
+        REQUIRE(restoredV5.CheckLineText(361, "var_C = dword ptr -0xc"));
+        REQUIRE(restoredV5.CheckLineText(362, "var_8 = dword ptr -8"));
+        REQUIRE(restoredV5.zone->removedLocalVariables.empty());
+
+        // a truncated list of removals (the cache file is untrusted): the record is not applied
+        std::vector<std::byte> truncated = buffer;
+        truncated.resize(truncated.size() - sizeof(int32));
+        DissasmTestInstance restoredTruncated(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cacheTruncated = makeCache(truncated);
+        zoneLinesChanged    = false;
+        REQUIRE(!restoredTruncated.zone->TryLoadDataFromCache(*cacheTruncated, zoneLinesChanged));
+        REQUIRE(restoredTruncated.CheckLineText(36, "var_44 = dword ptr -0x44"));
+        REQUIRE(restoredTruncated.CheckLineText(361, "var_C = dword ptr -0xc"));
+    }
+
     SECTION("caches saved before the local variables are moved below the variable lines")
     {
         DissasmTestInstance legacy(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);

@@ -3,6 +3,7 @@
 #include "DissasmViewer.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
 
+#include <set>
 #include <unordered_set>
 
 namespace GView::View::DissasmViewer
@@ -201,6 +202,9 @@ struct DissasmCodeZone : public ParseZone {
     uint32 asmLinesCount = 0;
     // x86/x64: local variables of the frame based functions, filled only by the deep scan
     DissasmLocalVariables localVariables;
+    // the variables the user removed (RemoveLocalVariable): function start, frame offset. Saved in the cache and removed from every later
+    // analysis (a variable the record does not have is not a removal: a newer analysis finds more)
+    std::set<std::pair<uint64, int32>> removedLocalVariables;
     // x86/x64: instruction address (relative, as DissasmAsmPreCacheLine::address) -> bit mask of the operand numbers
     // (FindOperandNumbers order) that are shown as decimal numbers instead of hexadecimal
     std::map<uint64, uint32> decimalOperands;

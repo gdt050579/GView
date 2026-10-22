@@ -6974,6 +6974,7 @@ GStatus DissasmCodeZone::RemoveLocalVariable(uint64 functionStart, int32 frameOf
     function->variables.erase(function->variables.begin() + (variable - function->variables.data()));
     if (function->variables.empty())
         localVariables.functions.erase(localVariables.functions.begin() + (function - localVariables.functions.data()));
+    removedLocalVariables.emplace(functionStart, frameOffset);
 
     if (variableLine != UINT32_MAX) {
         RemoveRootAnnotationLines({ variableLine });

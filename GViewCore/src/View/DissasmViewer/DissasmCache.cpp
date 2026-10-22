@@ -973,11 +973,15 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
 //  - version 3: [comments by anchor][label names by address][local variables][decimal operands]. Nothing depends on the lines: a record
 //    applies to any analysis of the zone, what this analysis does not find (a label, a variable) is kept for later.
 //  - version 4: version 3 and [collapsible zones by the anchors of their first and last lines].
+//  - version 5: version 4 and [the comments of the assistant][the names it suggests].
+//  - version 6: version 5 and [the variables the user removed]. The variables of a record of a function are the ones of the analysis that
+//    saved it: one that the analysis finds now and the record does not have is a variable a newer analysis found, not a removal. The
+//    records before version 6 remove no variable.
 //  - versions 1 and 2 (read only): [comments by line][annotations by line][local variables] and, from version 2, [decimal operands].
 // The records saved before the local variables existed start directly with the comments count (a count equal to the magic is not a
 // realistic value) and their lines do not contain the variable lines.
 constexpr uint32 DISSASM_CODE_ZONE_CACHE_MAGIC   = 0x5A434447; // "GDCZ"
-constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 5; // 5: the suggestions of the assistant (comments, names)
+constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 6; // 5: the suggestions of the assistant (comments, names), 6: the removed variables
 constexpr uint32 DISSASM_MAX_LABEL_NAME_SIZE     = 1024;
 
 // decimal operands: [count] then count x [instruction address (uint64)][numbers mask (uint32)]
@@ -1056,6 +1060,32 @@ static bool ReadAnchor(const std::byte*& start, const std::byte* end, DissasmCom
     return true;
 }
 
+// the variables the user removed: [count] then count x [function start (uint64)][frame offset (int32)]
+static void RemovedVariablesToBuffer(const std::set<std::pair<uint64, int32>>& removed, std::vector<std::byte>& buffer)
+{
+    append_bytes(buffer, static_cast<uint32>(removed.size()));
+    for (const auto& [function, frameOffset] : removed) {
+        append_bytes(buffer, function);
+        append_bytes(buffer, frameOffset);
+    }
+}
+
+static bool RemovedVariablesFromBuffer(const std::byte*& start, const std::byte* end, std::set<std::pair<uint64, int32>>& removed)
+{
+    constexpr size_t RECORD_SIZE = sizeof(uint64) + sizeof(int32);
+    uint32 count                 = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / RECORD_SIZE)
+        return false;
+    for (uint32 i = 0; i < count; i++) {
+        uint64 function   = 0;
+        int32 frameOffset = 0;
+        if (!read_primitive(start, end, function) || !read_primitive(start, end, frameOffset))
+            return false;
+        removed.emplace(function, frameOffset);
+    }
+    return true;
+}
+
 static void CollapsibleZonesToBuffer(const std::vector<DissasmCodeZone::CollapsibleZoneAnchors>& zones, std::vector<std::byte>& buffer)
 {
     append_bytes(buffer, static_cast<uint32>(zones.size()));
@@ -1115,22 +1145,26 @@ bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer)
     CollapsibleZonesToBuffer(GetCollapsibleZoneAnchors(), buffer);
     aiComments.ToBuffer(buffer);
     LabelNamesToBuffer(std::vector<std::pair<uint64, std::string>>(suggestedNames.begin(), suggestedNames.end()), buffer);
+    RemovedVariablesToBuffer(removedLocalVariables, buffer);
     return true;
 }
 
 // Version 3: the variables of the record are matched by function start and frame offset. The names are given to the variables of the
-// analysis, the variables of a function of the record that the record does not have were removed by the user. The functions the
-// analysis does not find are ignored.
-static void ApplyAddressKeyedVariables(DissasmCodeZone& zone, const DissasmLocalVariables& variables, bool& zoneLinesChanged)
+// analysis, the functions the analysis does not find are ignored. The variables the user removed (version 6) are removed from the
+// analysis; they stay removed for the next analyses even when this one does not find them. A variable of the analysis that the record
+// does not have is kept: before version 6 it was taken as removed by the user, and every variable a newer analysis found was lost.
+static void ApplyAddressKeyedVariables(
+      DissasmCodeZone& zone, const DissasmLocalVariables& variables, const std::set<std::pair<uint64, int32>>& removed, bool& zoneLinesChanged)
 {
+    zone.removedLocalVariables = removed;
     std::vector<uint32> removedLines;
-    for (const auto& [line, details] : zone.dissasmType.annotations.mappings) {
-        if (!IsLocalVariableAnnotation(details))
-            continue;
-        const auto cachedFunction = variables.FindFunctionByStart(GetLocalVariableAnnotationFunction(details.second));
-        if (cachedFunction && !cachedFunction->FindVariable(GetLocalVariableAnnotationOffset(details.second)))
-            removedLines.push_back(line); // sorted: the annotations are ordered by line
-    }
+    if (!removed.empty())
+        for (const auto& [line, details] : zone.dissasmType.annotations.mappings) {
+            if (!IsLocalVariableAnnotation(details))
+                continue;
+            if (removed.contains({ GetLocalVariableAnnotationFunction(details.second), GetLocalVariableAnnotationOffset(details.second) }))
+                removedLines.push_back(line); // sorted: the annotations are ordered by line
+        }
     std::string defaultName;
     for (const auto& cachedFunction : variables.functions) {
         auto freshFunction = zone.localVariables.FindFunctionByStart(cachedFunction.startAddress);
@@ -1161,8 +1195,8 @@ static void ApplyAddressKeyedVariables(DissasmCodeZone& zone, const DissasmLocal
     zoneLinesChanged = true;
 }
 
-// a version 3 / 4 / 5 record: [comments][label names][local variables][decimal operands], from version 4 [collapsible zones], from
-// version 5 [comments of the assistant][names suggested by the assistant]
+// a version 3 / 4 / 5 / 6 record: [comments][label names][local variables][decimal operands], from version 4 [collapsible zones], from
+// version 5 [comments of the assistant][names suggested by the assistant], from version 6 [the variables the user removed]
 struct AddressKeyedZoneRecord {
     DissasmUserComments comments;
     std::vector<std::pair<uint64, std::string>> labelNames;
@@ -1171,12 +1205,14 @@ struct AddressKeyedZoneRecord {
     std::vector<DissasmCodeZone::CollapsibleZoneAnchors> collapsibleZones;
     DissasmUserComments aiComments;
     std::vector<std::pair<uint64, std::string>> suggestedNames;
+    std::set<std::pair<uint64, int32>> removedVariables;
 
     bool LoadFromBuffer(const std::byte*& start, const std::byte* end, uint32 version)
     {
         return comments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, labelNames) && variables.LoadFromBuffer(start, end) &&
                DecimalOperandsFromBuffer(start, end, decimalOperands) && (version < 4 || CollapsibleZonesFromBuffer(start, end, collapsibleZones)) &&
-               (version < 5 || (aiComments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, suggestedNames)));
+               (version < 5 || (aiComments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, suggestedNames))) &&
+               (version < 6 || RemovedVariablesFromBuffer(start, end, removedVariables));
     }
 };
 
@@ -1485,7 +1521,7 @@ bool DissasmCodeZone::TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLines
 
     // version 3: everything is keyed by address / anchor, it applies to this analysis whatever its lines are
     if (auto record = ReadAddressKeyedZoneRecord(it->second); record.has_value()) {
-        ApplyAddressKeyedVariables(*this, record->variables, zoneLinesChanged);
+        ApplyAddressKeyedVariables(*this, record->variables, record->removedVariables, zoneLinesChanged);
         for (const auto& [address, name] : record->labelNames)
             ApplyUserLabelName(address, name);
         userComments = std::move(record->comments);
