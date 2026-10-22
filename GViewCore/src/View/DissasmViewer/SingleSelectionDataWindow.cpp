@@ -8,16 +8,18 @@ constexpr int32 BTN_ID_CANCEL = 2;
 void SingleLineEditWindow::Validate()
 {
     LocalString<128> tmp;
-    if (textField->GetText().IsEmpty())
+    if (textField->GetText().IsEmpty() && !allowEmpty)
     {
         Dialogs::MessageBox::ShowError("Error", "Please write something in the comment section !");
         textField->SetFocus();
+        return; // the dialog stays open: an empty text is not accepted
     }
     data = textField->GetText();
     Exit(Dialogs::Result::Ok);
 }
 
-SingleLineEditWindow::SingleLineEditWindow(std::string initialText, const char* title) : Window(title, "d:c,w:60,h:7", WindowFlags::ProcessReturn)
+SingleLineEditWindow::SingleLineEditWindow(std::string initialText, const char* title, bool allowEmptyText)
+    : Window(title, "d:c,w:60,h:7", WindowFlags::ProcessReturn), allowEmpty(allowEmptyText)
 {
     data = initialText;
     Factory::Label::Create(this, "&Text", "x:1,y:1,w:8");

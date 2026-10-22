@@ -939,6 +939,11 @@ bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uin
         errList.AddError("Resource depth is too big (>3)");
         return false;
     }
+    if (std::find(resourceDirectoriesVisited.begin(), resourceDirectoriesVisited.end(), relAddress) != resourceDirectoriesVisited.end()) {
+        errList.AddError("Resource directory (0x%X) is used more than once (a loop)", (uint32_t) relAddress);
+        return false;
+    }
+    resourceDirectoriesVisited.push_back(relAddress);
     if (obj->GetData().Copy<ImageResourceDirectory>(fileAddress, resDir) == false) {
         errList.AddWarning("Unable to read Resource Structure from (0x%X)", (uint32_t) fileAddress);
         return false;
@@ -958,6 +963,12 @@ bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uin
         errList.AddWarning("IMAGE_RESOURCE_DIRECTORY (Invalid Characteristics field)");
         return false;
     }
+
+    if (nrEnt > resourceEntriesBudget) {
+        errList.AddError("Too many resources in the whole tree");
+        return false;
+    }
+    resourceEntriesBudget -= nrEnt;
 
     fileAddress += sizeof(ImageResourceDirectory);
     for (tr = 0; tr < nrEnt; tr++, fileAddress += sizeof(ImageResourceDirectoryEntry)) {
@@ -991,6 +1002,8 @@ bool PEFile::BuildResources()
     uint32_t level[8];
 
     res.clear();
+    resourceDirectoriesVisited.clear();
+    resourceEntriesBudget = 0x10000; // the entries of the whole tree
     RVA = dirs[2].VirtualAddress; // export directory
     if (RVA == 0)
         return false;
@@ -1410,9 +1423,9 @@ bool PEFile::Update()
             errList.AddError("%s", tempStr.GetText());
         }
     }
-    // recalculez :
-    computedSize = sect[nrSections - 1].PointerToRawData + sect[nrSections - 1].SizeOfRawData;
-    if (sect[nrSections - 1].SizeOfRawData == 0) {
+    // recalculez : (no section: an invalid NumberOfSections, the file is its size)
+    computedSize = nrSections > 0 ? sect[nrSections - 1].PointerToRawData + sect[nrSections - 1].SizeOfRawData : obj->GetData().GetSize();
+    if (nrSections > 0 && sect[nrSections - 1].SizeOfRawData == 0) {
         computedSize = obj->GetData().GetSize();
         errList.AddWarning("File is using LastSection.SizeOfRawData = 0 trick");
     }
@@ -1441,8 +1454,8 @@ bool PEFile::Update()
               (int) ((computedSize - obj->GetData().GetSize()) * 100) / computedSize);
     }
 
-    tmp = sect[nrSections - 1].VirtualAddress + sect[nrSections - 1].Misc.VirtualSize;
-    if (nth32.OptionalHeader.SectionAlignment > 0) {
+    tmp = nrSections > 0 ? sect[nrSections - 1].VirtualAddress + sect[nrSections - 1].Misc.VirtualSize : 0;
+    if (nrSections > 0 && nth32.OptionalHeader.SectionAlignment > 0) {
         tmp += (nth32.OptionalHeader.SectionAlignment - tmp % nth32.OptionalHeader.SectionAlignment) % nth32.OptionalHeader.SectionAlignment;
     }
     if (tmp != nth32.OptionalHeader.SizeOfImage) {

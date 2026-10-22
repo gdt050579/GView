@@ -19,6 +19,41 @@ constexpr uint32 COMMAND_QUERY_MITRE_TECHNIQUE  = 112;
 constexpr uint32 COMMAND_RENAME_LABEL           = 113;
 constexpr uint32 COMMAND_REMOVE_LOCAL_VARIABLE  = 114;
 constexpr uint32 COMMAND_TOGGLE_NUMBER_BASE     = 115;
+constexpr uint32 COMMAND_CHANGE_ADDRESS_MODE    = 116;
+constexpr uint32 COMMAND_SHOW_XREFS            = 117;
+constexpr uint32 COMMAND_SHOW_FUNCTIONS        = 118;
+constexpr uint32 COMMAND_SHOW_STRINGS          = 119;
+constexpr uint32 COMMAND_FIND_NEXT             = 120;
+constexpr uint32 COMMAND_UNDO                  = 121;
+constexpr uint32 COMMAND_REDO                  = 122;
+constexpr uint32 COMMAND_COMMAND_PALETTE       = 123;
+constexpr uint32 COMMAND_SHOW_CALL_TREE        = 124;
+constexpr uint32 COMMAND_ACCEPT_AI_SUGGESTION  = 125;
+constexpr uint32 COMMAND_DISMISS_AI_SUGGESTION = 126;
+constexpr uint32 COMMAND_TOGGLE_AI_SUGGESTIONS = 127;
+constexpr uint32 COMMAND_SUGGEST_NAMES         = 128;
+constexpr uint32 COMMAND_SHOW_GRAPH            = 129;
+constexpr uint32 COMMAND_GOTO_ADDRESS          = 130;
+constexpr uint32 COMMAND_FIND                  = 131;
+constexpr uint32 COMMAND_TOGGLE_KEY_PROFILE    = 132;
+constexpr uint32 COMMAND_EXPORT_ANNOTATIONS    = 133;
+constexpr uint32 COMMAND_IMPORT_ANNOTATIONS    = 134;
+constexpr uint32 COMMAND_CREATE_SIGNATURES     = 135;
+constexpr uint32 COMMAND_APPLY_SIGNATURES      = 136;
+constexpr uint32 COMMAND_DEFINE_DATA           = 137;
+constexpr uint32 COMMAND_DEFINE_STRING         = 138;
+constexpr uint32 COMMAND_UNDEFINE              = 139;
+constexpr uint32 COMMAND_CREATE_FUNCTION       = 140;
+constexpr uint32 COMMAND_DELETE_FUNCTION       = 141;
+constexpr uint32 COMMAND_TOGGLE_NORETURN       = 142;
+constexpr uint32 COMMAND_SET_STRUCTURE         = 143;
+constexpr uint32 COMMAND_SET_OPERAND_STRUCTURE = 144;
+constexpr uint32 COMMAND_MARK_POSITION         = 145;
+constexpr uint32 COMMAND_SHOW_BOOKMARKS        = 146;
+constexpr uint32 COMMAND_ADD_REPEATABLE_COMMENT = 147;
+constexpr uint32 COMMAND_SHOW_IMPORTS          = 148;
+constexpr uint32 COMMAND_SET_PROTOTYPE         = 149;
+constexpr uint32 COMMAND_SET_OPERAND_CONSTANT  = 150;
 
 // navigation commands (resolved through Config::Map in OnKeyEvent)
 constexpr uint32 COMMAND_NAV_DOWN         = 0xC000;
@@ -126,6 +161,7 @@ namespace View
             Graphics::ColorPair AsmFunctionColor;              // ret call
             Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
             Graphics::ColorPair AsmJumpInstruction;            // jmp
+            Graphics::ColorPair AsmSystemInstructionColor;     // syscall, int, cpuid, rdtsc, sidt: system / anti debug instructions
             Graphics::ColorPair AsmComment;                    // comments added by user
             Graphics::ColorPair AsmLocalVariableColor;         // var_8, arg_0
             Graphics::ColorPair AsmDefaultColor;               // rest of things
@@ -169,6 +205,77 @@ namespace View
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
 
+            // the same key and name as the address mode of the buffer view
+            inline static KeyboardControl ChangeAddressModeCommand = {
+                Input::Key::F3, "ChangeAddressMode", "Show the addresses as VA, RVA or file offsets", COMMAND_CHANGE_ADDRESS_MODE
+            };
+
+            inline static KeyboardControl UndoCommand = { Input::Key::Ctrl | Input::Key::Z, "Undo", "Undo the last edit (comment, rename, numbers base, zone)", COMMAND_UNDO };
+            inline static KeyboardControl RedoCommand = { Input::Key::Ctrl | Input::Key::Y, "Redo", "Redo the last undone edit", COMMAND_REDO };
+            inline static KeyboardControl CommandPaletteCommand = {
+                Input::Key::Ctrl | Input::Key::P, "CommandPalette", "Show every command of the view with its key", COMMAND_COMMAND_PALETTE
+            };
+
+            inline static KeyboardControl ToggleAISuggestionsCommand = {
+                Input::Key::Ctrl | Input::Key::Shift | Input::Key::A, "ToggleAISuggestions", "Show or hide the suggestions of the assistant (comments, names)", COMMAND_TOGGLE_AI_SUGGESTIONS
+            };
+            inline static KeyboardControl SuggestNamesCommand = { Input::Key::Ctrl | Input::Key::Shift | Input::Key::K,
+                                                                  "SuggestFunctionNames",
+                                                                  "Ask the assistant names for the current function and the functions it calls",
+                                                                  COMMAND_SUGGEST_NAMES };
+
+            // the key profiles: the keys of GView, or the ones of IDA (G, X, ; / :, Esc, Ctrl+Enter, Enter, Space, Alt+T, Ctrl+T); the user's
+            // keys ([Keys.View.Dissasm]) win over both
+            enum class KeyProfile : uint8 { Default, IDA };
+            inline static KeyProfile ActiveKeyProfile = KeyProfile::Default;
+            inline static KeyboardControl GoToAddressCommand = {
+                Input::Key::None, "GoToAddress", "Go to an address or a label name (the IDA profile: G; both: F5 of the window)", COMMAND_GOTO_ADDRESS
+            };
+            inline static KeyboardControl FindCommand = {
+                Input::Key::None, "Find", "Find a text, bytes or an immediate value (the IDA profile: Alt+T; both: Ctrl+F of the window)", COMMAND_FIND
+            };
+            inline static KeyboardControl ToggleKeyProfileCommand = { Input::Key::Ctrl | Input::Key::Shift | Input::Key::P,
+                                                                      "ToggleKeyProfile",
+                                                                      "Switch the keys between the GView and the IDA profiles (saved in GView.ini)",
+                                                                      COMMAND_TOGGLE_KEY_PROFILE };
+
+            inline static KeyboardControl ExportAnnotationsCommand = {
+                Input::Key::None, "ExportAnnotations", "Write the names, comments, variables and zones to a JSON file (by address)", COMMAND_EXPORT_ANNOTATIONS
+            };
+            inline static KeyboardControl ImportAnnotationsCommand = {
+                Input::Key::None, "ImportAnnotations", "Add the names, comments, variables and zones of a JSON annotations file", COMMAND_IMPORT_ANNOTATIONS
+            };
+            inline static KeyboardControl CreateSignaturesCommand = {
+                Input::Key::None, "CreateSignatures", "Write the signatures of the named functions to a JSON file (FLIRT like)", COMMAND_CREATE_SIGNATURES
+            };
+            inline static KeyboardControl ApplySignaturesCommand = {
+                Input::Key::None, "ApplySignatures", "Name the sub_ functions that match a JSON signatures file", COMMAND_APPLY_SIGNATURES
+            };
+
+            inline static KeyboardControl ShowGraphCommand = {
+                Input::Key::Ctrl | Input::Key::B, "ShowGraph", "Show the graph of the basic blocks of the current function", COMMAND_SHOW_GRAPH
+            };
+
+            inline static KeyboardControl ShowCallTreeCommand = {
+                Input::Key::Ctrl | Input::Key::R, "ShowCallTree", "Show the callers and the callees of the current function", COMMAND_SHOW_CALL_TREE
+            };
+
+            inline static KeyboardControl ShowStringsCommand = {
+                Input::Key::Shift | Input::Key::F12, "ShowStrings", "Show the strings used by the code", COMMAND_SHOW_STRINGS
+            };
+            inline static KeyboardControl FindNextCommand = { Input::Key::F6, "FindNext", "Find the next match of the last search", COMMAND_FIND_NEXT };
+
+            inline static KeyboardControl ShowFunctionsCommand = {
+                Input::Key::Shift | Input::Key::F3, "ShowFunctions", "Show the functions found by the analysis", COMMAND_SHOW_FUNCTIONS
+            };
+            inline static KeyboardControl ShowImportsCommand = {
+                Input::Key::Shift | Input::Key::F4, "ShowImports", "Show the imports: their categories, prototypes and the places that use them", COMMAND_SHOW_IMPORTS
+            };
+
+            inline static KeyboardControl ShowXrefsCommand = {
+                Input::Key::Ctrl | Input::Key::X, "ShowXrefs", "Show the cross references to the label / target of the line", COMMAND_SHOW_XREFS
+            };
+
             inline static KeyboardControl CommandQueryFunctionName = {
                 Input::Key::Ctrl | Input::Key::K, "QueryFunctionName", "Query Digital Assistants (if any) for function name", COMMAND_QUERY_FUNCTION_NAME
             };
@@ -177,8 +284,24 @@ namespace View
                 Input::Key::Ctrl | Input::Key::L, "QueryMITRETechnique", "Query Digital Assistants (if any) for MITRE Techniques", COMMAND_QUERY_MITRE_TECHNIQUE
             };
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 7> CommandBarCommands = {
-                /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 23> CommandBarCommands = {
+                /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                GoToAddressCommand,
+                FindCommand,
+                ToggleKeyProfileCommand,
+                ShowGraphCommand,
+                ToggleAISuggestionsCommand,
+                SuggestNamesCommand,
+                ShowCallTreeCommand,
+                UndoCommand,
+                RedoCommand,
+                CommandPaletteCommand,
+                ShowXrefsCommand,
+                ShowFunctionsCommand,
+                ShowImportsCommand,
+                ShowStringsCommand,
+                FindNextCommand,
+                ShowOnlyDissasmCommand, /*ShowOrHideFileContentCommand,*/
                 AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
@@ -188,7 +311,17 @@ namespace View
             };
 
             // Other keys
+            inline static KeyboardControl AcceptAISuggestionCommand = {
+                Input::Key::A, "AcceptAISuggestion", "Accept the suggestion of the assistant on the line (name / comment)", COMMAND_ACCEPT_AI_SUGGESTION
+            };
+            inline static KeyboardControl DismissAISuggestionCommand = {
+                Input::Key::Shift | Input::Key::A, "DismissAISuggestion", "Dismiss the suggestion of the assistant on the line", COMMAND_DISMISS_AI_SUGGESTION
+            };
             inline static KeyboardControl AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
+            // IDA ; (the IDA profile: the character): shown at every place that refers to the line too
+            inline static KeyboardControl AddOrEditRepeatableCommentCommand = {
+                Input::Key::Shift | Input::Key::C, "AddOrEditRepeatableComment", "Add or edit the repeatable comment of the line (shown where it is used)", COMMAND_ADD_REPEATABLE_COMMENT
+            };
             inline static KeyboardControl RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
             inline static KeyboardControl RenameLabelCommand      = {
                 Input::Key::N, "RenameLabel", "Rename label, function or local variable", COMMAND_RENAME_LABEL
@@ -202,6 +335,48 @@ namespace View
             };
             inline static KeyboardControl ToggleNumberBaseCommand = {
                 Input::Key::H, "ToggleNumberBase", "Show the number under the cursor in decimal / hexadecimal", COMMAND_TOGGLE_NUMBER_BASE
+            };
+            inline static KeyboardControl DefineDataCommand = {
+                Input::Key::D, "DefineData", "Make the bytes of the line data (again: db, dw, dd, dq)", COMMAND_DEFINE_DATA
+            };
+            inline static KeyboardControl DefineStringCommand = {
+                Input::Key::Shift | Input::Key::D, "DefineString", "Make the line a string (the ASCII text up to its zero)", COMMAND_DEFINE_STRING
+            };
+            inline static KeyboardControl UndefineCommand = {
+                Input::Key::U, "Undefine", "Remove the data / string of the line (decoded as code again)", COMMAND_UNDEFINE
+            };
+            // IDA P / Delete function / Alt+P (the attributes of the function)
+            inline static KeyboardControl CreateFunctionCommand = {
+                Input::Key::P, "CreateFunction", "Make the line the start of a function", COMMAND_CREATE_FUNCTION
+            };
+            inline static KeyboardControl DeleteFunctionCommand = {
+                Input::Key::Shift | Input::Key::P, "DeleteFunction", "The function of the line is not a function any more (its label stays)", COMMAND_DELETE_FUNCTION
+            };
+            inline static KeyboardControl ToggleNoReturnCommand = {
+                Input::Key::Alt | Input::Key::P, "ToggleNoReturn", "Mark the function of the line as one that does not return (again: it returns)", COMMAND_TOGGLE_NORETURN
+            };
+            // IDA Alt+Q (struct var)
+            inline static KeyboardControl SetStructureCommand = {
+                Input::Key::Alt | Input::Key::Q, "SetStructure", "Give the local variable of the line a structure (STARTUPINFOW, SYSTEMTIME, ...)", COMMAND_SET_STRUCTURE
+            };
+            // IDA T (structure offset)
+            inline static KeyboardControl SetOperandStructureCommand = {
+                Input::Key::T, "SetOperandStructure", "Show the displacement of the memory operand as a field of a structure ([rbx + STARTUPINFOW.dwFlags])", COMMAND_SET_OPERAND_STRUCTURE
+            };
+            // IDA M (symbolic constant)
+            inline static KeyboardControl SetOperandConstantCommand = {
+                Input::Key::M, "SetOperandConstant", "Show the immediate of the instruction as a symbolic constant (GENERIC_READ, ERROR_ALREADY_EXISTS, WM_CLOSE)", COMMAND_SET_OPERAND_CONSTANT
+            };
+            // IDA Y (set type of a function)
+            inline static KeyboardControl SetPrototypeCommand = {
+                Input::Key::Y, "SetPrototype", "Set the prototype of the function of the line (its calls name their arguments)", COMMAND_SET_PROTOTYPE
+            };
+            // IDA Alt+M / Ctrl+M (marked positions)
+            inline static KeyboardControl MarkPositionCommand = {
+                Input::Key::Alt | Input::Key::M, "MarkPosition", "Bookmark the line with a description (again: edit it)", COMMAND_MARK_POSITION
+            };
+            inline static KeyboardControl ShowBookmarksCommand = {
+                Input::Key::Ctrl | Input::Key::M, "ShowBookmarks", "Show the bookmarks: go to one, delete one", COMMAND_SHOW_BOOKMARKS
             };
 
             inline static std::array<std::reference_wrapper<KeyboardControl>, 4> KeyDownCommands = {
@@ -236,7 +411,9 @@ namespace View
                 &ScrollLeftCommand, &ScrollRightCommand, &SpaceCommand,      &OpenSelectionCommand, &AddZoneCommand,
             };
             // keys handled in OnKeyEvent (navigation + the editing keys)
-            inline static std::array<KeyboardControl*, 21> KeyEventCommands = {
+            inline static std::array<KeyboardControl*, 36> KeyEventCommands = {
+                &AcceptAISuggestionCommand,
+                &DismissAISuggestionCommand,
                 &MoveDownCommand,
                 &MoveUpCommand,
                 &MoveLeftCommand,
@@ -258,11 +435,44 @@ namespace View
                 &RemoveLocalVariableCommand,
                 &SaveCacheCommand,
                 &ToggleNumberBaseCommand,
+                &DefineDataCommand,
+                &DefineStringCommand,
+                &UndefineCommand,
+                &CreateFunctionCommand,
+                &DeleteFunctionCommand,
+                &ToggleNoReturnCommand,
+                &SetStructureCommand,
+                &SetOperandStructureCommand,
+                &SetOperandConstantCommand,
+                &MarkPositionCommand,
+                &ShowBookmarksCommand,
+                &AddOrEditRepeatableCommentCommand,
+                &SetPrototypeCommand,
             };
             inline static Input::KeyMap Map;
 
-            inline static std::array<std::reference_wrapper<KeyboardControl>, 13> AllKeyboardCommands = {
-                /*AddNewTypeCommand,*/ ShowOnlyDissasmCommand,
+            inline static std::array<std::reference_wrapper<KeyboardControl>, 33> AllKeyboardCommands = {
+                /*AddNewTypeCommand,*/ ChangeAddressModeCommand,
+                ExportAnnotationsCommand,
+                ImportAnnotationsCommand,
+                CreateSignaturesCommand,
+                ApplySignaturesCommand,
+                GoToAddressCommand,
+                FindCommand,
+                ToggleKeyProfileCommand,
+                ShowGraphCommand,
+                ToggleAISuggestionsCommand,
+                SuggestNamesCommand,
+                ShowCallTreeCommand,
+                UndoCommand,
+                RedoCommand,
+                CommandPaletteCommand,
+                ShowXrefsCommand,
+                ShowFunctionsCommand,
+                ShowImportsCommand,
+                ShowStringsCommand,
+                FindNextCommand,
+                ShowOnlyDissasmCommand,
                 /*ShowOrHideFileContentCommand,*/ AsmExportFileContentCommand,
                 JumpBackCommand,
                 JumpForwardCommand,
@@ -280,8 +490,11 @@ namespace View
 
             bool ShowFileContent;
             bool ShowOnlyDissasm;
+            // the addresses of the instructions (the labels are always named after the VA): VA, RVA or file offset (DissasmPEConversionType)
+            uint8 AddressMode = 2;
             bool EnableDeepScanDissasmOnStart;
             bool CacheSameLocationAsAnalyzedFile;
+            bool AlignPadding = true; // the padding between the functions (int3, nop) is one line: align 0x10
             static void Update(AppCUI::Utils::IniSection sect);
             void UpdateColors(const AppCUI::Application::Config& config);
             void Initialize(const AppCUI::Application::Config& config);
@@ -297,6 +510,8 @@ namespace View
             void OnThemeChanged(const Application::Config& config) override;
         };
 
+        void ApplyKeyProfile(Config::KeyProfile profile);
+        Config::KeyProfile ReadKeyProfile();
         void RegisterKeys(KeyboardControlsInterface* interface);
         void OnKeysChanged();
     } // namespace DissasmViewer

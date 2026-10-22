@@ -8,54 +8,44 @@ constexpr int32 BTN_ID_CANCEL = 2;
 
 void GoToDialog::Validate()
 {
-    LocalString<128> tmp;
-    LocalString<256> error;
-    NumberParseFlags flags = NumberParseFlags::BaseAuto;
-
-    if (tmp.Set(lineTextField->GetText()) == false)
-    {
-        Dialogs::MessageBox::ShowError("Error", "Invalid line number (expecting ascii characters) for line number!");
-        lineTextField->SetFocus();
+    LocalString<256> text;
+    if (!text.Set(textField->GetText()) || text.Len() == 0) {
+        Dialogs::MessageBox::ShowError("Error", "Please write an address or a name!");
+        textField->SetFocus();
         return;
     }
-    const auto lineParser = Number::ToUInt32(tmp, flags);
-    if (!lineParser.has_value())
-    {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Line number `%s` is not a valid UInt32 number!", tmp.GetText()));
-        lineTextField->SetFocus();
+    std::string error;
+    if (!resolver(text.ToStringView(), error)) {
+        Dialogs::MessageBox::ShowError("Error", error);
+        textField->SetFocus();
         return;
     }
-
-    const auto newLine = lineParser.value();
-    if (newLine >= totalAvailableLines)
-    {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Expected a line number `%s` lower than %lu!", tmp.GetText(), totalAvailableLines));
-        lineTextField->SetFocus();
-        return;
-    }
-    resultLine = newLine;
+    resultText = text.GetText();
     Exit(Dialogs::Result::Ok);
 }
 
-GoToDialog::GoToDialog(uint32 currentLine, uint32 totalAvailableLines)
-    : Window("GoTo", "d:c,w:60,h:7", WindowFlags::ProcessReturn), resultLine(currentLine), totalAvailableLines(totalAvailableLines)
+GoToDialog::GoToDialog(std::string_view shownAddressType, Resolver resolver)
+    : Window("GoTo", "d:c,w:70,h:10", WindowFlags::ProcessReturn), resolver(std::move(resolver))
 {
-    Factory::Label::Create(this, "&Line:", "x:1,y:1,w:8");
-    lineTextField = Factory::TextField::Create(this, "", "x:10,y:1,w:46");
-    lineTextField->SetHotKey('L');
+    Factory::Label::Create(this, "&Address or name:", "x:1,y:1,w:18");
+    textField = Factory::TextField::Create(this, "", "x:20,y:1,w:46");
+    textField->SetHotKey('A');
 
-    Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);
-    Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
+    LocalString<128> help;
+    help.SetFormat("An address is hexadecimal (%.*s, as the address column)", static_cast<int>(shownAddressType.size()), shownAddressType.data());
+    Factory::Label::Create(this, help, "x:1,y:3,w:66");
+    Factory::Label::Create(this, "Prefixes: va:  rva:  off:  line: (decimal)", "x:1,y:4,w:66");
 
-    lineTextField->SetFocus();
+    Factory::Button::Create(this, "&OK", "l:21,b:0,w:13", BTN_ID_OK);
+    Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_ID_CANCEL);
+
+    textField->SetFocus();
 }
 
 bool GoToDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
-    if (eventType == Event::ButtonClicked)
-    {
-        switch (ID)
-        {
+    if (eventType == Event::ButtonClicked) {
+        switch (ID) {
         case BTN_ID_CANCEL:
             Exit(Dialogs::Result::Cancel);
             return true;
@@ -65,8 +55,7 @@ bool GoToDialog::OnEvent(Reference<Control>, Event eventType, int ID)
         }
     }
 
-    switch (eventType)
-    {
+    switch (eventType) {
     case Event::WindowAccept:
         Validate();
         return true;

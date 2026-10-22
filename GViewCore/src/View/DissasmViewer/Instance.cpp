@@ -2,6 +2,9 @@
 
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
+#include "DissasmChainedFixups.hpp"
+#include "DissasmObjC.hpp"
+#include "DissasmRtti.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -15,153 +18,6 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 64; // visited locations (a jump stores both its source and its destination)
 
-const std::array<AsmFunctionDetails, 58> KNOWN_FUNCTIONS = { {
-      { "WriteFile",
-        { { "hFile", "HANDLE" },
-          { "lpBuffer", "LPCVOID" },
-          { "nNumberOfBytesToWrite", "DWORD" },
-          { "lpNumberOfBytesWritten", "LPDWORD" },
-          { "lpOverlapped", "LPOVERLAPPED" } } },
-      { "CloseHandle", { { "hObject", "HANDLE" } } },
-      { "CreateFileW",
-        { { "lpFileName", "LPCWSTR" },
-          { "dwDesiredAccess", "DWORD" },
-          { "dwShareMode", "DWORD" },
-          { "lpSecurityAttributes", "LPSECURITY_ATTRIBUTES" },
-          { "dwCreationDisposition", "DWORD" },
-          { "dwFlagsAndAttributes", "DWORD" },
-          { "hTemplateFile", "HANDLE" } } },
-      { "CreateFileA",
-        {
-              { "lpFileName", "LPCSTR" },
-              { "dwDesiredAccess", "DWORD" },
-              { "dwShareMode", "DWORD" },
-              { "lpSecurityAttributes", "LPSECURITY_ATTRIBUTES" },
-              { "dwCreationDisposition", "DWORD" },
-              { "dwFlagsAndAttributes", "DWORD" },
-              { "hTemplateFile", "HANDLE" },
-        } },
-      { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } },
-      { "RegOpenKeyExW", { { "hKey", "HKEY" }, { "lpSubKey", "LPCWSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
-      { "RegOpenKeyExA", { { "hKey", "HKEY" }, { "lpSubKey", "LPCSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
-      { "RegSetValueExA",
-        {
-              { "hKey", "HKEY" },
-              { "lpValueName", "LPCSTR" },
-              { "Reserved", "DWORD" },
-              { "dwType", "DWORD" },
-              { "lpData", "const BYTE *" },
-              { "cbData", "DWORD" },
-        } },
-      { "RegSetValueExW",
-        { { "hKey", "HKEY" },
-          { "lpValueName", "LPCWSTR" },
-          { "lpReserved", "DWORD" },
-          { "dwType", "DWORD" },
-          { "lpData", "const BYTE*" },
-          { "cbData", "DWORD" } } },
-      { "RegCloseKey", { { "hKey", "HKEY" } } },
-      { "GetKeyboardLayout", { { "idThread", "DWORD" } } },
-      { "GetKeyboardState", { { "lpKeyState", "PBYTE" } } },
-      { "CreateProcessA",
-        {
-              { "lpApplicationName", "LPCSTR" },
-              { "lpCommandLine", "LPSTR" },
-              { "lpProcessAttributes", "LPSECURITY_ATTRIBUTES" },
-              { "lpThreadAttributes", "LPSECURITY_ATTRIBUTES" },
-              { "bInheritHandles", "BOOL" },
-              { "dwCreationFlags", "DWORD" },
-              { "lpEnvironment", "LPVOID" },
-              { "lpCurrentDirectory", "LPCSTR" },
-              { "lpStartupInfo", "LPSTARTUPINFOA" },
-              { "lpProcessInformation", "LPPROCESS_INFORMATION" },
-        } },
-      { "WaitForSingleObject",
-        {
-              { "hHandle", "HANDLE" },
-              { "dwMilliseconds", "DWORD" },
-        } },
-      { "LoadLibraryA",
-        {
-              { "lpLibFileName", "LPCSTR" },
-        } },
-      { "GetProcAddress",
-        {
-              { "hModule", "HMODULE" },
-              { "lpProcName", "LPCSTR" },
-        } },
-      { "FreeLibrary",
-        {
-              { "hLibModule", "HMODULE" },
-        } },
-      { "ShellExecuteA",
-        {
-              { "hwnd", "HWND" },
-              { "lpOperation", "LPCSTR" },
-              { "lpFile", "LPCSTR" },
-              { "lpParameters", "LPCSTR" },
-              { "lpDirectory", "LPCSTR" },
-              { "nShowCmd", "int" },
-        } },
-      { "EnumWindows", { { "lpEnumFunc", "WNDENUMPROC" }, { "lParam", "LPARAM" } } },
-      { "CallNextHookEx", { { "hhk", "HHOOK" }, { "nCode", "int" }, { "wParam", "WPARAM" }, { "lParam", "LPARAM" } } },
-      { "SetWindowsHookExA", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
-      { "SetWindowsHookExW", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
-      { "GetMessageA", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
-      { "GetMessageW", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
-      { "TranslateMessage", { { "lpMsg", "const MSG *" } } },
-      { "DispatchMessageA", { { "lpMsg", "const MSG *" } } },
-      { "DispatchMessageW", { { "lpMsg", "const MSG *" } } },
-      { "UnhookWindowsHookEx", { { "hhk", "HHOOK" } } },
-      { "GetModuleHandleA", { { "lpModuleName", "LPCSTR" } } },
-      { "GetModuleHandleW", { { "lpModuleName", "LPCWSTR" } } },
-      { "GetComputerNameA", { { "lpBuffer", "LPSTR" }, { "nSize", "LPDWORD" } } },
-      { "GetUserNameA", { { "lpBuffer", "LPSTR" }, { "pcbBuffer", "LPDWORD" } } },
-      { "GetDriveTypeA", { { "lpRootPathName", "LPCSTR" } } },
-      { "CopyFileA", { { "lpExistingFileName", "LPCSTR" }, { "lpNewFileName", "LPCSTR" }, { "bFailIfExists", "BOOL" } } },
-      { "URLDownloadToFileA",
-        { { "pCaller", "LPUNKNOWN" }, { "szURL", "LPCSTR" }, { "szFileName", "LPCSTR" }, { "dwReserved", "DWORD" }, { "lpfnCB", "LPBINDSTATUSCALLBACK" } } },
-      { "GetDC", { { "hWnd", "HWND" } } },
-      { "CreateCompatibleDC", { { "hDC", "HDC" } } },
-      { "GetSystemMetrics", { { "nIndex", "int" } } },
-      { "CreateCompatibleBitmap", { { "hdc", "HDC" }, { "cx", "int" }, { "cy", "int" } } },
-      { "SelectObject", { { "hDC", "HDC" }, { "hGdiObj", "HGDIOBJ" } } },
-      { "BitBlt",
-        { { "hdcDest", "HDC" },
-          { "xDest", "int" },
-          { "yDest", "int" },
-          { "cx", "int" },
-          { "cy", "int" },
-          { "hdcSrc", "HDC" },
-          { "xSrc", "int" },
-          { "ySrc", "int" },
-          { "rop", "DWORD" } } },
-      { "DeleteObject", { { "hObject", "HGDIOBJ" } } },
-      { "DeleteDC", { { "hdc", "HDC" } } },
-      { "ReleaseDC", { { "hWnd", "HWND" }, { "hDC", "HDC" } } },
-      { "GetKeyboardLayoutList", { { "nBuff", "int" }, { "lpList", "HKL *" } } },
-      { "OpenProcess", { { "dwDesiredAccess", "DWORD" }, { "bInheritHandle", "BOOL" }, { "dwProcessId", "DWORD" } } },
-      { "GetSystemInfo", { { "lpSystemInfo", "LPSYSTEM_INFO" } } },
-      { "VirtualQueryEx", { { "hProcess", "HANDLE" }, { "lpAddress", "LPCVOID" }, { "lpBuffer", "PMEMORY_BASIC_INFORMATION" }, { "dwLength", "SIZE_T" } } },
-      { "ReadProcessMemory",
-        { { "hProcess", "HANDLE" }, { "lpBaseAddress", "LPCVOID" }, { "lpBuffer", "LPVOID" }, { "nSize", "SIZE_T" }, { "lpNumberOfBytesRead", "SIZE_T*" } } },
-      { "GetWindowTextA", { { "hWnd", "HWND" }, { "lpString", "LPSTR" }, { "nMaxCount", "int" } } },
-      { "SetWindowsHookEx", { { "idHook", "int" }, { "lpfn", "HOOKPROC" }, { "hmod", "HINSTANCE" }, { "dwThreadId", "DWORD" } } },
-      { "GetMessage", { { "lpMsg", "LPMSG" }, { "hWnd", "HWND" }, { "wMsgFilterMin", "UINT" }, { "wMsgFilterMax", "UINT" } } },
-      { "DispatchMessage", { { "lpMsg", "const MSG*" } } },
-      { "SetFileAttributesA", { { "lpFileName", "LPCSTR" }, { "dwFileAttributes", "DWORD" } } },
-      { "RegQueryValueExA",
-        { { "hKey", "HKEY" },
-          { "lpValueName", "LPCSTR" },
-          { "lpReserved", "LPDWORD" },
-          { "lpType", "LPDWORD" },
-          { "lpData", "LPBYTE" },
-          { "lpcbData", "LPDWORD" } } },
-      { "GetModuleHandle", { { "lpModuleName", "LPCSTR" } } },
-      { "DeleteFileA", { { "lpFileName", "LPCSTR" } } },
-      { "lstrlenA", { { "lpString", "LPCSTR" } } },
-} };
-
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
 {
@@ -170,10 +26,13 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     if ((_settings) && (_settings->data)) {
         // move settings data pointer
         this->settings.reset((SettingsData*) _settings->data);
-        //_settings->data = nullptr; //TODO: is this ok?
+        _settings->data = nullptr; // owned by the viewer now: the plugin settings must not use (or free) it again
     } else {
         this->settings.reset(new SettingsData());
     }
+    ApplyChainedFixups(*this->settings, obj); // Mach-O: the pointers and the import slots that dyld writes
+    ApplyObjCMetadata(*this->settings, obj);  // Mach-O: the methods of the Objective-C classes, the selector / class references
+    ApplyCppRtti(*this->settings, obj);       // C++: the vtables, the type descriptors / typeinfo objects of the classes
 
     queryInterface = nullptr;
     if (config.Loaded == false)
@@ -213,24 +72,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     }
     // rightClickOffset = 0;
 
-    // TODO: to be moved inside plugin for some sort of API for token<->color
-    // keys are the first 4 bytes of the mnemonic, read in host byte order (must match GetASMColorPairByKeyword)
-    const auto key = [](const char* text) {
-        uint32 value;
-        memcpy(&value, text, sizeof(value));
-        return value;
-    };
-    asmData.instructionToColor = {
-        { key("int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
-        { key("ret"), ColorMan.Colors.AsmFunctionColor },
-        { key("call"), ColorMan.Colors.AsmFunctionColor },
-        { key("cmp"), ColorMan.Colors.AsmCompareInstructionColor },
-        { key("test"), ColorMan.Colors.AsmCompareInstructionColor },
-        { key("word"), ColorMan.Colors.AsmLocationInstruction },
-        { key("dwor"), ColorMan.Colors.AsmLocationInstruction },
-        { key("qwor"), ColorMan.Colors.AsmLocationInstruction },
-        { key("ptr"), ColorMan.Colors.AsmLocationInstruction },
-    };
+    // the colors of the instructions: GetX86MnemonicColor / GetX86TokenColor (x86_x64/DissasmX86.cpp)
 }
 
 inline uint64 LinePositionToOffset(LinePosition&& linePosition, uint32 textSize)
@@ -238,14 +80,100 @@ inline uint64 LinePositionToOffset(LinePosition&& linePosition, uint32 textSize)
     return static_cast<uint64>(linePosition.line) * textSize + linePosition.offset;
 }
 
+// the other views and panels (PE exports, sections) jump to a file offset: the instruction of a code zone that contains it
 bool Instance::GoTo(uint64 offset)
 {
-    return true;
+    repaintRequested = true; // asked by a panel: the view is drawn again at the next frame
+    return GoToFileOffset(offset);
 }
 
 bool Instance::Select(uint64 offset, uint64 size)
 {
-    return true;
+    repaintRequested = true;
+    return GoToFileOffset(offset); // the selection of this view is made of lines: the cursor goes to the start of the range
+}
+
+bool Instance::GoToFileOffset(uint64 fileOffset)
+{
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        const auto& details = codeZone->zoneDetails;
+        if (fileOffset < details.startingZonePoint || fileOffset - details.startingZonePoint >= details.size)
+            continue;
+        if (!codeZone->isInit || !codeZone->CanReachAsmLines()) {
+            // prepared when its title is drawn: the cursor goes there now, to the instruction after the zone is prepared
+            pendingGoTo          = fileOffset;
+            const auto from      = SaveCursorState();
+            Cursor.lineInView    = 0;
+            Cursor.startViewLine = codeZone->startLineIndex;
+            Cursor.hasMovedView  = true;
+            RecordJump(from);
+            return true;
+        }
+        return MoveCursorToZoneFileOffset(codeZone, fileOffset, true);
+    }
+    return false;
+}
+
+std::optional<uint64> Instance::ResolveGoToText(std::string_view text, std::string& error, std::optional<uint32>& line)
+{
+    line                      = std::nullopt;
+    const bool hasTranslation = settings->offsetTranslateCallback.IsValid();
+    const auto shownType      = hasTranslation ? static_cast<DissasmPEConversionType>(config.AddressMode) : DissasmPEConversionType::FileOffset;
+    const auto request        = ParseDissasmGoToText(text, shownType);
+    if (!request.has_value()) {
+        error = "Expecting a label name, a hexadecimal address or a prefix (va:, rva:, off:, line:)!";
+        return {};
+    }
+    if (request->line.has_value()) {
+        const uint32 totalLines = settings->parseZones.empty() ? 0 : settings->parseZones.back()->endingLineIndex;
+        if (request->line.value() >= totalLines) {
+            error = "The line must be lower than " + std::to_string(totalLines) + "!";
+            return {};
+        }
+        line = request->line;
+        return 0;
+    }
+
+    // a label name first: a name can also be a hexadecimal number (add, face)
+    for (const auto& zone : settings->parseZones) {
+        if (request->name.empty() || zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<const DissasmCodeZone*>(zone.get());
+        if (codeZone->cachedCodeOffsets.empty())
+            continue;
+        const auto address = codeZone->FindLabelByName(request->name);
+        if (address.has_value())
+            return codeZone->cachedCodeOffsets[0].offset + address.value();
+    }
+    if (!request->address.has_value()) {
+        error = "There is no label named `" + request->name + "`!";
+        return {};
+    }
+
+    uint64 fileOffset = request->address.value();
+    if (request->addressType != DissasmPEConversionType::FileOffset) {
+        if (!hasTranslation) {
+            error = "This file has no virtual addresses: use a file offset!";
+            return {};
+        }
+        fileOffset = settings->offsetTranslateCallback->TranslateToFileOffset(request->address.value(), static_cast<uint32>(request->addressType));
+        if (fileOffset == static_cast<uint64>(-1)) {
+            error = "The address is not a location of the file!";
+            return {};
+        }
+    }
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto& details = static_cast<const DissasmCodeZone*>(zone.get())->zoneDetails;
+        if (fileOffset >= details.startingZonePoint && fileOffset - details.startingZonePoint < details.size)
+            return fileOffset;
+    }
+    error = "The address is not inside a disassembled code zone!";
+    return {};
 }
 
 // bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
@@ -267,11 +195,14 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
     case 1:
         x = PrintCursorPosInfo(x, 0, 16, false, renderer);
         x = PrintCursorLineInfo(x, 0, 16, false, renderer);
-        PrintCursorValueInfo(x, 0, renderer);
+        x = PrintCursorValueInfo(x, 0, renderer); // the number under the cursor first: the location can be long
+        x = PrintCursorLocationInfo(x, 0, renderer);
+        PrintCursorInstructionInfo(x, 0, renderer); // what the instruction does: the last, it is cut by the width
         break;
     default:
         x = std::max<int>(PrintCursorPosInfo(x, 0, 16, false, renderer), PrintCursorLineInfo(x, 1, 16, false, renderer));
-        PrintCursorValueInfo(x, 0, renderer);
+        PrintCursorLocationInfo(x, 1, renderer);
+        PrintCursorInstructionInfo(PrintCursorValueInfo(x, 0, renderer), 0, renderer);
         break;
     }
 }
@@ -440,6 +371,40 @@ void Instance::AddComment()
     }
 }
 
+void Instance::AddRepeatableComment()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine || asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a label or an instruction!");
+        return;
+    }
+    // the address of the line: its label, or the instruction (a label line and its instruction share it: the label shows it)
+    const auto existing = zone->repeatableComments.find(asmLine.address);
+    selection.Clear();
+    SingleLineEditWindow dialog(existing != zone->repeatableComments.end() ? existing->second : std::string(), "Repeatable comment");
+    if (dialog.Show() != Dialogs::Result::Ok)
+        return;
+    std::string text = dialog.GetResult();
+    if (text.size() > DISSASM_MAX_REPEATABLE_COMMENT_SIZE)
+        text.resize(DISSASM_MAX_REPEATABLE_COMMENT_SIZE);
+    if (zone->SetRepeatableComment(asmLine.address, text)) // Ctrl+Z gives the previous one back
+        RefreshDrawnLines();                                  // the lines that refer to it, in the other zones too
+}
+
 void Instance::RemoveComment()
 {
     // TODO: duplicate code -> maybe extract this?
@@ -468,6 +433,20 @@ void Instance::RemoveComment()
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     std::string existing     = {};
     convertedZone->GetComment(startingLine, existing);
+    if (existing.empty()) {
+        // no comment: the repeatable comment of the line (Delete removes it too)
+        DissasmInsnExtractLineParams params{};
+        params.obj         = obj;
+        params.zone        = convertedZone;
+        params.settings    = settings.get();
+        params.asmData     = &asmData;
+        const auto asmLine = convertedZone->GetCurrentAsmLine(startingLine, obj, &params);
+        if (convertedZone->HasOwnRepeatableComment(asmLine)) {
+            convertedZone->SetRepeatableComment(asmLine.address, {});
+            RefreshDrawnLines();
+            return;
+        }
+    }
     convertedZone->RemoveComment(startingLine);
     if (!existing.empty())
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::CommentRemove);
@@ -492,7 +471,7 @@ void Instance::RenameLabel()
 
     uint32 startingLine = zonesFound[0].startingLine;
     if (startingLine == 0 || startingLine == 1) {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line inside the dissasm zone to rename it, not the title!");
         return;
     }
     startingLine--;
@@ -508,7 +487,6 @@ void Instance::RenameLabel()
     lineParams.dli                          = nullptr;
     lineParams.settings                     = settings.get();
     lineParams.asmData                      = &asmData;
-    lineParams.isCollapsed                  = zone->isCollapsed;
 
     auto renameResult = convertedZone->TryRenameLine(startingLine, obj, nullptr, &lineParams);
     if (!renameResult.ok) {
@@ -519,6 +497,7 @@ void Instance::RenameLabel()
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::LabelRename);
     selection.Clear();
     convertedZone->asmPreCacheData.Clear();
+    ForgetLinesReferringTo(convertedZone); // the operands of the other zones show the name
 }
 
 void Instance::RemoveLocalVariable()
@@ -541,7 +520,7 @@ void Instance::RemoveLocalVariable()
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     const auto language      = convertedZone->zoneDetails.language;
-    if (!convertedZone->isInit || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+    if (!convertedZone->isInit || !DissasmCodeZone::IsNativeCodeLanguage(language))
         return;
     if (convertedZone->localVariables.Empty()) {
         Dialogs::MessageBox::ShowNotification(
@@ -837,7 +816,12 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
         if (isSignedValue) {
             int64 value;
             memcpy(&value, buffer, sizeof(value));
-            AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), value);
+            // Int8 / Int16 / Int32: the bytes after the field are zero, the sign of the field is extended (-1 was shown as 255)
+            if (typeSize < sizeof(value)) {
+                const uint32 unusedBits = static_cast<uint32>(sizeof(value) - typeSize) * 8u;
+                value                   = static_cast<int64>(static_cast<uint64>(value) << unusedBits) >> unusedBits;
+            }
+            AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), static_cast<long long>(value));
         } else {
             uint64 value;
             memcpy(&value, buffer, sizeof(value));
@@ -952,6 +936,9 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     switch (zone->zoneDetails.language) {
     case DisassemblyLanguage::x86:
     case DisassemblyLanguage::x64:
+    case DisassemblyLanguage::ARM64:
+    case DisassemblyLanguage::ARM:
+    case DisassemblyLanguage::Thumb:
         return DrawDissasmX86AndX64CodeZone(dli, zone);
     case DisassemblyLanguage::JavaByteCode:
         return DrawDissasmJavaByteCodeZone(dli, zone);
@@ -1205,6 +1192,7 @@ void GView::View::DissasmViewer::BuildDissasmParseZones(SettingsData& settings, 
 
     if (zones.empty())
         return; // only text: the file is drawn as text lines, without zones
+    LinkCodeZones(zones);
 
     // the bytes after the last zone, until the end of the file
     if (params.showFileContent && shownBytesEnd < params.fileSize)
@@ -1251,6 +1239,7 @@ void Instance::RecomputeDissasmZones()
     params.showFileContent                 = config.ShowFileContent;
     params.structuresInitialCollapsedState = Layout.structuresInitialCollapsedState;
     BuildDissasmParseZones(*settings.get(), params);
+    dataZonesLinked = false; // new zones: their data zones are linked again once prepared
 
     if (!settings->parseZones.empty())
         UpdateLayoutTotalLines();
@@ -1279,7 +1268,16 @@ bool Instance::ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb)
     AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::PrintableAscii);
     for (uint32 i = 0; i < selection.GetCount(); i++) {
         if (selection.HasSelection(i)) {
-            found_data       = true;
+            found_data = true;
+            std::string codeText;
+            if (TryGetCodeZoneSelectionText(i, codeText)) {
+                for (const char c : codeText) {
+                    FixSizeString<1> cc;
+                    CHECK(cc.AddChar(c == '\n' ? c : static_cast<char>(cp[static_cast<uint8>(c)] & 0xFF)), false, "");
+                    CHECK(usb.Add(cc), false, "");
+                }
+                continue;
+            }
             auto storageData = selection.GetStorage(i);
             for (const auto c : *storageData) {
                 FixSizeString<1> cc;
@@ -1361,9 +1359,17 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
     }
     if (zone->extendedSize == newExtendedSize)
         return;
-    selection.Clear();
 
     const int32 sizeToAdjust = static_cast<int32>(newExtendedSize) - zone->extendedSize;
+    // a selection of the zone is cleared (its lines changed), a selection below it moves with its lines
+    selection.AdjustToResizedLines(zone->startLineIndex, zone->endingLineIndex, sizeToAdjust);
+    // the view stays on the same lines when a zone above the cursor changes its size (a zone above analyzed in the background, its lines
+    // counted): the lines below the zone move, the cursor moves with them
+    if (Cursor.startViewLine + Cursor.lineInView >= zone->endingLineIndex) {
+        const int64 startViewLine = static_cast<int64>(Cursor.startViewLine) + sizeToAdjust;
+        Cursor.startViewLine      = static_cast<uint32>(std::max<int64>(startViewLine, 0));
+        Cursor.hasMovedView       = true;
+    }
     zone->endingLineIndex += sizeToAdjust;
     bool foundZone = false;
     for (const auto& availableZone : settings->parseZones) {
@@ -1451,14 +1457,27 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
             zone->asmPreCacheData.Reset();
     }
 
-    DrawLineInfo dli(renderer, Layout.startingTextLineOffset, ColorMan.Colors.Normal);
+    // a GoTo that waited for its zone moves the cursor while the zone is drawn (its title prepares it): the rows after it were drawn
+    // (and their lines cached) from the previous first line, the view is drawn again from the new one
+    for (uint32 pass = 0; pass < 2; pass++) {
+        DrawLineInfo dli(renderer, Layout.startingTextLineOffset, ColorMan.Colors.Normal);
 
-    // TODO: improve this!!
-    selection.ClearStorages();
-    for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++) {
-        dli.screenLineToDraw = tr;
-        if (!PrepareDrawLineInfo(dli))
+        // TODO: improve this!!
+        selection.ClearStorages();
+        movedCursorWhileDrawing = false;
+        for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++) {
+            dli.screenLineToDraw = tr;
+            if (!PrepareDrawLineInfo(dli))
+                break;
+        }
+        if (!movedCursorWhileDrawing)
             break;
+        movedCursorWhileDrawing = false;
+        for (const auto& zone : asmData.zonesToClear)
+            zone->asmPreCacheData.Clear();
+        MyLine.buttons.clear();
+        MyLine.bullets.clear();
+        renderer.Clear(' ', ColorMan.Colors.Normal);
     }
 
     if (!MyLine.buttons.empty()) {
@@ -1469,31 +1488,134 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         for (const auto& bullet : MyLine.bullets)
             renderer.WriteSpecialCharacter(bullet.x, bullet.y, SpecialChars::CircleFilled, bullet.color);
     }
+    PaintNavigationBand(renderer);
+}
+
+AppCUI::Graphics::Color GView::View::DissasmViewer::GetDissasmBandColor(uint8 cell)
+{
+    switch (cell) {
+    case BAND_DATA:
+        return Color::Gray;
+    case BAND_CODE:
+        return Color::DarkGreen;
+    case BAND_FILE:
+        return Color::Blue;
+    case BAND_LOADING:
+        return Color::Green;
+    case BAND_REGISTRY:
+        return Color::Olive;
+    case BAND_SERVICE:
+        return Color::Teal;
+    case BAND_CRYPTO:
+        return Color::Yellow;
+    case BAND_NETWORK:
+        return Color::Aqua;
+    case BAND_PROCESS:
+        return Color::Magenta;
+    case BAND_ANTIDEBUG:
+        return Color::Pink;
+    case BAND_INJECTION:
+        return Color::Red;
+    case BAND_FUNCTION:
+        return Color::DarkBlue;
+    default:
+        return Color::Black;
+    }
+}
+
+void Instance::PaintNavigationBand(AppCUI::Graphics::Renderer& renderer)
+{
+    // the last column is outside of the lines (totalCharactersPerLine is the width - 1); the rows of the lines are 1 .. visibleRows
+    const int x         = static_cast<int>(Layout.totalCharactersPerLine);
+    const uint32 rows   = Layout.visibleRows;
+    const uint64 total  = Layout.totalLinesSize;
+    if (rows < 2 || total == 0 || x <= 0 || x >= GetWidth())
+        return;
+    // built again when what it shows changes: its size, the lines of the zones, the functions of the analysis and their categories
+    uint64 key = (static_cast<uint64>(rows) << 40) ^ total;
+    std::vector<const ParseZone*> zones;
+    zones.reserve(settings->parseZones.size());
+    for (const auto& zone : settings->parseZones) {
+        zones.push_back(zone.get());
+        key = key * 1000003ull + (static_cast<uint64>(zone->startLineIndex) << 32 | zone->endingLineIndex) + (zone->isCollapsed ? 7u : 0u);
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone) {
+            const auto* code = static_cast<const DissasmCodeZone*>(zone.get());
+            key              = key * 1000003ull + code->functionStarts.size() * 31ull + code->functionApiCategories.size() + (code->isInit ? 1u : 0u);
+            for (const auto& [address, description] : code->bookmarks)
+                key = key * 31ull + address + 1u;
+        }
+    }
+    if (key != navigationBandKey || navigationBand.size() != rows) {
+        navigationBand    = BuildDissasmNavigationBand(zones, total, rows);
+        navigationBandKey = key;
+    }
+    // the lines shown now: a triangle on their rows
+    const auto rowOf    = [&](uint64 line) { return static_cast<uint32>(std::min<uint64>(rows - 1u, line * rows / total)); };
+    const uint32 first  = rowOf(Cursor.startViewLine);
+    const uint32 last   = rowOf(std::min<uint64>(total - 1, static_cast<uint64>(Cursor.startViewLine) + rows - 1));
+    for (uint32 row = 0; row < rows; row++) {
+        const uint8 cell       = navigationBand[row] & ~BAND_BOOKMARK;
+        const ColorPair color  = { Color::White, cell == BAND_EMPTY ? ColorMan.Colors.Normal.Background : GetDissasmBandColor(cell) };
+        if (row >= first && row <= last)
+            renderer.WriteSpecialCharacter(x, static_cast<int>(row) + 1, SpecialChars::TriangleLeft, color);
+        else if (navigationBand[row] & BAND_BOOKMARK) // a bookmark (Alt+M) in the row
+            renderer.WriteSpecialCharacter(x, static_cast<int>(row) + 1, SpecialChars::CircleFilled, color);
+        else
+            renderer.WriteCharacter(x, static_cast<int>(row) + 1, ' ', color);
+    }
+}
+
+bool Instance::ShowNavigationBandRow(int x, int y, bool recordJump)
+{
+    const uint32 rows  = Layout.visibleRows;
+    const uint64 total = Layout.totalLinesSize;
+    if (x != static_cast<int>(Layout.totalCharactersPerLine) || y < 1 || y > static_cast<int>(rows) || total == 0 || rows < 2)
+        return false;
+    // the first line of the row (the inverse of the row of a line: line * rows / total), a few lines below the top of the view
+    const uint64 row  = static_cast<uint64>(y - 1);
+    const uint64 line = std::min<uint64>(total - 1, (row * total + rows - 1) / rows);
+    if (line == static_cast<uint64>(Cursor.startViewLine) + Cursor.lineInView)
+        return true;
+    const auto from      = SaveCursorState();
+    Cursor.lineInView    = static_cast<uint32>(std::min<uint64>(std::min<uint32>(5, rows / 2), line));
+    Cursor.startViewLine = static_cast<uint32>(line - Cursor.lineInView);
+    Cursor.hasMovedView  = true;
+    if (recordJump)
+        RecordJump(from);
+    return true;
 }
 
 bool Instance::ShowGoToDialog()
 {
     if (settings->parseZones.empty())
         return true;
-    const uint32 totalLines  = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
-    const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
-    GoToDialog dlg(currentLine, totalLines);
-    if (dlg.Show() == Dialogs::Result::Ok) {
-        const auto lineToReach = dlg.GetResultedLine();
-        if (lineToReach != currentLine) {
+    FinishDeepScans(); // the names are the labels of the analysis
+
+    const bool hasTranslation = settings->offsetTranslateCallback.IsValid();
+    const auto shownType      = hasTranslation ? static_cast<DissasmPEConversionType>(config.AddressMode) : DissasmPEConversionType::FileOffset;
+    const std::string_view shownTypeName =
+          shownType == DissasmPEConversionType::VA ? "VA" : (shownType == DissasmPEConversionType::RVA ? "RVA" : "file offset");
+    GoToDialog dlg(shownTypeName, [this](std::string_view text, std::string& error) {
+        std::optional<uint32> line;
+        return ResolveGoToText(text, error, line).has_value();
+    });
+    if (dlg.Show() != Dialogs::Result::Ok)
+        return true;
+
+    std::string error;
+    std::optional<uint32> line;
+    const auto fileOffset = ResolveGoToText(dlg.GetResultText(), error, line);
+    if (line.has_value()) {
+        const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
+        if (line.value() != currentLine) {
             const auto from = SaveCursorState();
-            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), Key::None, false);
+            MoveTo(0, static_cast<int32>(line.value()) - static_cast<int32>(currentLine), Key::None, false);
             RecordJump(from);
         }
+    } else if (fileOffset.has_value()) {
+        GoToFileOffset(fileOffset.value());
     }
-    /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
-    constexpr auto lineToReach = 248;
-    MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);*/
     return true;
-}
-bool Instance::ShowFindDialog()
-{
-    NOT_IMPLEMENTED(false);
 }
 bool Instance::ShowCopyDialog()
 {
@@ -1505,7 +1627,7 @@ bool Instance::ShowCopyDialog()
 
     if (GView::App::SetClipboardText(usb) == false) {
         LocalString<128> message;
-        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", obj->GetData().GetSize(), 100), false, "");
+        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", static_cast<unsigned long long>(obj->GetData().GetSize()), 100ull), false, "");
         Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
         return false;
     }
@@ -1570,24 +1692,18 @@ void Instance::OnStart()
     this->RecomputeDissasmLayout();
     this->RecomputeDissasmZones();
 
-    uint32 maxSize = 0;
-    while (settings->maxLocationMemoryMappingSize > 0) {
-        maxSize++;
-        settings->maxLocationMemoryMappingSize /= 10;
-    }
-    // TODO: do a research! this is an imperative setting
-    settings->maxLocationMemoryMappingSize = maxSize;
+    AddKnownFunctions(asmData);
+    LoadCacheData();
+}
 
+void GView::View::DissasmViewer::AddKnownFunctions(AsmData& asmData)
+{
     GView::Hashes::CRC32 crc32{};
     uint32 hashVal = 0;
-    for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++) {
-        if (!crc32.Init(Hashes::CRC32Type::JAMCRC) || !crc32.Update(KNOWN_FUNCTIONS[i].functionName) || !crc32.Final(hashVal)) {
-            // show err
-            return;
-        }
-        asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
-    }
-    LoadCacheData();
+    ForEachApiPrototype([&](const AsmFunctionDetails& details) {
+        if (crc32.Init(Hashes::CRC32Type::JAMCRC) && crc32.Update(details.functionName) && crc32.Final(hashVal))
+            asmData.functions.insert({ hashVal, &details });
+    });
 }
 
 void Instance::RecomputeDissasmLayout()
@@ -1643,6 +1759,13 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line)
     }
 }
 
+void Instance::RefreshDrawnLines()
+{
+    for (const auto& codeZone : asmData.zonesToClear)
+        codeZone->asmPreCacheData.Clear();
+    drawnLinesGeneration++; // the columns of the numbers under the cursor moved
+}
+
 Instance::~Instance()
 {
     while (!settings->buffersToDelete.empty()) {
@@ -1652,35 +1775,163 @@ Instance::~Instance()
     }
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails, DissasmComments& comments)
+// the constant an argument line gives: push 3, mov edx, 0x80000000, mov dword ptr [rsp + 0x20], 3, mov w1, #3; 0 for xor ecx, ecx /
+// and qword ptr [rsp + 0x30], 0; -1 for or eax, -1
+static std::optional<uint64> GetArgumentImmediate(const DissasmAsmPreCacheLine& line)
 {
+    if (!line.op_str || line.size == 0)
+        return std::nullopt;
+    const std::string_view mnemonic = line.mnemonic;
+    const std::string_view operands(line.op_str, line.op_str_size);
+    const auto comma              = operands.rfind(", ");
+    const std::string_view last   = comma == std::string_view::npos ? operands : operands.substr(comma + 2);
+    const std::string_view first  = operands.substr(0, operands.find(", "));
+    if ((mnemonic == "xor" || mnemonic == "sub") && comma != std::string_view::npos && first == last)
+        return 0u;
+    const auto immediate = ParseOperandImmediate(last);
+    if (!immediate.has_value())
+        return std::nullopt;
+    if (comma == std::string_view::npos)
+        return mnemonic == "push" ? std::optional<uint64>(static_cast<uint64>(immediate.value())) : std::nullopt;
+    if (mnemonic == "mov" || mnemonic == "movz" || (mnemonic == "and" && immediate.value() == 0) || (mnemonic == "or" && immediate.value() == -1))
+        return static_cast<uint64>(immediate.value());
+    return std::nullopt;
+}
+
+void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails, bool registerArguments)
+{
+    // the lines prepared so far (above the call); the call line itself is not added yet
     if (cachedAsmLines.empty())
         return;
-    constexpr uint32 MAX_LINE_DIFF = 10;
-
+    // the name of the argument before the generated text of the line: lpFileName "C:\\file.txt"; a constant with its symbolic name:
+    // dwDesiredAccess = GENERIC_READ
+    auto nameArgument = [functionDetails](DissasmAsmPreCacheLine& line, const char* name) {
+        std::string text = name;
+        std::string constant;
+        if (const auto value = GetArgumentImmediate(line); value.has_value())
+            constant = FormatApiConstant(functionDetails->functionName, name, value.value());
+        if (line.constantComment) { // a status named on the line: the value of the argument (ExitStatus = STATUS_ACCESS_DENIED)
+            if (constant.empty())
+                constant = line.autoComment;
+            line.autoComment.clear();
+            line.constantComment = false;
+        }
+        if (!constant.empty())
+            text += " = " + constant;
+        if (!line.autoComment.empty() && !line.autoComment.starts_with(text)) {
+            // the marks of the exception scopes are not a part of the value: dwBytes; try {
+            const std::string_view comment = line.autoComment;
+            const bool exceptionMark       = comment.starts_with("try {") || comment.starts_with("__try {") || comment.starts_with("} // starts at") ||
+                                       comment.starts_with("__except(") || comment.starts_with("catch(");
+            text += exceptionMark ? "; " : " ";
+            text += line.autoComment;
+            line.autoComment = std::move(text);
+        } else if (line.autoComment.empty()) {
+            line.autoComment = std::move(text);
+        }
+    };
     const uint32 startingLine = cachedAsmLines.back().currentLine;
-    uint32 pushIndex = 0, pushesRemaining = (uint32) functionDetails->params.size();
+    const auto paramsCount    = static_cast<uint32>(functionDetails->params.size());
 
-    for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && pushesRemaining; ++it) {
+    if (registerArguments) {
+        // x64: the last instruction before the call that writes an argument register / stack slot gives that argument; the search stops
+        // at the start of the block (a label, another call, a jmp or ret); a conditional jump continues into the call
+        constexpr uint32 MAX_LINE_DIFF_X64 = 24;
+        constexpr uint32 MAX_ARGUMENTS     = 20;
+        bool named[MAX_ARGUMENTS]          = {};
+        uint32 remaining                   = std::min(paramsCount, MAX_ARGUMENTS);
+        for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
+            const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
+            if (startingLine - it->currentLine > MAX_LINE_DIFF_X64 || it->size == 0 || (it->flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) ||
+                kind == X86InstructionKind::Call || kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return)
+                break;
+            const uint8 slot = it->argumentSlot;
+            if (slot >= paramsCount || slot >= MAX_ARGUMENTS || named[slot])
+                continue;
+            named[slot] = true;
+            remaining--;
+            if (functionDetails->params[slot].name && functionDetails->params[slot].name[0]) // not a parameter an inferred prototype does not know
+                nameArgument(*it, functionDetails->params[slot].name);
+        }
+        return;
+    }
+
+    // x86: the pushes, the last one is the first argument; GCC stores them instead: mov dword ptr [esp + 4], ... is the second. The walk
+    // goes past the calls made while the arguments are pushed (push eax; push 0; call GetProcessHeap; push eax ; hHeap; call HeapAlloc):
+    // the pushes such a call takes are left to it, the arguments of a known stdcall API (its prototype) or the ones its caller removes
+    // after it (cdecl: pop ecx / add esp, 8 right after the call); a call that takes what is not known ends it, as a jmp / ret
+    constexpr uint32 MAX_LINE_DIFF = 32;
+    uint32 pushIndex = 0, remaining = paramsCount;
+    uint32 taken           = 0;     // the pushes found later that a pop / add esp / a call took (they are not arguments of this call)
+    bool cleanedUpAfter    = false; // the call met next (walking back) is a cdecl one: its pushes are counted by its clean up
+    const auto calleeName  = [](const DissasmAsmPreCacheLine& line) -> std::string_view {
+        if (line.mapping)
+            return static_cast<const MemoryMappingEntry*>(line.mapping)->name; // call dword ptr [__imp_X]
+        if (!line.op_str)
+            return {};
+        const std::string_view operands(line.op_str, line.op_str_size); // call j_memset / call sub_401000
+        size_t start = operands.size();
+        while (start > 0 && (std::isalnum(static_cast<unsigned char>(operands[start - 1])) || operands[start - 1] == '_' || operands[start - 1] == '@'))
+            start--;
+        return operands.substr(start);
+    };
+    std::vector<bool> named(paramsCount, false);
+    for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && remaining; ++it) {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
-        if (it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
-            continue;
-
-        LocalString<128> commentResult;
-        commentResult.SetFormat("%s", functionDetails->params[pushIndex].name);
-        std::string foundComment;
-        if (comments.GetComment(it->currentLine, foundComment)) {
-            if (foundComment.starts_with(commentResult.GetText())) {
-                pushesRemaining--;
-                pushIndex++;
+        const auto kind = static_cast<X86InstructionKind>(it->instructionKind);
+        if (it->size != 0 && (kind == X86InstructionKind::Jump || kind == X86InstructionKind::Return))
+            break; // the block of another path
+        if (it->size != 0 && kind == X86InstructionKind::Call) {
+            // the CFG check of a call through a pointer (mov ecx, esi; call __guard_check_icall_fptr; call esi): it takes nothing
+            if (calleeName(*it).find("guard_check_icall") != std::string_view::npos)
+                continue;
+            if (cleanedUpAfter) {
+                cleanedUpAfter = false; // cdecl: the clean up counted its arguments
                 continue;
             }
-            commentResult.AddFormat(" %s", foundComment.c_str());
+            if (it->calleePushes != DissasmAsmPreCacheLine::NO_PUSHES) {
+                taken += it->calleePushes; // a function of the file: what it pops (ret 0x10), nothing for one that reads no stack argument
+                continue;
+            }
+            const auto* inner = FindApiPrototype(calleeName(*it));
+            const auto pushes = inner ? GetX86StdcallPushes(*inner) : std::nullopt; // stdcall: the callee takes its arguments
+            if (!pushes.has_value())
+                break; // what it takes is not known (a cdecl call cleaned up later, a function of the file)
+            taken += pushes.value();
+            continue;
         }
-        comments.AddOrUpdateComment(it->currentLine, commentResult.GetText());
-        pushesRemaining--;
-        pushIndex++;
+        if (it->size != 0 && it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag && it->op_str) {
+            // pop ecx / add esp, 0xc: the pushes before them are taken (the clean up of the call right before them)
+            const std::string_view operands(it->op_str, it->op_str_size);
+            uint32 removed = 0;
+            if (strcmp(it->mnemonic, "pop") == 0)
+                removed = 1;
+            else if (strcmp(it->mnemonic, "add") == 0 && operands.starts_with("esp, "))
+                removed = static_cast<uint32>(std::strtoul(std::string(operands.substr(5)).c_str(), nullptr, 0) / 4);
+            if (removed > 0) {
+                taken += removed;
+                const auto previous = std::next(it);
+                cleanedUpAfter      = previous != cachedAsmLines.rend() && previous->size != 0 &&
+                                 static_cast<X86InstructionKind>(previous->instructionKind) == X86InstructionKind::Call;
+                continue;
+            }
+        }
+        uint32 slot = paramsCount;
+        if (it->flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+            if (taken > 0) {
+                taken--; // an argument of a call made in between
+                continue;
+            }
+            slot = pushIndex++;
+        } else if (it->argumentSlot != DissasmAsmPreCacheLine::NO_ARGUMENT)
+            slot = it->argumentSlot;
+        if (slot >= paramsCount || named[slot])
+            continue;
+        named[slot] = true;
+        remaining--;
+        if (functionDetails->params[slot].name && functionDetails->params[slot].name[0])
+            nameArgument(*it, functionDetails->params[slot].name);
     }
 }
 
@@ -1689,6 +1940,23 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
     const auto linePos = Cursor.ToLinePosition();
 
     const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
+    // F2 from anywhere: the zone of the entry point when the cursor is not in it (a structure, another executable section)
+    if (goToEntryPoint) {
+        const auto isEntryZone = [](const std::unique_ptr<ParseZone>& zone) {
+            return zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(zone.get())->zoneDetails.HasEntryPoint();
+        };
+        if (zonesFound.size() != 1 || !isEntryZone(settings->parseZones[zonesFound[0].zoneIndex])) {
+            for (const auto& other : settings->parseZones) {
+                if (!isEntryZone(other))
+                    continue;
+                if (GoToFileOffset(static_cast<DissasmCodeZone*>(other.get())->zoneDetails.entryPoint))
+                    GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
+                return;
+            }
+            Dialogs::MessageBox::ShowNotification("Warning", "The entry point is not in a dissasm zone!");
+            return;
+        }
+    }
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single zone!");
         return;
@@ -1711,7 +1979,22 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
     }
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    uint64* offsetToReach    = nullptr;
+    // a collapsed zone line, or the first line of a collapsible zone that is not a jump / call: SPACE collapses / expands the zone
+    if (!goToEntryPoint && zonesFound[0].startingLine >= 2 && convertedZone->CanReachAsmLines()) {
+        DissasmInsnExtractLineParams params{};
+        params.obj         = obj;
+        params.zone        = convertedZone;
+        params.settings    = settings.get();
+        params.asmData     = &asmData;
+        const auto asmLine = convertedZone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+        const bool isBranch =
+              (asmLine.flags & (DissasmAsmPreCacheLine::InstructionFlag::CallFlag | DissasmAsmPreCacheLine::InstructionFlag::JmpFlag)) != 0;
+        if (asmLine.isCollapsedLine || (asmLine.shouldAddButton && !isBranch)) {
+            ChangeZoneCollapseState(zone.get(), linePos.line);
+            return;
+        }
+    }
+    uint64* offsetToReach = nullptr;
     if (goToEntryPoint)
         offsetToReach = &convertedZone->zoneDetails.entryPoint;
     DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine, offsetToReach);
@@ -1823,11 +2106,17 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         return;
     }
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    if (convertedZone->zoneDetails.language != DisassemblyLanguage::x86 && convertedZone->zoneDetails.language != DisassemblyLanguage::x64) {
-        Dialogs::MessageBox::ShowNotification("Error", "Query function name available only for x86 and x64 functions!");
+    if (!DissasmCodeZone::IsNativeCodeLanguage(convertedZone->zoneDetails.language)) {
+        Dialogs::MessageBox::ShowNotification("Error", "Query function name available only for x86, x64 and ARM64 functions!");
         return;
     }
     QuerySmartAssistantParams params = {};
+    if (lineEnd >= lineStart && (queryType == QueryTypeSmartAssistant::ExplainCode || queryType == QueryTypeSmartAssistant::ConvertToHighLevel)) {
+        // the selected code: from the first selected line to the last one
+        params.startsAtSelectedLine = true;
+        params.maxLines             = lineEnd - lineStart + 1u;
+    }
+    const char* architectureName = convertedZone->GetArchitectureName();
     if (queryType == QueryTypeSmartAssistant::FunctionName) {
         params.mnemonicStarsWith              = "sub_";
         params.mnemonicStartsWithError        = "This is not a function start! Please select a \"sub\" instruction! "
@@ -1847,12 +2136,16 @@ void Instance::QuerySmartAssistant(QueryTypeSmartAssistant queryType)
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ExplainCode) {
         params.displayPrompt = "Explain the selected code";
-        params.prompt = "Explain what this x86/x84 assembly code does. Please also add a new section at the end for comments where you explain each line "
-                        "in order and suggest "
-                        "maximum 8 words for comments describing what happens in than line. Please mark the new section by writing CommentsZoneExplained and "
-                        "then on the new line they start."
-                        "The format for the this section should be instruction found separated by # character and then the comment without additional special "
-                        "characters.";
+        LocalString<640> prompt;
+        prompt.SetFormat(
+              "Explain what this %s assembly code does. Please also add a new section at the end for comments where you explain each line "
+              "in order and suggest "
+              "maximum 8 words for comments describing what happens in that line. Please mark the new section by writing CommentsZoneExplained and "
+              "then on the new line they start. "
+              "The format for this section should be the instruction found, separated by the # character, and then the comment without additional "
+              "special characters.",
+              architectureName);
+        params.prompt = prompt.GetText();
         QuerySmartAssistantX86X64(convertedZone, zonesFound[0].startingLine, params, queryType);
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
         params.displayPrompt                  = "Decompile the following assembly into a higher level language.";

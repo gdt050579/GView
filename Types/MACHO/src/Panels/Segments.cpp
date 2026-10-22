@@ -74,7 +74,7 @@ void Panels::Segments::Update()
         item.SetText(
               1,
               temp.Format(
-                    "%s (%s)", std::string(MAC::LoadCommandNames.at(s.cmd)).c_str(), GetValue(n, static_cast<uint32_t>(s.cmd)).data()));
+                    "%s (%s)", std::string(MAC::NameOf(MAC::LoadCommandNames, s.cmd)).c_str(), GetValue(n, static_cast<uint32_t>(s.cmd)).data()));
         item.SetText(2, GetValue(n, s.cmdsize));
         item.SetText(3, GetValue(n, s.vmaddr));
         item.SetText(4, GetValue(n, s.vmsize));

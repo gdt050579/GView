@@ -27,6 +27,27 @@ bool GView::View::DissasmViewer::AdvancedSelection::Clear(uint32 index)
     return true;
 }
 
+void GView::View::DissasmViewer::AdvancedSelection::AdjustToResizedLines(uint32 rangeStart, uint32 rangeEnd, int32 delta)
+{
+    for (uint32 index = 0; index < MAX_SELECTION_ZONES; index++) {
+        auto& zone = zones[index];
+        if (zone.start == INVALID_LINE_POSITION)
+            continue;
+        if (zone.end.line >= rangeStart && zone.start.line < rangeEnd) {
+            Clear(index);
+            continue;
+        }
+        if (zone.start.line < rangeEnd)
+            continue; // above the lines
+        const auto move = [delta](LinePosition& position) {
+            position.line = static_cast<uint32>(std::max<int64>(static_cast<int64>(position.line) + delta, 0));
+        };
+        move(zone.start);
+        move(zone.end);
+        move(zone.originalPoint);
+    }
+}
+
 bool GView::View::DissasmViewer::AdvancedSelection::UpdateSelection(uint32 index, LinePosition position, bool ctrl_down, bool alt_down)
 {
     CHECK(index < MAX_SELECTION_ZONES, false, "Invalid selection index (%d) - should be between 0 and %d", index, MAX_SELECTION_ZONES - 1);

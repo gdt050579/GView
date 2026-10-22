@@ -89,16 +89,16 @@ void SymTab::Update()
 
         if (nl.n_type & (uint32) MAC::N_TYPE::STAB)
         {
-            _1s = MAC::NStabTypeNames.at((MAC::N_STAB_TYPE) nl.n_type);
-            _2s = MAC::NTypeNames.at(MAC::N_TYPE::STAB);
+            _1s = MAC::NameOf(MAC::NStabTypeNames, (MAC::N_STAB_TYPE) nl.n_type);
+            _2s = MAC::NameOf(MAC::NTypeNames, MAC::N_TYPE::STAB);
         }
         else if (nl.n_type & (uint32) MAC::N_TYPE::PEXT)
         {
-            _2s = MAC::NTypeNames.at(MAC::N_TYPE::PEXT);
+            _2s = MAC::NameOf(MAC::NTypeNames, MAC::N_TYPE::PEXT);
         }
         else if (nl.n_type & (uint32) MAC::N_TYPE::EXT)
         {
-            _2s = MAC::NTypeNames.at(MAC::N_TYPE::EXT);
+            _2s = MAC::NameOf(MAC::NTypeNames, MAC::N_TYPE::EXT);
         }
         else
         {
@@ -153,7 +153,7 @@ void SymTab::Update()
             case MAC::OrdinalType::MAX_LIBRARY:
             case MAC::OrdinalType::DYNAMIC_LOOKUP:
             case MAC::OrdinalType::EXECUTABLE:
-                ordinal = MAC::OrdinalTypeNames.at((MAC::OrdinalType) MAC::GET_LIBRARY_ORDINAL(nl.n_desc));
+                ordinal = MAC::NameOf(MAC::OrdinalTypeNames, (MAC::OrdinalType) MAC::GET_LIBRARY_ORDINAL(nl.n_desc));
                 break;
             default:
             {
@@ -178,10 +178,10 @@ void SymTab::Update()
         case MAC::ReferenceFlag::PRIVATE_DEFINED:
         case MAC::ReferenceFlag::PRIVATE_UNDEFINED_NON_LAZY:
         case MAC::ReferenceFlag::PRIVATE_UNDEFINED_LAZY:
-            _1s = MAC::ReferenceFlagNames.at((MAC::ReferenceFlag) reference);
+            _1s = MAC::NameOf(MAC::ReferenceFlagNames, (MAC::ReferenceFlag) reference);
             break;
         default:
-            _1s = MAC::NDescBitTypeNames.at((MAC::N_DESC_BIT_TYPE) reference);
+            _1s = MAC::NameOf(MAC::NDescBitTypeNames, (MAC::N_DESC_BIT_TYPE) reference);
             break;
         }
 

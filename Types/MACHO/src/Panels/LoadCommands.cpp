@@ -67,12 +67,12 @@ void Panels::LoadCommands::Update()
         auto item = list->AddItem(ls.Format("#%lu", i));
         item.SetData<MachOFile::LoadCommand>(const_cast<MachOFile::LoadCommand*>(&lc));
 
-        const auto& lcName     = MAC::LoadCommandNames.at(lc.value.cmd);
+        const auto& lcName     = MAC::NameOf(MAC::LoadCommandNames, lc.value.cmd);
         const auto& lcHexValue = GetValue(nf, static_cast<uint32_t>(lc.value.cmd));
         item.SetText(1, ls.Format("%s (%s)", lcName.data(), lcHexValue.data()));
         item.SetText(2, GetValue(nf, lc.offset));
         item.SetText(3, GetValue(nf, lc.value.cmdsize));
-        item.SetText(4, MAC::LoadCommandDescriptions.at(lc.value.cmd));
+        item.SetText(4, MAC::NameOf(MAC::LoadCommandDescriptions, lc.value.cmd));
 
         i++;
     }

@@ -7,6 +7,7 @@ enum DissasmProperties : uint32 {
     // Config properties
     CacheSameLocationAsAnalyzedFileConfig,
     DeepScanDissasmOnStartConfig,
+    AlignPaddingConfig,
     ShowFileContentConfig,
     ShowOnlyDissasmConfig,
 };
@@ -23,6 +24,9 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
     case DeepScanDissasmOnStartConfig:
         value = config.EnableDeepScanDissasmOnStart;
         return true;
+    case AlignPaddingConfig:
+        value = config.AlignPadding;
+        return true;
     case CacheSameLocationAsAnalyzedFileConfig:
         value = config.CacheSameLocationAsAnalyzedFile;
         return true;
@@ -34,12 +38,18 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
     switch (propertyID) {
     case ShowFileContentConfig:
         config.ShowFileContent = std::get<bool>(value);
+        RecomputeDissasmZones(); // as the command does: the zones of the file content are added / removed
         return true;
     case ShowOnlyDissasmConfig:
         config.ShowOnlyDissasm = std::get<bool>(value);
+        RefreshDrawnLines();
         return true;
     case DeepScanDissasmOnStartConfig:
         config.EnableDeepScanDissasmOnStart = std::get<bool>(value);
+        return true;
+    case AlignPaddingConfig:
+        config.AlignPadding = std::get<bool>(value);
+        RecomputeDissasmZones(); // the lines of the code zones change
         return true;
     case CacheSameLocationAsAnalyzedFileConfig:
         config.CacheSameLocationAsAnalyzedFile = std::get<bool>(value);
@@ -62,6 +72,7 @@ const vector<Property> Instance::GetPropertiesList()
         { ShowFileContentConfig, "Config", "ShowFileContent", PropertyType::Boolean, true },
         { ShowOnlyDissasmConfig, "Config", "ShowOnlyDissasm", PropertyType::Boolean, true },
         { DeepScanDissasmOnStartConfig, "Config", "DeepScanDissasmOnStart", PropertyType::Boolean, true },
+        { AlignPaddingConfig, "Config", "AlignPadding", PropertyType::Boolean, true },
         { CacheSameLocationAsAnalyzedFileConfig, "Config", "CacheSameLocationAsAnalyzedFile", PropertyType::Boolean, true },
     };
 

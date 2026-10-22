@@ -127,6 +127,8 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
 
 void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
+    if (button == MouseButton::Left && ShowNavigationBandRow(x, y, true))
+        return;
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
@@ -136,21 +138,35 @@ void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Ke
             const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
             MoveTo(offsetDiff, linesDiff, keyCode, false);
         } else if (button == MouseButton::Right) {
-            // rightClickOffset = mpInfo.bufferOffset;
+            // the menu acts on the clicked line (it acted on the line of the cursor); a click inside the selection keeps it (the selection
+            // based actions: collapsible zones, assistant)
+            const uint32 clickedLine = Cursor.startViewLine + mpInfo.lines;
+            const bool insideSelection =
+                  selection.HasSelection(0) && selection.GetSelectionStart(0).line <= clickedLine && clickedLine <= selection.GetSelectionEnd(0).line;
+            if (!insideSelection && (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset)) {
+                const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
+                const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
+                MoveTo(offsetDiff, linesDiff, Key::None, false);
+            }
             rightClickMenu.Show(this, x, y);
         }
-    } else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty()) {
-        for (const auto& btn : MyLine.buttons)
-            if (btn.x == x && btn.y == y) {
-                // the buttons are placed on screen rows (1 for the initial empty line), the zones use absolute lines
-                ChangeZoneCollapseState(btn.zone, Cursor.startViewLine + static_cast<uint32>(btn.y - 1));
-                break;
-            }
+    } else if (mpInfo.location == MouseLocation::Outside) {
+        // the buttons of the zones and the bullets of the collapsible zones inside the code zones; they are placed on screen rows (1 for the
+        // initial empty line), the zones use absolute lines
+        for (const auto* buttons : { &MyLine.buttons, &MyLine.bullets }) {
+            for (const auto& btn : *buttons)
+                if (btn.x == x && btn.y == y) {
+                    ChangeZoneCollapseState(btn.zone, Cursor.startViewLine + static_cast<uint32>(btn.y - 1));
+                    return;
+                }
+        }
     }
 }
 
 bool Instance::OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
+    if (button == MouseButton::Left && ShowNavigationBandRow(x, y, false))
+        return true;
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
@@ -197,7 +213,8 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
             MoveTo(-1, 0, Key::Left, select);
         return true;
     case COMMAND_NAV_RIGHT:
-        if (this->Cursor.offset < this->Layout.textSize)
+        // the last column is textSize - 1: a cursor placed after it was converted to the first column of the next line
+        if (this->Cursor.offset + 1 < this->Layout.textSize)
             MoveTo(1, 0, Key::Right, select);
         return true;
     case COMMAND_NAV_PAGE_DOWN:
@@ -232,7 +249,7 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
             MoveScrollTo(-1, 0);
         return true;
     case COMMAND_NAV_SCROLL_RIGHT:
-        if (this->Cursor.offset < Layout.textSize)
+        if (this->Cursor.offset + 1 < Layout.textSize)
             MoveScrollTo(1, 0);
         return true;
     case COMMAND_NAV_SPACE:
@@ -250,6 +267,12 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_REMOVE_COMMENT:
         RemoveComment();
         return true;
+    case COMMAND_ACCEPT_AI_SUGGESTION:
+        AcceptOrDismissAISuggestion(true);
+        return true;
+    case COMMAND_DISMISS_AI_SUGGESTION:
+        AcceptOrDismissAISuggestion(false);
+        return true;
     case COMMAND_RENAME_LABEL:
         RenameLabel();
         return true;
@@ -262,6 +285,45 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
     case COMMAND_TOGGLE_NUMBER_BASE:
         ToggleNumberBase();
         return true;
+    case COMMAND_DEFINE_DATA:
+        DefineUserData(UserDataEdit::Data);
+        return true;
+    case COMMAND_DEFINE_STRING:
+        DefineUserData(UserDataEdit::String);
+        return true;
+    case COMMAND_UNDEFINE:
+        DefineUserData(UserDataEdit::Undefine);
+        return true;
+    case COMMAND_CREATE_FUNCTION:
+        EditUserFunction(UserFunctionEdit::Create);
+        return true;
+    case COMMAND_DELETE_FUNCTION:
+        EditUserFunction(UserFunctionEdit::Delete);
+        return true;
+    case COMMAND_TOGGLE_NORETURN:
+        EditUserFunction(UserFunctionEdit::ToggleNoReturn);
+        return true;
+    case COMMAND_SET_STRUCTURE:
+        SetVariableStructure();
+        return true;
+    case COMMAND_SET_OPERAND_STRUCTURE:
+        SetOperandStructure();
+        return true;
+    case COMMAND_SET_OPERAND_CONSTANT:
+        SetOperandConstant();
+        return true;
+    case COMMAND_MARK_POSITION:
+        MarkPosition();
+        return true;
+    case COMMAND_SHOW_BOOKMARKS:
+        ShowBookmarks();
+        return true;
+    case COMMAND_ADD_REPEATABLE_COMMENT:
+        AddRepeatableComment();
+        return true;
+    case COMMAND_SET_PROTOTYPE:
+        SetFunctionPrototype();
+        return true;
     }
     return false;
 }
@@ -269,11 +331,43 @@ bool Instance::ExecuteNavigationCommand(uint32 commandId, bool select)
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     const auto action = Config::Map.Resolve(keyCode);
+    if (keyCode == Key::Escape && aiNaming.zone) {
+        StopAINaming(); // the names received so far stay
+        RefreshDrawnLines();
+        return true;
+    }
+    if (HasPendingDeepScans()) {
+        if (keyCode == Key::Escape) {
+            CancelDeepScans(); // the zones keep their instructions without labels
+            return true;
+        }
+        // the moves do not need the labels; the other actions do (rename, comments, zones); a frontend without frame updates (no FPS
+        // mode) ends the scans at the first key
+        const bool isMove = action.commandId >= COMMAND_NAV_DOWN && action.commandId <= COMMAND_NAV_SCROLL_RIGHT;
+        if (!frameUpdatesSeen || (action.commandId != Input::KeyMap::NO_COMMAND && !isMove))
+            FinishDeepScans();
+    }
     if ((action.commandId != Input::KeyMap::NO_COMMAND) && (ExecuteNavigationCommand(action.commandId, action.extendSelection)))
         return true;
 
-    if (keyCode == Key::Escape)
+    // the IDA profile: : adds a comment, ; a repeatable one (they are characters, not keys of AppCUI)
+    if (Config::ActiveKeyProfile == Config::KeyProfile::IDA && (charCode == ';' || charCode == ':') &&
+        (keyCode & (Key::Ctrl | Key::Alt)) == Key::None) {
+        FinishDeepScans();
+        if (charCode == ';')
+            AddRepeatableComment();
+        else
+            AddComment();
+        return true;
+    }
+    if (keyCode == Key::Escape) {
         SaveCacheData();
+        // Esc is the jump back (the IDA profile): handled here, before the command bar; with no history the key goes on
+        if (config.JumpBackCommand.Key == Key::Escape && JumpInHistory(true)) {
+            GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::JumpBack);
+            return true;
+        }
+    }
 
     return ViewControl::OnKeyEvent(keyCode, charCode);
 }
@@ -290,6 +384,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::Command) {
+        FinishDeepScans(); // every command uses the analysis (labels, cross references, the cache, the export)
         switch (ID) {
         case COMMAND_ADD_NEW_TYPE:
             Dialogs::MessageBox::ShowNotification("Info", "OK!");
@@ -298,8 +393,70 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             config.ShowFileContent = !config.ShowFileContent;
             this->RecomputeDissasmZones();
             return true;
+        case COMMAND_CHANGE_ADDRESS_MODE:
+            ChangeAddressMode();
+            return true;
+        case COMMAND_SHOW_XREFS:
+            ShowXrefs();
+            return true;
+        case COMMAND_SHOW_FUNCTIONS:
+            ShowFunctions();
+            return true;
+        case COMMAND_SHOW_IMPORTS:
+            ShowImports();
+            return true;
+        case COMMAND_SHOW_STRINGS:
+            ShowStrings();
+            return true;
+        case COMMAND_FIND_NEXT:
+            FindNext();
+            return true;
+        case COMMAND_UNDO:
+            UndoOrRedo(false);
+            return true;
+        case COMMAND_REDO:
+            UndoOrRedo(true);
+            return true;
+        case COMMAND_COMMAND_PALETTE:
+            ShowCommandPalette();
+            return true;
+        case COMMAND_SHOW_CALL_TREE:
+            ShowCallTree();
+            return true;
+        case COMMAND_SHOW_GRAPH:
+            ShowFunctionGraph();
+            return true;
+        case COMMAND_GOTO_ADDRESS:
+            ShowGoToDialog();
+            return true;
+        case COMMAND_FIND:
+            ShowFindDialog();
+            return true;
+        case COMMAND_TOGGLE_KEY_PROFILE:
+            ToggleKeyProfile();
+            return true;
+        case COMMAND_EXPORT_ANNOTATIONS:
+            ExportAnnotations();
+            return true;
+        case COMMAND_IMPORT_ANNOTATIONS:
+            ImportAnnotations();
+            return true;
+        case COMMAND_CREATE_SIGNATURES:
+            CreateSignatures();
+            return true;
+        case COMMAND_APPLY_SIGNATURES:
+            ApplySignatures();
+            return true;
+        case COMMAND_TOGGLE_AI_SUGGESTIONS:
+            showAISuggestions = !showAISuggestions;
+            RefreshDrawnLines();
+            return true;
+        case COMMAND_SUGGEST_NAMES:
+            StartAINaming();
+            return true;
         case COMMAND_SHOW_ONLY_DISSASM:
             config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
+            RefreshDrawnLines();
             return true;
         // case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
         //     AddNewCollapsibleTextZone();
@@ -375,4 +532,24 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     }
 
     return false;
+}
+
+// Ctrl+Shift+P: the keys of GView <-> the keys of IDA; saved in GView.ini, applied to every viewer (the user's keys win)
+void Instance::ToggleKeyProfile()
+{
+    const bool toIDA = Config::ActiveKeyProfile != Config::KeyProfile::IDA;
+    if (auto ini = AppCUI::Application::GetAppSettings()) {
+        ini->GetSection("View.Dissasm").UpdateValue("Config.KeyProfile", toIDA ? "ida" : "default", false);
+        AppCUI::Application::SaveAppSettings();
+    }
+    GView::App::ReapplyKeyBindings(); // RegisterKeys reads the profile again
+    const auto profile = toIDA ? Config::KeyProfile::IDA : Config::KeyProfile::Default;
+    if (Config::ActiveKeyProfile != profile) { // no settings file / no app: only the default keys of this profile
+        ApplyKeyProfile(profile);
+        OnKeysChanged();
+    }
+    Dialogs::MessageBox::ShowNotification(
+          "Keys",
+          toIDA ? "The IDA keys: G go to, X xrefs, ; comment, Esc back, Ctrl+Enter forward, Enter follow, Space graph, Alt+T find, Ctrl+T next"
+                : "The GView keys: F5 go to, Ctrl+X xrefs, C comment, Ctrl+Q back, Ctrl+E forward, Space follow, Ctrl+B graph, Ctrl+F find");
 }

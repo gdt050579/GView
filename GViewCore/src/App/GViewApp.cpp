@@ -50,6 +50,19 @@ bool UpdateSettingsForGenericPlugin(AppCUI::Utils::IniObject& ini, const std::fi
     fnUpdateSettings(sect);
     return true;
 }
+void GView::App::ReapplyKeyBindings()
+{
+    if (gviewAppInstance)
+        gviewAppInstance->ApplyKeyBindings();
+}
+bool GView::App::AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptions& options, std::string& json, std::string& error)
+{
+    if (!gviewAppInstance) {
+        error = "GView is not initialized!";
+        return false;
+    }
+    return gviewAppInstance->AnalyzeFile(path, options, json, error);
+}
 bool GView::App::Init(bool isTestingEnabled)
 {
     gviewAppInstance = new GView::App::Instance();
