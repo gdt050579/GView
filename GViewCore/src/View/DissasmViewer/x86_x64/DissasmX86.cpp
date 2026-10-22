@@ -565,6 +565,19 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     // numbers the user switched to decimal (H key)
     const uint32 decimalMask = zone ? zone->GetDecimalOperandsMask(address) : 0u;
 
+    // the return address of the function (IDA: retaddr; wil logs _ReturnAddress(): mov rcx, [rsp + 0x28]): not a variable of the frame,
+    // its slot named; at the stack pointer of the entry, above the saved frame register
+    if (!variable && function && zone && !zone->IsArmCode() && decimalMask == 0 &&
+        frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0)) {
+        std::string rewritten(text.substr(0, frameOperand.replaceStart));
+        rewritten.append(joiner);
+        rewritten.append("retaddr");
+        rewritten.append(text.substr(frameOperand.replaceEnd));
+        op_str      = portable_strdup(rewritten.c_str());
+        op_str_size = static_cast<uint32>(rewritten.size());
+        return;
+    }
+
     if (!variable) {
         // T: the displacement of the memory operand as a field of the structure the user gave ([rbx + STARTUPINFOW.dwFlags])
         const auto operandStructure = zone ? zone->operandStructures.find(address) : std::map<uint64, std::string>::const_iterator{};

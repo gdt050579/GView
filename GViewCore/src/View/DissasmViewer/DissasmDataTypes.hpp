@@ -269,7 +269,7 @@ namespace View
             std::vector<Field> fields; // in their order
         };
 
-        constexpr uint32 DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION = 512;
+        constexpr uint32 DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION = 1024; // the frames of the large functions of ntfs have 562 slots
         constexpr uint32 DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE     = 128;
 
         // A stack slot addressed through the frame register ([ebp - 8] / [rbp + 0x10]) inside a function.

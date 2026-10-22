@@ -9030,6 +9030,50 @@ TEST_CASE("X86StackPointerOfFrameRegisterFunctions", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000009  mov    eax, dword ptr [ebp + arg_0]").size() > 0);
 }
 
+TEST_CASE("X86ReturnAddressSlot", "[Dissasm]Help")
+{
+    // the return address of the function read from its slot (wil: _ReturnAddress()): retaddr, in a frame without a frame register (the
+    // stack pointer of the entry) and in a frame register function (above the saved ebp)
+    std::vector<unsigned char> x64 = {
+        0x53,                         // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x20,       // 0x01: sub rsp, 0x20
+        0x48, 0x89, 0x54, 0x24, 0x38, // 0x05: mov qword ptr [rsp + 0x38], rdx  (arg_8)
+        0x48, 0x8B, 0x4C, 0x24, 0x28, // 0x0a: mov rcx, qword ptr [rsp + 0x28]  (the return address)
+        0x48, 0x8D, 0x44, 0x24, 0x28, // 0x0f: lea rax, [rsp + 0x28]            (its address)
+        0x48, 0x83, 0xC4, 0x20,       // 0x14: add rsp, 0x20
+        0x5B,                         // 0x18: pop rbx
+        0xC3,                         // 0x19: ret
+    };
+    x64.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size       = 0x200;
+    layout.entryPoint = 0x00;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance stackFrame(x64.data(), x64.size(), true, layout);
+    const std::string listing = stackFrame.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000a  mov    rcx, qword ptr [rsp + 0x28 + retaddr]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000f  lea    rax, [rsp + 0x28 + retaddr]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov    qword ptr [rsp + 0x28 + arg_8], rdx").size() > 0);
+    REQUIRE(listing.find("retaddr = ") == std::string::npos); // not a variable of the frame
+
+    std::vector<unsigned char> x86 = {
+        0x55,             // 0x00: push ebp
+        0x8B, 0xEC,       // 0x01: mov ebp, esp
+        0x8B, 0x45, 0x04, // 0x03: mov eax, dword ptr [ebp + 4]  (the return address)
+        0x8B, 0x4D, 0x08, // 0x06: mov ecx, dword ptr [ebp + 8]  (arg_0)
+        0x5D,             // 0x09: pop ebp
+        0xC3,             // 0x0a: ret
+    };
+    x86.resize(0x200, 0xCC);
+    layout.language = DisassemblyLanguage::x86;
+    DissasmTestInstance frameRegister(x86.data(), x86.size(), true, layout);
+    const std::string listing32 = frameRegister.GetListing();
+    INFO(listing32);
+    REQUIRE(FindListingLine(listing32, "0x00000003  mov    eax, dword ptr [ebp + retaddr]").size() > 0);
+    REQUIRE(FindListingLine(listing32, "0x00000006  mov    ecx, dword ptr [ebp + arg_0]").size() > 0);
+}
+
 TEST_CASE("X64FunctionChunks", "[Dissasm]Help")
 {
     // x64 chained unwind data elsewhere: a chunk of the function (its cold code, reached by a jcc, jumping back), on the frame of the
