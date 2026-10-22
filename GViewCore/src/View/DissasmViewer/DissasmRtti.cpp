@@ -358,6 +358,24 @@ class RttiParser
 };
 } // namespace
 
+std::string GView::View::DissasmViewer::DemangleMsvcTypeName(std::string_view descriptor)
+{
+    // a pointer: .PA (x86) / .PEA (x64), .PB / .PEB (to const), then the class as in .?AV
+    std::string_view rest = descriptor;
+    std::string suffix;
+    for (const std::string_view prefix : { ".PEA", ".PEB", ".PA", ".PB" })
+        if (rest.starts_with(prefix)) {
+            suffix = prefix.back() == 'B' ? " const *" : " *";
+            rest.remove_prefix(prefix.size());
+            break;
+        }
+    const std::string classDescriptor = suffix.empty() ? std::string(rest) : ".?A" + std::string(rest);
+    const std::string name            = RttiParser::MsvcClassName(classDescriptor);
+    if (!name.empty())
+        return name + suffix;
+    return std::string(descriptor.starts_with('.') ? descriptor.substr(1) : descriptor);
+}
+
 void GView::View::DissasmViewer::ParseCppRtti(const RttiInput& input, RttiResult& result)
 {
     if (input.pointerSize != 4 && input.pointerSize != 8)

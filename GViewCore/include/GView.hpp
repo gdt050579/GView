@@ -1813,6 +1813,14 @@ namespace View
             std::string catchType;
             std::vector<std::pair<uint64, uint64>> tryRanges; // [begin, end)
         };
+        // an object the C++ exception handling destroys when it unwinds the function (x64 FH4: the unwind map entries with a destructor):
+        // its offset from the establisher frame, its destructor (file offset; 0: not in the file), the slot a pointer to it (the
+        // destructor gets the value of the slot) or the object (its address)
+        struct ExceptionObject {
+            int32 frameOffset;
+            uint64 destructor;
+            bool isPointer;
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
         // the entry point of a code zone that has none (an executable section that is not the one of the entry point)
@@ -1860,6 +1868,13 @@ namespace View
              * sub_X$dtor$0); their accesses to the frame of the function use its variables.
              */
             void AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionFunclet>& funclets);
+            /**
+             * \brief The objects the C++ exception handling destroys when it unwinds the function at `functionFileOffset` (FH4: the
+             * destructor and the frame offset of each), its frame from the unwind data (as AddExceptionScopes). The viewer makes their
+             * slots variables: destroyed by the destructor, typed after it when it tells the type (PropVariantClear: PROPVARIANT, a C++
+             * destructor X::~X: X).
+             */
+            void AddExceptionObjects(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionObject>& objects);
             /**
              * \brief A chunk of the function at `functionFileOffset` (its cold code elsewhere: x64 chained unwind data): `size` bytes at
              * `chunkFileOffset`. The chunk runs on the frame of the function after its prologue (`functionPrologSize` bytes): its stack

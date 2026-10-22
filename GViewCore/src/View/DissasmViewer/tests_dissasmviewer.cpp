@@ -9077,6 +9077,152 @@ TEST_CASE("X86ExceptionTables", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00401088  dd     " + zone.GetLabelNameAt(0x10)).find("; UnwindMap[0].action") != std::string_view::npos);
 }
 
+TEST_CASE("Arm64ExceptionScopes", "[Dissasm]Help")
+{
+    // ARM64 SEH (the scope table of __C_specific_handler in the .xdata): the scope marked, its filter a leaf function without .pdata (not a
+    // function entry): a function named after its function
+    const std::vector<uint32> code = {
+        0xA9BF7BFD, // 0x00: stp x29, x30, [sp, #-0x10]!
+        0x910003FD, // 0x04: mov x29, sp
+        0xD503201F, // 0x08: nop        (__try)
+        0xD503201F, // 0x0c: nop
+        0x14000002, // 0x10: b 0x18
+        0xD503201F, // 0x14: nop        (the __except block)
+        0xA8C17BFD, // 0x18: ldp x29, x30, [sp], #0x10
+        0xD65F03C0, // 0x1c: ret
+        0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F,
+        0x52800020, // 0x40: mov w0, #1 (the filter)
+        0xD65F03C0, // 0x44: ret
+    };
+    std::vector<unsigned char> file;
+    for (const uint32 word : code)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(word >> (8 * index)));
+    file.resize(0x100, 0);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x00, { "", 0x20, false, { { 0x08, 0x10, 0x40, 0x14 } }, 0, 0, 0 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x40) == zone.GetLabelNameAt(0x00) + "$filt$0");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000008  nop").find("__try { // __except at " + zone.GetLabelNameAt(0x14)) != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000c  nop").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000014  nop").find("__except(" + zone.GetLabelNameAt(0x40) + ") // owned by ") != std::string_view::npos);
+}
+
+TEST_CASE("X64ExceptionObjects", "[Dissasm]Help")
+{
+    // x64 FH4: the objects the unwinding destroys (their offset from the establisher frame: the rsp after the prologue, -0x38): variables
+    // destroyed by their destructor, typed after it (a C++ destructor CLock::~CLock: CLock; a handle freed by CloseHandle: HANDLE)
+    std::vector<unsigned char> file = {
+        0x53,                         // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x30,       // 0x01: sub rsp, 0x30
+        0x48, 0x8D, 0x4C, 0x24, 0x20, // 0x05: lea rcx, [rsp + 0x20]     (the object: -0x18)
+        0xE8, 0x31, 0x00, 0x00, 0x00, // 0x0a: call 0x40                 (CLock::~CLock)
+        0x48, 0x8B, 0x4C, 0x24, 0x28, // 0x0f: mov rcx, [rsp + 0x28]     (the handle: -0x10)
+        0xE8, 0x37, 0x00, 0x00, 0x00, // 0x14: call 0x50                 (CloseHandle)
+        0x48, 0x83, 0xC4, 0x30,       // 0x19: add rsp, 0x30
+        0x5B,                         // 0x1d: pop rbx
+        0xC3,                         // 0x1e: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3); // 0x40: the destructor
+    file.resize(0x50, 0xCC);
+    file.push_back(0xC3); // 0x50
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = {
+        { 0x00, { "", 0x1f, false, {}, 5, 0, 0, {}, {}, { { 0x20, 0x40, false }, { 0x28, 0x50, true } } } },
+        { 0x40, { "public: __cdecl CLock::~CLock(void)", 1, true } },
+        { 0x50, { "CloseHandle", 1, true } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto* object = frame->FindVariable(-0x18);
+    REQUIRE(object != nullptr);
+    REQUIRE(object->type == "CLock");
+    REQUIRE(object->origin == "destroyed on unwind by public: __cdecl CLock::~CLock(void)");
+    const auto* handle = frame->FindVariable(-0x10);
+    REQUIRE(handle != nullptr);
+    REQUIRE(handle->type == "HANDLE"); // CloseHandle (its argument named by the call, or the destructor)
+}
+
+TEST_CASE("X86ExceptionMarks", "[Dissasm]Help")
+{
+    // 32 bit MSVC: the scopes of the exception tables marked in their function: SEH4 (the try level in [ebp - 4], here from a register
+    // zeroed before), C++ (the state byte, the function that refers to the __ehhandler stub of the FuncInfo), the unwind funclet named
+    std::vector<unsigned char> file = {
+        0x55,                                     // 0x401000: push ebp
+        0x8B, 0xEC,                               // 0x401001: mov ebp, esp
+        0x68, 0x80, 0x10, 0x40, 0x00,             // 0x401003: push 0x401080            (the scope table)
+        0x33, 0xDB,                               // 0x401008: xor ebx, ebx
+        0x89, 0x5D, 0xFC,                         // 0x40100a: mov [ebp - 4], ebx       (__try {: level 0)
+        0x90,                                     // 0x40100d: nop
+        0xC7, 0x45, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF, // 0x40100e: mov dword ptr [ebp - 4], -2 (})
+        0xEB, 0x05,                               // 0x401015: jmp 0x40101c
+        0x33, 0xC0,                               // 0x401017: xor eax, eax             (the filter)
+        0x40,                                     // 0x401019: inc eax
+        0xC3,                                     // 0x40101a: ret
+        0x90,                                     // 0x40101b: nop                      (the __except block)
+        0x5D,                                     // 0x40101c: pop ebp
+        0xC3,                                     // 0x40101d: ret
+        0xCC, 0xCC,
+        0x55,                                     // 0x401020: push ebp
+        0x8B, 0xEC,                               // 0x401021: mov ebp, esp
+        0xB8, 0x50, 0x10, 0x40, 0x00,             // 0x401023: mov eax, 0x401050        (the __ehhandler stub)
+        0xC6, 0x45, 0xFC, 0x00,                   // 0x401028: mov byte ptr [ebp - 4], 0 (try {: state 0)
+        0x90,                                     // 0x40102c: nop
+        0xC6, 0x45, 0xFC, 0xFF,                   // 0x40102d: mov byte ptr [ebp - 4], -1 (})
+        0x5D,                                     // 0x401031: pop ebp
+        0xC3,                                     // 0x401032: ret
+        0xB8, 0x31, 0x10, 0x40, 0x00,             // 0x401033: mov eax, 0x401031        (the catch block: where it goes on)
+        0xC3,                                     // 0x401038: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x8D, 0x4D, 0xF0,                         // 0x401040: lea ecx, [ebp - 0x10]    (the unwind funclet)
+        0xE9, 0xD8, 0xFF, 0xFF, 0xFF,             // 0x401043: jmp 0x401020
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0xB8, 0xA0, 0x10, 0x40, 0x00,             // 0x401050: mov eax, 0x4010a0        (the stub: the FuncInfo)
+        0xE9, 0xA6, 0xFF, 0xFF, 0xFF,             // 0x401055: jmp 0x401000
+    };
+    file.resize(0x80, 0xCC);
+    const std::vector<uint32> tables = {
+        0xFFFFFFE4, 0, 0xFFFFFF8C, 0, 0xFFFFFFFE, 0x401017, 0x40101B, // 0x401080: the scope table (a record: the filter, the block)
+        0,                                                            // 0x40109c
+        0x19930522, 1, 0x4010C4, 1, 0x4010CC, 0, 0, 0, 0,             // 0x4010a0: FuncInfo
+        0xFFFFFFFF, 0x401040,                                         // 0x4010c4: UnwindMap[0]
+        0, 0, 1, 1, 0x4010E0,                                         // 0x4010cc: TryBlockMap[0]: states 0-0, a catch
+        0x40, 0, 0, 0x401033,                                         // 0x4010e0: HandlerType[0]: catch(...)
+        0,
+    };
+    for (const uint32 value : tables)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x40) == zone.GetLabelNameAt(0x20) + "$dtor$0");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0040100a  mov").find("__try { // __except at " + zone.GetLabelNameAt(0x1b)) != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040100e  mov").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401017  xor").find("__except filter // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040101b  nop").find("__except(" + zone.GetLabelNameAt(0x17) + ") // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401028  mov").find("try {") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040102d  mov").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401033  mov").find("catch(...) // owned by ") != std::string_view::npos);
+}
+
 TEST_CASE("X86ReturnAddressSlot", "[Dissasm]Help")
 {
     // the return address of the function read from its slot (wil: _ReturnAddress()): retaddr, in a frame without a frame register (the

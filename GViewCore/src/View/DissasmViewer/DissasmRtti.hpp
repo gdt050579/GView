@@ -52,4 +52,8 @@ void ParseCppRtti(const RttiInput& input, RttiResult& result);
 // the data zones of the settings parsed for their run-time type information: the names become named slots (labels of the data zones,
 // names of the operands)
 void ApplyCppRtti(SettingsData& settings, Reference<GView::Object> obj);
+
+// the name of a type descriptor of MSVC (the type of a catch): .?AVbad_alloc@std@@ -> std::bad_alloc, .PAVCItem@@ / .PEAVCItem@@ ->
+// CItem *, .PBVCItem@@ -> CItem const *; the other forms (the basic types) as they are, without the dot
+std::string DemangleMsvcTypeName(std::string_view descriptor);
 } // namespace GView::View::DissasmViewer

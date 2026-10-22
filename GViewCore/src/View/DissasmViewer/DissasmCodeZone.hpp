@@ -407,13 +407,13 @@ struct DissasmCodeZone : public ParseZone {
     // at) and its catch blocks on their funclet (catch(std::bad_alloc &) // owned by sub_X+0x24); by relative address. Recomputed by the
     // deep scan, not saved
     struct ExceptionMark {
-        enum class Kind : uint8 { TryBegin, TryEnd, Except, CppTryBegin, Catch };
+        enum class Kind : uint8 { TryBegin, TryEnd, Except, CppTryBegin, Catch, Finally, Filter }; // Finally / Filter: the blocks of x86
         Kind kind;
         uint64 begin;                  // the first instruction of the scope (of the first range of the try of a catch)
         std::optional<uint64> handler; // the filter / the __finally funclet; none: the constant filter EXCEPTION_EXECUTE_HANDLER
         std::optional<uint64> target;  // the __except block; none: a __finally
         std::string catchType;         // a catch: the type it takes ("..." for all)
-        bool owned = true;             // a catch: false when its try has no range in the function (no owner shown)
+        bool owned = true;             // a catch / a handler: false when its scope has no range in the function (no owner shown)
     };
     std::unordered_map<uint64, std::vector<ExceptionMark>> exceptionMarks;
     // the marks of the instruction at the relative address as a comment; empty without one

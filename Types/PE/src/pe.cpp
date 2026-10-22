@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -247,7 +248,8 @@ bool ReadCppExceptionFunclets(
       uint32 end,
       uint32 funcInfo,
       const std::unordered_set<uint32>& functionStarts,
-      std::vector<DissasmViewer::ExceptionFunclet>& funclets)
+      std::vector<DissasmViewer::ExceptionFunclet>& funclets,
+      std::vector<DissasmViewer::ExceptionObject>& objects)
 {
     constexpr uint32 MAX_STATES = 0x4000, MAX_TRY_BLOCKS = 0x400, MAX_CATCHES = 64, MAX_IP_ENTRIES = 0x10000;
     const auto fa = pe->RVAToFA(funcInfo);
@@ -259,6 +261,7 @@ bool ReadCppExceptionFunclets(
     };
     std::vector<TryBlock> tryBlocks;
     std::vector<int32> unwindFunclets;
+    std::vector<std::tuple<int32, int32, bool>> unwindObjects; // FH4: the destructor (RVA), the object (from the establisher frame), a pointer
     std::vector<std::pair<uint32, int32>> ipStates; // the RVA from which a state holds
     int32 stateCount = 0;
     const auto rvaFa = [&pe](int32 rva) { return rva > 0 ? pe->RVAToFA(static_cast<uint32>(rva)) : PE_INVALID_ADDRESS; };
@@ -299,6 +302,8 @@ bool ReadCppExceptionFunclets(
             if (static_cast<uint32>(entry[0]) >= begin && static_cast<uint32>(entry[0]) < end) // the map has the IPs of the funclets too
                 ipStates.emplace_back(static_cast<uint32>(entry[0]), entry[1]);
         }
+        if (info.ipCount > 0 && ipStates.empty())
+            return false; // the FuncInfo of another function (a catch funclet of ARM64 has the one of its function)
         for (uint32 index = 0; index < info.tryBlockCount; index++) {
             int32 entry[5]; // tryLow, tryHigh, catchHigh, nCatches, dispHandlerArray
             if (!data.Copy(itemFa(info.tryBlockMap, index, 20), entry) || entry[3] < 0 || static_cast<uint32>(entry[3]) > MAX_CATCHES)
@@ -346,8 +351,9 @@ bool ReadCppExceptionFunclets(
             for (uint32 index = 0; index < count && !unwind.failed; index++) {
                 const uint32 type = unwind.Unsigned() & 3; // the next offset (>> 2), the type: none, a destructor with an object, an RVA
                 if (type == 1 || type == 2) {
-                    unwind.Int();
-                    unwind.Unsigned();
+                    const int32 destructor = unwind.Int();
+                    const auto object      = static_cast<int32>(unwind.Unsigned());
+                    unwindObjects.emplace_back(destructor, object, type == 2);
                 } else if (type == 3)
                     unwindFunclets.push_back(unwind.Int());
             }
@@ -443,7 +449,86 @@ bool ReadCppExceptionFunclets(
                 funclets.push_back({ funcletFa, true, type, ranges });
         }
     }
-    return !funclets.empty();
+    // the objects the unwinding destroys (once each slot)
+    std::unordered_set<int32> slots;
+    for (const auto& [destructor, object, isPointer] : unwindObjects)
+        if (slots.insert(object).second) {
+            const auto destructorFa = rvaFa(destructor);
+            objects.push_back({ object, destructorFa == PE_INVALID_ADDRESS ? 0 : destructorFa, isPointer });
+        }
+    return !funclets.empty() || !objects.empty();
+}
+
+// the language specific data of a function with an exception handler (x64 / ARM64) at `handlerData` (the file offset after the RVA of the
+// handler), [begin, end): RVAs. The scope table of __C_specific_handler (a count, then the scopes { begin, end, handler, target }: every
+// scope inside the function, its handler EXCEPTION_EXECUTE_HANDLER (1) or a function of .pdata, its target 0 (__finally) or in the
+// function; `leafHandlers`: ARM64, a filter can be a leaf function without .pdata, a handler in the code), else the FuncInfo of the C++
+// exception handling (the same word is its RVA). The data of another handler (the GS cookie) fails the checks
+void AddFunctionExceptionData(
+      DissasmViewer::Settings& settings,
+      Reference<PE::PEFile> pe,
+      GView::Utils::DataCache& data,
+      uint32 begin,
+      uint32 end,
+      uint64 handlerData,
+      const std::unordered_set<uint32>& functionStarts,
+      uint8 prologSize,
+      uint8 frameRegister,
+      uint8 frameOffset,
+      bool leafHandlers)
+{
+    struct ScopeRecord {
+        uint32 BeginAddress;
+        uint32 EndAddress;
+        uint32 HandlerAddress;
+        uint32 JumpTarget;
+    };
+    constexpr uint32 MAX_SCOPES = 64;
+    const auto fa         = pe->RVAToFA(begin);
+    uint32 scopeCount     = 0;
+    if (fa == PE_INVALID_ADDRESS || !data.Copy<uint32>(handlerData, scopeCount))
+        return;
+    const auto isCode = [&pe](uint32 rva) {
+        for (uint32 index = 0; index < pe->nrSections; index++) {
+            const auto& section = pe->sect[index];
+            if (rva >= section.VirtualAddress && rva - section.VirtualAddress < std::max(section.Misc.VirtualSize, section.SizeOfRawData))
+                return (section.Characteristics & (__IMAGE_SCN_MEM_EXECUTE | __IMAGE_SCN_CNT_CODE)) != 0;
+        }
+        return false;
+    };
+    std::vector<DissasmViewer::ExceptionScope> scopes;
+    bool valid = scopeCount > 0 && scopeCount <= MAX_SCOPES;
+    for (uint32 index = 0; index < scopeCount && valid; index++) {
+        ScopeRecord scope;
+        if (!data.Copy<ScopeRecord>(handlerData + 4 + static_cast<uint64>(index) * sizeof(ScopeRecord), scope)) {
+            valid = false;
+            break;
+        }
+        valid = scope.BeginAddress >= begin && scope.BeginAddress < scope.EndAddress && scope.EndAddress <= end + 1 &&
+                (scope.HandlerAddress == 1 || functionStarts.contains(scope.HandlerAddress) || (leafHandlers && isCode(scope.HandlerAddress))) &&
+                (scope.JumpTarget == 0 ? scope.HandlerAddress != 1 : scope.JumpTarget >= begin && scope.JumpTarget < end);
+        if (!valid)
+            break;
+        const auto scopeBegin = pe->RVAToFA(scope.BeginAddress);
+        const auto scopeLast  = pe->RVAToFA(scope.EndAddress - 1);
+        const auto handler    = scope.HandlerAddress == 1 ? 0 : pe->RVAToFA(scope.HandlerAddress);
+        const auto target     = scope.JumpTarget == 0 ? 0 : pe->RVAToFA(scope.JumpTarget);
+        valid = scopeBegin != PE_INVALID_ADDRESS && scopeLast != PE_INVALID_ADDRESS && handler != PE_INVALID_ADDRESS && target != PE_INVALID_ADDRESS;
+        if (valid)
+            scopes.push_back({ scopeBegin, scopeLast + 1, handler, target });
+    }
+    if (valid) {
+        settings.AddExceptionScopes(fa, prologSize, frameRegister, frameOffset, scopes);
+        return;
+    }
+    std::vector<DissasmViewer::ExceptionFunclet> funclets;
+    std::vector<DissasmViewer::ExceptionObject> objects;
+    if (!ReadCppExceptionFunclets(pe, data, begin, end, scopeCount, functionStarts, funclets, objects))
+        return;
+    if (!funclets.empty())
+        settings.AddExceptionFunclets(fa, prologSize, frameRegister, frameOffset, funclets);
+    if (!objects.empty())
+        settings.AddExceptionObjects(fa, prologSize, frameRegister, frameOffset, objects);
 }
 } // namespace
 } // extern "C++"
@@ -477,6 +562,14 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
         const auto& exceptionDir               = pe->GetDirectory(PE::DirectoryType::Exception);
         const auto start                       = exceptionDir.VirtualAddress != 0 ? pe->RVAToFA(exceptionDir.VirtualAddress) : PE_INVALID_ADDRESS;
         const uint32 count = start != PE_INVALID_ADDRESS ? std::min<uint32>(exceptionDir.Size / sizeof(Arm64RuntimeFunction), MAX_RUNTIME_FUNCTIONS) : 0;
+        // ARM64: the functions with an exception handler (the X bit of their .xdata) and the file offset of its data (after the RVA of the
+        // handler, past the epilog scopes and the unwind codes)
+        struct HandledFunction {
+            uint32 begin, end;
+            uint64 handlerData;
+        };
+        std::vector<HandledFunction> handled;
+        std::unordered_set<uint32> functionStarts;
         for (uint32 index = 0; index < count; index++) {
             Arm64RuntimeFunction function;
             if (!data.Copy<Arm64RuntimeFunction>(start + static_cast<uint64>(index) * sizeof(Arm64RuntimeFunction), function))
@@ -492,12 +585,29 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
                 const auto xdataFa = pe->RVAToFA(function.UnwindData);
                 if (xdataFa != PE_INVALID_ADDRESS && data.Copy<uint32>(xdataFa, header))
                     length = static_cast<uint64>(header & 0x3FFFF) * lengthUnit;
+                // the header: the function length (18 bits), the version (2), X (a handler), E (one epilog in the header), the epilog
+                // count (5), the code words (5); both 0: an extension word (the epilog count 16 bits, the code words 8)
+                uint32 epilogs = (header >> 22) & 0x1F, codeWords = header >> 27, extension = 0;
+                uint64 position = xdataFa + 4;
+                if (epilogs == 0 && codeWords == 0 && data.Copy<uint32>(position, extension)) {
+                    epilogs   = extension & 0xFFFF;
+                    codeWords = (extension >> 16) & 0xFF;
+                    position += 4;
+                }
+                if (machine == PE::MachineType::ARM64 && xdataFa != PE_INVALID_ADDRESS && ((header >> 20) & 1) && length > 0) {
+                    const uint64 codes = position + (((header >> 21) & 1) ? 0 : 4ull * epilogs);
+                    handled.push_back({ function.BeginAddress, function.BeginAddress + static_cast<uint32>(length), codes + 4ull * codeWords + 4 });
+                }
             } else
                 continue; // 3: a reserved form
             const auto fa = pe->RVAToFA(function.BeginAddress & ~1u);
             if (fa != PE_INVALID_ADDRESS)
                 settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, length);
+            functionStarts.insert(function.BeginAddress & ~1u);
         }
+        // the scope tables of __C_specific_handler, the FuncInfo of the C++ exception handling (as x64; no frame register in the data)
+        for (const auto& function : handled)
+            AddFunctionExceptionData(settings, pe, data, function.begin, function.end, function.handlerData, functionStarts, 0, 0, 0, true);
     }
     // x64 exception data (.pdata): a RUNTIME_FUNCTION for nearly every function that is not a leaf, with its size
     else if (pe->hdr64) {
@@ -598,16 +708,7 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
                 settings.AddFunctionChunk(fa, chunk.end - chunk.begin, functionFa, primaries[chunk.function].prologSize);
         }
 
-        // the scope tables of __C_specific_handler (the language specific data after the handler RVA): a count, then the scopes
-        // { begin, end, handler, target } (RVAs); the data of another handler (C++ FuncInfo, the GS cookie) fails the checks: every scope
-        // inside the function, its handler EXCEPTION_EXECUTE_HANDLER (1) or a funclet of .pdata, its target 0 (__finally) or in the function
-        struct ScopeRecord {
-            uint32 BeginAddress;
-            uint32 EndAddress;
-            uint32 HandlerAddress;
-            uint32 JumpTarget;
-        };
-        constexpr uint32 MAX_SCOPES = 64;
+        // the language specific data of the functions with a handler: the scope tables of __C_specific_handler, the FuncInfo of C++
         for (const auto& function : handled) {
             const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
             struct UnwindHeader {
@@ -616,39 +717,8 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             if (!data.Copy<UnwindHeader>(unwindInfo, header))
                 continue;
             const uint64 handlerData = unwindInfo + 4 + 2ull * ((header.codeCount + 1u) & ~1u) + 4; // the codes (an even count), the handler RVA
-            const auto fa            = pe->RVAToFA(function.BeginAddress);
-            uint32 scopeCount        = 0;
-            if (fa == PE_INVALID_ADDRESS || !data.Copy<uint32>(handlerData, scopeCount))
-                continue;
-            std::vector<DissasmViewer::ExceptionScope> scopes;
-            bool valid = scopeCount > 0 && scopeCount <= MAX_SCOPES;
-            for (uint32 index = 0; index < scopeCount && valid; index++) {
-                ScopeRecord scope;
-                if (!data.Copy<ScopeRecord>(handlerData + 4 + static_cast<uint64>(index) * sizeof(ScopeRecord), scope)) {
-                    valid = false;
-                    break;
-                }
-                valid = scope.BeginAddress >= function.BeginAddress && scope.BeginAddress < scope.EndAddress && scope.EndAddress <= function.EndAddress + 1 &&
-                        (scope.HandlerAddress == 1 || functionStarts.contains(scope.HandlerAddress)) &&
-                        (scope.JumpTarget == 0 ? scope.HandlerAddress != 1 : scope.JumpTarget >= function.BeginAddress && scope.JumpTarget < function.EndAddress);
-                if (!valid)
-                    break;
-                const auto begin   = pe->RVAToFA(scope.BeginAddress);
-                const auto end     = pe->RVAToFA(scope.EndAddress - 1);
-                const auto handler = scope.HandlerAddress == 1 ? 0 : pe->RVAToFA(scope.HandlerAddress);
-                const auto target  = scope.JumpTarget == 0 ? 0 : pe->RVAToFA(scope.JumpTarget);
-                valid = begin != PE_INVALID_ADDRESS && end != PE_INVALID_ADDRESS && handler != PE_INVALID_ADDRESS && target != PE_INVALID_ADDRESS;
-                if (valid)
-                    scopes.push_back({ begin, end + 1, handler, target });
-            }
-            if (valid) {
-                settings.AddExceptionScopes(fa, header.prologSize, header.frame & 0xF, header.frame >> 4, scopes);
-                continue;
-            }
-            // not a scope table: the C++ exception handling (the same word is the RVA of its FuncInfo)
-            std::vector<DissasmViewer::ExceptionFunclet> funclets;
-            if (ReadCppExceptionFunclets(pe, data, function.BeginAddress, function.EndAddress, scopeCount, functionStarts, funclets))
-                settings.AddExceptionFunclets(fa, header.prologSize, header.frame & 0xF, header.frame >> 4, funclets);
+            AddFunctionExceptionData(
+                  settings, pe, data, function.BeginAddress, function.EndAddress, handlerData, functionStarts, header.prologSize, header.frame & 0xF, header.frame >> 4, false);
         }
     }
 

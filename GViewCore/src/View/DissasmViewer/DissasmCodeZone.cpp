@@ -1,6 +1,7 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmAnnotations.hpp"
 #include "DissasmFunctionUtils.hpp"
+#include "DissasmRtti.hpp"
 #include "x86_x64/DissasmX86LocalVariables.hpp"
 #include "x86_x64/X86InstructionInfo.hpp"
 #include "x86_x64/X86SwitchTables.hpp"
@@ -174,9 +175,27 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the instruction set of the zone and the tables found by the previous sweeps; the lines counted with them
     DissasmInstructionSet instructionSet;
     std::vector<DissasmInstructionSet::DataRange> pendingRanges; // found by this sweep, not yet data lines
-    // 32 bit: the immediates of the code that are addresses of the code zone (push offset X / mov eax, offset X): the exception tables of
-    // MSVC among them (AddExceptionData), relative
-    std::vector<uint64> exceptionTableCandidates;
+    // 32 bit: the immediates of the code that are addresses of the code zone (push offset X / mov eax, offset X) and their instruction:
+    // the exception tables of MSVC among them (AddExceptionData), the __ehhandler stubs (MarkX86ExceptionScopes); relative
+    std::vector<std::pair<uint64, uint64>> exceptionTableCandidates;
+    // 32 bit: the exception tables AddExceptionData read (the last sweep), by relative address: the records of the SEH4 scope tables, the
+    // FuncInfo of the C++ exception handling (the parent state of every state and its unwind action, the try blocks and their catch blocks)
+    struct X86ScopeRecord {
+        int32 enclosing;
+        uint32 filter;  // 0: __finally, 1: EXCEPTION_EXECUTE_HANDLER, else the VA of the filter
+        uint64 handler; // the __except / __finally block
+    };
+    struct X86TryBlock {
+        int32 low, high;
+        std::vector<std::pair<uint64, std::string>> catches; // the catch block (NO_TARGET: not in the zone), the type it takes
+    };
+    struct X86FuncInfo {
+        std::vector<int32> parentStates;
+        std::vector<uint64> actions; // NO_TARGET: none
+        std::vector<X86TryBlock> tryBlocks;
+    };
+    std::map<uint64, std::vector<X86ScopeRecord>> x86ScopeTables;
+    std::map<uint64, X86FuncInfo> x86FuncInfos;
     std::unordered_map<uint64, std::string> exceptionFieldNames; // the fields of the exception tables: DissasmCodeZone::fieldNames
     std::unique_ptr<DissasmLineCounter> recounter;
     std::vector<AsmOffsetLine> recountedOffsets;
@@ -611,7 +630,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
 
     // the scope table of SEH4 (_EH4_SCOPETABLE, the operand of push before __SEH_prolog4): the GS and EH cookie offsets (-2: none, else a
     // negative offset from ebp), then the records { EnclosingLevel (-2 for the first), FilterFunc (0: __finally), HandlerFunc } of the code
-    bool ReadScopeTable(uint64 table, std::vector<ExceptionField>& fields)
+    bool ReadScopeTable(uint64 table, std::vector<ExceptionField>& fields, std::vector<X86ScopeRecord>& parsed)
     {
         constexpr uint32 MAX_RECORDS = 64;
         const auto isCookieOffset = [](std::optional<uint32> value) {
@@ -638,6 +657,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             found.push_back({ record, 4, false, prefix + "EnclosingLevel" });
             found.push_back({ record + 4, 4, filter.value() > 1, prefix + "FilterFunc" });
             found.push_back({ record + 8, 4, true, prefix + "HandlerFunc" });
+            parsed.push_back({ static_cast<int32>(level.value()), filter.value(), handlerAddress.value() });
         }
         if (records == 0)
             return false;
@@ -645,11 +665,37 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return true;
     }
 
+    // the type a catch takes: its TypeDescriptor (x86: pVFTable, spare, then the name: .?AVbad_alloc@std@@) with the adjectives (const, a
+    // reference); "..." for all
+    std::string CatchTypeName(uint32 adjectives, uint32 type)
+    {
+        constexpr uint32 HT_IS_CONST = 1, HT_IS_REFERENCE = 8, HT_IS_STD_DOT_DOT = 0x40, MAX_NAME = 256;
+        if (type == 0 || (adjectives & HT_IS_STD_DOT_DOT))
+            return "...";
+        const auto offset = addressToFileOffset ? addressToFileOffset(static_cast<uint64>(type) + 8) : std::nullopt;
+        std::string name;
+        for (uint32 index = 0; offset.has_value() && index < MAX_NAME; index++) {
+            uint8 c = 0;
+            if (!obj->GetData().Copy<uint8>(offset.value() + index, c) || c == 0)
+                break;
+            if (c < 0x20 || c > 0x7E)
+                return "?";
+            name.push_back(static_cast<char>(c));
+        }
+        if (name.empty())
+            return "?";
+        std::string text = (adjectives & HT_IS_CONST) ? "const " : "";
+        text += DemangleMsvcTypeName(name);
+        if (adjectives & HT_IS_REFERENCE)
+            text += " &";
+        return text;
+    }
+
     // the FuncInfo of the C++ exception handling (mov eax, offset FuncInfo; jmp __CxxFrameHandler3): its magic, then the maps it points to
     // in the code zone: the unwind map { toState, action }, the try blocks { tryLow, tryHigh, catchHigh, nCatches, pHandlerArray } and
     // their handlers { adjectives, pType, dispCatchObj, addressOfHandler }. The unwind actions are funclets (functions of .text$x after
     // the code: lea ecx, [ebp - 0x18]; jmp dtor); the catch blocks are code of their function (they return the address where it goes on)
-    bool ReadFuncInfo(uint64 table, std::vector<ExceptionField>& fields, std::vector<uint64>& funclets, std::vector<uint64>& tables)
+    bool ReadFuncInfo(uint64 table, std::vector<ExceptionField>& fields, std::vector<uint64>& funclets, std::vector<uint64>& tables, X86FuncInfo& parsed)
     {
         constexpr uint32 MAX_STATES = 0x1000, MAX_TRY_BLOCKS = 0x100, MAX_CATCHES = 64;
         const auto magic = ReadCodeDword(table);
@@ -675,8 +721,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             for (uint32 state = 0; state < maxState.value(); state++) {
                 const uint64 entry = map.value() + 8ull * state;
                 const auto action  = ReadCodeDword(entry + 4);
-                if (!action.has_value() || !ReadCodeDword(entry).has_value())
+                const auto parent  = ReadCodeDword(entry);
+                if (!action.has_value() || !parent.has_value())
                     return false;
+                parsed.parentStates.push_back(static_cast<int32>(parent.value()));
+                parsed.actions.push_back(action.value() != 0 ? CodeAddressOf(action.value()).value_or(NO_TARGET) : NO_TARGET);
                 const std::string prefix = "UnwindMap[" + std::to_string(state) + "].";
                 found.push_back({ entry, 4, false, prefix + "toState" });
                 found.push_back({ entry + 4, 4, action.value() != 0, prefix + "action" });
@@ -693,6 +742,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 const auto handlers  = ReadCodeDword(entry + 16);
                 if (!catches.has_value() || catches.value() > MAX_CATCHES || !handlers.has_value())
                     return false;
+                const auto low = ReadCodeDword(entry), high = ReadCodeDword(entry + 4);
+                if (!low.has_value() || !high.has_value())
+                    return false;
+                X86TryBlock block{ static_cast<int32>(low.value()), static_cast<int32>(high.value()), {} };
                 const std::string prefix = "TryBlockMap[" + std::to_string(index) + "].";
                 found.push_back({ entry, 4, false, prefix + "tryLow" });
                 found.push_back({ entry + 4, 4, false, prefix + "tryHigh" });
@@ -700,20 +753,25 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 found.push_back({ entry + 12, 4, false, prefix + "nCatches" });
                 found.push_back({ entry + 16, 4, true, prefix + "pHandlerArray" });
                 const auto array = catches.value() > 0 ? CodeAddressOf(handlers.value()) : std::nullopt;
-                if (!array.has_value())
+                if (!array.has_value()) {
+                    parsed.tryBlocks.push_back(std::move(block));
                     continue;
+                }
                 tables.push_back(array.value());
                 for (uint32 handler = 0; handler < catches.value(); handler++) {
                     const uint64 type    = array.value() + 16ull * handler;
                     const auto address   = ReadCodeDword(type + 12);
                     if (!address.has_value())
                         return false;
+                    block.catches.emplace_back(CodeAddressOf(address.value()).value_or(NO_TARGET),
+                                               CatchTypeName(ReadCodeDword(type).value_or(0), ReadCodeDword(type + 4).value_or(0)));
                     const std::string name = "HandlerType[" + std::to_string(handler) + "].";
                     found.push_back({ type, 4, false, name + "adjectives" });
                     found.push_back({ type + 4, 4, true, name + "pType" });
                     found.push_back({ type + 8, 4, false, name + "dispCatchObj" });
                     found.push_back({ type + 12, 4, true, name + "addressOfHandler" });
                 }
+                parsed.tryBlocks.push_back(std::move(block));
             }
         }
         fields.insert(fields.end(), found.begin(), found.end());
@@ -728,15 +786,30 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     void AddExceptionData()
     {
         exceptionFieldNames.clear();
+        x86ScopeTables.clear();
+        x86FuncInfos.clear();
         if (exceptionTableCandidates.empty())
             return;
         std::sort(exceptionTableCandidates.begin(), exceptionTableCandidates.end());
         exceptionTableCandidates.erase(std::unique(exceptionTableCandidates.begin(), exceptionTableCandidates.end()), exceptionTableCandidates.end());
         std::vector<ExceptionField> fields;
         std::vector<uint64> funclets, tables;
-        for (const uint64 candidate : exceptionTableCandidates)
-            if (ReadFuncInfo(candidate, fields, funclets, tables) || ReadScopeTable(candidate, fields))
+        std::map<uint64, std::vector<X86ScopeRecord>> scopeTables;
+        std::map<uint64, X86FuncInfo> funcInfos;
+        for (size_t index = 0; index < exceptionTableCandidates.size(); index++) {
+            const uint64 candidate = exceptionTableCandidates[index].first;
+            if (((labelBase + candidate) & 3) != 0 || (index > 0 && exceptionTableCandidates[index - 1].first == candidate))
+                continue; // a table is aligned on 4; once
+            X86FuncInfo info;
+            std::vector<X86ScopeRecord> records;
+            if (ReadFuncInfo(candidate, fields, funclets, tables, info)) {
                 tables.push_back(candidate);
+                funcInfos.emplace(candidate, std::move(info));
+            } else if (ReadScopeTable(candidate, fields, records)) {
+                tables.push_back(candidate);
+                scopeTables.emplace(candidate, std::move(records));
+            }
+        }
         if (tables.empty())
             return;
         std::sort(tables.begin(), tables.end());
@@ -796,6 +869,264 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         for (const uint64 funclet : funclets)
             if (funclet < first)
                 AddTakenCodeAddress(funclet);
+        // the blocks the tables point to in the code (reached by the unwinding only): the __except / __finally blocks, the filters, the
+        // catch blocks; a label each (IDA: loc_)
+        const auto addBlockLabel = [this, first](uint64 address) {
+            if (address < first && address < blockStarts.size() && blockStarts[address] && callsMap.insert({ codeStart + address, true }).second)
+                callsFound.emplace_back(codeStart + address, zone->GetLabelName("loc_", address));
+        };
+        for (const auto& [table, records] : scopeTables)
+            for (const auto& record : records) {
+                addBlockLabel(record.handler);
+                if (const auto filter = record.filter > 1 ? CodeAddressOf(record.filter) : std::nullopt; filter.has_value())
+                    addBlockLabel(filter.value());
+            }
+        for (const auto& [table, info] : funcInfos)
+            for (const auto& block : info.tryBlocks)
+                for (const auto& [handler, type] : block.catches)
+                    if (handler != NO_TARGET)
+                        addBlockLabel(handler);
+        x86ScopeTables = std::move(scopeTables);
+        x86FuncInfos   = std::move(funcInfos);
+    }
+
+    // a mark of an exception scope on an instruction (relative), not twice the same one
+    void AddExceptionMark(uint64 address, const DissasmCodeZone::ExceptionMark& mark)
+    {
+        auto& marks = exceptionMarks[address];
+        if (std::none_of(marks.begin(), marks.end(), [&mark](const auto& other) {
+                return other.kind == mark.kind && other.begin == mark.begin && other.handler == mark.handler && other.target == mark.target &&
+                       other.catchType == mark.catchType;
+            }))
+            marks.push_back(mark);
+    }
+
+    // 32 bit MSVC: the scopes of the exception tables (AddExceptionData) marked in their function, as 7o / 7p for x64. The try level of
+    // SEH4 and the state of the C++ exception handling are stored in [ebp - 4] (mov dword ptr [ebp - 4], 0 / and [ebp - 4], 0 / or
+    // [ebp - 4], -1): in the order of the addresses, a scope begins at the store that enters it (__try { / try {), ends at the one that
+    // leaves it (} // starts at); its handlers are marked (__except(filter) / __finally / the filter / catch(type), owned by its first
+    // begin). The function of a scope table pushes it (push offset stru; call __SEH_prolog4); the one of a FuncInfo refers to its
+    // __ehhandler stub (mov eax, offset stub; call __EH_prolog3), the stub to the FuncInfo. The unwind funclets are named after the
+    // function (sub_X$dtor$N, as MSVC's symbols)
+    void MarkX86ExceptionScopes()
+    {
+        if (x86ScopeTables.empty() && x86FuncInfos.empty())
+            return;
+        if (functionEnds.size() != functionStarts.size())
+            return;
+        const auto functionOf = [this](uint64 address) -> std::optional<size_t> {
+            const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), address);
+            if (next == functionStarts.begin())
+                return std::nullopt;
+            const size_t index = static_cast<size_t>(next - functionStarts.begin()) - 1;
+            return address < functionEnds[index] ? std::optional<size_t>(index) : std::nullopt;
+        };
+        csh decoder         = detailHandle;
+        const bool ownsHandle = !hasDetailHandle;
+        if (ownsHandle) {
+            if (cs_open(zone->capstoneArch, static_cast<cs_mode>(internalArchitecture), &decoder) != CS_ERR_OK)
+                return;
+            if (cs_option(decoder, CS_OPT_DETAIL, CS_OPT_ON) != CS_ERR_OK) {
+                cs_close(&decoder);
+                return;
+            }
+        }
+        cs_insn* decoded = cs_malloc(decoder);
+        // the stores of [ebp - 4] of a function: their address, the value
+        const auto storesOf = [&](size_t function) {
+            std::vector<std::pair<uint64, int32>> stores;
+            const uint64 start = functionStarts[function], end = std::min(functionEnds[function], codeSize);
+            if (end <= start || !decoded)
+                return stores;
+            const auto bytes = obj->GetData().CopyToBuffer(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, DISSASM_MAX_ANALYZED_FUNCTION_SIZE)), false);
+            const uint8* data = bytes.GetData();
+            size_t size       = bytes.IsValid() ? bytes.GetLength() : 0;
+            uint64 address    = start;
+            // the constants in the registers (xor ebx, ebx; ...; mov [ebp - 4], ebx), by register family; in the order of the addresses
+            std::unordered_map<int, int32> constants;
+            while (size > 0 && cs_disasm_iter(decoder, &data, &size, &address, decoded)) {
+                const cs_x86& x86   = decoded->detail->x86;
+                // the state of the C++ exception handling is a byte when the states fit (mov byte ptr [ebp - 4], 2)
+                const bool toLevel  = x86.op_count == 2 && x86.operands[0].type == X86_OP_MEM && x86.operands[0].mem.base == X86_REG_EBP &&
+                                     x86.operands[0].mem.index == X86_REG_INVALID && x86.operands[0].mem.disp == -4 &&
+                                     (x86.operands[0].size == 4 || x86.operands[0].size == 1);
+                if (toLevel && x86.operands[1].type == X86_OP_IMM) {
+                    const auto value = x86.operands[0].size == 1 ? static_cast<int32>(static_cast<int8>(x86.operands[1].imm)) : static_cast<int32>(x86.operands[1].imm);
+                    if (decoded->id == X86_INS_MOV || (decoded->id == X86_INS_AND && value == 0) || (decoded->id == X86_INS_OR && value == -1))
+                        stores.emplace_back(decoded->address, value);
+                } else if (toLevel && decoded->id == X86_INS_MOV && x86.operands[1].type == X86_OP_REG) {
+                    if (const auto known = constants.find(GetX64RegisterFamily(x86.operands[1].reg)); known != constants.end())
+                        stores.emplace_back(decoded->address, x86.operands[0].size == 1 ? static_cast<int32>(static_cast<int8>(known->second)) : known->second);
+                }
+                // the registers written: their constant (xor r, r / mov r, imm / or r, -1) or none; a call: eax, ecx, edx
+                const bool writesRegister = x86.op_count >= 1 && x86.operands[0].type == X86_OP_REG && (x86.operands[0].access & CS_AC_WRITE);
+                const int family          = writesRegister ? GetX64RegisterFamily(x86.operands[0].reg) : -1;
+                std::optional<int32> constant;
+                if (writesRegister && x86.op_count == 2 && decoded->id == X86_INS_XOR && x86.operands[1].type == X86_OP_REG && x86.operands[1].reg == x86.operands[0].reg)
+                    constant = 0;
+                else if (writesRegister && x86.op_count == 2 && decoded->id == X86_INS_MOV && x86.operands[1].type == X86_OP_IMM)
+                    constant = static_cast<int32>(x86.operands[1].imm);
+                else if (writesRegister && x86.op_count == 2 && decoded->id == X86_INS_OR && x86.operands[1].type == X86_OP_IMM && static_cast<int32>(x86.operands[1].imm) == -1)
+                    constant = -1;
+                for (uint8 index = 0; index < x86.op_count; index++)
+                    if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                        constants.erase(GetX64RegisterFamily(x86.operands[index].reg));
+                for (uint8 index = 0; index < decoded->detail->regs_write_count; index++)
+                    constants.erase(GetX64RegisterFamily(decoded->detail->regs_write[index]));
+                if (decoded->id == X86_INS_CALL)
+                    for (const x86_reg reg : { X86_REG_EAX, X86_REG_ECX, X86_REG_EDX })
+                        constants.erase(GetX64RegisterFamily(reg));
+                if (constant.has_value() && family >= 0)
+                    constants[family] = constant.value();
+            }
+            return stores;
+        };
+        // the scopes of a function along its stores: begin(scope, address) / end(scope, address) where the scopes containing the level change
+        const auto walk = [](const std::vector<std::pair<uint64, int32>>& stores, int32 initial, const std::function<std::vector<int32>(int32)>& scopesOf,
+                             const std::function<void(int32, uint64)>& begin, const std::function<void(int32, uint64)>& end) {
+            int32 current = initial;
+            for (const auto& [address, value] : stores) {
+                if (value == current)
+                    continue;
+                const auto before = scopesOf(current), after = scopesOf(value);
+                for (const int32 scope : before)
+                    if (std::find(after.begin(), after.end(), scope) == after.end())
+                        end(scope, address);
+                for (const int32 scope : after)
+                    if (std::find(before.begin(), before.end(), scope) == before.end())
+                        begin(scope, address);
+                current = value;
+            }
+        };
+        using Mark = DissasmCodeZone::ExceptionMark;
+        constexpr uint32 MAX_DEPTH = 64;
+        // SEH4: the function that pushes the scope table
+        std::set<uint64> markedTables;
+        for (const auto& [value, from] : exceptionTableCandidates) {
+            const auto table = x86ScopeTables.find(value);
+            const auto function = functionOf(from);
+            if (table == x86ScopeTables.end() || !function.has_value() || !markedTables.insert(value).second)
+                continue;
+            const auto& records = table->second;
+            const auto scopesOf = [&records](int32 level) {
+                std::vector<int32> chain;
+                for (uint32 depth = 0; depth < MAX_DEPTH && level >= 0 && static_cast<size_t>(level) < records.size(); depth++) {
+                    chain.push_back(level);
+                    level = records[level].enclosing;
+                }
+                return chain;
+            };
+            std::map<int32, uint64> firstBegin;
+            const auto scopeMark = [&](int32 level, Mark::Kind kind, uint64 begin) {
+                const auto& record = records[level];
+                Mark mark{ kind, begin, std::nullopt, std::nullopt, {}, true };
+                if (record.filter == 0)
+                    mark.handler = record.handler; // __finally
+                else {
+                    mark.target = record.handler;
+                    if (record.filter > 1)
+                        mark.handler = CodeAddressOf(record.filter);
+                }
+                return mark;
+            };
+            walk(
+                  storesOf(function.value()),
+                  -2,
+                  scopesOf,
+                  [&](int32 level, uint64 address) {
+                      firstBegin.emplace(level, address);
+                      AddExceptionMark(address, scopeMark(level, Mark::Kind::TryBegin, address));
+                  },
+                  [&](int32 level, uint64 address) {
+                      const auto begin = firstBegin.find(level);
+                      AddExceptionMark(address, Mark{ Mark::Kind::TryEnd, begin != firstBegin.end() ? begin->second : address, std::nullopt, std::nullopt, {}, true });
+                  });
+            for (int32 level = 0; static_cast<size_t>(level) < records.size(); level++) {
+                const auto begin = firstBegin.find(level);
+                auto mark        = scopeMark(level, records[level].filter == 0 ? Mark::Kind::Finally : Mark::Kind::Except, begin != firstBegin.end() ? begin->second : 0);
+                mark.owned       = begin != firstBegin.end();
+                AddExceptionMark(records[level].handler, mark);
+                if (const auto filter = records[level].filter > 1 ? CodeAddressOf(records[level].filter) : std::nullopt; filter.has_value()) {
+                    mark.kind = Mark::Kind::Filter;
+                    AddExceptionMark(filter.value(), mark);
+                }
+            }
+        }
+        // C++: the stub that loads the FuncInfo, the function that refers to the stub
+        std::unordered_set<std::string> usedNames;
+        for (const auto& call : callsFound)
+            usedNames.insert(call.second);
+        const auto labelOf = [this](uint64 fileOffset) -> std::pair<uint64, std::string>* {
+            const auto call = std::lower_bound(
+                  callsFound.begin(), callsFound.end(), fileOffset, [](const auto& item, uint64 value) { return item.first < value; });
+            return call != callsFound.end() && call->first == fileOffset ? &*call : nullptr;
+        };
+        std::set<uint64> markedFuncInfos;
+        for (const auto& [value, from] : exceptionTableCandidates) {
+            const auto info = x86FuncInfos.find(value);
+            const auto stub = functionOf(from);
+            if (info == x86FuncInfos.end() || !stub.has_value() || !markedFuncInfos.insert(value).second)
+                continue;
+            const uint64 stubStart = functionStarts[stub.value()];
+            std::optional<size_t> parent;
+            for (const auto& [reference, referenceFrom] : exceptionTableCandidates)
+                if (reference == stubStart)
+                    if (const auto function = functionOf(referenceFrom); function.has_value() && function.value() != stub.value()) {
+                        parent = function;
+                        break;
+                    }
+            if (!parent.has_value())
+                continue;
+            const auto& tryBlocks = info->second.tryBlocks;
+            const auto scopesOf   = [&tryBlocks](int32 state) {
+                std::vector<int32> blocks;
+                for (size_t index = 0; index < tryBlocks.size(); index++)
+                    if (state >= tryBlocks[index].low && state <= tryBlocks[index].high)
+                        blocks.push_back(static_cast<int32>(index));
+                return blocks;
+            };
+            std::map<int32, uint64> firstBegin;
+            walk(
+                  storesOf(parent.value()),
+                  -1,
+                  scopesOf,
+                  [&](int32 block, uint64 address) {
+                      firstBegin.emplace(block, address);
+                      AddExceptionMark(address, Mark{ Mark::Kind::CppTryBegin, address, std::nullopt, std::nullopt, {}, true });
+                  },
+                  [&](int32 block, uint64 address) {
+                      const auto begin = firstBegin.find(block);
+                      AddExceptionMark(address, Mark{ Mark::Kind::TryEnd, begin != firstBegin.end() ? begin->second : address, std::nullopt, std::nullopt, {}, true });
+                  });
+            for (size_t index = 0; index < tryBlocks.size(); index++) {
+                const auto begin = firstBegin.find(static_cast<int32>(index));
+                for (const auto& [handler, type] : tryBlocks[index].catches)
+                    if (handler != NO_TARGET)
+                        AddExceptionMark(handler, Mark{ Mark::Kind::Catch, begin != firstBegin.end() ? begin->second : 0, std::nullopt, std::nullopt, type,
+                                                        begin != firstBegin.end() });
+            }
+            // the unwind funclets: sub_X$dtor$N (once each, not over a name of the plugin)
+            const auto* parentLabel = labelOf(codeStart + functionStarts[parent.value()]);
+            if (!parentLabel)
+                continue;
+            const std::string parentName = parentLabel->second;
+            uint32 unwinds               = 0;
+            std::set<uint64> named;
+            for (const uint64 action : info->second.actions) {
+                if (action == NO_TARGET || !named.insert(action).second)
+                    continue;
+                auto* funclet = labelOf(codeStart + action);
+                if (!funclet || GetLabelType(funclet->second) != SUB || (functionEntries && functionEntries->contains(codeStart + action)))
+                    continue;
+                std::string name = parentName + "$dtor$" + std::to_string(unwinds++);
+                if (usedNames.insert(name).second)
+                    funclet->second = std::move(name);
+            }
+        }
+        if (decoded)
+            cs_free(decoded, 1);
+        if (ownsHandle)
+            cs_close(&decoder);
     }
 
     // a value of a jump table (1, 2, 4 or 8 bytes) at an address of the labels
@@ -1529,8 +1860,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                                        (insn->detail->x86.operands[0].reg == X86_REG_EAX || insn->detail->x86.operands[0].reg == X86_REG_RAX);
             for (const uint64 value : operands.immediates) // small values are counters, sizes and flags
                 if (value >= 0x10000 && value >= labelBase && value - labelBase < codeSize) {
-                    if (!is64 && (value & 3) == 0)
-                        exceptionTableCandidates.push_back(value - labelBase);
+                    if (!is64)
+                        exceptionTableCandidates.emplace_back(value - labelBase, insn->address);
                     if (toAccumulator)
                         returnedAddress = value - labelBase; // decided by the next instruction
                     else
@@ -1833,10 +2164,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // the chunks of the functions (x64 chained unwind data) as well
         if (functionEntries)
             for (auto it = functionEntries->lower_bound(codeStart); it != functionEntries->end() && it->first - codeStart < codeSize; ++it) {
-                for (const auto& scope : it->second.exceptionScopes)
+                for (const auto& scope : it->second.exceptionScopes) {
                     if (scope.target >= codeStart && scope.target - codeStart < blockStarts.size() && blockStarts[scope.target - codeStart] &&
                         callsMap.insert({ scope.target, true }).second)
                         callsFound.emplace_back(scope.target, zone->GetLabelName("loc_", scope.target - codeStart));
+                    // a handler is a function (ARM64: a filter can be a leaf function without .pdata, not a function start yet)
+                    if (scope.handler >= codeStart && scope.handler - codeStart < codeSize && callsMap.insert({ scope.handler, false }).second)
+                        callsFound.emplace_back(scope.handler, zone->GetLabelName("sub_", scope.handler - codeStart));
+                }
                 for (const auto& chunk : it->second.chunks)
                     if (chunk.first >= codeStart && chunk.first - codeStart < blockStarts.size() && blockStarts[chunk.first - codeStart] &&
                         callsMap.insert({ chunk.first, true }).second)
@@ -1906,7 +2241,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (usedNames.insert(name).second)
                     call->second = std::move(name);
             }
-            if (hasFunctionEntries && !IsArmArch(arch))
+            if (hasFunctionEntries && (!IsArmArch(arch) || arch == DissasmArch::Arm64)) // the exception data of x64 / ARM64 PE
                 CollectExceptionScopes(usedNames, namedByPlugin);
         }
 
@@ -1946,26 +2281,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     return;
                 auto* funclet           = labelOf(fileOffset);
                 const auto funcletEntry = functionEntries->find(fileOffset);
-                if (!funclet || funcletEntry == functionEntries->end())
+                if (!funclet) // ARM64: a filter can be a leaf function without .pdata (named; no frame link)
                     return;
                 if (GetLabelType(funclet->second) == SUB && !namedByPlugin.contains(fileOffset)) {
                     std::string name = parentName + std::string(kind) + std::to_string(counter++);
                     if (usedNames.insert(name).second)
                         funclet->second = std::move(name);
                 }
-                if (is64)
+                if (arch == DissasmArch::X64 && funcletEntry != functionEntries->end()) // the frame of the function: x64 (mov rbp, rdx)
                     funcletLinks.push_back(
                           { fileOffset - codeStart, it->first - codeStart, funcletEntry->second.size, entry.prologSize, entry.frameRegister, entry.frameOffset });
             };
             // a mark, not twice the same one (the ranges shared by the try blocks of a function)
-            const auto addMark = [this](uint64 address, const DissasmCodeZone::ExceptionMark& mark) {
-                auto& marks = exceptionMarks[address];
-                if (std::none_of(marks.begin(), marks.end(), [&mark](const auto& other) {
-                        return other.kind == mark.kind && other.begin == mark.begin && other.handler == mark.handler && other.target == mark.target &&
-                               other.catchType == mark.catchType;
-                    }))
-                    marks.push_back(mark);
-            };
+            const auto addMark = [this](uint64 address, const DissasmCodeZone::ExceptionMark& mark) { AddExceptionMark(address, mark); };
             // the last instruction of [begin, end) (relative): } // starts at
             const auto lastInstruction = [this](uint64 begin, uint64 end) {
                 DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, begin, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
@@ -1996,7 +2324,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         catchMark.owned = true;
                     }
                 }
-                addMark(funclet.fileOffset - codeStart, catchMark);
+                // the catch block of a try of another list without a range here (ARM64: a catch funclet has the FuncInfo of its function
+                // too): the mark of the function that has the try; an owned mark replaces the one without an owner
+                auto& marks = exceptionMarks[funclet.fileOffset - codeStart];
+                const auto sameCatch = [&catchMark](const DissasmCodeZone::ExceptionMark& mark) {
+                    return mark.kind == DissasmCodeZone::ExceptionMark::Kind::Catch && mark.catchType == catchMark.catchType;
+                };
+                if (catchMark.owned)
+                    marks.erase(std::remove_if(marks.begin(), marks.end(), [&](const auto& mark) { return sameCatch(mark) && !mark.owned; }), marks.end());
+                if (catchMark.owned || std::none_of(marks.begin(), marks.end(), sameCatch))
+                    addMark(funclet.fileOffset - codeStart, catchMark);
+                if (marks.empty())
+                    exceptionMarks.erase(funclet.fileOffset - codeStart);
                 addFunclet(funclet.fileOffset, "$catch$", catches);
             }
             for (const auto& scope : entry.exceptionScopes) {
@@ -2056,6 +2395,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     {
         constexpr uint8 UNWIND_RBP = 5; // the number of rbp in the unwind data
         const uint64 prologEnd     = link.parent + link.prologSize;
+        if (prologEnd >= parent.endAddress)
+            return std::nullopt; // the frame ends before the prologue does: its depths there are not known
         if (link.frameRegister == 0 && !parent.usesFrameRegister)
             return parent.StackDeltaAt(prologEnd);
         if (link.frameRegister == UNWIND_RBP && parent.usesFrameRegister)
@@ -2114,6 +2455,91 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             chunkFrame.variables.clear();
             chunkFrame.variablesOf = frame.startAddress;
             pendingChunkFrames.push_back(std::move(chunkFrame));
+        }
+    }
+
+    // the type of an object from its destructor: an API that frees it (PropVariantClear(&object): PROPVARIANT; CloseHandle(slot): HANDLE),
+    // a C++ destructor (X::~X: X); empty when the name does not tell
+    static std::string ObjectTypeFromDestructor(std::string_view destructor, bool isPointer)
+    {
+        static constexpr std::array<std::tuple<std::string_view, std::string_view, bool>, 13> DESTRUCTORS = { {
+              { "PropVariantClear", "PROPVARIANT", false },     { "VariantClear", "VARIANT", false },
+              { "DeleteCriticalSection", "CRITICAL_SECTION", false }, { "FreePropVariantArray", "PROPVARIANT", false },
+              { "SysFreeString", "BSTR", true },               { "CloseHandle", "HANDLE", true },
+              { "RegCloseKey", "HKEY", true },                 { "LocalFree", "HLOCAL", true },
+              { "GlobalFree", "HGLOBAL", true },               { "CoTaskMemFree", "LPVOID", true },
+              { "FreeLibrary", "HMODULE", true },              { "ILFree", "PIDLIST_ABSOLUTE", true },
+              { "DestroyIcon", "HICON", true },
+        } };
+        std::string_view name = destructor;
+        if (name.starts_with("j_"))
+            name.remove_prefix(2); // the thunk of an import
+        for (const auto& [function, type, pointer] : DESTRUCTORS)
+            if (name == function && pointer == isPointer)
+                return std::string(type);
+        // public: __cdecl wil::unique_any_t<...>::~unique_any_t<...>(void): the class before ::~
+        const auto tilde = name.find("::~");
+        if (tilde == std::string_view::npos || isPointer)
+            return {};
+        std::string_view qualified = name.substr(0, tilde);
+        int32 depth                = 0;
+        for (size_t index = qualified.size(); index > 0; index--) { // the start of the qualified name: the last space outside < >
+            const char c = qualified[index - 1];
+            depth += c == '>' ? 1 : (c == '<' ? -1 : 0);
+            if (c == ' ' && depth == 0) {
+                qualified = qualified.substr(index);
+                break;
+            }
+        }
+        return std::string(qualified);
+    }
+
+    // x64 FH4: the objects the unwinding of the function destroys (Settings::AddExceptionObjects): their slots (from the establisher
+    // frame) are variables, destroyed on unwind by their destructor (the origin of the variable), typed after it when it tells the type
+    void AddExceptionObjects(DissasmFunctionFrame& frame, const DissasmFunctionEntry& entry)
+    {
+        const FuncletLink link{ 0, frame.startAddress, 0, entry.prologSize, entry.frameRegister, entry.frameOffset };
+        const auto establisher = EstablisherFrameDelta(frame, link);
+        if (!establisher.has_value())
+            return;
+        std::vector<DissasmLocalVariable> added;
+        for (const auto& object : entry.exceptionObjects) {
+            const int64 offset = establisher.value() + object.frameOffset;
+            if (offset < INT32_MIN || offset > INT32_MAX || (offset >= 0 && offset < (frame.usesFrameRegister ? 16 : 8)))
+                continue; // the return address (and the saved rbp)
+            if (!frame.FindVariableContaining(static_cast<int32>(offset))) {
+                DissasmLocalVariable variable{ static_cast<int32>(offset), static_cast<uint16>(object.isPointer ? 8 : 0), {} };
+                FormatDefaultLocalVariableName(
+                      frame.usesFrameRegister || offset < 8 ? static_cast<int32>(offset) : static_cast<int32>(offset) + 8, true, variable.name);
+                added.push_back(std::move(variable));
+            }
+        }
+        MergeFrameVariables(frame, std::move(added));
+        for (const auto& object : entry.exceptionObjects) {
+            const int64 offset = establisher.value() + object.frameOffset;
+            auto* variable     = offset >= INT32_MIN && offset <= INT32_MAX ? frame.FindVariable(static_cast<int32>(offset)) : nullptr;
+            if (!variable)
+                continue;
+            std::string destructor;
+            if (object.destructor >= codeStart && object.destructor - codeStart < codeSize) {
+                destructor = zone->GetLabelNameAt(object.destructor - codeStart);
+                const auto call = std::lower_bound(
+                      callsFound.begin(), callsFound.end(), object.destructor, [](const auto& item, uint64 value) { return item.first < value; });
+                if (call != callsFound.end() && call->first == object.destructor)
+                    destructor = call->second; // the names of this scan (the labels are placed after)
+                if (destructor.empty())
+                    destructor = zone->GetLabelName("sub_", object.destructor - codeStart);
+            }
+            if (destructor.empty())
+                continue;
+            if (variable->origin.empty())
+                variable->origin = "destroyed on unwind by " + destructor;
+            if (const std::string type = ObjectTypeFromDestructor(destructor, object.isPointer); !type.empty() && variable->type.empty() && !variable->structure) {
+                if (const auto* structure = FindApiStructure(type, true); structure && ApplyFrameStructure(frame, *variable, structure, false))
+                    variable->type = structure->name;
+                else
+                    variable->type = type;
+            }
         }
     }
 
@@ -4015,6 +4441,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         else if (const auto inferred = inferredPrototypes.find(relativeAddress); inferred != inferredPrototypes.end())
             NameArgumentsFromPrototype(frame, inferred->second->details, functionArch, functionData.GetData(), functionData.GetLength(), relativeAddress);
         NameVariablesFromCalls(frame, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, functionArch);
+        if (functionArch == DissasmArch::X64 && functionEntries) // x64 FH4: the objects the unwinding destroys
+            if (const auto entry = functionEntries->find(callValue); entry != functionEntries->end() && !entry->second.exceptionObjects.empty())
+                AddExceptionObjects(frame, entry->second);
         // the structures the user gave (Alt+Q), over the variables and the structures of the analysis
         const auto& userStructures = zone->userVariableStructures;
         for (auto user = userStructures.lower_bound({ relativeAddress, INT32_MIN }); user != userStructures.end() && user->first.first == relativeAddress; ++user) {
@@ -4161,6 +4590,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         ComputeApiCategories();
         InferPrototypes();
         TrackComInterfaces();
+        if (!is64 && arch == DissasmArch::X86)
+            MarkX86ExceptionScopes();
         if (paddingReached && pendingRanges.empty()) {
             // the reached padding only: the lines are counted again, the instructions and the analysis stay
             recountedOffsets.clear();
@@ -6166,7 +6597,13 @@ std::string DissasmCodeZone::FormatExceptionMarks(uint64 relativeAddress) const
             text += "} // starts at " + FormatCodeAddress(mark.begin);
             break;
         case ExceptionMark::Kind::Except:
-            text += "__except(" + handler + ") // owned by " + FormatCodeAddress(mark.begin);
+            text += "__except(" + handler + ")" + (mark.owned ? " // owned by " + FormatCodeAddress(mark.begin) : std::string());
+            break;
+        case ExceptionMark::Kind::Finally:
+            text += "__finally" + (mark.owned ? " // owned by " + FormatCodeAddress(mark.begin) : std::string());
+            break;
+        case ExceptionMark::Kind::Filter:
+            text += "__except filter" + (mark.owned ? " // owned by " + FormatCodeAddress(mark.begin) : std::string());
             break;
         case ExceptionMark::Kind::CppTryBegin:
             text += "try {";

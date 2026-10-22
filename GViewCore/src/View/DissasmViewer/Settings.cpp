@@ -76,6 +76,15 @@ void Settings::AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize,
     entry.frameOffset       = frameOffset;
 }
 
+void Settings::AddExceptionObjects(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionObject>& objects)
+{
+    auto& entry            = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.exceptionObjects = objects;
+    entry.prologSize       = prologSize;
+    entry.frameRegister    = frameRegister;
+    entry.frameOffset      = frameOffset;
+}
+
 void Settings::AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize)
 {
     auto& entry      = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
