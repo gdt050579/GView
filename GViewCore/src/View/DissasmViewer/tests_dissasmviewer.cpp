@@ -9030,6 +9030,53 @@ TEST_CASE("X86StackPointerOfFrameRegisterFunctions", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000009  mov    eax, dword ptr [ebp + arg_0]").size() > 0);
 }
 
+TEST_CASE("X86ExceptionTables", "[Dissasm]Help")
+{
+    // 32 bit MSVC: the exception data after the code (.xdata$x), referred to by the immediates of the code: a scope table of SEH4 and a
+    // FuncInfo with its unwind map; data lines by field, labels stru_, the unwind funclet a function
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x401000: push ebp
+        0x8B, 0xEC,                   // 0x401001: mov ebp, esp
+        0x68, 0x40, 0x10, 0x40, 0x00, // 0x401003: push 0x401040   (the scope table)
+        0xB8, 0x60, 0x10, 0x40, 0x00, // 0x401008: mov eax, 0x401060 (the FuncInfo)
+        0x5D,                         // 0x40100d: pop ebp
+        0xC3,                         // 0x40100e: ret
+        0xCC,                         // 0x40100f
+        0x8D, 0x4D, 0xF0,             // 0x401010: lea ecx, [ebp - 0x10] (the unwind funclet)
+        0xE9, 0xE8, 0xFF, 0xFF, 0xFF, // 0x401013: jmp 0x401000
+    };
+    file.resize(0x40, 0xCC);
+    const std::vector<uint32> tables = {
+        0xFFFFFFE4, 0, 0xFFFFFF8C, 0,          // 0x401040: GSCookieOffset, GSCookieXOROffset, EHCookieOffset, EHCookieXOROffset
+        0xFFFFFFFE, 0, 0x401000,               // 0x401050: ScopeRecord[0]: EnclosingLevel, FilterFunc (__finally), HandlerFunc
+        0,                                     // 0x40105c: between the tables
+        0x19930522, 1, 0x401084, 0, 0, 0, 0, 0, 0, // 0x401060: FuncInfo (maxState 1, pUnwindMap 0x401084)
+        0xFFFFFFFF, 0x401010,                  // 0x401084: UnwindMap[0]: toState, action (the funclet)
+        0,                                     // 0x40108c
+    };
+    for (const uint32 value : tables)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x40).starts_with("stru_"));
+    REQUIRE(zone.GetLabelNameAt(0x60).starts_with("stru_"));
+    REQUIRE(zone.GetLabelNameAt(0x84).starts_with("stru_"));
+    REQUIRE(std::binary_search(zone.functionStarts.begin(), zone.functionStarts.end(), 0x10)); // the unwind funclet
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00401040  dd     0xffffffe4").find("; GSCookieOffset") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401058  dd     ").find("; ScopeRecord[0].HandlerFunc") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040105c  dd     0x00000000").size() > 0); // the dword between the tables
+    REQUIRE(FindListingLine(listing, "0x00401060  dd     0x19930522").find("; magicNumber") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401068  dd     " + zone.GetLabelNameAt(0x84)).find("; pUnwindMap") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401088  dd     " + zone.GetLabelNameAt(0x10)).find("; UnwindMap[0].action") != std::string_view::npos);
+}
+
 TEST_CASE("X86ReturnAddressSlot", "[Dissasm]Help")
 {
     // the return address of the function read from its slot (wil: _ReturnAddress()): retaddr, in a frame without a frame register (the

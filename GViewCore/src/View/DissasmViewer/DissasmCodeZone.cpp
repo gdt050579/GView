@@ -174,6 +174,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the instruction set of the zone and the tables found by the previous sweeps; the lines counted with them
     DissasmInstructionSet instructionSet;
     std::vector<DissasmInstructionSet::DataRange> pendingRanges; // found by this sweep, not yet data lines
+    // 32 bit: the immediates of the code that are addresses of the code zone (push offset X / mov eax, offset X): the exception tables of
+    // MSVC among them (AddExceptionData), relative
+    std::vector<uint64> exceptionTableCandidates;
+    std::unordered_map<uint64, std::string> exceptionFieldNames; // the fields of the exception tables: DissasmCodeZone::fieldNames
     std::unique_ptr<DissasmLineCounter> recounter;
     std::vector<AsmOffsetLine> recountedOffsets;
     bool recounted = false;
@@ -496,6 +500,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         blockStarts.assign(blockStarts.size(), false);
         tableEntries.clear();
         pendingRanges.clear();
+        exceptionTableCandidates.clear();
         paddingRuns.clear();
         previousFallsThrough = previousIsCall = false;
         previousAddress = 0;
@@ -579,6 +584,218 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         labelWalker.reset(); // the end of the code
         return {};
+    }
+
+    // a field of an exception table: relative address, size, a pointer (shown with the name of what it points to), its name
+    struct ExceptionField {
+        uint64 address;
+        uint8 size;
+        bool pointer;
+        std::string name;
+    };
+
+    // a dword of the code zone (relative address)
+    std::optional<uint32> ReadCodeDword(uint64 address)
+    {
+        uint32 value = 0;
+        if (address + 4 > codeSize || !obj->GetData().Copy<uint32>(codeStart + address, value))
+            return std::nullopt;
+        return value;
+    }
+
+    // a VA of the code zone: relative, none otherwise
+    std::optional<uint64> CodeAddressOf(uint32 value) const
+    {
+        return value >= labelBase && value - labelBase < codeSize ? std::optional<uint64>(value - labelBase) : std::nullopt;
+    }
+
+    // the scope table of SEH4 (_EH4_SCOPETABLE, the operand of push before __SEH_prolog4): the GS and EH cookie offsets (-2: none, else a
+    // negative offset from ebp), then the records { EnclosingLevel (-2 for the first), FilterFunc (0: __finally), HandlerFunc } of the code
+    bool ReadScopeTable(uint64 table, std::vector<ExceptionField>& fields)
+    {
+        constexpr uint32 MAX_RECORDS = 64;
+        const auto isCookieOffset = [](std::optional<uint32> value) {
+            return value.has_value() && (value.value() == 0xFFFFFFFE || value.value() == 0 || (value.value() >= 0xFFFF0000u));
+        };
+        std::array<std::optional<uint32>, 4> header{ ReadCodeDword(table), ReadCodeDword(table + 4), ReadCodeDword(table + 8), ReadCodeDword(table + 12) };
+        if (!isCookieOffset(header[0]) || !isCookieOffset(header[2]) || !header[1].has_value() || !header[3].has_value() || header[1].value() > 0x10000 ||
+            header[3].value() > 0x10000)
+            return false;
+        std::vector<ExceptionField> found = { { table, 4, false, "GSCookieOffset" },
+                                              { table + 4, 4, false, "GSCookieXOROffset" },
+                                              { table + 8, 4, false, "EHCookieOffset" },
+                                              { table + 12, 4, false, "EHCookieXOROffset" } };
+        uint32 records = 0;
+        for (; records < MAX_RECORDS; records++) {
+            const uint64 record = table + 16 + 12ull * records;
+            const auto level = ReadCodeDword(record), filter = ReadCodeDword(record + 4), handler = ReadCodeDword(record + 8);
+            const auto handlerAddress = handler.has_value() ? CodeAddressOf(handler.value()) : std::nullopt;
+            const auto filterAddress  = filter.has_value() && filter.value() > 1 ? CodeAddressOf(filter.value()) : std::nullopt;
+            if (!level.has_value() || !handlerAddress.has_value() || (level.value() != 0xFFFFFFFE && level.value() >= records) ||
+                (filter.value_or(2) > 1 && !filterAddress.has_value()) || (records == 0 && level.value() != 0xFFFFFFFE))
+                break;
+            const std::string prefix = "ScopeRecord[" + std::to_string(records) + "].";
+            found.push_back({ record, 4, false, prefix + "EnclosingLevel" });
+            found.push_back({ record + 4, 4, filter.value() > 1, prefix + "FilterFunc" });
+            found.push_back({ record + 8, 4, true, prefix + "HandlerFunc" });
+        }
+        if (records == 0)
+            return false;
+        fields.insert(fields.end(), found.begin(), found.end());
+        return true;
+    }
+
+    // the FuncInfo of the C++ exception handling (mov eax, offset FuncInfo; jmp __CxxFrameHandler3): its magic, then the maps it points to
+    // in the code zone: the unwind map { toState, action }, the try blocks { tryLow, tryHigh, catchHigh, nCatches, pHandlerArray } and
+    // their handlers { adjectives, pType, dispCatchObj, addressOfHandler }. The unwind actions are funclets (functions of .text$x after
+    // the code: lea ecx, [ebp - 0x18]; jmp dtor); the catch blocks are code of their function (they return the address where it goes on)
+    bool ReadFuncInfo(uint64 table, std::vector<ExceptionField>& fields, std::vector<uint64>& funclets, std::vector<uint64>& tables)
+    {
+        constexpr uint32 MAX_STATES = 0x1000, MAX_TRY_BLOCKS = 0x100, MAX_CATCHES = 64;
+        const auto magic = ReadCodeDword(table);
+        if (!magic.has_value() || (magic.value() & 0x1FFFFFFF) < 0x19930520 || (magic.value() & 0x1FFFFFFF) > 0x19930522)
+            return false;
+        const auto maxState = ReadCodeDword(table + 4), unwindMap = ReadCodeDword(table + 8), tryCount = ReadCodeDword(table + 12),
+                   tryMap = ReadCodeDword(table + 16), ipCount = ReadCodeDword(table + 20), ipMap = ReadCodeDword(table + 24);
+        if (!maxState.has_value() || maxState.value() > MAX_STATES || !tryCount.has_value() || tryCount.value() > MAX_TRY_BLOCKS || !unwindMap.has_value() ||
+            !tryMap.has_value() || !ipCount.has_value() || !ipMap.has_value())
+            return false;
+        std::vector<ExceptionField> found = { { table, 4, false, "magicNumber" },      { table + 4, 4, false, "maxState" },
+                                              { table + 8, 4, true, "pUnwindMap" },    { table + 12, 4, false, "nTryBlocks" },
+                                              { table + 16, 4, true, "pTryBlockMap" }, { table + 20, 4, false, "nIPMapEntries" },
+                                              { table + 24, 4, true, "pIPToStateMap" } };
+        const uint32 version = magic.value() & 0x1FFFFFFF;
+        if (version >= 0x19930521)
+            found.push_back({ table + 28, 4, true, "pESTypeList" });
+        if (version >= 0x19930522)
+            found.push_back({ table + 32, 4, false, "EHFlags" });
+        // the unwind map
+        if (const auto map = maxState.value() > 0 ? CodeAddressOf(unwindMap.value()) : std::nullopt; map.has_value()) {
+            tables.push_back(map.value());
+            for (uint32 state = 0; state < maxState.value(); state++) {
+                const uint64 entry = map.value() + 8ull * state;
+                const auto action  = ReadCodeDword(entry + 4);
+                if (!action.has_value() || !ReadCodeDword(entry).has_value())
+                    return false;
+                const std::string prefix = "UnwindMap[" + std::to_string(state) + "].";
+                found.push_back({ entry, 4, false, prefix + "toState" });
+                found.push_back({ entry + 4, 4, action.value() != 0, prefix + "action" });
+                if (const auto funclet = action.value() != 0 ? CodeAddressOf(action.value()) : std::nullopt; funclet.has_value())
+                    funclets.push_back(funclet.value());
+            }
+        }
+        // the try blocks and their handlers
+        if (const auto map = tryCount.value() > 0 ? CodeAddressOf(tryMap.value()) : std::nullopt; map.has_value()) {
+            tables.push_back(map.value());
+            for (uint32 index = 0; index < tryCount.value(); index++) {
+                const uint64 entry   = map.value() + 20ull * index;
+                const auto catches   = ReadCodeDword(entry + 12);
+                const auto handlers  = ReadCodeDword(entry + 16);
+                if (!catches.has_value() || catches.value() > MAX_CATCHES || !handlers.has_value())
+                    return false;
+                const std::string prefix = "TryBlockMap[" + std::to_string(index) + "].";
+                found.push_back({ entry, 4, false, prefix + "tryLow" });
+                found.push_back({ entry + 4, 4, false, prefix + "tryHigh" });
+                found.push_back({ entry + 8, 4, false, prefix + "catchHigh" });
+                found.push_back({ entry + 12, 4, false, prefix + "nCatches" });
+                found.push_back({ entry + 16, 4, true, prefix + "pHandlerArray" });
+                const auto array = catches.value() > 0 ? CodeAddressOf(handlers.value()) : std::nullopt;
+                if (!array.has_value())
+                    continue;
+                tables.push_back(array.value());
+                for (uint32 handler = 0; handler < catches.value(); handler++) {
+                    const uint64 type    = array.value() + 16ull * handler;
+                    const auto address   = ReadCodeDword(type + 12);
+                    if (!address.has_value())
+                        return false;
+                    const std::string name = "HandlerType[" + std::to_string(handler) + "].";
+                    found.push_back({ type, 4, false, name + "adjectives" });
+                    found.push_back({ type + 4, 4, true, name + "pType" });
+                    found.push_back({ type + 8, 4, false, name + "dispCatchObj" });
+                    found.push_back({ type + 12, 4, true, name + "addressOfHandler" });
+                }
+            }
+        }
+        fields.insert(fields.end(), found.begin(), found.end());
+        return true;
+    }
+
+    // 32 bit MSVC: the exception data after the code (.xdata$x: the scope tables of SEH4, the FuncInfo of the C++ exception handling and
+    // their maps), referred to by the immediates of the code; it decodes as instructions (the junk after the code). From the first table
+    // to the end of the zone: data lines, the tables by field (named, their pointers with the name of what they point to; labels stru_X),
+    // the rest dwords. Only when the code before the first table ends there (a ret / jmp and padding) and no function of the plugin is
+    // after it. The unwind funclets the tables point to are functions; the filters, the __except / catch blocks are code of their function
+    void AddExceptionData()
+    {
+        exceptionFieldNames.clear();
+        if (exceptionTableCandidates.empty())
+            return;
+        std::sort(exceptionTableCandidates.begin(), exceptionTableCandidates.end());
+        exceptionTableCandidates.erase(std::unique(exceptionTableCandidates.begin(), exceptionTableCandidates.end()), exceptionTableCandidates.end());
+        std::vector<ExceptionField> fields;
+        std::vector<uint64> funclets, tables;
+        for (const uint64 candidate : exceptionTableCandidates)
+            if (ReadFuncInfo(candidate, fields, funclets, tables) || ReadScopeTable(candidate, fields))
+                tables.push_back(candidate);
+        if (tables.empty())
+            return;
+        std::sort(tables.begin(), tables.end());
+        tables.erase(std::unique(tables.begin(), tables.end()), tables.end());
+        const uint64 first = tables.front();
+        // the code before the first table ends there: its last flow record a ret / jmp / trap, then padding (an align line is a record of
+        // an unknown flow: skipped)
+        const auto isPadding = [this](uint64 from, uint64 to) {
+            for (uint64 address = from; address < to; address++) {
+                uint8 value = 0;
+                if (!obj->GetData().Copy<uint8>(codeStart + address, value) || (value != 0xCC && value != 0x90 && value != 0))
+                    return false;
+            }
+            return true;
+        };
+        size_t before = FirstRecordAt(first);
+        while (before > 0 && flowRecords[before - 1].kind == FlowKind::Unknown && isPadding(flowRecords[before - 1].address, first))
+            before--;
+        if (before == 0)
+            return;
+        const auto& last = flowRecords[before - 1];
+        if (last.kind != FlowKind::Return && last.kind != FlowKind::Jump && last.kind != FlowKind::Trap)
+            return;
+        if (!isPadding(last.address + last.size, first))
+            return;
+        if (functionEntries)
+            for (auto it = functionEntries->lower_bound(codeStart + first); it != functionEntries->end() && it->first - codeStart < codeSize; ++it)
+                return; // a function the plugin knows after it: the tables are not at the end
+        if (zone->zoneDetails.HasEntryPoint() && zone->zoneDetails.entryPoint >= codeStart + first)
+            return;
+        // the fields, the dwords between them
+        std::sort(fields.begin(), fields.end(), [](const auto& left, const auto& right) { return left.address < right.address; });
+        uint64 position = first;
+        const auto addGap = [this](uint64 from, uint64 to) { // dwords at the addresses (VA) aligned on 4
+            const uint64 aligned = std::min(to, ((labelBase + from + 3) & ~3ull) - labelBase);
+            const uint64 end4    = std::max(aligned, ((labelBase + to) & ~3ull) - labelBase);
+            if (from < aligned)
+                AddDataCandidate(from, aligned, 1);
+            if (aligned < end4)
+                AddDataCandidate(aligned, end4, 4);
+            if (end4 < to)
+                AddDataCandidate(end4, to, 1);
+        };
+        for (const auto& field : fields) {
+            if (field.address < position || field.address + field.size > codeSize)
+                continue; // before the first table, overlapping
+            if (field.address > position)
+                addGap(position, field.address);
+            AddDataCandidate(field.address, field.address + field.size, field.size, field.pointer);
+            exceptionFieldNames[field.address] = field.name;
+            position = field.address + field.size;
+        }
+        addGap(position, codeSize);
+        for (const uint64 table : tables)
+            if (table >= first && callsMap.insert({ codeStart + table, true }).second)
+                callsFound.emplace_back(codeStart + table, zone->GetLabelName("stru_", table));
+        for (const uint64 funclet : funclets)
+            if (funclet < first)
+                AddTakenCodeAddress(funclet);
     }
 
     // a value of a jump table (1, 2, 4 or 8 bytes) at an address of the labels
@@ -1312,6 +1529,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                                        (insn->detail->x86.operands[0].reg == X86_REG_EAX || insn->detail->x86.operands[0].reg == X86_REG_RAX);
             for (const uint64 value : operands.immediates) // small values are counters, sizes and flags
                 if (value >= 0x10000 && value >= labelBase && value - labelBase < codeSize) {
+                    if (!is64 && (value & 3) == 0)
+                        exceptionTableCandidates.push_back(value - labelBase);
                     if (toAccumulator)
                         returnedAddress = value - labelBase; // decided by the next instruction
                     else
@@ -3915,6 +4134,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // reaches becomes instructions (the lines are counted again), then the labels are placed
     void EndSweep()
     {
+        if (!is64 && arch == DissasmArch::X86)
+            AddExceptionData(); // before the new tables become data lines
         InferNoReturnFunctions();
         const auto reachedBefore = instructionSet.reachablePadding;
         const bool paddingReached = passes < DISSASM_MAX_TABLE_PASSES && AddReachedPadding();
@@ -4013,6 +4234,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         LinkFuncletFrames();
         zone->localVariables.functions  = std::move(frames);
         zone->exceptionMarks            = std::move(exceptionMarks);
+        for (auto& [address, name] : exceptionFieldNames) // 32 bit: the fields of the exception tables (AddExceptionData)
+            zone->fieldNames.emplace(address, std::move(name));
         // the tables that became data lines: their entries show the names of their cases
         zone->tableEntries.clear();
         for (const auto& [entry, target] : tableEntries)

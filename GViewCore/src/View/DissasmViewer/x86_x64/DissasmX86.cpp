@@ -1046,8 +1046,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 const int64 offset = range->unit == 4 ? static_cast<int32>(value) : (range->unit == 2 ? static_cast<int16>(value) : static_cast<int64>(value));
                 value              = params.zone->labelAddressBase + insn->address + static_cast<uint64>(offset);
             }
+            // the label at the address (IDA: dd offset stru_51423C / offset loc_X), else the place in its function
             const auto target = params.zone->FindCodeZoneOfAddress(value);
-            const std::string name = target ? target->FormatCodeAddress(value - target->labelAddressBase) : FormatAddress(value);
+            std::string name  = target ? target->GetLabelNameAt(value - target->labelAddressBase) : std::string();
+            if (name.empty())
+                name = target ? target->FormatCodeAddress(value - target->labelAddressBase) : FormatAddress(value);
             SetOperands(name.c_str(), params.zone);
             if (autoComment == name) // a field named after what it points to (an export)
                 autoComment.clear();
