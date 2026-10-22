@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <set>
 #include <map>
+#include <span>
 
 using namespace GView::View::DissasmViewer;
 using GView::Utils::GStatus;
@@ -3023,7 +3024,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return {};
         };
         const auto clobberVolatile = [&]() {
-            for (const int reg : is64 ? std::initializer_list<int>{ 0, 1, 2, 8, 9, 10, 11 } : std::initializer_list<int>{ 0, 1, 2 })
+            // static arrays: the arrays of two braced lists in a ?: end with the expression, before the loop reads them
+            static constexpr int VOLATILE_X64[] = { 0, 1, 2, 8, 9, 10, 11 }, VOLATILE_X86[] = { 0, 1, 2 };
+            for (const int reg : is64 ? std::span<const int>(VOLATILE_X64) : std::span<const int>(VOLATILE_X86))
                 registers[reg] = {};
         };
 
@@ -3227,13 +3230,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return GetX64RegisterFamily(reg);
         };
         // the registers a call changes (the volatile ones of the convention)
+        static constexpr int VOLATILE_SYSTEM_V[] = { 0, 1, 2, 6, 7, 8, 9, 10, 11 }, VOLATILE_WINDOWS[] = { 0, 1, 2, 8, 9, 10, 11 };
         uint32 volatileMask = 0;
         if (isArm64)
             volatileMask = (1u << 19) - 1u; // x0 .. x18
         else if (isArm32)
             volatileMask = 0xFu | (1u << 12); // r0 .. r3, r12
         else
-            for (const int reg : systemV ? std::initializer_list<int>{ 0, 1, 2, 6, 7, 8, 9, 10, 11 } : std::initializer_list<int>{ 0, 1, 2, 8, 9, 10, 11 })
+            for (const int reg : systemV ? std::span<const int>(VOLATILE_SYSTEM_V) : std::span<const int>(VOLATILE_WINDOWS))
                 volatileMask |= 1u << reg;
 
         // the code of the function, once: what every instruction writes, its copy, its branch
