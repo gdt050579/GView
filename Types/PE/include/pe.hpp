@@ -733,6 +733,21 @@ namespace Type
             {
                 uint64 RVA;
                 FixSizeString<117> Name;
+                ImageImportDescriptor Descriptor;
+                uint64 DescriptorFileOffset;
+            };
+            struct RichHeaderEntry {
+                uint16 ProductID;
+                uint16 Build;
+                uint32 Count;
+            };
+            struct RichHeaderInformation {
+                bool Present{ false };
+                uint32 Offset{ 0 }; // file offset of the "DanS" marker
+                uint32 Size{ 0 };   // from "DanS" up to (and including) the XOR key that follows "Rich"
+                uint32 Key{ 0 };
+                uint32 ComputedChecksum{ 0 };
+                std::vector<RichHeaderEntry> Entries;
             };
             struct ImportFunctionInformation
             {
@@ -776,6 +791,7 @@ namespace Type
             std::vector<ImageDebugDirectory> debugData;
             std::vector<ImportFunctionInformation> impFunc;
             std::vector<SymbolInformation> symbols;
+            RichHeaderInformation rich;
 
             ImageTLSDirectory32 tlsDir;
             PEColors peCols;
@@ -840,6 +856,7 @@ namespace Type
             bool BuildTLS();
             bool BuildDebugData();
             bool BuildSymbols();
+            bool BuildRichHeader();
 
             // GO
             bool ParseGoData();
@@ -867,6 +884,10 @@ namespace Type
             static std::string_view ResourceIDToName(ResourceType resType);
             static std::string_view LanguageIDToName(uint32 langID);
             static std::string_view DirectoryIDToName(uint32 dirID);
+            static std::string_view RichProductIDToName(uint16 productID);
+            static std::string_view DebugTypeToName(uint32 debugType);
+            static void TimeDateStampToString(uint32 timeDateStamp, String& output);
+            bool IsReproducibleBuild() const;
 
           public:
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
@@ -1036,15 +1057,38 @@ namespace Type
                 Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ListView> list;
 
-                void AddHeader(std::string_view name);
-                void AddNumber(std::string_view name, uint32 value);
-                void AddMagic(uint8* offset, uint32 size);
-                void AddItem(std::string_view name, std::string_view value);
+                ListViewItem AddHeader(std::string_view name, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
+                ListViewItem AddNumber(std::string_view name, uint64 value, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
+                ListViewItem AddMagic(uint8* offset, uint32 size, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
+                ListViewItem AddItem(std::string_view name, std::string_view value, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
+                ListViewItem AddTimeDateStamp(std::string_view name, uint32 value, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
+                void AddFlags(
+                      std::string_view name,
+                      uint32 value,
+                      const std::pair<uint32, std::string_view>* flags,
+                      uint32 count,
+                      uint64 fileOffset,
+                      uint32 xOffset = 0);
+
+                void AddDOSHeader();
+                void AddRichHeader();
+                void AddNTHeaders();
+                void AddFileHeader();
+                void AddOptionalHeader();
+                void AddDataDirectories(uint64 fileOffset);
+                void AddSectionHeaders();
+                void AddImportDescriptors();
+                void AddExportDirectory();
+                void AddDebugDirectory();
+
+                void GoToSelectedItem();
 
               public:
                 Headers(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
 
             class GoInformation : public TabPage

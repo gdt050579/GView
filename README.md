@@ -227,6 +227,9 @@ Unfortunately, unless you entirely temporarily disable `Gatekeeper` (which would
 
 [Open GView in your browser](https://gdt050579.github.io/GView/app/GView.html). There is nothing to install, and the files you open never leave the browser tab. To run a pinned version offline, download `GView-<version>-Web-wasm32.zip` from a [release](https://github.com/gdt050579/GView/releases), unzip it and run `python serve.py GView`. Browsers do not load WebAssembly from `file://` URLs.
 
+## Similar tools:
+* [Qiew](https://github.com/mtivadar/qiew) - a reverse engineering in tool in Python
+
 ## Start contributing
 - Clone this repository using recurse submodules: 
 ```bash
