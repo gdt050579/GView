@@ -75,6 +75,11 @@ bool AnalyzeX64ChunkFrame(
       const std::vector<DissasmFunctionFrame::StackAlias>& entryAliases,
       DissasmFunctionFrame& frame,
       const X86CallNoReturn& callNoReturn = {});
+// a frame register function (push rbp; mov rbp, rsp) with its stack pointer followed (`stackFrame`: AnalyzeX86StackFrame of the same code,
+// the frame register an alias of the stack pointer there): frame.stackDeltas receives rsp - rbp, the slots of the stack pointer the frame
+// does not have become variables in the offsets of the frame register (the arguments stored for the calls, the locals of an aligned frame:
+// and esp, -8). False when the frame register is not one alias of the stack pointer for the whole function
+bool MergeStackPointerSlots(DissasmFunctionFrame& frame, DissasmFunctionFrame&& stackFrame, bool is64);
 // the variables of `variables` that no variable of `frame` covers, added to it (sorted); false when the frame has too many already
 bool MergeFrameVariables(DissasmFunctionFrame& frame, std::vector<DissasmLocalVariable>&& variables);
 

@@ -508,6 +508,33 @@ StackFrameResult AnalyzeStackPointerFrame(
                     writesStack = true;
             }
             break;
+        case X86_INS_LEAVE: { // mov rsp, rbp; pop rbp: the stack pointer of the alias, then its pop
+            // after an early epilogue (leave; ret) the code reached by a branch the walk did not see: the last frame pointer of the
+            // function (GCC keeps one); without one leave is not followed (as before: the depth unchanged)
+            const x86_reg framePointer = is64 ? X86_REG_RBP : X86_REG_EBP;
+            if (const auto* restored = aliasOf(framePointer))
+                change = restored->delta + pointerSize - delta;
+            else
+                for (auto alias = frame.stackAliases.rbegin(); alias != frame.stackAliases.rend(); ++alias)
+                    if (alias->reg == cs_reg_name(detailHandle, framePointer)) {
+                        change = alias->delta + pointerSize - delta;
+                        break;
+                    }
+            break;
+        }
+        case X86_INS_AND:
+            // and esp, -8 (the aligned frames of MSVC x86 / GCC): no change, as IDA (the alignment is not known), only while an alias keeps
+            // the stack pointer (the frame register: the epilogue restores it from there)
+            if (IsRegisterOperand(x86, 0, stackRegister)) {
+                auto mask = immediate(1);
+                if (mask.has_value() && !is64)
+                    mask = static_cast<int32>(static_cast<uint32>(mask.value())); // and esp, 0xfffffff8
+                if (mask.has_value() && mask.value() < 0 && mask.value() >= -0x1000 && (mask.value() & (-mask.value() - 1)) == 0 && !aliases.empty())
+                    change = 0;
+                else
+                    writesStack = true;
+            }
+            break;
         case X86_INS_CALL:
             if (is64 || noReturnCall)
                 break; // the callee returns with the same rsp; a callee that does not return pops nothing
@@ -677,6 +704,40 @@ bool GView::View::DissasmViewer::AnalyzeX64ChunkFrame(
     const ChunkEntry chunk{ entryDelta, &entryAliases };
     return AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, true, frame, {}, callNoReturn, 0, ambiguousPushes, &chunk) ==
            StackFrameResult::Accepted;
+}
+
+bool GView::View::DissasmViewer::MergeStackPointerSlots(DissasmFunctionFrame& frame, DissasmFunctionFrame&& stackFrame, bool is64)
+{
+    const std::string_view frameRegister = is64 ? "rbp" : "ebp";
+    const auto alias = std::find_if(stackFrame.stackAliases.begin(), stackFrame.stackAliases.end(), [frameRegister](const auto& item) {
+        return item.reg == frameRegister;
+    });
+    if (!frame.usesFrameRegister || alias == stackFrame.stackAliases.end())
+        return false;
+    const int32 base = alias->delta; // the frame register - the stack pointer of the entry
+    // the frame register of the whole function: every alias of it at the same depth (not a second mov rbp, rsp elsewhere)
+    for (const auto& other : stackFrame.stackAliases)
+        if (other.reg == frameRegister && other.delta != base)
+            return false;
+    // the walk of the stack pointer goes on after an early epilogue (the code reached by a branch): the end of the frame too
+    frame.endAddress = std::max(frame.endAddress, stackFrame.endAddress);
+    frame.stackDeltas.clear();
+    frame.stackDeltas.reserve(stackFrame.stackDeltas.size());
+    for (const auto& [address, delta] : stackFrame.stackDeltas)
+        frame.stackDeltas.emplace_back(address, delta - base);
+    const int32 pointerSize = is64 ? 8 : 4;
+    std::vector<DissasmLocalVariable> variables;
+    variables.reserve(stackFrame.variables.size());
+    for (const auto& variable : stackFrame.variables) {
+        const int32 offset = variable.frameOffset - base;
+        if (offset >= 0 && offset < 2 * pointerSize)
+            continue; // the saved frame register, the return address
+        DissasmLocalVariable converted{ offset, variable.size, {} };
+        FormatDefaultLocalVariableName(offset, is64, converted.name);
+        variables.push_back(std::move(converted));
+    }
+    MergeFrameVariables(frame, std::move(variables));
+    return true;
 }
 
 bool GView::View::DissasmViewer::MergeFrameVariables(DissasmFunctionFrame& frame, std::vector<DissasmLocalVariable>&& variables)

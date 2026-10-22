@@ -3448,7 +3448,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 return {};
             if (frame.usesFrameRegister && (base == X86_REG_RBP || base == X86_REG_EBP))
                 return static_cast<int32>(disp);
-            if (!frame.usesFrameRegister && (base == X86_REG_RSP || base == X86_REG_ESP))
+            // the stack pointer: from the one of the entry, or from the frame register (MergeStackPointerSlots)
+            if (base == X86_REG_RSP || base == X86_REG_ESP)
                 if (const auto delta = frame.StackDeltaAt(address); delta.has_value())
                     return static_cast<int32>(disp + delta.value());
             // an alias of the stack pointer (mov r11, rsp / the biased rbp of MSVC x64: lea rbp, [rsp - 0x5f])
@@ -3758,17 +3759,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                       return IsFrameHelper(static_cast<uint64>(call.detail->x86.operands[0].imm));
                   }),
                   [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
+            const auto stackPurge = is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); });
+            const auto noReturn   = [this](const cs_insn& call) { return noReturnCalls.contains(call.address); };
             if (!analyzed) // no frame register (MSVC x64, x86 FPO / GCC -O2): the slots through the stack pointer
                 analyzed = AnalyzeX86StackFrame(
-                      detailHandle,
-                      functionData.GetData(),
-                      functionData.GetLength(),
-                      relativeAddress,
-                      limit,
-                      is64,
-                      frame,
-                      is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); }),
-                      [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
+                      detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame, stackPurge, noReturn);
+            else if (frame.usesFrameRegister) {
+                // its stack pointer too: the slots through rsp / esp (the arguments stored for the calls, the locals of an aligned frame:
+                // and esp, -8; IDA: [esp+1F8h+var_1F4]) in the offsets of the frame register
+                DissasmFunctionFrame stackFrame{};
+                if (AnalyzeX86StackFrame(
+                          detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, stackFrame, stackPurge, noReturn))
+                    MergeStackPointerSlots(frame, std::move(stackFrame), is64);
+            }
         }
         bool readOtherCode = false;
         if (analyzed && functionArch == DissasmArch::X64 && funcletsOfParent.contains(relativeAddress)) {

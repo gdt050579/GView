@@ -530,10 +530,11 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         function = framed;
         variable = function->FindVariableContaining(frameOperand.frameOffset);
     } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
-               stackFunction && !stackFunction->usesFrameRegister) {
+               stackFunction && (!stackFunction->usesFrameRegister || !stackFunction->stackDeltas.empty())) {
         // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; an alias of
         // it: a copy (mov r11, rsp: [r11 - 0x28] -> [r11 + var_28]), the biased frame pointer of MSVC x64 (lea rbp, [rsp - 0x5f]:
-        // [rbp + 0xf] -> [rbp + 0x5f + var_50])
+        // [rbp + 0xf] -> [rbp + 0x5f + var_50]); a frame register function: its stack pointer from the frame register (MergeStackPointerSlots:
+        // [esp + 0x10] -> [esp + 0x200 + var_1F0])
         // a funclet of x64 SEH: rbp is the establisher frame of its function, the slots are the variables of the function
         std::optional<int32> delta;
         // a chunk of a function (its cold code): the variables of the function

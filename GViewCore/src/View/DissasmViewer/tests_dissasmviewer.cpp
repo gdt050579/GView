@@ -1542,9 +1542,14 @@ TEST_CASE("LocalVariablesStackPointerFrames", "[Dissasm]LocalVariables")
     REQUIRE(frame.stackAliases[0].start == 3);
     REQUIRE(frame.stackAliases[0].end == 0x19);
 
-    // rsp written by something else than push / pop / sub / add / lea: not followed (push rbp; mov rbp, rsp; and rsp, -0x10; ...)
+    // an aligned frame (push rbp; mov rbp, rsp; and rsp, -0x10; ...; leave): the alignment is no change (IDA) while rbp keeps rsp, leave
+    // restores it from rbp; without the frame pointer it is not followed
     const std::vector<uint8> aligned = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xE4, 0xF0, 0x89, 0x44, 0x24, 0x20, 0xC9, 0xC3 };
-    REQUIRE(!AnalyzeX86StackFrame(x64.handle, aligned.data(), aligned.size(), 0, aligned.size(), true, frame));
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, aligned.data(), aligned.size(), 0, aligned.size(), true, frame));
+    REQUIRE(frame.StackDeltaAt(0x8) == -8);
+    REQUIRE(frame.StackDeltaAt(0xd) == 0); // leave
+    const std::vector<uint8> alignedOnly = { 0x48, 0x83, 0xE4, 0xF0, 0x89, 0x44, 0x24, 0x20, 0xC3 };
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, alignedOnly.data(), alignedOnly.size(), 0, alignedOnly.size(), true, frame));
 
     // the listing: [rsp + 0x38 + var_18] (rsp + 0x38 is the rsp of the entry), [r11 + var_10]
     std::vector<uint8> file = x64StackFrameCode;
@@ -8941,6 +8946,40 @@ TEST_CASE("X64ExceptionScopes", "[Dissasm]Help")
     // the slots of the funclets through rbp: the variables of their function
     REQUIRE(FindListingLine(listing, "0x00000038  mov    eax, dword ptr [rbp + 0x38 + var_18]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000089  mov    dword ptr [rbp - 0x10 + var_4], 0").size() > 0);
+}
+
+TEST_CASE("X86StackPointerOfFrameRegisterFunctions", "[Dissasm]Help")
+{
+    // a frame register function (MSVC x86, an aligned frame): the locals through esp in the offsets of ebp (the alignment as no change)
+    std::vector<unsigned char> file = {
+        0x55,                   // 0x00: push ebp
+        0x8B, 0xEC,             // 0x01: mov ebp, esp
+        0x83, 0xE4, 0xF8,       // 0x03: and esp, -8
+        0x83, 0xEC, 0x20,       // 0x06: sub esp, 0x20           (esp: ebp - 0x20)
+        0x8B, 0x45, 0x08,       // 0x09: mov eax, dword ptr [ebp + 8]
+        0x89, 0x44, 0x24, 0x10, // 0x0c: mov dword ptr [esp + 0x10], eax (-0x10)
+        0x8D, 0x4C, 0x24, 0x18, // 0x10: lea ecx, [esp + 0x18]   (-8)
+        0x8B, 0xE5,             // 0x14: mov esp, ebp
+        0x5D,                   // 0x16: pop ebp
+        0xC3,                   // 0x17: ret
+    };
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size       = 0x200;
+    layout.entryPoint = 0x00;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->usesFrameRegister);
+    REQUIRE(frame->FindVariable(8) != nullptr);
+    REQUIRE(frame->FindVariable(-0x10) != nullptr);
+    REQUIRE(frame->FindVariable(-8) != nullptr);
+    REQUIRE(frame->StackDeltaAt(0x0c) == -0x20);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    dword ptr [esp + 0x20 + var_10], eax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000010  lea    ecx, [esp + 0x20 + var_8]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000009  mov    eax, dword ptr [ebp + arg_0]").size() > 0);
 }
 
 TEST_CASE("X64FunctionChunks", "[Dissasm]Help")
