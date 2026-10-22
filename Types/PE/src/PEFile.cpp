@@ -1,6 +1,8 @@
 #include "pe.hpp"
 #include "DigitalSignature.hpp"
 
+#include <bit>
+
 using namespace GView::Type::PE;
 
 struct CV_INFO_PDB20 {
@@ -1111,9 +1113,11 @@ bool PEFile::BuildImport()
         auto imp_name = ReadString(impD.Name, MAX_IMPORTFNC_SIZE);
         if (imp_name.empty())
             break;
-        auto& item = impDLL.emplace_back();
-        item.RVA   = impD.Name;
-        item.Name  = imp_name;
+        auto& item                = impDLL.emplace_back();
+        item.RVA                  = impD.Name;
+        item.Name                 = imp_name;
+        item.Descriptor           = impD;
+        item.DescriptorFileOffset = addr;
 
         if (BuildImportDLLFunctions(nrDLLs, &impD) == false)
             break;
@@ -1153,6 +1157,7 @@ bool PEFile::BuildDebugData()
             errList.AddError("Unable to read Debug structure from (0x%X)", (uint32) faddr);
             return false;
         }
+        debugData.push_back(imgd);
 
         if (imgd.Type == __IMAGE_DEBUG_TYPE_CODEVIEW) {
             uint32 bufSize;
@@ -1191,6 +1196,448 @@ bool PEFile::BuildDebugData()
         }
     }
     return true;
+}
+
+bool PEFile::BuildRichHeader()
+{
+    constexpr uint32 RICH_SIGNATURE       = 0x68636952U; // "Rich"
+    constexpr uint32 DANS_SIGNATURE       = 0x536E6144U; // "DanS"
+    constexpr uint32 MAX_RICH_HEADER_AREA = 0x10000U;    // the Rich header lives in the DOS stub area, right before the PE header
+
+    rich.Present          = false;
+    rich.Offset           = 0;
+    rich.Size             = 0;
+    rich.Key              = 0;
+    rich.ComputedChecksum = 0;
+    rich.Entries.clear();
+
+    const auto areaSize = static_cast<uint32>(std::min<uint64>({ (uint64) dos.e_lfanew, obj->GetData().GetSize(), (uint64) MAX_RICH_HEADER_AREA }));
+    CHECK(areaSize >= sizeof(ImageDOSHeader) + 24, false, "");
+
+    const auto buf = obj->GetData().CopyToBuffer(0, areaSize, true);
+    CHECK(buf.IsValid() && buf.GetLength() == areaSize, false, "");
+    const uint8* data = buf.GetData();
+    auto readDword    = [data](uint32 offset) {
+        uint32 value;
+        memcpy(&value, data + offset, sizeof(value));
+        return value;
+    };
+
+    // "Rich" is followed by the XOR key => it must fit 8 bytes before the end of the area
+    uint32 richOffset = 0;
+    for (uint32 poz = (areaSize - 8) & ~3U; poz >= sizeof(ImageDOSHeader); poz -= 4) {
+        if (readDword(poz) == RICH_SIGNATURE) {
+            richOffset = poz;
+            break;
+        }
+    }
+    CHECK(richOffset != 0, false, "");
+
+    const uint32 key  = readDword(richOffset + 4);
+    uint32 dansOffset = 0;
+    for (uint32 poz = richOffset - 4; poz >= sizeof(ImageDOSHeader); poz -= 4) {
+        if ((readDword(poz) ^ key) == DANS_SIGNATURE) {
+            dansOffset = poz;
+            break;
+        }
+    }
+    if (dansOffset == 0) {
+        errList.AddWarning("Rich header signature found at 0x%X, but the 'DanS' start marker is missing", richOffset);
+        return false;
+    }
+    // DanS + 3 padding dwords, followed by (CompID, Count) pairs
+    if ((richOffset < dansOffset + 16) || (((richOffset - dansOffset - 16) % 8) != 0)) {
+        errList.AddWarning("Rich header from 0x%X to 0x%X has an invalid size", dansOffset, richOffset);
+        return false;
+    }
+    for (uint32 tr = 1; tr <= 3; tr++) {
+        if ((readDword(dansOffset + tr * 4) ^ key) != 0) {
+            errList.AddWarning("Rich header padding (after 'DanS') is not zero");
+            break;
+        }
+    }
+
+    rich.Present = true;
+    rich.Offset  = dansOffset;
+    rich.Size    = richOffset + 8 - dansOffset;
+    rich.Key     = key;
+    for (uint32 poz = dansOffset + 16; poz < richOffset; poz += 8) {
+        const uint32 compID = readDword(poz) ^ key;
+        rich.Entries.push_back({ static_cast<uint16>(compID >> 16), static_cast<uint16>(compID & 0xFFFF), readDword(poz + 4) ^ key });
+    }
+
+    // checksum = offset of "DanS" + every byte before it (except e_lfanew) rotated by its position + every CompID rotated by its count
+    uint32 checksum = dansOffset;
+    for (uint32 tr = 0; tr < dansOffset; tr++) {
+        if ((tr >= offsetof(ImageDOSHeader, e_lfanew)) && (tr < offsetof(ImageDOSHeader, e_lfanew) + sizeof(dos.e_lfanew)))
+            continue;
+        checksum += std::rotl(static_cast<uint32>(data[tr]), static_cast<int>(tr & 31));
+    }
+    for (const auto& e : rich.Entries) {
+        checksum += std::rotl((static_cast<uint32>(e.ProductID) << 16) | e.Build, static_cast<int>(e.Count & 31));
+    }
+    rich.ComputedChecksum = checksum;
+    if (checksum != key) {
+        errList.AddWarning("Rich header checksum mismatch (stored: 0x%08X, computed: 0x%08X)", key, checksum);
+    }
+
+    return true;
+}
+
+// Product IDs used by the Microsoft toolchain in the Rich header (index = product ID)
+static constexpr std::string_view richProductIDNames[] = {
+    "Unknown",
+    "Import0",
+    "Linker510",
+    "Cvtomf510",
+    "Linker600",
+    "Cvtomf600",
+    "Cvtres500",
+    "Utc11_Basic",
+    "Utc11_C",
+    "Utc12_Basic",
+    "Utc12_C",
+    "Utc12_CPP",
+    "AliasObj60",
+    "VisualBasic60",
+    "Masm613",
+    "Masm710",
+    "Linker511",
+    "Cvtomf511",
+    "Masm614",
+    "Linker512",
+    "Cvtomf512",
+    "Utc12_C_Std",
+    "Utc12_CPP_Std",
+    "Utc12_C_Book",
+    "Utc12_CPP_Book",
+    "Implib700",
+    "Cvtomf700",
+    "Utc13_Basic",
+    "Utc13_C",
+    "Utc13_CPP",
+    "Linker610",
+    "Cvtomf610",
+    "Linker601",
+    "Cvtomf601",
+    "Utc12_1_Basic",
+    "Utc12_1_C",
+    "Utc12_1_CPP",
+    "Linker620",
+    "Cvtomf620",
+    "AliasObj70",
+    "Linker621",
+    "Cvtomf621",
+    "Masm615",
+    "Utc13_LTCG_C",
+    "Utc13_LTCG_CPP",
+    "Masm620",
+    "ILAsm100",
+    "Utc12_2_Basic",
+    "Utc12_2_C",
+    "Utc12_2_CPP",
+    "Utc12_2_C_Std",
+    "Utc12_2_CPP_Std",
+    "Utc12_2_C_Book",
+    "Utc12_2_CPP_Book",
+    "Implib622",
+    "Cvtomf622",
+    "Cvtres501",
+    "Utc13_C_Std",
+    "Utc13_CPP_Std",
+    "Cvtpgd1300",
+    "Linker622",
+    "Linker700",
+    "Export622",
+    "Export700",
+    "Masm700",
+    "Utc13_POGO_I_C",
+    "Utc13_POGO_I_CPP",
+    "Utc13_POGO_O_C",
+    "Utc13_POGO_O_CPP",
+    "Cvtres700",
+    "Cvtres710p",
+    "Linker710p",
+    "Cvtomf710p",
+    "Export710p",
+    "Implib710p",
+    "Masm710p",
+    "Utc1310p_C",
+    "Utc1310p_CPP",
+    "Utc1310p_C_Std",
+    "Utc1310p_CPP_Std",
+    "Utc1310p_LTCG_C",
+    "Utc1310p_LTCG_CPP",
+    "Utc1310p_POGO_I_C",
+    "Utc1310p_POGO_I_CPP",
+    "Utc1310p_POGO_O_C",
+    "Utc1310p_POGO_O_CPP",
+    "Linker624",
+    "Cvtomf624",
+    "Export624",
+    "Implib624",
+    "Linker710",
+    "Cvtomf710",
+    "Export710",
+    "Implib710",
+    "Cvtres710",
+    "Utc1310_C",
+    "Utc1310_CPP",
+    "Utc1310_C_Std",
+    "Utc1310_CPP_Std",
+    "Utc1310_LTCG_C",
+    "Utc1310_LTCG_CPP",
+    "Utc1310_POGO_I_C",
+    "Utc1310_POGO_I_CPP",
+    "Utc1310_POGO_O_C",
+    "Utc1310_POGO_O_CPP",
+    "AliasObj710",
+    "AliasObj710p",
+    "Cvtpgd1310",
+    "Cvtpgd1310p",
+    "Utc1400_C",
+    "Utc1400_CPP",
+    "Utc1400_C_Std",
+    "Utc1400_CPP_Std",
+    "Utc1400_LTCG_C",
+    "Utc1400_LTCG_CPP",
+    "Utc1400_POGO_I_C",
+    "Utc1400_POGO_I_CPP",
+    "Utc1400_POGO_O_C",
+    "Utc1400_POGO_O_CPP",
+    "Cvtpgd1400",
+    "Linker800",
+    "Cvtomf800",
+    "Export800",
+    "Implib800",
+    "Cvtres800",
+    "Masm800",
+    "AliasObj800",
+    "PhoenixPrerelease",
+    "Utc1400_CVTCIL_C",
+    "Utc1400_CVTCIL_CPP",
+    "Utc1400_LTCG_MSIL",
+    "Utc1500_C",
+    "Utc1500_CPP",
+    "Utc1500_C_Std",
+    "Utc1500_CPP_Std",
+    "Utc1500_CVTCIL_C",
+    "Utc1500_CVTCIL_CPP",
+    "Utc1500_LTCG_C",
+    "Utc1500_LTCG_CPP",
+    "Utc1500_LTCG_MSIL",
+    "Utc1500_POGO_I_C",
+    "Utc1500_POGO_I_CPP",
+    "Utc1500_POGO_O_C",
+    "Utc1500_POGO_O_CPP",
+    "Cvtpgd1500",
+    "Linker900",
+    "Export900",
+    "Implib900",
+    "Cvtres900",
+    "Masm900",
+    "AliasObj900",
+    "Resource",
+    "AliasObj1000",
+    "Cvtpgd1600",
+    "Cvtres1000",
+    "Export1000",
+    "Implib1000",
+    "Linker1000",
+    "Masm1000",
+    "Phx1600_C",
+    "Phx1600_CPP",
+    "Phx1600_CVTCIL_C",
+    "Phx1600_CVTCIL_CPP",
+    "Phx1600_LTCG_C",
+    "Phx1600_LTCG_CPP",
+    "Phx1600_LTCG_MSIL",
+    "Phx1600_POGO_I_C",
+    "Phx1600_POGO_I_CPP",
+    "Phx1600_POGO_O_C",
+    "Phx1600_POGO_O_CPP",
+    "Utc1600_C",
+    "Utc1600_CPP",
+    "Utc1600_CVTCIL_C",
+    "Utc1600_CVTCIL_CPP",
+    "Utc1600_LTCG_C",
+    "Utc1600_LTCG_CPP",
+    "Utc1600_LTCG_MSIL",
+    "Utc1600_POGO_I_C",
+    "Utc1600_POGO_I_CPP",
+    "Utc1600_POGO_O_C",
+    "Utc1600_POGO_O_CPP",
+    "AliasObj1010",
+    "Cvtpgd1610",
+    "Cvtres1010",
+    "Export1010",
+    "Implib1010",
+    "Linker1010",
+    "Masm1010",
+    "Utc1610_C",
+    "Utc1610_CPP",
+    "Utc1610_CVTCIL_C",
+    "Utc1610_CVTCIL_CPP",
+    "Utc1610_LTCG_C",
+    "Utc1610_LTCG_CPP",
+    "Utc1610_LTCG_MSIL",
+    "Utc1610_POGO_I_C",
+    "Utc1610_POGO_I_CPP",
+    "Utc1610_POGO_O_C",
+    "Utc1610_POGO_O_CPP",
+    "AliasObj1100",
+    "Cvtpgd1700",
+    "Cvtres1100",
+    "Export1100",
+    "Implib1100",
+    "Linker1100",
+    "Masm1100",
+    "Utc1700_C",
+    "Utc1700_CPP",
+    "Utc1700_CVTCIL_C",
+    "Utc1700_CVTCIL_CPP",
+    "Utc1700_LTCG_C",
+    "Utc1700_LTCG_CPP",
+    "Utc1700_LTCG_MSIL",
+    "Utc1700_POGO_I_C",
+    "Utc1700_POGO_I_CPP",
+    "Utc1700_POGO_O_C",
+    "Utc1700_POGO_O_CPP",
+    "AliasObj1200",
+    "Cvtpgd1800",
+    "Cvtres1200",
+    "Export1200",
+    "Implib1200",
+    "Linker1200",
+    "Masm1200",
+    "Utc1800_C",
+    "Utc1800_CPP",
+    "Utc1800_CVTCIL_C",
+    "Utc1800_CVTCIL_CPP",
+    "Utc1800_LTCG_C",
+    "Utc1800_LTCG_CPP",
+    "Utc1800_LTCG_MSIL",
+    "Utc1800_POGO_I_C",
+    "Utc1800_POGO_I_CPP",
+    "Utc1800_POGO_O_C",
+    "Utc1800_POGO_O_CPP",
+    "AliasObj1210",
+    "Cvtpgd1810",
+    "Cvtres1210",
+    "Export1210",
+    "Implib1210",
+    "Linker1210",
+    "Masm1210",
+    "Utc1810_C",
+    "Utc1810_CPP",
+    "Utc1810_CVTCIL_C",
+    "Utc1810_CVTCIL_CPP",
+    "Utc1810_LTCG_C",
+    "Utc1810_LTCG_CPP",
+    "Utc1810_LTCG_MSIL",
+    "Utc1810_POGO_I_C",
+    "Utc1810_POGO_I_CPP",
+    "Utc1810_POGO_O_C",
+    "Utc1810_POGO_O_CPP",
+    "AliasObj1400",
+    "Cvtpgd1900",
+    "Cvtres1400",
+    "Export1400",
+    "Implib1400",
+    "Linker1400",
+    "Masm1400",
+    "Utc1900_C",
+    "Utc1900_CPP",
+    "Utc1900_CVTCIL_C",
+    "Utc1900_CVTCIL_CPP",
+    "Utc1900_LTCG_C",
+    "Utc1900_LTCG_CPP",
+    "Utc1900_LTCG_MSIL",
+    "Utc1900_POGO_I_C",
+    "Utc1900_POGO_I_CPP",
+    "Utc1900_POGO_O_C",
+    "Utc1900_POGO_O_CPP",
+};
+
+std::string_view PEFile::RichProductIDToName(uint16 productID)
+{
+    if (productID < ARRAY_LEN(richProductIDNames))
+        return richProductIDNames[productID];
+    return "";
+}
+
+std::string_view PEFile::DebugTypeToName(uint32 debugType)
+{
+    switch (debugType) {
+    case __IMAGE_DEBUG_TYPE_UNKNOWN:
+        return "Unknown";
+    case __IMAGE_DEBUG_TYPE_COFF:
+        return "COFF";
+    case __IMAGE_DEBUG_TYPE_CODEVIEW:
+        return "CodeView";
+    case __IMAGE_DEBUG_TYPE_FPO:
+        return "FPO";
+    case __IMAGE_DEBUG_TYPE_MISC:
+        return "Misc";
+    case __IMAGE_DEBUG_TYPE_EXCEPTION:
+        return "Exception";
+    case __IMAGE_DEBUG_TYPE_FIXUP:
+        return "Fixup";
+    case __IMAGE_DEBUG_TYPE_OMAP_TO_SRC:
+        return "OMAP to Src";
+    case __IMAGE_DEBUG_TYPE_OMAP_FROM_SRC:
+        return "OMAP from Src";
+    case __IMAGE_DEBUG_TYPE_BORLAND:
+        return "Borland";
+    case __IMAGE_DEBUG_TYPE_RESERVED10:
+        return "Reserved10";
+    case __IMAGE_DEBUG_TYPE_CLSID:
+        return "CLSID";
+    case 12:
+        return "VC Feature";
+    case 13:
+        return "POGO";
+    case 14:
+        return "ILTCG";
+    case 15:
+        return "MPX";
+    case 16:
+        return "Repro";
+    case 17:
+        return "Embedded Portable PDB";
+    case 19:
+        return "PDB Checksum";
+    case 20:
+        return "Extended DLL Characteristics";
+    }
+    return "";
+}
+
+void PEFile::TimeDateStampToString(uint32 timeDateStamp, String& output)
+{
+    // seconds since 01.01.1970 (UTC) => civil date (Howard Hinnant's civil_from_days)
+    const int64 days   = timeDateStamp / 86400;
+    const uint32 rest  = timeDateStamp % 86400;
+    const int64 z      = days + 719468;
+    const int64 era    = z / 146097;
+    const uint32 doe   = static_cast<uint32>(z - era * 146097);
+    const uint32 yoe   = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const uint32 doy   = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const uint32 mp    = (5 * doy + 2) / 153;
+    const uint32 day   = doy - (153 * mp + 2) / 5 + 1;
+    const uint32 month = mp < 10 ? mp + 3 : mp - 9;
+    const int64 year   = static_cast<int64>(yoe) + era * 400 + (month <= 2 ? 1 : 0);
+
+    output.Format("%04d-%02u-%02u %02u:%02u:%02u UTC (0x%08X)", static_cast<int32>(year), month, day, rest / 3600, (rest / 60) % 60, rest % 60, timeDateStamp);
+}
+
+bool PEFile::IsReproducibleBuild() const
+{
+    for (const auto& d : debugData) {
+        if (d.Type == 16) // IMAGE_DEBUG_TYPE_REPRO => TimeDateStamp fields hold a hash, not a date
+            return true;
+    }
+    return false;
 }
 
 void PEFile::CopySectionName(uint32 index, String& name)
@@ -1453,6 +1900,7 @@ bool PEFile::Update()
         }
     }
 
+    BuildRichHeader();
     BuildResources();   // cu erori setate
     BuildExport();      // cu erori setate
     BuildImport();      // cu erori setate

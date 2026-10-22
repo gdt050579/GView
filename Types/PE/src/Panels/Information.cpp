@@ -68,6 +68,22 @@ void Information::UpdateGeneralInformation()
 
     general->AddItem({ "Machine", pe->GetMachine() });
 
+    if (pe->IsReproducibleBuild()) {
+        general->AddItem({ "Compiled", tmp.Format("0x%08X (reproducible build hash)", pe->nth32.FileHeader.TimeDateStamp) });
+    } else {
+        PEFile::TimeDateStampToString(pe->nth32.FileHeader.TimeDateStamp, tmp);
+        general->AddItem({ "Compiled", tmp });
+    }
+    general->AddItem({ "Linker", tmp.Format("%u.%u", pe->nth32.OptionalHeader.MajorLinkerVersion, pe->nth32.OptionalHeader.MinorLinkerVersion) });
+    if (pe->rich.Present) {
+        const bool valid = pe->rich.ComputedChecksum == pe->rich.Key;
+        item = general->AddItem({ "Rich Header", tmp.Format("%u entries, checksum %s", (uint32) pe->rich.Entries.size(), valid ? "valid" : "invalid") });
+        if (!valid)
+            item.SetType(ListViewItem::Type::ErrorInformation);
+    } else {
+        general->AddItem({ "Rich Header", "Not present" });
+    }
+
     if (pe->dllName)
     {
         general->AddItem({ "ExportName", pe->dllName }).SetType(ListViewItem::Type::Emphasized_1);
