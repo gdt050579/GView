@@ -1033,7 +1033,7 @@ static bool LabelNamesFromBuffer(const std::byte*& start, const std::byte* end, 
         uint32 nameSize       = 0;
         const std::byte* name = nullptr;
         if (!read_primitive(start, end, address) || !read_primitive(start, end, nameSize) || nameSize == 0 || nameSize > DISSASM_MAX_LABEL_NAME_SIZE ||
-            !read_bytes(start, end, nameSize, name))
+            !read_text_bytes(start, end, nameSize, name))
             return false;
         names.emplace_back(address, std::string(reinterpret_cast<const char*>(name), nameSize));
     }
@@ -1111,7 +1111,7 @@ static bool CollapsibleZonesFromBuffer(const std::byte*& start, const std::byte*
         uint32 nameSize       = 0;
         const std::byte* name = nullptr;
         if (!ReadAnchor(start, end, zone.first) || !ReadAnchor(start, end, zone.last) || !read_primitive(start, end, isCollapsed) ||
-            !read_primitive(start, end, nameSize) || nameSize > DISSASM_MAX_LABEL_NAME_SIZE || !read_bytes(start, end, nameSize, name))
+            !read_primitive(start, end, nameSize) || nameSize > DISSASM_MAX_LABEL_NAME_SIZE || !read_text_bytes(start, end, nameSize, name))
             return false;
         zone.isCollapsed = isCollapsed != 0;
         zone.name        = std::string(reinterpret_cast<const char*>(name), nameSize);

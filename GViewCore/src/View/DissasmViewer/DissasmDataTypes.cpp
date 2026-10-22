@@ -99,7 +99,7 @@ bool DissasmComments::LoadFromBuffer(const std::byte*& start, const std::byte* e
         if (!read_primitive(start, end, comment_size))
             return false;
         const std::byte* out = nullptr;
-        if (!read_bytes(start, end, comment_size, out))
+        if (!read_text_bytes(start, end, comment_size, out))
             return false;
         comments[offset] = std::string((const char*) out, comment_size);
         --commentsCount;
@@ -212,7 +212,7 @@ bool DissasmUserComments::LoadFromBuffer(const std::byte*& start, const std::byt
         uint32 textSize = 0;
         const std::byte* text = nullptr;
         if (!read_primitive(start, end, kind) || !read_primitive(start, end, anchor.address) || !read_primitive(start, end, anchor.frameOffset) ||
-            !read_primitive(start, end, textSize) || !read_bytes(start, end, textSize, text))
+            !read_primitive(start, end, textSize) || !read_text_bytes(start, end, textSize, text))
             return false;
         if (kind > static_cast<uint8>(DissasmCommentAnchor::Kind::Variable))
             return false;
