@@ -2002,8 +2002,8 @@ bool GView::View::DissasmViewer::BuildX86AsmListing(
     };
 
     // the lines wait in the drawn lines cache before they are written: a call names its arguments on the lines placed before it (as on
-    // the screen, AnnounceCallInstruction)
-    constexpr size_t WAITING_LINES = 24;
+    // the screen, AnnounceCallInstruction): at least as many as it looks back (32 lines for the pushes of 32 bit code)
+    constexpr size_t WAITING_LINES = 32;
     auto& waitingLines             = zone.asmPreCacheData.cachedAsmLines;
     waitingLines.clear();
     auto writeWaitingLines = [&](size_t linesToKeep) {

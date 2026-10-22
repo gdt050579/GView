@@ -133,6 +133,7 @@ void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PE:
 }
 
 // The known starts of functions: the deep scan of the disassembly labels them even when nothing calls them directly
+extern "C++" { // the file is in the extern "C" block of the entry points: the helpers return C++ types
 namespace
 {
 // the compressed integers of the FuncInfo of __CxxFrameHandler4: the low bits of the first byte give the length (0: 1 byte, 01: 2 bytes,
@@ -445,6 +446,7 @@ bool ReadCppExceptionFunclets(
     return !funclets.empty();
 }
 } // namespace
+} // extern "C++"
 
 void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
 {
@@ -1141,6 +1143,57 @@ void AddDissasmDirectoryFields(DissasmViewer::Settings& settings, Reference<PE::
     }
 }
 
+// x86 MSVC merges .rdata into .text (/MERGE:.rdata=.text): the read-only data starts the section, its last group the debug data
+// (.rdata$zzzdbg: the CodeView / POGO records the debug directory points to), then the code (after the zeros of its alignment); the delay
+// import descriptors and the names they point to close the section. The RVAs where the code starts and where the read-only data at its
+// end starts (0: none); codeStart 0 when the section is not one (its own .rdata section, no debug directory in it, the entry point
+// before the code)
+struct MergedReadOnlyData {
+    uint32 codeStart = 0;
+    uint32 tailStart = 0;
+};
+static MergedReadOnlyData FindMergedReadOnlyData(Reference<PE::PEFile> pe, GView::Utils::DataCache& data, uint32 sectionStart, uint32 sectionEnd, uint32 entryPoint)
+{
+    struct DebugDirectory {
+        uint32 Characteristics, TimeDateStamp;
+        uint16 MajorVersion, MinorVersion;
+        uint32 Type, SizeOfData, AddressOfRawData, PointerToRawData;
+    };
+    constexpr uint32 MAX_DEBUG_ENTRIES = 32;
+    constexpr uint32 MAX_ALIGNMENT     = 0x100;
+    MergedReadOnlyData result;
+    const auto& debug = pe->GetDirectory(PE::DirectoryType::Debug);
+    if (debug.VirtualAddress < sectionStart || debug.VirtualAddress >= sectionEnd || debug.Size < sizeof(DebugDirectory))
+        return result;
+    const auto debugFa = pe->RVAToFA(debug.VirtualAddress);
+    if (debugFa == PE_INVALID_ADDRESS)
+        return result;
+    uint32 dataEnd = debug.VirtualAddress + debug.Size;
+    for (uint32 index = 0; index < std::min<uint32>(debug.Size / sizeof(DebugDirectory), MAX_DEBUG_ENTRIES); index++) {
+        DebugDirectory entry;
+        if (!data.Copy<DebugDirectory>(debugFa + static_cast<uint64>(index) * sizeof(DebugDirectory), entry))
+            break;
+        if (entry.AddressOfRawData >= sectionStart && entry.AddressOfRawData < sectionEnd && entry.SizeOfData < sectionEnd - entry.AddressOfRawData)
+            dataEnd = std::max(dataEnd, entry.AddressOfRawData + entry.SizeOfData);
+    }
+    if (dataEnd >= sectionEnd)
+        return result;
+    // the zeros of the alignment of the first function
+    uint32 codeStart = dataEnd;
+    const auto codeFa = pe->RVAToFA(codeStart);
+    for (uint8 value = 0; codeFa != PE_INVALID_ADDRESS && codeStart < sectionEnd && codeStart - dataEnd < MAX_ALIGNMENT; codeStart++)
+        if (!data.Copy<uint8>(codeFa + (codeStart - dataEnd), value) || value != 0)
+            break;
+    const bool entryInSection = entryPoint >= sectionStart && entryPoint < sectionEnd;
+    if (codeStart >= sectionEnd || (entryInSection && entryPoint < codeStart))
+        return result;
+    result.codeStart  = codeStart;
+    const auto& delay = pe->GetDirectory(PE::DirectoryType::DelayImport);
+    if (delay.VirtualAddress > codeStart && delay.VirtualAddress < sectionEnd && (!entryInSection || entryPoint < delay.VirtualAddress))
+        result.tailStart = delay.VirtualAddress;
+    return result;
+}
+
 void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
 {
     DissasmViewer::Settings settings;
@@ -1194,9 +1247,26 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
             if (overlaps)
                 continue;
             zones.emplace_back(start, start + size);
+            const uint64 dataSize = section.Misc.VirtualSize != 0 ? std::min<uint64>(size, section.Misc.VirtualSize) : size;
+            const auto merged     = isData ? MergedReadOnlyData{}
+                                           : FindMergedReadOnlyData(
+                                                   pe,
+                                                   win->GetObject()->GetData(),
+                                                   section.VirtualAddress,
+                                                   section.VirtualAddress + static_cast<uint32>(dataSize),
+                                                   pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint);
             if (isData) // the data, not the file alignment padding after it (VirtualSize < SizeOfRawData); its zeros are variables
-                settings.AddDataZone(start, section.Misc.VirtualSize != 0 ? std::min<uint64>(size, section.Misc.VirtualSize) : size, language, name);
-            else
+                settings.AddDataZone(start, dataSize, language, name);
+            else if (merged.codeStart != 0) {
+                // .rdata merged into the code section: a data zone for it (its strings, pointers, the load config), a code zone for the code
+                const uint64 codeOffset = start + (merged.codeStart - section.VirtualAddress);
+                const uint64 tailOffset = merged.tailStart != 0 ? start + (merged.tailStart - section.VirtualAddress) : start + size;
+                const std::string dataName = std::string(name) + " (.rdata)";
+                settings.AddDataZone(start, codeOffset - start, language, dataName);
+                settings.AddDisassemblyZone(codeOffset, tailOffset - codeOffset, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
+                if (tailOffset < start + dataSize)
+                    settings.AddDataZone(tailOffset, start + dataSize - tailOffset, language, dataName);
+            } else
                 settings.AddDisassemblyZone(start, size, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
         }
     }
