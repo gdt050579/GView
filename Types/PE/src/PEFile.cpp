@@ -1616,20 +1616,19 @@ std::string_view PEFile::DebugTypeToName(uint32 debugType)
 void PEFile::TimeDateStampToString(uint32 timeDateStamp, String& output)
 {
     // seconds since 01.01.1970 (UTC) => civil date (Howard Hinnant's civil_from_days)
-    const int64 days    = timeDateStamp / 86400;
-    const uint32 rest   = timeDateStamp % 86400;
-    const int64 z       = days + 719468;
-    const int64 era     = z / 146097;
-    const uint32 doe    = static_cast<uint32>(z - era * 146097);
-    const uint32 yoe    = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    const uint32 doy    = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    const uint32 mp     = (5 * doy + 2) / 153;
-    const uint32 day    = doy - (153 * mp + 2) / 5 + 1;
-    const uint32 month  = mp < 10 ? mp + 3 : mp - 9;
-    const int64 year    = static_cast<int64>(yoe) + era * 400 + (month <= 2 ? 1 : 0);
+    const int64 days   = timeDateStamp / 86400;
+    const uint32 rest  = timeDateStamp % 86400;
+    const int64 z      = days + 719468;
+    const int64 era    = z / 146097;
+    const uint32 doe   = static_cast<uint32>(z - era * 146097);
+    const uint32 yoe   = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const uint32 doy   = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const uint32 mp    = (5 * doy + 2) / 153;
+    const uint32 day   = doy - (153 * mp + 2) / 5 + 1;
+    const uint32 month = mp < 10 ? mp + 3 : mp - 9;
+    const int64 year   = static_cast<int64>(yoe) + era * 400 + (month <= 2 ? 1 : 0);
 
-    output.Format(
-          "%04d-%02u-%02u %02u:%02u:%02u UTC (0x%08X)", static_cast<int32>(year), month, day, rest / 3600, (rest / 60) % 60, rest % 60, timeDateStamp);
+    output.Format("%04d-%02u-%02u %02u:%02u:%02u UTC (0x%08X)", static_cast<int32>(year), month, day, rest / 3600, (rest / 60) % 60, rest % 60, timeDateStamp);
 }
 
 bool PEFile::IsReproducibleBuild() const

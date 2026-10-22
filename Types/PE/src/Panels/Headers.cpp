@@ -97,7 +97,8 @@ ListViewItem Panels::Headers::AddTimeDateStamp(std::string_view name, uint32 val
     PEFile::TimeDateStampToString(value, temp);
     return AddItem(name, temp, fileOffset);
 }
-void Panels::Headers::AddFlags(std::string_view name, uint32 value, const std::pair<uint32, std::string_view>* flags, uint32 count, uint64 fileOffset, uint32 xOffset)
+void Panels::Headers::AddFlags(
+      std::string_view name, uint32 value, const std::pair<uint32, std::string_view>* flags, uint32 count, uint64 fileOffset, uint32 xOffset)
 {
     LocalString<64> temp;
     AddItem(name, temp.Format("0x%X", value), fileOffset).SetXOffset(xOffset);

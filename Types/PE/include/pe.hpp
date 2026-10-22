@@ -736,14 +736,12 @@ namespace Type
                 ImageImportDescriptor Descriptor;
                 uint64 DescriptorFileOffset;
             };
-            struct RichHeaderEntry
-            {
+            struct RichHeaderEntry {
                 uint16 ProductID;
                 uint16 Build;
                 uint32 Count;
             };
-            struct RichHeaderInformation
-            {
+            struct RichHeaderInformation {
                 bool Present{ false };
                 uint32 Offset{ 0 }; // file offset of the "DanS" marker
                 uint32 Size{ 0 };   // from "DanS" up to (and including) the XOR key that follows "Rich"
@@ -1060,7 +1058,13 @@ namespace Type
                 ListViewItem AddMagic(uint8* offset, uint32 size, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
                 ListViewItem AddItem(std::string_view name, std::string_view value, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
                 ListViewItem AddTimeDateStamp(std::string_view name, uint32 value, uint64 fileOffset = GView::Utils::INVALID_OFFSET);
-                void AddFlags(std::string_view name, uint32 value, const std::pair<uint32, std::string_view>* flags, uint32 count, uint64 fileOffset, uint32 xOffset = 0);
+                void AddFlags(
+                      std::string_view name,
+                      uint32 value,
+                      const std::pair<uint32, std::string_view>* flags,
+                      uint32 count,
+                      uint64 fileOffset,
+                      uint32 xOffset = 0);
 
                 void AddDOSHeader();
                 void AddRichHeader();

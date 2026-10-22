@@ -77,8 +77,7 @@ void Information::UpdateGeneralInformation()
     general->AddItem({ "Linker", tmp.Format("%u.%u", pe->nth32.OptionalHeader.MajorLinkerVersion, pe->nth32.OptionalHeader.MinorLinkerVersion) });
     if (pe->rich.Present) {
         const bool valid = pe->rich.ComputedChecksum == pe->rich.Key;
-        item = general->AddItem(
-              { "Rich Header", tmp.Format("%u entries, checksum %s", (uint32) pe->rich.Entries.size(), valid ? "valid" : "invalid") });
+        item = general->AddItem({ "Rich Header", tmp.Format("%u entries, checksum %s", (uint32) pe->rich.Entries.size(), valid ? "valid" : "invalid") });
         if (!valid)
             item.SetType(ListViewItem::Type::ErrorInformation);
     } else {
