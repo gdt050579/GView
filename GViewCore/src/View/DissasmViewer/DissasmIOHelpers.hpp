@@ -133,12 +133,22 @@ static inline bool read_bytes(const std::byte*& p, const std::byte* end, std::si
     return true;
 }
 
+// the bytes of a text (a name, a comment): a NUL inside of it is a corrupted record, the lines keep their texts as C strings
+static inline bool read_text_bytes(const std::byte*& p, const std::byte* end, std::size_t len, const std::byte*& out_begin) noexcept
+{
+    const std::byte* begin = nullptr;
+    if (!read_bytes(p, end, len, begin) || (len > 0 && std::memchr(begin, 0, len) != nullptr))
+        return false;
+    out_begin = begin;
+    return true;
+}
+
 template<class T>
 static inline bool read_string_with_size(const std::byte*& p, const std::byte* end, T& out, const std::byte*& out_begin)
 {
     if (!read_primitive(p, end, out))
         return false;
-    return read_bytes(p, end, out, out_begin);
+    return read_text_bytes(p, end, out, out_begin);
 }
 
 static inline bool read_u32_len_prefixed_string(const std::byte*& p, const std::byte* end, std::string& out)
@@ -148,7 +158,7 @@ static inline bool read_u32_len_prefixed_string(const std::byte*& p, const std::
         return false;
     const std::size_t len    = static_cast<std::size_t>(len_u32);
     const std::byte* s_begin = nullptr;
-    if (!read_bytes(p, end, len, s_begin))
+    if (!read_text_bytes(p, end, len, s_begin))
         return false;
 
     try {

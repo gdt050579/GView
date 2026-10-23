@@ -3,125 +3,244 @@
 #include "DissasmFunctionUtils.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <unordered_set>
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
-// TODO: maybe add also minimum number?
-bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
+namespace
 {
-    const char* ptr     = op_str;
-    const char* start   = nullptr;
-    uint32 size         = 0;
-    bool insideBrackets = false;
-
-    auto checkValidSequence = [&ptr, &insideBrackets]() -> bool {
-        while (ptr && *ptr != '\0') {
-            if (*ptr == ' ' || *ptr == '[' || (*ptr >= 'a' && *ptr <= 'z') || (*ptr >= 'A' && *ptr <= 'Z')) {
-                if (*ptr == '[') {
-                    if (insideBrackets)
-                        return false;
-                    insideBrackets = true;
-                }
-                ptr++;
-                continue;
-            }
-            if (*ptr >= '0' && *ptr <= '9') {
-                break;
-            }
+// the qualified name of a mangled C++ / Rust name: Itanium (_ZSt9terminatev: std::terminate, _ZN4core9panicking9panic_fmt17h..E:
+// core::panicking::panic_fmt, without the hash of Rust) or MSVC (?_Xlength_error@std@@YAXPEBD@Z: std::_Xlength_error); none for the other
+// names (templates, operators)
+std::optional<std::string> QualifiedMangledName(std::string_view name)
+{
+    std::vector<std::string_view> parts;
+    const auto readPart = [&name, &parts]() {
+        size_t length = 0, digits = 0;
+        while (digits < name.size() && digits < 5 && name[digits] >= '0' && name[digits] <= '9')
+            length = length * 10 + static_cast<size_t>(name[digits++] - '0');
+        if (digits == 0 || length == 0 || length > name.size() - digits)
             return false;
-        }
+        parts.push_back(name.substr(digits, length));
+        name.remove_prefix(digits + length);
         return true;
     };
-
-    if (!checkValidSequence())
-        return false;
-
-    // while (ptr && *ptr != '\0') {
-    //     if (*ptr == ' ' || *ptr == '[' || *ptr >= 'a' && *ptr <= 'z' || *ptr >= 'A' && *ptr <= 'Z') {
-    //         if (*ptr == '[') {
-    //             if (insideBrackets)
-    //                 return false;
-    //             insideBrackets = true;
-    //         }
-    //         ptr++;
-    //         continue;
-    //     }
-    //     if (*ptr >= '0' && *ptr <= '9') {
-    //         break;
-    //     }
-    //     return false;
-    // }
-
-    bool is_hex = false;
-    while (ptr && *ptr != '\0') {
-        if (!start) {
-            if (*ptr == '0') // not hex
-            {
-                ptr++;
-                if (!ptr || *ptr != 'x') {
-                    start = ptr - 1;
-                    size  = 1;
-                    continue;
-                }
-                ptr++;
-                start  = ptr;
-                is_hex = true;
-                continue;
-            } else {
-                is_hex = false;
-                start  = ptr;
-                continue;
-            }
-        } else {
-            if ((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f')) {
-                size++;
-            } else {
-                if (size < maxSize - 2)
-                    return false;
-                break;
-            }
+    if (name.starts_with("__Z")) // Mach-O: the underscore of the C names
+        name.remove_prefix(1);
+    if (name.starts_with("_ZSt")) {
+        name.remove_prefix(4);
+        parts.push_back("std");
+        if (!readPart())
+            return std::nullopt;
+    } else if (name.starts_with("_ZN")) {
+        name.remove_prefix(3);
+        if (name.starts_with("St")) {
+            parts.push_back("std");
+            name.remove_prefix(2);
         }
-        ptr++;
-    }
-
-    if (insideBrackets) {
-        if (!ptr)
-            return false;
-        if (*ptr != ']')
-            return false;
-        ptr++;
-    }
-
-    if (maxSize < size) {
-        const uint32 diff = size - static_cast<uint32>(maxSize);
-        size -= diff;
-        start += diff;
-    }
-
-    if (!size || !start)
-        return false;
-
-    if (size < 2) {
-        ptr = !is_hex ? op_str : op_str + 2;
-        while (ptr && *ptr != '\0') {
-            if (!((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f')))
-                return false;
-            ptr++;
+        while (!name.empty() && name.front() != 'E')
+            if (!readPart())
+                return std::nullopt;
+        if (name.empty() || parts.size() < 2)
+            return std::nullopt;
+        // Rust (legacy mangling): the last part is the hash of the crate (h + 16 hexadecimal digits)
+        const auto last = parts.back();
+        if (last.size() == 17 && last.front() == 'h' && std::all_of(last.begin() + 1, last.end(), [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }))
+            parts.pop_back();
+    } else if (name.starts_with('?') && name.size() > 1 && name[1] != '?' && name[1] != '$') {
+        const auto end = name.find("@@");
+        if (end == std::string_view::npos)
+            return std::nullopt;
+        for (std::string_view scope = name.substr(1, end - 1); !scope.empty();) {
+            const auto at = scope.find('@');
+            parts.insert(parts.begin(), scope.substr(0, at));
+            scope = at == std::string_view::npos ? std::string_view() : scope.substr(at + 1);
         }
+    } else
+        return std::nullopt;
+    std::string result;
+    for (const auto part : parts) {
+        if (!result.empty())
+            result += "::";
+        result += part;
     }
+    return result;
+}
+} // namespace
 
-    if (!checkValidSequence())
-        return false;
+uint32_t GetApiCategories(std::string_view name)
+{
+    struct Entry {
+        std::string_view name;
+        uint32_t categories;
+        bool prefix; // the families of the Windows API: the A / W / Ex variants
+    };
+    static constexpr Entry ENTRIES[] = {
+        // the network
+        { "socket", API_NETWORK, false }, { "connect", API_NETWORK, false }, { "bind", API_NETWORK, false }, { "listen", API_NETWORK, false },
+        { "accept", API_NETWORK, false }, { "accept4", API_NETWORK, false }, { "send", API_NETWORK, false }, { "sendto", API_NETWORK, false },
+        { "sendmsg", API_NETWORK, false }, { "recv", API_NETWORK, false }, { "recvfrom", API_NETWORK, false }, { "recvmsg", API_NETWORK, false },
+        { "getaddrinfo", API_NETWORK, false }, { "gethostbyname", API_NETWORK, false }, { "inet_addr", API_NETWORK, false },
+        { "inet_pton", API_NETWORK, false }, { "WSAStartup", API_NETWORK, true }, { "WSASocket", API_NETWORK, true },
+        { "WSAConnect", API_NETWORK, true }, { "WSASend", API_NETWORK, true }, { "WSARecv", API_NETWORK, true }, { "WSAIoctl", API_NETWORK, true },
+        { "GetAddrInfo", API_NETWORK, true }, { "InternetOpen", API_NETWORK, true }, { "InternetConnect", API_NETWORK, true },
+        { "InternetReadFile", API_NETWORK, true }, { "InternetWriteFile", API_NETWORK, true }, { "HttpOpenRequest", API_NETWORK, true },
+        { "HttpSendRequest", API_NETWORK, true }, { "HttpQueryInfo", API_NETWORK, true }, { "WinHttpOpen", API_NETWORK, true },
+        { "WinHttpConnect", API_NETWORK, true }, { "WinHttpSendRequest", API_NETWORK, true }, { "WinHttpReceiveResponse", API_NETWORK, true },
+        { "WinHttpReadData", API_NETWORK, true }, { "URLDownloadToFile", API_NETWORK, true }, { "URLOpenStream", API_NETWORK, true },
+        { "DnsQuery", API_NETWORK, true }, { "curl_easy_", API_NETWORK, true }, { "SSL_connect", API_NETWORK, false }, { "SSL_read", API_NETWORK, false },
+        { "SSL_write", API_NETWORK, false },
+        // the crypto
+        { "Crypt", API_CRYPTO, true }, { "BCrypt", API_CRYPTO, true }, { "NCrypt", API_CRYPTO, true }, { "EVP_", API_CRYPTO, true },
+        { "AES_", API_CRYPTO, true }, { "RSA_", API_CRYPTO, true }, { "SHA1", API_CRYPTO, true }, { "SHA256", API_CRYPTO, true },
+        { "SHA512", API_CRYPTO, true }, { "MD5_", API_CRYPTO, true }, { "mbedtls_", API_CRYPTO, true }, { "CC_SHA", API_CRYPTO, true },
+        { "CC_MD5", API_CRYPTO, true }, { "CCCrypt", API_CRYPTO, true }, { "SecKey", API_CRYPTO, true },
+        // the processes
+        { "CreateProcess", API_PROCESS, true }, { "ShellExecute", API_PROCESS, true }, { "WinExec", API_PROCESS, false },
+        { "OpenProcess", API_PROCESS, false }, { "TerminateProcess", API_PROCESS, false }, { "NtCreateProcess", API_PROCESS, true },
+        { "NtCreateUserProcess", API_PROCESS, false }, { "RtlCreateUserProcess", API_PROCESS, false }, { "fork", API_PROCESS, false },
+        { "vfork", API_PROCESS, false }, { "execve", API_PROCESS, false }, { "execv", API_PROCESS, false }, { "execvp", API_PROCESS, false },
+        { "execl", API_PROCESS, false }, { "execlp", API_PROCESS, false }, { "execle", API_PROCESS, false }, { "posix_spawn", API_PROCESS, false },
+        { "posix_spawnp", API_PROCESS, false }, { "system", API_PROCESS, false }, { "popen", API_PROCESS, false },
+        // the memory and the threads of another process
+        { "VirtualAllocEx", API_INJECTION, true }, { "WriteProcessMemory", API_INJECTION, false }, { "ReadProcessMemory", API_INJECTION, false },
+        { "CreateRemoteThread", API_INJECTION, true }, { "NtCreateThreadEx", API_INJECTION, false }, { "RtlCreateUserThread", API_INJECTION, false },
+        { "QueueUserAPC", API_INJECTION, false }, { "NtQueueApcThread", API_INJECTION, true }, { "SetThreadContext", API_INJECTION, false },
+        { "NtMapViewOfSection", API_INJECTION, false }, { "NtUnmapViewOfSection", API_INJECTION, false }, { "ZwUnmapViewOfSection", API_INJECTION, false },
+        { "VirtualProtectEx", API_INJECTION, false }, { "SetWindowsHookEx", API_INJECTION, true }, { "ptrace", API_INJECTION | API_ANTIDEBUG, false },
+        { "process_vm_writev", API_INJECTION, false }, { "task_for_pid", API_INJECTION, false }, { "mach_vm_write", API_INJECTION, false },
+        // the files
+        { "CreateFile", API_FILE, true }, { "ReadFile", API_FILE, true }, { "WriteFile", API_FILE, true }, { "DeleteFile", API_FILE, true },
+        { "MoveFile", API_FILE, true }, { "CopyFile", API_FILE, true }, { "FindFirstFile", API_FILE, true }, { "FindNextFile", API_FILE, true },
+        { "SetFileAttributes", API_FILE, true }, { "NtCreateFile", API_FILE, false }, { "NtWriteFile", API_FILE, false }, { "fopen", API_FILE, false },
+        { "fopen64", API_FILE, false }, { "open", API_FILE, false }, { "open64", API_FILE, false }, { "openat", API_FILE, false },
+        { "creat", API_FILE, false }, { "unlink", API_FILE, false }, { "unlinkat", API_FILE, false }, { "rename", API_FILE, false },
+        { "remove", API_FILE, false },
+        // the registry
+        { "RegOpenKey", API_REGISTRY, true }, { "RegCreateKey", API_REGISTRY, true }, { "RegSetValue", API_REGISTRY, true },
+        { "RegSetKeyValue", API_REGISTRY, true }, { "RegQueryValue", API_REGISTRY, true }, { "RegGetValue", API_REGISTRY, true },
+        { "RegDeleteKey", API_REGISTRY, true }, { "RegDeleteValue", API_REGISTRY, true }, { "RegEnumKey", API_REGISTRY, true },
+        { "RegEnumValue", API_REGISTRY, true }, { "NtSetValueKey", API_REGISTRY, false }, { "ZwSetValueKey", API_REGISTRY, false },
+        { "NtOpenKey", API_REGISTRY, true }, { "ZwOpenKey", API_REGISTRY, true },
+        // the services
+        { "OpenSCManager", API_SERVICE, true }, { "CreateService", API_SERVICE, true }, { "OpenService", API_SERVICE, true },
+        { "StartService", API_SERVICE, true }, { "ControlService", API_SERVICE, true }, { "DeleteService", API_SERVICE, false },
+        { "ChangeServiceConfig", API_SERVICE, true },
+        // the code loaded at run time
+        { "LoadLibrary", API_LOADING, true }, { "GetProcAddress", API_LOADING, false }, { "LdrLoadDll", API_LOADING, false },
+        { "LdrGetProcedureAddress", API_LOADING, true }, { "dlopen", API_LOADING, false }, { "dlsym", API_LOADING, false },
+        { "NSCreateObjectFileImageFromMemory", API_LOADING, false },
+        // the debuggers
+        { "IsDebuggerPresent", API_ANTIDEBUG, false }, { "CheckRemoteDebuggerPresent", API_ANTIDEBUG, false },
+        { "NtQueryInformationProcess", API_ANTIDEBUG, false }, { "ZwQueryInformationProcess", API_ANTIDEBUG, false },
+        { "OutputDebugString", API_ANTIDEBUG, true }, { "NtSetInformationThread", API_ANTIDEBUG, false }, { "DebugActiveProcess", API_ANTIDEBUG, true },
+    };
+    // the import / thunk prefixes, the version / PLT / stdcall suffixes
+    for (bool stripped = true; stripped;) {
+        stripped = false;
+        for (const std::string_view prefix : { std::string_view("__imp_"), std::string_view("_imp__"), std::string_view("j_") })
+            if (name.size() > prefix.size() && name.starts_with(prefix)) {
+                name.remove_prefix(prefix.size());
+                stripped = true;
+            }
+    }
+    if (const auto at = name.find('@'); at != std::string_view::npos && at > 0)
+        name = name.substr(0, at);
+    const auto categoriesOf = [](std::string_view text) {
+        uint32_t categories = 0;
+        for (const auto& entry : ENTRIES)
+            if (entry.prefix ? text.starts_with(entry.name) : text == entry.name)
+                categories |= entry.categories;
+        return categories;
+    };
+    const uint32_t categories = categoriesOf(name);
+    if (categories != 0 || name.size() < 2 || name.front() != '_')
+        return categories;
+    return categoriesOf(name.substr(1)); // Mach-O / 32 bit Windows: _connect, _CreateFileA
+}
 
-    const NumberParseFlags numberFlags = is_hex ? NumberParseFlags::Base16 : NumberParseFlags::Base10;
-    const auto sv                      = std::string_view(start, size);
-    const auto converted               = Number::ToUInt64(sv, numberFlags);
-    if (!converted.has_value())
-        return false;
+std::string FormatApiCategories(uint32_t categories)
+{
+    static constexpr std::string_view NAMES[] = { "net", "crypto", "proc", "inject", "file", "reg", "service", "load", "antidebug" };
+    std::string text;
+    for (size_t index = 0; index < std::size(NAMES); index++)
+        if (categories & (1u << index)) {
+            if (!text.empty())
+                text += ' ';
+            text += NAMES[index];
+        }
+    return text;
+}
 
-    value = converted.value();
+uint32_t GetMainApiCategory(uint32_t categories)
+{
+    static constexpr uint32_t ORDER[] = { API_INJECTION, API_ANTIDEBUG, API_PROCESS, API_NETWORK, API_CRYPTO, API_SERVICE, API_REGISTRY, API_LOADING, API_FILE };
+    for (const uint32_t category : ORDER)
+        if (categories & category)
+            return category;
+    return 0;
+}
 
-    return true;
+bool IsNoReturnFunctionName(std::string_view name)
+{
+    static const std::unordered_set<std::string_view> NAMES = {
+        // C, POSIX, glibc, the C++ ABI, the unwinder, the sanitizers, Objective-C
+        "abort", "exit", "_exit", "_Exit", "quick_exit", "__assert_fail", "__assert_perror_fail", "__assert_rtn", "__assert", "__assert_func",
+        "__assert2", "__stack_chk_fail", "__stack_chk_fail_local", "__chk_fail", "__fortify_fail", "__fortify_fail_abort", "__libc_fatal",
+        "__libc_start_main", "__malloc_assert", "__libc_dynarray_at_failure", "_dl_fatal_printf", "_dl_signal_error", "longjmp", "_longjmp",
+        "siglongjmp", "__longjmp_chk", "__libc_longjmp", "__libc_siglongjmp", "pthread_exit", "thrd_exit", "__pthread_unwind",
+        "__pthread_unwind_next", "err", "errx", "verr", "verrx", "__cxa_throw", "__cxa_rethrow", "__cxa_bad_cast", "__cxa_bad_typeid",
+        "__cxa_throw_bad_array_new_length", "__cxa_call_terminate", "__cxa_call_unexpected", "__cxa_pure_virtual", "__cxa_deleted_virtual",
+        "_Unwind_Resume", "__ubsan_handle_builtin_unreachable", "__ubsan_handle_missing_return", "objc_exception_throw",
+        "objc_exception_rethrow", "objc_terminate", "_objc_fatal",
+        // Windows: the API, the native API, the kernel, the C / C++ run-time
+        "ExitProcess", "ExitThread", "FreeLibraryAndExitThread", "FatalExit", "FatalAppExitA", "FatalAppExitW", "RaiseFailFastException",
+        "RtlExitUserProcess", "RtlExitUserThread", "RtlRaiseStatus", "ExRaiseStatus", "ExRaiseAccessViolation",
+        "ExRaiseDatatypeMisalignment", "KeBugCheck", "KeBugCheckEx", "_invalid_parameter_noreturn", "_invoke_watson", "_CxxThrowException",
+        "__std_terminate", "terminate", "_amsg_exit", "__report_gsfailure", "__report_rangecheckfailure", "__report_securityfailure",
+        // Go
+        "runtime.throw", "runtime.fatal", "runtime.fatalthrow", "runtime.fatalpanic", "runtime.gopanic", "runtime.goexit", "runtime.panicwrap",
+    };
+    // the qualified names (C++, Rust)
+    static const std::unordered_set<std::string_view> QUALIFIED_NAMES = {
+        "std::terminate", "std::rethrow_exception", "std::abort", "std::exit", "std::_Exit", "std::quick_exit", "std::_Xbad_alloc",
+        "std::_Xinvalid_argument", "std::_Xlength_error", "std::_Xout_of_range", "std::_Xoverflow_error", "std::_Xruntime_error",
+        "std::_Xbad_function_call", "std::_Xregex_error", "__gnu_cxx::__verbose_terminate_handler", "std::process::exit",
+        "std::process::abort", "std::panicking::begin_panic", "std::panicking::rust_panic_with_hook", "core::result::unwrap_failed",
+        "core::option::unwrap_failed", "core::option::expect_failed", "alloc::alloc::handle_alloc_error",
+    };
+    const auto isQualifiedNoReturn = [](std::string_view qualified) {
+        return QUALIFIED_NAMES.contains(qualified) || qualified.starts_with("std::__throw_") || qualified.starts_with("std::_Throw_") ||
+               qualified.starts_with("core::panicking::panic") || (qualified.starts_with("core::slice::index::") && qualified.ends_with("_fail"));
+    };
+    // a demangled name: the qualified name, after the return type / the convention, before the parameters (void __cdecl std::terminate(void))
+    if (const auto parameters = name.find('('); parameters != std::string_view::npos && parameters > 0) {
+        name = name.substr(0, parameters);
+        if (const auto space = name.rfind(' '); space != std::string_view::npos)
+            name = name.substr(space + 1);
+    }
+    // the import / thunk prefixes
+    for (bool stripped = true; stripped;) {
+        stripped = false;
+        for (const std::string_view prefix : { std::string_view("__imp_"), std::string_view("_imp__"), std::string_view("j_") })
+            if (name.size() > prefix.size() && name.starts_with(prefix)) {
+                name.remove_prefix(prefix.size());
+                stripped = true;
+            }
+    }
+    if (const auto qualified = QualifiedMangledName(name); qualified.has_value()) // ?terminate@@YAXXZ: a global name, terminate
+        return isQualifiedNoReturn(qualified.value()) || NAMES.contains(qualified.value());
+    // the version (exit@GLIBC_2.2.5, exit@@GLIBC_2.2.5), the PLT (exit@plt), the stdcall decoration (_ExitProcess@4)
+    if (const auto at = name.find('@'); at != std::string_view::npos && at > 0)
+        name = name.substr(0, at);
+    if (name.find("::") != std::string_view::npos)
+        return isQualifiedNoReturn(name);
+    if (NAMES.contains(name) || (name.starts_with("__ubsan_handle_") && name.ends_with("_abort")) ||
+        (name.starts_with("__asan_report_") && name.find("noabort") == std::string_view::npos) || name.starts_with("runtime.panic") ||
+        name.starts_with("runtime.goPanic"))
+        return true;
+    // Mach-O / 32 bit Windows: the underscore of the C names (_exit for exit, __stack_chk_fail_local, _ExitProcess@4)
+    return name.size() > 1 && name.front() == '_' && NAMES.contains(name.substr(1));
 }
 
 LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
@@ -137,29 +256,6 @@ LocalString<64> FormatFunctionName(uint64 functionAddress, const char* prefix)
     }
     callName.Add(sv);
     return callName;
-}
-
-std::optional<uint64> GetDirectBranchTarget(std::string_view operands)
-{
-    const bool isHex          = operands.size() > 2 && operands[0] == '0' && operands[1] == 'x';
-    const std::string_view sv = isHex ? operands.substr(2) : operands;
-    const uint64 base         = isHex ? 16u : 10u;
-    if (sv.empty())
-        return {};
-    uint64 value = 0;
-    for (const char c : sv) {
-        uint64 digit;
-        if (c >= '0' && c <= '9')
-            digit = static_cast<uint64>(c - '0');
-        else if (isHex && c >= 'a' && c <= 'f')
-            digit = static_cast<uint64>(c - 'a' + 10);
-        else
-            return {};
-        if (value > (UINT64_MAX - digit) / base)
-            return {};
-        value = value * base + digit;
-    }
-    return value;
 }
 
 namespace
@@ -180,7 +276,7 @@ bool IsNameCharacter(char c)
 }
 bool CanPrecedeNumber(char c)
 {
-    return c == ' ' || c == '[' || c == ',' || c == '+' || c == '-' || c == '*' || c == ':';
+    return c == ' ' || c == '[' || c == ',' || c == '+' || c == '-' || c == '*' || c == ':' || c == '#'; // ARM64: #0x10
 }
 } // namespace
 
@@ -248,6 +344,231 @@ std::string FormatOperandNumbers(std::string_view operands, uint32 decimalMask, 
     return result;
 }
 
+namespace
+{
+bool IsTokenCharacter(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '.';
+}
+
+// the position of the number `value` written in hexadecimal (0x...) as a whole token of the operands
+std::optional<size_t> FindHexToken(std::string_view operands, uint64 value, size_t from = 0)
+{
+    char text[24];
+    snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(value));
+    const std::string_view token(text);
+    for (size_t position = operands.find(token, from); position != std::string_view::npos; position = operands.find(token, position + 1)) {
+        const bool startsToken = position == 0 || !IsTokenCharacter(operands[position - 1]);
+        const bool endsToken   = position + token.size() == operands.size() || !IsTokenCharacter(operands[position + token.size()]);
+        if (startsToken && endsToken)
+            return position;
+    }
+    return {};
+}
+} // namespace
+
+namespace
+{
+// a name that says the place is a pointer: off_, an import slot, an Objective-C reference (the size of the operand is not written)
+bool IsPointerName(std::string_view name)
+{
+    for (const std::string_view prefix : { "off_", "__imp_", "selRef_", "classRef_", "superRef_", "__security_cookie", "__guard_" })
+        if (name.starts_with(prefix))
+            return true;
+    return name.ends_with("_ptr"); // ELF: the GOT slot of a variable (stdout_ptr)
+}
+} // namespace
+
+std::optional<std::string> SubstituteX86MemoryOperand(std::string_view operands, std::string_view name, bool isLea, bool is64)
+{
+    if (name.empty())
+        return {};
+    // the bracket of the fixed address: [rip + 0x..] / [rip - 0x..] / [rip] on x64, [0x...] on x86
+    size_t open = std::string_view::npos;
+    for (size_t position = operands.find('['); position != std::string_view::npos; position = operands.find('[', position + 1)) {
+        const auto inside = operands.substr(position + 1);
+        if (is64 ? (inside.starts_with("rip ") || inside.starts_with("rip]")) : inside.starts_with("0x")) {
+            open = position;
+            break;
+        }
+    }
+    if (open == std::string_view::npos)
+        return {};
+    const size_t close = operands.find(']', open);
+    if (close == std::string_view::npos)
+        return {};
+    size_t start = open;
+    if (start >= 3 && operands[start - 1] == ':') {
+        const auto segment = operands.substr(start - 3, 2);
+        if (segment != "ds" && segment != "cs")
+            return {}; // fs:[0x30] / gs:[0x60]: the thread block, not a place of the file
+        start -= 3;
+    }
+    // the size before it: "dword ptr "
+    std::string_view size;
+    size_t sizeStart = start;
+    if (start >= 5 && operands.substr(start - 5, 5) == " ptr ") {
+        sizeStart = operands.rfind(' ', start - 6);
+        sizeStart = sizeStart == std::string_view::npos ? 0 : sizeStart + 1;
+        size      = operands.substr(sizeStart, start - 5 - sizeStart);
+    }
+    std::string result(operands.substr(0, isLea ? start : sizeStart));
+    if (isLea) {
+        result.append(name);
+    } else {
+        // the size is said by the name: byte_ / word_ / dword_ / qword_ / xmmword_, a pointer (off_, __imp_) of the size of the code
+        const std::string_view pointerSize = is64 ? "qword" : "dword";
+        const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
+                                                  (size == pointerSize && IsPointerName(name)));
+        if (!size.empty() && !sizeInName)
+            result.append(size).append(" ptr ");
+        result.append(is64 ? "cs:" : "ds:").append(name);
+    }
+    result.append(operands.substr(close + 1));
+    return result;
+}
+
+std::optional<std::string> SubstituteX86TableOperand(std::string_view operands, uint64 displacement, std::string_view name, bool isLea, bool is64, bool relativeToImageBase)
+{
+    if (name.empty())
+        return {};
+    char text[32];
+    const int length = snprintf(text, sizeof(text), " + 0x%llx]", static_cast<unsigned long long>(displacement));
+    const auto suffix = operands.find(std::string_view(text, static_cast<size_t>(length)));
+    if (suffix == std::string_view::npos)
+        return {};
+    const size_t open = operands.rfind('[', suffix);
+    if (open == std::string_view::npos)
+        return {};
+    const auto registers = operands.substr(open + 1, suffix - open - 1); // eax*4 / ebx + eax*4
+    if (registers.empty() || registers.find("rip") != std::string_view::npos)
+        return {};
+    size_t start = open;
+    if (start >= 3 && operands[start - 1] == ':') {
+        if (operands.substr(start - 3, 2) != "ds")
+            return {}; // fs: / gs:
+        start -= 3;
+    }
+    std::string_view size;
+    size_t sizeStart = start;
+    if (start >= 5 && operands.substr(start - 5, 5) == " ptr ") {
+        sizeStart = operands.rfind(' ', start - 6);
+        sizeStart = sizeStart == std::string_view::npos ? 0 : sizeStart + 1;
+        size      = operands.substr(sizeStart, start - 5 - sizeStart);
+    }
+    std::string result(operands.substr(0, isLea ? start : sizeStart));
+    if (!isLea) {
+        const std::string_view pointerSize = is64 ? "qword" : "dword";
+        const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
+                                                  (size == pointerSize && IsPointerName(name)));
+        if (!size.empty() && !sizeInName)
+            result.append(size).append(" ptr ");
+        result.append("ds:");
+    }
+    if (relativeToImageBase)
+        result.append("(").append(name).append(" - __ImageBase)");
+    else
+        result.append(name);
+    result.append("[").append(registers).append("]");
+    result.append(operands.substr(suffix + static_cast<size_t>(length)));
+    return result;
+}
+
+std::optional<std::string> SubstituteX86RelativeOperand(
+      std::string_view operands, std::string_view baseRegister, int64 displacement, std::string_view name, std::string_view baseName, bool isLea)
+{
+    if (name.empty() || baseName.empty() || baseRegister.empty())
+        return {};
+    char text[48];
+    const unsigned long long magnitude = displacement < 0 ? 0ull - static_cast<unsigned long long>(displacement) : static_cast<unsigned long long>(displacement);
+    const int length = displacement == 0 ? snprintf(text, sizeof(text), "[%.*s]", static_cast<int>(baseRegister.size()), baseRegister.data())
+                                         : snprintf(text, sizeof(text), "[%.*s %c 0x%llx]", static_cast<int>(baseRegister.size()), baseRegister.data(),
+                                                    displacement < 0 ? '-' : '+', magnitude);
+    if (length <= 0 || static_cast<size_t>(length) >= sizeof(text))
+        return {};
+    const size_t open = operands.find(std::string_view(text, static_cast<size_t>(length)));
+    if (open == std::string_view::npos)
+        return {};
+    size_t start = open;
+    if (start >= 3 && operands[start - 1] == ':') {
+        if (operands.substr(start - 3, 2) != "ds")
+            return {}; // fs: / gs:
+        start -= 3;
+    }
+    std::string_view size;
+    size_t sizeStart = start;
+    if (start >= 5 && operands.substr(start - 5, 5) == " ptr ") {
+        sizeStart = operands.rfind(' ', start - 6);
+        sizeStart = sizeStart == std::string_view::npos ? 0 : sizeStart + 1;
+        size      = operands.substr(sizeStart, start - 5 - sizeStart);
+    }
+    std::string result(operands.substr(0, isLea ? start : sizeStart));
+    if (!isLea) {
+        // the size is said by the name (dword_, a pointer of 32 bits: __imp_ / off_)
+        const bool sizeInName = !size.empty() && ((name.starts_with(size) && name.size() > size.size() && name[size.size()] == '_') ||
+                                                  (size == "dword" && IsPointerName(name)));
+        if (!size.empty() && !sizeInName)
+            result.append(size).append(" ptr ");
+        result.append("ds:");
+    }
+    result.append("(").append(name).append(" - ").append(baseName).append(")[").append(baseRegister).append("]");
+    result.append(operands.substr(open + static_cast<size_t>(length)));
+    return result;
+}
+
+std::optional<std::string> SubstituteX86Immediate(std::string_view operands, uint64 value, std::string_view name)
+{
+    if (name.empty() || operands.find('[') != std::string_view::npos)
+        return {}; // [0x403000] is a memory operand (SubstituteX86MemoryOperand)
+    const auto position = FindHexToken(operands, value);
+    if (!position.has_value())
+        return {};
+    char text[24];
+    const int length = snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(value));
+    std::string result(operands.substr(0, position.value()));
+    result.append("offset ").append(name);
+    result.append(operands.substr(position.value() + static_cast<size_t>(length)));
+    return result;
+}
+
+std::optional<std::string> SubstituteArmLiteral(std::string_view operands, std::string_view literal)
+{
+    const size_t open = operands.find("[pc");
+    if (literal.empty() || open == std::string_view::npos)
+        return {};
+    const size_t close = operands.find(']', open);
+    if (close == std::string_view::npos)
+        return {};
+    std::string result(operands.substr(0, open));
+    result.append("=").append(literal);
+    result.append(operands.substr(close + 1));
+    return result;
+}
+
+std::optional<std::string> SubstituteArm64PageOffset(std::string_view operands, uint64 pageOffset, std::string_view name)
+{
+    if (name.empty() || pageOffset == 0)
+        return {}; // [x8]: no offset written
+    const auto position = FindHexToken(operands, pageOffset);
+    if (!position.has_value() || position.value() == 0 || operands[position.value() - 1] != '#')
+        return {};
+    char text[24];
+    const int length = snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(pageOffset));
+    std::string result(operands.substr(0, position.value()));
+    result.append(name).append("@PAGEOFF");
+    result.append(operands.substr(position.value() + static_cast<size_t>(length)));
+    return result;
+}
+
+AppCUI::Utils::BufferView GetZoneBytes(Reference<GView::Object> obj, AppCUI::uint64 fileOffset, AppCUI::uint32 size)
+{
+    if (fileOffset >= DISSASM_UNINITIALIZED_ZONES_BASE) {
+        static const std::vector<uint8_t> zeros(64 * 1024, 0);
+        return AppCUI::Utils::BufferView(zeros.data(), std::min<size_t>(size, zeros.size()));
+    }
+    return obj->GetData().Get(fileOffset, size, false);
+}
+
 AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetLine>& values, uint64 searchedOffset, uint32* index)
 {
     assert(!values.empty());
@@ -264,21 +585,337 @@ uint64 GetCachedOffsetWindowEnd(const DissasmCodeZone* zone, uint32 cachedOffset
 {
     const auto& offsets = zone->cachedCodeOffsets;
     if (static_cast<size_t>(cachedOffsetIndex) + 1u < offsets.size())
-        return offsets[cachedOffsetIndex + 1u].offset - offsets[0].offset + DISSASM_MAX_INSTRUCTION_SIZE;
+        return offsets[cachedOffsetIndex + 1u].offset - offsets[0].offset + DISSASM_MAX_LINE_SIZE;
     // after the last cached offset there are less than DISSASM_INSTRUCTION_OFFSET_MARGIN bytes of decoded instructions
-    return offsets[cachedOffsetIndex].offset - offsets[0].offset + DISSASM_INSTRUCTION_OFFSET_MARGIN + 2 * DISSASM_MAX_INSTRUCTION_SIZE;
+    return offsets[cachedOffsetIndex].offset - offsets[0].offset + DISSASM_INSTRUCTION_OFFSET_MARGIN + 2 * DISSASM_MAX_LINE_SIZE;
 }
 
-bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn)
+namespace
+{
+// int3, nop (90, 66 90) or a long nop (0f 1f .., 66 0f 1f .., 66 2e 0f 1f .., 66 66 2e ..)
+bool IsPaddingStart(const uint8_t* code, size_t size)
+{
+    if (code[0] == 0xCC || code[0] == 0x90)
+        return true;
+    if (size < 2)
+        return false;
+    if (code[0] == 0x0F)
+        return code[1] == 0x1F;
+    return code[0] == 0x66 && (code[1] == 0x90 || code[1] == 0x0F || code[1] == 0x2E || code[1] == 0x66);
+}
+
+// The padding from the address up to the next 16 bytes aligned address (or up to the first byte that is not padding): one line,
+// "align N" (N: the alignment of its end, at most 0x10). Only a run of at least 2 bytes that is not longer than N: a lone nop or int3
+// stays an instruction. The run never needs more than DISSASM_MAX_LINE_SIZE bytes: the same line from any decoding window.
+bool DecodeX86Padding(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, AppCUI::uint64 alignmentBase)
+{
+    const AppCUI::uint64 start    = *address + alignmentBase;
+    const AppCUI::uint64 chunkEnd = (start | 0xF) + 1;
+    const size_t limit            = static_cast<size_t>(std::min<AppCUI::uint64>(chunkEnd - start, available));
+    size_t length                 = 0;
+    while (length < limit) {
+        if ((*code)[length] == 0xCC) {
+            length++;
+            continue;
+        }
+        const uint8_t* data = *code + length;
+        size_t left         = limit - length;
+        uint64_t at         = *address + length;
+        if (!IsPaddingStart(data, left) || !cs_disasm_iter(handle, &data, &left, &at, insn) || insn->id != X86_INS_NOP)
+            break;
+        length += insn->size;
+    }
+    const AppCUI::uint64 end       = start + length;
+    const AppCUI::uint64 alignment = std::min<AppCUI::uint64>(end & (~end + 1), 0x10); // the lowest set bit
+    if (length < 2 || alignment < 2 || length > alignment)
+        return false;
+
+    insn->id = 0; // X86_INS_INVALID: a data line, no flow
+    if (insn->detail)
+        memset(insn->detail, 0, sizeof(cs_detail));
+    insn->address = *address;
+    insn->size    = static_cast<uint16_t>(length);
+    memset(insn->bytes, 0, sizeof(insn->bytes));
+    memcpy(insn->bytes, *code, std::min(length, sizeof(insn->bytes)));
+    snprintf(insn->mnemonic, sizeof(insn->mnemonic), "align");
+    snprintf(insn->op_str, sizeof(insn->op_str), "0x%x", static_cast<unsigned int>(alignment));
+    *code += length;
+    *size -= length;
+    *address += length;
+    return true;
+}
+// a line that is not an instruction (X86_INS_INVALID / ARM64_INS_INVALID: no flow): db / .word / align
+void SetDataLine(cs_insn* insn, uint64_t address, const uint8_t* bytes, size_t length, const char* mnemonic, const char* operands)
+{
+    insn->id = 0;
+    if (insn->detail)
+        memset(insn->detail, 0, sizeof(cs_detail)); // no groups / operands (the previous instruction left its own)
+    insn->address = address;
+    insn->size    = static_cast<uint16_t>(length);
+    memset(insn->bytes, 0, sizeof(insn->bytes));
+    memcpy(insn->bytes, bytes, std::min(length, sizeof(insn->bytes)));
+    snprintf(insn->mnemonic, sizeof(insn->mnemonic), "%s", mnemonic);
+    snprintf(insn->op_str, sizeof(insn->op_str), "%s", operands);
+}
+
+// An entry of a jump table: a data line of `unit` bytes (db / dw / dd / dq, ARM: db / .short / .word / .quad); a last entry shorter than the
+// unit (the end of the table, of the code) is a db line
+bool DecodeTableLine(const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, uint8_t unit, bool isArm, bool uninitialized)
+{
+    if (available == 0)
+        return false;
+    if (uninitialized) {
+        // no values: db 0x10 dup(?) for a row, db ? / dw ? / dd ? / dq ? (ARM: .byte / .short / .word / .quad) for a variable
+        const bool isRow   = unit == DissasmInstructionSet::BYTES_ROW || !DissasmInstructionSet::IsValidDataUnit(unit) || unit > 8 || available < unit;
+        const size_t width = isRow ? std::min<size_t>(available, 16 - static_cast<size_t>(*address % 16)) : unit;
+        char text[32];
+        const char* mnemonic = isArm ? ".byte" : "db";
+        if (isRow)
+            snprintf(text, sizeof(text), width == 1 ? "?" : "0x%zx dup(?)", width);
+        else {
+            snprintf(text, sizeof(text), "?");
+            if (width == 2)
+                mnemonic = isArm ? ".short" : "dw";
+            else if (width == 4)
+                mnemonic = isArm ? ".word" : "dd";
+            else if (width == 8)
+                mnemonic = isArm ? ".quad" : "dq";
+        }
+        SetDataLine(insn, *address, *code, width, mnemonic, text);
+        *code += width;
+        *size -= width;
+        *address += width;
+        return true;
+    }
+    if (unit == DissasmInstructionSet::BYTES_ROW) {
+        // a row of a data zone: up to the next 16 bytes aligned address (the zones start at aligned addresses)
+        const size_t width = std::min<size_t>(available, 16 - static_cast<size_t>(*address % 16));
+        std::string text;
+        char number[8];
+        for (size_t index = 0; index < width; index++) {
+            snprintf(number, sizeof(number), index == 0 ? "0x%02x" : ", 0x%02x", static_cast<unsigned int>((*code)[index]));
+            text += number;
+        }
+        SetDataLine(insn, *address, *code, width, "db", text.c_str());
+        *code += width;
+        *size -= width;
+        *address += width;
+        return true;
+    }
+    const bool isUtf16 = unit == DissasmInstructionSet::UTF16_STRING && available >= 2;
+    if (unit == DissasmInstructionSet::ASCII_STRING || isUtf16) {
+        // a string defined by the user: up to DISSASM_MAX_LINE_SIZE bytes per line, db "text", 0 / du "text", 0 (UTF-16: 2 bytes per
+        // character); what is not printable as numbers
+        const size_t charSize = isUtf16 ? 2 : 1;
+        const size_t width    = std::min<size_t>(available, DISSASM_MAX_LINE_SIZE) / charSize * charSize;
+        std::string text;
+        bool inQuotes = false;
+        for (size_t index = 0; index < width; index += charSize) {
+            const uint32_t value = isUtf16 ? static_cast<uint32_t>((*code)[index] | ((*code)[index + 1] << 8)) : (*code)[index];
+            if (value >= 0x20 && value < 0x7F && value != '"') {
+                if (!inQuotes)
+                    text += text.empty() ? "\"" : ", \"";
+                inQuotes = true;
+                text.push_back(static_cast<char>(value));
+                continue;
+            }
+            if (inQuotes)
+                text.push_back('"');
+            inQuotes = false;
+            char number[8];
+            snprintf(number, sizeof(number), value == 0 ? "0" : (isUtf16 ? "0x%04x" : "0x%02x"), static_cast<unsigned int>(value));
+            text += text.empty() ? "" : ", ";
+            text += number;
+        }
+        if (inQuotes)
+            text.push_back('"');
+        SetDataLine(insn, *address, *code, width, isUtf16 ? "du" : (isArm ? ".ascii" : "db"), text.c_str());
+        *code += width;
+        *size -= width;
+        *address += width;
+        return true;
+    }
+    const size_t width = available >= unit && unit <= 8 ? unit : 1; // the last byte of a UTF-16 string of an odd size: db
+    uint64_t value     = 0;
+    for (size_t index = 0; index < width; index++)
+        value |= static_cast<uint64_t>((*code)[index]) << (8 * index);
+    char text[24];
+    const char* mnemonic = "db";
+    switch (width) {
+    case 2:
+        mnemonic = isArm ? ".short" : "dw";
+        snprintf(text, sizeof(text), "0x%04llx", static_cast<unsigned long long>(value));
+        break;
+    case 4:
+        mnemonic = isArm ? ".word" : "dd";
+        snprintf(text, sizeof(text), "0x%08llx", static_cast<unsigned long long>(value));
+        break;
+    case 8:
+        mnemonic = isArm ? ".quad" : "dq";
+        snprintf(text, sizeof(text), "0x%016llx", static_cast<unsigned long long>(value));
+        break;
+    default:
+        snprintf(text, sizeof(text), "0x%02llx", static_cast<unsigned long long>(value));
+        break;
+    }
+    SetDataLine(insn, *address, *code, width, mnemonic, text);
+    *code += width;
+    *size -= width;
+    *address += width;
+    return true;
+}
+
+// ARM64: 4 bytes instructions. A run of nops up to the next 16 bytes aligned address is one align line (as on x86, at least 2 of them,
+// not longer than the alignment of its end); an undecodable word is a data line (.word 0x..), the bytes before a boundary or the end of
+// the code (less than 4) are db lines
+bool DecodeArm64Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, AppCUI::uint64 alignmentBase)
+{
+    constexpr uint32_t NOP = 0xD503201F;
+    const auto wordAt      = [](const uint8_t* bytes) {
+        return static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) | (static_cast<uint32_t>(bytes[2]) << 16) |
+               (static_cast<uint32_t>(bytes[3]) << 24);
+    };
+    const auto advance = [code, size, address](size_t length) {
+        *code += length;
+        *size -= length;
+        *address += length;
+    };
+    char text[24];
+    if (alignmentBase != GView::View::DissasmViewer::DISSASM_NO_PADDING_ALIGNMENT && available >= 8 && wordAt(*code) == NOP) {
+        const AppCUI::uint64 start    = *address + alignmentBase;
+        const AppCUI::uint64 chunkEnd = (start | 0xF) + 1;
+        const size_t limit            = static_cast<size_t>(std::min<AppCUI::uint64>(chunkEnd - start, available));
+        size_t length                 = 0;
+        while (length + 4 <= limit && wordAt(*code + length) == NOP)
+            length += 4;
+        const AppCUI::uint64 end       = start + length;
+        const AppCUI::uint64 alignment = std::min<AppCUI::uint64>(end & (~end + 1), 0x10);
+        if (length >= 8 && length <= alignment) {
+            snprintf(text, sizeof(text), "0x%x", static_cast<unsigned int>(alignment));
+            SetDataLine(insn, *address, *code, length, "align", text);
+            advance(length);
+            return true;
+        }
+    }
+    if (available >= 4) {
+        const uint8_t* data = *code;
+        size_t left         = 4;
+        uint64_t at         = *address;
+        if (cs_disasm_iter(handle, &data, &left, &at, insn)) {
+            advance(4);
+            return true;
+        }
+        snprintf(text, sizeof(text), "0x%08x", static_cast<unsigned int>(wordAt(*code)));
+        SetDataLine(insn, *address, *code, 4, ".word", text);
+        advance(4);
+        return true;
+    }
+    snprintf(text, sizeof(text), "0x%02x", static_cast<unsigned int>(**code));
+    SetDataLine(insn, *address, *code, 1, "db", text);
+    advance(1);
+    return true;
+}
+
+// 32 bit ARM: the mode of the address (ARM: 4 bytes, Thumb: 2 or 4 bytes; the handle is switched to it). An undecodable instruction is a
+// data line (.word 0x.. / .short 0x..); a data region (a literal pool, ELF $d) is made of .word lines; less than a unit before a boundary:
+// db lines
+bool DecodeArm32Line(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, ArmCodeMode mode)
+{
+    const auto advance = [code, size, address](size_t length) {
+        *code += length;
+        *size -= length;
+        *address += length;
+    };
+    char text[24];
+    const uint8_t* bytes = *code;
+    const auto dataLine  = [&](size_t width) {
+        if (width == 4)
+            snprintf(text, sizeof(text), "0x%08x", static_cast<unsigned int>(bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (static_cast<uint32_t>(bytes[3]) << 24)));
+        else if (width == 2)
+            snprintf(text, sizeof(text), "0x%04x", static_cast<unsigned int>(bytes[0] | (bytes[1] << 8)));
+        else
+            snprintf(text, sizeof(text), "0x%02x", static_cast<unsigned int>(bytes[0]));
+        SetDataLine(insn, *address, bytes, width, width == 4 ? ".word" : (width == 2 ? ".short" : "db"), text);
+        advance(width);
+        return true;
+    };
+    if (mode == ArmCodeMode::Data)
+        return dataLine(available >= 4 ? 4 : 1);
+    const bool thumb      = mode == ArmCodeMode::Thumb;
+    const size_t unitSize = thumb ? 2 : 4;
+    if (available < unitSize)
+        return dataLine(1);
+    cs_option(handle, CS_OPT_MODE, thumb ? CS_MODE_THUMB : CS_MODE_ARM);
+    const uint8_t* data = *code;
+    size_t left         = std::min<size_t>(available, 4);
+    uint64_t at         = *address;
+    if (cs_disasm_iter(handle, &data, &left, &at, insn)) {
+        advance(insn->size);
+        return true;
+    }
+    return dataLine(unitSize);
+}
+} // namespace
+
+bool DecodeX86Line(
+      csh handle,
+      const uint8_t** code,
+      size_t* size,
+      uint64_t* address,
+      cs_insn* insn,
+      const std::vector<AppCUI::uint64>* boundaries,
+      AppCUI::uint64 alignmentBase,
+      const DissasmInstructionSet* instructionSet)
 {
     if (*size == 0)
         return false;
-    if (cs_disasm_iter(handle, code, size, address, insn))
+    // an instruction never ends after the next boundary
+    size_t available = *size;
+    if (boundaries && !boundaries->empty()) {
+        const auto next = std::upper_bound(boundaries->begin(), boundaries->end(), static_cast<AppCUI::uint64>(*address));
+        if (next != boundaries->end() && *next - *address < available)
+            available = static_cast<size_t>(*next - *address);
+    }
+    // the jump tables found by the analysis: data lines of their entries; no instruction runs into a table
+    if (instructionSet && !instructionSet->dataRanges.empty()) {
+        if (const auto* range = instructionSet->DataRangeAt(*address)) {
+            const size_t left = static_cast<size_t>(std::min<AppCUI::uint64>(range->end - *address, available));
+            return DecodeTableLine(code, size, address, insn, left, range->unit, instructionSet->kind != DissasmInstructionSet::Kind::X86, instructionSet->uninitialized);
+        }
+        const auto nextRange = instructionSet->NextDataRangeStart(*address);
+        if (nextRange.has_value() && nextRange.value() - *address < available)
+            available = static_cast<size_t>(nextRange.value() - *address);
+    }
+    // the padding the code reaches: instructions; an align line never runs into a reached padding instruction
+    bool reachedPadding     = false;
+    size_t paddingAvailable = available;
+    if (instructionSet && !instructionSet->reachablePadding.empty()) {
+        const auto reached = std::lower_bound(instructionSet->reachablePadding.begin(), instructionSet->reachablePadding.end(), static_cast<AppCUI::uint64>(*address));
+        if (reached != instructionSet->reachablePadding.end()) {
+            reachedPadding = *reached == *address;
+            if (!reachedPadding && *reached - *address < paddingAvailable)
+                paddingAvailable = static_cast<size_t>(*reached - *address);
+        }
+    }
+    const AppCUI::uint64 paddingBase = reachedPadding ? DISSASM_NO_PADDING_ALIGNMENT : alignmentBase;
+    if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm64) // 4 bytes instructions: the limit is a multiple of 4
+        return DecodeArm64Line(handle, code, size, address, insn, paddingAvailable >= 4 ? paddingAvailable : available, paddingBase);
+    if (instructionSet && instructionSet->kind == DissasmInstructionSet::Kind::Arm32)
+        return DecodeArm32Line(handle, code, size, address, insn, available, instructionSet->ModeAt(*address));
+    if (paddingBase != DISSASM_NO_PADDING_ALIGNMENT && IsPaddingStart(*code, paddingAvailable) &&
+        DecodeX86Padding(handle, code, size, address, insn, paddingAvailable, paddingBase))
         return true;
+    size_t left = available;
+    if (cs_disasm_iter(handle, code, &left, address, insn)) {
+        *size -= available - left;
+        return true;
+    }
 
     // cs_disasm_iter leaves the position as it is on failure: the byte becomes a data line of its own
     const uint8_t value = **code;
     insn->id            = 0; // X86_INS_INVALID: a data line, not an instruction
+    if (insn->detail)
+        memset(insn->detail, 0, sizeof(cs_detail)); // no groups / operands (the previous instruction left its own)
     insn->address       = *address;
     insn->size          = 1;
     memset(insn->bytes, 0, sizeof(insn->bytes));
@@ -291,20 +928,143 @@ bool DecodeX86Line(csh handle, const uint8_t** code, size_t* size, uint64_t* add
     return true;
 }
 
+namespace
+{
+// ret, padding or undecodable bytes: the next line can start a function
+bool IsFlowEndOrPadding(const cs_insn& insn)
+{
+    switch (insn.id) {
+    case X86_INS_INVALID: // db 0x..
+    case X86_INS_RET:
+    case X86_INS_RETF:
+    case X86_INS_RETFQ:
+    case X86_INS_INT3:
+    case X86_INS_HLT:
+    case X86_INS_UD2:
+    case X86_INS_NOP:
+        return true;
+    case X86_INS_ADD: // 00 00: zero padding
+        return strcmp(insn.op_str, "byte ptr [rax], al") == 0 || strcmp(insn.op_str, "byte ptr [eax], al") == 0;
+    default:
+        return false;
+    }
+}
+
+bool IsCalleeSavedRegister(std::string_view reg, bool is64)
+{
+    if (is64)
+        return reg == "rbx" || reg == "rsi" || reg == "rdi" || reg == "rbp" || reg == "r12" || reg == "r13" || reg == "r14" || reg == "r15";
+    return reg == "ebx" || reg == "esi" || reg == "edi" || reg == "ebp";
+}
+
+// mov qword ptr [rsp + 8], rbx: an argument / non volatile register saved in the home space (MSVC x64)
+bool IsHomeSpaceSave(std::string_view operands)
+{
+    constexpr std::string_view prefix = "qword ptr [rsp + ";
+    if (!operands.starts_with(prefix))
+        return false;
+    operands.remove_prefix(prefix.size());
+    for (const std::string_view slot : { "8], ", "0x10], ", "0x18], ", "0x20], " }) {
+        if (!operands.starts_with(slot))
+            continue;
+        const auto reg = operands.substr(slot.size());
+        return reg == "rcx" || reg == "rdx" || reg == "r8" || reg == "r9" || reg == "rbx" || reg == "rsi" || reg == "rdi" || reg == "rbp";
+    }
+    return false;
+}
+} // namespace
+
+std::optional<uint64> X86PrologueDetector::Next(const cs_insn& insn, uint64 fileOffset)
+{
+    const std::string_view operands     = insn.op_str;
+    const std::string_view framePointer = is64 ? "rbp" : "ebp";
+    const std::string_view frameSetup   = is64 ? "rbp, rsp" : "ebp, esp";
+    const std::string_view stackSub     = is64 ? "rsp, " : "esp, ";
+
+    const bool wasAfterPadding = afterPadding;
+    const bool wasAfterJump    = afterJump;
+    afterPadding               = IsFlowEndOrPadding(insn);
+    afterJump                  = insn.id == X86_INS_JMP || insn.id == X86_INS_LJMP;
+
+    // the second line of a prologue
+    const Pending previous = pending;
+    pending                = Pending::None;
+    const bool isPush      = insn.id == X86_INS_PUSH;
+    const bool isStackSub  = insn.id == X86_INS_SUB && operands.starts_with(stackSub);
+    const bool isFrameMov  = insn.id == X86_INS_MOV && operands == frameSetup;
+    switch (previous) {
+    case Pending::FramePush:
+        if (isFrameMov || (pendingAfterPadding && (isPush || isStackSub)))
+            return pendingOffset;
+        break;
+    case Pending::SavedRegisterPush:
+        if (isPush || isStackSub || isFrameMov)
+            return pendingOffset;
+        break;
+    case Pending::HotPatch:
+        if (isPush && operands == framePointer) {
+            pending = Pending::FramePush; // mov edi, edi; push ebp: the function starts at the mov
+            return {};
+        }
+        break;
+    case Pending::None:
+        break;
+    }
+
+    // the first line of a prologue
+    if (isPush && operands == framePointer) {
+        pending             = Pending::FramePush;
+        pendingOffset       = fileOffset;
+        pendingAfterPadding = wasAfterPadding;
+        return {};
+    }
+    if (insn.id == X86_INS_ENDBR32 || insn.id == X86_INS_ENDBR64)
+        return (wasAfterPadding || wasAfterJump) ? std::optional<uint64>(fileOffset) : std::nullopt;
+    if (!wasAfterPadding || afterPadding)
+        return {}; // inside the code, or more padding
+
+    switch (insn.id) {
+    case X86_INS_MOV:
+        if (!is64 && operands == "edi, edi") {
+            pending             = Pending::HotPatch;
+            pendingOffset       = fileOffset;
+            pendingAfterPadding = true;
+            return {};
+        }
+        if (is64 && (IsHomeSpaceSave(operands) || operands == "rax, rsp" || operands == "r11, rsp"))
+            return fileOffset;
+        break;
+    case X86_INS_SUB:
+        if (is64 && isStackSub)
+            return fileOffset;
+        break;
+    case X86_INS_PUSH:
+        if (IsCalleeSavedRegister(operands, is64)) {
+            pending             = Pending::SavedRegisterPush;
+            pendingOffset       = fileOffset;
+            pendingAfterPadding = true;
+        }
+        break;
+    default:
+        break;
+    }
+    return {};
+}
+
 bool DissasmCodeLinesWalker::Next(cs_insn* insn)
 {
     if (address >= codeSize)
         return false;
     // a whole instruction (or the end of the code): the same bytes as the code windows of the drawn lines, so the same lines are decoded.
     // The view is taken again for every line, nothing else can refill the data cache under it.
-    const uint32 requested = static_cast<uint32>(std::min<uint64>(codeSize - address, DISSASM_MAX_INSTRUCTION_SIZE));
-    const auto view        = obj->GetData().Get(codeStart + address, requested, false);
+    const uint32 requested = static_cast<uint32>(std::min<uint64>(codeSize - address, DISSASM_MAX_LINE_SIZE));
+    const auto view        = GetZoneBytes(obj, codeStart + address, requested);
     if (!view.IsValid() || view.GetLength() == 0)
         return false;
     const uint8_t* data = view.GetData();
     size_t size         = static_cast<size_t>(std::min<uint64>(view.GetLength(), requested));
     uint64_t current    = address;
-    if (!DecodeX86Line(handle, &data, &size, &current, insn))
+    if (!DecodeX86Line(handle, &data, &size, &current, insn, boundaries, alignmentBase, instructionSet))
         return false;
     address = current;
     return true;
@@ -334,12 +1094,10 @@ cs_insn* GetCurrentInstructionByOffset(
         return nullptr;
     }
 
-    // TODO: keep the handle open and insn open until the program ends
-    csh handle;
-    const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(zone->internalArchitecture), &handle);
-    if (resCode != CS_ERR_OK) {
+    const csh handle = zone->GetDecodeHandle();
+    if (handle == 0) {
         if (dli)
-            dli->WriteErrorToScreen(cs_strerror(resCode));
+            dli->WriteErrorToScreen("ERROR: capstone could not be initialized!");
         return nullptr;
     }
 
@@ -349,19 +1107,19 @@ cs_insn* GetCurrentInstructionByOffset(
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (zone->asmAddress <= offsetToReach) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
-        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
+        const bool decoded =
+              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase,
+                            &zone->instructionSet);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the offset is after the decoded code
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
             cs_free(insn, 1);
-            cs_close(&handle);
             return nullptr;
         }
         diffLines++;
     }
     diffLines += closestData.line - 1;
-    cs_close(&handle);
     return insn;
 }
 
@@ -390,4 +1148,32 @@ AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLin
     if (index)
         *index = left;
     return values[left];
+}
+
+// the characters of a name, a register or a number (mangled names: ?Name@@YAXXZ, $LN5)
+bool IsTokenCharacter(char16_t c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '@' || c == '?' || c == '$' || c == '.';
+}
+
+// the occurrences of `token` (a whole name: the characters around it are not name characters) get `color`
+void HighlightTokenOccurrences(AppCUI::Graphics::CharacterBuffer& chars, AppCUI::uint32 fromColumn, std::string_view token, AppCUI::Graphics::ColorPair color)
+{
+    Character* buffer   = chars.GetBuffer();
+    const uint32 length = chars.Len();
+    const auto size     = static_cast<uint32>(token.size());
+    for (uint32 column = fromColumn; column + size <= length; column++) {
+        if (column > 0 && IsTokenCharacter(buffer[column - 1].Code))
+            continue;
+        if (column + size < length && IsTokenCharacter(buffer[column + size].Code))
+            continue;
+        bool matches = true;
+        for (uint32 index = 0; index < size && matches; index++)
+            matches = buffer[column + index].Code == static_cast<char16>(static_cast<unsigned char>(token[index]));
+        if (!matches)
+            continue;
+        for (uint32 index = 0; index < size; index++)
+            buffer[column + index].Color = color;
+        column += size - 1;
+    }
 }

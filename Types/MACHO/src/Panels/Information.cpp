@@ -27,7 +27,7 @@ void Information::UpdateBasicInfo()
 
     const auto& info = MAC::GetArchInfoFromCPUTypeAndSubtype(machO->header.cputype, machO->header.cpusubtype);
 
-    general->AddItem({ "Byte Order", MAC::ByteOrderNames.at(info.byteorder) });
+    general->AddItem({ "Byte Order", MAC::NameOf(MAC::ByteOrderNames, info.byteorder) });
 
     general->AddItem({ "Magic", ls.Format("%-14s (0x%X)", machO->is64 ? "MH_MAGIC_64" : "MH_MAGIC", machO->header.magic) });
 
@@ -35,7 +35,7 @@ void Information::UpdateBasicInfo()
 
     general->AddItem({ "CPU Subtype", ls.Format("%-14s (0x%X)", info.description.c_str(), machO->header.cpusubtype) });
 
-    const auto& fileTypeName = MAC::FileTypeNames.at(machO->header.filetype);
+    const auto& fileTypeName = MAC::NameOf(MAC::FileTypeNames, machO->header.filetype);
     general->AddItem({ "File Type", ls.Format("%-14s (0x%X)", fileTypeName.data(), machO->header.filetype) })
           .SetType(ListViewItem::Type::Emphasized_1);
 
@@ -53,8 +53,8 @@ void Information::UpdateBasicInfo()
         LocalString<16> hfls;
         hfls.Format("(0x%X)", flag);
 
-        const auto flagName        = MAC::MachHeaderFlagsNames.at(flag).data();
-        const auto flagDescription = MAC::MachHeaderFlagsDescriptions.at(flag).data();
+        const auto flagName        = MAC::NameOf(MAC::MachHeaderFlagsNames, flag).data();
+        const auto flagDescription = MAC::NameOf(MAC::MachHeaderFlagsDescriptions, flag).data();
 
         general->AddItem({ "", ls.Format("%-20s %-12s %s", flagName, hfls.GetText(), flagDescription) })
               .SetType(ListViewItem::Type::Emphasized_2);
@@ -77,7 +77,7 @@ void Information::UpdateEntryPoint()
 
     general->AddItem("Entry Point").SetType(ListViewItem::Type::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->main->cmd);
+    const auto& lcName    = MAC::NameOf(MAC::LoadCommandNames, machO->main->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->main->cmd), hex);
     general->AddItem({ "Command", ls.Format("%-14s (%s)", lcName.data(), hexCommand.data()) });
 
@@ -105,7 +105,7 @@ void Information::UpdateSourceVersion()
 
     general->AddItem("Source Version").SetType(ListViewItem::Type::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->sourceVersion->cmd);
+    const auto& lcName    = MAC::NameOf(MAC::LoadCommandNames, machO->sourceVersion->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->sourceVersion->cmd), hex);
     general->AddItem({ "Command", ls.Format("%-22s (%s)", lcName.data(), hexCommand.data()) });
 
@@ -137,7 +137,7 @@ void Information::UpdateUUID()
 
     general->AddItem("UUID").SetType(ListViewItem::Type::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->uuid->cmd);
+    const auto& lcName    = MAC::NameOf(MAC::LoadCommandNames, machO->uuid->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->uuid->cmd), hex);
     general->AddItem({ "Command", ls.Format("%-35s (%s)", lcName.data(), hexCommand.data()) });
 
@@ -196,7 +196,7 @@ void Information::UpdateVersionMin()
 
     general->AddItem("Version Min").SetType(ListViewItem::Type::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->versionMin->cmd);
+    const auto& lcName    = MAC::NameOf(MAC::LoadCommandNames, machO->versionMin->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->versionMin->cmd), hex);
     general->AddItem({ "Command", ls.Format("%-22s (%s)", lcName.data(), hexCommand.data()) });
 

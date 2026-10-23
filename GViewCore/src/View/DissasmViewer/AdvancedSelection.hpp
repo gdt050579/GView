@@ -80,6 +80,9 @@ namespace View
             bool UpdateSelection(uint32 index, LinePosition position, bool ctrl_down, bool alt_down);
             int BeginSelection(LinePosition position, bool ctrl_down, bool alt_down);
             void ClearStorages();
+            // the lines [rangeStart, rangeEnd) became `delta` lines more (a zone resized: its lines counted, its analysis ended in the
+            // background): a selection that touches them is cleared (they changed), a selection below them moves with them
+            void AdjustToResizedLines(uint32 rangeStart, uint32 rangeEnd, int32 delta);
         };
     } // namespace DissasmViewer
 } // namespace View

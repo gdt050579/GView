@@ -99,12 +99,126 @@ bool DissasmComments::LoadFromBuffer(const std::byte*& start, const std::byte* e
         if (!read_primitive(start, end, comment_size))
             return false;
         const std::byte* out = nullptr;
-        if (!read_bytes(start, end, comment_size, out))
+        if (!read_text_bytes(start, end, comment_size, out))
             return false;
         comments[offset] = std::string((const char*) out, comment_size);
         --commentsCount;
     }
 
+    return true;
+}
+
+void DissasmXrefs::Finish()
+{
+    std::sort(byTarget.begin(), byTarget.end(), [](const DissasmXref& left, const DissasmXref& right) {
+        if (left.to != right.to)
+            return left.to < right.to;
+        if (left.from != right.from)
+            return left.from < right.from;
+        return left.kind < right.kind;
+    });
+    byTarget.erase(std::unique(byTarget.begin(),
+                               byTarget.end(),
+                               [](const DissasmXref& left, const DissasmXref& right) {
+                                   return left.to == right.to && left.from == right.from && left.kind == right.kind;
+                               }),
+                   byTarget.end());
+    byTarget.shrink_to_fit();
+    bySource.resize(byTarget.size());
+    for (uint32 index = 0; index < bySource.size(); index++)
+        bySource[index] = index;
+    std::stable_sort(bySource.begin(), bySource.end(), [this](uint32 left, uint32 right) { return byTarget[left].from < byTarget[right].from; });
+}
+
+std::vector<const DissasmXref*> DissasmXrefs::From(uint64 from) const
+{
+    std::vector<const DissasmXref*> references;
+    if (bySource.size() != byTarget.size())
+        return references; // not finished
+    auto it = std::lower_bound(bySource.begin(), bySource.end(), from, [this](uint32 index, uint64 value) { return byTarget[index].from < value; });
+    for (; it != bySource.end() && byTarget[*it].from == from; ++it)
+        references.push_back(&byTarget[*it]);
+    return references;
+}
+
+std::pair<std::vector<DissasmXref>::const_iterator, std::vector<DissasmXref>::const_iterator> DissasmXrefs::To(uint64 target) const
+{
+    const auto first = std::lower_bound(byTarget.begin(), byTarget.end(), target, [](const DissasmXref& xref, uint64 value) { return xref.to < value; });
+    const auto last  = std::upper_bound(first, byTarget.end(), target, [](uint64 value, const DissasmXref& xref) { return value < xref.to; });
+    return { first, last };
+}
+
+std::string_view GView::View::DissasmViewer::GetXrefKindName(DissasmXrefKind kind)
+{
+    switch (kind) {
+    case DissasmXrefKind::Call:
+        return "call";
+    case DissasmXrefKind::Jump:
+        return "jmp";
+    case DissasmXrefKind::ConditionalJump:
+        return "jcc";
+    case DissasmXrefKind::Read:
+        return "read";
+    case DissasmXrefKind::Write:
+        return "write";
+    case DissasmXrefKind::Offset:
+        return "offset";
+    case DissasmXrefKind::Switch:
+        return "switch";
+    }
+    return "";
+}
+
+bool DissasmUserComments::Get(const DissasmCommentAnchor& anchor, std::string& comment) const
+{
+    const auto it = comments.find(anchor);
+    if (it == comments.end())
+        return false;
+    comment = it->second;
+    return true;
+}
+
+void DissasmUserComments::Set(const DissasmCommentAnchor& anchor, std::string comment)
+{
+    comments[anchor] = std::move(comment);
+}
+
+bool DissasmUserComments::Remove(const DissasmCommentAnchor& anchor)
+{
+    return comments.erase(anchor) > 0;
+}
+
+void DissasmUserComments::ToBuffer(std::vector<std::byte>& buffer) const
+{
+    append_bytes(buffer, static_cast<uint32>(comments.size()));
+    for (const auto& [anchor, text] : comments) {
+        append_bytes(buffer, static_cast<uint8>(anchor.kind));
+        append_bytes(buffer, anchor.address);
+        append_bytes(buffer, anchor.frameOffset);
+        append_string(buffer, text);
+    }
+}
+
+bool DissasmUserComments::LoadFromBuffer(const std::byte*& start, const std::byte* end)
+{
+    // the cache file is untrusted: the count is bounded by the bytes left (every comment has at least its fixed fields)
+    constexpr size_t MINIMUM_RECORD_SIZE = sizeof(uint8) + sizeof(uint64) + sizeof(int32) + sizeof(uint32);
+    uint32 count                         = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / MINIMUM_RECORD_SIZE)
+        return false;
+    for (uint32 i = 0; i < count; i++) {
+        uint8 kind = 0;
+        DissasmCommentAnchor anchor;
+        uint32 textSize = 0;
+        const std::byte* text = nullptr;
+        if (!read_primitive(start, end, kind) || !read_primitive(start, end, anchor.address) || !read_primitive(start, end, anchor.frameOffset) ||
+            !read_primitive(start, end, textSize) || !read_text_bytes(start, end, textSize, text))
+            return false;
+        if (kind > static_cast<uint8>(DissasmCommentAnchor::Kind::Variable))
+            return false;
+        anchor.kind       = static_cast<DissasmCommentAnchor::Kind>(kind);
+        comments[anchor] = std::string(reinterpret_cast<const char*>(text), textSize);
+    }
     return true;
 }
 
@@ -204,6 +318,18 @@ DissasmLocalVariable* DissasmFunctionFrame::FindVariable(int32 frameOffset)
 const DissasmLocalVariable* DissasmFunctionFrame::FindVariable(int32 frameOffset) const
 {
     return const_cast<DissasmFunctionFrame*>(this)->FindVariable(frameOffset);
+}
+
+const DissasmLocalVariable* DissasmFunctionFrame::FindVariableContaining(int32 frameOffset) const
+{
+    auto it = std::upper_bound(
+          variables.begin(), variables.end(), frameOffset, [](int32 offset, const DissasmLocalVariable& var) { return offset < var.frameOffset; });
+    if (it == variables.begin())
+        return nullptr;
+    --it;
+    if (it->frameOffset == frameOffset)
+        return &(*it);
+    return it->structure && static_cast<int64>(frameOffset) < static_cast<int64>(it->frameOffset) + it->structure->size ? &(*it) : nullptr;
 }
 
 bool DissasmFunctionFrame::HasVariableNamed(std::string_view name) const

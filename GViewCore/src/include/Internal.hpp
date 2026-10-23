@@ -559,6 +559,9 @@ namespace Type
 
 namespace App
 {
+    // the key bindings are applied again to every viewer (a viewer changed the default keys: its key profile)
+    void ReapplyKeyBindings();
+
     namespace MenuCommands
     {
         constexpr int ARRANGE_VERTICALLY       = 100000;
@@ -795,6 +798,8 @@ namespace App
               string_view typeName,
               Reference<Window> parent           = nullptr,
               const ConstString& creationProcess = "");
+        // GView analyze: the analysis of the disassembly of a file as JSON, without a window (HeadlessAnalysis.cpp)
+        bool AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptions& options, std::string& json, std::string& error);
         bool AddBufferWindow(
               BufferView buf,
               const ConstString& name,

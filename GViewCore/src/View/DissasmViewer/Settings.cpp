@@ -23,16 +23,136 @@ void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zone
 {
     if (lang == DisassemblyLanguage::Default || lang == DisassemblyLanguage::Count)
         lang = INTERNAL_SETTINGS->defaultLanguage;
-    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang };
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang, {}, false };
+}
+
+void Settings::AddDataZone(uint64 zoneStart, uint64 zoneSize, DisassemblyLanguage lang, std::string_view name)
+{
+    AddDisassemblyZone(zoneStart, zoneSize, NO_ENTRY_POINT, lang, name);
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart].isData = true;
+}
+
+void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang, std::string_view name)
+{
+    AddDisassemblyZone(zoneStart, zoneSize, zoneDissasmStartPoint, lang);
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart].name = std::string(name); // a string_view is not NUL terminated
 }
 
 void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType)
 {
 #ifndef DISSASM_DISABLE_API_CALLS
-    INTERNAL_SETTINGS->memoryMappings.insert({ address, { name.data(), mappingType } });
+    INTERNAL_SETTINGS->memoryMappings.insert({ address, { std::string(name), mappingType } }); // a string_view is not NUL terminated
 #endif
-    if (address > INTERNAL_SETTINGS->maxLocationMemoryMappingSize)
-        INTERNAL_SETTINGS->maxLocationMemoryMappingSize = address;
+}
+
+void Settings::AddFunctionEntry(uint64 fileOffset, std::string_view name, FunctionEntryType type, uint64 size)
+{
+    auto& entry = INTERNAL_SETTINGS->functionEntries[fileOffset];
+    // the same function from several sources: an export keeps its name, the size is kept from the exception data
+    const bool isExport = type == FunctionEntryType::Export;
+    if (!name.empty() && (entry.name.empty() || (isExport && !entry.isExport))) {
+        entry.name     = std::string(name); // a string_view is not NUL terminated
+        entry.isExport = isExport;
+    }
+    if (size > 0)
+        entry.size = size;
+}
+
+void Settings::AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionScope>& scopes)
+{
+    auto& entry           = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.exceptionScopes = scopes;
+    entry.prologSize      = prologSize;
+    entry.frameRegister   = frameRegister;
+    entry.frameOffset     = frameOffset;
+}
+
+void Settings::AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionFunclet>& funclets)
+{
+    auto& entry             = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.exceptionFunclets = funclets;
+    entry.prologSize        = prologSize;
+    entry.frameRegister     = frameRegister;
+    entry.frameOffset       = frameOffset;
+}
+
+void Settings::AddExceptionObjects(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionObject>& objects)
+{
+    auto& entry            = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.exceptionObjects = objects;
+    entry.prologSize       = prologSize;
+    entry.frameRegister    = frameRegister;
+    entry.frameOffset      = frameOffset;
+}
+
+void Settings::AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize)
+{
+    auto& entry      = INTERNAL_SETTINGS->functionEntries[functionFileOffset];
+    entry.prologSize = functionPrologSize;
+    entry.chunks.emplace_back(chunkFileOffset, size);
+}
+
+void Settings::AddInstructionBoundary(uint64 fileOffset)
+{
+    INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);
+}
+
+void Settings::SetGlobalOffsetTable(uint64 address)
+{
+    INTERNAL_SETTINGS->globalOffsetTable = address;
+}
+
+void Settings::AddRelocatedPointer(uint64 fileOffset, uint64 value)
+{
+    INTERNAL_SETTINGS->relocatedPointers[fileOffset] = value;
+}
+
+void Settings::AddChainedFixups(BufferView data, uint64 imageBase)
+{
+    if (!data.IsValid())
+        return;
+    INTERNAL_SETTINGS->chainedFixups.assign(data.GetData(), data.GetData() + data.GetLength());
+    INTERNAL_SETTINGS->chainedFixupsImageBase = imageBase;
+}
+
+void Settings::AddDyldBindInfo(BufferView opcodes, const std::vector<uint64>& segmentAddresses, uint8 pointerSize, uint64 imageBase)
+{
+    if (!opcodes.IsValid() || opcodes.GetLength() == 0 || (pointerSize != 4 && pointerSize != 8))
+        return;
+    INTERNAL_SETTINGS->dyldBindInfos.push_back({ std::vector<uint8>(opcodes.GetData(), opcodes.GetData() + opcodes.GetLength()), segmentAddresses, pointerSize, imageBase });
+}
+
+void Settings::AddBoundSymbol(uint64 rva, std::string_view name)
+{
+    if (!name.empty())
+        INTERNAL_SETTINGS->boundSymbols[rva] = std::string(name);
+}
+
+void Settings::AddUninitializedDataZone(uint64 address, uint64 size, DisassemblyLanguage lang, std::string_view name)
+{
+    if (size == 0)
+        return;
+    // a file offset of its own after the end of the file, in the order of the zones (the listing places the zones by their offsets)
+    const uint64 index =
+          std::count_if(INTERNAL_SETTINGS->disassemblyZones.begin(), INTERNAL_SETTINGS->disassemblyZones.end(), [](const auto& zone) {
+              return zone.second.isUninitialized;
+          });
+    const uint64 fileOffset = DISSASM_UNINITIALIZED_ZONES_BASE + index * DISSASM_UNINITIALIZED_ZONE_SPACE;
+    AddDataZone(fileOffset, std::min(size, DISSASM_MAX_UNINITIALIZED_ZONE), lang, name);
+    auto& zone           = INTERNAL_SETTINGS->disassemblyZones[fileOffset];
+    zone.isUninitialized = true;
+    zone.virtualAddress  = address;
+}
+
+void Settings::AddDataField(uint64 address, uint32 size, DataFieldType type, std::string_view name)
+{
+    if (size > 0)
+        INTERNAL_SETTINGS->dataFields[address] = { size, type, std::string(name) };
+}
+
+void Settings::AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode)
+{
+    INTERNAL_SETTINGS->armCodeModes[fileOffset] = mode;
 }
 
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
@@ -87,7 +207,6 @@ SettingsData::SettingsData()
     defaultLanguage              = DisassemblyLanguage::Default;
     availableID                  = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
     offsetTranslateCallback      = nullptr;
-    maxLocationMemoryMappingSize = 0;
 }
 
 bool Settings::SetName(std::string_view name)

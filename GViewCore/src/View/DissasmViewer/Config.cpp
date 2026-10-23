@@ -42,6 +42,7 @@ void ColorManager::SetAllColorsInactive()
     this->Colors.AsmFunctionColor              = this->Colors.Inactive;
     this->Colors.AsmLocationInstruction        = this->Colors.Inactive;
     this->Colors.AsmJumpInstruction            = this->Colors.Inactive;
+    this->Colors.AsmSystemInstructionColor     = this->Colors.Inactive;
     this->Colors.AsmComment                    = this->Colors.Inactive;
     this->Colors.AsmLocalVariableColor         = this->Colors.Inactive;
     this->Colors.AsmDefaultColor               = this->Colors.Inactive;
@@ -72,7 +73,9 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     sect.UpdateValue("Config.ShowFileContent", true, true);
     sect.UpdateValue("Config.ShowOnlyDissasm", false, true);
     sect.UpdateValue("Config.DeepScanDissasmOnStart", true, true);
+    sect.UpdateValue("Config.AlignPadding", true, true);
     sect.UpdateValue("Config.CacheSameLocationAsAnalyzedFile", true, true);
+    sect.UpdateValue("Config.KeyProfile", "default", true); // default | ida
 }
 
 #define LOAD_COLOR_IF_EXISTS(name) \
@@ -105,6 +108,7 @@ void Config::UpdateColors(const AppCUI::Application::Config& config)
     this->ConfigColors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::Transparent };
     this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::Transparent };
     this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::Transparent };
+    this->ConfigColors.AsmSystemInstructionColor     = ColorPair{ Color::Red, Color::Transparent };
     this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, Color::Transparent };
     this->ConfigColors.AsmLocalVariableColor         = ColorPair{ Color::Yellow, Color::Transparent };
     this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, Color::Transparent };
@@ -129,6 +133,7 @@ void Config::UpdateColors(const AppCUI::Application::Config& config)
         LOAD_COLOR_IF_EXISTS(AsmJumpInstruction);
         LOAD_COLOR_IF_EXISTS(AsmComment);
         LOAD_COLOR_IF_EXISTS(AsmLocalVariableColor);
+        LOAD_COLOR_IF_EXISTS(AsmSystemInstructionColor);
         LOAD_COLOR_IF_EXISTS(AsmDefaultColor);
     }
 }
@@ -145,6 +150,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
             this->ShowOnlyDissasm                 = sect.GetValue("Config.ShowOnlyDissasm").ToBool(false);
             this->EnableDeepScanDissasmOnStart    = sect.GetValue("Config.DeepScanDissasmOnStart").ToBool(true);
             this->CacheSameLocationAsAnalyzedFile = sect.GetValue("Config.CacheSameLocationAsAnalyzedFile").ToBool(true);
+            this->AlignPadding                    = sect.GetValue("Config.AlignPadding").ToBool(true);
             foundSettings                         = true;
         }
     }
@@ -153,6 +159,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
         this->ShowOnlyDissasm                 = false;
         this->EnableDeepScanDissasmOnStart    = true;
         this->CacheSameLocationAsAnalyzedFile = true;
+        this->AlignPadding                    = true;
     }
 
     Application::Config::CustomColorNameStorage dissamColors = {
@@ -167,6 +174,7 @@ void Config::Initialize(const AppCUI::Application::Config& config)
         { "AsmJumpInstruction", CustomColor(ConfigColors.AsmJumpInstruction) },
         { "AsmComment", CustomColor(ConfigColors.AsmComment) },
         { "AsmLocalVariableColor", CustomColor(ConfigColors.AsmLocalVariableColor) },
+        { "AsmSystemInstructionColor", CustomColor(ConfigColors.AsmSystemInstructionColor) },
         { "AsmDefaultColor", CustomColor(ConfigColors.AsmDefaultColor) },
     };
     if (!Dialogs::ThemeEditor::RegisterCustomColors("DissamColors", dissamColors, this)) {
@@ -232,12 +240,12 @@ void Config::OnPreviewWindowDraw(
     ++startingY;
 
     r.WriteSingleLineText(startingX + 1, startingY, "jmp", *AsmJumpInstructionTheme);
-    r.WriteSingleLineText(startingX + 6, startingY, "offset_0x0000", *AsmOffsetColorTheme);
+    r.WriteSingleLineText(startingX + 6, startingY, "loc_401000", *AsmOffsetColorTheme);
     r.WriteSingleLineText(startingX + 20, startingY, "; AsmJumpInstructionTheme", *AsmCommentTheme);
     ++startingY;
 
     r.WriteSingleLineText(startingX + 1, startingY, "call", *AsmFunctionColorTheme);
-    r.WriteSingleLineText(startingX + 6, startingY, "sub_0x3121", *AsmDefaultColorTheme);
+    r.WriteSingleLineText(startingX + 6, startingY, "sub_401120", *AsmDefaultColorTheme);
     r.WriteSingleLineText(startingX + 20, startingY, "; AsmFunctionColorTheme", *AsmCommentTheme);
     ++startingY;
 
@@ -259,6 +267,13 @@ void Config::OnPreviewWindowDraw(
     if (AsmLocalVariableColorTheme) {
         r.WriteSingleLineText(startingX + 1, startingY, "var_8", *AsmLocalVariableColorTheme);
         r.WriteSingleLineText(startingX + 20, startingY, "; AsmLocalVariableColor", *AsmCommentTheme);
+        ++startingY;
+    }
+    const auto systemColor                    = colors.find("AsmSystemInstructionColor");
+    const auto AsmSystemInstructionColorTheme = systemColor != colors.end() ? systemColor->second.TryGetColorPair() : nullptr;
+    if (AsmSystemInstructionColorTheme) {
+        r.WriteSingleLineText(startingX + 1, startingY, "cpuid", *AsmSystemInstructionColorTheme);
+        r.WriteSingleLineText(startingX + 20, startingY, "; AsmSystemInstructionColor", *AsmCommentTheme);
     }
 
     // ret + call -> AsmFunctionColor
@@ -272,14 +287,61 @@ void Config::OnThemeChanged(const Application::Config& config)
     ConfigColors.hasChanges = true;
 }
 
+// The default keys of the active profile (the registry applies the keys of the user over them)
+void GView::View::DissasmViewer::ApplyKeyProfile(Config::KeyProfile profile)
+{
+    using Key = Input::Key;
+    const std::pair<KeyboardControl*, Key> idaKeys[] = {
+        { &Config::GoToAddressCommand, Key::G },
+        { &Config::ShowXrefsCommand, Key::X },
+        { &Config::AddZoneCommand, Key::Ctrl | Key::Shift | Key::X },
+        { &Config::AddOrEditCommentCommand, Key::None },           // : (a character, not a key of AppCUI: OnKeyEvent)
+        { &Config::AddOrEditRepeatableCommentCommand, Key::None }, // ;
+        { &Config::JumpBackCommand, Key::Escape },
+        { &Config::JumpForwardCommand, Key::Ctrl | Key::Enter },
+        { &Config::SpaceCommand, Key::Enter }, // follow the operand
+        { &Config::OpenSelectionCommand, Key::Ctrl | Key::Shift | Key::O },
+        { &Config::ShowGraphCommand, Key::Space },
+        { &Config::FindCommand, Key::Alt | Key::T },
+        { &Config::FindNextCommand, Key::Ctrl | Key::T },
+        { &Config::DefineStringCommand, Key::A }, // IDA A: a string; the suggestions of the assistant move to Alt+A
+        { &Config::AcceptAISuggestionCommand, Key::Alt | Key::A },
+        { &Config::DismissAISuggestionCommand, Key::Alt | Key::Shift | Key::A },
+    };
+    // the GView keys are the declared ones, kept before the first change
+    static std::vector<Key> gviewKeys;
+    if (gviewKeys.empty())
+        for (const auto& [control, key] : idaKeys)
+            gviewKeys.push_back(control->DefaultKey);
+    for (size_t index = 0; index < std::size(idaKeys); index++) {
+        const Key key                 = profile == Config::KeyProfile::IDA ? idaKeys[index].second : gviewKeys[index];
+        idaKeys[index].first->DefaultKey = key;
+        idaKeys[index].first->Key        = key;
+    }
+    Config::ActiveKeyProfile = profile;
+}
+
+Config::KeyProfile GView::View::DissasmViewer::ReadKeyProfile()
+{
+    auto ini = AppCUI::Application::GetAppSettings();
+    if (!ini)
+        return Config::KeyProfile::Default;
+    const auto value = ini->GetSection("View.Dissasm").GetValue("Config.KeyProfile").AsStringView().value_or(std::string_view("default"));
+    return value.size() == 3 && (value[0] == 'i' || value[0] == 'I') && (value[1] == 'd' || value[1] == 'D') && (value[2] == 'a' || value[2] == 'A')
+                 ? Config::KeyProfile::IDA
+                 : Config::KeyProfile::Default;
+}
+
 void GView::View::DissasmViewer::RegisterKeys(KeyboardControlsInterface* interface)
 {
+    ApplyKeyProfile(ReadKeyProfile());
     for (auto& key : Config::AllKeyboardCommands)
         interface->RegisterKey(&key.get());
     interface->BeginCategory("Navigation & editing");
     for (auto key : Config::NavigationCommands)
         interface->RegisterKey(key);
     interface->RegisterKeyText("Escape", "SaveCacheOnEscape", "Escape also saves the disassembly cache");
+    interface->RegisterKeyText("; / :", "CommentIDA", "The IDA profile: add or edit the comment of the line");
 }
 void GView::View::DissasmViewer::OnKeysChanged()
 {

@@ -58,6 +58,72 @@ namespace View
             bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
 
+        // What a comment of the user is attached to: an instruction, a label or a local variable line. Unlike a line, an anchor does not
+        // change when lines are added / removed (labels, variables) or hidden (collapsed zones), and it is saved as it is.
+        // The addresses are relative to the first decoded instruction of the zone (as DissasmAsmPreCacheLine::address).
+        struct DissasmCommentAnchor {
+            enum class Kind : uint8 { Instruction = 0, Label = 1, Variable = 2 };
+            Kind kind          = Kind::Instruction;
+            uint64 address     = 0; // the instruction, the label or the start of the function of the variable
+            int32 frameOffset  = 0; // Variable: the frame offset of the variable ([ebp - 8] -> -8)
+
+            auto operator<=>(const DissasmCommentAnchor&) const = default;
+        };
+
+        // The comments of the user of a code zone, keyed by their anchors. The anchors that no line has (an analysis that does not find a
+        // label / variable any more) keep their comments: they are shown again when the line comes back and they are always saved.
+        struct DissasmUserComments {
+            std::map<DissasmCommentAnchor, std::string> comments;
+
+            bool Get(const DissasmCommentAnchor& anchor, std::string& comment) const;
+            void Set(const DissasmCommentAnchor& anchor, std::string comment);
+            bool Remove(const DissasmCommentAnchor& anchor);
+
+            // [count] then count x [kind (uint8)][address (uint64)][frame offset (int32)][text size (uint32)][text]
+            void ToBuffer(std::vector<std::byte>& buffer) const;
+            bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
+        };
+
+        // A cross reference: the instruction at `from` uses the address `to` (both in the address space of the labels: the VA, or the file
+        // offset when the plugin has no translation). Computed by the analysis, never saved.
+        enum class DissasmXrefKind : uint8 {
+            Call,            // call to
+            Jump,            // jmp to
+            ConditionalJump, // jcc / loop to
+            Read,            // reads the data at to (mov eax, [rip + ...])
+            Write,           // writes the data at to
+            Offset,          // takes the address (lea rcx, [rip + ...] / push offset / mov ecx, offset)
+            Switch,          // a case of the jump table of an indirect jmp (switch)
+        };
+        struct DissasmXref {
+            uint64 from;
+            uint64 to;
+            DissasmXrefKind kind;
+            uint8 size = 0; // the bytes a read / write accesses (mov eax, dword ptr [...]: 4); 0: unknown, not an access
+        };
+        struct DissasmXrefs {
+            std::vector<DissasmXref> byTarget; // sorted by target, then by source (Finish)
+            std::vector<uint32> bySource;      // the indexes of byTarget, sorted by source (Finish)
+
+            void Clear()
+            {
+                byTarget.clear();
+                bySource.clear();
+            }
+            void Add(uint64 from, uint64 to, DissasmXrefKind kind, uint8 size = 0)
+            {
+                byTarget.push_back({ from, to, kind, size });
+            }
+            // sorts the references (and removes the duplicates) once they are all added
+            void Finish();
+            // the references to `target`, sorted by their source
+            std::pair<std::vector<DissasmXref>::const_iterator, std::vector<DissasmXref>::const_iterator> To(uint64 target) const;
+            // the references made by the instruction at `from` (its targets), in the order of their targets
+            std::vector<const DissasmXref*> From(uint64 from) const;
+        };
+        // "call", "jmp", "read", ... (the short text of the xrefs list)
+        std::string_view GetXrefKindName(DissasmXrefKind kind);
+
         struct AnnotationContainer {
             using AnnoationCallNameType   = std::string;
             using AnnoationCallValueType  = uint64;
@@ -187,14 +253,42 @@ namespace View
             bool LoadFromBuffer(const std::byte*& start, const std::byte* end);
         };
 
-        constexpr uint32 DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION = 512;
+        // a structure of the Windows / C API (STARTUPINFOW, WIN32_FIND_DATAW; FindApiStructure), laid out for 32 or 64 bit code
+        struct DissasmApiStructure {
+            struct Field {
+                std::string name;
+                std::string type;
+                uint32 offset      = 0;
+                uint32 elementSize = 0; // the size of the type (of one element of an array)
+                uint32 count       = 1; // the elements of an array (cFileName[260])
+                const DissasmApiStructure* structure = nullptr; // a field that is a structure of the table (FILETIME)
+            };
+            std::string name;
+            uint32 size      = 0;
+            uint32 alignment = 1;
+            std::vector<Field> fields; // in their order
+        };
+
+        constexpr uint32 DISSASM_MAX_LOCAL_VARIABLES_PER_FUNCTION = 1024; // the frames of the large functions of ntfs have 562 slots
         constexpr uint32 DISSASM_MAX_LOCAL_VARIABLE_NAME_SIZE     = 128;
+        // a depth of DissasmFunctionFrame::stackDeltas that is not known: after a dynamic allocation (alloca: sub rsp, rax), until the
+        // stack pointer is restored from an alias (lea rsp, [rbp - 0x28] / mov rsp, rbp / leave)
+        constexpr int32 DISSASM_UNKNOWN_STACK_DELTA = INT32_MIN;
 
         // A stack slot addressed through the frame register ([ebp - 8] / [rbp + 0x10]) inside a function.
         struct DissasmLocalVariable {
             int32 frameOffset; // signed displacement relative to the frame register: [ebp - 8] -> -8
             uint16 size;       // widest access in bytes, 0 when only its address is taken (lea)
             std::string name;
+            // the name the analysis gave (var_8, or the argument of an API it is passed as: phkResult); empty: the default name. Not saved:
+            // the analysis gives it again; a name different from it is the user's
+            std::string analysisName;
+            // what the analysis knows of its value from the APIs (not saved either): its type (HKEY, HANDLE; empty when not known) and
+            // where it comes from ("phkResult of RegOpenKeyExW", "returned by CreateFileW")
+            std::string type;
+            std::string origin;
+            // a structure the APIs fill (its address passed as lpStartupInfo): the slots inside it are its fields, not variables (not saved)
+            const DissasmApiStructure* structure = nullptr;
         };
 
         // Frame of a function that uses a frame pointer (push ebp; mov ebp, esp). Addresses use the same base as the instructions drawn
@@ -203,10 +297,53 @@ namespace View
             uint64 startAddress;
             uint64 endAddress;                           // exclusive
             std::vector<DissasmLocalVariable> variables; // sorted by frameOffset, unique offsets and names
+            int32 stackOffset = 0;            // ARM64: sp - x29 in the body (the [sp, #n] slots); recomputed by the deep scan
+            bool usesFrameRegister = true;    // ARM64: false for a function without x29 (offsets from the sp of the entry)
+            uint8 frameRegister    = 0;       // 32 bit ARM: r11 (ARM mode) or r7 (Thumb)
+            // x64 without a frame register: rsp - the rsp of the entry from an address on (push / pop / sub / add rsp), sorted; the slots
+            // ([rsp + 0x20]) are kept in offsets from the rsp of the entry (the return address at 0). Recomputed by the deep scan
+            std::vector<std::pair<uint64, int32>> stackDeltas;
+            // the registers that hold the stack pointer in [start, end): a copy (mov r11, rsp at the entry: [r11 - 0x28]), the biased frame
+            // pointer of MSVC x64 (lea rbp, [rsp - 0x5f] after the saves: [rbp + 0xf]); the register - the rsp of the entry = delta
+            struct StackAlias {
+                std::string reg;
+                int32 delta  = 0;
+                uint64 start = 0, end = 0;
+                // the slots are the ones of the frame of another function (by start): a funclet of x64 SEH keeps the establisher frame of
+                // its function in rbp (mov rbp, rdx), the delta is then in the offsets of that frame
+                std::optional<uint64> frameOf;
+            };
+            std::vector<StackAlias> stackAliases;
+            // a chunk of a function (its cold code: Settings::AddFunctionChunk): its slots are the variables of that function (by start), its
+            // stack deltas in the offsets of that frame; it has no variable of its own. Recomputed by the deep scan
+            std::optional<uint64> variablesOf;
+            // the slots of the registers the prologue saves by its pushes (push rbp; push rbx: the saved registers of the caller), in the
+            // offsets of the frame: not variables, their operands named as IDA does (var_s0 the lowest, var_s8, ...). Recomputed by the
+            // deep scan
+            int32 savedRegistersOffset = 0;
+            uint32 savedRegistersSize  = 0;
+            // and esp, -8 (an aligned frame of a frame register function): the depths of the stack pointer are not the ones of the frame
+            // register above the alignment (a local through esp may fall on the saved registers / the return address)
+            bool alignedStack = false;
+            bool IsSavedRegisterSlot(int32 frameOffset) const
+            {
+                return savedRegistersSize != 0 && frameOffset >= savedRegistersOffset &&
+                       static_cast<int64>(frameOffset) - savedRegistersOffset < static_cast<int64>(savedRegistersSize);
+            }
+            std::optional<int32> StackDeltaAt(uint64 address) const
+            {
+                const auto next = std::upper_bound(
+                      stackDeltas.begin(), stackDeltas.end(), address, [](uint64 value, const std::pair<uint64, int32>& change) { return value < change.first; });
+                if (next == stackDeltas.begin() || (next - 1)->second == DISSASM_UNKNOWN_STACK_DELTA)
+                    return std::nullopt;
+                return (next - 1)->second;
+            }
 
             DissasmLocalVariable* FindVariable(int32 frameOffset);
             const DissasmLocalVariable* FindVariable(int32 frameOffset) const;
             bool HasVariableNamed(std::string_view name) const;
+            // the variable of a slot: the one at the offset, or the structure that contains it ([rbp - 0x64] in StartupInfo at -0x70)
+            const DissasmLocalVariable* FindVariableContaining(int32 frameOffset) const;
         };
 
         struct DissasmLocalVariables {

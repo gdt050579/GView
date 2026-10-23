@@ -1,9 +1,24 @@
 #include "DissasmCodeZone.hpp"
+#include "DissasmChainedFixups.hpp"
+#include "DissasmObjC.hpp"
+#include "DissasmRtti.hpp"
 #include "x86_x64/DissasmX86.hpp"
 #include "DissasmFunctionUtils.hpp"
+#include "DissasmAnalysisExport.hpp"
+#include "DissasmAssistantRequest.hpp"
+#include "DissasmAnnotations.hpp"
+#include "DissasmSignatures.hpp"
+#include "DissasmImportOrdinals.hpp"
+#include <random>
+#include <atomic>
+#include <thread>
+#include <nlohmann/json.hpp>
 #include "x86_x64/DissasmX86LocalVariables.hpp"
+#include "x86_x64/X86InstructionInfo.hpp"
 #include <catch.hpp>
 #include <array>
+#include <filesystem>
+#include <fstream>
 
 using namespace GView::View::DissasmViewer;
 
@@ -33,18 +48,6 @@ class DummyType : public GView::TypeInterface
     {
         return selectionZoneInterface->GetSelectionZone(index);
     }
-};
-
-struct ZoneCheckData {
-    uint32 indexZoneStart;
-    uint32 indexZoneEnd;
-    bool shouldHaveName = false;
-};
-
-struct ZoneBeforeLines {
-    uint32 zoneIndex;
-    uint32 beforeTextLines;
-    uint32 beforeAsmLines;
 };
 
 /* Example test 1
@@ -278,33 +281,41 @@ struct ZoneLayout {
     uint64 entryPoint            = 10;
     DisassemblyLanguage language = DisassemblyLanguage::x86;
     uint32 cacheSize             = 0; // data cache size, 0 for the whole file (the data cache has at least 64 KB)
+    std::optional<uint64> labelAddressBase; // the VA of the zone start (the plugins with an offset translation)
+    std::function<bool(uint64)> isFileAddress; // the addresses of the file (cross references of the immediates)
+    std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
+    std::unordered_map<uint64, MemoryMappingEntry> imports;  // the imports by the RVA of their slot (the VA for x86 without translation)
+    bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
+    std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
+    std::optional<uint64> imageBase;
+    std::optional<std::chrono::milliseconds> deepScanBudget; // none: the deep scan ends in InitZone
+    std::vector<uint64> instructionBoundaries;               // file offsets where an instruction starts (section starts)
+    bool isData = false;                                     // a data zone (AddDataZone)
+    std::optional<uint64> globalOffsetTable;                 // 32 bit x86 PIC: ebx in the PLT stubs
+    std::vector<DissasmCodeZone*> siblings;                  // the other zones of the file (their xrefs name the labels of a data zone)
+    bool alignPadding = false; // the listings of the tests show every padding instruction (int3), unless a test asks for align lines
+    std::optional<std::chrono::milliseconds> lineCountBudget; // none: the lines are counted in InitZone
+    std::map<uint64, ArmCodeMode> armCodeModes;               // 32 bit ARM: the mode changes, by file offset
+    std::map<uint64, uint64> relocatedPointers;               // the pointers the loader writes (file offset -> VA)
+    bool isUninitialized = false;                             // an uninitialized data zone (start: its file offset, labelAddressBase: its VA)
+    std::map<uint64, DissasmDataField> dataFields;            // the fields of the structures of the data, by VA
+    std::unordered_map<uint64, std::string> boundSymbols;     // Mach-O: the symbols of the pointers dyld binds, by RVA
+};
+
+// the RVA (and the VA) of an offset is the offset
+struct TestIdentityTranslation : public GView::View::BufferViewer::OffsetTranslateInterface {
+    uint64_t TranslateToFileOffset(uint64 value, uint32) override
+    {
+        return value;
+    }
+    uint64_t TranslateFromFileOffset(uint64 value, uint32) override
+    {
+        return value;
+    }
 };
 
 class DissasmTestInstance
 {
-    bool CheckLinesWorkingIndexesSameAsZonesRecursive(std::vector<DissasmCodeInternalType>* childrenToCheck)
-    {
-        if (!childrenToCheck)
-            return true;
-
-        for (auto& z : *childrenToCheck) {
-            if (z.indexZoneStart != z.workingIndexZoneStart || z.indexZoneEnd != z.workingIndexZoneEnd) {
-                printf(
-                      "CheckLinesWorkingIndexesSameAsZonesRecursive ERROR: zone %d<->%d, %d<->%d",
-                      z.indexZoneStart,
-                      z.workingIndexZoneStart,
-                      z.indexZoneEnd,
-                      z.workingIndexZoneEnd);
-                return false;
-            }
-            if (!z.internalTypes.empty())
-                if (!CheckLinesWorkingIndexesSameAsZonesRecursive(&z.internalTypes))
-                    return false;
-        }
-
-        return true;
-    }
-
   public:
     Instance* instance;
     std::vector<GView::Object> objects;
@@ -312,6 +323,9 @@ class DissasmTestInstance
 
     bool enableLocalVariables;
     ZoneLayout layout;
+    SettingsData settingsData; // the imports of the layout
+    TestIdentityTranslation translation;
+    DissasmCodeZoneInitData lastInitData{};
 
     DissasmTestInstance(const unsigned char* binaryData, size_t binaryDataSize, bool enableLocalVariables = false, ZoneLayout layout = {})
         : enableLocalVariables(enableLocalVariables), layout(layout)
@@ -358,82 +372,63 @@ class DissasmTestInstance
         zone->zoneDetails.startingZonePoint = layout.start;
         zone->zoneDetails.size              = layout.size;
         zone->zoneDetails.entryPoint        = layout.entryPoint;
+        zone->zoneDetails.isData            = layout.isData;
+        zone->zoneDetails.isUninitialized   = layout.isUninitialized;
+        zone->zoneDetails.virtualAddress    = layout.labelAddressBase.value_or(0);
+        zone->siblingZones                  = layout.siblings;
 
         DissasmCodeZoneInitData initData      = {};
         initData.enableDeepScanDissasmOnStart  = true;
         initData.enableLocalVariablesDetection = enableLocalVariables;
-        initData.maxLocationMemoryMappingSize  = 6;
         initData.visibleRows                  = 53;
+        initData.labelAddressBase             = layout.labelAddressBase;
+        initData.isFileAddress                = layout.isFileAddress;
+        initData.functionEntries              = &layout.functionEntries;
+        if (layout.translateOffsets)
+            settingsData.offsetTranslateCallback = &translation;
+        settingsData.memoryMappings = layout.imports;
+        initData.addressToFileOffset = layout.addressToFileOffset;
+        initData.imageBase           = layout.imageBase;
+        initData.deepScanBudget      = layout.deepScanBudget;
+        initData.alignPadding        = layout.alignPadding;
+        initData.lineCountBudget     = layout.lineCountBudget;
+        initData.armCodeModes        = &layout.armCodeModes;
+        initData.relocatedPointers   = &layout.relocatedPointers;
+        initData.dataFields          = &layout.dataFields;
+        initData.instructionBoundaries = &layout.instructionBoundaries;
+        initData.globalOffsetTable     = layout.globalOffsetTable;
+        settingsData.globalOffsetTable = layout.globalOffsetTable;
+        settingsData.boundSymbols      = layout.boundSymbols;
+        if (!layout.imports.empty()) {
+            auto* settings      = &settingsData;
+            auto* codeZone      = zone.get();
+            initData.findImport = [settings, codeZone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, codeZone, operands); };
+        }
         initData.obj                          = obj;
+        lastInitData                          = initData; // a new analysis of the zone (ReanalyzeCodeZone)
 
         if (!zone->InitZone(initData)) {
             FAIL("DissasmTestInstance: InitZone failed");
         }
     }
 
-    bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
+    // the collapsible zones of the code zone (expanded lines): [start, end) and the collapsed state
+    bool CheckZones(std::initializer_list<DissasmCollapsibleZone> expected)
     {
-        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
-            return false;
+        const auto& zones = zone->collapsibleZones;
+        bool same         = zones.size() == expected.size();
+        auto it           = expected.begin();
+        for (size_t i = 0; same && i < zones.size(); i++, ++it)
+            same = zones[i].start == it->start && zones[i].end == it->end && zones[i].isCollapsed == it->isCollapsed;
+        if (!same) {
+            printf("zones:");
+            for (const auto& z : zones)
+                printf(" [%u, %u)%s", z.start, z.end, z.isCollapsed ? "c" : "");
+            printf("\n");
         }
-
-        std::vector<DissasmCodeInternalType>* childrenToCheck = &zone->dissasmType.internalTypes;
-        if (zoneIndex != UINT32_MAX)
-            childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
-
-        if (childrenToCheck->size() != zones.size()) {
-            printf("ERROR: invalid zone length %d >= %zu", zoneIndex, childrenToCheck->size());
-            return false;
-        }
-
-        auto it = childrenToCheck->begin();
-        for (auto& z : zones) {
-            if (it->indexZoneStart != z.indexZoneStart || it->indexZoneEnd != z.indexZoneEnd || !it->name.empty() != z.shouldHaveName) {
-                printf(
-                      "ERROR: zone %d<->%d, %d<->%d, %d<->%d",
-                      it->indexZoneStart,
-                      z.indexZoneStart,
-                      it->indexZoneEnd,
-                      z.indexZoneEnd,
-                      !it->name.empty(),
-                      z.shouldHaveName);
-                return false;
-            }
-            ++it;
-        }
-        return true;
+        return same;
     }
-    bool CheckBeforeLinesData(uint32 zoneIndex, std::initializer_list<ZoneBeforeLines> zones)
-    {
-        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
-            printf("ERROR: invalid zone index %d >= %zu", zoneIndex, zone->dissasmType.internalTypes.size());
-            return false;
-        }
 
-        std::vector<DissasmCodeInternalType>* childrenToCheck = &zone->dissasmType.internalTypes;
-        if (zoneIndex != UINT32_MAX)
-            childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
-
-        for (auto& z : zones) {
-            if (z.zoneIndex >= childrenToCheck->size()) {
-                printf("ERROR: invalid zone index %d >= %zu", z.zoneIndex, childrenToCheck->size());
-                return false;
-            }
-            const auto& it = (*childrenToCheck)[z.zoneIndex];
-
-            // if (!it.IsValidDataLine()) {
-            //     printf("ERROR: !IsValidDataLine for zone %d, %d<->%d != %d", z.zoneIndex, it.beforeTextLines, it.beforeAsmLines, it.indexZoneStart);
-            //     return false;
-            // }
-
-            if (it.beforeTextLines != z.beforeTextLines || it.beforeAsmLines != z.beforeAsmLines) {
-                printf("ERROR: [%d]zone: %d<->%d, %d<->%d", z.zoneIndex, it.beforeTextLines, z.beforeTextLines, it.beforeAsmLines, z.beforeAsmLines);
-                return false;
-            }
-        }
-        return true;
-    }
     bool CheckLineOpStr(uint32 line, std::string_view startWithStr)
     {
         auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
@@ -442,10 +437,6 @@ class DissasmTestInstance
             return false;
         }
         return true;
-    }
-    bool CheckLinesWorkingIndexesSameAsZones()
-    {
-        return CheckLinesWorkingIndexesSameAsZonesRecursive(&zone->dissasmType.internalTypes);
     }
     bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
     {
@@ -478,11 +469,6 @@ class DissasmTestInstance
         return zone->GetComment(line, temp);
     }
 
-    DissasmCodeInternalType* GetDissasmCodeInternalTypeByLine(uint32 line)
-    {
-        return GetRecursiveCollpasedZoneByLine(zone->dissasmType, line);
-    }
-
     bool CheckComment(uint32 line, std::string expectedValue)
     {
         std::string temp = {};
@@ -499,10 +485,6 @@ class DissasmTestInstance
         return zone->RemoveComment(line, false);
     }
 
-    void ReachZoneLine(uint32 zoneLine)
-    {
-        zone->ReachZoneLine(zoneLine);
-    }
     DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 line)
     {
         auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
@@ -529,12 +511,6 @@ class DissasmTestInstance
         for (uint32 i = 0; i < count; i++) {
             auto val = zone->GetCurrentAsmLine(i, &objects[0], nullptr);
             printf("[%u] %s %s ", i, val.mnemonic, val.op_str);
-
-            for (const auto& type : zone->types) {
-                if (type.get().name.empty())
-                    continue;
-                printf("%s ", type.get().name.c_str());
-            }
 
             if (zone->GetComment(i, comment)) {
                 printf("\tComment: \"%s\"", comment.c_str());
@@ -580,6 +556,17 @@ class DissasmTestInstance
         params.asmData  = &asmData;
         params.zone     = zone.get();
         return zone->GetCurrentAsmLine(line, &objects[0], &params);
+    }
+
+    // the .asm listing with the imports of the layout and the known Windows APIs (their arguments are named)
+    std::string GetListing()
+    {
+        AsmData asmData;
+        AddKnownFunctions(asmData);
+        std::string listing;
+        if (!BuildX86AsmListing(*zone, &objects[0], &settingsData, &asmData, listing))
+            FAIL("DissasmTestInstance: BuildX86AsmListing failed");
+        return listing;
     }
 
     bool CheckDrawnLineText(uint32 line, std::string_view expected)
@@ -638,353 +625,271 @@ class DissasmTestInstance
     }
 };
 
-TEST_CASE("DissasmFunctions", "[Dissasm]Functions")
+// A line keyed code zone record (cache versions 1 and 2) of the zone, as the previous versions saved it: [magic][version][comments by
+// line][annotations][local variables] and, from version 2, [decimal operands]. `lineComments`: line -> comment of the user.
+static void WriteLineKeyedRecord(DissasmCodeZone& zone, uint32 version, const std::map<uint32, std::string>& lineComments, std::vector<std::byte>& buffer)
 {
-    uint64 value = 0;
-    REQUIRE(!CheckExtractInsnHexValue("mov eax, 0x1234", value, 5));
-
-    REQUIRE(CheckExtractInsnHexValue("f0x1234", value, 5));
-    REQUIRE(value == 0x1234);
-
-    REQUIRE(CheckExtractInsnHexValue("x1234", value, 5));
-    REQUIRE(value == 1234);
-
-    REQUIRE(!CheckExtractInsnHexValue("x", value, 5));
-
-    REQUIRE(CheckExtractInsnHexValue("123", value, 5));
-    REQUIRE(value == 123);
-
-    REQUIRE(CheckExtractInsnHexValue("0x123", value, 5));
-    REQUIRE(value == 0x123);
-
-    REQUIRE(CheckExtractInsnHexValue("0", value, 5));
-    REQUIRE(value == 0);
-
-    REQUIRE(CheckExtractInsnHexValue("0x0", value, 5));
-    REQUIRE(value == 0);
-
-    REQUIRE(CheckExtractInsnHexValue("  123", value, 5));
-    REQUIRE(value == 123);
-
-    REQUIRE(CheckExtractInsnHexValue("mov ptr [0x123]", value, 5));
-    REQUIRE(value == 0x123);
-
-    REQUIRE(!CheckExtractInsnHexValue("mov eax, [0x123]", value, 5));
-    REQUIRE(!CheckExtractInsnHexValue("mov [rbp + 0x123]", value, 5));
-    REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
+    auto appendU32 = [&buffer](uint32 value) {
+        const auto bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    buffer.clear();
+    appendU32(0x5A434447); // "GDCZ"
+    appendU32(version);
+    DissasmComments comments;
+    for (const auto& [line, text] : lineComments)
+        comments.AddOrUpdateComment(line, text);
+    comments.ToBuffer(buffer);
+    zone.dissasmType.annotations.ToBuffer(buffer);
+    zone.localVariables.ToBuffer(buffer);
+    if (version >= 2) {
+        appendU32(static_cast<uint32>(zone.decimalOperands.size()));
+        for (const auto& [address, mask] : zone.decimalOperands) {
+            const auto bytes = reinterpret_cast<const std::byte*>(&address);
+            buffer.insert(buffer.end(), bytes, bytes + sizeof(address));
+            appendU32(mask);
+        }
+    }
 }
 
-TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]CollapsibleZones")
+// the lines of exampleTest1BinaryCode without local variables: 0-4 int3, 5 sub_5, 6 jmp, 7 EntryPoint, 8 jmp, 9 sub_F, 10 jmp, 11 jmp,
+// 12-34 int3, 35 sub_30, 36 push ebp ...
+constexpr uint32 EXAMPLE_TEST1_EXPANDED_LINES = 4570;
+std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine); // DissasmX86.cpp
+
+TEST_CASE("CollapsibleZonesAdd", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-
-    uint32 zoneEndingIndex = 4572;
-
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+    REQUIRE(dissasmInstance.zone->GetExpandedLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES);
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2 }, { 2, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 } }));
-
-    REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
-    REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
-
-    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, zoneEndingIndex } }));
-
+    REQUIRE(dissasmInstance.CheckZones({ { 2, 5 } }));
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5)); // the same zone
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4)); // partially overlapping
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));  // next to it
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));  // inside a zone
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 12)); // around zones
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 12 }, { 0, 2 }, { 2, 5 }, { 5, 11 }, { 7, 9 } }));
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(10, 13)); // partially overlapping
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(4, 4));
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(EXAMPLE_TEST1_EXPANDED_LINES - 1, EXAMPLE_TEST1_EXPANDED_LINES + 1)); // after the last line
+    REQUIRE(dissasmInstance.zone->GetDisplayLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES);
 
-    REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
-
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-
-    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 8, true }, { 8, 10 } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 10, true }, { 10, zoneEndingIndex - 1 } }));
-    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(7, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
+    // the first line of a zone has its button, the other lines do not
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(5).shouldAddButton);
+    REQUIRE(!dissasmInstance.GetCurrentAsmLine(6).shouldAddButton);
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
 }
 
-TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
+TEST_CASE("CollapsibleZonesCollapseAndExpand", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-    uint32 zoneEndingIndex = 4572;
-
-    std::array<const char*, 47> mnemonicArrayStart = { "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "sub_0x000000005",
-                                                       "jmp",  "EntryPoint",
-                                                       "jmp",  "sub_0x00000000F",
-                                                       "jmp",  "jmp",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "int3",
-                                                       "int3", "sub_0x000000030",
-                                                       "push", "mov",
-                                                       "sub",  "push",
-                                                       "push", "push",
-                                                       "mov",  "call",
-                                                       "cmp",  "jle",
-                                                       "cmp" };
-    REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, static_cast<uint32>(mnemonicArrayStart.size()), mnemonicArrayStart.data()));
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5, "", true } }));
 
-    // dissasmInstance.PrintInstructions(50);
-    std::array<const char*, 43> mnemonicArrayCollapse1 = { "collapsed", "sub_0x000000005",
-                                                           "jmp",       "EntryPoint",
-                                                           "jmp",       "sub_0x00000000F",
-                                                           "jmp",       "jmp",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "int3",
-                                                           "int3",      "sub_0x000000030",
-                                                           "push",      "mov",
-                                                           "sub",       "push",
-                                                           "push",      "push",
-                                                           "mov",       "call",
-                                                           "cmp",       "jle",
-                                                           "cmp" };
+    std::array<const char*, 43> mnemonicArrayCollapse1 = { "collapsed", "sub_5", "jmp",  "EntryPoint", "jmp",  "sub_F", "jmp",  "jmp",  "int3",
+                                                           "int3",      "int3",  "int3", "int3",       "int3", "int3",  "int3", "int3", "int3",
+                                                           "int3",      "int3",  "int3", "int3",       "int3", "int3",  "int3", "int3", "int3",
+                                                           "int3",      "int3",  "int3", "int3",       "sub_30", "push", "mov", "sub",  "push",
+                                                           "push",      "push",  "mov",  "call",       "cmp",  "jle",   "cmp" };
     REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, static_cast<uint32>(mnemonicArrayCollapse1.size()), mnemonicArrayCollapse1.data()));
     REQUIRE(dissasmInstance.CheckLineOpStr(0, "Zone"));
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(0).isCollapsedLine);
 
+    // the shown lines 8..30 are the expanded lines 12..34
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 31));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 8 }, { 8, 31, true }, { 31, zoneEndingIndex } }));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5, "", true }, { 12, 35 } }));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
+    std::array<const char*, 21> mnemonicArrayCollapse2 = { "collapsed", "sub_5", "jmp",  "EntryPoint", "jmp",  "sub_F", "jmp",
+                                                           "jmp",       "collapsed", "sub_30", "push", "mov", "sub", "push",
+                                                           "push",      "push", "mov", "call", "cmp", "jle", "cmp" };
+    REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, static_cast<uint32>(mnemonicArrayCollapse2.size()), mnemonicArrayCollapse2.data()));
 
-    std::array<const char*, 21> mnemonicArrayCollapse2 = { "collapsed", "sub_0x000000005",
-                                                           "jmp",       "EntryPoint",
-                                                           "jmp",       "sub_0x00000000F",
-                                                           "jmp",       "jmp",
-                                                           "collapsed", "sub_0x000000030",
-                                                           "push",      "mov",
-                                                           "sub",       "push",
-                                                           "push",      "push",
-                                                           "mov",       "call",
-                                                           "cmp",       "jle",
-                                                           "cmp" };
-    // dissasmInstance.PrintInstructions(50);
-    REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, mnemonicArrayCollapse2.size(), mnemonicArrayCollapse2.data()));
-    // dissasmInstance.PrintInstructions(50);
+    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse)); // already collapsed
+    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(6, DissasmCodeZone::CollapseExpandType::Collapse)); // not inside a zone
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::NegateCurrentState));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5, "", true }, { 12, 35 } }));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "int3"));
 }
 
 TEST_CASE("CollapsibleZonesSizesAndNestedZones", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-    const uint32 zoneEndingIndex = 4572;
-    const uint32 extendedSize    = zoneEndingIndex - 1; // the zone lines and the title
+    const uint32 extendedSize = EXAMPLE_TEST1_EXPANDED_LINES + 1u; // the zone lines and the title
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
 
-    // every collapse / expand gives the new size of the zone, not only the first one
+    // every collapse / expand gives the new size of the zone
     int32 newSize = 0;
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
     REQUIRE(newSize == static_cast<int32>(extendedSize - 4));
-    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(4, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
+    REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(4, DissasmCodeZone::CollapseExpandType::Collapse, newSize)); // the shown line 4 is 8
     REQUIRE(newSize == static_cast<int32>(extendedSize - 5));
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand, newSize));
     REQUIRE(newSize == static_cast<int32>(extendedSize - 1));
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Expand, newSize));
     REQUIRE(newSize == static_cast<int32>(extendedSize));
 
-    // a line after the shown lines (but inside the expanded zone) must not loop forever, the next lines are reached again
+    // the last lines are reached when a zone is collapsed
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse, newSize));
-    dissasmInstance.ReachZoneLine(zoneEndingIndex - 2);
+    const uint32 shownLines = dissasmInstance.zone->GetDisplayLinesCount();
+    REQUIRE(shownLines == EXAMPLE_TEST1_EXPANDED_LINES - 4);
+    REQUIRE(dissasmInstance.GetLineText(shownLines - 1) == dissasmInstance.GetLineText(shownLines - 1)); // decodes, no endless walk
+    REQUIRE(!dissasmInstance.zone->DisplayToExpanded(shownLines).has_value());
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
     REQUIRE(dissasmInstance.zone->CollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand, newSize));
 
-    // zones added inside a zone that already has children are split inside it
+    // zones inside zones
     REQUIRE(dissasmInstance.RemoveCollapsibleZone(8));
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
     REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(1, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 6));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckInternalTypes(1, { { 5, 6, true }, { 6, 7 }, { 7, 9, true }, { 9, 11 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(1, { { 0, 0, 5 } }));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5 }, { 5, 11 }, { 5, 6 }, { 7, 9 } }));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
+
+    // the inner zone, then the outer zone (a line of the outer zone that is in no inner zone); expanding the outer zone keeps the inner
+    // zone collapsed
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "collapsed"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "sub_F"));
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(6, DissasmCodeZone::CollapseExpandType::Collapse));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "collapsed"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp")); // expanded line 11
+    REQUIRE(dissasmInstance.zone->GetDisplayLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES - 5);
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(5, DissasmCodeZone::CollapseExpandType::Expand));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "collapsed"));
+    REQUIRE(dissasmInstance.zone->GetDisplayLinesCount() == EXAMPLE_TEST1_EXPANDED_LINES - 1);
+
+    // every shown line maps to an expanded line and back
+    for (uint32 line = 0; line < 100; line++) {
+        const auto place = dissasmInstance.zone->DisplayToExpanded(line);
+        REQUIRE(place.has_value());
+        REQUIRE(dissasmInstance.zone->ExpandedToDisplay(place->expandedLine) == line);
+    }
 }
 
 TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
-
-    uint32 zoneEndingIndex = 4572;
-    // dissasmInstance.PrintInstructions(50);
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
-
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
-
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 }, { 2, 2, 6 }, { 3, 3, 7 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse));
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
-
+    REQUIRE(!dissasmInstance.RemoveCollapsibleZone(0)); // a collapsed zone is expanded first
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
     REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand)); // already expanded
+    for (uint32 line = 0; line < 5; line++)
+        REQUIRE(dissasmInstance.CheckLineMnemonic(line, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
 
     REQUIRE(dissasmInstance.RemoveCollapsibleZone(8));
-    // same as before, after dissasmInstance.AddCollpasibleZone(0, 5)
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5 } }));
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 }, { 2, 2, 6 }, { 3, 2, 8 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
-
-    REQUIRE(!dissasmInstance.RemoveCollapsibleZone(5));
+    REQUIRE(!dissasmInstance.RemoveCollapsibleZone(5)); // not inside a zone
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(6));
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(7));
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(10));
-
-    // dissasmInstance.PrintInstructions(12);
     REQUIRE(dissasmInstance.RemoveCollapsibleZone(4));
-    // dissasmInstance.PrintInstructions(12);
+    REQUIRE(dissasmInstance.CheckZones({ { 8, 10 } }));
+    for (uint32 line = 0; line < 5; line++)
+        REQUIRE(dissasmInstance.CheckLineMnemonic(line, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
 
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 2, 6 }, { 2, 2, 8 } }));
-    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
+    // the innermost zone of the line is removed
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 12));
+    REQUIRE(dissasmInstance.RemoveCollapsibleZone(9));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 12 } }));
+    REQUIRE(dissasmInstance.RemoveCollapsibleZone(9));
+    REQUIRE(dissasmInstance.CheckZones({}));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
 }
 
-TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]CollapsibleZones")
+TEST_CASE("CollapsibleZonesFollowTheLines", "[Dissasm]CollapsibleZones")
 {
-    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    REQUIRE(edited.AddCollpasibleZone(0, 5));
+    REQUIRE(edited.AddCollpasibleZone(36, 50));
+    REQUIRE(edited.AddOrUpdateComment(40, "inside the zone"));
+    REQUIRE(edited.CheckCollapseOrExtendZone(36, DissasmCodeZone::CollapseExpandType::Collapse));
+    std::string_view zoneName = "isPrime body";
+    REQUIRE(edited.zone->TryRenameLine(36, &edited.objects[0], &zoneName).ok);
+    REQUIRE(edited.CheckLineOpStr(36, "isPrime body"));
 
-    uint32 zoneEndingIndex = 4572;
-    // dissasmInstance.PrintInstructions(20);
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
-
-    SECTION("removing first collapsible zones[2]")
+    SECTION("saved in the cache with their names and states")
     {
-        REQUIRE(dissasmInstance.AddCollpasibleZone(0, 6));
-        REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 6, true }, { 6, zoneEndingIndex } }));
-
-        REQUIRE(dissasmInstance.RemoveCollapsibleZone(5));
-        // dissasmInstance.PrintInstructions(20);
-        REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(zoneLinesChanged); // a collapsed zone: less lines are shown
+        REQUIRE(restored.CheckZones({ { 0, 5 }, { 36, 50, "", true } }));
+        REQUIRE(restored.CheckLineMnemonic(36, "collapsed"));
+        REQUIRE(restored.CheckLineOpStr(36, "isPrime body"));
+        REQUIRE(restored.zone->GetDisplayLinesCount() == edited.zone->GetDisplayLinesCount());
+        REQUIRE(restored.CheckCollapseOrExtendZone(36, DissasmCodeZone::CollapseExpandType::Expand));
+        REQUIRE(restored.CheckComment(40, "inside the zone"));
     }
 
-    SECTION("removing middle collapsible zones[3]")
+    SECTION("placed on the same lines in another layout")
     {
-        REQUIRE(dissasmInstance.AddCollpasibleZone(9, 11));
-        REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 9 }, { 9, 11, true }, { 11, zoneEndingIndex } }));
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+        // an analysis without the label sub_5: the second zone is one line above
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        restored.zone->RemoveRootAnnotationLines({ 5 });
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckZones({ { 0, 5 }, { 35, 49, "", true } }));
+    }
 
-        REQUIRE(dissasmInstance.RemoveCollapsibleZone(10));
-        // dissasmInstance.PrintInstructions(20);
-        REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
-        REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
+    SECTION("the zones keep their lines when a line is removed")
+    {
+        edited.zone->RemoveRootAnnotationLines({ 5 }); // before the second zone
+        REQUIRE(edited.CheckZones({ { 0, 5 }, { 35, 49, "", true } }));
+        REQUIRE(edited.CheckLineMnemonic(35, "collapsed"));
+    }
+
+    SECTION("the zones of a record kept aside by an older version are merged")
+    {
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZoneUnapplied.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged)); // no record of its own
+        REQUIRE(zoneLinesChanged);
+        REQUIRE(restored.CheckZones({ { 0, 5 }, { 36, 50, "", true } }));
+        REQUIRE(restored.CheckComment(36, "inside the zone") == false); // the comment is on a line hidden by the collapsed zone
+    }
+
+    SECTION("following a jump lands on the collapsed zone that hides the target")
+    {
+        // the instruction index of a shown line, none for the collapsed line
+        REQUIRE(!DissasmGetCurrentAsmLineAndPrepareCodeZone(edited.zone.get(), 36).has_value());
+        const auto index = DissasmGetCurrentAsmLineAndPrepareCodeZone(edited.zone.get(), 37); // the first line after the zone
+        REQUIRE(index.has_value());
+        REQUIRE(edited.zone->ExpandedToDisplay(edited.zone->InstructionIndexToExpanded(index.value())) == 37);
+        const auto hiddenInstruction = edited.zone->ExpandedToInstructionIndex(40);
+        REQUIRE(edited.zone->ExpandedToDisplay(edited.zone->InstructionIndexToExpanded(hiddenInstruction)) == 36);
     }
 }
 
@@ -998,14 +903,14 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_5"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_F"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
+    REQUIRE(dissasmInstance.CheckZones({}));
 
     REQUIRE(dissasmInstance.AddOrUpdateComment(2, "c2"));
     REQUIRE(dissasmInstance.AddOrUpdateComment(5, "c5"));
@@ -1029,16 +934,15 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
 
     // SECTION("collapsible zones")
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 12)); // comments on lines 5 and 10 should be inside
-    auto internalZone = dissasmInstance.GetDissasmCodeInternalTypeByLine(10);
-    REQUIRE(internalZone);
-    REQUIRE(internalZone->commentsData.HasComment(5));
-    REQUIRE(internalZone->commentsData.HasComment(10));
+    REQUIRE(dissasmInstance.HasComment(5));
+    REQUIRE(dissasmInstance.HasComment(10));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(10, DissasmCodeZone::CollapseExpandType::Collapse));
 
-    REQUIRE(internalZone->commentsData.HasComment(5));  // available, but not visible
+    // the comments follow their instructions / labels: the collapsed line starts with the label of line 5 (its comment), the comment of
+    // line 10 is kept but hidden by the collapsed zone
     REQUIRE(dissasmInstance.HasComment(5));
-    REQUIRE(internalZone->commentsData.HasComment(10)); // available, but not visible
-    REQUIRE(!dissasmInstance.HasComment(20));           // it has been moved due to collapse of the zone
+    REQUIRE(dissasmInstance.zone->userComments.comments.size() == 4);
+    REQUIRE(!dissasmInstance.HasComment(20)); // it has been moved due to collapse of the zone
     REQUIRE(dissasmInstance.HasComment(14));
     REQUIRE(dissasmInstance.CheckComment(14, "c0"));
 
@@ -1063,7 +967,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
 {
     DissasmTestInstance withoutVariables(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
     REQUIRE(withoutVariables.zone->localVariables.Empty());
-    REQUIRE(withoutVariables.CheckLineText(35, "sub_0x000000030"));
+    REQUIRE(withoutVariables.CheckLineText(35, "sub_30"));
     REQUIRE(withoutVariables.CheckLineText(36, "push ebp"));
     REQUIRE(withoutVariables.CheckLineText(44, "cmp dword ptr [ebp + 8], 1"));
 
@@ -1076,7 +980,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
     REQUIRE(functions[2].startAddress == 0x320);
 
     // isPrime(int number): IDA like variables below the label, the instructions use their names
-    REQUIRE(dissasmInstance.CheckLineText(35, "sub_0x000000030"));
+    REQUIRE(dissasmInstance.CheckLineText(35, "sub_30"));
     REQUIRE(dissasmInstance.CheckLineText(36, "var_44 = dword ptr -0x44"));
     REQUIRE(dissasmInstance.CheckLineText(37, "arg_0 = dword ptr 8"));
     REQUIRE(dissasmInstance.CheckLineText(38, "push ebp"));
@@ -1085,7 +989,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
     REQUIRE(dissasmInstance.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
 
     // main(): int a = 1, b = 2, c = 3;
-    REQUIRE(dissasmInstance.CheckLineText(360, "sub_0x0000002B0"));
+    REQUIRE(dissasmInstance.CheckLineText(360, "sub_2B0"));
     REQUIRE(dissasmInstance.CheckLineText(361, "var_C = dword ptr -0xc"));
     REQUIRE(dissasmInstance.CheckLineText(362, "var_8 = dword ptr -8"));
     REQUIRE(dissasmInstance.CheckLineText(363, "var_4 = dword ptr -4"));
@@ -1097,7 +1001,7 @@ TEST_CASE("LocalVariablesDetection", "[Dissasm]LocalVariables")
     const auto variableLines = dissasmInstance.zone->dissasmType.annotations.size() - withoutVariables.zone->dissasmType.annotations.size();
     REQUIRE(variableLines == 7);
     REQUIRE(dissasmInstance.zone->asmLinesCount == withoutVariables.zone->asmLinesCount);
-    REQUIRE(dissasmInstance.zone->dissasmType.indexZoneEnd == withoutVariables.zone->dissasmType.indexZoneEnd + 7);
+    REQUIRE(dissasmInstance.zone->GetExpandedLinesCount() == withoutVariables.zone->GetExpandedLinesCount() + 7);
 
     // the same line decoded twice in a row must be the same instruction
     REQUIRE(dissasmInstance.CheckLineText(46, "cmp dword ptr [ebp + arg_0], 1"));
@@ -1133,14 +1037,14 @@ TEST_CASE("LocalVariablesRenameAndRemove", "[Dissasm]LocalVariables")
     REQUIRE(dissasmInstance.AddOrUpdateComment(60, "c60"));
 
     // remove from an instruction: the definition line disappears and every following line moves up
-    const uint32 zoneEnd = zone.dissasmType.indexZoneEnd;
+    const uint32 zoneEnd = zone.GetExpandedLinesCount();
     REQUIRE(dissasmInstance.RemoveLocalVariable(55));
-    REQUIRE(zone.dissasmType.indexZoneEnd == zoneEnd - 1);
-    REQUIRE(dissasmInstance.CheckLineText(35, "sub_0x000000030"));
+    REQUIRE(zone.GetExpandedLinesCount() == zoneEnd - 1);
+    REQUIRE(dissasmInstance.CheckLineText(35, "sub_30"));
     REQUIRE(dissasmInstance.CheckLineText(36, "number = dword ptr 8"));
     REQUIRE(dissasmInstance.CheckLineText(37, "push ebp"));
     REQUIRE(dissasmInstance.CheckLineText(45, "cmp dword ptr [ebp + number], 1"));
-    REQUIRE(dissasmInstance.CheckLineText(49, "offset_0x00000004F"));
+    REQUIRE(dissasmInstance.CheckLineText(49, "loc_4F"));
     REQUIRE(dissasmInstance.CheckLineText(54, "mov dword ptr [ebp - 0x44], eax")); // not a variable anymore
     REQUIRE(dissasmInstance.CheckComment(30, "c30"));
     REQUIRE(!dissasmInstance.HasComment(36)); // the comment of the removed line is gone
@@ -1153,15 +1057,18 @@ TEST_CASE("LocalVariablesRenameAndRemove", "[Dissasm]LocalVariables")
     REQUIRE(zone.localVariables.functions.size() == 2);
     REQUIRE(dissasmInstance.CheckLineText(36, "push ebp"));
     REQUIRE(dissasmInstance.CheckLineText(44, "cmp dword ptr [ebp + 8], 1"));
-    REQUIRE(dissasmInstance.CheckLineText(358, "sub_0x0000002B0"));
+    REQUIRE(dissasmInstance.CheckLineText(358, "sub_2B0"));
     REQUIRE(dissasmInstance.CheckLineText(359, "var_C = dword ptr -0xc"));
     REQUIRE(!dissasmInstance.RemoveLocalVariable(36)); // nothing to remove
 
-    // the collapsible zones keep copies of the lines: removing is refused, renaming still works
+    // with collapsible zones: renaming and removing work, the zones keep their lines
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
-    REQUIRE(!dissasmInstance.RemoveLocalVariable(359));
+    REQUIRE(dissasmInstance.AddCollpasibleZone(355, 365));
     REQUIRE(dissasmInstance.RenameLocalVariable(359, "c").ok);
     REQUIRE(dissasmInstance.CheckLineText(359, "c = dword ptr -0xc"));
+    REQUIRE(dissasmInstance.RemoveLocalVariable(359));
+    REQUIRE(dissasmInstance.CheckZones({ { 0, 5 }, { 355, 364 } }));
+    REQUIRE(dissasmInstance.CheckLineText(358, "sub_2B0"));
 }
 
 TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
@@ -1189,7 +1096,7 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         bool zoneLinesChanged = false;
         REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
         REQUIRE(zoneLinesChanged);
-        REQUIRE(restored.zone->dissasmType.indexZoneEnd == edited.zone->dissasmType.indexZoneEnd);
+        REQUIRE(restored.zone->GetExpandedLinesCount() == edited.zone->GetExpandedLinesCount());
         REQUIRE(restored.zone->GetRootZoneLinesCount() == edited.zone->GetRootZoneLinesCount());
         const uint32 linesCount = edited.zone->GetRootZoneLinesCount();
         for (uint32 line = 0; line < linesCount; line++)
@@ -1206,22 +1113,82 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         // a variable the analysis never found
         auto& function = edited.zone->localVariables.functions[0];
         function.variables.insert(function.variables.begin(), DissasmLocalVariable{ -0x100, 4, "injected" });
+        // version 3 (keyed by address): the variable is ignored, everything else is applied
+        REQUIRE(edited.zone->ToBuffer(buffer));
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cache            = makeCache(buffer);
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckLineText(35, "isPrime"));
+        REQUIRE(restored.CheckLineText(36, "count = dword ptr -0x44"));
+        REQUIRE(restored.CheckComment(100, "c100"));
+        REQUIRE(!restored.zone->localVariables.functions[0].HasVariableNamed("injected"));
+
+        // version 2 (keyed by line): the layout does not match, the record is not applied
+        std::vector<std::byte> lineKeyed;
+        WriteLineKeyedRecord(*edited.zone, 2, { { 100, "c100" } }, lineKeyed);
+        DissasmTestInstance restoredV2(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cacheV2 = makeCache(lineKeyed);
+        zoneLinesChanged = false;
+        REQUIRE(!restoredV2.zone->TryLoadDataFromCache(*cacheV2, zoneLinesChanged));
+        REQUIRE(!zoneLinesChanged);
+        REQUIRE(restoredV2.CheckLineText(35, "sub_30"));
+        REQUIRE(restoredV2.CheckLineText(36, "var_44 = dword ptr -0x44"));
+        REQUIRE(!restoredV2.HasComment(100));
+
+        // truncated record
+        buffer.resize(buffer.size() / 2);
+        auto truncatedCache = makeCache(buffer);
+        REQUIRE(!restoredV2.zone->TryLoadDataFromCache(*truncatedCache, zoneLinesChanged));
+        REQUIRE(restoredV2.CheckLineText(36, "var_44 = dword ptr -0x44"));
+    }
+
+    SECTION("a variable the record does not have is a variable a newer analysis found, not a removal")
+    {
+        // the record of an older analysis that did not find var_C of main (the user removed var_8 only)
+        REQUIRE(edited.zone->removedLocalVariables.size() == 1);
+        uint64 mainStart = 0;
+        int32 offset     = 0;
+        REQUIRE(edited.zone->GetLocalVariableFromLine(361, &edited.objects[0], mainStart, offset));
+        REQUIRE(offset == -0xc);
+        auto* main           = edited.zone->localVariables.FindFunctionByStart(mainStart);
+        const auto* variable = main->FindVariable(-0xc);
+        REQUIRE(variable != nullptr);
+        main->variables.erase(main->variables.begin() + (variable - main->variables.data()));
         REQUIRE(edited.zone->ToBuffer(buffer));
 
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
         auto cache            = makeCache(buffer);
         bool zoneLinesChanged = false;
-        REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
-        REQUIRE(!zoneLinesChanged);
-        REQUIRE(restored.CheckLineText(35, "sub_0x000000030"));
-        REQUIRE(restored.CheckLineText(36, "var_44 = dword ptr -0x44"));
-        REQUIRE(!restored.HasComment(100));
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckLineText(36, "count = dword ptr -0x44"));
+        REQUIRE(restored.CheckLineText(361, "var_C = dword ptr -0xc")); // kept
+        REQUIRE(restored.CheckLineText(362, "var_4 = dword ptr -4"));   // var_8: removed by the user
+        REQUIRE(restored.zone->removedLocalVariables == edited.zone->removedLocalVariables);
 
-        // truncated record
-        buffer.resize(buffer.size() / 2);
-        auto truncatedCache = makeCache(buffer);
-        REQUIRE(!restored.zone->TryLoadDataFromCache(*truncatedCache, zoneLinesChanged));
-        REQUIRE(restored.CheckLineText(36, "var_44 = dword ptr -0x44"));
+        // a version 5 record (no removals in it): the renames, no variable removed
+        std::vector<std::byte> version5 = buffer;
+        const uint32 five               = 5;
+        memcpy(version5.data() + sizeof(uint32), &five, sizeof(five));
+        version5.resize(version5.size() - (sizeof(uint32) + (sizeof(uint64) + sizeof(int32)) * edited.zone->removedLocalVariables.size()));
+        DissasmTestInstance restoredV5(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cacheV5     = makeCache(version5);
+        zoneLinesChanged = false;
+        REQUIRE(restoredV5.zone->TryLoadDataFromCache(*cacheV5, zoneLinesChanged));
+        REQUIRE(restoredV5.CheckLineText(36, "count = dword ptr -0x44"));
+        REQUIRE(restoredV5.CheckLineText(361, "var_C = dword ptr -0xc"));
+        REQUIRE(restoredV5.CheckLineText(362, "var_8 = dword ptr -8"));
+        REQUIRE(restoredV5.zone->removedLocalVariables.empty());
+
+        // a truncated list of removals (the cache file is untrusted): the record is not applied
+        std::vector<std::byte> truncated = buffer;
+        truncated.resize(truncated.size() - sizeof(int32));
+        DissasmTestInstance restoredTruncated(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+        auto cacheTruncated = makeCache(truncated);
+        zoneLinesChanged    = false;
+        REQUIRE(!restoredTruncated.zone->TryLoadDataFromCache(*cacheTruncated, zoneLinesChanged));
+        REQUIRE(restoredTruncated.CheckLineText(36, "var_44 = dword ptr -0x44"));
+        REQUIRE(restoredTruncated.CheckLineText(361, "var_C = dword ptr -0xc"));
     }
 
     SECTION("caches saved before the local variables are moved below the variable lines")
@@ -1231,8 +1198,12 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         REQUIRE(legacy.AddOrUpdateComment(10, "c10"));
         REQUIRE(legacy.AddOrUpdateComment(60, "c60"));
         REQUIRE(legacy.AddOrUpdateComment(400, "c400"));
-        std::vector<std::byte> legacyBuffer;
-        legacy.zone->dissasmType.commentsData.ToBuffer(legacyBuffer);
+        std::vector<std::byte> legacyBuffer; // [comments by line][annotations], no magic
+        DissasmComments legacyComments;
+        legacyComments.AddOrUpdateComment(10, "c10");
+        legacyComments.AddOrUpdateComment(60, "c60");
+        legacyComments.AddOrUpdateComment(400, "c400");
+        legacyComments.ToBuffer(legacyBuffer);
         legacy.zone->dissasmType.annotations.ToBuffer(legacyBuffer);
 
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
@@ -1247,6 +1218,169 @@ TEST_CASE("LocalVariablesCache", "[Dissasm]LocalVariables")
         REQUIRE(restored.CheckLineText(62, legacy.GetLineText(60)));
         REQUIRE(restored.CheckComment(405, "c400")); // and 3 more of main
         REQUIRE(restored.CheckLineText(405, legacy.GetLineText(400)));
+    }
+}
+
+namespace
+{
+// a mutation of a record (the cache file is untrusted: a sample can come with its cache): bit flips, 4 / 8 byte fields at the values that
+// break the counts and the sizes, a truncation, inserted bytes, a duplicated chunk
+std::vector<std::byte> MutateRecord(const std::vector<std::byte>& record, std::mt19937& random)
+{
+    std::vector<std::byte> data = record;
+    const auto pick = [&random](size_t count) { return count == 0 ? size_t(0) : static_cast<size_t>(random() % count); };
+    static constexpr uint32 FIELDS[] = { 0, 1, 2, 0xFF, 0xFFFF, 0x7FFFFFFF, 0x80000000, 0xFFFFFFFF, 0xFFFFFFFE, 0x10000 };
+    switch (random() % 6) {
+    case 0:
+        for (uint32 count = 1 + random() % 8; count > 0 && !data.empty(); count--)
+            data[pick(data.size())] ^= static_cast<std::byte>(1u << (random() % 8));
+        break;
+    case 1:
+        for (uint32 count = 1 + random() % 3; count > 0 && data.size() >= 4; count--) {
+            const uint32 value = FIELDS[pick(std::size(FIELDS))];
+            memcpy(data.data() + pick(data.size() - 3), &value, sizeof(value));
+        }
+        break;
+    case 2:
+        if (data.size() >= 8) {
+            const uint64 value = (random() % 2) ? UINT64_MAX : 0x8000000000000000ull;
+            memcpy(data.data() + pick(data.size() - 7), &value, sizeof(value));
+        }
+        break;
+    case 3:
+        data.resize(pick(data.size()));
+        break;
+    case 4: {
+        const size_t at = pick(data.size() + 1);
+        for (uint32 count = 1 + random() % 32; count > 0; count--)
+            data.insert(data.begin() + at, static_cast<std::byte>(random() & 0xFF));
+        break;
+    }
+    default:
+        if (!data.empty()) {
+            const size_t from = pick(data.size()), length = std::min<size_t>(data.size() - from, 1 + random() % 64);
+            const std::vector<std::byte> chunk(data.begin() + from, data.begin() + from + length);
+            data.insert(data.begin() + pick(data.size() + 1), chunk.begin(), chunk.end());
+        }
+        break;
+    }
+    return data;
+}
+} // namespace
+
+TEST_CASE("CacheRecordsFuzz", "[Dissasm]Cache")
+{
+    // the records of a zone with every kind of user data: the current record (version 4), the line keyed records of the versions 1 and 2,
+    // the user data, the user functions, the user structures, the operand structures, the bookmarks, the repeatable comments and the
+    // prototypes records; mutated (a fixed seed: the same mutants on every run) and loaded into a zone
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+    std::string_view labelName = "isPrime";
+    REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+    REQUIRE(edited.RenameLocalVariable(36, "count").ok);
+    REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+    REQUIRE(edited.AddOrUpdateComment(36, "on a variable"));
+    REQUIRE(edited.zone->AddCollapsibleZone(120, 130));
+    std::vector<std::byte> current, versionOne, versionTwo;
+    REQUIRE(edited.zone->ToBuffer(current));
+    WriteLineKeyedRecord(*edited.zone, 1, { { 50, "line 50" }, { 70, "line 70" } }, versionOne);
+    WriteLineKeyedRecord(*edited.zone, 2, { { 50, "line 50" } }, versionTwo);
+    std::vector<std::byte> userData, userFunctions;
+    const auto append = [](std::vector<std::byte>& buffer, const auto& value) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    append(userData, uint32{ 0x44554447 }), append(userData, uint32{ 1 }), append(userData, uint32{ 2 });
+    append(userData, uint64{ 0x10 }), append(userData, uint64{ 0x18 }), append(userData, uint8{ 4 });
+    append(userData, uint64{ 0x20 }), append(userData, uint64{ 0x30 }), append(userData, uint8{ 0 });
+    append(userFunctions, uint32{ 0x46554447 }), append(userFunctions, uint32{ 1 }), append(userFunctions, uint32{ 2 });
+    append(userFunctions, uint64{ 0x30 }), append(userFunctions, uint8{ USER_FUNCTION_CREATE });
+    append(userFunctions, uint64{ 0x5 }), append(userFunctions, uint8{ USER_FUNCTION_NORETURN });
+    std::vector<std::byte> userStructures, operandStructures, operandConstants;
+    UserVariableStructuresToBuffer({ { { 0x30, -0x20 }, "SYSTEMTIME" }, { { 0x5, -8 }, "" } }, userStructures);
+    OperandStructuresToBuffer({ { 0x30, "STARTUPINFOW" }, { 0x5, "FILETIME" } }, operandStructures);
+    OperandConstantsToBuffer({ { 0x30, "ACCESS_RIGHTS" }, { 0x5, "HRESULTS" } }, operandConstants);
+    std::vector<std::byte> bookmarks, repeatableComments, prototypes;
+    BookmarksToBuffer({ { 0x30, "the decryption loop" }, { 0x5, "x" } }, bookmarks);
+    UserPrototypesToBuffer({ { 0x30, "int decrypt(char* buffer, int size)" }, { 0x5, "void f()" } }, prototypes);
+    RepeatableCommentsToBuffer({ { 0x30, "decrypts the configuration" }, { 0x5, "y" } }, repeatableComments);
+
+    // GVIEW_FUZZ_ROUNDS=<rounds> [GVIEW_FUZZ_SEED=<seed>]: a longer run with other mutants (a local fuzzing campaign)
+    const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
+    const char* seedText   = std::getenv("GVIEW_FUZZ_SEED");
+    const uint32 ROUNDS    = roundsText ? static_cast<uint32>(std::strtoul(roundsText, nullptr, 10)) : 150u;
+    std::mt19937 random(seedText ? static_cast<uint32>(std::strtoul(seedText, nullptr, 10)) : 0x6E5F1234u);
+    std::unique_ptr<DissasmTestInstance> restored;
+    uint32 loaded = 0;
+    for (const auto* seed : { &current, &versionOne, &versionTwo }) {
+        for (uint32 round = 0; round < ROUNDS; round++) {
+            if (round % 25 == 0) // a zone that the previous records changed is replaced from time to time
+                restored = std::make_unique<DissasmTestInstance>(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
+            const auto mutant = MutateRecord(*seed, random);
+            DissasmCache cache;
+            cache.hasCache = true;
+            cache.AddRegion("DissasmParseZoneType.0", mutant.data(), static_cast<uint32>(mutant.size()));
+            bool zoneLinesChanged = false;
+            loaded += restored->zone->TryLoadDataFromCache(cache, zoneLinesChanged) ? 1 : 0;
+            // the zone stays usable: its lines are drawn
+            const uint32 lines = std::min<uint32>(restored->zone->GetExpandedLinesCount(), 200);
+            for (uint32 line = 0; line < lines; line += 7)
+                restored->GetLineText(line);
+        }
+    }
+    INFO(loaded);
+    REQUIRE(loaded > 0); // some mutants are still valid records (the parsers were reached)
+    if (roundsText)
+        WARN("cache record mutants loaded: " << loaded << " of " << 3 * ROUNDS);
+
+    // the user data / user functions records and the local variables
+    for (uint32 round = 0; round < 2000 + 10 * (roundsText ? ROUNDS : 0); round++) {
+        const auto data = MutateRecord(userData, random);
+        DissasmCache cache;
+        cache.AddRegion("DissasmUserData.0", data.data(), static_cast<uint32>(data.size()));
+        for (const auto& range : ReadUserDataRanges(cache, *edited.zone))
+            REQUIRE(range.start < range.end);
+        const auto functionsData = MutateRecord(userFunctions, random);
+        DissasmCache functionsCache;
+        functionsCache.AddRegion("DissasmUserFunctions.0", functionsData.data(), static_cast<uint32>(functionsData.size()));
+        for (const auto& [address, flags] : ReadUserFunctions(functionsCache, *edited.zone))
+            REQUIRE(((flags & ~USER_FUNCTION_ALL) == 0 && flags != 0 && address < edited.zone->zoneDetails.size));
+        const auto structuresData = MutateRecord(userStructures, random);
+        DissasmCache structuresCache;
+        structuresCache.AddRegion("DissasmUserStructures.0", structuresData.data(), static_cast<uint32>(structuresData.size()));
+        for (const auto& [key, structure] : ReadUserVariableStructures(structuresCache, *edited.zone))
+            REQUIRE((key.first < edited.zone->zoneDetails.size && IsValidUserStructureName(structure)));
+        const auto operandsData = MutateRecord(operandStructures, random);
+        DissasmCache operandsCache;
+        operandsCache.AddRegion("DissasmOperandStructures.0", operandsData.data(), static_cast<uint32>(operandsData.size()));
+        for (const auto& [address, structure] : ReadOperandStructures(operandsCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && !structure.empty() && IsValidUserStructureName(structure)));
+        const auto constantsData = MutateRecord(operandConstants, random);
+        DissasmCache constantsCache;
+        constantsCache.AddRegion("DissasmOperandConstants.0", constantsData.data(), static_cast<uint32>(constantsData.size()));
+        for (const auto& [address, set] : ReadOperandConstants(constantsCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && IsConstantSetName(set)));
+        const auto bookmarksData = MutateRecord(bookmarks, random);
+        DissasmCache bookmarksCache;
+        bookmarksCache.AddRegion("DissasmBookmarks.0", bookmarksData.data(), static_cast<uint32>(bookmarksData.size()));
+        for (const auto& [address, description] : ReadBookmarks(bookmarksCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && !description.empty() && description.size() <= DISSASM_MAX_BOOKMARK_SIZE));
+        const auto repeatableData = MutateRecord(repeatableComments, random);
+        DissasmCache repeatableCache;
+        repeatableCache.AddRegion("DissasmRepeatableComments.0", repeatableData.data(), static_cast<uint32>(repeatableData.size()));
+        for (const auto& [address, text] : ReadRepeatableComments(repeatableCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && !text.empty() && text.size() <= DISSASM_MAX_REPEATABLE_COMMENT_SIZE));
+        const auto prototypesData = MutateRecord(prototypes, random);
+        DissasmCache prototypesCache;
+        prototypesCache.AddRegion("DissasmUserPrototypes.0", prototypesData.data(), static_cast<uint32>(prototypesData.size()));
+        for (const auto& [address, text] : ReadUserPrototypes(prototypesCache, *edited.zone))
+            REQUIRE((address < edited.zone->zoneDetails.size && ParseUserPrototype(text) != nullptr));
+        std::vector<std::byte> variables;
+        edited.zone->localVariables.ToBuffer(variables);
+        const auto variablesData = MutateRecord(variables, random);
+        const std::byte* start   = variablesData.data();
+        DissasmLocalVariables parsed;
+        parsed.LoadFromBuffer(start, variablesData.data() + variablesData.size());
+        REQUIRE(start <= variablesData.data() + variablesData.size());
     }
 }
 
@@ -1271,7 +1405,7 @@ TEST_CASE("CodeZoneCacheRecordKey", "[Dissasm]Cache")
     REQUIRE(restored.CheckLineText(35, "isPrime"));
     REQUIRE(restored.CheckComment(100, "c100"));
     // the jumps / calls to a label renamed by the assistant (TryRenameLine with a name) use the new name as well
-    REQUIRE(edited.zone->dissasmType.annotations.get_name_change("sub_0x000000030") == "isPrime");
+    REQUIRE(edited.zone->dissasmType.annotations.get_name_change("sub_30") == "isPrime");
 }
 
 TEST_CASE("LocalVariablesOperandsAndNames", "[Dissasm]LocalVariables")
@@ -1408,6 +1542,238 @@ TEST_CASE("LocalVariablesFrameAnalysis", "[Dissasm]LocalVariables")
     DetailHandle x64(CS_MODE_64);
     REQUIRE(AnalyzeFrame(x64, { 0x55, 0x48, 0x89, 0xE5, 0x89, 0x7D, 0xEC, 0x48, 0x89, 0x45, 0x10, 0x5D, 0xC3 }, true, frame));
     REQUIRE(CheckFrameVariables(frame, { { -0x14, 4, "var_14" }, { 0x10, 8, "arg_0" } }));
+}
+
+// x64 without a frame register: the slots of rsp (and of a copy of rsp) in offsets from the rsp of the entry
+static const std::vector<uint8> x64StackFrameCode = {
+    0x4C, 0x8B, 0xDC,                   // 0x00: mov r11, rsp
+    0x53,                               // 0x03: push rbx
+    0x48, 0x83, 0xEC, 0x30,             // 0x04: sub rsp, 0x30
+    0x49, 0x89, 0x43, 0xF0,             // 0x08: mov qword ptr [r11 - 0x10], rax
+    0x89, 0x44, 0x24, 0x20,             // 0x0C: mov dword ptr [rsp + 0x20], eax
+    0x48, 0x8B, 0x44, 0x24, 0x40,       // 0x10: mov rax, qword ptr [rsp + 0x40]
+    0x48, 0x8B, 0x04, 0x24,             // 0x15: mov rax, qword ptr [rsp]
+    0x45, 0x31, 0xDB,                   // 0x19: xor r11d, r11d (the copy of rsp ends)
+    0x49, 0x89, 0x43, 0xF8,             // 0x1C: mov qword ptr [r11 - 8], rax
+    0x48, 0x83, 0xC4, 0x30,             // 0x20: add rsp, 0x30
+    0x5B,                               // 0x24: pop rbx
+    0xC3,                               // 0x25: ret
+};
+
+TEST_CASE("LocalVariablesStackPointerFrames", "[Dissasm]LocalVariables")
+{
+    X86FrameOperand operand{};
+    REQUIRE(FindX86StackOperand("dword ptr [rsp + 0x20], eax", operand));
+    REQUIRE(operand.frameOffset == 0x20);
+    REQUIRE(FindX86StackOperand("rax, qword ptr [rsp]", operand));
+    REQUIRE(operand.frameOffset == 0);
+    REQUIRE(operand.replaceStart == operand.replaceEnd);
+    REQUIRE(FindX86StackOperand("qword ptr [r11 - 0x28], rax", operand, "r11"));
+    REQUIRE(operand.frameOffset == -0x28);
+    REQUIRE(!FindX86StackOperand("qword ptr [r11 - 0x28], rax", operand));
+    REQUIRE(!FindX86StackOperand("dword ptr [rsp + rax*4 + 8]", operand));
+    REQUIRE(!FindX86StackOperand("dword ptr [rbp - 8]", operand));
+    REQUIRE(!FindX86StackOperand("dword ptr [rsp + 8]", operand, ""));
+
+    DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, x64StackFrameCode.data(), x64StackFrameCode.size(), 0, x64StackFrameCode.size(), true, frame));
+    REQUIRE(!frame.usesFrameRegister);
+    REQUIRE(frame.endAddress == 0x26);
+    REQUIRE(frame.stackOffset == -0x38);
+    // [rsp + 0x40] is above the return address: arg_0 (IDA); [r11 - 8] is not a slot after the copy of rsp is written
+    REQUIRE(CheckFrameVariables(frame, { { -0x38, 8, "var_38" }, { -0x18, 4, "var_18" }, { -0x10, 8, "var_10" }, { 8, 8, "arg_0" } }));
+    const std::vector<std::pair<uint64, int32>> deltas = { { 0, 0 }, { 4, -8 }, { 8, -0x38 }, { 0x24, -8 }, { 0x25, 0 } };
+    REQUIRE(frame.stackDeltas == deltas);
+    REQUIRE(frame.StackDeltaAt(0x10) == -0x38);
+    REQUIRE(frame.StackDeltaAt(0x24) == -8);
+    REQUIRE(frame.stackAliases.size() == 1);
+    REQUIRE(frame.stackAliases[0].reg == "r11");
+    REQUIRE(frame.stackAliases[0].delta == 0);
+    REQUIRE(frame.stackAliases[0].start == 3);
+    REQUIRE(frame.stackAliases[0].end == 0x19);
+
+    // an aligned frame (push rbp; mov rbp, rsp; and rsp, -0x10; ...; leave): the alignment is no change (IDA) while rbp keeps rsp, leave
+    // restores it from rbp; without the frame pointer it is not followed
+    const std::vector<uint8> aligned = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xE4, 0xF0, 0x89, 0x44, 0x24, 0x20, 0xC9, 0xC3 };
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, aligned.data(), aligned.size(), 0, aligned.size(), true, frame));
+    REQUIRE(frame.StackDeltaAt(0x8) == -8);
+    REQUIRE(frame.StackDeltaAt(0xd) == 0); // leave
+    const std::vector<uint8> alignedOnly = { 0x48, 0x83, 0xE4, 0xF0, 0x89, 0x44, 0x24, 0x20, 0xC3 };
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, alignedOnly.data(), alignedOnly.size(), 0, alignedOnly.size(), true, frame));
+
+    // the listing: [rsp + 0x38 + var_18] (rsp + 0x38 is the rsp of the entry), [r11 + var_10]
+    std::vector<uint8> file = x64StackFrameCode;
+    file.resize(64, 0xCC); // int3
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(1, "var_38 = qword ptr -0x38"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "arg_0 = qword ptr 8"));
+    REQUIRE(dissasmInstance.CheckLineText(5, "mov r11, rsp"));
+    REQUIRE(dissasmInstance.CheckLineText(8, "mov qword ptr [r11 + var_10], rax"));
+    REQUIRE(dissasmInstance.CheckLineText(9, "mov dword ptr [rsp + 0x38 + var_18], eax"));
+    REQUIRE(dissasmInstance.CheckLineText(10, "mov rax, qword ptr [rsp + 0x38 + arg_0]"));
+    REQUIRE(dissasmInstance.CheckLineText(11, "mov rax, qword ptr [rsp + 0x38 + var_38]"));
+    REQUIRE(dissasmInstance.CheckLineText(13, "mov qword ptr [r11 - 8], rax"));
+    REQUIRE(dissasmInstance.CheckLineText(14, "add rsp, 0x30"));
+
+    // mov eax, 0x1050; call __chkstk; sub rsp, rax; mov [rsp + 0x20], ecx; add rsp, 0x1050; ret: the size of the frame from eax
+    const std::vector<uint8> probed = { 0xB8, 0x50, 0x10, 0x00, 0x00, 0xE8, 0x36, 0x00, 0x00, 0x00, 0x48, 0x2B, 0xE0,
+                                        0x89, 0x4C, 0x24, 0x20, 0x48, 0x81, 0xC4, 0x50, 0x10, 0x00, 0x00, 0xC3 };
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, probed.data(), probed.size(), 0, probed.size(), true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -0x1030, 4, "var_1030" } }));
+}
+
+// x86 without a frame register (MSVC FPO): a stdcall import, a cdecl callee cleaned up by pop ecx a few instructions later
+static const std::vector<uint8> x86StackFrameCode = {
+    0x83, 0xEC, 0x10,                   // 0x00: sub esp, 0x10
+    0x56,                               // 0x03: push esi (saved)
+    0x8B, 0x74, 0x24, 0x18,             // 0x04: mov esi, dword ptr [esp + 0x18] (arg_0)
+    0x89, 0x74, 0x24, 0x04,             // 0x08: mov dword ptr [esp + 4], esi (var_10)
+    0x6A, 0x00,                         // 0x0C: push 0
+    0x56,                               // 0x0E: push esi
+    0xFF, 0x15, 0x00, 0x20, 0x40, 0x00, // 0x0F: call dword ptr [0x402000] (stdcall: pops its 8 bytes)
+    0x8B, 0xC8,                         // 0x15: mov ecx, eax
+    0x89, 0x4C, 0x24, 0x08,             // 0x17: mov dword ptr [esp + 8], ecx (var_C)
+    0x51,                               // 0x1B: push ecx
+    0xE8, 0x1F, 0x00, 0x00, 0x00,       // 0x1C: call 0x40 (cdecl)
+    0x59,                               // 0x21: pop ecx (the caller cleans up)
+    0x5E,                               // 0x22: pop esi
+    0x83, 0xC4, 0x10,                   // 0x23: add esp, 0x10
+    0xC2, 0x04, 0x00,                   // 0x26: ret 4
+};
+
+TEST_CASE("LocalVariablesStackPointerFrames32", "[Dissasm]LocalVariables")
+{
+    X86FrameOperand operand{};
+    REQUIRE(FindX86StackOperand("dword ptr [esp + 0x18]", operand, "esp"));
+    REQUIRE(operand.frameOffset == 0x18);
+
+    DetailHandle x86(CS_MODE_32);
+    DissasmFunctionFrame frame{};
+    const auto analyze = [&](const std::vector<uint8>& code, const X86CalleeStackPurge& purge = {}, uint64 codeAddress = 0) {
+        return AnalyzeX86StackFrame(x86.handle, code.data(), code.size(), codeAddress, codeAddress + code.size(), false, frame, purge);
+    };
+    // the callees: not known (the guesses), or known (a direct call: cdecl, a call through memory: stdcall with 8 bytes)
+    const X86CalleeStackPurge knownCallees = [](const cs_insn& call) -> std::optional<uint32> {
+        return call.detail->x86.operands[0].type == X86_OP_IMM ? 0u : 8u;
+    };
+    for (const auto& purge : { X86CalleeStackPurge{}, knownCallees }) {
+        REQUIRE(analyze(x86StackFrameCode, purge));
+        REQUIRE(!frame.usesFrameRegister);
+        REQUIRE(frame.endAddress == 0x29);
+        REQUIRE(CheckFrameVariables(frame, { { -0x10, 4, "var_10" }, { -0xC, 4, "var_C" }, { 4, 4, "arg_0" } }));
+        REQUIRE(frame.StackDeltaAt(0x08) == -0x14);
+        REQUIRE(frame.StackDeltaAt(0x15) == (purge ? -0x14 : -0x1C)); // a guess waits for the next use of the stack
+        REQUIRE(frame.StackDeltaAt(0x17) == -0x14);
+        REQUIRE(frame.StackDeltaAt(0x21) == -0x18);
+        REQUIRE(frame.StackDeltaAt(0x26) == 0);
+    }
+
+    // push esi; mov esi, [esp + 8]; push esi; call [free]; push esi; call [free]; add esp, 8; pop esi; ret: the cleanup of two cdecl calls
+    // at once; guessed as stdcall the ret is unbalanced, known as cdecl it is not
+    const std::vector<uint8> deferred = { 0x56, 0x8B, 0x74, 0x24, 0x08, 0x56, 0xFF, 0x15, 0x00, 0x20, 0x40, 0x00,
+                                          0x56, 0xFF, 0x15, 0x04, 0x20, 0x40, 0x00, 0x83, 0xC4, 0x08, 0x5E, 0xC3 };
+    REQUIRE(!analyze(deferred));
+    REQUIRE(analyze(deferred, [](const cs_insn&) -> std::optional<uint32> { return 0u; }));
+    REQUIRE(CheckFrameVariables(frame, { { 4, 4, "arg_0" } }));
+
+    // push ecx; call [GetFileAttributesW]; mov eax, [esp + 8]; ret: push ecx at the entry is the argument, not a local (the other reading)
+    const std::vector<uint8> entryArgument = { 0x51, 0xFF, 0x15, 0x00, 0x20, 0x40, 0x00, 0x8B, 0x44, 0x24, 0x08, 0xC3 };
+    REQUIRE(analyze(entryArgument));
+    REQUIRE(CheckFrameVariables(frame, { { 8, 4, "arg_4" } }));
+
+    // mov edx, [esp + 8]; jmp __CxxFrameHandler3: a tail call with the stack of the entry; push esi; push 1; mov eax, [esp + 0x10]; jmp
+    // back: a chunk of another function (its pushes are still on the stack)
+    REQUIRE(analyze({ 0x8B, 0x54, 0x24, 0x08, 0xEB, 0x80 }, {}, 0x100));
+    REQUIRE(CheckFrameVariables(frame, { { 8, 4, "arg_4" } }));
+    REQUIRE(!analyze({ 0x56, 0x6A, 0x01, 0x8B, 0x44, 0x24, 0x10, 0xEB, 0x80 }, {}, 0x100));
+
+    // mov eax, 0x1000; call __chkstk (moves esp); mov [esp + 0x10], ecx; add esp, 0x1000; ret
+    REQUIRE(analyze({ 0xB8, 0x00, 0x10, 0x00, 0x00, 0xE8, 0x36, 0x00, 0x00, 0x00, 0x89, 0x4C, 0x24, 0x10, 0x81, 0xC4, 0x00, 0x10, 0x00, 0x00, 0xC3 }));
+    REQUIRE(CheckFrameVariables(frame, { { -0xFF0, 4, "var_FF0" } }));
+
+    // the listing: [esp + 0x14 + arg_0]; the callee at 0x40 (ret) is cdecl, the import is not known (a guess)
+    std::vector<uint8> file = x86StackFrameCode;
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3);
+    file.resize(0x60, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(1, "var_10 = dword ptr -0x10"));
+    REQUIRE(dissasmInstance.CheckLineText(3, "arg_0 = dword ptr 4"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "sub esp, 0x10"));
+    REQUIRE(dissasmInstance.CheckLineText(6, "mov esi, dword ptr [esp + 0x14 + arg_0]"));
+    REQUIRE(dissasmInstance.CheckLineText(7, "mov dword ptr [esp + 0x14 + var_10], esi"));
+    REQUIRE(dissasmInstance.CheckLineText(12, "mov dword ptr [esp + 0x14 + var_C], ecx"));
+}
+
+TEST_CASE("LocalVariablesFrameHelpers", "[Dissasm]LocalVariables")
+{
+    DetailHandle x86(CS_MODE_32);
+    DissasmFunctionFrame frame{};
+    const auto analyze = [&](const std::vector<uint8>& code, bool isHelper) {
+        return AnalyzeX86FunctionFrame(
+              x86.handle, code.data(), code.size(), 0, code.size(), false, frame, [isHelper](const cs_insn&) { return isHelper; });
+    };
+    // push 8; mov eax, offset handler; call __EH_prolog3; mov [ebp - 4], ecx; mov eax, [ebp + 8]; ret: an ebp frame (default names)
+    const std::vector<uint8> eh3 = { 0x6A, 0x08, 0xB8, 0x34, 0x12, 0x00, 0x00, 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x4D, 0xFC, 0x8B, 0x45, 0x08, 0xC3 };
+    REQUIRE(analyze(eh3, true));
+    REQUIRE(CheckFrameVariables(frame, { { -4, 4, "var_4" }, { 8, 4, "arg_0" } }));
+    REQUIRE(!analyze(eh3, false)); // a call to a regular function: no frame
+    // push 0x10; push offset scopetable; call __SEH_prolog4; mov [ebp - 4], eax; mov [ebp - 0x18], esp; mov [ebp - 0x20], ecx; ret: the SEH
+    // record of IDA (ms_exc = CPPEH_RECORD ptr -0x18)
+    const std::vector<uint8> seh4 = { 0x6A, 0x10, 0x68, 0x34, 0x12, 0x00, 0x00, 0xE8, 0x10, 0x00, 0x00, 0x00,
+                                      0x89, 0x45, 0xFC, 0x89, 0x65, 0xE8, 0x89, 0x4D, 0xE0, 0xC3 };
+    REQUIRE(analyze(seh4, true));
+    REQUIRE(CheckFrameVariables(frame, { { -0x20, 4, "var_20" }, { -0x18, 4, "ms_exc.old_esp" }, { -4, 4, "ms_exc.registration.TryLevel" } }));
+    // three setup instructions, or none, are not the call of a frame helper
+    REQUIRE(!analyze({ 0x6A, 0x10, 0x6A, 0x10, 0x6A, 0x10, 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x45, 0xFC, 0xC3 }, true));
+    REQUIRE(!analyze({ 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x45, 0xFC, 0xC3 }, true));
+
+    // the deep scan recognizes the helper from its code: it stores ebp, points ebp into the stack and returns without restoring it
+    std::vector<uint8> file = {
+        0x6A, 0x08,                         // 0x00: push 8
+        0x68, 0x78, 0x56, 0x34, 0x12,       // 0x02: push 0x12345678
+        0xE8, 0x39, 0x00, 0x00, 0x00,       // 0x07: call 0x45 (__SEH_prolog4)
+        0x89, 0x45, 0xFC,                   // 0x0C: mov [ebp - 4], eax
+        0x8B, 0x45, 0x08,                   // 0x0F: mov eax, [ebp + 8]
+        0x89, 0x45, 0xE0,                   // 0x12: mov [ebp - 0x20], eax
+        0xE8, 0x67, 0x00, 0x00, 0x00,       // 0x15: call 0x81 (__SEH_epilog4)
+        0xC2, 0x04, 0x00,                   // 0x1A: ret 4
+    };
+    file.resize(0x45, 0xCC);
+    for (const uint8 byte : { 0x68, 0x00, 0x20, 0x00, 0x00,       // push offset _except_handler4
+                              0x64, 0xFF, 0x35, 0x00, 0x00, 0x00, 0x00, // push dword ptr fs:[0]
+                              0x8B, 0x44, 0x24, 0x10,             // mov eax, [esp + 0x10]
+                              0x89, 0x6C, 0x24, 0x10,             // mov [esp + 0x10], ebp
+                              0x8D, 0x6C, 0x24, 0x10,             // lea ebp, [esp + 0x10]
+                              0x2B, 0xE0,                         // sub esp, eax
+                              0x53, 0x56, 0x57,                   // push ebx; push esi; push edi
+                              0xC3 })                             // ret
+        file.push_back(byte);
+    file.resize(0x81, 0xCC);
+    file.push_back(0xC3);
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(1, "var_20 = dword ptr -0x20"));
+    REQUIRE(dissasmInstance.CheckLineText(2, "ms_exc.registration.TryLevel = dword ptr -4"));
+    REQUIRE(dissasmInstance.CheckLineText(3, "arg_0 = dword ptr 8"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "push 8"));
+    REQUIRE(dissasmInstance.CheckLineText(7, "mov dword ptr [ebp + ms_exc.registration.TryLevel], eax"));
+    REQUIRE(dissasmInstance.CheckLineText(8, "mov eax, dword ptr [ebp + arg_0]"));
+    REQUIRE(dissasmInstance.CheckLineText(9, "mov dword ptr [ebp + var_20], eax"));
 }
 
 TEST_CASE("LocalVariablesSerialization", "[Dissasm]LocalVariables")
@@ -1640,7 +2006,7 @@ TEST_CASE("OperandNumbers", "[Dissasm]DecimalOperands")
     REQUIRE(numbersOf("dword ptr [ebp + var_8], r8d").empty());
     REQUIRE(numbersOf("xmm0, xmm1").empty());
     REQUIRE(numbersOf("st(0)").empty());
-    REQUIRE(numbersOf("sub_0x000000030").empty());
+    REQUIRE(numbersOf("sub_30").empty());
     REQUIRE(numbersOf("eax, 1st").empty());
 
     const auto numbers = FindOperandNumbers("eax, 0xffffffff");
@@ -1709,7 +2075,7 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     }
     REQUIRE(foundVariableLine);
 
-    // saved in the cache (version 2) and restored
+    // saved in the cache (version 3) and restored
     std::vector<std::byte> buffer;
     zone.ToggleDecimalOperand(address, 0);
     REQUIRE(zone.ToBuffer(buffer));
@@ -1723,9 +2089,8 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     REQUIRE(restored.CheckLineText(62, "movzx eax, byte ptr [edx + 4198840]"));
 
     // a version 1 record (no decimal operands) is still loaded
-    std::vector<std::byte> versionOne(buffer.begin(), buffer.end() - static_cast<std::ptrdiff_t>(sizeof(uint32) + sizeof(uint64) + sizeof(uint32)));
-    const uint32 version = 1;
-    memcpy(versionOne.data() + sizeof(uint32), &version, sizeof(version));
+    std::vector<std::byte> versionOne;
+    WriteLineKeyedRecord(zone, 1, {}, versionOne);
     auto cacheV1      = std::make_unique<DissasmCache>();
     cacheV1->hasCache = true;
     cacheV1->AddRegion("DissasmParseZoneType.0", versionOne.data(), static_cast<uint32>(versionOne.size()));
@@ -1743,19 +2108,77 @@ TEST_CASE("DecimalOperands", "[Dissasm]DecimalOperands")
     REQUIRE(restoredTruncated.CheckLineText(62, "movzx eax, byte ptr [edx + 0x4011b8]"));
 }
 
-TEST_CASE("DirectBranchTargets", "[Dissasm]Jumps")
+// the flow and the operands of the first instruction of `code`, decoded at `address` with the instruction details
+struct DecodedInfo {
+    X86Flow flow;
+    X86OperandsInfo operands;
+};
+static DecodedInfo DecodeInfo(std::initializer_list<unsigned char> code, bool is64, uint64 address = 0)
 {
-    REQUIRE(GetDirectBranchTarget("0x1f4") == 0x1f4u);
-    REQUIRE(GetDirectBranchTarget("7") == 7u);
-    REQUIRE(GetDirectBranchTarget("0xffffffffffffffff") == UINT64_MAX);
-    REQUIRE(!GetDirectBranchTarget("0x10000000000000000").has_value()); // does not fit in 64 bits
-    REQUIRE(!GetDirectBranchTarget("18446744073709551616").has_value());
-    REQUIRE(!GetDirectBranchTarget("").has_value());
-    REQUIRE(!GetDirectBranchTarget("0x").has_value());
-    REQUIRE(!GetDirectBranchTarget("eax").has_value());
-    REQUIRE(!GetDirectBranchTarget("dword ptr [0x404000]").has_value());
-    REQUIRE(!GetDirectBranchTarget("0x10:0x20").has_value()); // far pointer
-    REQUIRE(!GetDirectBranchTarget("0x1F4").has_value());     // capstone prints lower case hex digits
+    csh handle;
+    REQUIRE(cs_open(CS_ARCH_X86, is64 ? CS_MODE_64 : CS_MODE_32, &handle) == CS_ERR_OK);
+    REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    cs_insn* insn = cs_malloc(handle);
+    const std::vector<unsigned char> bytes(code);
+    const uint8_t* data = bytes.data();
+    size_t size         = bytes.size();
+    uint64_t current    = address;
+    REQUIRE(DecodeX86Line(handle, &data, &size, &current, insn));
+    DecodedInfo info{ GetX86Flow(*insn), GetX86OperandsInfo(*insn, is64) };
+    cs_free(insn, 1);
+    cs_close(&handle);
+    return info;
+}
+
+TEST_CASE("X86InstructionInfo", "[Dissasm]Jumps")
+{
+    // x64
+    auto info = DecodeInfo({ 0xE8, 0xFB, 0x00, 0x00, 0x00 }, true, 0x100); // call 0x200
+    REQUIRE(info.flow == X86Flow::Call);
+    REQUIRE(info.operands.directTarget == 0x200u);
+    info = DecodeInfo({ 0xFF, 0x15, 0x10, 0x00, 0x00, 0x00 }, true, 0x100); // call qword ptr [rip + 0x10]
+    REQUIRE(info.flow == X86Flow::Call);
+    REQUIRE(!info.operands.directTarget.has_value());
+    REQUIRE(info.operands.ripTarget == 0x116u);
+    info = DecodeInfo({ 0x48, 0x8D, 0x0D, 0xF0, 0xFF, 0xFF, 0xFF }, true, 0x100); // lea rcx, [rip - 0x10]
+    REQUIRE(info.flow == X86Flow::None);
+    REQUIRE(info.operands.ripTarget == 0xF7u);
+    info = DecodeInfo({ 0x75, 0x05 }, true, 0x10); // jne 0x17
+    REQUIRE(info.flow == X86Flow::ConditionalJump);
+    REQUIRE(info.operands.directTarget == 0x17u);
+    info = DecodeInfo({ 0xEB, 0xFE }, true, 0x10); // jmp 0x10
+    REQUIRE(info.flow == X86Flow::Jump);
+    REQUIRE(info.operands.directTarget == 0x10u);
+    info = DecodeInfo({ 0xFF, 0xE0 }, true); // jmp rax: indirect, no target
+    REQUIRE(info.flow == X86Flow::Jump);
+    REQUIRE(!info.operands.directTarget.has_value());
+    REQUIRE(DecodeInfo({ 0xC3 }, true).flow == X86Flow::Return);
+    REQUIRE(DecodeInfo({ 0xCC }, true).flow == X86Flow::Interrupt);
+    // gs: points to the thread data, not to an address of the file
+    info = DecodeInfo({ 0x65, 0x48, 0x8B, 0x04, 0x25, 0x30, 0x00, 0x00, 0x00 }, true); // mov rax, qword ptr gs:[0x30]
+    REQUIRE(!info.operands.absoluteMemory.has_value());
+    REQUIRE(!info.operands.ripTarget.has_value());
+    // a data line (db) has no flow and no operands
+    info = DecodeInfo({ 0x06 }, true); // push es: not valid in 64 bit code
+    REQUIRE(info.flow == X86Flow::None);
+    REQUIRE(info.operands.immediates.empty());
+
+    // x86
+    info = DecodeInfo({ 0xFF, 0x15, 0x00, 0x40, 0x40, 0x00 }, false); // call dword ptr [0x404000]
+    REQUIRE(info.flow == X86Flow::Call);
+    REQUIRE(info.operands.absoluteMemory == 0x404000u);
+    REQUIRE(!info.operands.directTarget.has_value());
+    info = DecodeInfo({ 0x68, 0x00, 0x30, 0x40, 0x00 }, false); // push 0x403000
+    REQUIRE(info.flow == X86Flow::None);
+    REQUIRE(info.operands.immediates == std::vector<uint64>{ 0x403000 });
+    info = DecodeInfo({ 0xE2, 0xFE }, false, 0x20); // loop 0x20
+    REQUIRE(info.flow == X86Flow::ConditionalJump);
+    REQUIRE(info.operands.directTarget == 0x20u);
+    info = DecodeInfo({ 0xE9, 0xF1, 0xFF, 0xFF, 0xFF }, false, 0x0); // jmp -0xa: wraps around at 4 GB in 32 bit code
+    REQUIRE(info.operands.directTarget == 0xFFFFFFF6u);
+    info = DecodeInfo({ 0xC7, 0x05, 0x10, 0x30, 0x40, 0x00, 0x01, 0x00, 0x00, 0x00 }, false); // mov dword ptr [0x403010], 1
+    REQUIRE(info.operands.absoluteMemory == 0x403010u);
+    REQUIRE(info.operands.immediates == std::vector<uint64>{ 1 });
 }
 
 TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
@@ -1791,8 +2214,8 @@ TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
 
     // the labels are placed on the targets and keep their address relative to the code
     const auto& annotations = zone.dissasmType.annotations;
-    const auto subLine      = annotations.get_line_by_annotation_name("sub_0x000000280");
-    const auto offsetLine   = annotations.get_line_by_annotation_name("offset_0x000000300");
+    const auto subLine      = annotations.get_line_by_annotation_name("sub_280");
+    const auto offsetLine   = annotations.get_line_by_annotation_name("loc_300");
     REQUIRE(subLine.has_value());
     REQUIRE(offsetLine.has_value());
     REQUIRE(annotations.find(subLine.value())->second.second == 0x180);
@@ -1801,16 +2224,17 @@ TEST_CASE("BranchTargetsRelativeToTheCode", "[Dissasm]Jumps")
     REQUIRE(dissasmInstance.CheckLineText(subLine.value() + 1, "push ebp"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(offsetLine.value() + 1, "ret"));
 
-    // the drawn operands use the same labels, the targets outside of the code keep their operands
+    // the drawn operands use the same labels, the targets outside of the code are shown with their address (the address space of the labels:
+    // the file offsets here, there is no offset translation)
     REQUIRE(dissasmInstance.CheckDrawnLineText(0, "EntryPoint"));
-    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "jmp offset_0x000000300"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "jmp loc_300"));
     REQUIRE(dissasmInstance.GetDrawnAsmLine(1).branchTarget == 0x200u);
-    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "call sub_0x000000280"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "call sub_280"));
     REQUIRE(dissasmInstance.GetDrawnAsmLine(2).branchTarget == 0x180u);
-    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0xfffffff0"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0xf0")); // 0x10 bytes before the zone
     REQUIRE(!dissasmInstance.GetDrawnAsmLine(3).branchTarget.has_value());
     REQUIRE(dissasmInstance.CheckDrawnLineText(4, "call dword ptr [0x404000]"));
-    REQUIRE(dissasmInstance.CheckDrawnLineText(5, "jmp 0x300"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(5, "jmp 0x400"));
     REQUIRE(!dissasmInstance.GetDrawnAsmLine(5).branchTarget.has_value());
 }
 
@@ -2238,8 +2662,10 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
     }
     REQUIRE(missingLabel != UINT32_MAX);
     edited.zone->RemoveRootAnnotationLines({ missingLabel });
+    // a version 2 record (keyed by line): in its layout the comments are one line above (the missing label is before them)
+    const std::map<uint32, std::string> recordComments = { { 9, "c10" }, { 99, "c100" } };
     std::vector<std::byte> buffer;
-    REQUIRE(edited.zone->ToBuffer(buffer));
+    WriteLineKeyedRecord(*edited.zone, 2, recordComments, buffer);
 
     auto makeCache = [](const std::vector<std::byte>& data) {
         auto cache      = std::make_unique<DissasmCache>();
@@ -2263,7 +2689,7 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         REQUIRE(restored.CheckLineText(36, "count = dword ptr -0x44"));
         REQUIRE(restored.CheckComment(10, "c10"));
         REQUIRE(restored.CheckComment(100, "c100"));
-        REQUIRE(restored.zone->dissasmType.annotations.get_name_change("sub_0x000000030") == "isPrime");
+        REQUIRE(restored.zone->dissasmType.annotations.get_name_change("sub_30") == "isPrime");
     }
 
     SECTION("a record that can not be placed is rejected and the zone is left unchanged")
@@ -2271,7 +2697,7 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         // a variable the analysis never found
         auto& function = edited.zone->localVariables.functions[0];
         function.variables.insert(function.variables.begin(), DissasmLocalVariable{ -0x100, 4, "injected" });
-        REQUIRE(edited.zone->ToBuffer(buffer));
+        WriteLineKeyedRecord(*edited.zone, 2, recordComments, buffer);
 
         DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize, true);
         auto cache            = makeCache(buffer);
@@ -2279,7 +2705,7 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         REQUIRE(!restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
         REQUIRE(!zoneLinesChanged);
         REQUIRE(restored.zone->cacheRecordRejected); // SaveCacheData keeps it aside instead of overwriting it
-        REQUIRE(restored.CheckLineText(35, "sub_0x000000030"));
+        REQUIRE(restored.CheckLineText(35, "sub_30"));
         REQUIRE(!restored.HasComment(100));
 
         // no record: nothing to keep aside
@@ -2288,4 +2714,8603 @@ TEST_CASE("CodeZoneRecordWithLessLabels", "[Dissasm]Cache")
         REQUIRE(!restored.zone->TryLoadDataFromCache(*emptyCache, zoneLinesChanged));
         REQUIRE(!restored.zone->cacheRecordRejected);
     }
+}
+
+// the function starts found by X86PrologueDetector for the code (file offsets, the code is placed at offset 0)
+static std::vector<uint64> DetectPrologues(const std::vector<unsigned char>& code, bool is64)
+{
+    csh handle;
+    REQUIRE(cs_open(CS_ARCH_X86, is64 ? CS_MODE_64 : CS_MODE_32, &handle) == CS_ERR_OK);
+    cs_insn* insn = cs_malloc(handle);
+    X86PrologueDetector detector(is64);
+    std::vector<uint64> starts;
+    const uint8_t* data = code.data();
+    size_t size         = code.size();
+    uint64_t address    = 0;
+    while (true) {
+        const uint64 offset = address;
+        if (!DecodeX86Line(handle, &data, &size, &address, insn))
+            break;
+        const auto start = detector.Next(*insn, offset);
+        if (start.has_value())
+            starts.push_back(start.value());
+    }
+    cs_free(insn, 1);
+    cs_close(&handle);
+    return starts;
+}
+
+TEST_CASE("PrologueDetection", "[Dissasm]Functions")
+{
+    // x64 MSVC: the home space save right after the int3 padding of the previous function
+    REQUIRE(DetectPrologues({ 0xC3, 0xCC, 0xCC, 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57 }, true) == std::vector<uint64>{ 3 });
+    // x64: sub rsp, 0x28 after a ret
+    REQUIRE(DetectPrologues({ 0xC3, 0x48, 0x83, 0xEC, 0x28, 0x90 }, true) == std::vector<uint64>{ 1 });
+    // x64: push rbx; push rsi after nop padding
+    REQUIRE(DetectPrologues({ 0x90, 0x53, 0x56, 0x48, 0x83, 0xEC, 0x20 }, true) == std::vector<uint64>{ 1 });
+    // x64: push rbp; mov rbp, rsp anywhere (the frame pointer setup)
+    REQUIRE(DetectPrologues({ 0x48, 0x31, 0xC0, 0x55, 0x48, 0x89, 0xE5 }, true) == std::vector<uint64>{ 3 });
+    // x64: endbr64 after a jmp
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0xEB, 0x00, 0xF3, 0x0F, 0x1E, 0xFA, 0xC3 }, true) == std::vector<uint64>{ 4 });
+    // x64: the start of the code is a function start
+    REQUIRE(DetectPrologues({ 0x48, 0x83, 0xEC, 0x28, 0xC3 }, true) == std::vector<uint64>{ 0 });
+    // x64: inside the code (no ret / padding before): sub rsp and the stores to [rsp + 0x20] (5th argument) are not prologues
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0x48, 0x83, 0xEC, 0x28, 0x48, 0x89, 0x44, 0x24, 0x20 }, true).empty());
+    // x64: after a jmp only endbr64 starts a function (the code after a jmp is usually the else branch)
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0xEB, 0x00, 0x48, 0x83, 0xEC, 0x28 }, true).empty());
+    // x64: rax is stored to the home space of the callee (outgoing argument), not saved: not a prologue
+    REQUIRE(DetectPrologues({ 0xC3, 0x48, 0x89, 0x44, 0x24, 0x08 }, true).empty());
+
+    // x86: hot patching prologue, the function starts at mov edi, edi
+    REQUIRE(DetectPrologues({ 0xCC, 0x8B, 0xFF, 0x55, 0x8B, 0xEC }, false) == std::vector<uint64>{ 1 });
+    // x86: push ebp; mov ebp, esp anywhere
+    REQUIRE(DetectPrologues({ 0x31, 0xC0, 0x55, 0x8B, 0xEC }, false) == std::vector<uint64>{ 2 });
+    // x86: push esi; push edi after a ret
+    REQUIRE(DetectPrologues({ 0xC3, 0x56, 0x57, 0x8B, 0x7C, 0x24, 0x0C }, false) == std::vector<uint64>{ 1 });
+    // x86: a single push after padding is not enough (push 0 / push eax are arguments)
+    REQUIRE(DetectPrologues({ 0xC3, 0x56, 0x8B, 0xF1 }, false).empty());
+}
+
+TEST_CASE("PrologueFunctionsLabels", "[Dissasm]Functions")
+{
+    // two x64 functions that are never called directly: both get a sub_ label (the first one is the entry point)
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x0: sub rsp, 0x28 (entry point)
+        0x48, 0x83, 0xC4, 0x28,       // 0x4: add rsp, 0x28
+        0xC3,                         // 0x8: ret
+        0xCC, 0xCC, 0xCC,             // 0x9: padding
+        0x48, 0x89, 0x5C, 0x24, 0x08, // 0xC: mov qword ptr [rsp + 8], rbx
+        0x31, 0xC0,                   // 0x11: xor eax, eax
+        0xC3,                         // 0x13: ret
+    };
+    file.resize(64, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+
+    std::vector<std::pair<uint64, std::string>> labels;
+    for (const auto& [line, details] : dissasmInstance.zone->dissasmType.annotations.mappings)
+        labels.emplace_back(details.second, details.first);
+    REQUIRE(labels.size() == 2);
+    REQUIRE(labels[0] == std::pair<uint64, std::string>{ 0, "EntryPoint" });
+    REQUIRE(labels[1] == std::pair<uint64, std::string>{ 0xC, "sub_C" });
+}
+
+TEST_CASE("ZeroBytesInsideTheCode", "[Dissasm]DataLines")
+{
+    // a run of zero bytes between two functions does not end the code; the zeros at the end of the zone (alignment) are not shown
+    std::vector<unsigned char> file = { 0x55, 0x89, 0xE5, 0x5D, 0xC3 }; // push ebp; mov ebp, esp; pop ebp; ret
+    file.resize(file.size() + 100, 0x00);                                 // 50 x add byte ptr [eax], al
+    const size_t secondFunction = file.size();
+    file.insert(file.end(), { 0x55, 0x89, 0xE5, 0x5D, 0xC3 });
+    file.resize(file.size() + 33, 0x00); // trailing padding: 16 x add byte ptr [eax], al + db 0x00
+
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x86;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // 4 + 50 + 4 instructions: the second function is decoded, the trailing zeros are not
+    REQUIRE(zone.asmLinesCount == 4 + 50 + 4);
+    bool foundSecondFunction = false;
+    for (const auto& [line, details] : zone.dissasmType.annotations.mappings)
+        foundSecondFunction |= details.second == secondFunction;
+    REQUIRE(foundSecondFunction);
+}
+
+TEST_CASE("StringPreview", "[Dissasm]Strings")
+{
+    std::vector<unsigned char> file(64, 0);
+    const char ascii[] = "Hello world";
+    memcpy(file.data() + 4, ascii, sizeof(ascii));
+    const char16_t wide[] = u"Wide text";
+    memcpy(file.data() + 20, wide, sizeof(wide));
+    file[50] = 'a'; // too short to be a string
+    file[51] = 'b';
+    file.resize(256, 0xCC);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size());
+    Reference<GView::Object> obj = &dissasmInstance.objects[0];
+    REQUIRE(TryExtractStringPreview(obj, 4) == std::optional<std::string>("\"Hello world\""));
+    REQUIRE(TryExtractStringPreview(obj, 10) == std::optional<std::string>("\"world\""));
+    REQUIRE(TryExtractStringPreview(obj, 20) == std::optional<std::string>("L\"Wide text\""));
+    REQUIRE(!TryExtractStringPreview(obj, 50).has_value());
+    REQUIRE(!TryExtractStringPreview(obj, 0).has_value());   // zeros
+    REQUIRE(!TryExtractStringPreview(obj, 100).has_value()); // int3 bytes are not printable
+}
+
+TEST_CASE("AsmListingExport", "[Dissasm]Export")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x0: sub rsp, 0x28 (entry point)
+        0xE8, 0x07, 0x00, 0x00, 0x00, // 0x4: call 0x10
+        0x48, 0x83, 0xC4, 0x28,       // 0x9: add rsp, 0x28
+        0xC3,                         // 0xD: ret
+        0xCC, 0xCC,                   // 0xE: padding
+        0x31, 0xC0,                   // 0x10: xor eax, eax
+        0xC3,                         // 0x12: ret
+    };
+    file.resize(32, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // line 0: EntryPoint, 1: sub rsp, 2: call
+    REQUIRE(dissasmInstance.CheckLineText(2, "call 0x10"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(2, "calls the helper"));
+
+    SettingsData settings;
+    AsmData asmData;
+    std::string listing;
+    REQUIRE(BuildX86AsmListing(zone, &dissasmInstance.objects[0], &settings, &asmData, listing));
+    INFO(listing);
+    REQUIRE(listing.starts_with("; GView disassembly listing (x64)"));
+    REQUIRE(listing.find("\nEntryPoint:\n0x00000000  sub    rsp, 0x28\n") != std::string::npos);
+    // the call uses the label of its target and keeps the comment of the user
+    const auto callLine = listing.find("0x00000004  call   sub_10");
+    REQUIRE(callLine != std::string::npos);
+    const auto callLineEnd = listing.find('\n', callLine);
+    REQUIRE(listing.substr(callLine, callLineEnd - callLine).ends_with("; calls the helper"));
+    // the label of the called function lists its callers
+    const auto labelLine = listing.find("\nsub_10:");
+    REQUIRE(labelLine != std::string::npos);
+    const auto labelLineEnd = listing.find('\n', labelLine + 1);
+    REQUIRE(listing.substr(labelLine, labelLineEnd - labelLine).ends_with("; xref: EntryPoint+0x4 (call)"));
+    REQUIRE(listing.find("\n0x00000010  xor    eax, eax\n", labelLineEnd) == labelLineEnd);
+    // every line of the zone is written: 2 labels + all the instructions
+    REQUIRE(GetCodeZoneLinesCount(zone) == zone.asmLinesCount + 2);
+}
+
+TEST_CASE("DissasmCacheFilePath", "[Dissasm]Cache")
+{
+    // next to the analysed file
+    REQUIRE(DissasmCache::GetCacheFilePath(u"/samples/a.exe", true) == std::filesystem::path(u"/samples/a.exe.dissasm.cache"));
+
+    // in the cache folder of the user: one file per analysed file (it used to be one "..dissasm.cache" file shared by every file)
+    const std::filesystem::path folder = u"/cache";
+    const auto first                   = DissasmCache::GetCacheFilePath(u"/samples/a.exe", false, folder);
+    const auto second                  = DissasmCache::GetCacheFilePath(u"/other/a.exe", false, folder);
+    REQUIRE(first.parent_path() == folder);
+    REQUIRE(first.filename().u8string().starts_with(u8"a.exe."));
+    REQUIRE(first.filename().u8string().ends_with(u8".dissasm.cache"));
+    REQUIRE(first != second);
+    REQUIRE(first == DissasmCache::GetCacheFilePath(u"/samples/a.exe", false, folder)); // the same file every time
+}
+
+TEST_CASE("DissasmCacheFileSave", "[Dissasm]Cache")
+{
+    std::error_code ec;
+    const auto folder = std::filesystem::temp_directory_path(ec) / ("gview_dissasm_cache_test_" + std::to_string(reinterpret_cast<uintptr_t>(&ec)));
+    REQUIRE(std::filesystem::create_directories(folder, ec));
+    const auto cachePath = folder / "sub" / "file.dissasm.cache"; // the folder of the cache file is created
+
+    const std::byte firstData[]  = { std::byte{ 1 }, std::byte{ 2 }, std::byte{ 3 } };
+    const std::byte secondData[] = { std::byte{ 9 } };
+
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("first", firstData, sizeof(firstData)));
+    REQUIRE(cache.SaveCacheFile(cachePath.u16string()));
+    REQUIRE(!std::filesystem::exists(cachePath.string() + ".tmp", ec)); // replaced the cache file
+
+    DissasmCache loaded;
+    REQUIRE(loaded.LoadCacheFile(cachePath.u16string()));
+    REQUIRE(loaded.zonesData.size() == 1);
+    REQUIRE(loaded.zonesData["first"].size == sizeof(firstData));
+    REQUIRE(memcmp(loaded.zonesData["first"].data.get(), firstData, sizeof(firstData)) == 0);
+
+    // a cache file that could not be used is copied before it is overwritten
+    DissasmCache replacement;
+    replacement.keepBackupOnSave = true;
+    REQUIRE(replacement.AddRegion("second", secondData, sizeof(secondData)));
+    REQUIRE(replacement.SaveCacheFile(cachePath.u16string()));
+    REQUIRE(!replacement.keepBackupOnSave); // only once
+    DissasmCache backup;
+    REQUIRE(backup.LoadCacheFile((cachePath.u16string() + u".bak")));
+    REQUIRE(backup.zonesData.contains("first"));
+    DissasmCache current;
+    REQUIRE(current.LoadCacheFile(cachePath.u16string()));
+    REQUIRE(current.zonesData.contains("second"));
+
+    std::filesystem::remove_all(folder, ec);
+}
+
+// a cache file with the records written as they are (name, data); `version` is written as the version record when it is not 0
+static bool WriteRawCacheFile(const std::filesystem::path& path, uint32 version, const std::vector<std::pair<std::string, std::vector<uint8>>>& records)
+{
+    std::vector<uint8> data;
+    auto appendU32 = [&data](uint32 value) {
+        const auto bytes = reinterpret_cast<const uint8*>(&value);
+        data.insert(data.end(), bytes, bytes + sizeof(value));
+    };
+    appendU32(static_cast<uint32>(records.size()) + (version != 0 ? 1u : 0u));
+    if (version != 0) {
+        appendU32(static_cast<uint32>(DISSASM_CACHE_VERSION_RECORD.size()));
+        data.insert(data.end(), DISSASM_CACHE_VERSION_RECORD.begin(), DISSASM_CACHE_VERSION_RECORD.end());
+        appendU32(sizeof(version));
+        appendU32(version);
+    }
+    for (const auto& [name, value] : records) {
+        appendU32(static_cast<uint32>(name.size()));
+        data.insert(data.end(), name.begin(), name.end());
+        appendU32(static_cast<uint32>(value.size()));
+        data.insert(data.end(), value.begin(), value.end());
+    }
+    AppCUI::OS::File file;
+    const bool written = file.Create(path, true) && file.Write(data.data(), static_cast<uint32>(data.size()));
+    file.Close();
+    return written;
+}
+
+TEST_CASE("DissasmCacheFileVersions", "[Dissasm]Cache")
+{
+    static_assert(DISSASM_CACHE_OLDEST_LOADABLE_VERSION <= DISSASM_CACHE_VERSION);
+    std::error_code ec;
+    const auto folder = std::filesystem::temp_directory_path(ec) / ("gview_dissasm_cache_versions_" + std::to_string(reinterpret_cast<uintptr_t>(&ec)));
+    REQUIRE(std::filesystem::create_directories(folder, ec));
+    const auto path = folder / "file.dissasm.cache";
+
+    // the files written before the version record are version 1
+    REQUIRE(WriteRawCacheFile(path, 0, { { "zone", { 1, 2, 3 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(cache.LoadCacheFile(path.u16string()));
+        REQUIRE(cache.fileVersion == 1);
+        REQUIRE(cache.zonesData.size() == 1);
+    }
+    // the current version: the version record is not a zone record
+    REQUIRE(WriteRawCacheFile(path, DISSASM_CACHE_VERSION, { { "zone", { 1, 2, 3 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(cache.LoadCacheFile(path.u16string()));
+        REQUIRE(cache.fileVersion == DISSASM_CACHE_VERSION);
+        REQUIRE(cache.zonesData.size() == 1);
+        REQUIRE(!cache.zonesData.contains(std::string(DISSASM_CACHE_VERSION_RECORD)));
+    }
+    // a file written by a newer version is not loaded
+    REQUIRE(WriteRawCacheFile(path, DISSASM_CACHE_VERSION + 1, { { "zone", { 1, 2, 3 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(!cache.LoadCacheFile(path.u16string()));
+    }
+    // a version record that is not a 32 bit number
+    REQUIRE(WriteRawCacheFile(path, 0, { { std::string(DISSASM_CACHE_VERSION_RECORD), { 2, 0 } } }));
+    {
+        DissasmCache cache;
+        REQUIRE(!cache.LoadCacheFile(path.u16string()));
+    }
+    // the saved files have the current version
+    {
+        DissasmCache cache;
+        const std::byte data[] = { std::byte{ 7 } };
+        REQUIRE(cache.AddRegion("zone", data, sizeof(data)));
+        REQUIRE(cache.SaveCacheFile(path.u16string()));
+        DissasmCache loaded;
+        REQUIRE(loaded.LoadCacheFile(path.u16string()));
+        REQUIRE(loaded.fileVersion == DISSASM_CACHE_VERSION);
+        REQUIRE(loaded.zonesData.size() == 1);
+    }
+    std::filesystem::remove_all(folder, ec);
+}
+
+TEST_CASE("DissasmCacheZoneValidation", "[Dissasm]Cache")
+{
+    // a zone bigger than the data cache window: the version 1 record hashes the first window, version 2 adds the hash of the whole zone
+    std::vector<unsigned char> file(256 * 1024, 0x90); // nop
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.cacheSize  = 64 * 1024;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    Reference<GView::Object> obj = &dissasmInstance.objects[0];
+
+    SettingsData settings;
+    settings.disassemblyZones[0] = DisassemblyZone{ 0, file.size(), 0, DisassemblyLanguage::x86 };
+    DissasmCache cache;
+    REQUIRE(settings.SaveToCache(cache, obj));
+    REQUIRE(cache.zonesData.contains("DisassemblyZone.0"));
+    REQUIRE(cache.zonesData.contains("DisassemblyZoneHash.0"));
+    // the hashes (the first 32 characters) differ: the whole zone is hashed, not only the first window
+    REQUIRE(memcmp(cache.zonesData["DisassemblyZone.0"].data.get(), cache.zonesData["DisassemblyZoneHash.0"].data.get(), 32) != 0);
+
+    cache.fileVersion = DISSASM_CACHE_VERSION;
+    REQUIRE(settings.ValidateCacheData(cache, obj));
+
+    // a whole zone hash that does not match: the zone changed after its first window
+    cache.zonesData["DisassemblyZoneHash.0"].data[0] ^= std::byte{ 1 };
+    REQUIRE(!settings.ValidateCacheData(cache, obj));
+    // a version 1 file has no whole zone hash: the first window is checked (as the readers of version 1 do)
+    cache.fileVersion = 1;
+    REQUIRE(settings.ValidateCacheData(cache, obj));
+    cache.zonesData.erase("DisassemblyZoneHash.0");
+    REQUIRE(settings.ValidateCacheData(cache, obj));
+    // a version 2 file without the whole zone hash is not valid
+    cache.fileVersion = DISSASM_CACHE_VERSION;
+    REQUIRE(!settings.ValidateCacheData(cache, obj));
+}
+
+// the label names written by the versions before the VA names: sub_0x<file offset> / offset_0x<file offset> (the renamed labels keep
+// their names, their initial names are the legacy ones)
+static void UseLegacyLabelNames(DissasmCodeZone& zone)
+{
+    auto& annotations      = zone.dissasmType.annotations;
+    const uint64 codeStart = zone.cachedCodeOffsets[0].offset;
+    for (auto& [line, details] : annotations.mappings) {
+        if (IsLocalVariableAnnotation(details) || details.first == "EntryPoint")
+            continue;
+        const std::string initial = annotations.current_name_to_initial_name.at(details.first);
+        const std::string legacy  = FormatFunctionName(codeStart + details.second, initial.starts_with("sub_") ? "sub_0x" : "offset_0x").GetText();
+        const std::string current = details.first == initial ? legacy : details.first;
+        annotations.initial_name_to_current_name.erase(initial);
+        annotations.current_name_to_initial_name.erase(details.first);
+        annotations.initial_name_to_current_name[legacy] = current;
+        annotations.current_name_to_initial_name[current] = legacy;
+        details.first                                    = current;
+    }
+}
+
+TEST_CASE("LegacyLabelNamesMigration", "[Dissasm]Cache")
+{
+    DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    std::string_view labelName = "isPrime";
+    REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+    REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+    UseLegacyLabelNames(*edited.zone);
+    REQUIRE(edited.CheckLineText(5, "sub_0x000000005")); // the record as the previous versions saved it
+    REQUIRE(edited.CheckLineText(48, "offset_0x00000004F"));
+    std::vector<std::byte> buffer;
+    REQUIRE(edited.zone->ToBuffer(buffer));
+
+    DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+    auto cache                   = std::make_unique<DissasmCache>();
+    cache->hasCache              = true;
+    const std::string recordName = "DissasmCodeZone." + std::to_string(restored.zone->zoneDetails.startingZonePoint);
+    REQUIRE(cache->AddRegion(recordName, buffer.data(), static_cast<uint32>(buffer.size())));
+    bool zoneLinesChanged = false;
+    REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+
+    // the default names are the names of the analysis, the name given by the user stays
+    const auto& annotations = restored.zone->dissasmType.annotations;
+    REQUIRE(restored.CheckLineText(5, "sub_5"));
+    REQUIRE(restored.CheckLineText(48, "loc_4F"));
+    REQUIRE(restored.CheckLineText(35, "isPrime"));
+    REQUIRE(restored.CheckComment(100, "c100"));
+    REQUIRE(annotations.get_name_change("sub_30") == "isPrime");
+    REQUIRE(annotations.get_name_change("sub_5") == "sub_5");
+    REQUIRE(!annotations.contains_annotation_name("sub_0x000000005"));
+    REQUIRE(annotations.get_name_change("sub_0x000000030").empty());
+    // the jumps / calls to the labels use the same names: the jmp of the thunk to the renamed function shows its name
+    REQUIRE(restored.CheckDrawnLineText(6, "jmp isPrime"));
+    // a label can be renamed again after the migration
+    std::string_view newName = "isPrimeNumber";
+    REQUIRE(restored.zone->TryRenameLine(35, &restored.objects[0], &newName).ok);
+    REQUIRE(restored.CheckDrawnLineText(6, "jmp isPrimeNumber"));
+}
+
+TEST_CASE("LabelNamesFromTheLabelAddresses", "[Dissasm]Functions")
+{
+    // the labels are named after labelAddressBase + the relative address (the VA of the zone start when the plugin translates the offsets)
+    std::vector<unsigned char> file = {
+        0xE8, 0x07, 0x00, 0x00, 0x00, // 0x0: call 0xc
+        0xEB, 0x05,                   // 0x5: jmp 0xc (a tail call to the same function)
+        0xE9, 0x00, 0x10, 0x00, 0x00, // 0x7: jmp 0x100c (outside of the zone)
+        0x31, 0xC0,                   // 0xc: xor eax, eax
+        0xC3,                         // 0xe: ret
+    };
+    file.resize(32, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    {
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        REQUIRE(dissasmInstance.zone->labelAddressBase == 0); // no translation: the file offsets
+        REQUIRE(dissasmInstance.CheckLineText(4, "sub_C"));
+    }
+
+    // as the VA of a PE file
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    REQUIRE(dissasmInstance.zone->GetLabelName("loc_", 0x20) == "loc_401020");
+    REQUIRE(dissasmInstance.CheckLineText(0, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineText(4, "sub_40100C"));
+    // the call and the jmp to the same function use its label
+    REQUIRE(dissasmInstance.CheckDrawnLineText(1, "call sub_40100C"));
+    REQUIRE(dissasmInstance.CheckDrawnLineText(2, "jmp sub_40100C"));
+    // a target outside of the zone: its VA (32 bit)
+    REQUIRE(dissasmInstance.CheckDrawnLineText(3, "jmp 0x40200c"));
+}
+
+static std::unique_ptr<DissasmCache> MakeCodeZoneCache(const std::vector<std::pair<std::string, std::vector<std::byte>>>& records)
+{
+    auto cache      = std::make_unique<DissasmCache>();
+    cache->hasCache = true;
+    for (const auto& [name, data] : records)
+        cache->AddRegion(name, data.data(), static_cast<uint32>(data.size()));
+    return cache;
+}
+
+TEST_CASE("AddressKeyedComments", "[Dissasm]Comments")
+{
+    SECTION("a comment added inside a collapsible zone is saved")
+    {
+        DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        REQUIRE(edited.AddCollpasibleZone(5, 12));
+        REQUIRE(edited.AddOrUpdateComment(8, "inside the zone")); // the previous versions kept it in the child zone and never saved it
+        REQUIRE(edited.AddOrUpdateComment(30, "after the zone"));
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.CheckComment(8, "inside the zone"));
+        REQUIRE(restored.CheckComment(30, "after the zone"));
+    }
+
+    SECTION("the comments and the label names follow their instructions and labels in another layout")
+    {
+        DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        std::string_view labelName = "isPrime";
+        REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+        REQUIRE(edited.AddOrUpdateComment(35, "on the label"));
+        REQUIRE(edited.AddOrUpdateComment(36, "on the first instruction"));
+        REQUIRE(edited.AddOrUpdateComment(100, "c100"));
+        const std::string line100 = edited.GetLineText(100);
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        // an analysis that does not find the label sub_5 (line 5): every line after it is one line above
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        REQUIRE(restored.CheckLineText(5, "sub_5"));
+        restored.zone->RemoveRootAnnotationLines({ 5 });
+        auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(!restored.zone->cacheRecordRejected);
+        REQUIRE(restored.CheckLineText(34, "isPrime"));
+        REQUIRE(restored.CheckComment(34, "on the label"));
+        REQUIRE(restored.CheckComment(35, "on the first instruction"));
+        REQUIRE(restored.CheckLineText(99, line100));
+        REQUIRE(restored.CheckComment(99, "c100"));
+    }
+
+    SECTION("the name of a label the analysis does not find is kept and saved again")
+    {
+        DissasmTestInstance edited(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        std::string_view labelName = "isPrime";
+        REQUIRE(edited.zone->TryRenameLine(35, &edited.objects[0], &labelName).ok);
+        std::vector<std::byte> buffer;
+        REQUIRE(edited.zone->ToBuffer(buffer));
+
+        // an analysis without the label of isPrime (line 35)
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        restored.zone->RemoveRootAnnotationLines({ 35 });
+        auto cache            = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.zone->orphanLabelNames.size() == 1);
+        REQUIRE(restored.zone->orphanLabelNames.begin()->second == "isPrime");
+
+        // saved again: an analysis that finds the label gets the name back
+        REQUIRE(restored.zone->ToBuffer(buffer));
+        DissasmTestInstance again(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cacheAgain = MakeCodeZoneCache({ { "DissasmCodeZone.0", buffer } });
+        REQUIRE(again.zone->TryLoadDataFromCache(*cacheAgain, zoneLinesChanged));
+        REQUIRE(again.CheckLineText(35, "isPrime"));
+        REQUIRE(again.zone->orphanLabelNames.empty());
+    }
+
+    SECTION("a record kept aside by an older version is merged")
+    {
+        DissasmTestInstance current(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        REQUIRE(current.AddOrUpdateComment(100, "current"));
+        REQUIRE(current.AddOrUpdateComment(40, "current 40"));
+        std::vector<std::byte> currentRecord;
+        REQUIRE(current.zone->ToBuffer(currentRecord));
+
+        DissasmTestInstance keptAside(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        std::string_view labelName = "isPrime";
+        REQUIRE(keptAside.zone->TryRenameLine(35, &keptAside.objects[0], &labelName).ok);
+        REQUIRE(keptAside.AddOrUpdateComment(40, "kept aside 40"));
+        REQUIRE(keptAside.AddOrUpdateComment(200, "kept aside 200"));
+        std::vector<std::byte> keptAsideRecord;
+        REQUIRE(keptAside.zone->ToBuffer(keptAsideRecord));
+
+        DissasmTestInstance restored(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cache = MakeCodeZoneCache({ { "DissasmCodeZone.0", currentRecord }, { "DissasmCodeZoneUnapplied.0", keptAsideRecord } });
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.zone->mergedUnappliedRecord);
+        REQUIRE(restored.CheckComment(100, "current"));
+        REQUIRE(restored.CheckComment(40, "current 40")); // the data of the zone wins
+        REQUIRE(restored.CheckComment(200, "kept aside 200"));
+        REQUIRE(restored.CheckLineText(35, "isPrime"));
+
+        // without a record of the zone the record kept aside is applied as well
+        DissasmTestInstance onlyKeptAside(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+        auto cacheKeptAside = MakeCodeZoneCache({ { "DissasmCodeZoneUnapplied.0", keptAsideRecord } });
+        REQUIRE(!onlyKeptAside.zone->TryLoadDataFromCache(*cacheKeptAside, zoneLinesChanged)); // no record of its own
+        REQUIRE(onlyKeptAside.zone->mergedUnappliedRecord);
+        REQUIRE(onlyKeptAside.CheckComment(200, "kept aside 200"));
+    }
+}
+
+TEST_CASE("UserCommentsSerialization", "[Dissasm]Comments")
+{
+    DissasmUserComments comments;
+    comments.Set({ DissasmCommentAnchor::Kind::Instruction, 0x10, 0 }, "instruction");
+    comments.Set({ DissasmCommentAnchor::Kind::Label, 0x10, 0 }, "label"); // the same address, another line
+    comments.Set({ DissasmCommentAnchor::Kind::Variable, 0x30, -8 }, "variable");
+    std::vector<std::byte> buffer;
+    comments.ToBuffer(buffer);
+
+    DissasmUserComments loaded;
+    const std::byte* start = buffer.data();
+    REQUIRE(loaded.LoadFromBuffer(start, buffer.data() + buffer.size()));
+    REQUIRE(start == buffer.data() + buffer.size());
+    REQUIRE(loaded.comments == comments.comments);
+
+    // truncated / corrupted data is rejected
+    DissasmUserComments truncated;
+    start = buffer.data();
+    REQUIRE(!truncated.LoadFromBuffer(start, buffer.data() + buffer.size() - 1));
+    auto corrupted                      = buffer;
+    corrupted[sizeof(uint32)]           = std::byte{ 7 }; // an unknown anchor kind
+    DissasmUserComments corruptedLoaded;
+    start = corrupted.data();
+    REQUIRE(!corruptedLoaded.LoadFromBuffer(start, corrupted.data() + corrupted.size()));
+}
+
+TEST_CASE("CrossReferences", "[Dissasm]Xrefs")
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00,             // 0x00: call 0x10
+        0xEB, 0x09,                               // 0x05: jmp 0x10
+        0x48, 0x8D, 0x0D, 0x20, 0x00, 0x00, 0x00, // 0x07: lea rcx, [rip + 0x20] -> 0x2e
+        0x75, 0x00,                               // 0x0e: jne 0x10
+        0x31, 0xC0,                               // 0x10: xor eax, eax
+        0x89, 0x05, 0x10, 0x00, 0x00, 0x00,       // 0x12: mov dword ptr [rip + 0x10], eax -> 0x28 (write)
+        0xC3,                                     // 0x18: ret
+    };
+    file.resize(64, 0xCC);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& zone = *dissasmInstance.zone;
+
+    // the function starts: the entry point and the called function
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x10 });
+
+    // the references to the function: the call, the jmp and the jne, sorted by their source
+    const auto [first, last] = zone.xrefs.To(0x140001010);
+    REQUIRE(last - first == 3);
+    REQUIRE(first[0].from == 0x140001000);
+    REQUIRE(first[0].kind == DissasmXrefKind::Call);
+    REQUIRE(first[1].from == 0x140001005);
+    REQUIRE(first[1].kind == DissasmXrefKind::Jump);
+    REQUIRE(first[2].from == 0x14000100E);
+    REQUIRE(first[2].kind == DissasmXrefKind::ConditionalJump);
+
+    // the data: the address taken by lea, the variable written by mov
+    const auto [leaFirst, leaLast] = zone.xrefs.To(0x14000102E);
+    REQUIRE(leaLast - leaFirst == 1);
+    REQUIRE(leaFirst->kind == DissasmXrefKind::Offset);
+    const auto [writeFirst, writeLast] = zone.xrefs.To(0x140001028);
+    REQUIRE(writeLast - writeFirst == 1);
+    REQUIRE(writeFirst->kind == DissasmXrefKind::Write);
+    REQUIRE(writeFirst->from == 0x140001012);
+
+    // the sources are named after their functions
+    REQUIRE(zone.FormatCodeAddress(0x0) == "EntryPoint");
+    REQUIRE(zone.FormatCodeAddress(0xE) == "EntryPoint+0xE");
+    REQUIRE(zone.FormatCodeAddress(0x12) == "sub_140001010+0x2");
+
+    // the label line shows who uses it
+    REQUIRE(dissasmInstance.CheckLineText(5, "sub_140001010"));
+    REQUIRE(dissasmInstance.GetCurrentAsmLine(5).autoComment == "xrefs: EntryPoint (call), EntryPoint+0x5 (jmp) +1 more");
+
+    // a renamed function: its new name
+    std::string_view name = "worker";
+    REQUIRE(dissasmInstance.zone->TryRenameLine(5, &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.FormatCodeAddress(0x12) == "worker+0x2");
+}
+
+TEST_CASE("CrossReferencesOfImmediates", "[Dissasm]Xrefs")
+{
+    // 32 bit code: an immediate is a reference only when it is an address of the file (a constant is not)
+    std::vector<unsigned char> file = {
+        0x68, 0x20, 0x10, 0x40, 0x00,       // 0x00: push 0x401020
+        0x68, 0x05, 0x00, 0x00, 0x00,       // 0x05: push 5
+        0x68, 0x00, 0x00, 0x50, 0x00,       // 0x0a: push 0x500000 (not in the file)
+        0xA1, 0x30, 0x10, 0x40, 0x00,       // 0x0f: mov eax, dword ptr [0x401030]
+        0xC3,                               // 0x14: ret
+    };
+    file.resize(64, 0xCC);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x401000;
+    layout.isFileAddress    = [](uint64 va) { return va >= 0x401000 && va < 0x401040; };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& zone = *dissasmInstance.zone;
+
+    const auto [first, last] = zone.xrefs.To(0x401020);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Offset);
+    REQUIRE(first->from == 0x401000);
+    REQUIRE(zone.xrefs.To(5).first == zone.xrefs.To(5).second);
+    REQUIRE(zone.xrefs.To(0x500000).first == zone.xrefs.To(0x500000).second);
+    const auto [readFirst, readLast] = zone.xrefs.To(0x401030);
+    REQUIRE(readLast - readFirst == 1);
+    REQUIRE(readFirst->kind == DissasmXrefKind::Read);
+}
+
+TEST_CASE("FunctionEntriesOfThePlugin", "[Dissasm]FunctionEntries")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28, // 0x00: sub rsp, 0x28 (entry point)
+        0x85, 0xC9,             // 0x04: test ecx, ecx
+        0x74, 0x08,             // 0x06: je 0x10
+        0x48, 0x83, 0xC4, 0x28, // 0x08: add rsp, 0x28
+        0xC3,                   // 0x0c: ret
+        0xCC, 0xCC, 0xCC,       // 0x0d: padding
+        0x31, 0xC0,             // 0x10: xor eax, eax (export "Worker", also a jump target)
+        0xC3,                   // 0x12: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }); // 0x20: mov eax, 1; ret (exception data, nothing calls it)
+    file.resize(0x30, 0xCC);
+    file.push_back(0xC3); // 0x30: ret (TLS callback)
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3); // 0x40: ret (an export with a name already used)
+    file.resize(0x50, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    layout.functionEntries  = {
+        { 0x0, { "start", 0, true } }, // the entry point keeps its name
+        { 0x10, { "Worker", 0, true } },
+        { 0x20, { "", 6, false } },
+        { 0x30, { "TlsCallback_0", 0, false } },
+        { 0x40, { "Worker", 0, true } },
+        { 0x1000, { "OutsideTheZone", 0, true } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x10, 0x20, 0x30, 0x40 });
+    REQUIRE(zone.GetLabelNameAt(0x0) == "EntryPoint");
+    REQUIRE(zone.GetLabelNameAt(0x10) == "Worker");
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_140001020");
+    REQUIRE(zone.GetLabelNameAt(0x30) == "TlsCallback_0");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "sub_140001040");
+
+    // the jump uses the name of the export; the names of the plugin are not names of the user (not saved in the cache)
+    REQUIRE(dissasmInstance.CheckLineText(3, "je 0x10"));
+    SettingsData settings;
+    AsmData asmData;
+    std::string listing;
+    REQUIRE(BuildX86AsmListing(zone, &dissasmInstance.objects[0], &settings, &asmData, listing));
+    INFO(listing);
+    REQUIRE(listing.find("je     Worker") != std::string::npos);
+    REQUIRE(listing.find("\nTlsCallback_0:") != std::string::npos);
+    REQUIRE(zone.GetUserLabelNames().empty());
+    REQUIRE(zone.FormatCodeAddress(0x12) == "Worker+0x2");
+
+    // renamed by the user: saved by its address
+    std::string_view name = "Helper";
+    const uint32 workerLine = 9; // EntryPoint, 5 instructions, 3 int3, Worker
+    REQUIRE(dissasmInstance.CheckLineText(workerLine, "Worker"));
+    REQUIRE(zone.TryRenameLine(workerLine, &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.FormatCodeAddress(0x12) == "Helper+0x2");
+    const auto userNames = zone.GetUserLabelNames();
+    REQUIRE(userNames.size() == 1);
+    REQUIRE(userNames[0] == std::pair<uint64, std::string>{ 0x10, "Helper" });
+}
+
+TEST_CASE("FunctionEntriesFromSeveralSources", "[Dissasm]FunctionEntries")
+{
+    Settings settings;
+    auto* data = static_cast<SettingsData*>(settings.data);
+    // the exception data gives the size, the export its name, a later name does not replace the name of the export
+    settings.AddFunctionEntry(0x400, {}, FunctionEntryType::ExceptionData, 0x30);
+    settings.AddFunctionEntry(0x400, "TlsCallback_0", FunctionEntryType::TlsCallback);
+    settings.AddFunctionEntry(0x400, "Exported", FunctionEntryType::Export);
+    settings.AddFunctionEntry(0x400, "Other", FunctionEntryType::Export);
+    REQUIRE(data->functionEntries.size() == 1);
+    const auto& entry = data->functionEntries.at(0x400);
+    REQUIRE(entry.name == "Exported");
+    REQUIRE(entry.isExport);
+    REQUIRE(entry.size == 0x30);
+    delete data;
+}
+
+// the text of the listing line that contains `instruction` (empty when there is none)
+static std::string_view FindListingLine(std::string_view listing, std::string_view instruction)
+{
+    const auto position = listing.find(instruction);
+    if (position == std::string_view::npos)
+        return {};
+    const auto start = listing.rfind('\n', position);
+    const auto end   = listing.find('\n', position);
+    const size_t from = start == std::string_view::npos ? 0 : start + 1;
+    return listing.substr(from, (end == std::string_view::npos ? listing.size() : end) - from);
+}
+
+TEST_CASE("ImportThunksX86", "[Dissasm]Thunks")
+{
+    std::vector<unsigned char> file = {
+        0x6A, 0x00,                         // 0x00: push 0 (uType)
+        0x6A, 0x01,                         // 0x02: push 1 (lpCaption)
+        0x6A, 0x02,                         // 0x04: push 2 (lpText)
+        0x6A, 0x03,                         // 0x06: push 3 (hWnd)
+        0xE8, 0x13, 0x00, 0x00, 0x00,       // 0x08: call 0x20 (the thunk)
+        0xC3,                               // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x20: jmp dword ptr [0x401080] (thunk of MessageBoxA)
+    file.resize(0x28, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x28: another thunk of MessageBoxA
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0x8B, 0xC0, 0xFF, 0x25, 0x80, 0x10, 0x40, 0x00 }); // 0x30: mov eax, eax; jmp [0x401080] (inside a block: no thunk)
+    file.resize(0x40, 0xCC);
+
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "MessageBoxA", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.GetLabelNameAt(0x20) == "j_MessageBoxA");
+    REQUIRE(zone.GetLabelNameAt(0x28) == "j_MessageBoxA_1");
+    REQUIRE(zone.GetLabelNameAt(0x32).empty());
+    REQUIRE(zone.thunkImports.size() == 2);
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x20, 0x28 });
+
+    // the call through the thunk names the pushed arguments (the last push is the first argument)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "call   j_MessageBoxA").size() > 0);
+    REQUIRE(FindListingLine(listing, "push   3").ends_with("; hWnd"));
+    REQUIRE(FindListingLine(listing, "push   2").ends_with("; lpText"));
+    REQUIRE(FindListingLine(listing, "push   1").ends_with("; lpCaption"));
+    REQUIRE(FindListingLine(listing, "push   0").ends_with("; uType = MB_OK"));
+}
+
+TEST_CASE("CallArgumentsX64", "[Dissasm]Thunks")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+        0x45, 0x31, 0xC9,                         // 0x04: xor r9d, r9d (uType)
+        0x4C, 0x8D, 0x05, 0x82, 0x00, 0x00, 0x00, // 0x07: lea r8, [rip + 0x82] -> 0x90 (lpCaption)
+        0x48, 0x8D, 0x15, 0x8B, 0x00, 0x00, 0x00, // 0x0e: lea rdx, [rip + 0x8b] -> 0xa0 (lpText)
+        0x31, 0xC9,                               // 0x15: xor ecx, ecx (hWnd)
+        0xE8, 0x14, 0x00, 0x00, 0x00,             // 0x17: call 0x30 (the thunk)
+        0x48, 0x83, 0xC4, 0x28,                   // 0x1c: add rsp, 0x28
+        0xC3,                                     // 0x20: ret
+    };
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x4A, 0x00, 0x00, 0x00 }); // 0x30: jmp qword ptr [rip + 0x4a] -> slot 0x80 (MessageBoxA)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });                         // 0x40: mov rcx, rbx (hObject)
+    file.insert(file.end(), { 0x85, 0xC0, 0x75, 0x06 });                   // 0x43: test eax, eax; jne 0x4d (or continues into the call)
+    file.insert(file.end(), { 0xFF, 0x15, 0x3B, 0x00, 0x00, 0x00, 0xC3 }); // 0x47: call qword ptr [rip + 0x3b] -> slot 0x88 (CloseHandle); ret
+    file.resize(0x90, 0x00);
+    for (const char c : std::string_view("Caption"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0xA0, 0x00);
+    for (const char c : std::string_view("Text"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0xB0, 0x00);
+
+    ZoneLayout layout;
+    layout.size             = 0x80; // the code; the import slots and the strings follow it
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = {
+        { 0x80, { "MessageBoxA", MemoryMappingType::FunctionMapping } },
+        { 0x88, { "CloseHandle", MemoryMappingType::FunctionMapping } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x30) == "j_MessageBoxA");
+
+    // the last write of every argument register before the call
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "call   j_MessageBoxA").size() > 0);
+    REQUIRE(FindListingLine(listing, "xor    ecx, ecx").ends_with("; hWnd"));
+    REQUIRE(FindListingLine(listing, "lea    rdx").find("; lpText") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "lea    r8").find("; lpCaption") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "xor    r9d, r9d").ends_with("; uType = MB_OK"));
+    REQUIRE(FindListingLine(listing, "sub    rsp, 0x28").find(';') == std::string_view::npos);
+    // a call through the import slot
+    REQUIRE(FindListingLine(listing, "mov    rcx, rbx").ends_with("; hObject"));
+}
+
+// the cases of the switch tests: mov eax, case; ret
+static void WriteSwitchCase(std::vector<unsigned char>& file, size_t offset, uint8 value)
+{
+    file.resize(std::max(file.size(), offset + 6), 0xCC);
+    const unsigned char code[] = { 0xB8, value, 0x00, 0x00, 0x00, 0xC3 };
+    std::copy(std::begin(code), std::end(code), file.begin() + offset);
+}
+
+static void WriteDword(std::vector<unsigned char>& file, size_t offset, uint32 value)
+{
+    file.resize(std::max(file.size(), offset + 4), 0x00);
+    for (uint32 index = 0; index < 4; index++)
+        file[offset + index] = static_cast<unsigned char>(value >> (8 * index));
+}
+
+// a PE like layout: the zone starts at the RVA 0x1000, the RVA of a file offset is offset + 0x1000
+static ZoneLayout MakeSwitchLayout(size_t fileSize, size_t codeSize, DisassemblyLanguage language, uint64 imageBase)
+{
+    ZoneLayout layout;
+    layout.size             = codeSize;
+    layout.entryPoint       = 0;
+    layout.language         = language;
+    layout.labelAddressBase = imageBase + 0x1000;
+    layout.imageBase        = imageBase;
+    const uint64 zoneVA     = imageBase + 0x1000;
+    layout.addressToFileOffset = [zoneVA, fileSize](uint64 va) -> std::optional<uint64> {
+        if (va < zoneVA || va - zoneVA >= fileSize)
+            return {};
+        return va - zoneVA;
+    };
+    return layout;
+}
+
+TEST_CASE("SwitchTableMsvcX64", "[Dissasm]Switch")
+{
+    std::vector<unsigned char> file = {
+        0x83, 0xF9, 0x02,                         // 0x00: cmp ecx, 2
+        0x77, 0x4B,                               // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                         // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF, // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00, // 0x0f: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                         // 0x16: add rcx, rdx
+        0xFF, 0xE1,                               // 0x19: jmp rcx
+    };
+    WriteSwitchCase(file, 0x20, 0);
+    WriteSwitchCase(file, 0x30, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    WriteDword(file, 0x80, 0x1020);                // the table of RVAs
+    WriteDword(file, 0x84, 0x1030);
+    WriteDword(file, 0x88, 0x1040);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x64, 0x140000000));
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.switchJumps.size() == 1);
+    REQUIRE(zone.switchJumps.at(0x19) == 3);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "loc_140001020");
+    REQUIRE(zone.GetLabelNameAt(0x30) == "loc_140001030");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "loc_140001040");
+    const auto [first, last] = zone.xrefs.To(0x140001030);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Switch);
+    REQUIRE(first->from == 0x140001019);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "jmp    rcx").ends_with("; switch: 3 cases"));
+    REQUIRE(FindListingLine(listing, "loc_140001030:").ends_with("; xref: EntryPoint+0x19 (switch)"));
+}
+
+TEST_CASE("SwitchTableMsvcX64IndexTable", "[Dissasm]Switch")
+{
+    std::vector<unsigned char> file = {
+        0x83, 0xF9, 0x05,                                     // 0x00: cmp ecx, 5 (6 cases)
+        0x77, 0x4B,                                           // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                                     // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF,             // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x0F, 0xB6, 0x84, 0x02, 0x90, 0x10, 0x00, 0x00,       // 0x0f: movzx eax, byte ptr [rdx + rax + 0x1090] (the index table)
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00,             // 0x17: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                                     // 0x1e: add rcx, rdx
+        0xFF, 0xE1,                                           // 0x21: jmp rcx
+    };
+    WriteSwitchCase(file, 0x30, 0);
+    WriteSwitchCase(file, 0x38, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    WriteDword(file, 0x80, 0x1030);
+    WriteDword(file, 0x84, 0x1038);
+    WriteDword(file, 0x88, 0x1040);
+    file.resize(0x90, 0x00);
+    file.insert(file.end(), { 0, 1, 0, 2, 2, 1 }); // 0x90: the entry of every case
+    file.resize(0xA0, 0x00);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x64, 0x140000000));
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.switchJumps.size() == 1);
+    REQUIRE(zone.switchJumps.at(0x21) == 6);
+    REQUIRE(zone.GetLabelNameAt(0x30) == "loc_140001030");
+    REQUIRE(zone.GetLabelNameAt(0x38) == "loc_140001038");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "loc_140001040");
+}
+
+TEST_CASE("SwitchTableGccRelative", "[Dissasm]Switch")
+{
+    // the bounds check gives the cases; without it, the table ends at its first entry that is not code
+    enum class BoundsCheck { Register, Memory, None };
+    for (const auto boundsCheck : { BoundsCheck::Register, BoundsCheck::Memory, BoundsCheck::None }) {
+        std::vector<unsigned char> file;
+        if (boundsCheck == BoundsCheck::Register)
+            file.insert(file.end(), { 0x83, 0xF8, 0x02, 0x77, 0x4B }); // 0x00: cmp eax, 2; ja 0x50
+        else if (boundsCheck == BoundsCheck::Memory)
+            file.insert(file.end(), { 0x80, 0x39, 0x02, 0x77, 0x4B }); // 0x00: cmp byte ptr [rcx], 2; ja 0x50
+        else
+            file.insert(file.end(), { 0x90, 0x90, 0x90, 0x90, 0x90 }); // 0x00: nop
+        file.insert(
+              file.end(),
+              {
+                    0x48, 0x8D, 0x15, 0x74, 0x00, 0x00, 0x00, // 0x05: lea rdx, [rip + 0x74] (the table, 0x80)
+                    0x48, 0x63, 0x04, 0x82,                   // 0x0c: movsxd rax, dword ptr [rdx + rax*4]
+                    0x48, 0x01, 0xD0,                         // 0x10: add rax, rdx
+                    0xFF, 0xE0,                               // 0x13: jmp rax
+              });
+        WriteSwitchCase(file, 0x20, 0);
+        WriteSwitchCase(file, 0x30, 1);
+        WriteSwitchCase(file, 0x40, 2);
+        file.resize(0x50, 0xCC);
+        file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+        WriteDword(file, 0x80, static_cast<uint32>(-0x60)); // the offsets from the table
+        WriteDword(file, 0x84, static_cast<uint32>(-0x50));
+        WriteDword(file, 0x88, static_cast<uint32>(-0x40));
+        WriteDword(file, 0x8C, static_cast<uint32>(-0x30)); // the next data: code too (the default), not a case of a bounded switch
+        WriteDword(file, 0x90, 0x7FFFFFF0);                 // not code
+
+        ZoneLayout layout;
+        layout.size                = 0x80;
+        layout.entryPoint          = 0;
+        layout.language            = DisassemblyLanguage::x64;
+        const uint64 fileSize      = file.size();
+        layout.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+        };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        auto& zone = *dissasmInstance.zone;
+        INFO("bounds check: " << static_cast<int>(boundsCheck));
+        REQUIRE(zone.switchJumps.size() == 1);
+        REQUIRE(zone.switchJumps.at(0x13) == (boundsCheck == BoundsCheck::None ? 4u : 3u));
+        REQUIRE(zone.GetLabelNameAt(0x20) == "loc_20");
+        REQUIRE(zone.GetLabelNameAt(0x40) == "loc_40");
+    }
+}
+
+TEST_CASE("SwitchTableMsvcX86", "[Dissasm]Switch")
+{
+    std::vector<unsigned char> file = {
+        0x83, 0xF8, 0x02,                         // 0x00: cmp eax, 2
+        0x77, 0x4B,                               // 0x03: ja 0x50 (default)
+        0xFF, 0x24, 0x85, 0x80, 0x10, 0x40, 0x00, // 0x05: jmp dword ptr [eax*4 + 0x401080]
+    };
+    WriteSwitchCase(file, 0x20, 0);
+    WriteSwitchCase(file, 0x30, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    WriteDword(file, 0x80, 0x401020);            // the table of addresses
+    WriteDword(file, 0x84, 0x401030);
+    WriteDword(file, 0x88, 0x401040);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x86, 0x400000));
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.switchJumps.size() == 1);
+    REQUIRE(zone.switchJumps.at(0x5) == 3);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "loc_401020");
+    REQUIRE(zone.GetLabelNameAt(0x30) == "loc_401030");
+    REQUIRE(zone.GetLabelNameAt(0x40) == "loc_401040");
+    // a jump table that is not one (a bounds check with entries that are not code) is not used
+    WriteDword(file, 0x84, 0x12345678);
+    DissasmTestInstance wrongTable(file.data(), file.size(), false, MakeSwitchLayout(file.size(), 0x80, DisassemblyLanguage::x86, 0x400000));
+    REQUIRE(wrongTable.zone->switchJumps.empty());
+    REQUIRE(wrongTable.zone->GetLabelNameAt(0x30).empty());
+}
+
+// many small functions, each one calls the next one: push rbp; mov rbp, rsp; call next; pop rbp; ret
+static std::vector<unsigned char> MakeManyFunctions(uint32 count)
+{
+    constexpr uint32 FUNCTION_SIZE = 11;
+    std::vector<unsigned char> file;
+    file.reserve(static_cast<size_t>(count) * FUNCTION_SIZE + 16);
+    for (uint32 index = 0; index < count; index++) {
+        file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });
+        file.insert(file.end(), { 0xE8, 0x02, 0x00, 0x00, 0x00 }); // call the next function (2 bytes after the call)
+        file.insert(file.end(), { 0x5D, 0xC3 });
+    }
+    file.resize(file.size() + 16, 0xCC);
+    return file;
+}
+
+TEST_CASE("DeepScanInSteps", "[Dissasm]DeepScan")
+{
+    const auto file = MakeManyFunctions(4000);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance oneShot(file.data(), file.size(), false, layout);
+    REQUIRE_FALSE(oneShot.zone->IsDeepScanPending());
+
+    // no time for the scan in InitZone: the instructions are shown without labels, the scan continues in steps
+    layout.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance inSteps(file.data(), file.size(), false, layout);
+    auto& zone = *inSteps.zone;
+    REQUIRE(zone.IsDeepScanPending());
+    REQUIRE(zone.GetDisplayLinesCount() == zone.asmLinesCount);
+    REQUIRE(zone.xrefs.byTarget.empty());
+
+    uint32 steps   = 0;
+    float progress = zone.GetDeepScanProgress();
+    while (!zone.ContinueDeepScan(std::chrono::steady_clock::now())) { // the deadline has passed: the smallest step every time
+        const float current = zone.GetDeepScanProgress();
+        REQUIRE(current >= progress);
+        progress = current;
+        REQUIRE(++steps < 100000);
+    }
+    REQUIRE(steps > 10);
+    REQUIRE(zone.IsDeepScanPending()); // ended, not committed yet
+    zone.CommitDeepScan();
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+
+    // the same analysis as the scan done at once
+    REQUIRE(zone.GetDisplayLinesCount() == oneShot.zone->GetDisplayLinesCount());
+    REQUIRE(zone.functionStarts == oneShot.zone->functionStarts);
+    REQUIRE(zone.xrefs.byTarget.size() == oneShot.zone->xrefs.byTarget.size());
+    REQUIRE(zone.dissasmType.annotations.mappings == oneShot.zone->dissasmType.annotations.mappings);
+    REQUIRE(inSteps.GetListing() == oneShot.GetListing());
+}
+
+TEST_CASE("DeepScanCancelled", "[Dissasm]DeepScan")
+{
+    const auto file = MakeManyFunctions(4000);
+    ZoneLayout layout;
+    layout.size           = file.size();
+    layout.entryPoint     = 0;
+    layout.language       = DisassemblyLanguage::x64;
+    layout.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.IsDeepScanPending());
+    REQUIRE_FALSE(zone.ContinueDeepScan(std::chrono::steady_clock::now()));
+
+    // the zone keeps its instructions, without labels
+    zone.CancelDeepScan();
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+    REQUIRE(zone.GetDisplayLinesCount() == zone.asmLinesCount);
+    REQUIRE(zone.dissasmType.annotations.mappings.empty());
+    REQUIRE(dissasmInstance.CheckLineText(0, "push rbp"));
+    const std::string listing = dissasmInstance.GetListing();
+    REQUIRE(listing.find("EntryPoint:") == std::string::npos); // no label lines (the call operands still name their targets)
+    REQUIRE(listing.find("sub_7:") == std::string::npos);
+}
+
+TEST_CASE("GoToText", "[Dissasm]GoTo")
+{
+    using Type = DissasmPEConversionType;
+    // a name or an address in the shown mode (hexadecimal, as in IDA)
+    auto request = ParseDissasmGoToText("  140001000 ", Type::VA);
+    REQUIRE(request.has_value());
+    REQUIRE(request->name == "140001000");
+    REQUIRE(request->address == 0x140001000ull);
+    REQUIRE(request->addressType == Type::VA);
+    REQUIRE(ParseDissasmGoToText("0x1A2b", Type::RVA)->address == 0x1A2Bull);
+    REQUIRE(ParseDissasmGoToText("401000h", Type::VA)->address == 0x401000ull);
+
+    // a name that is not a number
+    request = ParseDissasmGoToText("CreateFileW", Type::VA);
+    REQUIRE(request.has_value());
+    REQUIRE(request->name == "CreateFileW");
+    REQUIRE_FALSE(request->address.has_value());
+
+    // the prefixes choose the kind
+    request = ParseDissasmGoToText("rva:1000", Type::VA);
+    REQUIRE(request->name.empty());
+    REQUIRE(request->address == 0x1000ull);
+    REQUIRE(request->addressType == Type::RVA);
+    REQUIRE(ParseDissasmGoToText("VA:0x140001000", Type::FileOffset)->addressType == Type::VA);
+    REQUIRE(ParseDissasmGoToText("off:400", Type::VA)->addressType == Type::FileOffset);
+    REQUIRE(ParseDissasmGoToText("offset:400", Type::VA)->address == 0x400ull);
+    REQUIRE(ParseDissasmGoToText("line:120", Type::VA)->line == 120u);
+
+    // not valid
+    REQUIRE_FALSE(ParseDissasmGoToText("", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("   ", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("rva:xyz", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("line:12a", Type::VA).has_value());
+    REQUIRE_FALSE(ParseDissasmGoToText("va:11112222333344445", Type::VA).has_value()); // more than 64 bits
+}
+
+TEST_CASE("FunctionsList", "[Dissasm]GoTo")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x07, 0x00, 0x00, 0x00, // 0x04: call 0x10
+        0xE8, 0x12, 0x00, 0x00, 0x00, // 0x09: call 0x20
+        0xC3,                         // 0x0e: ret
+        0xCC,                         // 0x0f
+        0x31, 0xC0,                   // 0x10: xor eax, eax
+        0xC3,                         // 0x12: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0xEB, 0xFF, 0xFF, 0xFF, 0xC3 }); // 0x20: call 0x10; ret (the export "Worker")
+    file.resize(0x30, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    layout.functionEntries  = { { 0x20, { "Worker", 6, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    const auto functions = zone.GetFunctions(&layout.functionEntries);
+    REQUIRE(functions.size() == 3);
+    REQUIRE(functions[0].name == "EntryPoint");
+    REQUIRE(functions[0].isEntryPoint);
+    REQUIRE(functions[0].size == 0x0F); // up to its ret: the int3 after it is not part of it
+    REQUIRE(functions[1].name == "sub_140001010");
+    REQUIRE(functions[1].start == 0x10);
+    REQUIRE(functions[1].xrefs == 2); // called by the entry point and by Worker
+    REQUIRE(functions[1].size == 3);
+    REQUIRE(functions[2].name == "Worker");
+    REQUIRE(functions[2].isExport);
+    REQUIRE(functions[2].size == 6); // the size given by the plugin
+    REQUIRE(functions[2].xrefs == 1);
+
+    // the labels by name: exact, then ignoring the case
+    REQUIRE(zone.FindLabelByName("Worker") == 0x20ull);
+    REQUIRE(zone.FindLabelByName("worker") == 0x20ull);
+    REQUIRE(zone.FindLabelByName("SUB_140001010") == 0x10ull);
+    REQUIRE_FALSE(zone.FindLabelByName("missing").has_value());
+    REQUIRE_FALSE(zone.FindLabelByName("").has_value());
+
+    // a renamed function is found by its new name
+    std::string_view name = "helper";
+    REQUIRE(dissasmInstance.CheckLineText(6, "sub_140001010")); // EntryPoint, 4 instructions, int3, the label
+    REQUIRE(zone.TryRenameLine(6, &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.FindLabelByName("helper") == 0x10ull);
+    REQUIRE(zone.GetFunctions(nullptr)[1].name == "helper");
+}
+
+TEST_CASE("SearchInputs", "[Dissasm]Search")
+{
+    REQUIRE(ParseDissasmBytePattern("48 8B ?? 05") == std::vector<int16>{ 0x48, 0x8B, -1, 0x05 });
+    REQUIRE(ParseDissasmBytePattern("488b??05") == std::vector<int16>{ 0x48, 0x8B, -1, 0x05 });
+    REQUIRE(ParseDissasmBytePattern(" 48  ?  c3 ") == std::vector<int16>{ 0x48, -1, 0xC3 });
+    REQUIRE_FALSE(ParseDissasmBytePattern("").has_value());
+    REQUIRE_FALSE(ParseDissasmBytePattern("4").has_value());
+    REQUIRE_FALSE(ParseDissasmBytePattern("48 zz").has_value());
+
+    REQUIRE(ParseDissasmSearchNumber("4096") == 4096ull);
+    REQUIRE(ParseDissasmSearchNumber("0x1000") == 0x1000ull);
+    REQUIRE(ParseDissasmSearchNumber(" 1000h ") == 0x1000ull);
+    REQUIRE(ParseDissasmSearchNumber("-8") == static_cast<uint64>(-8));
+    REQUIRE_FALSE(ParseDissasmSearchNumber("12ab").has_value()); // decimal without a hexadecimal mark
+    REQUIRE_FALSE(ParseDissasmSearchNumber("").has_value());
+    REQUIRE_FALSE(ParseDissasmSearchNumber("99999999999999999999999").has_value());
+}
+
+TEST_CASE("SearchCode", "[Dissasm]Search")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+        0x48, 0x8D, 0x15, 0x29, 0x00, 0x00, 0x00, // 0x04: lea rdx, [rip + 0x29] -> 0x34 ("Hello")
+        0xB9, 0x00, 0x10, 0x00, 0x00,             // 0x0b: mov ecx, 0x1000
+        0x48, 0x8B, 0x45, 0xF8,                   // 0x10: mov rax, qword ptr [rbp - 8]
+        0xB9, 0x00, 0x10, 0x00, 0x00,             // 0x14: mov ecx, 0x1000
+        0x48, 0x83, 0xC4, 0x28,                   // 0x19: add rsp, 0x28
+        0xC3,                                     // 0x1d: ret
+    };
+    file.resize(0x30, 0xCC);
+    file.resize(0x34, 0x00);
+    for (const char c : std::string_view("Hello"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x40, 0x00);
+
+    ZoneLayout layout;
+    layout.size       = 0x30;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    const uint64 codeSize = zone.GetCodeSize();
+
+    // byte patterns: the first match after `from`
+    REQUIRE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0, codeSize) == 0x0Bull);
+    REQUIRE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0x0C, codeSize) == 0x14ull);
+    REQUIRE(zone.FindBytes({ 0x48, -1, 0x45 }, 0, codeSize) == 0x10ull);
+    REQUIRE_FALSE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0x15, codeSize).has_value());
+    REQUIRE_FALSE(zone.FindBytes({ 0xB9, 0x00, 0x10 }, 0, 0x0D).has_value()); // the match must end before `to`
+
+    // immediates and displacements, from an instruction of the listing
+    REQUIRE(zone.FindImmediate(0x1000, 0, codeSize) == 0x0Bull);
+    REQUIRE(zone.FindImmediate(0x1000, 0x10, codeSize) == 0x14ull);
+    REQUIRE(zone.FindImmediate(static_cast<uint64>(-8), 0, codeSize) == 0x10ull); // [rbp - 8]
+    REQUIRE(zone.FindImmediate(0x28, 0x04, codeSize) == 0x19ull);
+    REQUIRE_FALSE(zone.FindImmediate(0x1234, 0, codeSize).has_value());
+
+    // the text of the shown lines: 0 EntryPoint, 1 sub, 2 lea, 3 mov, 4 mov, 5 mov
+    REQUIRE(zone.FindText("ecx, 0x1000", false, 0, UINT32_MAX, nullptr) == 3u);
+    REQUIRE(zone.FindText("ECX, 0X1000", false, 4, UINT32_MAX, nullptr) == 5u);
+    REQUIRE_FALSE(zone.FindText("ECX", true, 0, UINT32_MAX, nullptr).has_value()); // match case
+    REQUIRE(zone.FindText("entrypoint", false, 0, UINT32_MAX, nullptr) == 0u);
+    REQUIRE(dissasmInstance.AddOrUpdateComment(4, "the size of the buffer"));
+    REQUIRE(zone.FindText("buffer", false, 0, UINT32_MAX, nullptr) == 4u);
+    REQUIRE_FALSE(zone.FindText("missing", false, 0, UINT32_MAX, nullptr).has_value());
+
+    // the strings used by the code
+    const uint64 fileSize = file.size();
+    const auto strings    = zone.GetReferencedStrings([fileSize](uint64 offset) -> std::optional<uint64> {
+        return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+    });
+    REQUIRE(strings.size() == 1);
+    REQUIRE(strings[0].address == 0x34);
+    REQUIRE(strings[0].text == "\"Hello\"");
+    REQUIRE(strings[0].xrefs == 1);
+}
+
+TEST_CASE("ArrowsToTheEdges", "[Dissasm]Arrows")
+{
+    using Line = DissasmAsmPreCacheLine;
+    // 5 drawn instructions: a jmp below the view, a call below the view, a jcc above the view
+    DissasmAsmPreCacheData data{};
+    const uint64 addresses[] = { 0x10, 0x12, 0x14, 0x16, 0x18 };
+    for (uint32 index = 0; index < 5; index++) {
+        Line line;
+        line.address     = addresses[index];
+        line.size        = 2;
+        line.currentLine = index;
+        data.cachedAsmLines.push_back(std::move(line));
+    }
+    data.cachedAsmLines[1].flags        = Line::InstructionFlag::JmpFlag;
+    data.cachedAsmLines[1].branchTarget = 0x100;
+    data.cachedAsmLines[2].flags        = Line::InstructionFlag::CallFlag;
+    data.cachedAsmLines[2].branchTarget = 0x200;
+    data.cachedAsmLines[3].flags        = Line::InstructionFlag::JmpFlag;
+    data.cachedAsmLines[3].branchTarget = 0x0;
+    data.PrepareLabelArrows();
+
+    // the lane of an arrow: the column of its source with ArrowRight
+    const auto laneOf = [&](size_t index) -> std::optional<uint32> {
+        for (uint32 lane = 0; lane < Line::ARROW_LANES; lane++)
+            if (data.cachedAsmLines[index].arrowCells[lane] & Line::ArrowRight)
+                return lane;
+        return {};
+    };
+    const auto down = laneOf(1);
+    const auto up   = laneOf(3);
+    REQUIRE(down.has_value());
+    REQUIRE(up.has_value());
+    REQUIRE(down.value() != up.value()); // they share lines 1..3
+
+    // the jmp below: from its line to the last line, continued out of the view, without a head
+    for (size_t index = 1; index < 5; index++)
+        REQUIRE((data.cachedAsmLines[index].arrowCells[down.value()] & Line::ArrowDown) != 0);
+    REQUIRE((data.cachedAsmLines[0].arrowCells[down.value()] & (Line::ArrowUp | Line::ArrowDown)) == 0);
+    // the jcc above: from the first line to its line, continued out of the view
+    for (size_t index = 0; index < 4; index++)
+        REQUIRE((data.cachedAsmLines[index].arrowCells[up.value()] & (index == 3 ? Line::ArrowUp : Line::ArrowDown)) != 0);
+    REQUIRE((data.cachedAsmLines[0].arrowCells[up.value()] & Line::ArrowUp) != 0);
+    // no arrow head on the drawn lines, and the call got no arrow
+    for (size_t index = 0; index < 5; index++)
+        REQUIRE((data.cachedAsmLines[index].arrowCells[Line::ARROW_LANES] & Line::ArrowHead) == 0);
+    REQUIRE_FALSE(laneOf(2).has_value());
+}
+
+TEST_CASE("TokenHighlight", "[Dissasm]Arrows")
+{
+    const ColorPair normal{ Color::White, Color::Black };
+    const ColorPair highlight{ Color::Black, Color::Yellow };
+    const auto sameColor = [](ColorPair left, ColorPair right) { return left.Foreground == right.Foreground && left.Background == right.Background; };
+    CharacterBuffer chars;
+    chars.Add("xx mov rax, qword ptr [rax + 8] ; rax = raxx, eax", normal);
+
+    // whole names only: raxx and eax are other names; the columns before `fromColumn` are not searched
+    HighlightTokenOccurrences(chars, 3, "rax", highlight);
+    std::string highlighted;
+    for (uint32 column = 0; column < chars.Len(); column++)
+        highlighted += sameColor(chars.GetBuffer()[column].Color, highlight) ? '^' : ' ';
+    std::string expected(chars.Len(), ' '); // rax at the columns 7, 23 and 34
+    for (const uint32 column : { 7u, 8u, 9u, 23u, 24u, 25u, 34u, 35u, 36u })
+        expected[column] = '^';
+    REQUIRE(highlighted == expected);
+    // xx is not searched (before the column)
+    HighlightTokenOccurrences(chars, 3, "xx", highlight);
+    REQUIRE(sameColor(chars.GetBuffer()[0].Color, normal));
+
+    REQUIRE(IsTokenCharacter(u'?'));
+    REQUIRE(IsTokenCharacter(u'_'));
+    REQUIRE_FALSE(IsTokenCharacter(u'['));
+    REQUIRE_FALSE(IsTokenCharacter(u' '));
+}
+
+TEST_CASE("UndoRedoEdits", "[Dissasm]Undo")
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x10,       // 0x04: sub rsp, 0x10
+        0x48, 0x89, 0x45, 0xF8,       // 0x08: mov qword ptr [rbp - 8], rax
+        0x8B, 0x45, 0xF4,             // 0x0c: mov eax, dword ptr [rbp - 0xc]
+        0xE8, 0x0C, 0x00, 0x00, 0x00, // 0x0f: call 0x20
+        0xC9,                         // 0x14: leave
+        0xC3,                         // 0x15: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE_FALSE(zone.CanUndoEdit());
+
+    const auto findLine = [&zone](std::string_view text) {
+        const auto line = zone.FindText(text, true, 0, UINT32_MAX, nullptr);
+        REQUIRE(line.has_value());
+        return line.value();
+    };
+    const auto commentOf = [&zone](uint32 line) {
+        std::string comment;
+        return zone.GetComment(line, comment) ? comment : std::string("<none>");
+    };
+
+    // comments: added, edited, removed, then undone and redone
+    const uint32 subLine = findLine("sub rsp, 0x10");
+    REQUIRE(dissasmInstance.AddOrUpdateComment(subLine, "frame"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(subLine, "frame of 16"));
+    REQUIRE(zone.RemoveComment(subLine, false));
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->address == 0x04ull);
+    REQUIRE(commentOf(subLine) == "frame of 16");
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(commentOf(subLine) == "frame");
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(commentOf(subLine) == "<none>");
+    REQUIRE_FALSE(zone.CanUndoEdit());
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(commentOf(subLine) == "frame");
+    REQUIRE(zone.CanRedoEdit());
+    // a new edit: the undone ones can not be redone any more
+    REQUIRE(dissasmInstance.AddOrUpdateComment(findLine("leave"), "end"));
+    REQUIRE_FALSE(zone.CanRedoEdit());
+
+    // a label rename (the calls show the name of the label)
+    std::string_view name = "helper";
+    REQUIRE(zone.TryRenameLine(findLine("sub_20"), &dissasmInstance.objects[0], &name).ok);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "helper");
+    place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->address == 0x20ull);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_20");
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(zone.GetLabelNameAt(0x20) == "helper");
+
+    // a local variable rename
+    REQUIRE_FALSE(zone.localVariables.functions.empty());
+    const auto& function      = zone.localVariables.functions[0];
+    const int32 frameOffset   = function.variables[0].frameOffset;
+    const std::string initial = function.variables[0].name;
+    REQUIRE(zone.RenameLocalVariable(function.startAddress, frameOffset, "count").ok);
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.localVariables.functions[0].FindVariable(frameOffset)->name == initial);
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(zone.localVariables.functions[0].FindVariable(frameOffset)->name == "count");
+
+    // the base of a number (H)
+    zone.ToggleDecimalOperand(0x04, 0);
+    REQUIRE(zone.GetDecimalOperandsMask(0x04) == 1u);
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.GetDecimalOperandsMask(0x04) == 0u);
+
+    // a collapsible zone added and removed
+    const uint32 movLine = findLine("mov rbp, rsp");
+    REQUIRE(zone.AddCollapsibleZone(movLine, movLine + 3));
+    REQUIRE(zone.collapsibleZones.size() == 1);
+    const uint32 zoneStart = zone.collapsibleZones[0].start;
+    place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->expandedLine == zoneStart);
+    REQUIRE(zone.collapsibleZones.empty());
+    REQUIRE(zone.RedoEdit().has_value());
+    REQUIRE(zone.collapsibleZones.size() == 1);
+    REQUIRE(zone.RemoveCollapsibleZone(movLine));
+    REQUIRE(zone.collapsibleZones.empty());
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.collapsibleZones.size() == 1);
+
+    // a removed variable moves the lines: the history is cleared
+    REQUIRE(zone.CanUndoEdit());
+    bool lineRemoved = false;
+    REQUIRE(zone.RemoveLocalVariable(function.startAddress, frameOffset, lineRemoved).ok);
+    REQUIRE(lineRemoved);
+    REQUIRE_FALSE(zone.CanUndoEdit());
+    REQUIRE_FALSE(zone.CanRedoEdit());
+}
+
+TEST_CASE("CallersAndCallees", "[Dissasm]CallTree")
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00,       // 0x00: call 0x10
+        0xFF, 0x15, 0x35, 0x00, 0x00, 0x00, // 0x05: call qword ptr [rip + 0x35] -> slot 0x40 (ExitProcess)
+        0x74, 0x01,                         // 0x0b: je 0x0e (inside the function: not a call)
+        0x90,                               // 0x0d: nop
+        0xEB, 0x10,                         // 0x0e: jmp 0x20 (a tail call)
+        0x31, 0xC0,                         // 0x10: xor eax, eax
+        0x75, 0xFC,                         // 0x12: jne 0x10 (a loop: not a caller)
+        0xC3,                               // 0x14: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });             // 0x20: push rbp; mov rbp, rsp
+    file.insert(file.end(), { 0xE8, 0xE7, 0xFF, 0xFF, 0xFF });       // 0x24: call 0x10
+    file.insert(file.end(), { 0x5D, 0xC3 });                         // 0x29: pop rbp; ret
+    file.resize(0x48, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "ExitProcess", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x0, 0x10, 0x20 });
+    REQUIRE(zone.GetFunctionContaining(0x14) == 0x10ull);
+    REQUIRE(zone.GetFunctionContaining(0x05) == 0x0ull);
+
+    auto* settings = &dissasmInstance.settingsData;
+    auto* code     = dissasmInstance.zone.get();
+    const auto findImport = [settings, code](const X86OperandsInfo& operands) { return FindX86OperandsImport(settings, code, operands); };
+
+    // the calls of the entry point: a function, an import, a tail call (the je is inside the function)
+    const auto callees = zone.GetCallees(0x0, findImport);
+    REQUIRE(callees.size() == 3);
+    REQUIRE(callees[0].site == 0x00);
+    REQUIRE(callees[0].function == "sub_10");
+    REQUIRE(callees[0].functionStart == 0x10ull);
+    REQUIRE(callees[1].site == 0x05);
+    REQUIRE(callees[1].function == "ExitProcess");
+    REQUIRE_FALSE(callees[1].functionStart.has_value());
+    REQUIRE(callees[2].site == 0x0E);
+    REQUIRE(callees[2].function == "sub_20");
+    REQUIRE(callees[2].isTailJump);
+
+    // the callers of sub_10: the entry point and sub_20 (its loop is not a caller)
+    const auto callers = zone.GetCallers(0x10);
+    REQUIRE(callers.size() == 2);
+    REQUIRE(callers[0].site == 0x00);
+    REQUIRE(callers[0].function == "EntryPoint");
+    REQUIRE(callers[1].site == 0x24);
+    REQUIRE(callers[1].function == "sub_20");
+    REQUIRE(callers[1].functionStart == 0x20ull);
+
+    // the tail call is a caller of sub_20
+    const auto tailCallers = zone.GetCallers(0x20);
+    REQUIRE(tailCallers.size() == 1);
+    REQUIRE(tailCallers[0].isTailJump);
+    REQUIRE(tailCallers[0].function == "EntryPoint");
+}
+
+TEST_CASE("AssistantSuggestions", "[Dissasm]AI")
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x10,       // 0x04: sub rsp, 0x10
+        0xE8, 0x13, 0x00, 0x00, 0x00, // 0x08: call 0x20
+        0xC9,                         // 0x0d: leave
+        0xC3,                         // 0x0e: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    const auto findLine = [&zone](std::string_view text) {
+        const auto line = zone.FindText(text, true, 0, UINT32_MAX, nullptr);
+        REQUIRE(line.has_value());
+        return line.value();
+    };
+
+    // the code sent to the assistant: the function until its ret, with the names of the targets
+    AsmData asmData;
+    DissasmInsnExtractLineParams params{};
+    params.obj      = &dissasmInstance.objects[0];
+    params.zone     = &zone;
+    params.settings = &dissasmInstance.settingsData;
+    params.asmData  = &asmData;
+    const std::string code = zone.BuildAssistantFunctionText(0x0, &params);
+    REQUIRE(code.starts_with("Here is x64 assembly code:"));
+    REQUIRE(code.find("sub rsp, 0x10") != std::string::npos);
+    REQUIRE(code.find("call sub_20") != std::string::npos);
+    REQUIRE(code.find("xor") == std::string::npos); // the next function
+
+    // the suggestions are kept apart from the data of the user
+    const uint32 subLine = findLine("sub rsp, 0x10");
+    REQUIRE(dissasmInstance.AddOrUpdateComment(subLine, "frame"));
+    REQUIRE(zone.SetAIComment(subLine, "allocates the locals"));
+    zone.suggestedNames[0x20] = "ComputeValue";
+    std::string text;
+    REQUIRE(zone.GetComment(subLine, text));
+    REQUIRE(text == "frame");
+    REQUIRE(zone.GetAIComment(dissasmInstance.GetCurrentAsmLine(subLine), text));
+    REQUIRE(text == "allocates the locals");
+    const uint32 labelLine = findLine("sub_20");
+    REQUIRE(zone.GetSuggestedName(dissasmInstance.GetCurrentAsmLine(labelLine)) == std::optional<std::string>("ComputeValue"));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("; frame ; AI: allocates the locals") != std::string::npos);
+    REQUIRE(listing.find("; AI name: ComputeValue") != std::string::npos);
+
+    // saved in the cache (record version 5)
+    {
+        std::vector<std::byte> buffer;
+        REQUIRE(zone.ToBuffer(buffer));
+        DissasmTestInstance restored(file.data(), file.size(), false, layout);
+        auto cache      = std::make_unique<DissasmCache>();
+        cache->hasCache = true;
+        cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+        bool zoneLinesChanged = false;
+        REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+        REQUIRE(restored.zone->GetAIComment(restored.GetCurrentAsmLine(subLine), text));
+        REQUIRE(text == "allocates the locals");
+        REQUIRE(restored.zone->suggestedNames.at(0x20) == "ComputeValue");
+        REQUIRE(restored.zone->GetComment(subLine, text));
+        REQUIRE(text == "frame");
+    }
+
+    // accepted: the comment of the user (it can be undone), the name of the label
+    REQUIRE(zone.AcceptAISuggestion(subLine).ok);
+    REQUIRE(zone.GetComment(subLine, text));
+    REQUIRE(text == "frame; allocates the locals");
+    REQUIRE_FALSE(zone.GetAIComment(dissasmInstance.GetCurrentAsmLine(subLine), text));
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.GetComment(subLine, text));
+    REQUIRE(text == "frame");
+    REQUIRE(zone.AcceptAISuggestion(labelLine).ok);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "ComputeValue");
+    REQUIRE(zone.suggestedNames.empty());
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_20");
+
+    // dismissed
+    const uint32 leaveLine = findLine("leave");
+    REQUIRE(zone.SetAIComment(leaveLine, "restores the frame"));
+    REQUIRE(zone.DismissAISuggestion(leaveLine));
+    REQUIRE_FALSE(zone.DismissAISuggestion(leaveLine));
+    REQUIRE_FALSE(zone.AcceptAISuggestion(leaveLine).ok);
+}
+
+TEST_CASE("HeadlessAnalysisListing", "[Dissasm]Analyze")
+{
+    // GView analyze --listing: the listing of every zone (the F8 export) next to the JSON
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret (the export "Worker")
+    file.resize(0x30, 0xCC);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Settings settings;
+    settings.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+    settings.AddFunctionEntry(0x20, "Worker", FunctionEntryType::Export);
+    std::string text, error, listing = "stale";
+    DissasmAnalysisOptions options;
+    options.listingOutput = &listing;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error, options));
+    INFO(listing);
+    REQUIRE(listing.starts_with("; GView disassembly listing (x64)"));
+    REQUIRE(listing.find("stale") == std::string::npos);
+    REQUIRE(listing.find("\nEntryPoint:") != std::string::npos);
+    REQUIRE(listing.find("call   Worker") != std::string::npos);
+    REQUIRE(listing.find("\nWorker:") != std::string::npos);
+    REQUIRE(listing.find("xor    eax, eax") != std::string::npos);
+    // the JSON is the same with or without the listing
+    Settings again;
+    again.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+    again.AddFunctionEntry(0x20, "Worker", FunctionEntryType::Export);
+    std::string plain;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], again, plain, error));
+    REQUIRE(nlohmann::json::parse(plain) == nlohmann::json::parse(text));
+}
+
+TEST_CASE("AssistantNameAnswers", "[Dissasm]AI")
+{
+    REQUIRE(ParseAssistantSuggestedName("ParseHeader, ReadHeader, LoadHeader") == "ParseHeader");
+    REQUIRE(ParseAssistantSuggestedName("1. `ReadConfig`\n2. LoadConfig") == "ReadConfig");
+    REQUIRE(ParseAssistantSuggestedName("\"compute_checksum\"") == "compute_checksum");
+    REQUIRE(ParseAssistantSuggestedName("- InitTable") == "InitTable");
+    REQUIRE(ParseAssistantSuggestedName("  ,  ,  ") == "");
+    REQUIRE(ParseAssistantSuggestedName("") == "");
+    REQUIRE(ParseAssistantSuggestedName("Sure! Here: x") == "Sure"); // the first name of the text
+}
+
+TEST_CASE("HeadlessAnalysisJson", "[Dissasm]Analyze")
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret (the export "Worker")
+    file.resize(0x30, 0xCC);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+
+    // the settings a plugin gives to the viewer
+    Settings settings;
+    settings.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+    settings.AddFunctionEntry(0x20, "Worker", FunctionEntryType::Export);
+    std::string text, error;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error));
+    REQUIRE(settings.data == nullptr); // the analysis owns the settings data
+
+    const auto root = nlohmann::json::parse(text);
+    REQUIRE(root["zones"].size() == 1);
+    const auto& zone = root["zones"][0];
+    REQUIRE(zone["language"] == "x64");
+    REQUIRE(zone["addresses"] == "file offset");
+    REQUIRE(zone["entryPoint"] == "0x0");
+    const auto& functions = zone["functions"];
+    REQUIRE(functions.size() == 2);
+    REQUIRE(functions[0]["name"] == "EntryPoint");
+    REQUIRE(functions[0]["kind"] == "entry");
+    REQUIRE(functions[0]["callees"].size() == 1);
+    REQUIRE(functions[0]["callees"][0]["function"] == "Worker");
+    REQUIRE(functions[0]["callees"][0]["address"] == "0x20");
+    REQUIRE(functions[0]["callees"][0]["site"] == "0x4");
+    REQUIRE(functions[1]["name"] == "Worker");
+    REQUIRE(functions[1]["kind"] == "export");
+    REQUIRE(functions[1]["callers"].size() == 1);
+    REQUIRE(functions[1]["callers"][0]["function"] == "EntryPoint");
+    REQUIRE(zone["switches"].empty());
+    REQUIRE(zone["comments"].empty());
+
+    // a plugin without disassembly zones
+    Settings empty;
+    REQUIRE_FALSE(BuildAnalysisJson(&dissasmInstance.objects[0], empty, text, error));
+    REQUIRE(error == "The file has no disassembly zone!");
+}
+
+TEST_CASE("ImportThunksWithEndbr", "[Dissasm]Thunks")
+{
+    // an ELF .plt.sec stub (CET): endbr64; bnd jmp [rip + ...]; nop - the calls go to the endbr
+    std::vector<unsigned char> file = {
+        0xE8, 0x1B, 0x00, 0x00, 0x00, // 0x00: call 0x20
+        0xC3,                         // 0x05: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xF3, 0x0F, 0x1E, 0xFA });                   // 0x20: endbr64
+    file.insert(file.end(), { 0xF2, 0xFF, 0x25, 0x15, 0x00, 0x00, 0x00 }); // 0x24: bnd jmp qword ptr [rip + 0x15] -> slot 0x40 (puts)
+    file.insert(file.end(), { 0x0F, 0x1F, 0x44, 0x00, 0x00 });             // 0x2b: nop
+    file.resize(0x48, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "puts", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.GetLabelNameAt(0x20) == "j_puts");
+    REQUIRE(zone.GetLabelNameAt(0x24).empty()); // the jmp is inside the thunk
+    REQUIRE(zone.thunkImports.contains(0x20));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("call   j_puts") != std::string::npos);
+}
+
+TEST_CASE("InstructionBoundaries", "[Dissasm]Boundaries")
+{
+    // a gap of one zero byte before a stub (the end of __text before __stubs): 00 FF decodes as add bh, bh and hides the stub
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00, // 0x00: call 0x10
+        0xC3,                         // 0x05: ret
+    };
+    file.resize(0x0F, 0xCC);
+    file.push_back(0x00);                                                // 0x0f: padding
+    file.insert(file.end(), { 0xFF, 0x25, 0x2A, 0x00, 0x00, 0x00 });     // 0x10: jmp qword ptr [rip + 0x2a] -> slot 0x40 (puts)
+    file.resize(0x48, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "puts", MemoryMappingType::FunctionMapping } } };
+    {
+        DissasmTestInstance misaligned(file.data(), file.size(), false, layout);
+        REQUIRE(misaligned.zone->GetLabelNameAt(0x10) != "j_puts");
+    }
+
+    // the start of the section is a boundary: the padding is a data line, the stub a thunk
+    layout.instructionBoundaries = { 0x10 };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.instructionBoundaries == std::vector<uint64>{ 0x10 });
+    REQUIRE(zone.GetLabelNameAt(0x10) == "j_puts");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("db     0x00") != std::string::npos);
+    REQUIRE(listing.find("call   j_puts") != std::string::npos);
+
+    // a function entry is a boundary as well
+    layout.instructionBoundaries.clear();
+    layout.functionEntries = { { 0x10, { "", 0, false } } };
+    DissasmTestInstance withEntry(file.data(), file.size(), false, layout);
+    REQUIRE(withEntry.zone->GetLabelNameAt(0x10) == "j_puts");
+}
+
+TEST_CASE("FunctionGraph", "[Dissasm]Graph")
+{
+    std::vector<unsigned char> file = {
+        0x85, 0xFF,                   // 0x00: test edi, edi
+        0x74, 0x07,                   // 0x02: je 0x0b
+        0xB8, 0x01, 0x00, 0x00, 0x00, // 0x04: mov eax, 1 (else)
+        0xEB, 0x05,                   // 0x09: jmp 0x10
+        0xB8, 0x02, 0x00, 0x00, 0x00, // 0x0b: mov eax, 2 (then, continues into the loop)
+        0xFF, 0xC8,                   // 0x10: dec eax (the loop)
+        0x75, 0xFC,                   // 0x12: jne 0x10
+        0xC3,                         // 0x14: ret
+    };
+    file.resize(0x20, 0xCC); // padding: not reached from the entry
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto graph = dissasmInstance.zone->BuildFunctionGraph(0x0);
+    using Kind       = DissasmGraphBlock::EdgeKind;
+
+    REQUIRE_FALSE(graph.truncated);
+    REQUIRE(graph.blocks.size() == 5);
+    const auto& blocks = graph.blocks;
+    REQUIRE(blocks[0].start == 0x00);
+    REQUIRE(blocks[0].end == 0x04);
+    REQUIRE(blocks[0].successors.size() == 2);
+    REQUIRE(blocks[0].successors[0].target == 2); // je: the then block
+    REQUIRE(blocks[0].successors[0].kind == Kind::True);
+    REQUIRE(blocks[0].successors[1].target == 1); // the else block, right after
+    REQUIRE(blocks[0].successors[1].kind == Kind::False);
+    REQUIRE(blocks[1].start == 0x04);
+    REQUIRE(blocks[1].successors.size() == 1);
+    REQUIRE(blocks[1].successors[0].target == 3); // jmp to the loop
+    REQUIRE(blocks[2].start == 0x0B);
+    REQUIRE(blocks[2].successors[0].target == 3); // no branch: the next block
+    REQUIRE(blocks[2].successors[0].kind == Kind::Jump);
+    REQUIRE(blocks[3].start == 0x10);
+    REQUIRE(blocks[3].instructions.size() == 2);
+    REQUIRE(blocks[3].successors[0].target == 3); // the loop: a back edge to itself
+    REQUIRE(blocks[3].successors[0].kind == Kind::True);
+    REQUIRE(blocks[3].successors[1].target == 4);
+    REQUIRE(blocks[4].start == 0x14);
+    REQUIRE(blocks[4].exits);
+    REQUIRE(blocks[4].successors.empty());
+    // the ordinals of the instructions follow the listing: 7 instructions before the ret
+    REQUIRE(blocks[4].instructions == std::vector<uint32>{ 7 });
+}
+
+TEST_CASE("KeyProfileIDA", "[Dissasm]Keys")
+{
+    using Key = AppCUI::Input::Key;
+    const auto gviewGoTo = Config::GoToAddressCommand.DefaultKey;
+    const auto gviewComment = Config::AddOrEditCommentCommand.DefaultKey;
+    const auto gviewBack    = Config::JumpBackCommand.DefaultKey;
+    const auto gviewSpace   = Config::SpaceCommand.DefaultKey;
+
+    ApplyKeyProfile(Config::KeyProfile::IDA);
+    REQUIRE(Config::ActiveKeyProfile == Config::KeyProfile::IDA);
+    REQUIRE(Config::GoToAddressCommand.Key == Key::G);
+    REQUIRE(Config::ShowXrefsCommand.Key == Key::X);
+    REQUIRE(Config::AddZoneCommand.Key == (Key::Ctrl | Key::Shift | Key::X));
+    REQUIRE(Config::AddOrEditCommentCommand.Key == Key::None);
+    REQUIRE(Config::JumpBackCommand.Key == Key::Escape);
+    REQUIRE(Config::JumpForwardCommand.Key == (Key::Ctrl | Key::Enter));
+    REQUIRE(Config::SpaceCommand.Key == Key::Enter);
+    REQUIRE(Config::ShowGraphCommand.Key == Key::Space);
+    REQUIRE(Config::FindCommand.Key == (Key::Alt | Key::T));
+    REQUIRE(Config::FindNextCommand.DefaultKey == (Key::Ctrl | Key::T));
+    // the keys that IDA shares with GView stay
+    REQUIRE(Config::RenameLabelCommand.Key == Key::N);
+    REQUIRE(Config::ToggleNumberBaseCommand.Key == Key::H);
+
+    // no key of the view is bound twice
+    std::set<const AppCUI::Input::KeyBinding*> controls;
+    for (const auto& control : Config::AllKeyboardCommands)
+        controls.insert(&control.get());
+    controls.insert(Config::KeyEventCommands.begin(), Config::KeyEventCommands.end());
+    std::map<uint32, std::string_view> used;
+    for (const auto* control : controls) {
+        if (control->Key == Key::None)
+            continue;
+        const auto [it, added] = used.insert({ static_cast<uint32>(control->Key), control->Caption });
+        INFO(control->Caption << " and " << it->second);
+        REQUIRE(added);
+    }
+
+    // back to the keys of GView
+    ApplyKeyProfile(Config::KeyProfile::Default);
+    REQUIRE(Config::ActiveKeyProfile == Config::KeyProfile::Default);
+    REQUIRE(Config::GoToAddressCommand.Key == gviewGoTo);
+    REQUIRE(Config::AddOrEditCommentCommand.Key == gviewComment);
+    REQUIRE(Config::JumpBackCommand.Key == gviewBack);
+    REQUIRE(Config::SpaceCommand.Key == gviewSpace);
+    REQUIRE(Config::ShowXrefsCommand.Key == (Key::Ctrl | Key::X));
+}
+
+namespace
+{
+size_t CountOccurrences(const std::string& text, std::string_view token)
+{
+    size_t count = 0;
+    for (size_t position = text.find(token); position != std::string::npos; position = text.find(token, position + token.size()))
+        count++;
+    return count;
+}
+} // namespace
+
+TEST_CASE("AlignPadding", "[Dissasm]Align")
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00,                   // 0x00: call 0x10
+        0xE8, 0x16, 0x00, 0x00, 0x00,                   // 0x05: call 0x20
+        0xC3,                                           // 0x0a: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC,                   // 0x0b: align 0x10
+        0x31, 0xC0,                                     // 0x10: xor eax, eax
+        0xC3,                                           // 0x12: ret
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00,             // 0x13: nop word ptr [rax + rax] \ align 0x10
+        0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00,       // 0x19: nop dword ptr [rax]      /
+        0xC3,                                           // 0x20: ret
+        0xCC,                                           // 0x21: int3 (a single byte: an instruction)
+        0xC3, 0xC3,                                     // 0x22: ret, ret
+        0x90, 0x90,                                     // 0x24: align 0x2 (the next instruction is 2 bytes aligned)
+        0xC3,                                           // 0x26: ret
+        0xCC, 0xCC,                                     // 0x27: int3, int3 (they end at an odd address)
+        0xC3,                                           // 0x29: ret
+    };
+    file.insert(file.end(), 38, 0xCC); // 0x2a: align 0x10 (to 0x30), align 0x10 (0x30), align 0x10 (0x40)
+    file.push_back(0xC3);              // 0x50: ret
+    file.resize(0x60, 0xC3);
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    {
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(CountOccurrences(listing, "align  0x10") == 5);
+        REQUIRE(CountOccurrences(listing, "align  0x2") == 1);
+        REQUIRE(CountOccurrences(listing, "int3") == 3);
+        REQUIRE(CountOccurrences(listing, "nop") == 0);
+        // the functions after the padding keep their labels
+        REQUIRE(!dissasmInstance.zone->GetLabelNameAt(0x10).empty());
+        REQUIRE(!dissasmInstance.zone->GetLabelNameAt(0x20).empty());
+        // 2 calls, 8 ret, xor, 6 align lines, 3 int3, the ret lines after the code
+        REQUIRE(dissasmInstance.zone->asmLinesCount == 2 + 8 + 1 + 6 + 3 + (0x60 - 0x51));
+    }
+    {
+        // the alignment is the one of the addresses of the listing (the VA): 0x140001013 -> 0x140001018 is align 0x8
+        layout.labelAddressBase = 0x140001008;
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(CountOccurrences(listing, "align  0x8") >= 1);
+    }
+    {
+        // the setting is off: every padding instruction is a line
+        layout.labelAddressBase.reset();
+        layout.alignPadding = false;
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        REQUIRE(CountOccurrences(listing, "align") == 0);
+        REQUIRE(CountOccurrences(listing, "int3") == 5 + 1 + 2 + 38);
+    }
+}
+
+TEST_CASE("AlignPaddingReachable", "[Dissasm]Align")
+{
+    // the padding that the code reaches is instructions (IDA: align only for the bytes no code reaches)
+    std::vector<unsigned char> file = {
+        0x85, 0xC0,                         // 0x00: test eax, eax
+        0x74, 0x0C,                         // 0x02: je 0x10
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00, // 0x04: nop word ptr [rax + rax] (reached: je falls through)
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00, // 0x0a: nop word ptr [rax + rax]
+        0xC3,                               // 0x10: ret
+    };
+    file.insert(file.end(), 15, 0xCC);               // 0x11: align 0x10 (after ret: no code reaches it)
+    file.insert(file.end(), { 0xE8, 0x0B, 0, 0, 0 }); // 0x20: call 0x30
+    file.insert(file.end(), 11, 0x90);               // 0x25: align 0x10 (after a call, then a function: a call that does not return)
+    file.insert(file.end(), { 0x74, 0x06 });         // 0x30: je 0x38 (into the padding)
+    file.insert(file.end(), { 0xEB, 0x0C });         // 0x32: jmp 0x40
+    file.insert(file.end(), 12, 0xCC);               // 0x34: align 0x8 (0x34 - 0x38), then 8 int3 the je reaches
+    file.push_back(0xC3);                            // 0x40: ret
+    file.resize(0x50, 0xC3);
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(CountOccurrences(listing, "nop    word ptr [rax + rax]") == 2);
+    REQUIRE(CountOccurrences(listing, "align  0x10") == 2);
+    REQUIRE(CountOccurrences(listing, "align  0x8") == 1);
+    REQUIRE(CountOccurrences(listing, "int3") == 8);
+    REQUIRE(!dissasmInstance.zone->GetLabelNameAt(0x38).empty()); // the target in the padding keeps its label
+
+    // ARM64: cbz x0, 0x10 falls through into 3 nops (instructions); the 3 nops after ret are an align line
+    std::vector<unsigned char> arm = {};
+    const auto word = [&arm](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            arm.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xB4000080); // 0x00: cbz x0, 0x10
+    for (int index = 0; index < 3; index++)
+        word(0xD503201F); // 0x04: nop
+    word(0xD65F03C0); // 0x10: ret
+    for (int index = 0; index < 3; index++)
+        word(0xD503201F); // 0x14: align 0x10
+    word(0xD65F03C0); // 0x20: ret
+    arm.resize(0x30, 0);
+    layout.size     = arm.size();
+    layout.language = DisassemblyLanguage::ARM64;
+    DissasmTestInstance armInstance(arm.data(), arm.size(), false, layout);
+    const std::string armListing = armInstance.GetListing();
+    INFO(armListing);
+    REQUIRE(CountOccurrences(armListing, "nop") == 3);
+    REQUIRE(CountOccurrences(armListing, "align  0x10") == 1);
+}
+
+TEST_CASE("NoReturnFunctionNames", "[Dissasm]NoReturn")
+{
+    for (const std::string_view name :
+         { "exit", "_exit", "abort", "__imp_ExitProcess", "j_exit", "exit@GLIBC_2.2.5", "exit@plt", "_ExitProcess@4", "__stack_chk_fail",
+           "___stack_chk_fail", "_abort", "__CxxThrowException@8", "KeBugCheckEx", "_ZSt9terminatev", "__ZSt9terminatev",
+           "_ZSt20__throw_length_errorPKc", "?terminate@@YAXXZ", "?_Xlength_error@std@@YAXPEBD@Z", "void __cdecl std::terminate(void)",
+           "std::__throw_bad_alloc()", "_ZN4core9panicking9panic_fmt17h0123456789abcdefE", "__ubsan_handle_type_mismatch_v1_abort",
+           "__asan_report_load4", "runtime.panicIndex" }) {
+        INFO(name);
+        REQUIRE(IsNoReturnFunctionName(name));
+    }
+    for (const std::string_view name : { "", "printf", "j_printf", "error", "_assert", "atexit", "exit_group", "terminate_handler",
+                                         "RaiseException", "TerminateProcess", "std::_Xtime_get_ticks", "?_Xtime_get_ticks@std@@YA_JXZ",
+                                         "_ZSt4cout", "__asan_report_load4_noabort", "_ZN4core3fmt5write17h0123456789abcdefE" }) {
+        INFO(name);
+        REQUIRE_FALSE(IsNoReturnFunctionName(name));
+    }
+}
+
+TEST_CASE("NoReturnFunctions", "[Dissasm]NoReturn")
+{
+    // fatal calls exit (an import): it does not return; fatal2 calls fatal on both paths (found by the second round); user and the entry
+    // point return. The padding after a call to fatal is not reached (no label after it: the align line comes from the noreturn call)
+    std::vector<unsigned char> file = {
+        0x85, 0xFF,                   // 0x00: test edi, edi
+        0x75, 0x11,                   // 0x02: jne 0x15
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call fatal (0x20)
+    };
+    file.insert(file.end(), 7, 0xCC);                                         // 0x09: align 0x10 (fatal does not return)
+    file.insert(file.end(), { 0xE8, 0x2B, 0x00, 0x00, 0x00 });                // 0x10: call user (0x40), no label
+    file.push_back(0xC3);                                                     // 0x15: ret
+    file.insert(file.end(), 10, 0xCC);                                        // 0x16: align 0x10
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });                      // 0x20: fatal: sub rsp, 0x28
+    file.insert(file.end(), { 0xB9, 0x01, 0x00, 0x00, 0x00 });                // 0x24: mov ecx, 1
+    file.insert(file.end(), { 0xFF, 0x15, 0x51, 0x00, 0x00, 0x00 });          // 0x29: call qword ptr [rip + 0x51] -> slot 0x80 (exit)
+    file.push_back(0xCC);                                                     // 0x2f: int3 (a lone one: an instruction)
+    file.insert(file.end(), { 0x85, 0xC9, 0x74, 0x05 });                      // 0x30: fatal2: test ecx, ecx; je 0x39
+    file.insert(file.end(), { 0xE8, 0xE7, 0xFF, 0xFF, 0xFF });                // 0x34: call fatal
+    file.insert(file.end(), { 0xE8, 0xE2, 0xFF, 0xFF, 0xFF });                // 0x39: call fatal
+    file.insert(file.end(), { 0xCC, 0xCC });                                  // 0x3e: align 0x10
+    file.insert(file.end(), { 0x85, 0xFF, 0x75, 0x05 });                      // 0x40: user: test edi, edi; jne 0x49
+    file.insert(file.end(), { 0xE8, 0xE7, 0xFF, 0xFF, 0xFF });                // 0x44: call fatal2
+    file.insert(file.end(), { 0x8D, 0x47, 0x01, 0xC3 });                      // 0x49: lea eax, [rdi + 1]; ret
+    file.resize(0x88, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.alignPadding     = true;
+    layout.imports          = { { 0x80, { "exit", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x20, 0x30 });
+    REQUIRE(zone.noReturnCalls == std::unordered_set<uint64>{ 0x04, 0x29, 0x34, 0x39, 0x44 });
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(CountOccurrences(listing, "int3") == 1);
+    REQUIRE(zone.GetLabelNameAt(0x10).empty());
+    for (const auto& function : zone.GetFunctions(nullptr))
+        REQUIRE(function.isNoReturn == (function.start == 0x20 || function.start == 0x30));
+
+    // the graph of the entry point: the block of the call to fatal has no successor (it does not exit either)
+    const auto graph = zone.BuildFunctionGraph(0x0);
+    REQUIRE(graph.blocks.size() == 3);
+    REQUIRE(graph.blocks[1].start == 0x04);
+    REQUIRE(graph.blocks[1].successors.empty());
+    REQUIRE_FALSE(graph.blocks[1].exits);
+    REQUIRE(graph.blocks[2].start == 0x15);
+    // fatal2: the test block, then two blocks that end with a call to fatal
+    const auto graph2 = zone.BuildFunctionGraph(0x30);
+    REQUIRE(graph2.blocks.size() == 3);
+    REQUIRE(graph2.blocks[1].successors.empty());
+    REQUIRE(graph2.blocks[2].successors.empty());
+}
+
+TEST_CASE("NoReturnLocalImport", "[Dissasm]NoReturn")
+{
+    // a PIC library calls its own exported function through its thunk (fatal@plt: j_fatal); the function of that name does not return
+    std::vector<unsigned char> file = { 0xE8, 0x0B, 0x00, 0x00, 0x00 }; // 0x00: call j_fatal (0x10)
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x2A, 0x00, 0x00, 0x00 }); // 0x10: jmp qword ptr [rip + 0x2a] -> slot 0x40 (fatal)
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x15, 0x22, 0x00, 0x00, 0x00 }); // 0x20: fatal: call qword ptr [rip + 0x22] -> slot 0x48 (exit)
+    file.resize(0x50, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x40, { "fatal", MemoryMappingType::FunctionMapping } }, { 0x48, { "exit", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = { { 0x20, { "fatal", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x10) == "j_fatal");
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x00, 0x10, 0x20 }); // the entry point calls only j_fatal
+    REQUIRE(zone.noReturnCalls.contains(0x00));
+}
+
+TEST_CASE("NoReturnArm", "[Dissasm]NoReturn")
+{
+    std::vector<unsigned char> arm;
+    const auto word = [&arm](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            arm.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    // ARM64: fatal (0x10) calls abort (a symbol of the plugin); the entry point returns on one path
+    word(0xB4000040); // 0x00: cbz x0, 0x08
+    word(0x94000003); // 0x04: bl fatal (0x10)
+    word(0x52800020); // 0x08: mov w0, #1
+    word(0xD65F03C0); // 0x0c: ret
+    word(0xA9BF7BFD); // 0x10: fatal: stp x29, x30, [sp, #-0x10]!
+    word(0x94000003); // 0x14: bl abort (0x20)
+    word(0xD503201F); // 0x18: nop
+    word(0xD503201F); // 0x1c: nop
+    word(0xD4200020); // 0x20: abort: brk #1
+    word(0xD503201F);
+    word(0xD503201F);
+    word(0xD65F03C0);
+    ZoneLayout layout;
+    layout.size            = arm.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x20, { "abort", 0, true } } };
+    {
+        DissasmTestInstance armInstance(arm.data(), arm.size(), false, layout);
+        REQUIRE(armInstance.zone->noReturnFunctions == std::vector<uint64>{ 0x10, 0x20 });
+        REQUIRE(armInstance.zone->noReturnCalls == std::unordered_set<uint64>{ 0x04, 0x14 });
+    }
+
+    // Thumb: bxlt lr in an IT block is a return (the function returns), the call to abort does not return
+    std::vector<unsigned char> thumb = {
+        0x06, 0x28,             // 0x00: cmp r0, #6
+        0xBC, 0xBF,             // 0x02: itt lt
+        0x40, 0x00,             // 0x04: lsllt r0, r0, #1
+        0x70, 0x47,             // 0x06: bxlt lr
+        0x00, 0xF0, 0x02, 0xF8, // 0x08: bl abort (0x10)
+        0x00, 0xBF, 0x00, 0xBF, // 0x0c: nop, nop
+        0x00, 0xDE,             // 0x10: abort: udf #0
+    };
+    while (thumb.size() < 0x20) {
+        thumb.push_back(0x00);
+        thumb.push_back(0xBF); // nop
+    }
+    layout.size            = thumb.size();
+    layout.language        = DisassemblyLanguage::ARM;
+    layout.armCodeModes    = { { 0x0, ArmCodeMode::Thumb } };
+    layout.functionEntries = { { 0x10, { "abort", 0, true } } };
+    DissasmTestInstance thumbInstance(thumb.data(), thumb.size(), false, layout);
+    REQUIRE(thumbInstance.zone->noReturnFunctions == std::vector<uint64>{ 0x10 });
+    REQUIRE(thumbInstance.zone->noReturnCalls.contains(0x08));
+}
+
+TEST_CASE("FunctionEnds", "[Dissasm]NoReturn")
+{
+    // the end of a function: the last instruction its paths reach (the dead code after a call to exit and the padding excluded)
+    std::vector<unsigned char> file = {
+        0x85, 0xFF,                   // 0x00: test edi, edi
+        0x74, 0x0A,                   // 0x02: je 0x0e
+        0xE8, 0x27, 0x00, 0x00, 0x00, // 0x04: call exit (0x30)
+        0x31, 0xC0,                   // 0x09: xor eax, eax (dead code)
+        0x31, 0xC9,                   // 0x0b: xor ecx, ecx
+        0xC3,                         // 0x0d: ret
+        0x31, 0xD2,                   // 0x0e: xor edx, edx
+        0xC3,                         // 0x10: ret
+    };
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0x0F, 0x0B }); // 0x30: exit: ud2
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.alignPadding    = true;
+    layout.functionEntries = { { 0x30, { "exit", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x30 });
+    REQUIRE(zone.functionEnds == std::vector<uint64>{ 0x11, 0x32 });
+    REQUIRE(zone.GetFunctionEnd(0x30) == 0x32);
+    const auto functions = zone.GetFunctions(nullptr);
+    REQUIRE(functions[0].size == 0x11);
+    REQUIRE(functions[1].size == 2);
+    // the attributes on the label line (IDA: ; Attributes: noreturn)
+    REQUIRE(zone.FormatFunctionAttributes(0x30) == "noreturn");
+    REQUIRE(zone.FormatFunctionAttributes(0x00).empty());
+    REQUIRE(zone.FormatFunctionAttributes(0x0E).empty()); // not a function
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("Attributes: noreturn; xref: EntryPoint+0x4 (call)") != std::string::npos);
+}
+
+TEST_CASE("FunctionFramesNoReturn", "[Dissasm]NoReturn")
+{
+    // ARM64: the code after bl abort is not the function's (its slot is not a variable)
+    std::vector<unsigned char> arm;
+    const auto word = [&arm](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            arm.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BE7BFD); // 0x00: stp x29, x30, [sp, #-0x20]!
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0xB9001FA0); // 0x08: str w0, [x29, #0x1c]
+    word(0x94000005); // 0x0c: bl abort (0x20)
+    word(0xB9401BA1); // 0x10: ldr w1, [x29, #0x18] (dead code)
+    word(0xA8C27BFD); // 0x14: ldp x29, x30, [sp], #0x20
+    word(0xD65F03C0); // 0x18: ret
+    word(0xD503201F); // 0x1c: nop
+    word(0xD4200020); // 0x20: abort: brk #1
+    word(0xD503201F);
+    word(0xD503201F);
+    word(0xD65F03C0);
+    ZoneLayout layout;
+    layout.size            = arm.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x20, { "abort", 0, true } } };
+    DissasmTestInstance dissasmInstance(arm.data(), arm.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->variables.size() == 1);
+    REQUIRE(frame->variables[0].frameOffset == 0x1C);
+    REQUIRE(zone.GetFunctionEnd(0x00) == 0x10);
+    REQUIRE(zone.FormatFunctionAttributes(0x00) == "noreturn bp-based frame");
+}
+
+TEST_CASE("FunctionChunks", "[Dissasm]NoReturn")
+{
+    // the jne of the entry point reaches a block placed after the padding (endbr64: the prologue rules take it for a function) that jumps
+    // back: a chunk of the entry point (IDA: a function tail), not a function
+    std::vector<unsigned char> file = {
+        0x55,             // 0x00: push rbp
+        0x48, 0x89, 0xE5, // 0x01: mov rbp, rsp
+        0x89, 0x7D, 0xF8, // 0x04: mov dword ptr [rbp - 8], edi
+        0x85, 0xFF,       // 0x07: test edi, edi
+        0x75, 0x15,       // 0x09: jne 0x20
+        0x8B, 0x45, 0xF8, // 0x0b: mov eax, dword ptr [rbp - 8]
+        0x5D,             // 0x0e: pop rbp
+        0xC3,             // 0x0f: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xF3, 0x0F, 0x1E, 0xFA }); // 0x20: endbr64
+    file.insert(file.end(), { 0x8B, 0x45, 0xF8 });       // 0x24: mov eax, dword ptr [rbp - 8]
+    file.insert(file.end(), { 0x01, 0xC0 });             // 0x27: add eax, eax
+    file.insert(file.end(), { 0xEB, 0xE3 });             // 0x29: jmp 0x0e
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00 });
+    REQUIRE(zone.functionChunks == std::vector<DissasmFunctionChunk>{ { 0x20, 0x2B, 0x00 } });
+    REQUIRE(zone.GetFunctionContaining(0x27) == 0x0ull);
+    REQUIRE(zone.GetLabelNameAt(0x20) == "loc_20");
+    REQUIRE(zone.GetFunctions(nullptr)[0].chunks == std::vector<std::pair<uint64, uint64>>{ { 0x20, 0x2B } });
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("Chunk of EntryPoint; xref: EntryPoint+0x9 (jcc)") != std::string::npos);
+    // the frame of the function names the slot in the chunk too
+    REQUIRE(CountOccurrences(listing, "mov    eax, dword ptr [rbp + var_8]") == 2);
+    // the graph of the entry point: its blocks and the chunk (the jne goes there, the chunk goes back to the epilogue)
+    const auto graph = zone.BuildFunctionGraph(0x0);
+    REQUIRE(graph.blocks.size() == 4);
+    REQUIRE(graph.blocks[3].start == 0x20);
+    REQUIRE(graph.blocks[3].successors.size() == 1);
+    REQUIRE(graph.blocks[graph.blocks[3].successors[0].target].start == 0x0E);
+
+    // called by another function: a function, not a chunk
+    file[0x09] = 0xE8; // 0x09: call 0x20 (replaces jne + mov eax, ...)
+    file[0x0A] = 0x12;
+    file[0x0B] = 0x00;
+    file[0x0C] = 0x00;
+    file[0x0D] = 0x00;
+    DissasmTestInstance called(file.data(), file.size(), false, layout);
+    REQUIRE(called.zone->functionStarts == std::vector<uint64>{ 0x00, 0x20 });
+    REQUIRE(called.zone->functionChunks.empty());
+}
+
+TEST_CASE("ApiCategories", "[Dissasm]Triage")
+{
+    REQUIRE(GetApiCategories("CreateFileW") == API_FILE);
+    REQUIRE(GetApiCategories("__imp_CryptEncrypt") == API_CRYPTO);
+    REQUIRE(GetApiCategories("j_connect") == API_NETWORK);
+    REQUIRE(GetApiCategories("connect@GLIBC_2.2.5") == API_NETWORK);
+    REQUIRE(GetApiCategories("_socket") == API_NETWORK);       // Mach-O
+    REQUIRE(GetApiCategories("_CreateProcessA@40") == API_PROCESS); // 32 bit Windows
+    REQUIRE(GetApiCategories("RegSetValueExW") == API_REGISTRY);
+    REQUIRE(GetApiCategories("ptrace") == (API_INJECTION | API_ANTIDEBUG));
+    REQUIRE(GetApiCategories("GetProcAddress") == API_LOADING);
+    REQUIRE(GetApiCategories("RegisterClassW") == 0); // not a registry API
+    REQUIRE(GetApiCategories("bindtextdomain") == 0); // the POSIX names are exact
+    REQUIRE(GetApiCategories("OpenProcessToken") == 0);
+    REQUIRE(GetApiCategories("printf") == 0);
+    REQUIRE(GetApiCategories("") == 0);
+    REQUIRE(FormatApiCategories(API_NETWORK | API_CRYPTO | API_ANTIDEBUG) == "net crypto antidebug");
+    REQUIRE(FormatApiCategories(0).empty());
+}
+
+TEST_CASE("FunctionApiCategories", "[Dissasm]Triage")
+{
+    // the entry point calls CreateFileW (its slot) and download (0x20); download jumps to its thunk of connect (0x30); 0x40 is a function
+    // the plugin names socket (a static binary)
+    std::vector<unsigned char> file = {
+        0xFF, 0x15, 0x7A, 0x00, 0x00, 0x00, // 0x00: call qword ptr [rip + 0x7a] -> slot 0x80 (CreateFileW)
+        0xE8, 0x15, 0x00, 0x00, 0x00,       // 0x06: call 0x20
+        0xC3,                               // 0x0b: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0x1B, 0x00, 0x00, 0x00 }); // 0x20: call 0x40 (socket)
+    file.insert(file.end(), { 0xEB, 0x09 });                   // 0x25: jmp 0x30 (j_connect: a tail call)
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x52, 0x00, 0x00, 0x00 }); // 0x30: jmp qword ptr [rip + 0x52] -> slot 0x88 (connect)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x40: socket: xor eax, eax; ret
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "CreateFileW", MemoryMappingType::FunctionMapping } }, { 0x88, { "connect", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = { { 0x40, { "socket", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x30, 0x40 });
+    REQUIRE(zone.functionApiCategories == std::vector<uint32>{ API_FILE, API_NETWORK, API_NETWORK, 0 });
+    const auto functions = zone.GetFunctions(nullptr);
+    REQUIRE(functions[0].apiCategories == API_FILE); // not through the functions it calls (download)
+    REQUIRE(functions[1].apiCategories == API_NETWORK);
+}
+
+TEST_CASE("ImportUses", "[Dissasm]Triage")
+{
+    // CreateFileW called through its slot twice; connect through its thunk (0x30: endbr64, then jmp [slot] at 0x34) by a tail jump: the
+    // jmp of the thunk is not a use; ExitProcess is imported, never used
+    std::vector<unsigned char> file = {
+        0xFF, 0x15, 0x7A, 0x00, 0x00, 0x00, // 0x00: call qword ptr [rip + 0x7a] -> slot 0x80 (CreateFileW)
+        0xE8, 0x15, 0x00, 0x00, 0x00,       // 0x06: call 0x20
+        0xC3,                               // 0x0b: ret
+    };
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x15, 0x6A, 0x00, 0x00, 0x00 }); // 0x10: call qword ptr [rip + 0x6a] -> slot 0x80 (CreateFileW)
+    file.insert(file.end(), { 0xC3 });                               // 0x16: ret
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0xEB, 0xFF, 0xFF, 0xFF }); // 0x20: call 0x10
+    file.insert(file.end(), { 0xEB, 0x09 });                   // 0x25: jmp 0x30 (j_connect)
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xF3, 0x0F, 0x1E, 0xFA });             // 0x30: endbr64
+    file.insert(file.end(), { 0xFF, 0x25, 0x4E, 0x00, 0x00, 0x00 }); // 0x34: jmp qword ptr [rip + 0x4e] -> slot 0x88 (connect)
+    file.resize(0xA0, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                { 0x88, { "connect", MemoryMappingType::FunctionMapping } },
+                                { 0x90, { "ExitProcess", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.thunkImports.contains(0x30));
+    const auto imports = CollectImportUses(&dissasmInstance.settingsData, { &zone });
+    REQUIRE(imports.size() == 3);
+    const uint64 base = zone.labelAddressBase;
+    REQUIRE(imports[0].name == "CreateFileW");
+    REQUIRE(imports[0].targets == std::vector<uint64>{ base + 0x80 });
+    REQUIRE(imports[0].uses == 2);
+    REQUIRE(imports[1].name == "ExitProcess");
+    REQUIRE(imports[1].uses == 0);
+    REQUIRE(imports[2].name == "connect");
+    REQUIRE(imports[2].targets == std::vector<uint64>{ base + 0x88, base + 0x30 }); // the slot, then the thunk
+    REQUIRE(imports[2].thunks == std::vector<uint64>{ base + 0x30 });
+    REQUIRE(imports[2].thunkCode.size() == 1);
+    REQUIRE(imports[2].thunkCode[0].first == base + 0x30);
+    REQUIRE(imports[2].thunkCode[0].second > base + 0x34);
+    REQUIRE(imports[2].uses == 1); // the tail jump to the thunk, not its jmp [slot]
+    // no analyzed zone: nothing
+    REQUIRE(CollectImportUses(&dissasmInstance.settingsData, {}).empty());
+}
+
+TEST_CASE("NavigationBand", "[Dissasm]Triage")
+{
+    // the most telling category of a function
+    REQUIRE(GetMainApiCategory(API_NETWORK | API_INJECTION | API_FILE) == API_INJECTION);
+    REQUIRE(GetMainApiCategory(API_FILE | API_CRYPTO) == API_CRYPTO);
+    REQUIRE(GetMainApiCategory(API_ANTIDEBUG | API_PROCESS) == API_ANTIDEBUG);
+    REQUIRE(GetMainApiCategory(0) == 0);
+    REQUIRE(GetDissasmBandCellOfCategory(API_NETWORK) == BAND_NETWORK);
+    REQUIRE(GetDissasmBandCellOfCategory(0) == BAND_FUNCTION);
+
+    // the entry point calls CreateRemoteThread (injection) and 0x20; 0x20 calls 0x40 and jumps to the thunk of connect (network, as the thunk); 0x40 calls
+    // nothing; a data zone after the code
+    std::vector<unsigned char> file = {
+        0xFF, 0x15, 0x7A, 0x00, 0x00, 0x00, // 0x00: call qword ptr [rip + 0x7a] -> slot 0x80 (CreateRemoteThread)
+        0xE8, 0x15, 0x00, 0x00, 0x00,       // 0x06: call 0x20
+        0xC3,                               // 0x0b: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xE8, 0x1B, 0x00, 0x00, 0x00 }); // 0x20: call 0x40
+    file.insert(file.end(), { 0xEB, 0x09 });                   // 0x25: jmp 0x30 (j_connect)
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xFF, 0x25, 0x52, 0x00, 0x00, 0x00 }); // 0x30: jmp qword ptr [rip + 0x52] -> slot 0x88 (connect)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x40: xor eax, eax; ret
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports = { { 0x80, { "CreateRemoteThread", MemoryMappingType::FunctionMapping } }, { 0x88, { "connect", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x30, 0x40 });
+    REQUIRE(zone.functionApiCategories == std::vector<uint32>{ API_INJECTION, API_NETWORK, API_NETWORK, 0 }); // 0x20: its tail call
+
+    struct TestZone : public ParseZone {
+    } data{};
+    zone.startLineIndex    = 0;
+    zone.isCollapsed       = false; // set by the view (BuildDissasmParseZones)
+    zone.endingLineIndex   = 2 + zone.GetDisplayLinesCount(); // the title and the header of the columns, then the lines
+    data.zoneType          = DissasmParseZoneType::StructureParseZone;
+    data.startLineIndex    = zone.endingLineIndex;
+    data.endingLineIndex   = zone.endingLineIndex + 4;
+    const uint64 total     = data.endingLineIndex;
+    const std::vector<const ParseZone*> zones = { &zone, &data };
+    const auto lineOf = [&zone](uint64 function) { return 2u + zone.GetLabelDisplayLine(function).value(); };
+
+    // a row for each line: the title is code, every function from its label to the next one, the data zone
+    const auto band = BuildDissasmNavigationBand(zones, total, static_cast<uint32>(total));
+    REQUIRE(band.size() == total);
+    REQUIRE(band[0] == BAND_CODE);
+    REQUIRE(band[lineOf(0x00)] == BAND_INJECTION);
+    REQUIRE(band[lineOf(0x20) - 1] == BAND_INJECTION); // the padding after the entry point: still its function
+    REQUIRE(band[lineOf(0x20)] == BAND_NETWORK);
+    REQUIRE(band[lineOf(0x30)] == BAND_NETWORK);
+    REQUIRE(band[lineOf(0x40)] == BAND_FUNCTION);
+    REQUIRE(band[total - 1] == BAND_DATA);
+    // fewer rows than lines: a row gets the most telling of its lines
+    REQUIRE(BuildDissasmNavigationBand(zones, total, 1) == std::vector<uint8>{ BAND_INJECTION });
+    const auto two = BuildDissasmNavigationBand(zones, total, 2);
+    REQUIRE(two[0] == BAND_INJECTION);
+    REQUIRE(two[1] >= BAND_FUNCTION);
+    REQUIRE(BuildDissasmNavigationBand(zones, 0, 3) == std::vector<uint8>(3, BAND_EMPTY));
+    // a collapsed code zone is its line (the code before the functions)
+    zone.isCollapsed = true;
+    REQUIRE(BuildDissasmNavigationBand(zones, total, 1) == std::vector<uint8>{ BAND_CODE });
+    zone.isCollapsed = false;
+}
+
+TEST_CASE("InstructionHelp", "[Dissasm]Help")
+{
+    const auto x64 = [](std::string_view mnemonic, std::string_view operands = {}) { return DescribeInstruction(mnemonic, operands, DissasmArch::X64); };
+    REQUIRE(x64("cmovne") == "move if not equal / not zero (ZF = 0)");
+    REQUIRE(x64("jae") == "jump if above or equal, unsigned >= (CF = 0)");
+    REQUIRE(x64("js") == "jump if sign: negative (SF = 1)");
+    REQUIRE(x64("setg") == "set the byte to 1 if greater, signed > (ZF = 0 and SF = OF), else 0");
+    REQUIRE(x64("jmp") == "jump");
+    REQUIRE(x64("notrack jmp") == "jump");
+    REQUIRE(x64("rep stosb").starts_with("repeated rcx times: store al to [rdi]"));
+    REQUIRE(x64("lock cmpxchg").starts_with("atomic: compare with rax"));
+    REQUIRE(x64("movsd", "xmm0, qword ptr [rax]") == "move a scalar double (64 bits)");
+    REQUIRE(x64("movsd").starts_with("copy a dword from [rsi]"));
+    REQUIRE(x64("addss", "xmm0, xmm1") == "add (a scalar float)");
+    REQUIRE(x64("vmovdqu", "ymm0, ymmword ptr [rcx]") == "move 128 bits (unaligned) (AVX)");
+    REQUIRE(x64("vaddps", "ymm0, ymm1, ymm2") == "add (packed floats) (AVX)");
+    REQUIRE(x64("cvttsd2si").starts_with("convert"));
+    REQUIRE(x64("fyl2x").empty());
+    REQUIRE(x64("").empty());
+
+    const auto arm64 = [](std::string_view mnemonic) { return DescribeInstruction(mnemonic, {}, DissasmArch::Arm64); };
+    REQUIRE(arm64("b.ne") == "branch if not equal (Z = 0)");
+    REQUIRE(arm64("adrp").find("4 KB page") != std::string::npos);
+    REQUIRE(arm64("csel").starts_with("select the first register"));
+    REQUIRE(arm64("bne").empty()); // no condition suffixes on ARM64
+
+    const auto thumb = [](std::string_view mnemonic) { return DescribeInstruction(mnemonic, {}, DissasmArch::Thumb); };
+    REQUIRE(thumb("bne") == "branch, if not equal (Z = 0)");
+    REQUIRE(thumb("moveq") == "copy a register / an immediate, if equal (Z = 1)");
+    REQUIRE(thumb("lsls") == "logical shift left, sets the flags");
+    REQUIRE(thumb("movs") == "copy a register / an immediate, sets the flags");
+    REQUIRE(thumb("bls") == "branch, if unsigned <= (C = 0 or Z = 1)");
+    REQUIRE(thumb("add.w") == "add");
+    REQUIRE(thumb("itete") == "if-then block: the next 1 to 4 instructions are conditional");
+    REQUIRE(thumb("bx").starts_with("branch to a register (bit 0: Thumb"));
+    REQUIRE(thumb("pop") == "load registers from the stack (with pc: return)");
+}
+
+TEST_CASE("ApiPrototypes", "[Dissasm]Help")
+{
+    REQUIRE(GetApiPrototypesCount() > 800);
+    // every line of the table parsed: a name, its parameters named and typed
+    ForEachApiPrototype([](const AsmFunctionDetails& details) {
+        INFO(details.prototype);
+        const auto identifier = [](std::string_view text) {
+            return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; });
+        };
+        REQUIRE(identifier(details.functionName));
+        for (const auto& parameter : details.params) {
+            REQUIRE(identifier(parameter.name));
+            REQUIRE(!std::string_view(parameter.type).empty());
+        }
+    });
+    const auto* createFile = FindApiPrototype("CreateFileW");
+    REQUIRE(createFile != nullptr);
+    REQUIRE(createFile->params.size() == 7);
+    REQUIRE(std::string_view(createFile->params[0].name) == "lpFileName");
+    REQUIRE(std::string_view(createFile->params[0].type) == "LPCWSTR");
+    REQUIRE(std::string_view(createFile->params[6].name) == "hTemplateFile");
+    REQUIRE(createFile->prototype.starts_with("HANDLE CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess"));
+    const auto* createFileA = FindApiPrototype("__imp_CreateFileA"); // the A function of the same line
+    REQUIRE(createFileA != nullptr);
+    REQUIRE(std::string_view(createFileA->params[0].type) == "LPCSTR");
+    REQUIRE(FindApiPrototype("j_connect") == FindApiPrototype("connect"));
+    REQUIRE(FindApiPrototype("connect@GLIBC_2.2.5") == FindApiPrototype("connect"));
+    REQUIRE(FindApiPrototype("_connect") == FindApiPrototype("connect")); // Mach-O
+    REQUIRE(FindApiPrototype("_CreateProcessA@40") == FindApiPrototype("CreateProcessA"));
+    REQUIRE(FindApiPrototype("ZwClose") == FindApiPrototype("NtClose"));
+    REQUIRE(FindApiPrototype("Process32FirstW") != nullptr);
+    REQUIRE(FindApiPrototype("_stricmp")->functionName == "_stricmp");
+    // the forwarders of the UCRT (api-ms-win-crt-private): _o__wcsicmp is _wcsicmp, _o_wcstol is wcstol
+    REQUIRE(FindApiPrototype("_o__wcsicmp") == FindApiPrototype("_wcsicmp"));
+    REQUIRE(FindApiPrototype("__imp__o_wcstol")->functionName == "wcstol");
+    REQUIRE(FindApiPrototype("j__o__get_osfhandle")->functionName == "_get_osfhandle");
+    // the window manager, the certificates, the kernel, the GNU C library
+    REQUIRE(std::string_view(FindApiPrototype("GetDlgItem")->params[1].name) == "nIDDlgItem");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("GetDlgItem")) == "DlgItem");
+    REQUIRE(FindApiPrototype("CertFindCertificateInStore")->params.size() == 6);
+    REQUIRE(FindApiPrototype("ExAcquireResourceExclusiveLite")->returnType == "BOOLEAN");
+    REQUIRE(FindApiPrototype("__errno_location@GLIBC_2.2.5") != nullptr);
+    // 32 bit: the 64 bit handles take two pushes (EventWriteTransfer: 7 pushes for 6 parameters)
+    REQUIRE(IsWideX86Type("REGHANDLE"));
+    REQUIRE(GetX86StdcallPushes(*FindApiPrototype("EventWriteTransfer")) == 7u);
+    const auto* printfDetails = FindApiPrototype("printf");
+    REQUIRE(printfDetails->params.size() == 1); // the ... is not an argument
+    REQUIRE(std::string_view(printfDetails->params[0].type) == "const char*");
+    const auto* execve = FindApiPrototype("execve");
+    REQUIRE(std::string_view(execve->params[1].type) == "char* const*");
+    REQUIRE(FindApiPrototype("GetTickCount")->params.empty());
+    REQUIRE(FindApiPrototype("NoSuchFunction") == nullptr);
+}
+
+TEST_CASE("X64ArgumentSlots", "[Dissasm]Help")
+{
+    const auto slotOf = [](std::initializer_list<unsigned char> code, bool systemV) {
+        csh handle;
+        REQUIRE(cs_open(CS_ARCH_X86, CS_MODE_64, &handle) == CS_ERR_OK);
+        REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+        cs_insn* insn = cs_malloc(handle);
+        const std::vector<unsigned char> bytes(code);
+        const uint8_t* data = bytes.data();
+        size_t size         = bytes.size();
+        uint64_t address    = 0;
+        REQUIRE(cs_disasm_iter(handle, &data, &size, &address, insn));
+        const auto slot = GetX64ArgumentSlot(*insn, systemV);
+        cs_free(insn, 1);
+        cs_close(&handle);
+        return slot;
+    };
+    // mov edi, 1: the first argument of System V, nothing on Windows
+    REQUIRE(slotOf({ 0xBF, 0x01, 0x00, 0x00, 0x00 }, true) == std::optional<uint8>(0));
+    REQUIRE_FALSE(slotOf({ 0xBF, 0x01, 0x00, 0x00, 0x00 }, false).has_value());
+    // mov ecx, 1: the fourth of System V, the first of Windows
+    REQUIRE(slotOf({ 0xB9, 0x01, 0x00, 0x00, 0x00 }, true) == std::optional<uint8>(3));
+    REQUIRE(slotOf({ 0xB9, 0x01, 0x00, 0x00, 0x00 }, false) == std::optional<uint8>(0));
+    // mov qword ptr [rsp + 8], rax: the eighth of System V (the stack from [rsp]), the home space on Windows
+    REQUIRE(slotOf({ 0x48, 0x89, 0x44, 0x24, 0x08 }, true) == std::optional<uint8>(7));
+    REQUIRE_FALSE(slotOf({ 0x48, 0x89, 0x44, 0x24, 0x08 }, false).has_value());
+    // mov qword ptr [rsp + 0x20], rax: the fifth of Windows
+    REQUIRE(slotOf({ 0x48, 0x89, 0x44, 0x24, 0x20 }, false) == std::optional<uint8>(4));
+}
+
+TEST_CASE("ArgumentSlots", "[Dissasm]Help")
+{
+    const auto slotOf = [](cs_arch arch, cs_mode mode, std::initializer_list<unsigned char> code, DissasmArch dissasmArch) {
+        csh handle;
+        REQUIRE(cs_open(arch, mode, &handle) == CS_ERR_OK);
+        REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+        cs_insn* insn = cs_malloc(handle);
+        const std::vector<unsigned char> bytes(code);
+        const uint8_t* data = bytes.data();
+        size_t size         = bytes.size();
+        uint64_t address    = 0;
+        REQUIRE(cs_disasm_iter(handle, &data, &size, &address, insn));
+        const auto slot = GetArgumentSlot(*insn, dissasmArch, false);
+        cs_free(insn, 1);
+        cs_close(&handle);
+        return slot;
+    };
+    const auto arm64 = [&](uint32 word) {
+        return slotOf(CS_ARCH_ARM64, CS_MODE_ARM, { static_cast<unsigned char>(word), static_cast<unsigned char>(word >> 8),
+                                                    static_cast<unsigned char>(word >> 16), static_cast<unsigned char>(word >> 24) },
+                      DissasmArch::Arm64);
+    };
+    REQUIRE(arm64(0x52800041) == std::optional<uint8>(1)); // mov w1, #2
+    REQUIRE(arm64(0x10000000) == std::optional<uint8>(0)); // adr x0, #0
+    REQUIRE(arm64(0xF90007E8) == std::optional<uint8>(9)); // str x8, [sp, #8]: the second argument in the stack
+    REQUIRE_FALSE(arm64(0xAA0003F3).has_value());          // mov x19, x0
+    REQUIRE_FALSE(arm64(0xA9BF7BFD).has_value());          // stp x29, x30, [sp, #-0x10]!
+
+    const auto arm = [&](uint32 word) {
+        return slotOf(CS_ARCH_ARM, CS_MODE_ARM, { static_cast<unsigned char>(word), static_cast<unsigned char>(word >> 8),
+                                                  static_cast<unsigned char>(word >> 16), static_cast<unsigned char>(word >> 24) },
+                      DissasmArch::Arm);
+    };
+    REQUIRE(arm(0xE3A01002) == std::optional<uint8>(1)); // mov r1, #2
+    REQUIRE(arm(0xE58D2004) == std::optional<uint8>(5)); // str r2, [sp, #4]: the sixth argument
+    REQUIRE_FALSE(arm(0xE92D4010).has_value());          // push {r4, lr}
+    REQUIRE_FALSE(arm(0xE1A04000).has_value());          // mov r4, r0
+
+    const auto x86 = [&](std::initializer_list<unsigned char> code) { return slotOf(CS_ARCH_X86, CS_MODE_32, code, DissasmArch::X86); };
+    REQUIRE(x86({ 0xC7, 0x44, 0x24, 0x04, 0x02, 0x00, 0x00, 0x00 }) == std::optional<uint8>(1)); // mov dword ptr [esp + 4], 2
+    REQUIRE(x86({ 0x89, 0x04, 0x24 }) == std::optional<uint8>(0));                               // mov dword ptr [esp], eax
+    REQUIRE_FALSE(x86({ 0x8B, 0x44, 0x24, 0x04 }).has_value());                                 // mov eax, dword ptr [esp + 4]
+}
+
+TEST_CASE("VariableNamesFromApiArguments", "[Dissasm]Help")
+{
+    // &var_10 is the phkResult of RegOpenKeyExW (the fifth argument: [rsp + 0x20]), then its value the hKey of RegCloseKey: the variable is
+    // phkResult (the first call names it); var_8 is passed to nothing
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push rbp
+        0x48, 0x89, 0xE5,                   // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x30,             // 0x04: sub rsp, 0x30
+        0x89, 0x4D, 0xF8,                   // 0x08: mov dword ptr [rbp - 8], ecx
+        0x48, 0x8D, 0x45, 0xF0,             // 0x0b: lea rax, [rbp - 0x10]
+        0x48, 0x89, 0x44, 0x24, 0x20,       // 0x0f: mov qword ptr [rsp + 0x20], rax
+        0x41, 0xB9, 0x19, 0x00, 0x02, 0x00, // 0x14: mov r9d, 0x20019
+        0x45, 0x31, 0xC0,                   // 0x1a: xor r8d, r8d
+        0x31, 0xD2,                         // 0x1d: xor edx, edx
+        0xB9, 0x02, 0x00, 0x00, 0x80,       // 0x1f: mov ecx, 0x80000002
+        0xFF, 0x15, 0x56, 0x00, 0x00, 0x00, // 0x24: call qword ptr [rip + 0x56] -> slot 0x80 (RegOpenKeyExW)
+        0x48, 0x8B, 0x4D, 0xF0,             // 0x2a: mov rcx, qword ptr [rbp - 0x10]
+        0xFF, 0x15, 0x54, 0x00, 0x00, 0x00, // 0x2e: call qword ptr [rip + 0x54] -> slot 0x88 (RegCloseKey)
+        0x48, 0x89, 0xEC,                   // 0x34: mov rsp, rbp
+        0x5D,                               // 0x37: pop rbp
+        0xC3,                               // 0x38: ret
+    };
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "RegOpenKeyExW", MemoryMappingType::FunctionMapping } }, { 0x88, { "RegCloseKey", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x10) != nullptr);
+    REQUIRE(frame->FindVariable(-0x10)->name == "phkResult");
+    REQUIRE(frame->FindVariable(-0x10)->analysisName == "phkResult");
+    REQUIRE(frame->FindVariable(-8)->name == "var_8");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "lea    rax, [rbp + phkResult]").size() > 0);
+    // the name of the analysis is not a name of the user: not in the annotations; a rename of the user is
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE_FALSE(document["zones"][0].contains("variables"));
+    zone.localVariables.functions[0].FindVariable(-0x10)->name = "hRunKey";
+    document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["variables"].size() == 1);
+    REQUIRE(document["zones"][0]["variables"][0]["name"] == "hRunKey");
+}
+
+TEST_CASE("ApiReturnAndPointedTypes", "[Dissasm]Help")
+{
+    // the return types of the prototypes (none for void)
+    REQUIRE(FindApiPrototype("CreateFileW")->returnType == "HANDLE");
+    REQUIRE(FindApiPrototype("getenv")->returnType == "char*");
+    REQUIRE(FindApiPrototype("strtoul")->returnType == "unsigned long");
+    REQUIRE(FindApiPrototype("srand")->returnType.empty());
+    REQUIRE(FindApiPrototype("GetSystemTimeAsFileTime")->returnType.empty()); // VOID
+    // the type a variable has when its address is passed
+    REQUIRE(GetPointedType("PHKEY") == "HKEY");
+    REQUIRE(GetPointedType("LPDWORD") == "DWORD");
+    REQUIRE(GetPointedType("HMODULE*") == "HMODULE");
+    REQUIRE(GetPointedType("LPVOID*") == "LPVOID");
+    REQUIRE(GetPointedType("void**") == "void*");
+    REQUIRE(GetPointedType("char* const*") == "char*");
+    REQUIRE(GetPointedType("const char*") == "char");
+    REQUIRE(GetPointedType("LPCWSTR") == "WCHAR");
+    REQUIRE(GetPointedType("LPSTR") == "CHAR");
+    REQUIRE(GetPointedType("REFIID") == "IID");
+    REQUIRE(GetPointedType("LPWIN32_FIND_DATAW") == "WIN32_FIND_DATAW");
+    REQUIRE(GetPointedType("LPVOID").empty());
+    REQUIRE(GetPointedType("const void*").empty());
+    REQUIRE(GetPointedType("DWORD").empty());
+    REQUIRE(GetPointedType("LPARAM").empty()); // not pointers
+    REQUIRE(GetPointedType("PROCESSINFOCLASS").empty());
+    // the names of the return values
+    REQUIRE(GetReturnValueName(*FindApiPrototype("CreateFileW")) == "File");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("GetProcAddress")) == "ProcAddress");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("LoadLibraryA")) == "Library");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("GetLastError")) == "LastError");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("ExAllocatePoolWithTag")) == "PoolWithTag");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("malloc")) == "malloc_result");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("VirtualAlloc")) == "VirtualAlloc_result");
+    REQUIRE(GetReturnValueName(*FindApiPrototype("CreateProcessW")) == "CreateProcess_result"); // a BOOL is not the process
+    REQUIRE(GetReturnValueName(*FindApiPrototype("NtCreateFile")) == "NtCreateFile_result");
+}
+
+TEST_CASE("VariableTypesAndReturnValues", "[Dissasm]Help")
+{
+    // the value returned by GetProcessHeap kept in var_8: ProcessHeap (HANDLE); the one of CreateFileW copied to rbx then to var_10, then
+    // passed to CloseHandle: hObject (the argument names it), its type and origin from the return; &var_18 the lpSystemTimeAsFileTime of
+    // GetSystemTimeAsFileTime: the FILETIME SystemTimeAsFileTime (its address: without lp); the BOOL of CreateDirectoryW in var_20; eax
+    // overwritten (xor) before var_24: nothing
+    std::vector<unsigned char> file = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x40 }; // push rbp; mov rbp, rsp; sub rsp, 0x40
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    call(0x100);                                         // GetProcessHeap
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xF8 }); // mov qword ptr [rbp - 8], rax
+    call(0x108);                                         // CreateFileW
+    file.insert(file.end(), { 0x48, 0x89, 0xC3 });       // mov rbx, rax
+    file.insert(file.end(), { 0x48, 0x89, 0x5D, 0xF0 }); // mov qword ptr [rbp - 0x10], rbx
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xF0 }); // mov rcx, qword ptr [rbp - 0x10]
+    call(0x110);                                         // CloseHandle
+    file.insert(file.end(), { 0x48, 0x8D, 0x4D, 0xE8 }); // lea rcx, [rbp - 0x18]
+    call(0x118);                                         // GetSystemTimeAsFileTime
+    call(0x120);                                         // CreateDirectoryW
+    file.insert(file.end(), { 0x89, 0x45, 0xE0 });       // mov dword ptr [rbp - 0x20], eax
+    call(0x100);                                         // GetProcessHeap
+    file.insert(file.end(), { 0x31, 0xC0 });             // xor eax, eax
+    file.insert(file.end(), { 0x89, 0x45, 0xDC });       // mov dword ptr [rbp - 0x24], eax
+    file.insert(file.end(), { 0x48, 0x89, 0xEC, 0x5D, 0xC3 }); // mov rsp, rbp; pop rbp; ret
+    REQUIRE(file.size() < 0x100);
+    file.resize(0x130, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x100;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x100, { "GetProcessHeap", MemoryMappingType::FunctionMapping } },
+                                { 0x108, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                { 0x110, { "CloseHandle", MemoryMappingType::FunctionMapping } },
+                                { 0x118, { "GetSystemTimeAsFileTime", MemoryMappingType::FunctionMapping } },
+                                { 0x120, { "CreateDirectoryW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto check = [frame](int32 offset, std::string_view name, std::string_view type, std::string_view origin) {
+        const auto* variable = frame->FindVariable(offset);
+        REQUIRE(variable != nullptr);
+        CHECK(variable->name == name);
+        CHECK(variable->analysisName == name);
+        CHECK(variable->type == type);
+        CHECK(variable->origin == origin);
+    };
+    check(-8, "ProcessHeap", "HANDLE", "returned by GetProcessHeap");
+    check(-0x10, "hObject", "HANDLE", "returned by CreateFileW");
+    check(-0x18, "SystemTimeAsFileTime", "FILETIME", "lpSystemTimeAsFileTime of GetSystemTimeAsFileTime");
+    CHECK(frame->FindVariable(-0x18)->structure == FindApiStructure("FILETIME", true));
+    check(-0x20, "CreateDirectory_result", "BOOL", "returned by CreateDirectoryW");
+    check(-0x24, "var_24", "", "");
+    // the variable lines: the type and the origin as a comment; the names of the analysis are not the user's (not in the annotations)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "ProcessHeap = qword ptr -8").ends_with("; HANDLE, returned by GetProcessHeap"));
+    REQUIRE(FindListingLine(listing, "SystemTimeAsFileTime = FILETIME ptr -0x18").ends_with("; lpSystemTimeAsFileTime of GetSystemTimeAsFileTime"));
+    REQUIRE(FindListingLine(listing, "mov    qword ptr [rbp + hObject], rbx").size() > 0);
+    REQUIRE(FindListingLine(listing, "var_24 = dword ptr").find(';') == std::string_view::npos);
+    REQUIRE_FALSE(BuildAnnotationsDocument({ &zone }, "sample.bin")["zones"][0].contains("variables"));
+    // a rename of the user keeps what the analysis knows of the value
+    auto* renamed = zone.localVariables.functions[0].FindVariable(-8);
+    renamed->name = "hHeap";
+    REQUIRE(FormatLocalVariableOrigin(*renamed) == "HANDLE, returned by GetProcessHeap");
+
+    // the cache: the rename of the user comes back; a name of the analysis is saved as the default name, the next analysis names the
+    // variable again (an older version named it oldName: not a rename of the user)
+    auto* older         = zone.localVariables.functions[0].FindVariable(-0x10);
+    older->name         = "oldName";
+    older->analysisName = "oldName";
+    std::vector<std::byte> buffer;
+    REQUIRE(zone.ToBuffer(buffer));
+    const std::string saved(reinterpret_cast<const char*>(buffer.data()), buffer.size());
+    REQUIRE(saved.find("hHeap") != std::string::npos);
+    REQUIRE(saved.find("oldName") == std::string::npos);
+    REQUIRE(saved.find("var_10") != std::string::npos);
+    DissasmTestInstance restored(file.data(), file.size(), true, layout);
+    auto cache      = std::make_unique<DissasmCache>();
+    cache->hasCache = true;
+    cache->AddRegion("DissasmCodeZone.0", buffer.data(), static_cast<uint32>(buffer.size()));
+    bool zoneLinesChanged = false;
+    REQUIRE(restored.zone->TryLoadDataFromCache(*cache, zoneLinesChanged));
+    const auto* restoredFrame = restored.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(restoredFrame->FindVariable(-8)->name == "hHeap");
+    REQUIRE(restoredFrame->FindVariable(-0x10)->name == "hObject");
+    REQUIRE(restoredFrame->FindVariable(-0x20)->name == "CreateDirectory_result");
+    REQUIRE(restoredFrame->FindVariable(-0x24)->name == "var_24");
+}
+
+TEST_CASE("VariableReturnValuesArm64", "[Dissasm]Help")
+{
+    // clang -O0: char* home = getenv(...); int fd = open(...): the slots of the two return values (stur after the bl)
+    std::vector<unsigned char> code;
+    const auto word = [&code](uint32 value) {
+        for (uint32 i = 0; i < 4; i++)
+            code.push_back(static_cast<unsigned char>(value >> (8 * i)));
+    };
+    word(0xD10083FF); // 0x00: sub sp, sp, #0x20
+    word(0xA9017BFD); // 0x04: stp x29, x30, [sp, #0x10]
+    word(0x910043FD); // 0x08: add x29, sp, #0x10
+    word(0x9400000D); // 0x0c: bl getenv (0x40)
+    word(0xF81F83A0); // 0x10: stur x0, [x29, #-8]
+    word(0x9400000D); // 0x14: bl open (0x48)
+    word(0xB81F43A0); // 0x18: stur w0, [x29, #-0xc]
+    word(0xA9417BFD); // 0x1c: ldp x29, x30, [sp, #0x10]
+    word(0x910083FF); // 0x20: add sp, sp, #0x20
+    word(0xD65F03C0); // 0x24: ret
+    while (code.size() < 0x40)
+        word(0xD503201F); // nop
+    word(0xD65F03C0); // 0x40: getenv: ret
+    word(0xD503201F);
+    word(0xD65F03C0); // 0x48: open: ret
+    word(0xD503201F);
+    ZoneLayout layout;
+    layout.size            = code.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x40, { "getenv", 0, true } }, { 0x48, { "open", 0, true } } };
+    DissasmTestInstance armInstance(code.data(), code.size(), true, layout);
+    const auto* frame = armInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-8) != nullptr);
+    CHECK(frame->FindVariable(-8)->name == "getenv_result");
+    CHECK(frame->FindVariable(-8)->type == "char*");
+    REQUIRE(frame->FindVariable(-0xc) != nullptr);
+    CHECK(frame->FindVariable(-0xc)->name == "open_result");
+    CHECK(frame->FindVariable(-0xc)->origin == "returned by open");
+}
+
+TEST_CASE("ApiStructureLayouts", "[Dissasm]Help")
+{
+    // the sizes of the SDK, 32 and 64 bit
+    const auto sizeOf = [](std::string_view name, bool is64) {
+        const auto* structure = FindApiStructure(name, is64);
+        INFO(name << (is64 ? " 64" : " 32"));
+        REQUIRE(structure != nullptr);
+        return structure->size;
+    };
+    const std::pair<std::string_view, std::pair<uint32, uint32>> SIZES[] = {
+        { "FILETIME", { 8, 8 } },
+        { "SYSTEMTIME", { 16, 16 } },
+        { "STARTUPINFOW", { 68, 104 } },
+        { "STARTUPINFOA", { 68, 104 } },
+        { "PROCESS_INFORMATION", { 16, 24 } },
+        { "WIN32_FIND_DATAW", { 592, 592 } },
+        { "WIN32_FIND_DATAA", { 320, 320 } },
+        { "PROCESSENTRY32", { 296, 304 } },
+        { "PROCESSENTRY32W", { 556, 568 } },
+        { "MODULEENTRY32", { 548, 568 } },
+        { "MODULEENTRY32W", { 1064, 1080 } },
+        { "THREADENTRY32", { 28, 28 } },
+        { "MEMORY_BASIC_INFORMATION", { 28, 48 } },
+        { "SYSTEM_INFO", { 36, 48 } },
+        { "MSG", { 28, 48 } },
+        { "SECURITY_ATTRIBUTES", { 12, 24 } },
+        { "OVERLAPPED", { 20, 32 } },
+        { "CRITICAL_SECTION", { 24, 40 } },
+        { "SHELLEXECUTEINFOW", { 60, 112 } },
+        { "WSADATA", { 400, 408 } },
+        { "TOKEN_PRIVILEGES", { 16, 16 } },
+        { "UNICODE_STRING", { 8, 16 } },
+        { "OBJECT_ATTRIBUTES", { 24, 48 } },
+        { "IO_STATUS_BLOCK", { 8, 16 } },
+        { "sockaddr", { 16, 16 } },
+    };
+    for (const auto& [name, sizes] : SIZES) {
+        CHECK(sizeOf(name, false) == sizes.first);
+        CHECK(sizeOf(name, true) == sizes.second);
+    }
+    REQUIRE(FindApiStructure("CONTEXT", true) == nullptr);
+    REQUIRE(GetApiStructuresCount(true) == GetApiStructuresCount(false));
+    // the fields as IDA writes them after the variable
+    const auto& findData = *FindApiStructure("WIN32_FIND_DATAW", true);
+    REQUIRE(FormatApiStructureMember(findData, 0).empty());
+    REQUIRE(FormatApiStructureMember(findData, 0, true) == ".dwFileAttributes"); // an access of the memory: the first field
+    REQUIRE(FormatApiStructureMember(findData, 0x14) == ".ftLastWriteTime.dwLowDateTime");
+    REQUIRE(FormatApiStructureMember(findData, 0x18) == ".ftLastWriteTime.dwHighDateTime");
+    REQUIRE(FormatApiStructureMember(findData, 0x2c) == ".cFileName");
+    REQUIRE(FormatApiStructureMember(findData, 0x2e) == ".cFileName+2");
+    REQUIRE(FormatApiStructureMember(findData, 0x234) == ".cAlternateFileName");
+    REQUIRE(FormatApiStructureMember(findData, 0x260) == "+0x260"); // past the end
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("STARTUPINFOW", true), 0x3c) == ".dwFlags");
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("STARTUPINFOW", false), 0x2c) == ".dwFlags");
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("STARTUPINFOW", true), 4) == "+4"); // the padding before lpReserved
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("TOKEN_PRIVILEGES", true), 0xc) == ".Privileges.Attributes");
+    REQUIRE(FormatApiStructureMember(*FindApiStructure("PROCESS_INFORMATION", true), 0x10) == ".dwProcessId");
+    // the A / W structures of the prototypes
+    REQUIRE(GetPointedType(FindApiPrototype("FindFirstFileW")->params[1].type) == "WIN32_FIND_DATAW");
+    REQUIRE(GetPointedType(FindApiPrototype("CreateProcessA")->params[8].type) == "STARTUPINFOA");
+}
+
+TEST_CASE("FrameStructuresFromApis", "[Dissasm]Help")
+{
+    // x64: &var_80 is the lpStartupInfo of CreateProcessW ([rsp + 0x40]) and &var_18 its lpProcessInformation ([rsp + 0x48]): the
+    // structures StartupInfo and ProcessInformation, the slots inside them are their fields (cb, dwFlags, wShowWindow, hThread, dwProcessId)
+    std::vector<unsigned char> file = {
+        0x55,                                     // 0x00: push rbp
+        0x48, 0x89, 0xE5,                         // 0x01: mov rbp, rsp
+        0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00, // 0x04: sub rsp, 0xa0
+        0xC7, 0x45, 0x80, 0x68, 0x00, 0x00, 0x00, // mov dword ptr [rbp - 0x80], 0x68  (cb)
+        0xC7, 0x45, 0xBC, 0x01, 0x00, 0x00, 0x00, // mov dword ptr [rbp - 0x44], 1     (dwFlags)
+        0x66, 0xC7, 0x45, 0xC0, 0x00, 0x00,       // mov word ptr [rbp - 0x40], 0      (wShowWindow)
+        0x48, 0x8D, 0x45, 0xE8,                   // lea rax, [rbp - 0x18]
+        0x48, 0x89, 0x44, 0x24, 0x48,             // mov qword ptr [rsp + 0x48], rax   (lpProcessInformation)
+        0x48, 0x8D, 0x45, 0x80,                   // lea rax, [rbp - 0x80]
+        0x48, 0x89, 0x44, 0x24, 0x40,             // mov qword ptr [rsp + 0x40], rax   (lpStartupInfo)
+    };
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    call(0x100);                                         // CreateProcessW
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xE8 }); // mov rcx, qword ptr [rbp - 0x18] (hProcess)
+    call(0x108);                                         // CloseHandle
+    file.insert(file.end(), { 0x48, 0x8B, 0x4D, 0xF0 }); // mov rcx, qword ptr [rbp - 0x10] (hThread)
+    call(0x108);                                         // CloseHandle
+    file.insert(file.end(), { 0x8B, 0x45, 0xF8 });       // mov eax, dword ptr [rbp - 8] (dwProcessId)
+    file.insert(file.end(), { 0x48, 0x89, 0xEC, 0x5D, 0xC3 }); // mov rsp, rbp; pop rbp; ret
+    REQUIRE(file.size() < 0x100);
+    file.resize(0x110, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x100;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x100, { "CreateProcessW", MemoryMappingType::FunctionMapping } }, { 0x108, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    std::vector<std::string> names;
+    for (const auto& variable : frame->variables)
+        names.push_back(variable.name);
+    REQUIRE(names == std::vector<std::string>{ "StartupInfo", "ProcessInformation" });
+    REQUIRE(frame->variables[0].frameOffset == -0x80);
+    REQUIRE(frame->variables[0].structure == FindApiStructure("STARTUPINFOW", true));
+    REQUIRE(frame->FindVariableContaining(-0x44) == &frame->variables[0]);
+    REQUIRE(frame->FindVariableContaining(-0x19) == &frame->variables[0]); // the end of StartupInfo
+    REQUIRE(frame->FindVariableContaining(-0x18) == &frame->variables[1]);
+    REQUIRE(frame->FindVariableContaining(-0x81) == nullptr);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "StartupInfo = STARTUPINFOW ptr -0x80").ends_with("; lpStartupInfo of CreateProcessW"));
+    REQUIRE(FindListingLine(listing, "ProcessInformation = PROCESS_INFORMATION ptr -0x18").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    dword ptr [rbp + StartupInfo.cb], 0x68").size() > 0);
+    REQUIRE(FindListingLine(listing, "lea    rax, [rbp + StartupInfo]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    rcx, qword ptr [rbp + ProcessInformation.hProcess]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    dword ptr [rbp + StartupInfo.dwFlags], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + StartupInfo.wShowWindow], 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    rcx, qword ptr [rbp + ProcessInformation.hThread]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, dword ptr [rbp + ProcessInformation.dwProcessId]").size() > 0);
+    REQUIRE(listing.find("var_44") == std::string::npos);
+
+    // a rename of the structure (its definition line or a field of an instruction) renames its fields too
+    REQUIRE(zone.RenameLocalVariable(0x00, -0x80, "si").ok);
+    const std::string renamed = dissasmInstance.GetListing();
+    INFO(renamed);
+    REQUIRE(FindListingLine(renamed, "mov    dword ptr [rbp + si.dwFlags], 1").size() > 0);
+}
+
+TEST_CASE("FrameStructuresX86", "[Dissasm]Help")
+{
+    // 32 bit: the address of the slot pushed as the lpFindFileData of FindFirstFileW: FindFileData (WIN32_FIND_DATAW, 0x250 bytes) and its
+    // fields, the nested FILETIME of ftLastWriteTime
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push ebp
+        0x89, 0xE5,                         // 0x01: mov ebp, esp
+        0x81, 0xEC, 0x50, 0x02, 0x00, 0x00, // 0x03: sub esp, 0x250
+        0x8D, 0x85, 0xB0, 0xFD, 0xFF, 0xFF, // 0x09: lea eax, [ebp - 0x250]
+        0x50,                               // 0x0f: push eax
+        0xFF, 0x75, 0x08,                   // 0x10: push dword ptr [ebp + 8]
+        0xFF, 0x15, 0x80, 0x10, 0x40, 0x00, // 0x13: call dword ptr [0x401080] (FindFirstFileW)
+        0x8D, 0x8D, 0xDC, 0xFD, 0xFF, 0xFF, // 0x19: lea ecx, [ebp - 0x224] (cFileName)
+        0x8B, 0x85, 0xC8, 0xFD, 0xFF, 0xFF, // 0x1f: mov eax, dword ptr [ebp - 0x238] (ftLastWriteTime.dwHighDateTime)
+        0x89, 0xEC,                         // 0x25: mov esp, ebp
+        0x5D,                               // 0x27: pop ebp
+        0xC3,                               // 0x28: ret
+    };
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401080, { "FindFirstFileW", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x250) != nullptr);
+    REQUIRE(frame->FindVariable(-0x250)->name == "FindFileData");
+    REQUIRE(frame->FindVariable(-0x250)->structure == FindApiStructure("WIN32_FIND_DATAW", false));
+    REQUIRE(frame->FindVariable(8)->name == "lpFileName"); // a value: the name of the argument
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "lea    ecx, [ebp + FindFileData.cFileName]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, dword ptr [ebp + FindFileData.ftLastWriteTime.dwHighDateTime]").size() > 0);
+}
+
+TEST_CASE("AlignPaddingAcrossCachedOffsets", "[Dissasm]Align")
+{
+    // functions of different sizes padded to 16 bytes: the align lines are found at every position from the cached offsets (500 bytes
+    // apart) and from the code windows of the drawn lines
+    std::vector<unsigned char> file;
+    uint32 expectedLines = 0, expectedAligns = 0, expectedInt3 = 0;
+    for (uint32 function = 0; file.size() < 6000; function++) {
+        for (uint32 i = 0; i < function % 7; i++, expectedLines++)
+            file.insert(file.end(), { 0x48, 0x89, 0xC0 }); // mov rax, rax
+        file.push_back(0xC3);                               // ret
+        expectedLines++;
+        const size_t padding = (16 - file.size() % 16) % 16;
+        if (padding == 1)
+            expectedInt3++;
+        else if (padding > 1)
+            expectedAligns++;
+        expectedLines += padding > 0 ? 1 : 0;
+        file.insert(file.end(), padding, 0xCC);
+    }
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    layout.cacheSize    = 1024; // smaller than the code: the code is read window after window
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    REQUIRE(dissasmInstance.zone->asmLinesCount == expectedLines);
+    const std::string listing = dissasmInstance.GetListing();
+    REQUIRE(CountOccurrences(listing, "align  0x10") == expectedAligns);
+    REQUIRE(CountOccurrences(listing, "int3") == expectedInt3);
+    REQUIRE(CountOccurrences(listing, "db ") == 0);
+}
+
+TEST_CASE("InstructionKinds", "[Dissasm]Colors")
+{
+    csh handle = 0;
+    REQUIRE(cs_open(CS_ARCH_X86, CS_MODE_64, &handle) == CS_ERR_OK); // no details: the kind comes from the instruction id
+    const auto kindOf = [handle](std::initializer_list<uint8_t> bytes) {
+        const std::vector<uint8_t> code(bytes);
+        cs_insn* insn      = nullptr;
+        const size_t count = cs_disasm(handle, code.data(), code.size(), 0, 1, &insn);
+        REQUIRE(count == 1);
+        const auto kind = GetX86InstructionKind(insn->id, insn->mnemonic);
+        cs_free(insn, count);
+        return kind;
+    };
+    using Kind = X86InstructionKind;
+    REQUIRE(kindOf({ 0xE8, 0x00, 0x00, 0x00, 0x00 }) == Kind::Call);       // call
+    REQUIRE(kindOf({ 0xFF, 0x15, 0x00, 0x00, 0x00, 0x00 }) == Kind::Call); // call qword ptr [rip]
+    REQUIRE(kindOf({ 0xEB, 0x00 }) == Kind::Jump);                         // jmp
+    REQUIRE(kindOf({ 0x74, 0x00 }) == Kind::ConditionalJump);              // je
+    REQUIRE(kindOf({ 0x0F, 0x8F, 0x00, 0x00, 0x00, 0x00 }) == Kind::ConditionalJump); // jg near
+    REQUIRE(kindOf({ 0xE2, 0x00 }) == Kind::ConditionalJump);              // loop
+    REQUIRE(kindOf({ 0xC3 }) == Kind::Return);                             // ret
+    REQUIRE(kindOf({ 0x48, 0x39, 0xC8 }) == Kind::Compare);                // cmp rax, rcx
+    REQUIRE(kindOf({ 0x85, 0xC0 }) == Kind::Compare);                      // test eax, eax
+    REQUIRE(kindOf({ 0x55 }) == Kind::Stack);                              // push rbp
+    REQUIRE(kindOf({ 0x5D }) == Kind::Stack);                              // pop rbp
+    REQUIRE(kindOf({ 0xC9 }) == Kind::Stack);                              // leave
+    REQUIRE(kindOf({ 0x90 }) == Kind::Padding);                            // nop
+    REQUIRE(kindOf({ 0xCC }) == Kind::Padding);                            // int3
+    REQUIRE(kindOf({ 0xF3, 0x0F, 0x1E, 0xFA }) == Kind::Padding);          // endbr64
+    REQUIRE(kindOf({ 0x0F, 0xA2 }) == Kind::System);                       // cpuid
+    REQUIRE(kindOf({ 0x0F, 0x31 }) == Kind::System);                       // rdtsc
+    REQUIRE(kindOf({ 0x0F, 0x05 }) == Kind::System);                       // syscall
+    REQUIRE(kindOf({ 0xCD, 0x2D }) == Kind::System);                       // int 0x2d
+    REQUIRE(kindOf({ 0x0F, 0x01, 0x08 }) == Kind::System);                 // sidt [rax]
+    REQUIRE(kindOf({ 0x48, 0x89, 0xC8 }) == Kind::Other);                  // mov rax, rcx
+    REQUIRE(kindOf({ 0x48, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00 }) == Kind::Other); // lea
+    cs_close(&handle);
+    // the data lines of DecodeX86Line
+    REQUIRE(GetX86InstructionKind(X86_INS_INVALID, "db") == Kind::Data);
+    REQUIRE(GetX86InstructionKind(X86_INS_INVALID, "align") == Kind::Padding);
+}
+
+TEST_CASE("RegisterAndTokenColors", "[Dissasm]Colors")
+{
+    using Register = X86RegisterKind;
+    for (const auto name : { "rax", "eax", "ax", "al", "ah", "r8", "r8d", "r9w", "r10b", "r15", "cs", "fs", "xmm0", "xmm15", "ymm31", "mm7", "k1", "cr0", "dr7" })
+        CHECK(GetX86RegisterKind(name) == Register::General);
+    for (const auto name : { "rsp", "esp", "sp", "spl", "rbp", "ebp", "rsi", "sil", "rdi", "dil", "rip" })
+        CHECK(GetX86RegisterKind(name) == Register::Pointer);
+    // the last letter does not make a register any more (the old rule colored them)
+    for (const auto name : { "r16", "r08", "xmm32", "mm8", "rx", "box", "dword", "ptr", "sub_401000", "j_puts", "0x10", "loc_1", "eaxx" })
+        CHECK(GetX86RegisterKind(name) == Register::None);
+
+    DissasmColors colors{};
+    colors.AsmDefaultColor               = ColorPair{ Color::Green, Color::Black };
+    colors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, Color::Black };
+    colors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, Color::Black };
+    colors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::Black };
+    colors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::Black };
+    colors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::Black };
+    colors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, Color::Black };
+    colors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, Color::Black };
+    colors.AsmSystemInstructionColor     = ColorPair{ Color::Red, Color::Black };
+    const auto same = [](ColorPair left, ColorPair right) { return left.Foreground == right.Foreground && left.Background == right.Background; };
+
+    REQUIRE(same(GetX86TokenColor("r12d", colors), colors.AsmWorkRegisterColor));
+    REQUIRE(same(GetX86TokenColor("rbp", colors), colors.AsmStackRegisterColor));
+    REQUIRE(same(GetX86TokenColor("byte", colors), colors.AsmLocationInstruction));
+    REQUIRE(same(GetX86TokenColor("xmmword", colors), colors.AsmLocationInstruction));
+    REQUIRE(same(GetX86TokenColor("j_CreateFileW", colors), colors.AsmJumpInstruction));
+    // names that start like a mnemonic or a register are names: the old 4 letters match colored them
+    REQUIRE(same(GetX86TokenColor("callback", colors), colors.AsmDefaultColor));
+    REQUIRE(same(GetX86TokenColor("testFunction", colors), colors.AsmDefaultColor));
+    REQUIRE(same(GetX86TokenColor("jump_table", colors), colors.AsmDefaultColor));
+
+    using Kind = X86InstructionKind;
+    REQUIRE(same(GetX86MnemonicColor(Kind::Call, colors), colors.AsmFunctionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Return, colors), colors.AsmFunctionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::ConditionalJump, colors), colors.AsmJumpInstruction));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Compare, colors), colors.AsmCompareInstructionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Stack, colors), colors.AsmStackRegisterColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Padding, colors), colors.AsmIrrelevantInstructionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::System, colors), colors.AsmSystemInstructionColor));
+    REQUIRE(same(GetX86MnemonicColor(Kind::Other, colors), colors.AsmDefaultColor));
+}
+
+TEST_CASE("InstructionKindOfTheLines", "[Dissasm]Colors")
+{
+    std::vector<unsigned char> file = {
+        0x55,             // 0x00: push rbp
+        0x0F, 0xA2,       // 0x01: cpuid
+        0x74, 0x01,       // 0x03: je 0x6
+        0xC3,             // 0x05: ret
+        0x5D,             // 0x06: pop rbp
+        0xC3,             // 0x07: ret
+    };
+    file.resize(0x10, 0xCC);
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::x64;
+    layout.alignPadding = true;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    using Kind = X86InstructionKind;
+    std::vector<Kind> kinds;
+    for (uint32 line = 0; line < dissasmInstance.zone->GetDisplayLinesCount(); line++) {
+        const auto asmLine = dissasmInstance.GetCurrentAsmLine(line);
+        if (asmLine.label.empty() && asmLine.size > 0)
+            kinds.push_back(static_cast<Kind>(asmLine.instructionKind));
+    }
+    REQUIRE(kinds == std::vector<Kind>{ Kind::Stack, Kind::System, Kind::ConditionalJump, Kind::Return, Kind::Stack, Kind::Return, Kind::Padding });
+}
+
+namespace
+{
+// answers once it is released (the HTTP call of a real assistant), on the thread that asks it
+struct TestAssistant : GView::CommonInterfaces::SmartAssistants::SmartAssistantPromptInterface {
+    std::promise<void> release;
+    std::shared_future<void> released = release.get_future().share();
+    std::atomic<std::thread::id> askedOn{};
+    bool fail = false;
+    std::string AskSmartAssistant(std::string_view prompt, std::string_view, bool& isSuccess) override
+    {
+        askedOn = std::this_thread::get_id();
+        released.wait();
+        if (fail)
+            throw std::runtime_error("network down");
+        isSuccess = true;
+        return "Name for " + std::string(prompt);
+    }
+};
+} // namespace
+
+TEST_CASE("AssistantRequestOnWorkerThread", "[Dissasm]Assistant")
+{
+    TestAssistant assistant;
+    DissasmAssistantRequest request;
+    REQUIRE_FALSE(request.IsRunning());
+    request.Start(&assistant, "sub_10", "Give me a name");
+    REQUIRE(request.IsRunning());
+    REQUIRE_FALSE(request.IsReady()); // the assistant has not answered: the UI thread goes on
+    assistant.release.set_value();
+    const auto answer = request.Take();
+    REQUIRE(answer.success);
+    REQUIRE(answer.text == "Name for sub_10");
+    REQUIRE(assistant.askedOn.load() != std::this_thread::get_id());
+    REQUIRE_FALSE(request.IsRunning());
+}
+
+TEST_CASE("AssistantRequestAtOnce", "[Dissasm]Assistant")
+{
+    TestAssistant assistant;
+    assistant.release.set_value();
+    DissasmAssistantRequest request;
+    request.Start(&assistant, "sub_20", "Give me a name", false); // a frontend without frame updates
+    REQUIRE(request.IsReady());
+    REQUIRE(assistant.askedOn.load() == std::this_thread::get_id());
+    REQUIRE(request.Take().text == "Name for sub_20");
+
+    // an assistant that throws is a failed answer
+    TestAssistant failing;
+    failing.fail = true;
+    failing.release.set_value();
+    request.Start(&failing, "sub_30", "Give me a name");
+    const auto answer = request.Take();
+    REQUIRE_FALSE(answer.success);
+    REQUIRE(answer.text.find("network down") != std::string::npos);
+}
+
+TEST_CASE("AssistantRequestAbandoned", "[Dissasm]Assistant")
+{
+    TestAssistant assistant;
+    DissasmAssistantRequest::AbandonedRequests abandoned;
+    {
+        DissasmAssistantRequest request;
+        request.Start(&assistant, "sub_40", "Give me a name");
+        request.Abandon(abandoned); // Esc: the request goes on without anyone waiting for it
+        REQUIRE_FALSE(request.IsRunning());
+        REQUIRE(abandoned.size() == 1);
+    } // the request object is gone, the UI did not wait
+    assistant.release.set_value();
+    abandoned.front().wait();
+    // the finished requests are removed when another one is abandoned
+    TestAssistant other;
+    other.release.set_value();
+    DissasmAssistantRequest next;
+    next.Start(&other, "sub_50", "Give me a name");
+    next.Take();
+    next.Abandon(abandoned); // nothing running: nothing added
+    REQUIRE(abandoned.empty());
+}
+
+TEST_CASE("LineCountInSteps", "[Dissasm]LineCount")
+{
+    auto file = MakeManyFunctions(20000);
+    file.resize(file.size() + 64, 0x00); // the file alignment padding: not lines once the whole code is read
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance oneShot(file.data(), file.size(), false, layout);
+    REQUIRE_FALSE(oneShot.zone->IsDeepScanPending());
+
+    // no time for the line count in InitZone: the first lines are shown, the count continues in steps, then the deep scan
+    layout.lineCountBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance inSteps(file.data(), file.size(), false, layout);
+    auto& zone = *inSteps.zone;
+    REQUIRE(zone.IsCountingLines());
+    REQUIRE(zone.IsDeepScanPending());
+    REQUIRE(zone.asmLinesCount > 0);
+    REQUIRE(zone.asmLinesCount < oneShot.zone->asmLinesCount);
+    REQUIRE(zone.GetDisplayLinesCount() == zone.asmLinesCount); // no labels yet
+    REQUIRE(inSteps.CheckLineText(0, "push rbp"));
+    // the last counted line is decoded at its place: 5 lines in every function of 11 bytes
+    constexpr uint64 LINE_OFFSETS[5] = { 0, 1, 4, 9, 10 };
+    const uint32 lastLine            = zone.asmLinesCount - 1;
+    REQUIRE(inSteps.GetCurrentAsmLine(lastLine).address == (lastLine / 5) * 11 + LINE_OFFSETS[lastLine % 5]);
+
+    uint32 steps         = 0;
+    uint32 countingSteps = 0;
+    uint32 lines         = zone.asmLinesCount;
+    while (!zone.ContinueDeepScan(std::chrono::steady_clock::now())) {
+        if (zone.IsCountingLines()) {
+            REQUIRE(zone.asmLinesCount >= lines); // the zone grows
+            lines = zone.asmLinesCount;
+            countingSteps++;
+        }
+        REQUIRE(++steps < 100000);
+    }
+    REQUIRE(countingSteps > 3);
+    REQUIRE_FALSE(zone.IsCountingLines());
+    zone.CommitDeepScan();
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+
+    // the same lines and analysis as the zone counted at once
+    REQUIRE(zone.asmLinesCount == oneShot.zone->asmLinesCount);
+    REQUIRE(zone.cachedCodeOffsets.size() == oneShot.zone->cachedCodeOffsets.size());
+    REQUIRE(zone.GetDisplayLinesCount() == oneShot.zone->GetDisplayLinesCount());
+    REQUIRE(zone.functionStarts == oneShot.zone->functionStarts);
+    REQUIRE(inSteps.GetListing() == oneShot.GetListing());
+}
+
+TEST_CASE("LineCountCancelled", "[Dissasm]LineCount")
+{
+    const auto file = MakeManyFunctions(20000);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.lineCountBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.IsCountingLines());
+
+    // Esc: the lines are still needed (they are counted now), the deep scan does not start
+    zone.CancelDeepScan();
+    REQUIRE_FALSE(zone.IsCountingLines());
+    REQUIRE_FALSE(zone.IsDeepScanPending());
+    REQUIRE(zone.asmLinesCount == 20000 * 5 + 16); // push, mov, call, pop, ret in every function, then 16 int3
+    REQUIRE(zone.dissasmType.annotations.mappings.empty());
+}
+
+TEST_CASE("Arm64Listing", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x00: stp x29, x30, [sp, #-0x10]!
+        0xFD, 0x03, 0x00, 0x91, // 0x04: mov x29, sp
+        0x06, 0x00, 0x00, 0x94, // 0x08: bl 0x20
+        0x60, 0x00, 0x00, 0xB4, // 0x0c: cbz x0, 0x18
+        0x81, 0x01, 0x00, 0x10, // 0x10: adr x1, 0x40
+        0x4B, 0x00, 0x00, 0x54, // 0x14: b.lt 0x1c
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x18: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x1c: ret
+        0x20, 0x00, 0x80, 0x52, // 0x20: mov w0, #1 (the function called by bl)
+        0xC0, 0x03, 0x5F, 0xD6, // 0x24: ret
+        0x1F, 0x20, 0x03, 0xD5, // 0x28: nop \ align 0x10
+        0x1F, 0x20, 0x03, 0xD5, // 0x2c: nop /
+        0xFF, 0xFF, 0xFF, 0xFF, // 0x30: an undecodable word
+        0xC0, 0x03, 0x5F, 0xD6, // 0x34: ret
+    };
+    file.resize(0x40, 0x00);
+    for (const char c : std::string_view("Hello ARM64"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x50, 0x00);
+    file.push_back(0xC0); // 3 bytes at the end of the code: db lines
+    file.push_back(0x03);
+    file.push_back(0x5F);
+
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::ARM64;
+    layout.alignPadding = true;
+    layout.translateOffsets = true; // the strings are read through the translation of the plugin (here: the RVA is the file offset)
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.IsArm64Code());
+    REQUIRE(zone.CanReachAsmLines());
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("stp    x29, x30, [sp, #-0x10]!") != std::string::npos);
+    REQUIRE(listing.find("bl     sub_20") != std::string::npos);    // the call names its target
+    REQUIRE(listing.find("cbz    x0, loc_18") != std::string::npos); // the register stays before the target
+    REQUIRE(listing.find("b.lt   loc_1C") != std::string::npos);
+    REQUIRE(listing.find("align  0x10") != std::string::npos);
+    REQUIRE(listing.find(".word  0xffffffff") != std::string::npos);
+    REQUIRE(listing.find("db     0xc0") != std::string::npos);
+    REQUIRE(listing.find("db     0x5f") != std::string::npos);
+    REQUIRE(listing.find("\"Hello ARM64\"") != std::string::npos); // adr: the string at the address
+    REQUIRE(listing.find("adr    x1, 0x40") != std::string::npos);   // the address of the listing, not the capstone #0x40
+
+    // the functions, the labels and the cross references of the branches and of the data
+    REQUIRE(std::find(zone.functionStarts.begin(), zone.functionStarts.end(), 0x20) != zone.functionStarts.end());
+    REQUIRE(zone.GetLabelNameAt(0x18) == "loc_18");
+    REQUIRE(zone.GetLabelNameAt(0x1C) == "loc_1C");
+    const auto [callFirst, callLast] = zone.xrefs.To(0x20);
+    REQUIRE(callLast - callFirst == 1);
+    REQUIRE(callFirst->from == 0x08);
+    REQUIRE(callFirst->kind == DissasmXrefKind::Call);
+    const auto [dataFirst, dataLast] = zone.xrefs.To(0x40);
+    REQUIRE(dataLast - dataFirst == 1);
+    REQUIRE(dataFirst->kind == DissasmXrefKind::Offset);
+    const auto [condFirst, condLast] = zone.xrefs.To(0x18);
+    REQUIRE(condLast - condFirst == 1);
+    REQUIRE(condFirst->kind == DissasmXrefKind::ConditionalJump);
+
+    // the kinds (colors) of the lines
+    using Kind = X86InstructionKind;
+    std::vector<Kind> kinds;
+    for (uint32 line = 0; line < zone.GetDisplayLinesCount() && kinds.size() < 8; line++) {
+        const auto asmLine = dissasmInstance.GetCurrentAsmLine(line);
+        if (asmLine.label.empty() && asmLine.size > 0)
+            kinds.push_back(static_cast<Kind>(asmLine.instructionKind));
+    }
+    REQUIRE(kinds == std::vector<Kind>{ Kind::Stack, Kind::Other, Kind::Call, Kind::ConditionalJump, Kind::Other, Kind::ConditionalJump, Kind::Stack,
+                                        Kind::Return });
+    // the immediate search
+    REQUIRE(zone.FindImmediate(1, 0, zone.GetCodeSize()) == std::optional<uint64>(0x20)); // mov w0, #1
+}
+
+TEST_CASE("Arm64RegisterNames", "[Dissasm]Arm64")
+{
+    for (const auto name : { "x0", "x30", "w0", "w30", "xzr", "wzr", "v31", "q0", "d7", "s3", "h1", "b0" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::General);
+    for (const auto name : { "sp", "wsp", "fp", "lr" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::Pointer);
+    for (const auto name : { "x31", "w31", "v32", "x", "sub_20", "loc_18" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::None);
+}
+
+TEST_CASE("Arm64AdrpPairs", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0x00, 0x00, 0x00, 0xB0, // 0x00: adrp x0, 0x1000
+        0x00, 0x80, 0x00, 0x91, // 0x04: add x0, x0, #0x20      -> 0x1020 (a string)
+        0x08, 0x00, 0x00, 0xB0, // 0x08: adrp x8, 0x1000
+        0x08, 0x09, 0x40, 0xF9, // 0x0c: ldr x8, [x8, #0x10]    -> 0x1010 (the slot of puts)
+        0x00, 0x01, 0x3F, 0xD6, // 0x10: blr x8                 -> a call of puts
+        0x04, 0x00, 0x00, 0x94, // 0x14: bl 0x24                (the stub)
+        0x09, 0x00, 0x00, 0xB0, // 0x18: adrp x9, 0x1000        (after a call: the registers are set again)
+        0x21, 0x09, 0x00, 0xB9, // 0x1c: str w1, [x9, #8]       -> 0x1008 written
+        0xC0, 0x03, 0x5F, 0xD6, // 0x20: ret
+        0x10, 0x00, 0x00, 0xB0, // 0x24: adrp x16, 0x1000       \ the stub of malloc: j_malloc
+        0x10, 0x0E, 0x40, 0xF9, // 0x28: ldr x16, [x16, #0x18]  |
+        0x00, 0x02, 0x1F, 0xD6, // 0x2c: br x16                 /
+    };
+    const uint64 codeSize = file.size();
+    file.resize(0x1020, 0x00);
+    for (const char c : std::string_view("Pair string"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x1040, 0x00);
+
+    ZoneLayout layout;
+    layout.size             = codeSize;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM64;
+    layout.translateOffsets = true; // the RVA is the file offset
+    layout.imports          = { { 0x1010, { "puts", MemoryMappingType::FunctionMapping } }, { 0x1018, { "malloc", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // the deep scan resolves the pairs: the drawn lines are decoded alone
+    REQUIRE(zone.resolvedAddresses.at(0x04) == 0x1020);
+    REQUIRE(zone.resolvedAddresses.at(0x0C) == 0x1010);
+    REQUIRE(zone.resolvedAddresses.at(0x10) == 0x1010);
+    REQUIRE(zone.resolvedAddresses.at(0x1C) == 0x1008);
+    REQUIRE(zone.resolvedAddresses.at(0x2C) == 0x1018);
+    REQUIRE_FALSE(zone.resolvedAddresses.contains(0x00)); // adrp alone: a page
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("\"Pair string\"") != std::string::npos); // add x0, x0, #0x20: the string
+    REQUIRE(listing.find("blr    puts") != std::string::npos);     // the call through the slot of the import
+    REQUIRE(listing.find("bl     j_malloc") != std::string::npos); // the stub is an import thunk
+    REQUIRE(zone.GetLabelNameAt(0x24) == "j_malloc");
+    REQUIRE(listing.find("; 0x1008") != std::string::npos);         // str w1, [x9, #8]: the address written
+    REQUIRE(listing.find("ldr    x8, [x8, #__imp_puts@PAGEOFF]") != std::string::npos); // ldr x8, [x8, #0x10]: the import of the slot
+    // the adrp named by its first pair (IDA: adrp x8, __imp_puts@PAGE); a pair to a place without a name keeps the page
+    REQUIRE(zone.adrpPages.at(0x08) == 0x1010);
+    REQUIRE(zone.adrpPages.at(0x18) == 0x1008);
+    REQUIRE(listing.find("adrp   x8, __imp_puts@PAGE") != std::string::npos);
+    REQUIRE(listing.find("adrp   x16, __imp_malloc@PAGE") != std::string::npos);
+    REQUIRE(listing.find("adrp   x9, 0x1000") != std::string::npos);
+
+    // the cross references of the data
+    const auto kindsTo = [&zone](uint64 address) {
+        std::vector<std::pair<uint64, DissasmXrefKind>> kinds;
+        const auto [first, last] = zone.xrefs.To(address);
+        for (auto it = first; it != last; ++it)
+            kinds.emplace_back(it->from, it->kind);
+        return kinds;
+    };
+    REQUIRE(kindsTo(0x1020) == std::vector<std::pair<uint64, DissasmXrefKind>>{ { 0x04, DissasmXrefKind::Offset } });
+    REQUIRE(kindsTo(0x1008) == std::vector<std::pair<uint64, DissasmXrefKind>>{ { 0x1C, DissasmXrefKind::Write } });
+    REQUIRE(kindsTo(0x1010).size() == 2); // ldr and blr read the slot
+}
+
+TEST_CASE("Arm64AdrpTrackerLimits", "[Dissasm]Arm64")
+{
+    csh handle = 0;
+    REQUIRE(cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle) == CS_ERR_OK);
+    REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    Arm64AdrpTracker tracker;
+    const auto next = [&](uint32 word, uint64 address) {
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, address, 1, &insn) == 1);
+        const auto result = tracker.Next(*insn, false);
+        cs_free(insn, 1);
+        return result;
+    };
+    // the page register is changed by another instruction: no pair
+    next(0xB0000000, 0x0);   // adrp x0, 0x1000
+    next(0xAA0103E0, 0x4);   // mov x0, x1
+    REQUIRE_FALSE(next(0x91008000, 0x8).has_value()); // add x0, x0, #0x20
+    // a jump ends the pair
+    next(0xB0000000, 0xC);   // adrp x0, 0x1000
+    next(0x14000001, 0x10);  // b 0x14
+    REQUIRE_FALSE(next(0x91008000, 0x14).has_value());
+    // add with lsl #12
+    next(0xB0000000, 0x18);  // adrp x0, 0x1000
+    const auto shifted = next(0x91400400, 0x1C); // add x0, x0, #1, lsl #12
+    REQUIRE(shifted.has_value());
+    REQUIRE(shifted->address == 0x2000);
+    REQUIRE(shifted->memoryAccess == 0);
+
+    // ldr x19, [sp], #0x10 (post index): the immediate is not a literal address
+    {
+        const uint32 word      = 0xF84107F3;
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn          = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, 0x100, 1, &insn) == 1);
+        REQUIRE_FALSE(GetArm64OperandsInfo(*insn).ripTarget.has_value());
+        cs_free(insn, 1);
+    }
+
+    // a zone that starts inside a page (VA 0x100000450): adrp gives the page of the VA (capstone decoded from the zone start, address 0)
+    Arm64AdrpTracker based(0x100000450);
+    const auto nextBased = [&](uint32 word, uint64 address) {
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, address, 1, &insn) == 1);
+        const auto result = based.Next(*insn, false);
+        cs_free(insn, 1);
+        return result;
+    };
+    nextBased(0xB0000000, 0x0); // adrp x0, +1 page: VA 0x100001000
+    const auto basedPair = nextBased(0x91008000, 0x4); // add x0, x0, #0x20
+    REQUIRE(basedPair.has_value());
+    REQUIRE(basedPair->address == 0x100001020 - 0x100000450);
+    cs_close(&handle);
+}
+
+TEST_CASE("Arm64SwitchTable", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0x1F, 0x08, 0x00, 0x71, // 0x00: cmp w0, #2
+        0x68, 0x01, 0x00, 0x54, // 0x04: b.hi 0x30                (the default: 3 cases)
+        0xC9, 0x01, 0x00, 0x10, // 0x08: adr x9, 0x40             (the table)
+        0x8A, 0x00, 0x00, 0x10, // 0x0c: adr x10, 0x1c            (the anchor)
+        0x2B, 0x69, 0x60, 0x38, // 0x10: ldrb w11, [x9, x0]
+        0x4A, 0x09, 0x0B, 0x8B, // 0x14: add x10, x10, x11, lsl #2
+        0x40, 0x01, 0x1F, 0xD6, // 0x18: br x10
+        0x40, 0x01, 0x80, 0x52, // 0x1c: case 0: mov w0, #10
+        0xC0, 0x03, 0x5F, 0xD6, //       ret
+        0x60, 0x01, 0x80, 0x52, // 0x24: case 1: mov w0, #11
+        0xC0, 0x03, 0x5F, 0xD6, //       ret
+        0xC0, 0x03, 0x5F, 0xD6, // 0x2c: case 2: ret
+        0x00, 0x00, 0x80, 0x52, // 0x30: default: mov w0, #0
+        0xC0, 0x03, 0x5F, 0xD6, //       ret
+    };
+    const uint64 codeSize = file.size();
+    file.resize(0x40, 0x00);
+    file.insert(file.end(), { 0x00, 0x02, 0x04 }); // 0x40: the cases, in instructions from the anchor
+    file.resize(0x48, 0x00);
+
+    ZoneLayout layout;
+    layout.size                = codeSize;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::ARM64;
+    layout.addressToFileOffset = [](uint64 address) { return std::optional<uint64>(address); };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    REQUIRE(zone.switchJumps.at(0x18) == 3);
+    REQUIRE(zone.GetLabelNameAt(0x1C) == "loc_1C");
+    REQUIRE(zone.GetLabelNameAt(0x24) == "loc_24");
+    REQUIRE(zone.GetLabelNameAt(0x2C) == "loc_2C");
+    for (const uint64 target : { 0x1C, 0x24, 0x2C }) { // the anchor (case 0) is also the address taken by adr x10
+        const auto [first, last] = zone.xrefs.To(target);
+        const auto switchXref    = std::find_if(first, last, [](const auto& xref) { return xref.kind == DissasmXrefKind::Switch; });
+        REQUIRE(switchXref != last);
+        REQUIRE(switchXref->from == 0x18);
+        REQUIRE(std::count_if(first, last, [](const auto& xref) { return xref.kind == DissasmXrefKind::Switch; }) == 1);
+    }
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("switch: 3 cases") != std::string::npos);
+
+    // without the bound (no cmp / b.hi) the table is not read
+    file[0] = 0x1F;
+    file[1] = 0x20;
+    file[2] = 0x03;
+    file[3] = 0xD5; // nop
+    DissasmTestInstance unbounded(file.data(), file.size(), false, layout);
+    REQUIRE_FALSE(unbounded.zone->switchJumps.contains(0x18));
+}
+
+TEST_CASE("Arm64Prologues", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0x60, 0x00, 0x00, 0xB4, // 0x00: cbz x0, 0x0c
+        0x00, 0x00, 0x80, 0x52, // 0x04: mov w0, #0
+        0xC0, 0x03, 0x5F, 0xD6, // 0x08: ret
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x0c: stp x29, x30, [sp, #-0x10]!  (shrink wrapped: reached by the cbz, inside the function)
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x10: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x14: ret
+        0xFD, 0x7B, 0xBF, 0xA9, // 0x18: stp x29, x30, [sp, #-0x10]!  (nothing reaches it: a function called indirectly)
+        0xFD, 0x7B, 0xC1, 0xA8, // 0x1c: ldp x29, x30, [sp], #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x20: ret
+        0xFF, 0x03, 0x01, 0xD1, // 0x24: sub sp, sp, #0x40           (another one)
+        0xFF, 0x03, 0x01, 0x91, // 0x28: add sp, sp, #0x40
+        0xC0, 0x03, 0x5F, 0xD6, // 0x2c: ret
+    };
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& starts = dissasmInstance.zone->functionStarts;
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x18) != starts.end());
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x24) != starts.end());
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x0C) == starts.end());
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x0C) == "loc_C");
+}
+
+TEST_CASE("Arm64FrameVariables", "[Dissasm]Arm64")
+{
+    std::vector<unsigned char> file = {
+        0xFF, 0xC3, 0x00, 0xD1, // 0x00: sub sp, sp, #0x30
+        0xFD, 0x7B, 0x02, 0xA9, // 0x04: stp x29, x30, [sp, #0x20]   (the frame record: not a variable)
+        0xFD, 0x83, 0x00, 0x91, // 0x08: add x29, sp, #0x20          (sp = x29 - 0x20)
+        0xA0, 0xC3, 0x1F, 0xB8, // 0x0c: stur w0, [x29, #-4]         -> var_4
+        0xE1, 0x07, 0x00, 0xF9, // 0x10: str x1, [sp, #8]            -> x29 - 0x18: var_18
+        0xA0, 0xC3, 0x5F, 0xB8, // 0x14: ldur w0, [x29, #-4]
+        0xFD, 0x7B, 0x42, 0xA9, // 0x18: ldp x29, x30, [sp, #0x20]
+        0xFF, 0xC3, 0x00, 0x91, // 0x1c: add sp, sp, #0x30
+        0xC0, 0x03, 0x5F, 0xD6, // 0x20: ret
+        0xFF, 0x43, 0x00, 0xD1, // 0x24: sub sp, sp, #0x10           (a leaf function without x29)
+        0xE0, 0x0F, 0x00, 0xB9, // 0x28: str w0, [sp, #0xc]          -> the sp of the entry - 4: var_4
+        0xE0, 0x0F, 0x40, 0xB9, // 0x2c: ldr w0, [sp, #0xc]
+        0xFF, 0x43, 0x00, 0x91, // 0x30: add sp, sp, #0x10
+        0xC0, 0x03, 0x5F, 0xD6, // 0x34: ret
+    };
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->usesFrameRegister);
+    REQUIRE(frame->stackOffset == -0x20);
+    REQUIRE(frame->variables.size() == 2);
+    REQUIRE(frame->variables[0].frameOffset == -0x18);
+    REQUIRE(frame->variables[0].size == 8);
+    REQUIRE(frame->variables[0].name == "var_18");
+    REQUIRE(frame->variables[1].frameOffset == -4);
+    REQUIRE(frame->variables[1].size == 4);
+
+    const auto* leaf = zone.localVariables.FindFunctionByStart(0x24);
+    REQUIRE(leaf != nullptr);
+    REQUIRE_FALSE(leaf->usesFrameRegister);
+    REQUIRE(leaf->variables.size() == 1);
+    REQUIRE(leaf->variables[0].name == "var_4");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("var_18 = qword ptr -0x18") != std::string::npos);
+    REQUIRE(listing.find("stur   w0, [x29, #var_4]") != std::string::npos);
+    REQUIRE(listing.find("str    x1, [sp, #var_18]") != std::string::npos);
+    REQUIRE(listing.find("str    w0, [sp, #var_4]") != std::string::npos);
+    REQUIRE(listing.find("stp    x29, x30, [sp, #0x20]") != std::string::npos); // the saved registers keep their operands
+}
+
+TEST_CASE("Arm64FrameOperands", "[Dissasm]Arm64")
+{
+    Arm64FrameOperand slot{};
+    REQUIRE(FindArm64FrameOperand("w0, [x29, #-0x14]", slot));
+    REQUIRE(slot.displacement == -0x14);
+    REQUIRE_FALSE(slot.isStackPointerBased);
+    REQUIRE(FindArm64FrameOperand("x1, [sp, #8]", slot));
+    REQUIRE(slot.displacement == 8);
+    REQUIRE(slot.isStackPointerBased);
+    REQUIRE_FALSE(FindArm64FrameOperand("x29, x30, [sp, #-0x10]!", slot)); // the writeback of the prologue
+    REQUIRE_FALSE(FindArm64FrameOperand("x29, x30, [sp], #0x10", slot));
+    REQUIRE_FALSE(FindArm64FrameOperand("x0, [x20, #8]", slot));
+}
+
+namespace
+{
+// decodes one instruction of 32 bit ARM code (`thumb`: Thumb mode) at a relative address, with the details
+struct Arm32Decoder {
+    csh handle = 0;
+    Arm32Decoder()
+    {
+        REQUIRE(cs_open(CS_ARCH_ARM, CS_MODE_THUMB, &handle) == CS_ERR_OK);
+        REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    }
+    ~Arm32Decoder()
+    {
+        cs_close(&handle);
+    }
+    template <typename Callback>
+    void Decode(std::initializer_list<uint8_t> bytes, uint64 address, bool thumb, Callback&& callback)
+    {
+        cs_option(handle, CS_OPT_MODE, thumb ? CS_MODE_THUMB : CS_MODE_ARM);
+        const std::vector<uint8_t> code(bytes);
+        cs_insn* insn      = nullptr;
+        const size_t count = cs_disasm(handle, code.data(), code.size(), address, 1, &insn);
+        REQUIRE(count == 1);
+        INFO(insn->mnemonic << " " << insn->op_str << " id " << insn->id);
+        callback(*insn);
+        cs_free(insn, count);
+    }
+};
+} // namespace
+
+TEST_CASE("Arm32Tracker", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    using Result = Arm32Tracker::Result;
+    // a Windows import thunk (Thumb-2): movw r12, #0x2050; movt r12, #0x40; ldr.w pc, [r12] at the VA 0x401040, the code starts at 0x401000
+    {
+        Arm32Tracker tracker(0x401000);
+        std::optional<Result> result;
+        decoder.Decode({ 0x42, 0xF2, 0x50, 0x0C }, 0x40, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, true); });
+        decoder.Decode({ 0xC0, 0xF2, 0x40, 0x0C }, 0x44, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value()); // movt: the address is taken
+        REQUIRE(result->address == 0x1050);
+        decoder.Decode({ 0xDC, 0xF8, 0x00, 0xF0 }, 0x48, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(result->address == 0x1050);
+        REQUIRE(result->throughSlot);          // ldr pc, [r12]: a jump through the slot
+        REQUIRE(result->sequenceStart == 0x40); // the movw
+        REQUIRE(result->sequenceAtBlockStart);
+    }
+    // an ELF PLT stub (ARM): add ip, pc, #0, #12; add ip, ip, #32, #20; ldr pc, [ip, #0x94]! at 0x102e0, the code starts at 0x10268
+    {
+        Arm32Tracker tracker(0x10268);
+        std::optional<Result> result;
+        decoder.Decode({ 0x00, 0xC6, 0x8F, 0xE2 }, 0x102E0 - 0x10268, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, true); });
+        decoder.Decode({ 0x20, 0xCA, 0x8C, 0xE2 }, 0x102E4 - 0x10268, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, false); });
+        decoder.Decode({ 0x94, 0xF0, 0xBC, 0xE5 }, 0x102E8 - 0x10268, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(result->throughSlot);
+        REQUIRE(result->address == 0x102E8 + 0x20000 + 0x94 - 0x10268); // pc (0x102e0 + 8) + 0x20000 + 0x94
+    }
+    // PIC data (Thumb): ldr r0, [pc, #0x18]; add r0, pc: the literal is an offset from pc; the address is before the code (the VA wraps)
+    {
+        Arm32Tracker tracker(0x10268, [](uint64 relativeAddress) -> std::optional<uint32> {
+            return relativeAddress == 0x10288 - 0x10268 ? std::optional<uint32>(0xFFFEFFE0) : std::nullopt;
+        });
+        std::optional<Result> result;
+        decoder.Decode({ 0x06, 0x48 }, 0x1026E - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        decoder.Decode({ 0x78, 0x44 }, 0x10270 - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(0x10268 + result->address == 0x254); // 0x10274 + 0xfffeffe0, on 32 bits
+        REQUIRE(result->memoryAccess == 0);
+    }
+}
+
+TEST_CASE("Arm32FlowAndOperands", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    using Flow = X86Flow;
+    decoder.Decode({ 0x17, 0x00, 0x00, 0xEB }, 0x14, false, [](const cs_insn& insn) { // bl #0x70
+        REQUIRE(GetArm32Flow(insn) == Flow::Call);
+        REQUIRE(GetArm32OperandsInfo(insn, false).directTarget == std::optional<uint64>(0x14 + 8 + 0x17 * 4));
+    });
+    decoder.Decode({ 0x01, 0x00, 0x00, 0xBA }, 0x1C, false, [](const cs_insn& insn) { // blt
+        REQUIRE(GetArm32Flow(insn) == Flow::ConditionalJump);
+        REQUIRE(GetArm32InstructionKind(insn.id, insn.mnemonic) == X86InstructionKind::ConditionalJump);
+    });
+    decoder.Decode({ 0x00, 0x88, 0xBD, 0xE8 }, 0x48, false, [](const cs_insn& insn) { REQUIRE(GetArm32Flow(insn) == Flow::Return); });  // pop {fp, pc}
+    decoder.Decode({ 0x70, 0x47 }, 0x10, true, [](const cs_insn& insn) { REQUIRE(GetArm32Flow(insn) == Flow::Return); });            // bx lr
+    decoder.Decode({ 0x60, 0x47 }, 0x10, true, [](const cs_insn& insn) { REQUIRE(GetArm32Flow(insn) == Flow::Jump); });              // bx ip
+    decoder.Decode({ 0x80, 0xB5 }, 0x10, true, [](const cs_insn& insn) { REQUIRE(IsArm32PrologueStart(insn)); });                   // push {r7, lr}
+    decoder.Decode({ 0x20, 0x00, 0x9F, 0xE5 }, 0x0C, false, [](const cs_insn& insn) { // ldr r0, [pc, #0x20]: pc = the address + 8
+        const auto operands = GetArm32OperandsInfo(insn, false);
+        REQUIRE(operands.ripTarget == std::optional<uint64>(0x0C + 8 + 0x20));
+        REQUIRE(operands.memoryAccess == CS_AC_READ);
+    });
+    decoder.Decode({ 0x06, 0x48 }, 0x06, true, [](const cs_insn& insn) { // ldr r0, [pc, #0x18] (Thumb): pc = the aligned address + 4
+        REQUIRE(GetArm32OperandsInfo(insn, true).ripTarget == std::optional<uint64>(0x08 + 0x18));
+    });
+    for (const auto name : { "r0", "r7", "sb", "sl" })
+        CHECK(GetX86RegisterKind(name) == X86RegisterKind::General);
+    CHECK(GetX86RegisterKind("pc") == X86RegisterKind::Pointer);
+}
+
+TEST_CASE("Arm32ModesInOneZone", "[Dissasm]Arm32")
+{
+    // Thumb code that calls an ARM stub (blx): the mode changes at 0x10 (ARM) and a literal pool at 0x0c (data)
+    std::vector<unsigned char> file = {
+        0x80, 0xB5,             // 0x00: push {r7, lr}
+        0x00, 0xF0, 0x06, 0xE8, // 0x02: blx #0x10 (to ARM code)
+        0x80, 0xBD,             // 0x06: pop {r7, pc}
+        0x00, 0xBF, 0x00, 0xBF, // 0x08: nop; nop
+        0x78, 0x56, 0x34, 0x12, // 0x0c: .word 0x12345678 (a literal pool)
+        0x01, 0x00, 0xA0, 0xE3, // 0x10: mov r0, #1 (ARM)
+        0x1E, 0xFF, 0x2F, 0xE1, // 0x14: bx lr
+    };
+    ZoneLayout layout;
+    layout.size         = file.size();
+    layout.entryPoint   = 0;
+    layout.language     = DisassemblyLanguage::Thumb;
+    layout.armCodeModes = { { 0x0C, ArmCodeMode::Data }, { 0x10, ArmCodeMode::Arm } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetArchAt(0x02) == DissasmArch::Thumb);
+    REQUIRE(zone.GetArchAt(0x10) == DissasmArch::Arm);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("push   {r7, lr}") != std::string::npos);
+    REQUIRE(listing.find("blx    sub_10") != std::string::npos);
+    REQUIRE(listing.find(".word  0x12345678") != std::string::npos);
+    REQUIRE(listing.find("mov    r0, #1") != std::string::npos);
+    REQUIRE(listing.find("bx     lr") != std::string::npos);
+    REQUIRE(std::find(zone.functionStarts.begin(), zone.functionStarts.end(), 0x10) != zone.functionStarts.end());
+}
+
+TEST_CASE("Arm32SwitchTables", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    const auto run = [&decoder](Arm32Tracker& tracker, std::initializer_list<std::pair<std::vector<uint8_t>, uint64>> instructions, bool thumb) {
+        std::optional<Arm64JumpTable> table;
+        for (const auto& [bytes, address] : instructions) {
+            cs_option(decoder.handle, CS_OPT_MODE, thumb ? CS_MODE_THUMB : CS_MODE_ARM);
+            cs_insn* insn = nullptr;
+            REQUIRE(cs_disasm(decoder.handle, bytes.data(), bytes.size(), address, 1, &insn) == 1);
+            tracker.Next(*insn, thumb, false);
+            table = tracker.TakeJumpTable();
+            cs_free(insn, 1);
+        }
+        return table;
+    };
+    {
+        // Thumb: cmp r0, #11; bhi default; tbb [pc, r0]: the byte table follows the tbb, the case i is at the tbb + 4 + 2 * entry i
+        Arm32Tracker tracker;
+        const auto table = run(tracker, { { { 0x0B, 0x28 }, 0x00 }, { { 0x10, 0xD8 }, 0x02 }, { { 0xDF, 0xE8, 0x00, 0xF0 }, 0x04 } }, true);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 12);
+        REQUIRE(table->table == 0x08);
+        REQUIRE(table->entrySize == 1);
+        REQUIRE(table->base == 0x08);
+        REQUIRE(table->shift == 1);
+    }
+    {
+        // ARM (clang): cmp r0, #11; bxhi lr; add r1, pc, #4; ldr r0, [r1, r0, lsl #2]; add pc, r1, r0: words relative to the table
+        Arm32Tracker tracker;
+        const auto table = run(tracker,
+                               { { { 0x0B, 0x00, 0x50, 0xE3 }, 0x00 },
+                                 { { 0x1E, 0xFF, 0x2F, 0x81 }, 0x04 },
+                                 { { 0x04, 0x10, 0x8F, 0xE2 }, 0x08 },
+                                 { { 0x00, 0x01, 0x91, 0xE7 }, 0x0C },
+                                 { { 0x00, 0xF0, 0x81, 0xE0 }, 0x10 } },
+                               false);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 12);
+        REQUIRE(table->table == 0x08 + 8 + 4);
+        REQUIRE(table->entrySize == 4);
+        REQUIRE(table->base == table->table);
+        REQUIRE(table->shift == 0);
+    }
+    {
+        // ARM (gcc): cmp r0, #3; ldrls pc, [pc, r0, lsl #2]: the addresses of the cases follow
+        Arm32Tracker tracker;
+        const auto table = run(tracker, { { { 0x03, 0x00, 0x50, 0xE3 }, 0x00 }, { { 0x00, 0xF1, 0x9F, 0x97 }, 0x04 } }, false);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 4);
+        REQUIRE(table->absolute);
+        REQUIRE(table->table == 0x04 + 8);
+    }
+    {
+        // ARM (gcc): cmp r0, #3; addls pc, pc, r0, lsl #2: a branch for every case after the add (and its b default)
+        Arm32Tracker tracker;
+        const auto table = run(tracker, { { { 0x03, 0x00, 0x50, 0xE3 }, 0x00 }, { { 0x00, 0xF1, 0x8F, 0x90 }, 0x04 } }, false);
+        REQUIRE(table.has_value());
+        REQUIRE(table->count == 4);
+        REQUIRE(table->entrySize == 0);
+        REQUIRE(table->base == 0x04 + 8);
+        REQUIRE(table->shift == 2);
+    }
+    {
+        // no bound: no table
+        Arm32Tracker tracker;
+        REQUIRE_FALSE(run(tracker, { { { 0xDF, 0xE8, 0x00, 0xF0 }, 0x04 } }, true).has_value());
+    }
+}
+
+TEST_CASE("Arm32FrameVariables", "[Dissasm]Arm32")
+{
+    std::vector<unsigned char> file = {
+        0x00, 0x48, 0x2D, 0xE9, // 0x00: push {r11, lr}               (ARM)
+        0x0D, 0xB0, 0xA0, 0xE1, // 0x04: mov r11, sp                  (the frame register: fp)
+        0x0C, 0xD0, 0x4D, 0xE2, // 0x08: sub sp, sp, #12              (sp = fp - 0xc)
+        0x04, 0x00, 0x8D, 0xE5, // 0x0c: str r0, [sp, #4]             -> var_8
+        0x00, 0x00, 0x8D, 0xE5, // 0x10: str r0, [sp]                 -> var_C
+        0x04, 0x20, 0x0B, 0xE5, // 0x14: str r2, [r11, #-4]           -> var_4
+        0x0B, 0xD0, 0xA0, 0xE1, // 0x18: mov sp, r11
+        0x00, 0x88, 0xBD, 0xE8, // 0x1c: pop {r11, pc}
+        0x82, 0xB0,             // 0x20: sub sp, #8                   (Thumb, a leaf without a frame register)
+        0x01, 0x90,             // 0x22: str r0, [sp, #4]             -> the sp of the entry - 4: var_4
+        0x01, 0x98,             // 0x24: ldr r0, [sp, #4]
+        0x02, 0xB0,             // 0x26: add sp, #8
+        0x70, 0x47,             // 0x28: bx lr
+    };
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::ARM;
+    layout.armCodeModes     = { { 0x20, ArmCodeMode::Thumb } };
+    layout.functionEntries  = { { 0x20, { "leaf", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->frameRegister == 11);
+    REQUIRE(frame->stackOffset == -0xC);
+    REQUIRE(frame->variables.size() == 3);
+    REQUIRE(frame->variables[0].frameOffset == -0xC);
+    REQUIRE(frame->variables[1].frameOffset == -8);
+    REQUIRE(frame->variables[2].frameOffset == -4);
+
+    const auto* leaf = zone.localVariables.FindFunctionByStart(0x20);
+    REQUIRE(leaf != nullptr);
+    REQUIRE_FALSE(leaf->usesFrameRegister);
+    REQUIRE(leaf->variables.size() == 1);
+    REQUIRE(leaf->variables[0].name == "var_4");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("str    r0, [sp, #var_8]") != std::string::npos);
+    REQUIRE(listing.find("str    r0, [sp, #var_C]") != std::string::npos); // [sp]: the name is inserted
+    REQUIRE(listing.find("str    r2, [fp, #var_4]") != std::string::npos);
+    REQUIRE(listing.find("str    r0, [sp, #var_4]") != std::string::npos); // the Thumb leaf
+}
+
+TEST_CASE("ArmFrameOperandForms", "[Dissasm]Arm32")
+{
+    Arm64FrameOperand slot{};
+    REQUIRE(FindArmFrameOperand("r0, [fp, #-0x14]", "fp", slot));
+    REQUIRE(slot.displacement == -0x14);
+    REQUIRE_FALSE(slot.needsSeparator);
+    REQUIRE(FindArmFrameOperand("r0, [sp]", "r7", slot));
+    REQUIRE(slot.isStackPointerBased);
+    REQUIRE(slot.needsSeparator);
+    REQUIRE(slot.displacement == 0);
+    REQUIRE_FALSE(FindArmFrameOperand("lr, [sp, #-4]!", "fp", slot));
+    REQUIRE_FALSE(FindArmFrameOperand("r4, [sp], #4", "fp", slot));
+    REQUIRE_FALSE(FindArmFrameOperand("r0, [r7, #4]", "fp", slot)); // r7 is not the frame register of an ARM mode function
+}
+
+TEST_CASE("AnnotationsRoundTrip", "[Dissasm]Annotations")
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x10,       // 0x04: sub rsp, 0x10
+        0x48, 0x89, 0x45, 0xF8,       // 0x08: mov qword ptr [rbp - 8], rax
+        0x8B, 0x45, 0xF4,             // 0x0c: mov eax, dword ptr [rbp - 0xc]
+        0xE8, 0x0C, 0x00, 0x00, 0x00, // 0x0f: call 0x20
+        0xC9,                         // 0x14: leave
+        0xC3,                         // 0x15: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+
+    // the annotations of the user on a first analysis
+    DissasmTestInstance first(file.data(), file.size(), true, layout);
+    auto& zone           = *first.zone;
+    const auto findLine = [](DissasmCodeZone& target, std::string_view text) {
+        const auto line = target.FindText(text, true, 0, UINT32_MAX, nullptr);
+        REQUIRE(line.has_value());
+        return line.value();
+    };
+    REQUIRE(first.AddOrUpdateComment(findLine(zone, "sub rsp, 0x10"), "frame of 16"));
+    std::string_view helperName = "helper";
+    REQUIRE(zone.TryRenameLine(findLine(zone, "sub_20"), &first.objects[0], &helperName).ok);
+    REQUIRE(zone.RenameLocalVariable(0x00, -8, "count").ok);
+    REQUIRE(first.AddCollpasibleZone(findLine(zone, "sub rsp, 0x10"), findLine(zone, "leave")));
+    zone.decimalOperands[0x04] = 1; // sub rsp, 16
+    zone.suggestedNames[0x20]  = "ReturnZero";
+
+    const auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    INFO(document.dump(2));
+    REQUIRE(document["format"].get<std::string>() == DISSASM_ANNOTATIONS_FORMAT);
+    const auto& zoneJson = document["zones"][0];
+    REQUIRE(zoneJson["names"][0]["address"].get<std::string>() == "0x20");
+    REQUIRE(zoneJson["names"][0]["name"].get<std::string>() == "helper");
+    REQUIRE(zoneJson["comments"][0]["text"].get<std::string>() == "frame of 16");
+    REQUIRE(zoneJson["variables"].size() == 1); // only the renamed one (var_C keeps the name of the analysis)
+    REQUIRE(zoneJson["variables"][0]["name"].get<std::string>() == "count");
+    REQUIRE(zoneJson["decimalOperands"][0]["mask"].get<uint32>() == 1);
+    REQUIRE(zoneJson["collapsibleZones"].size() == 1);
+    REQUIRE(zoneJson["suggestedNames"][0]["name"].get<std::string>() == "ReturnZero");
+
+    // a new analysis of the same code (through a text file: dump / parse), at another address: the annotations follow the code
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance second(file.data(), file.size(), true, layout);
+    auto& other = *second.zone;
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { &other }, result, error));
+    REQUIRE(result.zones == 1);
+    REQUIRE(result.names == 1);
+    REQUIRE(result.comments == 1);
+    REQUIRE(result.variables == 1);
+    REQUIRE(result.decimalOperands == 1);
+    REQUIRE(result.collapsibleZones == 1);
+    REQUIRE(result.suggestedNames == 1);
+    REQUIRE(result.skipped == 0);
+    REQUIRE(other.GetLabelNameAt(0x20) == "helper");
+    REQUIRE(other.localVariables.FindFunctionByStart(0x00)->FindVariable(-8)->name == "count");
+    REQUIRE(other.decimalOperands.at(0x04) == 1);
+    REQUIRE(other.suggestedNames.at(0x20) == "ReturnZero");
+    REQUIRE(other.collapsibleZones.size() == 1);
+    REQUIRE_FALSE(other.CanUndoEdit());
+    std::string comment;
+    REQUIRE(other.GetComment(findLine(other, "sub rsp, 16"), comment)); // the number in decimal as well
+    REQUIRE(comment == "frame of 16");
+    // the names of the document are the names of the second zone (in its VA)
+    REQUIRE(ExportZoneAnnotations(other)["names"][0]["address"].get<std::string>() == "0x140001020");
+}
+
+TEST_CASE("AnnotationsImportErrors", "[Dissasm]Annotations")
+{
+    std::vector<unsigned char> file(0x40, 0xC3);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    std::vector<DissasmCodeZone*> zones{ dissasmInstance.zone.get() };
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE_FALSE(ImportAnnotationsDocument(nlohmann::json{ { "format", "other" } }, zones, result, error));
+    REQUIRE_FALSE(ImportAnnotationsDocument(
+          nlohmann::json{ { "format", DISSASM_ANNOTATIONS_FORMAT }, { "version", DISSASM_ANNOTATIONS_VERSION + 1 }, { "zones", nlohmann::json::array() } },
+          zones,
+          result,
+          error));
+    // a zone of another file offset: nothing applies
+    nlohmann::json document = { { "format", DISSASM_ANNOTATIONS_FORMAT },
+                                { "version", DISSASM_ANNOTATIONS_VERSION },
+                                { "zones", { { { "fileOffset", "0x1000" } } } } };
+    REQUIRE_FALSE(ImportAnnotationsDocument(document, zones, result, error));
+    // the entries outside the code, a bad comment, a label that does not exist: skipped, the others applied
+    document["zones"] = { { { "fileOffset", "0x0" },
+                            { "comments",
+                              { { { "address", "0x5" }, { "text", "kept" } }, { { "address", "0x1000" }, { "text", "outside" } }, { { "address", "x" } } } },
+                            { "names", { { { "address", "0x6" }, { "name", "no_label_here" } } } } } };
+    result = {};
+    REQUIRE(ImportAnnotationsDocument(document, zones, result, error));
+    REQUIRE(result.comments == 1);
+    REQUIRE(result.skipped == 3);
+}
+
+// x64: the entry point calls two functions (0x20, 0x40) that do not depend on their place but for a RIP relative lea
+static std::vector<unsigned char> SignaturesSampleCode(bool sameFunctions)
+{
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0xE8, 0x32, 0x00, 0x00, 0x00, // 0x09: call 0x40
+        0x5D,                         // 0x0e: pop rbp
+        0xC3,                         // 0x0f: ret
+    };
+    const std::vector<unsigned char> addMul = {
+        0x48, 0x89, 0xC8,                         // mov rax, rcx
+        0x48, 0x01, 0xD0,                         // add rax, rdx
+        0x48, 0x0F, 0xAF, 0xC1,                   // imul rax, rcx
+        0x48, 0x83, 0xC0, 0x07,                   // add rax, 7
+        0x48, 0x8D, 0x05, 0x00, 0x01, 0x00, 0x00, // lea rax, [rip + 0x100]
+        0xC3,                                     // ret
+    };
+    const std::vector<unsigned char> negShift = {
+        0x48, 0x31, 0xC0,       // xor rax, rax
+        0x48, 0xFF, 0xC0,       // inc rax
+        0x48, 0xC1, 0xE0, 0x04, // shl rax, 4
+        0x48, 0x83, 0xE8, 0x03, // sub rax, 3
+        0x48, 0xF7, 0xD8,       // neg rax
+        0xC3,                   // ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), addMul.begin(), addMul.end());
+    file.resize(0x40, 0xCC);
+    const auto& second = sameFunctions ? addMul : negShift;
+    file.insert(file.end(), second.begin(), second.end());
+    file.resize(0x60, 0xCC);
+    return file;
+}
+
+TEST_CASE("SignaturesRoundTrip", "[Dissasm]Signatures")
+{
+    const auto file = SignaturesSampleCode(false);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+
+    // the file with the names (a build with symbols)
+    DissasmTestInstance named(file.data(), file.size(), true, layout);
+    auto& zone = *named.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x40 });
+    REQUIRE(zone.ApplyUserLabelName(0x20, "add_mul"));
+    REQUIRE(zone.ApplyUserLabelName(0x40, "neg_shift"));
+
+    // the targets of the calls and the RIP relative displacements are masked; the padding up to the next function is not in the pattern
+    // (the size of the function keeps it)
+    const auto entry = BuildFunctionPattern(zone, 0x00);
+    REQUIRE(entry.has_value());
+    REQUIRE(entry->functionSize == 0x20);
+    REQUIRE(entry->ToText() == "55 48 89 E5 E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 5D C3");
+    REQUIRE(entry->FixedBytes() == 8); // not enough for a signature
+    const auto addMul = BuildFunctionPattern(zone, 0x20);
+    REQUIRE(addMul.has_value());
+    REQUIRE(addMul->ToText() == "48 89 C8 48 01 D0 48 0F AF C1 48 83 C0 07 48 8D 05 ?? ?? ?? ?? C3");
+    REQUIRE(addMul->functionSize == 0x20);
+
+    const auto document = BuildSignaturesDocument({ &zone });
+    INFO(document.dump(2));
+    REQUIRE(document["format"].get<std::string>() == DISSASM_SIGNATURES_FORMAT);
+    REQUIRE(document["architecture"].get<std::string>() == "x64");
+    REQUIRE(document["signatures"].size() == 2); // the entry point keeps its automatic name (and is too short)
+    REQUIRE(document["signatures"][0]["name"].get<std::string>() == "add_mul");
+    REQUIRE(document["signatures"][0]["size"].get<uint64>() == 0x20);
+
+    // the stripped file, at another address: the functions get their names
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance stripped(file.data(), file.size(), true, layout);
+    auto& other = *stripped.zone;
+    REQUIRE(other.GetLabelNameAt(0x20) == "sub_140001020");
+    DissasmSignaturesApply result;
+    std::string error;
+    REQUIRE(ApplySignaturesDocument(nlohmann::json::parse(document.dump()), { &other }, result, error));
+    REQUIRE(result.signatures == 2);
+    REQUIRE(result.named == 2);
+    REQUIRE(result.ambiguous == 0);
+    REQUIRE(other.GetLabelNameAt(0x20) == "add_mul");
+    REQUIRE(other.GetLabelNameAt(0x40) == "neg_shift");
+    REQUIRE(other.GetLabelNameAt(0x00) == "EntryPoint");
+    REQUIRE_FALSE(other.CanUndoEdit());
+
+    // applied again: the names are there already
+    result = {};
+    REQUIRE(ApplySignaturesDocument(document, { &other }, result, error));
+    REQUIRE(result.named == 0);
+}
+
+TEST_CASE("SignaturesAmbiguousAndErrors", "[Dissasm]Signatures")
+{
+    auto file = SignaturesSampleCode(false);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance named(file.data(), file.size(), true, layout);
+    REQUIRE(named.zone->ApplyUserLabelName(0x20, "add_mul"));
+    const auto document = BuildSignaturesDocument({ named.zone.get() });
+    REQUIRE(document["signatures"].size() == 1);
+
+    // the same code twice: the name would go to two functions, none gets it
+    const auto twice = SignaturesSampleCode(true);
+    DissasmTestInstance copies(twice.data(), twice.size(), true, layout);
+    std::vector<DissasmCodeZone*> zones{ copies.zone.get() };
+    DissasmSignaturesApply result;
+    std::string error;
+    REQUIRE(ApplySignaturesDocument(document, zones, result, error));
+    REQUIRE(result.named == 0);
+    REQUIRE(result.ambiguous == 2);
+    REQUIRE(copies.zone->GetLabelNameAt(0x20) == "sub_20");
+
+    // two names for the same bytes: the function is ambiguous
+    auto twoNames                      = document;
+    twoNames["signatures"].push_back(twoNames["signatures"][0]);
+    twoNames["signatures"][1]["name"] = "add_mul_copy";
+    DissasmTestInstance single(file.data(), file.size(), true, layout);
+    result = {};
+    REQUIRE(ApplySignaturesDocument(twoNames, { single.zone.get() }, result, error));
+    REQUIRE(result.named == 0);
+    REQUIRE(result.ambiguous == 1);
+
+    // not a signatures file, a newer version, another architecture
+    REQUIRE_FALSE(ApplySignaturesDocument(nlohmann::json{ { "format", "other" } }, zones, result, error));
+    auto newer       = document;
+    newer["version"] = DISSASM_SIGNATURES_VERSION + 1;
+    REQUIRE_FALSE(ApplySignaturesDocument(newer, zones, result, error));
+    auto arm64            = document;
+    arm64["architecture"] = "ARM64";
+    REQUIRE_FALSE(ApplySignaturesDocument(arm64, zones, result, error));
+    REQUIRE(error.find("ARM64") != std::string::npos);
+
+    // the bad entries are skipped
+    auto bad                          = document;
+    bad["signatures"][0]["pattern"]   = "48 8Z";
+    bad["signatures"].push_back({ { "name", "short" }, { "pattern", "48 89 C8" } });
+    result = {};
+    REQUIRE(ApplySignaturesDocument(bad, { single.zone.get() }, result, error));
+    REQUIRE(result.signatures == 0);
+    REQUIRE(result.named == 0);
+}
+
+TEST_CASE("SignaturesArm64", "[Dissasm]Signatures")
+{
+    std::vector<unsigned char> file = {
+        0x08, 0x00, 0x00, 0x94, // 0x00: bl 0x20
+        0xC0, 0x03, 0x5F, 0xD6, // 0x04: ret
+    };
+    while (file.size() < 0x20)
+        file.insert(file.end(), { 0x1F, 0x20, 0x03, 0xD5 }); // nop
+    file.insert(file.end(), {
+                                  0xFD, 0x7B, 0xBF, 0xA9, // 0x20: stp x29, x30, [sp, #-0x10]!
+                                  0xFD, 0x03, 0x00, 0x91, // 0x24: mov x29, sp
+                                  0x20, 0x00, 0x80, 0x52, // 0x28: mov w0, #1
+                                  0x05, 0x00, 0x00, 0x94, // 0x2c: bl 0x40
+                                  0x00, 0x04, 0x00, 0x11, // 0x30: add w0, w0, #1
+                                  0xFD, 0x7B, 0xC1, 0xA8, // 0x34: ldp x29, x30, [sp], #0x10
+                                  0xC0, 0x03, 0x5F, 0xD6, // 0x38: ret
+                                  0x1F, 0x20, 0x03, 0xD5, // 0x3c: nop
+                                  0x40, 0x00, 0x80, 0x52, // 0x40: mov w0, #2
+                                  0xC0, 0x03, 0x5F, 0xD6, // 0x44: ret
+                            });
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance named(file.data(), file.size(), true, layout);
+    auto& zone = *named.zone;
+    REQUIRE(zone.ApplyUserLabelName(0x20, "add_one"));
+    REQUIRE(zone.ApplyUserLabelName(0x40, "two")); // too short for a signature
+
+    // the whole bl is masked (its target is in the instruction), the nop after the ret is not in the pattern
+    const auto pattern = BuildFunctionPattern(zone, 0x20);
+    REQUIRE(pattern.has_value());
+    REQUIRE(pattern->ToText() == "FD 7B BF A9 FD 03 00 91 20 00 80 52 ?? ?? ?? ?? 00 04 00 11 FD 7B C1 A8 C0 03 5F D6");
+    const auto document = BuildSignaturesDocument({ &zone });
+    INFO(document.dump(2));
+    REQUIRE(document["architecture"].get<std::string>() == "ARM64");
+    REQUIRE(document["signatures"].size() == 1);
+
+    // the stripped file at another address
+    layout.labelAddressBase = 0x400000;
+    DissasmTestInstance stripped(file.data(), file.size(), true, layout);
+    DissasmSignaturesApply result;
+    std::string error;
+    REQUIRE(ApplySignaturesDocument(document, { stripped.zone.get() }, result, error));
+    REQUIRE(result.named == 1);
+    REQUIRE(stripped.zone->GetLabelNameAt(0x20) == "add_one");
+    REQUIRE(stripped.zone->GetLabelNameAt(0x40) == "sub_400040");
+
+    // x64 signatures do not apply to ARM64 code
+    auto x64            = document;
+    x64["architecture"] = "x64";
+    REQUIRE_FALSE(ApplySignaturesDocument(x64, { stripped.zone.get() }, result, error));
+}
+
+TEST_CASE("HeadlessAnalysisSignatures", "[Dissasm]Analyze")
+{
+    const auto file = SignaturesSampleCode(false);
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    const auto analyze = [&](const DissasmAnalysisOptions& options) {
+        Settings settings;
+        settings.AddDisassemblyZone(0, file.size(), 0, DisassemblyLanguage::x64);
+        std::string text, error;
+        REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error, options));
+        return nlohmann::json::parse(text);
+    };
+    const auto functionName = [](const nlohmann::json& root, std::string_view address) {
+        for (const auto& function : root["zones"][0]["functions"])
+            if (function["address"].get<std::string>() == address)
+                return function["name"].get<std::string>();
+        return std::string();
+    };
+
+    // the names of an annotations file, then the signatures of the named functions
+    const nlohmann::json annotations = { { "format", DISSASM_ANNOTATIONS_FORMAT },
+                                         { "version", DISSASM_ANNOTATIONS_VERSION },
+                                         { "zones",
+                                           { { { "fileOffset", "0x0" },
+                                               { "names", { { { "address", "0x20" }, { "name", "add_mul" } }, { { "address", "0x40" }, { "name", "neg_shift" } } } } } } } };
+    nlohmann::json signatures;
+    DissasmAnalysisOptions first;
+    first.annotations      = &annotations;
+    first.signaturesOutput = &signatures;
+    const auto named = analyze(first);
+    INFO(named.dump(2));
+    REQUIRE(named["annotationsImport"]["names"] == 2);
+    REQUIRE(functionName(named, "0x20") == "add_mul");
+    REQUIRE(signatures["format"].get<std::string>() == DISSASM_SIGNATURES_FORMAT);
+    REQUIRE(signatures["signatures"].size() == 2);
+    REQUIRE_FALSE(named.contains("signaturesApply"));
+
+    // a new analysis (no names) with the signatures
+    DissasmAnalysisOptions second;
+    second.signatures = &signatures;
+    const auto applied = analyze(second);
+    REQUIRE(applied["signaturesApply"]["named"] == 2);
+    REQUIRE(applied["signaturesApply"]["ambiguous"] == 0);
+    REQUIRE(functionName(applied, "0x20") == "add_mul");
+    REQUIRE(functionName(applied, "0x40") == "neg_shift");
+
+    // a file of another architecture / format: the error is in the JSON, the analysis is still written
+    auto arm64            = signatures;
+    arm64["architecture"] = "ARM64";
+    const nlohmann::json other = { { "format", "other" } };
+    DissasmAnalysisOptions wrong;
+    wrong.signatures  = &arm64;
+    wrong.annotations = &other;
+    const auto failed = analyze(wrong);
+    REQUIRE(failed["signaturesApply"].contains("error"));
+    REQUIRE(failed["annotationsImport"].contains("error"));
+    REQUIRE(functionName(failed, "0x20") == "sub_20");
+}
+
+TEST_CASE("SwitchTableInsideCode", "[Dissasm]Switch")
+{
+    // MSVC x64 puts the table after the code of the function, in .text: its entries become data lines
+    std::vector<unsigned char> file = {
+        0x83, 0xF9, 0x02,                         // 0x00: cmp ecx, 2
+        0x77, 0x4B,                               // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                         // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF, // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00, // 0x0f: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                         // 0x16: add rcx, rdx
+        0xFF, 0xE1,                               // 0x19: jmp rcx
+    };
+    WriteSwitchCase(file, 0x20, 0);
+    WriteSwitchCase(file, 0x30, 1);
+    WriteSwitchCase(file, 0x40, 2);
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    file.resize(0x80, 0xCC);
+    WriteDword(file, 0x80, 0x1020); // the table of RVAs, inside the code
+    WriteDword(file, 0x84, 0x1030);
+    WriteDword(file, 0x88, 0x1040);
+    // 0x8c: mov eax, 5; ret - decoded from the last entry (40 10 00: adc byte ptr [rax], dl; 00 b8 ...) it would be hidden
+    file.insert(file.end(), { 0xB8, 0x05, 0x00, 0x00, 0x00, 0xC3 });
+    file.resize(0xA0, 0xCC);
+
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, MakeSwitchLayout(file.size(), file.size(), DisassemblyLanguage::x64, 0x140000000));
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.switchJumps.at(0x19) == 3);
+    REQUIRE(zone.instructionSet.dataRanges.size() == 1);
+    REQUIRE(zone.instructionSet.dataRanges[0].start == 0x80);
+    REQUIRE(zone.instructionSet.dataRanges[0].end == 0x8C);
+    REQUIRE(zone.instructionSet.dataRanges[0].unit == 4);
+    REQUIRE(zone.tableEntries.size() == 3);
+    REQUIRE(zone.GetLabelNameAt(0x80) == "jpt_140001019");
+    const auto [first, last] = zone.xrefs.To(0x140001080);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Read);
+    REQUIRE(first->from == 0x140001019);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "jpt_140001019:").ends_with("; xref: EntryPoint+0x19 (read)"));
+    REQUIRE(FindListingLine(listing, "dd     loc_140001020").size() > 0);
+    REQUIRE(FindListingLine(listing, "dd     loc_140001040").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, 5").size() > 0); // the code after the table is decoded from its start
+    REQUIRE(listing.find("adc ") == std::string::npos);
+
+    // the same lines when the scan runs in steps (the lines are counted again in steps too): many functions after the table
+    auto big           = file;
+    const auto filler  = MakeManyFunctions(1000);
+    big.insert(big.end(), filler.begin(), filler.end());
+    auto layout = MakeSwitchLayout(big.size(), big.size(), DisassemblyLanguage::x64, 0x140000000);
+    DissasmTestInstance bigOneShot(big.data(), big.size(), false, layout);
+    REQUIRE(bigOneShot.zone->instructionSet.dataRanges.size() == 1);
+    layout.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmTestInstance inSteps(big.data(), big.size(), false, layout);
+    auto& steppedZone = *inSteps.zone;
+    REQUIRE(steppedZone.IsDeepScanPending());
+    REQUIRE(steppedZone.instructionSet.dataRanges.empty()); // until the scan is committed
+    float progress = steppedZone.GetDeepScanProgress();
+    uint32 steps   = 0;
+    while (!steppedZone.ContinueDeepScan(std::chrono::steady_clock::now())) {
+        const float current = steppedZone.GetDeepScanProgress();
+        REQUIRE(current >= progress);
+        progress = current;
+        REQUIRE(++steps < 100000);
+    }
+    REQUIRE(steps > 2);
+    steppedZone.CommitDeepScan();
+    REQUIRE(steppedZone.instructionSet.dataRanges.size() == 1);
+    REQUIRE(steppedZone.asmLinesCount == bigOneShot.zone->asmLinesCount);
+    REQUIRE(steppedZone.cachedCodeOffsets.size() == bigOneShot.zone->cachedCodeOffsets.size());
+    REQUIRE(steppedZone.GetDisplayLinesCount() == bigOneShot.zone->GetDisplayLinesCount());
+    REQUIRE(inSteps.GetListing() == bigOneShot.GetListing());
+
+    // the index table of the cases (MSVC: a byte per case) is data too; a table without a bound is not (its end is a guess)
+    std::vector<unsigned char> indexed = {
+        0x83, 0xF9, 0x05,                               // 0x00: cmp ecx, 5 (6 cases)
+        0x77, 0x4B,                                     // 0x03: ja 0x50 (default)
+        0x48, 0x63, 0xC1,                               // 0x05: movsxd rax, ecx
+        0x48, 0x8D, 0x15, 0xF1, 0xEF, 0xFF, 0xFF,       // 0x08: lea rdx, [rip - 0x100f] (__ImageBase)
+        0x0F, 0xB6, 0x84, 0x02, 0x90, 0x10, 0x00, 0x00, // 0x0f: movzx eax, byte ptr [rdx + rax + 0x1090]
+        0x8B, 0x8C, 0x82, 0x80, 0x10, 0x00, 0x00,       // 0x17: mov ecx, dword ptr [rdx + rax*4 + 0x1080]
+        0x48, 0x01, 0xD1,                               // 0x1e: add rcx, rdx
+        0xFF, 0xE1,                                     // 0x21: jmp rcx
+    };
+    WriteSwitchCase(indexed, 0x30, 0);
+    WriteSwitchCase(indexed, 0x38, 1);
+    WriteSwitchCase(indexed, 0x40, 2);
+    indexed.resize(0x50, 0xCC);
+    indexed.insert(indexed.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: default
+    indexed.resize(0x80, 0xCC);
+    WriteDword(indexed, 0x80, 0x1030);
+    WriteDword(indexed, 0x84, 0x1038);
+    WriteDword(indexed, 0x88, 0x1040);
+    indexed.resize(0x90, 0xCC);
+    indexed.insert(indexed.end(), { 0, 1, 0, 2, 2, 1 }); // 0x90: the entry of every case
+    indexed.resize(0xA0, 0xCC);
+    DissasmTestInstance indexInstance(indexed.data(), indexed.size(), false, MakeSwitchLayout(indexed.size(), indexed.size(), DisassemblyLanguage::x64, 0x140000000));
+    const auto& ranges = indexInstance.zone->instructionSet.dataRanges;
+    REQUIRE(ranges.size() == 2);
+    REQUIRE((ranges[0].start == 0x80 && ranges[0].end == 0x8C && ranges[0].unit == 4));
+    REQUIRE((ranges[1].start == 0x90 && ranges[1].end == 0x96 && ranges[1].unit == 1));
+    const std::string indexListing = indexInstance.GetListing();
+    INFO(indexListing);
+    REQUIRE(FindListingLine(indexListing, "dd     loc_140001038").size() > 0);
+    REQUIRE(FindListingLine(indexListing, "db     0x02").size() > 0);
+}
+
+TEST_CASE("SwitchTableThumbTbb", "[Dissasm]Arm32")
+{
+    std::vector<unsigned char> file = {
+        0x02, 0x28,             // 0x00: cmp r0, #2
+        0x0A, 0xD8,             // 0x02: bhi 0x1a (default)
+        0xDF, 0xE8, 0x00, 0xF0, // 0x04: tbb [pc, r0] - the case i is at 0x08 + 2 * entry i
+        0x02, 0x04, 0x06,       // 0x08: the byte table
+        0x00,                   // 0x0b: the padding to the next instruction
+        0x01, 0x20, 0x70, 0x47, // 0x0c: movs r0, #1; bx lr
+        0x02, 0x20, 0x70, 0x47, // 0x10: movs r0, #2; bx lr
+        0x03, 0x20, 0x70, 0x47, // 0x14: movs r0, #3; bx lr
+        0x00, 0xBF,             // 0x18: nop
+        0x00, 0x20, 0x70, 0x47, // 0x1a: movs r0, #0; bx lr
+    };
+    ZoneLayout layout;
+    layout.size                = file.size();
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::Thumb;
+    const uint64 fileSize      = file.size();
+    layout.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+        return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.switchJumps.at(0x04) == 3);
+    REQUIRE(zone.instructionSet.dataRanges.size() == 1);
+    REQUIRE(zone.instructionSet.dataRanges[0].start == 0x08);
+    REQUIRE(zone.instructionSet.dataRanges[0].end == 0x0C); // the padding byte too: the instructions are 2 bytes aligned
+    REQUIRE(zone.GetLabelNameAt(0x08) == "jpt_4");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "db     loc_C").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     loc_14").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     0x00").size() > 0);
+    REQUIRE(FindListingLine(listing, "movs   r0, #1").size() > 0);
+}
+
+// two executable sections of a PE: .text (the entry point) calls into PAGE (no entry point)
+static std::vector<unsigned char> TwoSectionsCode()
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28, // 0x00: sub rsp, 0x28 (entry point)
+        0x48, 0x83, 0xC4, 0x28, // 0x04: add rsp, 0x28
+        0xC3,                   // 0x08: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });       // 0x40: push rbp; mov rbp, rsp (PAGE)
+    file.insert(file.end(), { 0xE8, 0x07, 0x00, 0x00, 0x00 }); // 0x44: call 0x50
+    file.insert(file.end(), { 0x5D, 0xC3 });                   // 0x49: pop rbp; ret
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: xor eax, eax; ret
+    file.resize(0x60, 0xCC);
+    return file;
+}
+
+TEST_CASE("CodeZoneWithoutEntryPoint", "[Dissasm]Zones")
+{
+    const auto file = TwoSectionsCode();
+    ZoneLayout layout;
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE_FALSE(zone.zoneDetails.HasEntryPoint());
+    REQUIRE(zone.CanReachAsmLines());
+    REQUIRE(zone.GetLabelNameAt(0x10) == "sub_50"); // the call target
+    REQUIRE(zone.GetLabelNameAt(0x00) == "sub_40"); // the prologue
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("EntryPoint") == std::string::npos);
+    REQUIRE(listing.find("entry point none") != std::string::npos);
+
+}
+
+TEST_CASE("HeadlessAnalysisSections", "[Dissasm]Zones")
+{
+    const auto file = TwoSectionsCode();
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Settings settings;
+    settings.AddDisassemblyZone(0, 0x40, 0, DisassemblyLanguage::x64, ".text");
+    settings.AddDisassemblyZone(0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE");
+    std::string text, error;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error));
+    const auto root = nlohmann::json::parse(text);
+    INFO(root.dump(2));
+    REQUIRE(root["zones"].size() == 2);
+    REQUIRE(root["zones"][0]["name"] == ".text");
+    REQUIRE(root["zones"][0]["entryPoint"] == "0x0");
+    REQUIRE(root["zones"][0]["functions"][0]["name"] == "EntryPoint");
+    REQUIRE(root["zones"][1]["name"] == "PAGE");
+    REQUIRE(root["zones"][1]["entryPoint"].is_null());
+    const auto& functions = root["zones"][1]["functions"];
+    REQUIRE(functions.size() == 2);
+    REQUIRE(functions[0]["name"] == "sub_40");
+    REQUIRE(functions[1]["name"] == "sub_50");
+}
+
+TEST_CASE("CacheValidationNewZones", "[Dissasm]Zones")
+{
+    // a cache saved when the plugin gave only .text still applies when it gives the other executable sections too
+    const auto file = TwoSectionsCode();
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Reference<GView::Object> obj = &dissasmInstance.objects[0];
+    SettingsData textOnly;
+    textOnly.disassemblyZones[0] = DisassemblyZone{ 0, 0x40, 0, DisassemblyLanguage::x64 };
+    DissasmCache cache;
+    REQUIRE(textOnly.SaveToCache(cache, obj));
+    cache.fileVersion = DISSASM_CACHE_VERSION;
+
+    SettingsData sections;
+    sections.disassemblyZones[0]    = DisassemblyZone{ 0, 0x40, 0, DisassemblyLanguage::x64, ".text" };
+    sections.disassemblyZones[0x40] = DisassemblyZone{ 0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE" };
+    REQUIRE(sections.ValidateCacheData(cache, obj));
+    // no zone of the cache: another file
+    SettingsData pageOnly;
+    pageOnly.disassemblyZones[0x40] = DisassemblyZone{ 0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE" };
+    REQUIRE_FALSE(pageOnly.ValidateCacheData(cache, obj));
+    // a zone of the cache that changed
+    cache.zonesData["DisassemblyZoneHash.0"].data[0] ^= std::byte{ 1 };
+    REQUIRE_FALSE(sections.ValidateCacheData(cache, obj));
+}
+
+// .text (the entry point) calls a function of PAGE, which PAGE calls too
+static std::vector<unsigned char> CrossSectionsCode()
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28 (entry point)
+        0xE8, 0x47, 0x00, 0x00, 0x00, // 0x04: call 0x50 (PAGE)
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5 });       // 0x40: push rbp; mov rbp, rsp (PAGE)
+    file.insert(file.end(), { 0xE8, 0x07, 0x00, 0x00, 0x00 }); // 0x44: call 0x50
+    file.insert(file.end(), { 0x5D, 0xC3 });                   // 0x49: pop rbp; ret
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x50: xor eax, eax; ret
+    file.resize(0x60, 0xCC);
+    return file;
+}
+
+TEST_CASE("CrossZoneReferences", "[Dissasm]Zones")
+{
+    const auto file = CrossSectionsCode();
+    ZoneLayout layout;
+    layout.size       = 0x40;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance text(file.data(), file.size(), false, layout);
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    DissasmTestInstance page(file.data(), file.size(), false, layout);
+    auto& textZone = *text.zone;
+    auto& pageZone = *page.zone;
+
+    // not linked: each zone has only its own references
+    REQUIRE(pageZone.GetCallers(0x10).size() == 1);
+    textZone.siblingZones = { &pageZone };
+    pageZone.siblingZones = { &textZone };
+
+    // the callers of sub_50: sub_40 (PAGE) and the entry point (.text, in its own relative addresses)
+    const auto callers = pageZone.GetCallers(0x10);
+    REQUIRE(callers.size() == 2);
+    REQUIRE(callers[0].function == "sub_40");
+    REQUIRE(callers[0].zone == nullptr);
+    REQUIRE(callers[1].function == "EntryPoint");
+    REQUIRE(callers[1].zone == &textZone);
+    REQUIRE(callers[1].site == 0x04);
+    REQUIRE(pageZone.GetXrefsTo(0x50).size() == 2);
+    REQUIRE(pageZone.FormatXrefsSummary(0x10) == "xrefs: sub_40+0x4 (call), EntryPoint+0x4 (call)");
+    const auto functions = pageZone.GetFunctions(nullptr);
+    REQUIRE(functions.size() == 2);
+    REQUIRE(functions[1].xrefs == 2);
+
+    // the callee of the entry point is the function of PAGE (its relative address there, its name)
+    const auto callees = textZone.GetCallees(0x00, nullptr);
+    REQUIRE(callees.size() == 1);
+    REQUIRE(callees[0].function == "sub_50");
+    REQUIRE(callees[0].zone == &pageZone);
+    REQUIRE(callees[0].functionStart == std::optional<uint64>(0x10));
+    REQUIRE(textZone.FindCodeZoneOfAddress(0x50) == &pageZone);
+    REQUIRE(textZone.FindCodeZoneOfAddress(0x08) == &textZone);
+    REQUIRE(textZone.FindCodeZoneOfAddress(0x100) == nullptr);
+    // an address outside of the zone is named in the zone that has it
+    REQUIRE(textZone.FormatCodeAddress(0x52) == "sub_50+0x2");
+    REQUIRE(textZone.FormatCodeAddress(0x100) == "0x100");
+}
+
+TEST_CASE("HeadlessAnalysisCrossSections", "[Dissasm]Zones")
+{
+    const auto file = CrossSectionsCode();
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false);
+    Settings settings;
+    settings.AddDisassemblyZone(0, 0x40, 0, DisassemblyLanguage::x64, ".text");
+    settings.AddDisassemblyZone(0x40, 0x20, NO_ENTRY_POINT, DisassemblyLanguage::x64, "PAGE");
+    std::string text, error;
+    REQUIRE(BuildAnalysisJson(&dissasmInstance.objects[0], settings, text, error));
+    const auto root = nlohmann::json::parse(text);
+    INFO(root.dump(2));
+    const auto& entry = root["zones"][0]["functions"][0];
+    REQUIRE(entry["name"] == "EntryPoint");
+    REQUIRE(entry["callees"].size() == 1);
+    REQUIRE(entry["callees"][0]["function"] == "sub_50");
+    REQUIRE(entry["callees"][0]["address"] == "0x50");
+    const auto& callee = root["zones"][1]["functions"][1];
+    REQUIRE(callee["name"] == "sub_50");
+    REQUIRE(callee["xrefs"] == 2);
+    REQUIRE(callee["callers"].size() == 2);
+    REQUIRE(callee["callers"][1]["function"] == "EntryPoint");
+    REQUIRE(callee["callers"][1]["site"] == "0x4");
+}
+
+TEST_CASE("SearchAcrossZones", "[Dissasm]Zones")
+{
+    const auto file = CrossSectionsCode();
+    ZoneLayout layout;
+    layout.size       = 0x40;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance text(file.data(), file.size(), false, layout);
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    DissasmTestInstance page(file.data(), file.size(), false, layout);
+    auto* textZone = text.zone.get();
+    auto* pageZone = page.zone.get();
+    const std::vector<DissasmCodeZone*> zones{ textZone, pageZone };
+    const auto search = [&zones](DissasmSearchKind kind, std::string_view what, size_t startZone, uint64 from) {
+        DissasmSearch request;
+        request.kind = kind;
+        request.text = std::string(what);
+        return SearchCodeZones(zones, startZone, from, request, nullptr);
+    };
+
+    // .text has no xor: the search continues in PAGE
+    auto hit = search(DissasmSearchKind::Text, "xor eax, eax", 0, 1);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == pageZone);
+    // from PAGE, the search wraps to .text (the next zone after the last one)
+    hit = search(DissasmSearchKind::Text, "sub rsp, 0x28", 1, 0);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == textZone);
+    // bytes and immediates: relative addresses of the zone
+    hit = search(DissasmSearchKind::Bytes, "31 C0 C3", 0, 0);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == pageZone);
+    REQUIRE(hit->position == 0x10);
+    hit = search(DissasmSearchKind::Immediate, "0x28", 0, 0x04); // after sub rsp, 0x28: add rsp, 0x28
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == textZone);
+    REQUIRE(hit->position == 0x09);
+    // the start of the first zone is searched last: from the end of PAGE, the pattern of PAGE itself
+    hit = search(DissasmSearchKind::Bytes, "55 48 89 E5", 1, 0x01);
+    REQUIRE(hit.has_value());
+    REQUIRE(hit->zone == pageZone);
+    REQUIRE(hit->position == 0x00);
+    REQUIRE_FALSE(search(DissasmSearchKind::Bytes, "12 34 56", 0, 0).has_value());
+    REQUIRE_FALSE(search(DissasmSearchKind::Immediate, "not a number", 0, 0).has_value());
+}
+
+TEST_CASE("StringsAcrossZones", "[Dissasm]Zones")
+{
+    // the same string used by .text and by PAGE
+    std::vector<unsigned char> file = {
+        0x48, 0x8D, 0x0D, 0x69, 0x00, 0x00, 0x00, // 0x00: lea rcx, [rip + 0x69] (0x70)
+        0xC3,                                     // 0x07: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8D, 0x15, 0x29, 0x00, 0x00, 0x00 }); // 0x40: lea rdx, [rip + 0x29] (0x70)
+    file.push_back(0xC3);                                                   // 0x47: ret
+    file.resize(0x70, 0xCC);
+    for (const char c : std::string_view("Hello strings"))
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x80, 0x00);
+
+    ZoneLayout layout;
+    layout.size       = 0x40;
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance text(file.data(), file.size(), false, layout);
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    DissasmTestInstance page(file.data(), file.size(), false, layout);
+    text.zone->siblingZones = { page.zone.get() };
+    page.zone->siblingZones = { text.zone.get() };
+
+    const uint64 fileSize          = file.size();
+    const auto addressToFileOffset = [fileSize](uint64 address) -> std::optional<uint64> {
+        return address < fileSize ? std::optional<uint64>(address) : std::nullopt;
+    };
+    REQUIRE(text.zone->GetReferencedStrings(addressToFileOffset).size() == 1);
+    const auto strings = text.zone->GetReferencedStringsOfFile(addressToFileOffset);
+    REQUIRE(strings.size() == 1);
+    REQUIRE(strings[0].address == 0x70);
+    REQUIRE(strings[0].text == "\"Hello strings\"");
+    REQUIRE(strings[0].xrefs == 2);
+    REQUIRE(text.zone->GetXrefsTo(0x70).size() == 2);
+}
+
+// code, a string and a dword inside the code, then the function called
+static std::vector<unsigned char> UserDataSample()
+{
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28
+        0xE8, 0x17, 0x00, 0x00, 0x00, // 0x04: call 0x20
+        0x48, 0x83, 0xC4, 0x28,       // 0x09: add rsp, 0x28
+        0xC3,                         // 0x0d: ret
+        0xCC, 0xCC,                   // 0x0e
+    };
+    for (const char c : std::string_view("Hi there"))
+        file.push_back(static_cast<unsigned char>(c)); // 0x10: the string and its zero
+    file.push_back(0x00);
+    file.insert(file.end(), { 0x11, 0x22, 0x33, 0x44 }); // 0x19: a dword
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x30, 0xCC);
+    return file;
+}
+
+TEST_CASE("UserDataRanges", "[Dissasm]UserData")
+{
+    const auto file = UserDataSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.ApplyUserLabelName(0x20, "helper"));
+    zone.userComments.Set({ DissasmCommentAnchor::Kind::Instruction, 0x09, 0 }, "after the call");
+
+    // A: the text up to its zero; D: db, then dw, then dd
+    REQUIRE(zone.DefineUserString(0x10));
+    REQUIRE_FALSE(zone.DefineUserString(0x0E)); // int3: no text
+    REQUIRE(zone.DefineUserData(0x19));
+    REQUIRE(zone.userDataRanges.back().unit == 1);
+    REQUIRE(zone.DefineUserData(0x19));
+    REQUIRE(zone.DefineUserData(0x19));
+    REQUIRE(zone.userDataRanges.size() == 2);
+    REQUIRE(zone.userDataRanges[0] == DissasmInstructionSet::DataRange{ 0x10, 0x19, 0 });
+    REQUIRE(zone.userDataRanges[1] == DissasmInstructionSet::DataRange{ 0x19, 0x1D, 4 });
+
+    // the zone analyzed again: the data lines, the annotations of the user kept
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "db     \"Hi there\", 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "dd     0x44332211").size() > 0);
+    REQUIRE(FindListingLine(listing, "call   helper").size() > 0);
+    REQUIRE(FindListingLine(listing, "add    rsp, 0x28").ends_with("; after the call"));
+    REQUIRE(zone.GetLabelNameAt(0x20) == "helper");
+
+    // the ranges in the annotations: a new analysis of the same file gets them (and its lines)
+    const auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["dataRanges"].size() == 2);
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    auto& freshZone = *fresh.zone;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { &freshZone }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.dataRanges == 2);
+    REQUIRE(freshZone.userDataRanges == zone.userDataRanges);
+    REQUIRE(freshZone.GetLabelNameAt(0x20) == "helper"); // the names after the new analysis
+    REQUIRE(FindListingLine(fresh.GetListing(), "dd     0x44332211").size() > 0);
+
+    // U: the string is code again
+    REQUIRE(zone.UndefineUserData(0x14));
+    REQUIRE_FALSE(zone.UndefineUserData(0x14));
+    REQUIRE(zone.userDataRanges.size() == 1);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(dissasmInstance.GetListing().find("Hi there") == std::string::npos);
+}
+
+namespace
+{
+// the entry point calls helper (0x10) and sub_30; 0x20 is code that nothing calls (a callback the analysis does not find)
+std::vector<unsigned char> UserFunctionsSample()
+{
+    std::vector<unsigned char> file = {
+        0xE8, 0x0B, 0x00, 0x00, 0x00, // 0x00: call 0x10
+        0xE8, 0x26, 0x00, 0x00, 0x00, // 0x05: call 0x30
+        0xC3,                         // 0x0a: ret
+    };
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x10: xor eax, eax; ret
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3 }); // 0x20: mov eax, 1; ret
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), { 0xB8, 0x02, 0x00, 0x00, 0x00, 0xC3 }); // 0x30: mov eax, 2; ret
+    file.resize(0x40, 0xCC);
+    return file;
+}
+} // namespace
+
+TEST_CASE("UserFunctions", "[Dissasm]UserData")
+{
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    REQUIRE(zone.ApplyUserLabelName(0x10, "helper"));
+
+    // P: 0x20 is a function; not where one starts already
+    REQUIRE(zone.CreateUserFunction(0x20));
+    REQUIRE_FALSE(zone.CreateUserFunction(0x10));
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x20, 0x30 });
+    REQUIRE(zone.GetLabelNameAt(0x20) == "sub_20");
+    REQUIRE(zone.GetLabelNameAt(0x10) == "helper");
+
+    // Delete function: helper is a location (its name stays), the entry point stays a function
+    REQUIRE(zone.DeleteUserFunction(0x10));
+    REQUIRE_FALSE(zone.DeleteUserFunction(0x00));
+    REQUIRE_FALSE(zone.DeleteUserFunction(0x12)); // no function starts there
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x30 });
+    REQUIRE(zone.GetLabelNameAt(0x10) == "helper");
+    REQUIRE(zone.GetXrefsTo(0x10).size() == 1); // the call is still a reference
+
+    // the noreturn attribute: sub_30 returns, the user says it does not (the call to it ends the flow), then the other way around
+    REQUIRE(zone.noReturnFunctions.empty());
+    REQUIRE(zone.ToggleUserNoReturn(0x30));
+    REQUIRE(zone.userFunctions.at(0x30) == USER_FUNCTION_NORETURN);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x00, 0x30 }); // the entry point ends with the call to it
+    REQUIRE(zone.noReturnCalls.contains(0x05));
+    for (const auto& function : zone.GetFunctions(nullptr))
+        REQUIRE(function.isNoReturn == (function.start == 0x00 || function.start == 0x30));
+
+    // the functions of the user in the annotations: a new analysis of the same file gets them
+    const auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["functions"].size() == 3);
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    auto& freshZone = *fresh.zone;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { &freshZone }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.functions == 3);
+    REQUIRE(freshZone.userFunctions == zone.userFunctions);
+    REQUIRE(freshZone.functionStarts == zone.functionStarts);
+    REQUIRE(freshZone.noReturnFunctions == zone.noReturnFunctions);
+    REQUIRE(freshZone.GetLabelNameAt(0x10) == "helper");
+
+    // the attribute again: it returns (an exit named function would too)
+    REQUIRE(zone.ToggleUserNoReturn(0x30));
+    REQUIRE(zone.userFunctions.at(0x30) == USER_FUNCTION_RETURNS);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.noReturnFunctions.empty());
+    // a deleted function of the user (P) leaves nothing
+    REQUIRE(zone.DeleteUserFunction(0x20));
+    REQUIRE_FALSE(zone.userFunctions.contains(0x20));
+}
+
+TEST_CASE("UserVariableStructures", "[Dissasm]UserData")
+{
+    // var_20 is filled field by field and passed to a function of the code: no structure from the analysis, the user says SYSTEMTIME; &var_30
+    // is the lpSystemTimeAsFileTime of GetSystemTimeAsFileTime: a FILETIME for the analysis, none for the user (var_2C comes back)
+    std::vector<unsigned char> file = {
+        0x55,                                     // 0x00: push rbp
+        0x48, 0x89, 0xE5,                         // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x40,                   // 0x04: sub rsp, 0x40
+        0x66, 0xC7, 0x45, 0xE0, 0x07, 0x00,       // 0x08: mov word ptr [rbp - 0x20], 7  (wYear)
+        0x66, 0xC7, 0x45, 0xE2, 0x01, 0x00,       // 0x0e: mov word ptr [rbp - 0x1e], 1  (wMonth)
+        0x66, 0xC7, 0x45, 0xE6, 0x03, 0x00,       // 0x14: mov word ptr [rbp - 0x1a], 3  (wDay)
+        0x48, 0x8D, 0x4D, 0xE0,                   // 0x1a: lea rcx, [rbp - 0x20]
+        0xE8, 0x2D, 0x00, 0x00, 0x00,             // 0x1e: call 0x50
+        0xC7, 0x45, 0xD4, 0x00, 0x00, 0x00, 0x00, // 0x23: mov dword ptr [rbp - 0x2c], 0
+        0x48, 0x8D, 0x4D, 0xD0,                   // 0x2a: lea rcx, [rbp - 0x30]
+        0xFF, 0x15, 0x4C, 0x00, 0x00, 0x00,       // 0x2e: call qword ptr [rip + 0x4c] -> slot 0x80 (GetSystemTimeAsFileTime)
+        0x48, 0x89, 0xEC,                         // 0x34: mov rsp, rbp
+        0x5D,                                     // 0x37: pop rbp
+        0xC3,                                     // 0x38: ret
+    };
+    file.resize(0x50, 0xCC);
+    file.push_back(0xC3); // 0x50: ret
+    file.resize(0x90, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x80;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x80, { "GetSystemTimeAsFileTime", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone       = *dissasmInstance.zone;
+    const auto frame = [&zone]() { return zone.localVariables.FindFunctionByStart(0x00); };
+    const auto analysis = [&]() {
+        REQUIRE(frame() != nullptr);
+        REQUIRE(frame()->FindVariable(-0x20) != nullptr);
+        REQUIRE(frame()->FindVariable(-0x20)->structure == nullptr);
+        REQUIRE(frame()->FindVariable(-0x1E) != nullptr);
+        REQUIRE(frame()->FindVariable(-0x30)->structure == FindApiStructure("FILETIME", true));
+        REQUIRE(frame()->FindVariable(-0x2C) == nullptr);
+    };
+    analysis();
+
+    // Alt+Q: SYSTEMTIME for var_20, none for the FILETIME; a new analysis applies them
+    const auto before                    = zone.userVariableStructures;
+    zone.userVariableStructures[{ 0x00, -0x20 }] = "SYSTEMTIME";
+    zone.userVariableStructures[{ 0x00, -0x30 }] = "";
+    zone.RecordUserVariableStructuresEdit(before, 0x00);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const auto user = [&]() {
+        REQUIRE(frame() != nullptr);
+        REQUIRE(frame()->FindVariable(-0x20)->structure == FindApiStructure("SYSTEMTIME", true));
+        REQUIRE(frame()->FindVariable(-0x20)->type == "SYSTEMTIME");
+        REQUIRE(frame()->FindVariable(-0x1E) == nullptr);
+        REQUIRE(frame()->FindVariable(-0x1A) == nullptr);
+        REQUIRE(frame()->FindVariable(-0x30)->structure == nullptr);
+        REQUIRE(frame()->FindVariable(-0x2C) != nullptr);
+    };
+    user();
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "var_20 = SYSTEMTIME ptr -0x20").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + var_20.wYear], 7").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + var_20.wMonth], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    word ptr [rbp + var_20.wDay], 3").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    dword ptr [rbp + var_2C], 0").size() > 0);
+
+    // Ctrl+Z: the structures of the analysis (a new analysis), Ctrl+Y: the user's again
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->reanalyze);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    analysis();
+    place = zone.RedoEdit();
+    REQUIRE((place.has_value() && place->reanalyze));
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    user();
+
+    // the annotations: a new analysis of the same file gets them; a name that is not one is skipped
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["variableStructures"].size() == 2);
+    document["zones"][0]["variableStructures"].push_back({ { "function", "0x0" }, { "frameOffset", -8 }, { "structure", "not a name!" } });
+    DissasmTestInstance fresh(file.data(), file.size(), true, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.structures == 2);
+    REQUIRE(result.skipped >= 1);
+    REQUIRE(fresh.zone->userVariableStructures == zone.userVariableStructures);
+    REQUIRE(fresh.zone->localVariables.FindFunctionByStart(0x00)->FindVariable(-0x20)->structure == FindApiStructure("SYSTEMTIME", true));
+
+    // the cache record: read back; a bad name, a function outside of the zone dropped; a damaged record gives nothing
+    std::vector<std::byte> buffer;
+    auto structures                   = zone.userVariableStructures;
+    structures[{ 0x10, -4 }]          = "bad name";
+    structures[{ 0x1000, -4 }]        = "SYSTEMTIME";
+    UserVariableStructuresToBuffer(structures, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserStructures.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserVariableStructures(cache, zone) == zone.userVariableStructures);
+    buffer.resize(buffer.size() - 3);
+    DissasmCache truncated;
+    REQUIRE(truncated.AddRegion("DissasmUserStructures.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserVariableStructures(truncated, zone).empty());
+}
+
+TEST_CASE("OperandStructures", "[Dissasm]UserData")
+{
+    // the displacement of a memory operand as the field of a structure (IDA T)
+    const auto& startup64 = *FindApiStructure("STARTUPINFOW", true);
+    const auto apply      = [](std::string_view operands, const DissasmApiStructure& structure, bool isArm) {
+        return ApplyOperandStructure(operands, structure, isArm).value_or("<none>");
+    };
+    REQUIRE(apply("dword ptr [rbx + 0x3c], eax", startup64, false) == "dword ptr [rbx + STARTUPINFOW.dwFlags], eax");
+    REQUIRE(apply("eax, dword ptr [rbx]", startup64, false) == "eax, dword ptr [rbx + STARTUPINFOW.cb]");
+    REQUIRE(apply("rax, qword ptr [rbx + rcx*8 + 0x10]", startup64, false) == "rax, qword ptr [rbx + rcx*8 + STARTUPINFOW.lpDesktop]");
+    REQUIRE(apply("dword ptr [rbx + 60], 1", startup64, false) == "dword ptr [rbx + STARTUPINFOW.dwFlags], 1"); // decimal (H)
+    REQUIRE(apply("rax, qword ptr [rbx + 0x100]", startup64, false) == "rax, qword ptr [rbx + STARTUPINFOW+0x100]");
+    REQUIRE(apply("eax, dword ptr [rbx + 0x2c]", *FindApiStructure("STARTUPINFOW", false), false) == "eax, dword ptr [rbx + STARTUPINFOW.dwFlags]");
+    REQUIRE(apply("eax, dword ptr [rbx - 8]", startup64, false) == "<none>");
+    REQUIRE(apply("rax, qword ptr [rip + 0x100]", startup64, false) == "<none>");
+    REQUIRE(apply("eax, dword ptr fs:[0x30]", startup64, false) == "<none>");
+    REQUIRE(apply("eax, ecx", startup64, false) == "<none>");
+    REQUIRE(apply("w0, [x19, #0x3c]", startup64, true) == "w0, [x19, #STARTUPINFOW.dwFlags]");
+    REQUIRE(apply("x0, [x19]", startup64, true) == "x0, [x19, #STARTUPINFOW.cb]");
+    REQUIRE(apply("x0, [x19, #-8]", startup64, true) == "<none>");
+    REQUIRE(apply("x0, [x19, x1]", startup64, true) == "<none>");
+
+    // rcx is a STARTUPINFOW of the caller: its fields through the register
+    std::vector<unsigned char> file = {
+        0xC7, 0x41, 0x3C, 0x01, 0x00, 0x00, 0x00, // 0x00: mov dword ptr [rcx + 0x3c], 1
+        0x8B, 0x01,                               // 0x07: mov eax, dword ptr [rcx]
+        0x48, 0x8B, 0x51, 0x58,                   // 0x09: mov rdx, qword ptr [rcx + 0x58]
+        0xC3,                                     // 0x0d: ret
+    };
+    file.resize(0x20, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.SetOperandStructure(0x00, "STARTUPINFOW"));
+    REQUIRE(zone.SetOperandStructure(0x09, "STARTUPINFOW"));
+    REQUIRE_FALSE(zone.SetOperandStructure(0x09, "STARTUPINFOW")); // the same: nothing changes
+    const auto withFields = [&dissasmInstance]() {
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "mov    dword ptr [rcx + STARTUPINFOW.dwFlags], 1").size() > 0);
+        REQUIRE(FindListingLine(listing, "mov    rdx, qword ptr [rcx + STARTUPINFOW.hStdOutput]").size() > 0);
+        REQUIRE(FindListingLine(listing, "mov    eax, dword ptr [rcx]").size() > 0); // not given one
+    };
+    withFields();
+
+    // Ctrl+Z / Ctrl+Y (only the drawing changes: no new analysis)
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && !place->reanalyze && place->address == 0x09));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    rdx, qword ptr [rcx + 0x58]").size() > 0);
+    REQUIRE(zone.RedoEdit().has_value());
+    withFields();
+    // none: the operand as it is
+    REQUIRE(zone.SetOperandStructure(0x00, ""));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    dword ptr [rcx + 0x3c], 1").size() > 0);
+    REQUIRE(zone.UndoEdit().has_value());
+    withFields();
+
+    // a new analysis (P / D / Alt+Q) keeps them
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    withFields();
+
+    // the annotations: a new instance gets them; a bad name / none is skipped
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["operandStructures"].size() == 2);
+    document["zones"][0]["operandStructures"].push_back({ { "address", "0x7" }, { "structure", "" } });
+    document["zones"][0]["operandStructures"].push_back({ { "address", "0x7" }, { "structure", "no such name!" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.operandStructures == 2);
+    REQUIRE(result.skipped == 2);
+    REQUIRE(fresh.zone->operandStructures == zone.operandStructures);
+
+    // the cache record: read back; an empty name, a bad one, an address outside of the zone dropped
+    auto structures    = zone.operandStructures;
+    structures[0x07]   = "";
+    structures[0x0d]   = "a b";
+    structures[0x1000] = "FILETIME";
+    std::vector<std::byte> buffer;
+    OperandStructuresToBuffer(structures, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmOperandStructures.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadOperandStructures(cache, zone) == zone.operandStructures);
+}
+
+TEST_CASE("OperandConstants", "[Dissasm]UserData")
+{
+    // IDA M: the sets, the immediate of the last operand replaced by its name
+    size_t sets = 0;
+    ForEachConstantSet([&sets](std::string_view id, std::string_view title) {
+        REQUIRE((!id.empty() && !title.empty() && IsConstantSetName(id)));
+        sets++;
+    });
+    REQUIRE(sets > 70);
+    REQUIRE_FALSE(IsConstantSetName("NO_SUCH_SET"));
+    REQUIRE(ApplyOperandConstant("edx, 0x80000000", "ACCESS_RIGHTS") == std::optional<std::string>("edx, GENERIC_READ"));
+    REQUIRE(ApplyOperandConstant("dword ptr [rsp + 0x20], 3", "DISPOSITIONS") == std::optional<std::string>("dword ptr [rsp + 0x20], OPEN_EXISTING"));
+    REQUIRE(ApplyOperandConstant("0x80070057", "HRESULTS") == std::optional<std::string>("E_INVALIDARG")); // push
+    REQUIRE(ApplyOperandConstant("w1, #0x3", "DISPOSITIONS") == std::optional<std::string>("w1, #OPEN_EXISTING"));
+    REQUIRE(ApplyOperandConstant("eax, ecx", "ACCESS_RIGHTS") == std::nullopt);
+    REQUIRE(ApplyOperandConstant("ecx, 0x5", "ACCESS_RIGHTS") == std::nullopt); // no name for it
+    REQUIRE(ApplyOperandConstant("ecx, 0x5", "NO_SUCH_SET") == std::nullopt);
+    REQUIRE(FormatConstantOfSet("POOL_TAG", 0x7346744E) == "'NtFs'");
+    REQUIRE(FormatConstantOfSet("WIN32_ERRORS", 0xB7) == "ERROR_ALREADY_EXISTS");
+    REQUIRE(GetLastOperandImmediate("eax, -1") == std::optional<uint64>(UINT64_MAX));
+
+    // a zone: the immediates of instructions that are not arguments of a known API
+    std::vector<unsigned char> file = {
+        0xBA, 0x00, 0x00, 0x00, 0x80, // 0x00: mov edx, 0x80000000
+        0x3D, 0xB7, 0x00, 0x00, 0x00, // 0x05: cmp eax, 0xb7
+        0x89, 0xC8,                   // 0x0a: mov eax, ecx
+        0xC3,                         // 0x0c: ret
+    };
+    file.resize(0x20, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.SetOperandConstant(0x00, "ACCESS_RIGHTS"));
+    REQUIRE(zone.SetOperandConstant(0x05, "WIN32_ERRORS"));
+    REQUIRE_FALSE(zone.SetOperandConstant(0x05, "WIN32_ERRORS")); // the same: nothing changes
+    const auto withNames = [&dissasmInstance]() {
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "mov    edx, GENERIC_READ").size() > 0);
+        REQUIRE(FindListingLine(listing, "cmp    eax, ERROR_ALREADY_EXISTS").size() > 0);
+    };
+    withNames();
+    // a set that does not name the value: the number stays
+    REQUIRE(zone.SetOperandConstant(0x0a, "ACCESS_RIGHTS"));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    eax, ecx").size() > 0);
+    REQUIRE(zone.UndoEdit().has_value());
+
+    // Ctrl+Z / Ctrl+Y (only the drawing changes)
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && !place->reanalyze && place->address == 0x05));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "cmp    eax, 0xb7").size() > 0);
+    REQUIRE(zone.RedoEdit().has_value());
+    withNames();
+    // none: the number
+    REQUIRE(zone.SetOperandConstant(0x00, ""));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "mov    edx, 0x80000000").size() > 0);
+    REQUIRE(zone.UndoEdit().has_value());
+    withNames();
+
+    // a new analysis keeps them
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    withNames();
+
+    // the annotations: a new instance gets them; a set that does not exist is skipped
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["operandConstants"].size() == 2);
+    document["zones"][0]["operandConstants"].push_back({ { "address", "0xa" }, { "set", "NO_SUCH_SET" } });
+    document["zones"][0]["operandConstants"].push_back({ { "address", "0xa" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.operandConstants == 2);
+    REQUIRE(result.skipped == 2);
+    REQUIRE(fresh.zone->operandConstants == zone.operandConstants);
+
+    // the cache record: read back; a set that does not exist, an address outside of the zone dropped
+    auto constants    = zone.operandConstants;
+    constants[0x0a]   = "NO_SUCH_SET";
+    constants[0x1000] = "HRESULTS";
+    std::vector<std::byte> buffer;
+    OperandConstantsToBuffer(constants, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmOperandConstants.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadOperandConstants(cache, zone) == zone.operandConstants);
+}
+
+TEST_CASE("Bookmarks", "[Dissasm]UserData")
+{
+    // IDA Alt+M: a bookmark inside helper (0x12, no label there) and one on the label of sub_30
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    zone.bookmarks = { { 0x12, "inside the helper" }, { 0x30, "the last one" } };
+
+    // the band: the row of the label of their function gets the flag, the color stays
+    zone.startLineIndex  = 0;
+    zone.isCollapsed     = false;
+    zone.endingLineIndex = 2 + zone.GetDisplayLinesCount();
+    const uint64 total   = zone.endingLineIndex;
+    const auto band      = BuildDissasmNavigationBand({ &zone }, total, static_cast<uint32>(total));
+    const auto lineOf    = [&zone](uint64 function) { return 2u + zone.GetLabelDisplayLine(function).value(); };
+    REQUIRE((band[lineOf(0x10)] & BAND_BOOKMARK) != 0);
+    REQUIRE((band[lineOf(0x30)] & BAND_BOOKMARK) != 0);
+    REQUIRE((band[lineOf(0x10)] & ~BAND_BOOKMARK) == BAND_FUNCTION);
+    REQUIRE((band[lineOf(0x00)] & BAND_BOOKMARK) == 0);
+    REQUIRE(std::count_if(band.begin(), band.end(), [](uint8 cell) { return (cell & BAND_BOOKMARK) != 0; }) == 2);
+
+    // a new analysis keeps them; the annotations into a new instance (an empty description skipped)
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.bookmarks.size() == 2);
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["bookmarks"].size() == 2);
+    document["zones"][0]["bookmarks"].push_back({ { "address", "0x20" }, { "description", "" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.bookmarks == 2);
+    REQUIRE(result.skipped == 1);
+    REQUIRE(fresh.zone->bookmarks == zone.bookmarks);
+
+    // the cache record: read back; an empty / too long description, an address outside of the zone dropped
+    auto bookmarks    = zone.bookmarks;
+    bookmarks[0x20]   = "";
+    bookmarks[0x21]   = std::string(DISSASM_MAX_BOOKMARK_SIZE + 1, 'x');
+    bookmarks[0x1000] = "outside";
+    std::vector<std::byte> buffer;
+    BookmarksToBuffer(bookmarks, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmBookmarks.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadBookmarks(cache, zone) == zone.bookmarks);
+}
+
+TEST_CASE("RepeatableComments", "[Dissasm]UserData")
+{
+    // IDA ;: a comment on sub_10 is shown on its label and on the call to it; one on the ret of sub_10 (no label) on that line
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    const auto targets = zone.xrefs.From(zone.labelAddressBase + 0x00); // the source index of the references
+    REQUIRE(targets.size() == 1);
+    REQUIRE(targets[0]->to == zone.labelAddressBase + 0x10);
+    REQUIRE(zone.SetRepeatableComment(0x10, "returns 0"));
+    REQUIRE(zone.SetRepeatableComment(0x12, "the end"));
+    REQUIRE_FALSE(zone.SetRepeatableComment(0x10, "returns 0")); // the same: nothing changes
+    const auto check = [&dissasmInstance](bool withEnd) {
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "sub_10:").find("; returns 0") != std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "call   sub_10").find("; returns 0") != std::string_view::npos);
+        REQUIRE(FindListingLine(listing, "xor    eax, eax").find("returns 0") == std::string_view::npos); // its label shows it
+        REQUIRE(FindListingLine(listing, "call   sub_30").find(';') == std::string_view::npos);
+        REQUIRE((FindListingLine(listing, "0x00000012  ret").find("; the end") != std::string_view::npos) == withEnd);
+    };
+    check(true);
+
+    // Ctrl+Z / Ctrl+Y; Delete (no comment on the line): removed
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && place->address == 0x12 && !place->reanalyze));
+    check(false);
+    REQUIRE(zone.RedoEdit().has_value());
+    check(true);
+
+    // a new analysis keeps them; the annotations into a new instance (an empty text skipped)
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    check(true);
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["repeatableComments"].size() == 2);
+    document["zones"][0]["repeatableComments"].push_back({ { "address", "0x30" }, { "text", "" } });
+    DissasmTestInstance fresh(file.data(), file.size(), false, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error));
+    REQUIRE(result.repeatableComments == 2);
+    REQUIRE(result.skipped == 1);
+    REQUIRE(fresh.zone->repeatableComments == zone.repeatableComments);
+
+    // the cache record: read back; an empty text, an address outside of the zone dropped
+    auto comments    = zone.repeatableComments;
+    comments[0x30]   = "";
+    comments[0x1000] = "outside";
+    std::vector<std::byte> buffer;
+    RepeatableCommentsToBuffer(comments, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmRepeatableComments.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadRepeatableComments(cache, zone) == zone.repeatableComments);
+}
+
+TEST_CASE("UserPrototypes", "[Dissasm]UserData")
+{
+    // the text of a prototype
+    REQUIRE(ParseUserPrototype("int decrypt(char* buffer, int size)") != nullptr);
+    const auto parsed = ParseUserPrototype("  unsigned long long __fastcall hash(const unsigned char* data, size_t length, ...)  ");
+    REQUIRE(parsed != nullptr);
+    REQUIRE(parsed->details.functionName == "hash");
+    REQUIRE(parsed->details.returnType == "unsigned long long __fastcall"); // the convention is a word of the type
+    REQUIRE(parsed->details.params.size() == 2);
+    REQUIRE(std::string_view(parsed->details.params[0].type) == "const unsigned char*");
+    REQUIRE(std::string_view(parsed->details.params[1].name) == "length");
+    REQUIRE(ParseUserPrototype("void init(void)")->details.params.empty());
+    REQUIRE(ParseUserPrototype("int f(int)") == nullptr);                   // a parameter without a name
+    REQUIRE(ParseUserPrototype("int f(int a, void (*cb)(int))") == nullptr); // a pointer to a function
+    REQUIRE(ParseUserPrototype("int 9f(int a)") == nullptr);
+    REQUIRE(ParseUserPrototype("int f int a") == nullptr);
+    REQUIRE(ParseUserPrototype("int f(int a) trailing") == nullptr);
+    REQUIRE(ParseUserPrototype("") == nullptr);
+    REQUIRE(ParseUserPrototype("int f(" + std::string(600, 'a') + " b)") == nullptr); // too long
+
+    // x64 (Windows): the caller passes 5 and &var_10 to sub_40 and keeps what it returns in var_4; sub_40 keeps its arguments in the home space
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x48, 0x89, 0xE5,             // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x30,       // 0x04: sub rsp, 0x30
+        0x48, 0x8D, 0x55, 0xF0,       // 0x08: lea rdx, [rbp - 0x10]
+        0xB9, 0x05, 0x00, 0x00, 0x00, // 0x0c: mov ecx, 5
+        0xE8, 0x2A, 0x00, 0x00, 0x00, // 0x11: call 0x40
+        0x89, 0x45, 0xFC,             // 0x16: mov dword ptr [rbp - 4], eax
+        0x48, 0x89, 0xEC,             // 0x19: mov rsp, rbp
+        0x5D,                         // 0x1c: pop rbp
+        0xC3,                         // 0x1d: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,                   // 0x40: push rbp
+                                  0x48, 0x89, 0xE5,       // 0x41: mov rbp, rsp
+                                  0x89, 0x4D, 0x10,       // 0x44: mov dword ptr [rbp + 0x10], ecx
+                                  0x48, 0x89, 0x55, 0x18, // 0x47: mov qword ptr [rbp + 0x18], rdx
+                                  0x8B, 0x45, 0x10,       // 0x4b: mov eax, dword ptr [rbp + 0x10]
+                                  0x5D,                   // 0x4e: pop rbp
+                                  0xC3,                   // 0x4f: ret
+                            });
+    file.resize(0x60, 0xCC);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40 });
+    const auto variable = [&zone](uint64 function, int32 offset) {
+        const auto* frame = zone.localVariables.FindFunctionByStart(function);
+        REQUIRE(frame != nullptr);
+        const auto* found = frame->FindVariable(offset);
+        REQUIRE(found != nullptr);
+        return *found;
+    };
+    const auto analysis = [&]() {
+        REQUIRE(variable(0x00, -0x10).name == "var_10");
+        REQUIRE(variable(0x00, -4).name == "var_4");
+        REQUIRE(variable(0x40, 0x10).name == "arg_0");
+    };
+    analysis();
+
+    // Y on sub_40, a new analysis
+    const auto before        = zone.userPrototypes;
+    zone.userPrototypes[0x40] = "int decrypt(int count, char* buffer)";
+    zone.RecordUserPrototypesEdit(before, 0x40);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const auto user = [&]() {
+        // its arguments (the home space), the variables of the caller passed to it and the value it returns
+        REQUIRE(variable(0x40, 0x10).name == "count");
+        REQUIRE(variable(0x40, 0x10).type == "int");
+        REQUIRE(variable(0x40, 0x10).origin == "argument of decrypt");
+        REQUIRE(variable(0x40, 0x18).name == "buffer");
+        REQUIRE(variable(0x00, -0x10).name == "buffer");
+        REQUIRE(variable(0x00, -0x10).type == "char");
+        REQUIRE(variable(0x00, -4).name == "decrypt_result");
+        REQUIRE(variable(0x00, -4).type == "int");
+    };
+    user();
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("int decrypt(int count, char* buffer)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "mov    ecx, 5").ends_with("; count"));
+    REQUIRE(FindListingLine(listing, "lea    rdx, [rbp + buffer]").ends_with("; buffer"));
+    REQUIRE(variable(0x40, 0x10).analysisName == "count"); // the analysis: not a rename of the user
+    REQUIRE_FALSE(BuildAnnotationsDocument({ &zone }, "sample.bin")["zones"][0].contains("variables"));
+
+    // Ctrl+Z / Ctrl+Y: a new analysis each time
+    auto place = zone.UndoEdit();
+    REQUIRE((place.has_value() && place->reanalyze));
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    analysis();
+    place = zone.RedoEdit();
+    REQUIRE((place.has_value() && place->reanalyze));
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    user();
+
+    // the annotations into a new instance (a text that is not a prototype skipped)
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    REQUIRE(document["zones"][0]["prototypes"].size() == 1);
+    document["zones"][0]["prototypes"].push_back({ { "function", "0x0" }, { "prototype", "not a prototype" } });
+    DissasmTestInstance fresh(file.data(), file.size(), true, layout);
+    DissasmAnnotationsImport result;
+    std::string error;
+    REQUIRE(ImportAnnotationsDocument(nlohmann::json::parse(document.dump()), { fresh.zone.get() }, result, error, [&fresh](DissasmCodeZone& target) {
+        DissasmAnnotationsImport reimported;
+        return ReanalyzeCodeZone(target, fresh.lastInitData, reimported);
+    }));
+    REQUIRE(result.prototypes == 1);
+    REQUIRE(result.skipped >= 1);
+    REQUIRE(fresh.zone->userPrototypes == zone.userPrototypes);
+    REQUIRE(fresh.zone->localVariables.FindFunctionByStart(0x00)->FindVariable(-4)->name == "decrypt_result");
+
+    // the cache record: a text that is not a prototype, a function outside of the zone dropped
+    auto texts    = zone.userPrototypes;
+    texts[0x00]   = "int f int";
+    texts[0x1000] = "int g(int a)";
+    std::vector<std::byte> buffer;
+    UserPrototypesToBuffer(texts, buffer);
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserPrototypes.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserPrototypes(cache, zone) == zone.userPrototypes);
+}
+
+TEST_CASE("UserPrototypesX86Arguments", "[Dissasm]UserData")
+{
+    // 32 bit: the arguments in the stack: arg_0, arg_4 then a 64 bit one (arg_8, 8 bytes), arg_10
+    std::vector<unsigned char> file = {
+        0x6A, 0x04,                   // 0x00: push 4
+        0x6A, 0x03,                   // 0x02: push 3
+        0x6A, 0x02,                   // 0x04: push 2
+        0x6A, 0x01,                   // 0x06: push 1
+        0x6A, 0x00,                   // 0x08: push 0
+        0xE8, 0x11, 0x00, 0x00, 0x00, // 0x0a: call 0x20
+        0x83, 0xC4, 0x14,             // 0x0f: add esp, 0x14
+        0xC3,                         // 0x12: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,             // 0x20: push ebp
+                                  0x89, 0xE5,       // 0x21: mov ebp, esp
+                                  0x8B, 0x45, 0x08, // 0x23: mov eax, dword ptr [ebp + 8]   (arg_0)
+                                  0x03, 0x45, 0x0C, // 0x26: add eax, dword ptr [ebp + 0xc] (arg_4)
+                                  0x03, 0x45, 0x10, // 0x29: add eax, dword ptr [ebp + 0x10] (arg_8)
+                                  0x03, 0x45, 0x18, // 0x2c: add eax, dword ptr [ebp + 0x18] (arg_10)
+                                  0x5D,             // 0x2f: pop ebp
+                                  0xC3,             // 0x30: ret
+                            });
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone              = *dissasmInstance.zone;
+    zone.userPrototypes[0x20] = "int sum(int a, int b, __int64 wide, int last)";
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x20);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(8)->name == "a");
+    REQUIRE(frame->FindVariable(0xc)->name == "b");
+    REQUIRE(frame->FindVariable(0x10)->name == "wide");
+    REQUIRE(frame->FindVariable(0x18)->name == "last");
+    // the pushes of the call name the arguments (the last push is the first argument)
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "push   0").ends_with("; a"));
+    REQUIRE(FindListingLine(listing, "push   1").ends_with("; b"));
+}
+
+TEST_CASE("X86ArgumentsAcrossInnerCalls", "[Dissasm]Help")
+{
+    // 32 bit: the pushes of a call go past the calls made in between: GetProcessHeap (stdcall, no argument), _get_osfhandle (cdecl: pop ecx
+    // after it), sub_60 (ret 8: two pushes), the constant idiom push 2; pop eax (not an argument)
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push ebp
+        0x89, 0xE5,                         // 0x01: mov ebp, esp
+        0x83, 0xEC, 0x10,                   // 0x03: sub esp, 0x10
+        0xFF, 0x75, 0xF8,                   // 0x06: push dword ptr [ebp - 8]      (dwBytes)
+        0x6A, 0x08,                         // 0x09: push 8                        (dwFlags)
+        0xFF, 0x15, 0x00, 0x10, 0x40, 0x00, // 0x0b: call dword ptr [GetProcessHeap]
+        0x50,                               // 0x11: push eax                      (hHeap)
+        0xFF, 0x15, 0x04, 0x10, 0x40, 0x00, // 0x12: call dword ptr [HeapAlloc]
+        0x6A, 0x00,                         // 0x18: push 0                        (lpOverlapped)
+        0x8D, 0x45, 0xF4,                   // 0x1a: lea eax, [ebp - 0xc]
+        0x50,                               // 0x1d: push eax                      (lpNumberOfBytesRead)
+        0x6A, 0x40,                         // 0x1e: push 0x40                     (nNumberOfBytesToRead)
+        0x68, 0x00, 0x20, 0x40, 0x00,       // 0x20: push 0x402000                 (lpBuffer)
+        0xFF, 0x75, 0x08,                   // 0x25: push dword ptr [ebp + 8]      (the argument of _get_osfhandle)
+        0xFF, 0x15, 0x0C, 0x10, 0x40, 0x00, // 0x28: call dword ptr [_get_osfhandle]
+        0x59,                               // 0x2e: pop ecx
+        0x50,                               // 0x2f: push eax                      (hFile)
+        0xFF, 0x15, 0x08, 0x10, 0x40, 0x00, // 0x30: call dword ptr [ReadFile]
+        0x68, 0xE8, 0x03, 0x00, 0x00,       // 0x36: push 1000                     (dwMilliseconds)
+        0x6A, 0x01,                         // 0x3b: push 1                        (the arguments of sub_60)
+        0x6A, 0x02,                         // 0x3d: push 2
+        0xE8, 0x1C, 0x00, 0x00, 0x00,       // 0x3f: call 0x60                     (ret 8)
+        0x6A, 0x05,                         // 0x44: push 5
+        0x58,                               // 0x46: pop eax
+        0xFF, 0x15, 0x10, 0x10, 0x40, 0x00, // 0x47: call dword ptr [Sleep]
+        0x89, 0xEC,                         // 0x4d: mov esp, ebp
+        0x5D,                               // 0x4f: pop ebp
+        0xC3,                               // 0x50: ret
+    };
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0x8B, 0x44, 0x24, 0x04, 0xC2, 0x08, 0x00 }); // 0x60: mov eax, dword ptr [esp + 4]; ret 8
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401000, { "GetProcessHeap", MemoryMappingType::FunctionMapping } },
+                          { 0x401004, { "HeapAlloc", MemoryMappingType::FunctionMapping } },
+                          { 0x401008, { "ReadFile", MemoryMappingType::FunctionMapping } },
+                          { 0x40100C, { "_get_osfhandle", MemoryMappingType::FunctionMapping } },
+                          { 0x401010, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.calleeStackPurges.contains(0x60));
+    REQUIRE(zone.calleeStackPurges.at(0x60) == 8);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000009  push   8").ends_with("; dwFlags = HEAP_ZERO_MEMORY"));
+    REQUIRE(FindListingLine(listing, "0x00000011  push   eax").ends_with("; hHeap"));
+    REQUIRE(FindListingLine(listing, "0x00000018  push   0").ends_with("; lpOverlapped"));
+    REQUIRE(FindListingLine(listing, "0x0000001e  push   0x40").ends_with("; nNumberOfBytesToRead"));
+    REQUIRE(FindListingLine(listing, "0x00000020  push   0x402000").ends_with("; lpBuffer"));
+    REQUIRE(FindListingLine(listing, "0x00000025  push").ends_with("; fd")); // the argument of _get_osfhandle (cdecl: pop ecx after it)
+    REQUIRE(FindListingLine(listing, "0x0000002f  push   eax").ends_with("; hFile"));
+    REQUIRE(FindListingLine(listing, "0x00000036  push   0x3e8").ends_with("; dwMilliseconds"));
+    REQUIRE(FindListingLine(listing, "0x00000044  push   5").find(';') == std::string_view::npos); // push 5; pop eax: a constant
+    // the variables: the value of var_8 is the dwBytes of HeapAlloc, &var_C the lpNumberOfBytesRead of ReadFile
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-8)->name == "dwBytes");
+    REQUIRE(frame->FindVariable(-0xc)->name == "NumberOfBytesRead");
+    REQUIRE(FindListingLine(listing, "0x00000006  push").ends_with("; dwBytes"));
+}
+
+TEST_CASE("InferredPrototypes", "[Dissasm]Help")
+{
+    // x64 Windows. sub_40 keeps its argument in rbx across Sleep and passes it to CloseHandle: sub_40(HANDLE hObject); sub_70 passes its
+    // second argument on to sub_40 by a tail jump: sub_70(a1, HANDLE hObject) (a second round); sub_80 passes rcx to CloseHandle only on one
+    // of two paths that meet (the other one writes rcx): nothing; sub_A0 keeps rbx in the home space of rcx: not an argument there
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    const auto relative = [&file](uint8 opcode, uint32 target) { // call / jmp rel32
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 5);
+        file.push_back(opcode);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    // 0x00: the entry point calls the three
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // sub rsp, 0x28
+    file.insert(file.end(), { 0x48, 0x89, 0xC1 });       // mov rcx, rax       (hObject)
+    relative(0xE8, 0x40);                                // call sub_40
+    file.insert(file.end(), { 0x48, 0x89, 0xC2 });       // mov rdx, rax       (hObject of sub_70)
+    relative(0xE8, 0x70);                                // call sub_70
+    relative(0xE8, 0x80);                                // call sub_80
+    relative(0xE8, 0xA0);                                // call sub_A0
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // add rsp, 0x28; ret
+    file.resize(0x40, 0xCC);
+    // 0x40: sub_40
+    file.insert(file.end(), { 0x53 });                         // push rbx
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x20 });       // sub rsp, 0x20
+    file.insert(file.end(), { 0x48, 0x89, 0xCB });             // mov rbx, rcx
+    file.insert(file.end(), { 0xB9, 0x64, 0x00, 0x00, 0x00 }); // mov ecx, 100
+    call(0x200);                                               // call Sleep
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });             // mov rcx, rbx
+    call(0x208);                                               // call CloseHandle
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x20, 0x5B, 0xC3 }); // add rsp, 0x20; pop rbx; ret
+    file.resize(0x70, 0xCC);
+    // 0x70: sub_70
+    file.insert(file.end(), { 0x48, 0x89, 0xD1 }); // mov rcx, rdx
+    relative(0xE9, 0x40);                          // jmp sub_40
+    file.resize(0x80, 0xCC);
+    // 0x80: sub_80
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // sub rsp, 0x28
+    file.insert(file.end(), { 0x85, 0xD2 });             // test edx, edx
+    file.insert(file.end(), { 0x74, 0x03 });             // je +3 (the call)
+    file.insert(file.end(), { 0x48, 0x89, 0xC1 });       // mov rcx, rax       (only on this path)
+    call(0x208);                                         // call CloseHandle
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // add rsp, 0x28; ret
+    file.resize(0xA0, 0xCC);
+    // 0xa0: sub_A0
+    file.insert(file.end(), { 0x48, 0x89, 0x5C, 0x24, 0x08 }); // mov qword ptr [rsp + 8], rbx (the home space of rcx)
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x20 });       // sub rsp, 0x20
+    file.insert(file.end(), { 0x48, 0x8B, 0x5C, 0x24, 0x28 }); // mov rbx, qword ptr [rsp + 0x28]
+    call(0x208);                                               // call CloseHandle (rcx: the argument)
+    file.insert(file.end(), { 0x48, 0x8B, 0x5C, 0x24, 0x28 }); // mov rbx, qword ptr [rsp + 0x28]
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x20, 0xC3 }); // add rsp, 0x20; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } }, { 0x208, { "CloseHandle", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x70, 0x80, 0xA0 });
+    const auto* wrapper = zone.FindInferredPrototype(0x40);
+    REQUIRE(wrapper != nullptr);
+    REQUIRE(std::string_view(wrapper->prototype) == "BOOL sub_40(HANDLE hObject)"); // it returns what CloseHandle returns
+    const auto* second = zone.FindInferredPrototype(0x70);
+    REQUIRE(second != nullptr);
+    REQUIRE(std::string_view(second->prototype) == "BOOL sub_70(a1, HANDLE hObject)");
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x80)->prototype) == "BOOL sub_80()"); // the two paths do not agree on rcx
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0xA0)->prototype) == "BOOL sub_A0(HANDLE hObject)");
+    REQUIRE(zone.FindFunctionPrototype(0x40) == wrapper);
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: BOOL sub_40(HANDLE hObject)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000004  mov    rcx, rax").ends_with("; hObject")); // the calls to them name their arguments
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    rdx, rax").ends_with("; hObject"));
+    // the home slot of rcx keeps rbx in sub_A0: not named after the argument
+    const auto* frame = zone.localVariables.FindFunctionByStart(0xA0);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(8) != nullptr);
+    REQUIRE(frame->FindVariable(8)->name == "arg_0");
+
+    // the user's prototype wins
+    zone.userPrototypes[0x40] = "void closeIt(HANDLE handle)";
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.FindInferredPrototype(0x40) == nullptr);
+    REQUIRE(std::string_view(zone.FindFunctionPrototype(0x40)->prototype) == "void closeIt(HANDLE handle)");
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x70)->prototype) == "sub_70(a1, HANDLE handle)"); // from the user's (void)
+}
+
+TEST_CASE("X86InferredPrototypes", "[Dissasm]Help")
+{
+    // 32 bit x86: the arguments in the stack. sub_40 keeps [ebp + 8] in esi across Sleep and pushes it for CloseHandle: sub_40(HANDLE
+    // hObject); sub_60 (no frame) pushes its second argument [esp + 8] for sub_40: sub_60(a1, HANDLE hObject) (a second round); sub_80 writes
+    // its argument before it pushes it: nothing; sub_A0 writes it in a loop: nothing at the loop start; sub_C0 (cdecl, mov [esp], eax) gives
+    // both of its arguments to free: sub_C0(void* ptr, void* ptr_2); sub_100 passes a LARGE_INTEGER (two pushes) to SetFilePointerEx
+    std::vector<unsigned char> file;
+    const auto relative = [&file](uint32 target) { // call rel32
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 5);
+        file.push_back(0xE8);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    // 0x00: the entry point calls them
+    file.insert(file.end(), { 0x6A, 0x10 }); // 0x00: push 0x10                  (hObject)
+    relative(0x40);                          // 0x02: call sub_40
+    file.insert(file.end(), { 0x6A, 0x01 }); // 0x07: push 1                     (hObject of sub_60)
+    file.insert(file.end(), { 0x6A, 0x02 }); // 0x09: push 2
+    relative(0x60);                          // 0x0b: call sub_60
+    file.insert(file.end(), { 0x6A, 0x03 }); // 0x10: push 3
+    relative(0x80);                          // 0x12: call sub_80
+    file.insert(file.end(), { 0x6A, 0x04 }); // 0x17: push 4
+    relative(0xA0);                          // 0x19: call sub_A0
+    file.insert(file.end(), { 0x6A, 0x05 }); // 0x1e: push 5                     (ptr_2)
+    file.insert(file.end(), { 0x6A, 0x06 }); // 0x20: push 6                     (ptr)
+    relative(0xC0);                          // 0x22: call sub_C0
+    file.insert(file.end(), { 0x83, 0xC4, 0x08 }); // 0x27: add esp, 8
+    file.insert(file.end(), { 0x6A, 0x00 });       // 0x2a: push 0              (liDistanceToMove: high)
+    file.insert(file.end(), { 0x6A, 0x20 });       // 0x2c: push 0x20           (low)
+    file.insert(file.end(), { 0x6A, 0x07 });       // 0x2e: push 7              (hFile)
+    relative(0x100);                               // 0x30: call sub_100
+    file.push_back(0xC3);                          // 0x35: ret
+    file.resize(0x40, 0xCC);
+    // 0x40: sub_40
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                   // push ebp; mov ebp, esp
+    file.insert(file.end(), { 0x56, 0x8B, 0x75, 0x08 });             // push esi; mov esi, dword ptr [ebp + 8]
+    file.insert(file.end(), { 0x6A, 0x64 });                         // push 100
+    file.insert(file.end(), { 0xFF, 0x15, 0x00, 0x10, 0x40, 0x00 }); // call dword ptr [Sleep]
+    file.insert(file.end(), { 0x56 });                               // push esi
+    file.insert(file.end(), { 0xFF, 0x15, 0x04, 0x10, 0x40, 0x00 }); // call dword ptr [CloseHandle]
+    file.insert(file.end(), { 0x5E, 0x5D, 0xC2, 0x04, 0x00 });       // pop esi; pop ebp; ret 4
+    file.resize(0x60, 0xCC);
+    // 0x60: sub_60
+    file.insert(file.end(), { 0xFF, 0x74, 0x24, 0x08 }); // push dword ptr [esp + 8]
+    relative(0x40);                                      // call sub_40
+    file.insert(file.end(), { 0xC2, 0x08, 0x00 });       // ret 8
+    file.resize(0x80, 0xCC);
+    // 0x80: sub_80
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                         // push ebp; mov ebp, esp
+    file.insert(file.end(), { 0xC7, 0x45, 0x08, 0x00, 0x00, 0x00, 0x00 }); // mov dword ptr [ebp + 8], 0
+    file.insert(file.end(), { 0xFF, 0x75, 0x08 });                         // push dword ptr [ebp + 8]
+    file.insert(file.end(), { 0xFF, 0x15, 0x04, 0x10, 0x40, 0x00 });       // call dword ptr [CloseHandle]
+    file.insert(file.end(), { 0x5D, 0xC2, 0x04, 0x00 });                   // pop ebp; ret 4
+    file.resize(0xA0, 0xCC);
+    // 0xa0: sub_A0
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                   // 0xa0: push ebp; mov ebp, esp
+    file.insert(file.end(), { 0xFF, 0x75, 0x08 });                   // 0xa3: push dword ptr [ebp + 8]
+    file.insert(file.end(), { 0xFF, 0x15, 0x04, 0x10, 0x40, 0x00 }); // 0xa6: call dword ptr [CloseHandle]
+    file.insert(file.end(), { 0x83, 0x45, 0x08, 0x04 });             // 0xac: add dword ptr [ebp + 8], 4
+    file.insert(file.end(), { 0x83, 0x7D, 0x08, 0x00 });             // 0xb0: cmp dword ptr [ebp + 8], 0
+    file.insert(file.end(), { 0x75, 0xED });                         // 0xb4: jne 0xa3
+    file.insert(file.end(), { 0x5D, 0xC2, 0x04, 0x00 });             // 0xb6: pop ebp; ret 4
+    file.resize(0xC0, 0xCC);
+    // 0xc0: sub_C0
+    file.insert(file.end(), { 0x83, 0xEC, 0x1C });                   // sub esp, 0x1c
+    file.insert(file.end(), { 0x8B, 0x44, 0x24, 0x20 });             // mov eax, dword ptr [esp + 0x20]  (the first argument)
+    file.insert(file.end(), { 0x89, 0x04, 0x24 });                   // mov dword ptr [esp], eax
+    file.insert(file.end(), { 0xFF, 0x15, 0x08, 0x10, 0x40, 0x00 }); // call dword ptr [free]
+    file.insert(file.end(), { 0x8B, 0x44, 0x24, 0x24 });             // mov eax, dword ptr [esp + 0x24]  (the second one)
+    file.insert(file.end(), { 0x89, 0x04, 0x24 });                   // mov dword ptr [esp], eax
+    file.insert(file.end(), { 0xFF, 0x15, 0x08, 0x10, 0x40, 0x00 }); // call dword ptr [free]
+    file.insert(file.end(), { 0x83, 0xC4, 0x1C, 0xC3 });             // add esp, 0x1c; ret
+    file.resize(0x100, 0xCC);
+    // 0x100: sub_100
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC });                   // push ebp; mov ebp, esp
+    file.insert(file.end(), { 0x6A, 0x00, 0x6A, 0x00 });             // push 0; push 0  (dwMoveMethod, lpNewFilePointer)
+    file.insert(file.end(), { 0xFF, 0x75, 0x10, 0xFF, 0x75, 0x0C }); // push dword ptr [ebp + 0x10]; push dword ptr [ebp + 0xc]
+    file.insert(file.end(), { 0xFF, 0x75, 0x08 });                   // push dword ptr [ebp + 8]
+    file.insert(file.end(), { 0xFF, 0x15, 0x0C, 0x10, 0x40, 0x00 }); // call dword ptr [SetFilePointerEx]
+    file.insert(file.end(), { 0x5D, 0xC2, 0x0C, 0x00 });             // pop ebp; ret 0xc
+    file.resize(0x120, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.imports    = { { 0x401000, { "Sleep", MemoryMappingType::FunctionMapping } },
+                          { 0x401004, { "CloseHandle", MemoryMappingType::FunctionMapping } },
+                          { 0x401008, { "free", MemoryMappingType::FunctionMapping } },
+                          { 0x40100C, { "SetFilePointerEx", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0x100 });
+    const auto prototypeOf = [&zone](uint64 start) {
+        const auto* prototype = zone.FindInferredPrototype(start);
+        return prototype ? std::string(prototype->prototype) : std::string();
+    };
+    REQUIRE(prototypeOf(0x40) == "BOOL sub_40(HANDLE hObject)"); // eax: what CloseHandle returns
+    REQUIRE(prototypeOf(0x60) == "BOOL sub_60(a1, HANDLE hObject)");
+    REQUIRE(prototypeOf(0x80) == "BOOL sub_80()"); // no argument
+    REQUIRE(prototypeOf(0xA0) == "BOOL sub_A0()");
+    REQUIRE(prototypeOf(0xC0) == "sub_C0(void* ptr, void* ptr_2)"); // free returns nothing
+    REQUIRE(prototypeOf(0x100) == "BOOL sub_100(HANDLE hFile, LARGE_INTEGER liDistanceToMove)");
+    // the arguments of the frames, named after them
+    REQUIRE(zone.localVariables.FindFunctionByStart(0x40)->FindVariable(8)->name == "hObject");
+    REQUIRE(zone.localVariables.FindFunctionByStart(0x100)->FindVariable(0xC)->name == "liDistanceToMove");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: BOOL sub_40(HANDLE hObject)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000000  push   0x10").ends_with("; hObject")); // the calls to them name their arguments
+    REQUIRE(FindListingLine(listing, "0x00000007  push   1").ends_with("; hObject"));
+    REQUIRE(FindListingLine(listing, "0x00000020  push   6").ends_with("; ptr"));
+    REQUIRE(FindListingLine(listing, "0x0000001e  push   5").ends_with("; ptr_2"));
+    REQUIRE(FindListingLine(listing, "0x0000002e  push   7").ends_with("; hFile"));
+}
+
+TEST_CASE("InferredReturnValues", "[Dissasm]Help")
+{
+    // x64 Windows. sub_40 returns what CreateFileW returns (-1 on its error path: a constant): HANDLE sub_40(LPCWSTR lpFileName); sub_80 tail
+    // jumps to it: the same (a second round); sub_A0 returns CreateFileW on a path, GetProcessHeap on the other: no return type. The caller
+    // keeps what they return: File (HANDLE, the name of the API's return value), File_2, var_18 (nothing)
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    const auto relative = [&file](uint8 opcode, uint32 target) { // call / jmp rel32
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 5);
+        file.push_back(opcode);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    // 0x00: the caller
+    file.insert(file.end(), { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x40 }); // push rbp; mov rbp, rsp; sub rsp, 0x40
+    relative(0xE8, 0x40);                                                        // call sub_40
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xF8 });                         // mov qword ptr [rbp - 8], rax
+    relative(0xE8, 0x80);                                                        // call sub_80
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xF0 });                         // mov qword ptr [rbp - 0x10], rax
+    relative(0xE8, 0xA0);                                                        // call sub_A0
+    file.insert(file.end(), { 0x48, 0x89, 0x45, 0xE8 });                         // mov qword ptr [rbp - 0x18], rax
+    file.insert(file.end(), { 0x48, 0x89, 0xEC, 0x5D, 0xC3 });                   // mov rsp, rbp; pop rbp; ret
+    file.resize(0x40, 0xCC);
+    // 0x40: sub_40
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x38 });       // 0x40: sub rsp, 0x38
+    file.insert(file.end(), { 0x48, 0x85, 0xC9 });             // 0x44: test rcx, rcx
+    file.insert(file.end(), { 0x74, 0x0B });                   // 0x47: je 0x54
+    call(0x200);                                               // 0x49: call CreateFileW
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x38, 0xC3 }); // 0x4f: add rsp, 0x38; ret
+    file.insert(file.end(), { 0x48, 0x83, 0xC8, 0xFF });       // 0x54: or rax, -1
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x38, 0xC3 }); // 0x58: add rsp, 0x38; ret
+    file.resize(0x80, 0xCC);
+    // 0x80: sub_80
+    relative(0xE9, 0x40); // jmp sub_40
+    file.resize(0xA0, 0xCC);
+    // 0xa0: sub_A0
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 }); // 0xa0: sub rsp, 0x28
+    file.insert(file.end(), { 0x85, 0xD2 });             // 0xa4: test edx, edx
+    file.insert(file.end(), { 0x74, 0x08 });             // 0xa6: je 0xb0
+    call(0x200);                                         // 0xa8: call CreateFileW
+    file.insert(file.end(), { 0xEB, 0x06 });             // 0xae: jmp 0xb6
+    call(0x208);                                         // 0xb0: call GetProcessHeap
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0xb6: add rsp, 0x28; ret
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CreateFileW", MemoryMappingType::FunctionMapping } }, { 0x208, { "GetProcessHeap", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x80, 0xA0 });
+    const auto* wrapper = zone.FindInferredPrototype(0x40);
+    REQUIRE(wrapper != nullptr);
+    REQUIRE(std::string_view(wrapper->prototype).starts_with("HANDLE sub_40(LPCWSTR lpFileName, DWORD dwDesiredAccess, ")); // rcx .. r9 passed on
+    REQUIRE(wrapper->returnType == "HANDLE");
+    REQUIRE(GetReturnValueName(*wrapper) == "File"); // the name of the return value of CreateFileW
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0x80)->prototype).starts_with("HANDLE sub_80(LPCWSTR lpFileName, "));
+    REQUIRE(GetReturnValueName(*zone.FindInferredPrototype(0x80)) == "File");
+    REQUIRE(std::string_view(zone.FindInferredPrototype(0xA0)->prototype).starts_with("sub_A0(LPCWSTR lpFileName, ")); // two APIs: not one return
+
+    // the variables of the caller, named and typed after what the wrappers return
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto check = [frame](int32 offset, std::string_view name, std::string_view type, std::string_view origin) {
+        const auto* variable = frame->FindVariable(offset);
+        REQUIRE(variable != nullptr);
+        CHECK(variable->name == name);
+        CHECK(variable->type == type);
+        CHECK(variable->origin == origin);
+    };
+    check(-8, "File", "HANDLE", "returned by sub_40");
+    check(-0x10, "File_2", "HANDLE", "returned by sub_80");
+    check(-0x18, "var_18", "", "");
+
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "sub_40:").find("inferred: HANDLE sub_40(LPCWSTR lpFileName, ") != std::string_view::npos);
+}
+
+TEST_CASE("ApiConstants", "[Dissasm]Help")
+{
+    // the access rights: the generic ones, the ones of the object of the API (the A / W ending dropped), the combinations first
+    REQUIRE(FormatApiConstant("CreateFileW", "dwDesiredAccess", 0x80000000) == "GENERIC_READ");
+    REQUIRE(FormatApiConstant("CreateFileA", "dwDesiredAccess", 0xC0000000) == "GENERIC_READ | GENERIC_WRITE");
+    REQUIRE(FormatApiConstant("OpenProcess", "dwDesiredAccess", 0x1FFFFF) == "PROCESS_ALL_ACCESS");
+    REQUIRE(FormatApiConstant("OpenProcess", "dwDesiredAccess", 0x410) == "PROCESS_VM_READ | PROCESS_QUERY_INFORMATION");
+    REQUIRE(FormatApiConstant("RegOpenKeyExW", "samDesired", 0x20119) == "KEY_READ | KEY_WOW64_64KEY");
+    REQUIRE(FormatApiConstant("sub_401000", "dwDesiredAccess", 0x80000000) == "GENERIC_READ"); // an inferred prototype: the generic rights
+    // a 32 bit constant sign extended in a 64 bit register; not a 64 bit one
+    REQUIRE(FormatApiConstant("RegOpenKeyExW", "hKey", 0xFFFFFFFF80000001ull) == "HKEY_CURRENT_USER");
+    REQUIRE(FormatApiConstant("GetStdHandle", "nStdHandle", static_cast<uint64>(-11)) == "STD_OUTPUT_HANDLE");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0x100000001ull).empty());
+    // the fields (once each) and the flags; the bits without a name in hexadecimal; nothing when no bit has a name
+    REQUIRE(FormatApiConstant("MessageBoxW", "uType", 0x24) == "MB_YESNO | MB_ICONQUESTION");
+    REQUIRE(FormatApiConstant("MessageBoxA", "uType", 0x10) == "MB_OK | MB_ICONERROR");
+    REQUIRE(FormatApiConstant("open", "flags", 0x241) == "O_WRONLY | O_CREAT | O_TRUNC");
+    REQUIRE(FormatApiConstant("VirtualAlloc", "flProtect", 0x140) == "PAGE_EXECUTE_READWRITE | PAGE_GUARD");
+    REQUIRE(FormatApiConstant("VirtualAlloc", "flAllocationType", 0x3000) == "MEM_COMMIT | MEM_RESERVE");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0x9) == "FILE_SHARE_READ | 0x8");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0x8).empty());
+    REQUIRE(FormatApiConstant("CreateFileW", "dwShareMode", 0).empty()); // no name for 0
+    REQUIRE(FormatApiConstant("CertOpenStore", "dwEncodingType", 0x10001) == "X509_ASN_ENCODING | PKCS_7_ASN_ENCODING");
+    // the value 0 of a set that names it; the combinations of the memory flags
+    REQUIRE(FormatApiConstant("LocalAlloc", "uFlags", 0) == "LMEM_FIXED");
+    REQUIRE(FormatApiConstant("LocalAlloc", "uFlags", 0x40) == "LPTR");
+    REQUIRE(FormatApiConstant("CoInitializeEx", "dwCoInit", 0) == "COINIT_MULTITHREADED");
+    REQUIRE(FormatApiConstant("CoInitializeEx", "dwCoInit", 6) == "COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE");
+    REQUIRE(FormatApiConstant("SetFilePointer", "dwMoveMethod", 0) == "FILE_BEGIN");
+    // the enumerations: the exact value only
+    REQUIRE(FormatApiConstant("WaitForSingleObject", "dwMilliseconds", 0xFFFFFFFF) == "INFINITE");
+    REQUIRE(FormatApiConstant("WaitForSingleObject", "dwMilliseconds", 1000).empty());
+    REQUIRE(FormatApiConstant("CryptCreateHash", "Algid", 0x800C) == "CALG_SHA_256");
+    REQUIRE(FormatApiConstant("CreateFileW", "dwCreationDisposition", 3) == "OPEN_EXISTING");
+    // a parameter that means something else in every API: only by its function
+    REQUIRE(FormatApiConstant("sub_401000", "dwFlags", 8).empty());
+    REQUIRE(FormatApiConstant("HeapAlloc", "dwFlags", 8) == "HEAP_ZERO_MEMORY");
+    // a pool tag (memory order), an I/O control code
+    REQUIRE(FormatApiConstant("ExAllocatePoolWithTag", "Tag", 0x7346744E) == "'NtFs'");
+    REQUIRE(FormatApiConstant("ExAllocatePoolWithTag", "Tag", 0x00000001).empty());
+    REQUIRE(FormatApiConstant("DeviceIoControl", "dwIoControlCode", 0x222004) == "CTL_CODE(0x22, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)");
+
+    // the listing: the constants of the calls of CreateFileW, RegOpenKeyExW, VirtualAlloc (x64: the registers, the stack slots, xor, and)
+    std::vector<unsigned char> file;
+    const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+        const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+        file.insert(file.end(), { 0xFF, 0x15 });
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x48 });                         // sub rsp, 0x48
+    file.insert(file.end(), { 0x48, 0x89, 0xD9 });                               // mov rcx, rbx                 (lpFileName)
+    file.insert(file.end(), { 0xBA, 0x00, 0x00, 0x00, 0xC0 });                   // mov edx, 0xc0000000          (dwDesiredAccess)
+    file.insert(file.end(), { 0x41, 0xB8, 0x03, 0x00, 0x00, 0x00 });             // mov r8d, 3                   (dwShareMode)
+    file.insert(file.end(), { 0x45, 0x31, 0xC9 });                               // xor r9d, r9d                 (lpSecurityAttributes)
+    file.insert(file.end(), { 0xC7, 0x44, 0x24, 0x20, 0x03, 0x00, 0x00, 0x00 }); // mov dword ptr [rsp + 0x20], 3
+    file.insert(file.end(), { 0xC7, 0x44, 0x24, 0x28, 0x80, 0x00, 0x00, 0x00 }); // mov dword ptr [rsp + 0x28], 0x80
+    file.insert(file.end(), { 0x48, 0x83, 0x64, 0x24, 0x30, 0x00 });             // and qword ptr [rsp + 0x30], 0 (hTemplateFile)
+    call(0x200);                                                                 // call CreateFileW
+    file.insert(file.end(), { 0x48, 0xC7, 0xC1, 0x02, 0x00, 0x00, 0x80 });       // mov rcx, 0xffffffff80000002  (hKey)
+    file.insert(file.end(), { 0x48, 0x89, 0xDA });                               // mov rdx, rbx                 (lpSubKey)
+    file.insert(file.end(), { 0x45, 0x31, 0xC0 });                               // xor r8d, r8d                 (ulOptions)
+    file.insert(file.end(), { 0x41, 0xB9, 0x19, 0x00, 0x02, 0x00 });             // mov r9d, 0x20019             (samDesired)
+    file.insert(file.end(), { 0x48, 0x89, 0x5C, 0x24, 0x20 });                   // mov qword ptr [rsp + 0x20], rbx (phkResult)
+    call(0x208);                                                                 // call RegOpenKeyExW
+    file.insert(file.end(), { 0x31, 0xC9 });                                     // xor ecx, ecx                 (lpAddress)
+    file.insert(file.end(), { 0xBA, 0x00, 0x10, 0x00, 0x00 });                   // mov edx, 0x1000              (dwSize)
+    file.insert(file.end(), { 0x41, 0xB8, 0x00, 0x30, 0x00, 0x00 });             // mov r8d, 0x3000              (flAllocationType)
+    file.insert(file.end(), { 0x41, 0xB9, 0x40, 0x00, 0x00, 0x00 });             // mov r9d, 0x40                (flProtect)
+    call(0x210);                                                                 // call VirtualAlloc
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x48, 0xC3 });                   // add rsp, 0x48; ret
+    REQUIRE(file.size() < 0x200);
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                { 0x208, { "RegOpenKeyExW", MemoryMappingType::FunctionMapping } },
+                                { 0x210, { "VirtualAlloc", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "mov    edx, 0xc0000000").ends_with("; dwDesiredAccess = GENERIC_READ | GENERIC_WRITE"));
+    REQUIRE(FindListingLine(listing, "mov    r8d, 3").ends_with("; dwShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE"));
+    REQUIRE(FindListingLine(listing, "xor    r9d, r9d").ends_with("; lpSecurityAttributes")); // no constant of it
+    REQUIRE(FindListingLine(listing, "0x00000015  mov").ends_with("; dwCreationDisposition = OPEN_EXISTING"));
+    REQUIRE(FindListingLine(listing, "0x0000001d  mov").ends_with("; dwFlagsAndAttributes = FILE_ATTRIBUTE_NORMAL"));
+    REQUIRE(FindListingLine(listing, "0x00000025  and").ends_with("; hTemplateFile"));
+    REQUIRE(FindListingLine(listing, "mov    rcx, 0xffffffff80000002").ends_with("; hKey = HKEY_LOCAL_MACHINE"));
+    REQUIRE(FindListingLine(listing, "xor    r8d, r8d").ends_with("; ulOptions"));
+    REQUIRE(FindListingLine(listing, "mov    r9d, 0x20019").ends_with("; samDesired = KEY_READ"));
+    REQUIRE(FindListingLine(listing, "mov    edx, 0x1000").ends_with("; dwSize"));
+    REQUIRE(FindListingLine(listing, "mov    r8d, 0x3000").ends_with("; flAllocationType = MEM_COMMIT | MEM_RESERVE"));
+    REQUIRE(FindListingLine(listing, "mov    r9d, 0x40").ends_with("; flProtect = PAGE_EXECUTE_READWRITE"));
+}
+
+TEST_CASE("ApiReturnConstants", "[Dissasm]Help")
+{
+    // the values an API returns: by the function, else by the type it returns
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("WaitForSingleObject"), 0x102) == "WAIT_TIMEOUT");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("GetLastError"), 0xB7) == "ERROR_ALREADY_EXISTS");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CreateFileW"), UINT64_MAX) == "INVALID_HANDLE_VALUE"); // cmp rax, -1
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("GetFileAttributesW"), 0xFFFFFFFF) == "INVALID_FILE_ATTRIBUTES");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("RegOpenKeyExW"), 2) == "ERROR_FILE_NOT_FOUND"); // an LSTATUS
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CoCreateInstance"), 0x80040154) == "REGDB_E_CLASSNOTREG");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CoCreateInstance"), 0x80070490) == "HRESULT_FROM_WIN32(ERROR_NOT_FOUND)");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("NtCreateFile"), 0xC0000034) == "STATUS_OBJECT_NAME_NOT_FOUND");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("MessageBoxW"), 6) == "IDYES");
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("connect"), UINT64_MAX).empty()); // POSIX too: not SOCKET_ERROR
+    REQUIRE(FormatApiReturnConstant(*FindApiPrototype("CreateFileW"), 0).empty());
+    // a status wherever it is: the error NTSTATUSes, the HRESULT errors; not the low HRESULTs / the masks
+    REQUIRE(FormatDistinctiveConstant(0xC0000022) == "STATUS_ACCESS_DENIED");
+    REQUIRE(FormatDistinctiveConstant(0xFFFFFFFFC0000034ull) == "STATUS_OBJECT_NAME_NOT_FOUND");
+    REQUIRE(FormatDistinctiveConstant(0x80070057) == "E_INVALIDARG");
+    REQUIRE(FormatDistinctiveConstant(0x80070002) == "HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)");
+    REQUIRE(FormatDistinctiveConstant(0x80000005).empty());
+    REQUIRE(FormatDistinctiveConstant(0xC0000000).empty());
+    REQUIRE(FormatDistinctiveConstant(0x102).empty());
+
+    // x64: the cmp after the calls (through a copy: mov esi, eax), a status of the code, a status passed to SetLastError
+    {
+        std::vector<unsigned char> file;
+        const auto call = [&file](uint32 slot) { // call qword ptr [rip + slot - next]
+            const uint32 displacement = slot - static_cast<uint32>(file.size() + 6);
+            file.insert(file.end(), { 0xFF, 0x15 });
+            for (uint32 i = 0; i < 4; i++)
+                file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+        };
+        file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28 });             // 0x00: sub rsp, 0x28
+        call(0x200);                                                     // 0x04: call CreateFileW
+        file.insert(file.end(), { 0x48, 0x83, 0xF8, 0xFF });             // 0x0a: cmp rax, -1          (INVALID_HANDLE_VALUE)
+        file.insert(file.end(), { 0x48, 0x89, 0xC1 });                   // 0x0e: mov rcx, rax         (hHandle)
+        file.insert(file.end(), { 0xBA, 0xE8, 0x03, 0x00, 0x00 });       // 0x11: mov edx, 1000
+        call(0x208);                                                     // 0x16: call WaitForSingleObject
+        file.insert(file.end(), { 0x3D, 0x02, 0x01, 0x00, 0x00 });       // 0x1c: cmp eax, 0x102       (WAIT_TIMEOUT)
+        call(0x210);                                                     // 0x21: call GetLastError
+        file.insert(file.end(), { 0x89, 0xC6 });                         // 0x27: mov esi, eax
+        file.insert(file.end(), { 0x81, 0xFE, 0xB7, 0x00, 0x00, 0x00 }); // 0x29: cmp esi, 0xb7        (ERROR_ALREADY_EXISTS)
+        file.insert(file.end(), { 0xB9, 0x05, 0x40, 0x00, 0x80 });       // 0x2f: mov ecx, 0x80004005  (dwErrCode = E_FAIL)
+        call(0x218);                                                     // 0x34: call SetLastError
+        file.insert(file.end(), { 0xB8, 0x22, 0x00, 0x00, 0xC0 });       // 0x3a: mov eax, 0xc0000022  (STATUS_ACCESS_DENIED)
+        file.insert(file.end(), { 0x3D, 0x02, 0x01, 0x00, 0x00 });       // 0x3f: cmp eax, 0x102       (a constant: nothing)
+        file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x28, 0xC3 });       // 0x44: add rsp, 0x28; ret
+        file.resize(0x220, 0xCC);
+        ZoneLayout layout;
+        layout.size             = 0x200;
+        layout.entryPoint       = 0;
+        layout.language         = DisassemblyLanguage::x64;
+        layout.translateOffsets = true;
+        layout.imports          = { { 0x200, { "CreateFileW", MemoryMappingType::FunctionMapping } },
+                                    { 0x208, { "WaitForSingleObject", MemoryMappingType::FunctionMapping } },
+                                    { 0x210, { "GetLastError", MemoryMappingType::FunctionMapping } },
+                                    { 0x218, { "SetLastError", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        auto& zone = *dissasmInstance.zone;
+        REQUIRE(zone.returnValueConstants.size() == 3);
+        REQUIRE(zone.returnValueConstants.at(0x0A) == "INVALID_HANDLE_VALUE");
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "0x0000000a  cmp").ends_with("; INVALID_HANDLE_VALUE"));
+        REQUIRE(FindListingLine(listing, "0x0000001c  cmp").ends_with("; WAIT_TIMEOUT"));
+        REQUIRE(FindListingLine(listing, "0x00000029  cmp").ends_with("; ERROR_ALREADY_EXISTS"));
+        REQUIRE(FindListingLine(listing, "0x0000002f  mov").ends_with("; dwErrCode = E_FAIL"));
+        REQUIRE(FindListingLine(listing, "0x0000003a  mov").ends_with("; STATUS_ACCESS_DENIED"));
+        REQUIRE(FindListingLine(listing, "0x0000003f  cmp").find(';') == std::string_view::npos);
+    }
+    // 32 bit: the walk of the stack (7e), the status pushed for SetLastError
+    {
+        std::vector<unsigned char> file = {
+            0xFF, 0x15, 0x00, 0x10, 0x40, 0x00, // 0x00: call dword ptr [GetLastError]
+            0x3D, 0xB7, 0x00, 0x00, 0x00,       // 0x06: cmp eax, 0xb7         (ERROR_ALREADY_EXISTS)
+            0x68, 0x57, 0x00, 0x07, 0x80,       // 0x0b: push 0x80070057       (dwErrCode = E_INVALIDARG)
+            0xFF, 0x15, 0x04, 0x10, 0x40, 0x00, // 0x10: call dword ptr [SetLastError]
+            0xC3,                               // 0x16: ret
+        };
+        file.resize(0x40, 0xCC);
+        ZoneLayout layout;
+        layout.size       = file.size();
+        layout.entryPoint = 0;
+        layout.imports    = { { 0x401000, { "GetLastError", MemoryMappingType::FunctionMapping } },
+                              { 0x401004, { "SetLastError", MemoryMappingType::FunctionMapping } } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE(FindListingLine(listing, "0x00000006  cmp").ends_with("; ERROR_ALREADY_EXISTS"));
+        REQUIRE(FindListingLine(listing, "0x0000000b  push").ends_with("; dwErrCode = E_INVALIDARG"));
+    }
+}
+
+TEST_CASE("ComInterfaces", "[Dissasm]Help")
+{
+    // the GUIDs (their bytes: Data1, Data2, Data3 little endian), the interfaces, the vtables
+    const uint8 locatorIid[16]   = { 0x87, 0xA6, 0x12, 0xDC, 0x7F, 0x73, 0xCF, 0x11, 0x88, 0x4D, 0x00, 0xAA, 0x00, 0x4B, 0x2E, 0x24 };
+    const uint8 locatorClsid[16] = { 0x11, 0xF8, 0x90, 0x45, 0x3A, 0x1D, 0xD0, 0x11, 0x89, 0x1F, 0x00, 0xAA, 0x00, 0x4B, 0x2E, 0x24 };
+    const uint8 unknownIid[16]   = { 0, 0, 0, 0, 0, 0, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46 };
+    REQUIRE(FindGuidName(locatorIid) == "IID_IWbemLocator");
+    REQUIRE(FindGuidName(locatorClsid) == "CLSID_WbemLocator");
+    REQUIRE(FindInterfaceOfIid(locatorIid) == "IWbemLocator");
+    REQUIRE(FindInterfaceOfIid(locatorClsid).empty()); // a CLSID is not an interface
+    REQUIRE(FindInterfaceOfIid(unknownIid) == "IUnknown");
+    REQUIRE(FindComMethod("IWbemServices", 2)->second.name == "Release");
+    REQUIRE(FindComMethod("IWbemServices", 2)->first == "IWbemServices");
+    REQUIRE(FindComMethod("IWbemServices", 20)->second.name == "ExecQuery");
+    REQUIRE(FindComMethod("ITaskService", 10)->second.name == "Connect"); // after the 7 of IDispatch
+    REQUIRE(FindComMethod("IShellLinkA", 20)->second.name == "SetPath");
+    REQUIRE_FALSE(FindComMethod("IWbemLocator", 4).has_value());
+    REQUIRE(FindComProducer("CoCreateInstance")->riidParameter == 3);
+    REQUIRE(FindComProducer("CreateFileW") == nullptr);
+
+    // x64: CoCreateInstance(CLSID_WbemLocator, 0, 1, IID_IWbemLocator, &locator); locator->ConnectServer(..., &services) (its 8th
+    // parameter, in the stack); services->ExecQuery through the CFG dispatch (mov rax, [rax + 0xa0]; call [dispatch]); services->Release
+    std::vector<unsigned char> file;
+    const auto ripOperand = [&file](std::initializer_list<unsigned char> opcode, uint32 target, uint32 after) {
+        file.insert(file.end(), opcode);
+        const uint32 displacement = target - static_cast<uint32>(file.size() + 4 + after);
+        for (uint32 i = 0; i < 4; i++)
+            file.push_back(static_cast<unsigned char>(displacement >> (8 * i)));
+    };
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x48 });             // 0x00: sub rsp, 0x48
+    file.insert(file.end(), { 0x48, 0x8D, 0x44, 0x24, 0x30 });       // 0x04: lea rax, [rsp + 0x30]   (&locator)
+    file.insert(file.end(), { 0x48, 0x89, 0x44, 0x24, 0x20 });       // 0x09: mov [rsp + 0x20], rax   (ppv)
+    ripOperand({ 0x4C, 0x8D, 0x0D }, 0x100, 0);                      // 0x0e: lea r9, IID_IWbemLocator
+    file.insert(file.end(), { 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00 }); // 0x15: mov r8d, 1
+    file.insert(file.end(), { 0x31, 0xD2 });                         // 0x1b: xor edx, edx
+    ripOperand({ 0x48, 0x8D, 0x0D }, 0x110, 0);                      // 0x1d: lea rcx, CLSID_WbemLocator
+    ripOperand({ 0xFF, 0x15 }, 0x200, 0);                            // 0x24: call CoCreateInstance
+    file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x30 });       // 0x2a: mov rcx, [rsp + 0x30]   (locator)
+    file.insert(file.end(), { 0x48, 0x8D, 0x44, 0x24, 0x38 });       // 0x2f: lea rax, [rsp + 0x38]   (&services)
+    file.insert(file.end(), { 0x48, 0x89, 0x44, 0x24, 0x40 });       // 0x34: mov [rsp + 0x40], rax   (ppNamespace: the 8th)
+    file.insert(file.end(), { 0x48, 0x8B, 0x01 });                   // 0x39: mov rax, [rcx]
+    file.insert(file.end(), { 0xFF, 0x50, 0x18 });                   // 0x3c: call [rax + 0x18]       (IWbemLocator::ConnectServer)
+    file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x38 });       // 0x3f: mov rcx, [rsp + 0x38]   (services)
+    file.insert(file.end(), { 0x48, 0x8B, 0x01 });                   // 0x44: mov rax, [rcx]
+    file.insert(file.end(), { 0x48, 0x8B, 0x80, 0xA0, 0x00, 0x00, 0x00 }); // 0x47: mov rax, [rax + 0xa0]
+    ripOperand({ 0xFF, 0x15 }, 0x208, 0);                            // 0x4e: call [dispatch]         (IWbemServices::ExecQuery)
+    file.insert(file.end(), { 0x48, 0x8B, 0x4C, 0x24, 0x38 });       // 0x54: mov rcx, [rsp + 0x38]
+    file.insert(file.end(), { 0x48, 0x8B, 0x01 });                   // 0x59: mov rax, [rcx]
+    file.insert(file.end(), { 0xFF, 0x50, 0x10 });                   // 0x5c: call [rax + 0x10]       (IWbemServices::Release)
+    file.insert(file.end(), { 0x48, 0x8B, 0x19 });                   // 0x5f: mov rbx, [rcx]          (rcx: written by the call)
+    file.insert(file.end(), { 0xFF, 0x53, 0x10 });                   // 0x62: call [rbx + 0x10]       (nothing)
+    file.insert(file.end(), { 0x48, 0x83, 0xC4, 0x48, 0xC3 });       // 0x65: add rsp, 0x48; ret
+    file.resize(0x100, 0xCC);
+    file.insert(file.end(), std::begin(locatorIid), std::end(locatorIid));     // 0x100
+    file.insert(file.end(), std::begin(locatorClsid), std::end(locatorClsid)); // 0x110
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "CoCreateInstance", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    INFO(zone.interfaceCalls.size());
+    REQUIRE(zone.interfaceCalls.size() == 3);
+    REQUIRE(zone.interfaceCalls.at(0x3C) == "IWbemLocator::ConnectServer");
+    REQUIRE(zone.interfaceCalls.at(0x4E) == "IWbemServices::ExecQuery");
+    REQUIRE(zone.interfaceCalls.at(0x5C) == "IWbemServices::Release");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000e  lea    r9, IID_IWbemLocator").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000001d  lea    rcx, CLSID_WbemLocator").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000003c  call").ends_with("; IWbemLocator::ConnectServer"));
+    REQUIRE(FindListingLine(listing, "0x0000004e  call").ends_with("; IWbemServices::ExecQuery"));
+    REQUIRE(FindListingLine(listing, "0x00000062  call").find(';') == std::string_view::npos);
+
+    // the prototypes of the methods: the arguments of their calls named (This, the 8th in the stack), the variables that receive an
+    // interface typed and named after it
+    const auto* connect = FindComMethodPrototype("IWbemLocator::ConnectServer");
+    REQUIRE(connect != nullptr);
+    REQUIRE(connect->prototype.starts_with("HRESULT IWbemLocator::ConnectServer(IWbemLocator* This, const BSTR strNetworkResource"));
+    REQUIRE(connect->params.size() == 9);
+    REQUIRE(std::string_view(connect->params[8].name) == "ppNamespace");
+    REQUIRE(FindComMethodPrototype("IWbemServices::Release")->returnType == "ULONG");
+    REQUIRE(std::string_view(FindComMethodPrototype("IWbemServices::QueryInterface")->params[0].type) == "IWbemServices*");
+    REQUIRE(FindComMethodPrototype("ITaskService::Connect") == nullptr); // a VARIANT by value: no prototype
+    REQUIRE(FindComMethodPrototype("IWbemServices::NoSuchMethod") == nullptr);
+    REQUIRE(FindListingLine(listing, "0x0000002a  mov").ends_with("; This"));
+    REQUIRE(FindListingLine(listing, "0x00000034  mov").ends_with("; ppNamespace"));
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto variableNamed = [frame](std::string_view name) -> const DissasmLocalVariable* {
+        for (const auto& variable : frame->variables)
+            if (variable.name == name)
+                return &variable;
+        return nullptr;
+    };
+    INFO(frame->variables.size());
+    REQUIRE(variableNamed("pWbemLocator") != nullptr);
+    REQUIRE(variableNamed("pWbemLocator")->type == "IWbemLocator*");
+    REQUIRE(variableNamed("pWbemServices") != nullptr);
+    REQUIRE(variableNamed("pWbemServices")->type == "IWbemServices*");
+    REQUIRE(variableNamed("This") == nullptr);
+}
+
+TEST_CASE("X86BiasedFramePointer", "[Dissasm]Help")
+{
+    // MSVC x64: the frame pointer set after the saves, biased (lea rbp, [rsp - 0x1f]: the rsp of the entry - 0x27), kept by the calls (a
+    // callee saved register), the epilogue restores rsp from it (lea rsp, [rbp + 0x1f])
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0x5C, 0x24, 0x08,             // 0x00: mov [rsp + 8], rbx
+        0x55,                                     // 0x05: push rbp
+        0x48, 0x8D, 0x6C, 0x24, 0xE1,             // 0x06: lea rbp, [rsp - 0x1f]
+        0x48, 0x81, 0xEC, 0xD0, 0x00, 0x00, 0x00, // 0x0b: sub rsp, 0xd0
+        0x48, 0x89, 0x45, 0x0F,                   // 0x12: mov [rbp + 0xf], rax      (the slot -0x18)
+        0xFF, 0x15, 0xE4, 0x01, 0x00, 0x00,       // 0x16: call qword ptr [rip + 0x1e4] (Sleep: 0x200)
+        0x48, 0x8B, 0x45, 0x7F,                   // 0x1c: mov rax, [rbp + 0x7f]     (the 0x58: the 10th argument)
+        0x48, 0x8D, 0x65, 0x1F,                   // 0x20: lea rsp, [rbp + 0x1f]
+        0x5D,                                     // 0x24: pop rbp
+        0xC3,                                     // 0x25: ret
+    };
+    DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, file.data(), file.size(), 0, file.size(), true, frame));
+    REQUIRE(!frame.usesFrameRegister);
+    REQUIRE(frame.stackAliases.size() == 1);
+    REQUIRE(frame.stackAliases[0].reg == "rbp");
+    REQUIRE(frame.stackAliases[0].delta == -0x27);
+    REQUIRE(frame.stackAliases[0].start == 0x0b);
+    REQUIRE(frame.stackAliases[0].end == 0x24); // pop rbp
+    REQUIRE(frame.FindVariable(-0x18) != nullptr);
+    REQUIRE(frame.FindVariable(0x58) != nullptr);
+    REQUIRE(frame.StackDeltaAt(0x24) == -8); // lea rsp, [rbp + 0x1f]
+    REQUIRE(frame.StackDeltaAt(0x25) == 0);
+
+    // the listing: the slots through rbp named (IDA: [rbp+27h+var_18])
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000012  mov    qword ptr [rbp + 0x27 + var_18], rax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000001c  mov    rax, qword ptr [rbp + 0x27 + arg_50]").size() > 0);
+
+    // the frame pointer from a copy of rsp (mov rax, rsp; lea rbp, [rax - 0x5f]), the epilogue of MSVC through r11 (lea r11, [rsp + 0xa0];
+    // mov rsp, r11), the body after an early epilogue (pop rbp; ret: the branch to it keeps rbp)
+    std::vector<unsigned char> chained = {
+        0x48, 0x8B, 0xC4,                               // 0x00: mov rax, rsp
+        0x48, 0x89, 0x58, 0x08,                         // 0x03: mov [rax + 8], rbx
+        0x55,                                           // 0x07: push rbp
+        0x48, 0x8D, 0x68, 0xA1,                         // 0x08: lea rbp, [rax - 0x5f]
+        0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00,       // 0x0c: sub rsp, 0xa0
+        0x85, 0xC9,                                     // 0x13: test ecx, ecx
+        0x75, 0x0E,                                     // 0x15: jne 0x25
+        0x4C, 0x8D, 0x9C, 0x24, 0xA0, 0x00, 0x00, 0x00, // 0x17: lea r11, [rsp + 0xa0]
+        0x49, 0x8B, 0xE3,                               // 0x1f: mov rsp, r11
+        0x5D,                                           // 0x22: pop rbp
+        0xC3,                                           // 0x23: ret
+        0xCC,                                           // 0x24: int3
+        0x48, 0x89, 0x45, 0x10,                         // 0x25: mov [rbp + 0x10], rax  (the slot -0x4f)
+        0x4C, 0x8D, 0x9C, 0x24, 0xA0, 0x00, 0x00, 0x00, // 0x29: lea r11, [rsp + 0xa0]
+        0x49, 0x8B, 0xE3,                               // 0x31: mov rsp, r11
+        0x5D,                                           // 0x34: pop rbp
+        0xC3,                                           // 0x35: ret
+    };
+    DissasmFunctionFrame chainedFrame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, chained.data(), chained.size(), 0, chained.size(), true, chainedFrame));
+    REQUIRE(chainedFrame.FindVariable(-0x4f) != nullptr);
+    REQUIRE(chainedFrame.StackDeltaAt(0x22) == -8); // mov rsp, r11
+    bool rbpAfterEpilogue = false;
+    for (const auto& alias : chainedFrame.stackAliases)
+        rbpAfterEpilogue |= alias.reg == "rbp" && alias.delta == -0x5f && alias.start <= 0x25 && alias.end > 0x25;
+    REQUIRE(rbpAfterEpilogue);
+}
+
+TEST_CASE("X64ExceptionScopes", "[Dissasm]Help")
+{
+    // x64 SEH (the scope table of __C_specific_handler): a __try / __except with a filter funclet (no frame register: the establisher
+    // frame is the rsp after the prologue), a __try / __finally of a frame register function (the funclet: lea rbp, [rdx + 0x10])
+    std::vector<unsigned char> file = {
+        0x53,                                           // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x30,                         // 0x01: sub rsp, 0x30
+        0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00, // 0x05: mov dword ptr [rsp + 0x20], 0   (__try; the slot -0x18)
+        0xFF, 0x15, 0xED, 0x01, 0x00, 0x00,             // 0x0d: call qword ptr [rip + 0x1ed]   (Sleep: 0x200)
+        0xEB, 0x05,                                     // 0x13: jmp 0x1a
+        0xB8, 0x01, 0x00, 0x00, 0x00,                   // 0x15: mov eax, 1                     (__except)
+        0x8B, 0x44, 0x24, 0x20,                         // 0x1a: mov eax, dword ptr [rsp + 0x20]
+        0x48, 0x83, 0xC4, 0x30,                         // 0x1e: add rsp, 0x30
+        0x5B,                                           // 0x22: pop rbx
+        0xC3,                                           // 0x23: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x30: push rbp                       (the filter)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x31: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x35: mov rbp, rdx                   (the establisher frame)
+        0x8B, 0x45, 0x20,                               // 0x38: mov eax, dword ptr [rbp + 0x20] (the slot -0x18 of 0x00)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x3b: add rsp, 0x20
+        0x5D,                                           // 0x3f: pop rbp
+        0xC3,                                           // 0x40: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x50: push rbp
+        0x48, 0x8B, 0xEC,                               // 0x51: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x20,                         // 0x54: sub rsp, 0x20
+        0xC7, 0x45, 0xFC, 0x01, 0x00, 0x00, 0x00,       // 0x58: mov dword ptr [rbp - 4], 1     (__try)
+        0xFF, 0x15, 0x9B, 0x01, 0x00, 0x00,             // 0x5f: call qword ptr [rip + 0x19b]   (Sleep)
+        0xB9, 0x00, 0x00, 0x00, 0x00,                   // 0x65: mov ecx, 0
+        0x48, 0x8B, 0xD5,                               // 0x6a: mov rdx, rbp
+        0xE8, 0x0E, 0x00, 0x00, 0x00,                   // 0x6d: call 0x80                      (the __finally)
+        0x8B, 0x45, 0xFC,                               // 0x72: mov eax, dword ptr [rbp - 4]
+        0x48, 0x8B, 0xE5,                               // 0x75: mov rsp, rbp
+        0x5D,                                           // 0x78: pop rbp
+        0xC3,                                           // 0x79: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x80: push rbp                       (the __finally)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x81: sub rsp, 0x20
+        0x48, 0x8D, 0x6A, 0x10,                         // 0x85: lea rbp, [rdx + 0x10]
+        0xC7, 0x45, 0xEC, 0x00, 0x00, 0x00, 0x00,       // 0x89: mov dword ptr [rbp - 0x14], 0  (the slot -4 of 0x50)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x90: add rsp, 0x20
+        0x5D,                                           // 0x94: pop rbp
+        0xC3,                                           // 0x95: ret
+    };
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0x50;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = {
+        { 0x00, { "", 0x24, false, { { 0x05, 0x13, 0x30, 0x15 } }, 5, 0, 0 } }, // no frame register, the prologue: push rbx; sub rsp, 0x30
+        { 0x30, { "", 0x11, false } },
+        { 0x50, { "", 0x2a, false, { { 0x58, 0x6d, 0x80, 0 } }, 8, 5, 0 } }, // rbp, offset 0
+        { 0x80, { "", 0x16, false } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    // the funclets named after their function, a label at the __except block
+    REQUIRE(zone.GetLabelNameAt(0x30) == zone.GetLabelNameAt(0x00) + "$filt$0");
+    REQUIRE(zone.GetLabelNameAt(0x80) == zone.GetLabelNameAt(0x50) + "$fin$0");
+    REQUIRE(zone.GetLabelNameAt(0x15).starts_with("loc_"));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const std::string filter = zone.GetLabelNameAt(0x30);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov").find("__try { // __except at " + zone.GetLabelNameAt(0x15)) != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000d  call").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000015  mov").find("__except(" + filter + ") // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000058  mov").find("__try { // __finally(" + zone.GetLabelNameAt(0x80) + ")") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000006a  mov").find("} // starts at ") != std::string_view::npos);
+    // the slots of the funclets through rbp: the variables of their function
+    REQUIRE(FindListingLine(listing, "0x00000038  mov    eax, dword ptr [rbp + 0x38 + var_18]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000089  mov    dword ptr [rbp - 0x10 + var_4], 0").size() > 0);
+}
+
+TEST_CASE("X86StackPointerOfFrameRegisterFunctions", "[Dissasm]Help")
+{
+    // a frame register function (MSVC x86, an aligned frame): the locals through esp in the offsets of ebp (the alignment as no change)
+    std::vector<unsigned char> file = {
+        0x55,                   // 0x00: push ebp
+        0x8B, 0xEC,             // 0x01: mov ebp, esp
+        0x83, 0xE4, 0xF8,       // 0x03: and esp, -8
+        0x83, 0xEC, 0x20,       // 0x06: sub esp, 0x20           (esp: ebp - 0x20)
+        0x8B, 0x45, 0x08,       // 0x09: mov eax, dword ptr [ebp + 8]
+        0x89, 0x44, 0x24, 0x10, // 0x0c: mov dword ptr [esp + 0x10], eax (-0x10)
+        0x8D, 0x4C, 0x24, 0x18, // 0x10: lea ecx, [esp + 0x18]   (-8)
+        0x8B, 0xE5,             // 0x14: mov esp, ebp
+        0x5D,                   // 0x16: pop ebp
+        0xC3,                   // 0x17: ret
+    };
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size       = 0x200;
+    layout.entryPoint = 0x00;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->usesFrameRegister);
+    REQUIRE(frame->FindVariable(8) != nullptr);
+    REQUIRE(frame->FindVariable(-0x10) != nullptr);
+    REQUIRE(frame->FindVariable(-8) != nullptr);
+    REQUIRE(frame->StackDeltaAt(0x0c) == -0x20);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    dword ptr [esp + 0x20 + var_10], eax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000010  lea    ecx, [esp + 0x20 + var_8]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000009  mov    eax, dword ptr [ebp + arg_0]").size() > 0);
+}
+
+TEST_CASE("X86ExceptionTables", "[Dissasm]Help")
+{
+    // 32 bit MSVC: the exception data after the code (.xdata$x), referred to by the immediates of the code: a scope table of SEH4 and a
+    // FuncInfo with its unwind map; data lines by field, labels stru_, the unwind funclet a function
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x401000: push ebp
+        0x8B, 0xEC,                   // 0x401001: mov ebp, esp
+        0x68, 0x40, 0x10, 0x40, 0x00, // 0x401003: push 0x401040   (the scope table)
+        0xB8, 0x60, 0x10, 0x40, 0x00, // 0x401008: mov eax, 0x401060 (the FuncInfo)
+        0x5D,                         // 0x40100d: pop ebp
+        0xC3,                         // 0x40100e: ret
+        0xCC,                         // 0x40100f
+        0x8D, 0x4D, 0xF0,             // 0x401010: lea ecx, [ebp - 0x10] (the unwind funclet)
+        0xE9, 0xE8, 0xFF, 0xFF, 0xFF, // 0x401013: jmp 0x401000
+    };
+    file.resize(0x40, 0xCC);
+    const std::vector<uint32> tables = {
+        0xFFFFFFE4, 0, 0xFFFFFF8C, 0,          // 0x401040: GSCookieOffset, GSCookieXOROffset, EHCookieOffset, EHCookieXOROffset
+        0xFFFFFFFE, 0, 0x401000,               // 0x401050: ScopeRecord[0]: EnclosingLevel, FilterFunc (__finally), HandlerFunc
+        0,                                     // 0x40105c: between the tables
+        0x19930522, 1, 0x401084, 0, 0, 0, 0, 0, 0, // 0x401060: FuncInfo (maxState 1, pUnwindMap 0x401084)
+        0xFFFFFFFF, 0x401010,                  // 0x401084: UnwindMap[0]: toState, action (the funclet)
+        0,                                     // 0x40108c
+    };
+    for (const uint32 value : tables)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x40).starts_with("stru_"));
+    REQUIRE(zone.GetLabelNameAt(0x60).starts_with("stru_"));
+    REQUIRE(zone.GetLabelNameAt(0x84).starts_with("stru_"));
+    REQUIRE(std::binary_search(zone.functionStarts.begin(), zone.functionStarts.end(), 0x10)); // the unwind funclet
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00401040  dd     0xffffffe4").find("; GSCookieOffset") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401058  dd     ").find("; ScopeRecord[0].HandlerFunc") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040105c  dd     0x00000000").size() > 0); // the dword between the tables
+    REQUIRE(FindListingLine(listing, "0x00401060  dd     0x19930522").find("; magicNumber") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401068  dd     " + zone.GetLabelNameAt(0x84)).find("; pUnwindMap") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401088  dd     " + zone.GetLabelNameAt(0x10)).find("; UnwindMap[0].action") != std::string_view::npos);
+}
+
+TEST_CASE("Arm64ExceptionScopes", "[Dissasm]Help")
+{
+    // ARM64 SEH (the scope table of __C_specific_handler in the .xdata): the scope marked, its filter a leaf function without .pdata (not a
+    // function entry): a function named after its function
+    const std::vector<uint32> code = {
+        0xA9BF7BFD, // 0x00: stp x29, x30, [sp, #-0x10]!
+        0x910003FD, // 0x04: mov x29, sp
+        0xD503201F, // 0x08: nop        (__try)
+        0xD503201F, // 0x0c: nop
+        0x14000002, // 0x10: b 0x18
+        0xD503201F, // 0x14: nop        (the __except block)
+        0xA8C17BFD, // 0x18: ldp x29, x30, [sp], #0x10
+        0xD65F03C0, // 0x1c: ret
+        0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F, 0xD503201F,
+        0x52800020, // 0x40: mov w0, #1 (the filter)
+        0xD65F03C0, // 0x44: ret
+    };
+    std::vector<unsigned char> file;
+    for (const uint32 word : code)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(word >> (8 * index)));
+    file.resize(0x100, 0);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::ARM64;
+    layout.functionEntries = { { 0x00, { "", 0x20, false, { { 0x08, 0x10, 0x40, 0x14 } }, 0, 0, 0 } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x40) == zone.GetLabelNameAt(0x00) + "$filt$0");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000008  nop").find("__try { // __except at " + zone.GetLabelNameAt(0x14)) != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000c  nop").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000014  nop").find("__except(" + zone.GetLabelNameAt(0x40) + ") // owned by ") != std::string_view::npos);
+}
+
+TEST_CASE("X64ExceptionObjects", "[Dissasm]Help")
+{
+    // x64 FH4: the objects the unwinding destroys (their offset from the establisher frame: the rsp after the prologue, -0x38): variables
+    // destroyed by their destructor, typed after it (a C++ destructor CLock::~CLock: CLock; a handle freed by CloseHandle: HANDLE)
+    std::vector<unsigned char> file = {
+        0x53,                         // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x30,       // 0x01: sub rsp, 0x30
+        0x48, 0x8D, 0x4C, 0x24, 0x20, // 0x05: lea rcx, [rsp + 0x20]     (the object: -0x18)
+        0xE8, 0x31, 0x00, 0x00, 0x00, // 0x0a: call 0x40                 (CLock::~CLock)
+        0x48, 0x8B, 0x4C, 0x24, 0x28, // 0x0f: mov rcx, [rsp + 0x28]     (the handle: -0x10)
+        0xE8, 0x37, 0x00, 0x00, 0x00, // 0x14: call 0x50                 (CloseHandle)
+        0x48, 0x83, 0xC4, 0x30,       // 0x19: add rsp, 0x30
+        0x5B,                         // 0x1d: pop rbx
+        0xC3,                         // 0x1e: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3); // 0x40: the destructor
+    file.resize(0x50, 0xCC);
+    file.push_back(0xC3); // 0x50
+    file.resize(0x80, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = {
+        { 0x00, { "", 0x1f, false, {}, 5, 0, 0, {}, {}, { { 0x20, 0x40, false }, { 0x28, 0x50, true } } } },
+        { 0x40, { "public: __cdecl CLock::~CLock(void)", 1, true } },
+        { 0x50, { "CloseHandle", 1, true } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    const auto* object = frame->FindVariable(-0x18);
+    REQUIRE(object != nullptr);
+    REQUIRE(object->type == "CLock");
+    REQUIRE(object->origin == "destroyed on unwind by public: __cdecl CLock::~CLock(void)");
+    const auto* handle = frame->FindVariable(-0x10);
+    REQUIRE(handle != nullptr);
+    REQUIRE(handle->type == "HANDLE"); // CloseHandle (its argument named by the call, or the destructor)
+}
+
+TEST_CASE("X86ExceptionMarks", "[Dissasm]Help")
+{
+    // 32 bit MSVC: the scopes of the exception tables marked in their function: SEH4 (the try level in [ebp - 4], here from a register
+    // zeroed before), C++ (the state byte, the function that refers to the __ehhandler stub of the FuncInfo), the unwind funclet named
+    std::vector<unsigned char> file = {
+        0x55,                                     // 0x401000: push ebp
+        0x8B, 0xEC,                               // 0x401001: mov ebp, esp
+        0x68, 0x80, 0x10, 0x40, 0x00,             // 0x401003: push 0x401080            (the scope table)
+        0x33, 0xDB,                               // 0x401008: xor ebx, ebx
+        0x89, 0x5D, 0xFC,                         // 0x40100a: mov [ebp - 4], ebx       (__try {: level 0)
+        0x90,                                     // 0x40100d: nop
+        0xC7, 0x45, 0xFC, 0xFE, 0xFF, 0xFF, 0xFF, // 0x40100e: mov dword ptr [ebp - 4], -2 (})
+        0xEB, 0x05,                               // 0x401015: jmp 0x40101c
+        0x33, 0xC0,                               // 0x401017: xor eax, eax             (the filter)
+        0x40,                                     // 0x401019: inc eax
+        0xC3,                                     // 0x40101a: ret
+        0x90,                                     // 0x40101b: nop                      (the __except block)
+        0x5D,                                     // 0x40101c: pop ebp
+        0xC3,                                     // 0x40101d: ret
+        0xCC, 0xCC,
+        0x55,                                     // 0x401020: push ebp
+        0x8B, 0xEC,                               // 0x401021: mov ebp, esp
+        0xB8, 0x50, 0x10, 0x40, 0x00,             // 0x401023: mov eax, 0x401050        (the __ehhandler stub)
+        0xC6, 0x45, 0xFC, 0x00,                   // 0x401028: mov byte ptr [ebp - 4], 0 (try {: state 0)
+        0x90,                                     // 0x40102c: nop
+        0xC6, 0x45, 0xFC, 0xFF,                   // 0x40102d: mov byte ptr [ebp - 4], -1 (})
+        0x5D,                                     // 0x401031: pop ebp
+        0xC3,                                     // 0x401032: ret
+        0xB8, 0x31, 0x10, 0x40, 0x00,             // 0x401033: mov eax, 0x401031        (the catch block: where it goes on)
+        0xC3,                                     // 0x401038: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x8D, 0x4D, 0xF0,                         // 0x401040: lea ecx, [ebp - 0x10]    (the unwind funclet)
+        0xE9, 0xD8, 0xFF, 0xFF, 0xFF,             // 0x401043: jmp 0x401020
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0xB8, 0xA0, 0x10, 0x40, 0x00,             // 0x401050: mov eax, 0x4010a0        (the stub: the FuncInfo)
+        0xE9, 0xA6, 0xFF, 0xFF, 0xFF,             // 0x401055: jmp 0x401000
+    };
+    file.resize(0x80, 0xCC);
+    const std::vector<uint32> tables = {
+        0xFFFFFFE4, 0, 0xFFFFFF8C, 0, 0xFFFFFFFE, 0x401017, 0x40101B, // 0x401080: the scope table (a record: the filter, the block)
+        0,                                                            // 0x40109c
+        0x19930522, 1, 0x4010C4, 1, 0x4010CC, 0, 0, 0, 0,             // 0x4010a0: FuncInfo
+        0xFFFFFFFF, 0x401040,                                         // 0x4010c4: UnwindMap[0]
+        0, 0, 1, 1, 0x4010E0,                                         // 0x4010cc: TryBlockMap[0]: states 0-0, a catch
+        0x40, 0, 0, 0x401033,                                         // 0x4010e0: HandlerType[0]: catch(...)
+        0,
+    };
+    for (const uint32 value : tables)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x40) == zone.GetLabelNameAt(0x20) + "$dtor$0");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0040100a  mov").find("__try { // __except at " + zone.GetLabelNameAt(0x1b)) != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040100e  mov").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401017  xor").find("__except filter // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040101b  nop").find("__except(" + zone.GetLabelNameAt(0x17) + ") // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401028  mov").find("try {") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0040102d  mov").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401033  mov").find("catch(...) // owned by ") != std::string_view::npos);
+}
+
+TEST_CASE("X86ReturnAddressSlot", "[Dissasm]Help")
+{
+    // the return address of the function read from its slot (wil: _ReturnAddress()): retaddr, in a frame without a frame register (the
+    // stack pointer of the entry) and in a frame register function (above the saved ebp)
+    std::vector<unsigned char> x64 = {
+        0x53,                         // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x20,       // 0x01: sub rsp, 0x20
+        0x48, 0x89, 0x54, 0x24, 0x38, // 0x05: mov qword ptr [rsp + 0x38], rdx  (arg_8)
+        0x48, 0x8B, 0x4C, 0x24, 0x28, // 0x0a: mov rcx, qword ptr [rsp + 0x28]  (the return address)
+        0x48, 0x8D, 0x44, 0x24, 0x28, // 0x0f: lea rax, [rsp + 0x28]            (its address)
+        0x48, 0x83, 0xC4, 0x20,       // 0x14: add rsp, 0x20
+        0x5B,                         // 0x18: pop rbx
+        0xC3,                         // 0x19: ret
+    };
+    x64.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size       = 0x200;
+    layout.entryPoint = 0x00;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance stackFrame(x64.data(), x64.size(), true, layout);
+    const std::string listing = stackFrame.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000a  mov    rcx, qword ptr [rsp + 0x28 + retaddr]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000f  lea    rax, [rsp + 0x28 + retaddr]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov    qword ptr [rsp + 0x28 + arg_8], rdx").size() > 0);
+    REQUIRE(listing.find("retaddr = ") == std::string::npos); // not a variable of the frame
+
+    std::vector<unsigned char> x86 = {
+        0x55,             // 0x00: push ebp
+        0x8B, 0xEC,       // 0x01: mov ebp, esp
+        0x8B, 0x45, 0x04, // 0x03: mov eax, dword ptr [ebp + 4]  (the return address)
+        0x8B, 0x4D, 0x08, // 0x06: mov ecx, dword ptr [ebp + 8]  (arg_0)
+        0x5D,             // 0x09: pop ebp
+        0xC3,             // 0x0a: ret
+    };
+    x86.resize(0x200, 0xCC);
+    layout.language = DisassemblyLanguage::x86;
+    DissasmTestInstance frameRegister(x86.data(), x86.size(), true, layout);
+    const std::string listing32 = frameRegister.GetListing();
+    INFO(listing32);
+    REQUIRE(FindListingLine(listing32, "0x00000003  mov    eax, dword ptr [ebp + retaddr]").size() > 0);
+    REQUIRE(FindListingLine(listing32, "0x00000006  mov    ecx, dword ptr [ebp + arg_0]").size() > 0);
+}
+
+TEST_CASE("X64AllocaFrames", "[Dissasm]Help")
+{
+    // a dynamic allocation (alloca: sub rsp, rax) in a function whose rbp keeps the stack pointer: the frame is kept, the depth of rsp is
+    // not known from the allocation until rsp is restored from rbp (lea rsp, [rbp - 8]); the body after an early epilogue and its padding
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x00: push rbp
+        0x49, 0x89, 0xCA,             // 0x01: mov r10, rcx
+        0x48, 0x89, 0xE5,             // 0x04: mov rbp, rsp                (rbp: -8)
+        0x53,                         // 0x07: push rbx
+        0x48, 0x83, 0xEC, 0x28,       // 0x08: sub rsp, 0x28               (-0x38)
+        0x48, 0x89, 0x7D, 0xE8,       // 0x0c: mov qword ptr [rbp - 0x18], rdi (the slot -0x20)
+        0x48, 0x89, 0x74, 0x24, 0x08, // 0x10: mov qword ptr [rsp + 8], rsi    (the slot -0x30)
+        0x85, 0xC9,                   // 0x15: test ecx, ecx
+        0x75, 0x0C,                   // 0x17: jne 0x25
+        0x48, 0x8B, 0x5D, 0xF8,       // 0x19: mov rbx, qword ptr [rbp - 8]    (the saved rbx: var_s0)
+        0xC9,                         // 0x1d: leave
+        0xC3,                         // 0x1e: ret
+        0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00, // 0x1f: nop word ptr [rax + rax] (the padding of GCC)
+        0x48, 0x8D, 0x42, 0x0F,       // 0x25: lea rax, [rdx + 0xf]
+        0x25, 0xF0, 0x0F, 0x00, 0x00, // 0x29: and eax, 0xff0
+        0x48, 0x29, 0xC4,             // 0x2e: sub rsp, rax                (not known)
+        0x48, 0x89, 0x54, 0x24, 0x08, // 0x31: mov qword ptr [rsp + 8], rdx    (not a slot)
+        0x48, 0x89, 0x45, 0xE0,       // 0x36: mov qword ptr [rbp - 0x20], rax (the slot -0x28)
+        0x48, 0x8D, 0x65, 0xF8,       // 0x3a: lea rsp, [rbp - 8]          (-0x10: the saved rbx)
+        0x5B,                         // 0x3e: pop rbx
+        0x5D,                         // 0x3f: pop rbp
+        0xC3,                         // 0x40: ret
+    };
+    DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, file.data(), file.size(), 0, file.size(), true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -0x30, 8, "var_30" }, { -0x28, 8, "var_28" }, { -0x20, 8, "var_20" } }));
+    REQUIRE(frame.savedRegistersOffset == -0x10); // push rbp; push rbx
+    REQUIRE(frame.savedRegistersSize == 0x10);
+    REQUIRE(frame.StackDeltaAt(0x10) == -0x38);
+    REQUIRE(frame.StackDeltaAt(0x25) == -0x38); // the target of the jne after the padding: its depth, its rbp
+    REQUIRE(frame.StackDeltaAt(0x2e) == -0x38);
+    REQUIRE(!frame.StackDeltaAt(0x31).has_value());
+    REQUIRE(!frame.StackDeltaAt(0x3a).has_value());
+    REQUIRE(frame.StackDeltaAt(0x3e) == -0x10);
+    REQUIRE(frame.StackDeltaAt(0x40) == 0);
+
+    // without a register that keeps the stack pointer the allocation is not followed; an allocation never restored before the ret neither
+    const std::vector<unsigned char> noAlias = { 0x48, 0x83, 0xEC, 0x20, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x48, 0x29, 0xC4, 0xC3 };
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, noAlias.data(), noAlias.size(), 0, noAlias.size(), true, frame));
+    const std::vector<unsigned char> notRestored = { 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x48, 0x29, 0xC4, 0x5D, 0xC3 };
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, notRestored.data(), notRestored.size(), 0, notRestored.size(), true, frame));
+
+    // the probing loop of GCC (-fstack-clash-protection) in a frame register function: a page a turn until rsp reaches the end of the
+    // allocation; its probe is not a variable, the depth not known from the loop on, leave restores it
+    const std::vector<unsigned char> probing = {
+        0x55,                                                 // 0x80: push rbp
+        0x48, 0x89, 0xE5,                                     // 0x81: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x20,                               // 0x84: sub rsp, 0x20
+        0x48, 0x89, 0x4C, 0x24, 0x08,                         // 0x88: mov qword ptr [rsp + 8], rcx (var_18)
+        0x48, 0x8D, 0x42, 0x17,                               // 0x8d: lea rax, [rdx + 0x17]
+        0x48, 0x89, 0xE1,                                     // 0x91: mov rcx, rsp
+        0x48, 0x25, 0x00, 0xF0, 0xFF, 0xFF,                   // 0x94: and rax, 0xfffffffffffff000
+        0x48, 0x29, 0xC1,                                     // 0x9a: sub rcx, rax
+        0x48, 0x39, 0xCC,                                     // 0x9d: cmp rsp, rcx
+        0x74, 0x12,                                           // 0xa0: je 0xb4
+        0x48, 0x81, 0xEC, 0x00, 0x10, 0x00, 0x00,             // 0xa2: sub rsp, 0x1000
+        0x48, 0x83, 0x8C, 0x24, 0xF8, 0x0F, 0x00, 0x00, 0x00, // 0xa9: or qword ptr [rsp + 0xff8], 0 (the probe)
+        0xEB, 0xE9,                                           // 0xb2: jmp 0x9d
+        0x48, 0x89, 0x45, 0xF0,                               // 0xb4: mov qword ptr [rbp - 0x10], rax (var_10)
+        0x48, 0x89, 0x44, 0x24, 0x08,                         // 0xb8: mov qword ptr [rsp + 8], rax (not a slot)
+        0xC9,                                                 // 0xbd: leave
+        0xC3,                                                 // 0xbe: ret
+    };
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, probing.data(), probing.size(), 0x80, 0x80 + probing.size(), true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -0x20, 8, "var_20" }, { -0x18, 8, "var_18" } })); // from the entry: [rsp + 8], [rbp - 0x10]
+    REQUIRE(frame.StackDeltaAt(0x9d) == std::nullopt);
+    REQUIRE(frame.StackDeltaAt(0xb8) == std::nullopt);
+    REQUIRE(frame.StackDeltaAt(0xbe) == 0);
+
+    // the listing: the slots through rbp everywhere, through rsp where the depth is known
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), probing.begin(), probing.end());
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = 0x200;
+    layout.entryPoint      = 0x00;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x80, { "", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    qword ptr [rbp + 0x8 + var_20], rdi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    qword ptr [rsp + 0x38 + var_30], rsi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000031  mov    qword ptr [rsp + 8], rdx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000036  mov    qword ptr [rbp + 0x8 + var_28], rax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000003a  lea    rsp, [rbp + 0x8 + var_s0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000088  mov    qword ptr [rsp + 0x20 + var_18], rcx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x000000a9  or     qword ptr [rsp + 0xff8], 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x000000b4  mov    qword ptr [rbp + var_10], rax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x000000b8  mov    qword ptr [rsp + 8], rax").size() > 0);
+}
+
+TEST_CASE("X86SavedRegisterSlots", "[Dissasm]Help")
+{
+    // the slots of the registers the prologue pushes: not variables, named as IDA does (var_s0 the lowest); the saves in the home space
+    // of MSVC x64 stay arguments (arg_0)
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0x5C, 0x24, 0x08, // 0x00: mov qword ptr [rsp + 8], rbx (arg_0)
+        0x56,                         // 0x05: push rsi                     (var_s8)
+        0x57,                         // 0x06: push rdi                     (var_s0)
+        0x48, 0x83, 0xEC, 0x20,       // 0x07: sub rsp, 0x20
+        0x89, 0x4C, 0x24, 0x10,       // 0x0b: mov dword ptr [rsp + 0x10], ecx (var_20)
+        0x4C, 0x8D, 0x5C, 0x24, 0x20, // 0x0f: lea r11, [rsp + 0x20]        (the epilogue of MSVC: var_s0)
+        0x49, 0x8B, 0x5B, 0x18,       // 0x14: mov rbx, qword ptr [r11 + 0x18] (arg_0)
+        0x49, 0x8B, 0xE3,             // 0x18: mov rsp, r11
+        0x5F,                         // 0x1b: pop rdi
+        0x5E,                         // 0x1c: pop rsi
+        0xC3,                         // 0x1d: ret
+    };
+    file.resize(0x40, 0xCC);
+    const std::vector<unsigned char> frameRegister = {
+        0x55,                   // 0x40: push rbp
+        0x48, 0x89, 0xE5,       // 0x41: mov rbp, rsp
+        0x53,                   // 0x44: push rbx                    (rbp - 8: var_s0)
+        0x48, 0x83, 0xEC, 0x18, // 0x45: sub rsp, 0x18
+        0x89, 0x7D, 0xF0,       // 0x49: mov dword ptr [rbp - 0x10], edi (var_10)
+        0x48, 0x8B, 0x5D, 0xF8, // 0x4c: mov rbx, qword ptr [rbp - 8]
+        0xC9,                   // 0x50: leave
+        0xC3,                   // 0x51: ret
+    };
+    file.insert(file.end(), frameRegister.begin(), frameRegister.end());
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = 0x200;
+    layout.entryPoint      = 0x00;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x40, { "", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->savedRegistersOffset == -0x10);
+    REQUIRE(frame->savedRegistersSize == 0x10);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x20, 4, "var_20" }, { 8, 8, "arg_0" } }));
+    const auto* framed = dissasmInstance.zone->localVariables.FindFunctionByStart(0x40);
+    REQUIRE(framed != nullptr);
+    REQUIRE(framed->usesFrameRegister);
+    REQUIRE(framed->savedRegistersOffset == -8); // push rbx at rbp - 8, the saved rbp at rbp
+    REQUIRE(framed->FindVariable(-8) == nullptr);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x0000000b  mov    dword ptr [rsp + 0x30 + var_20], ecx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000f  lea    r11, [rsp + 0x30 + var_s0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000014  mov    rbx, qword ptr [r11 + 0x10 + arg_0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000049  mov    dword ptr [rbp + var_10], edi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000004c  mov    rbx, qword ptr [rbp + var_s0]").size() > 0);
+    REQUIRE(listing.find("var_s0 = ") == std::string::npos); // not a variable of the frame
+
+    // 32 bit without a frame register: a pushed register read back through esp
+    std::vector<unsigned char> x86 = {
+        0x56,                   // 0x00: push esi                  (var_s4)
+        0x57,                   // 0x01: push edi                  (var_s0)
+        0x8B, 0x44, 0x24, 0x0C, // 0x02: mov eax, dword ptr [esp + 0xc] (arg_0)
+        0x8B, 0x74, 0x24, 0x04, // 0x06: mov esi, dword ptr [esp + 4]   (the saved esi)
+        0x5F,                   // 0x0a: pop edi
+        0x5E,                   // 0x0b: pop esi
+        0xC3,                   // 0x0c: ret
+    };
+    x86.resize(0x200, 0xCC);
+    layout.language        = DisassemblyLanguage::x86;
+    layout.functionEntries = {};
+    DissasmTestInstance x86Instance(x86.data(), x86.size(), true, layout);
+    const std::string listing32 = x86Instance.GetListing();
+    INFO(listing32);
+    REQUIRE(FindListingLine(listing32, "0x00000002  mov    eax, dword ptr [esp + 0x8 + arg_0]").size() > 0);
+    REQUIRE(FindListingLine(listing32, "0x00000006  mov    esi, dword ptr [esp + 0x8 + var_s4]").size() > 0);
+}
+
+TEST_CASE("ImportOrdinalNames", "[Dissasm]Imports")
+{
+    // a DLL that exports the ordinals 5 (Alpha), 6 (no name), 7 (Gamma): its export table, read from memory and from a folder
+    std::vector<uint8> image(0x400, 0);
+    const auto put16 = [](std::vector<uint8>& to, size_t offset, uint16 value) { memcpy(to.data() + offset, &value, sizeof(value)); };
+    const auto put32 = [](std::vector<uint8>& to, size_t offset, uint32 value) { memcpy(to.data() + offset, &value, sizeof(value)); };
+    put16(image, 0, 0x5A4D);
+    put32(image, 0x3C, 0x40);
+    put32(image, 0x40, 0x4550);  // PE
+    put16(image, 0x44, 0x14C);   // i386
+    put16(image, 0x46, 1);       // one section
+    put16(image, 0x54, 0xE0);    // the size of the optional header
+    put16(image, 0x58, 0x10B);   // PE32
+    put32(image, 0xB4, 16);      // NumberOfRvaAndSizes
+    put32(image, 0xB8, 0x1000);  // the export directory
+    put32(image, 0xBC, 0x100);
+    put32(image, 0x140, 0x200);  // the section: VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData
+    put32(image, 0x144, 0x1000);
+    put32(image, 0x148, 0x200);
+    put32(image, 0x14C, 0x200);
+    put32(image, 0x210, 5);      // Base
+    put32(image, 0x214, 3);      // NumberOfFunctions
+    put32(image, 0x218, 2);      // NumberOfNames
+    put32(image, 0x220, 0x1050); // AddressOfNames
+    put32(image, 0x224, 0x1060); // AddressOfNameOrdinals
+    put32(image, 0x250, 0x1070); // "Alpha"
+    put32(image, 0x254, 0x1078); // "Gamma"
+    put16(image, 0x260, 0);      // the functions 0 (ordinal 5), 2 (ordinal 7)
+    put16(image, 0x262, 2);
+    memcpy(image.data() + 0x270, "Alpha", 6);
+    memcpy(image.data() + 0x278, "Gamma", 6);
+    std::unordered_map<uint32, std::string> names;
+    REQUIRE(ReadPeExportNamesByOrdinal(image.data(), image.size(), names));
+    REQUIRE(names == std::unordered_map<uint32, std::string>{ { 5, "Alpha" }, { 7, "Gamma" } });
+
+    // malformed: truncated before the ordinals of the names, counts past the end (the names read are kept), a name out of the sections, a
+    // name with a control character, a function index past the functions, no PE
+    names.clear();
+    REQUIRE(!ReadPeExportNamesByOrdinal(image.data(), 0x260, names));
+    REQUIRE(names.empty());
+    auto broken = image;
+    put32(broken, 0x218, 0xFFFFFFFF);
+    REQUIRE(!ReadPeExportNamesByOrdinal(broken.data(), broken.size(), names));
+    REQUIRE(names.size() == 2);
+    broken = image;
+    put32(broken, 0x250, 0x9000);
+    broken[0x27A] = 0x07; // "Gamma"
+    names.clear();
+    REQUIRE(ReadPeExportNamesByOrdinal(broken.data(), broken.size(), names));
+    REQUIRE(names.empty());
+    broken = image;
+    put16(broken, 0x260, 3);
+    put16(broken, 0x262, 0xFFFF);
+    REQUIRE(ReadPeExportNamesByOrdinal(broken.data(), broken.size(), names));
+    REQUIRE(names.empty());
+    REQUIRE(!ReadPeExportNamesByOrdinal(image.data() + 1, image.size() - 1, names));
+    REQUIRE(!ReadPeExportNamesByOrdinal(nullptr, 0, names));
+
+    // the names of the import tables are file names, never paths
+    REQUIRE(IsPlainDllName("certcli.dll"));
+    REQUIRE(IsPlainDllName("api-ms-win-core-path-l1-1-0.dll"));
+    REQUIRE(!IsPlainDllName("..\\certcli.dll"));
+    REQUIRE(!IsPlainDllName("C:certcli.dll"));
+    REQUIRE(!IsPlainDllName("a/b.dll"));
+    REQUIRE(!IsPlainDllName(".."));
+    REQUIRE(!IsPlainDllName(""));
+
+    // the DLL in the folder of the file: the name of an ordinal, none for an ordinal without a name; kept once read
+    const auto folder = std::filesystem::temp_directory_path() / "gview_import_ordinals_test";
+    std::filesystem::create_directories(folder);
+    const auto dll = folder / "gvordtest.dll";
+    {
+        std::ofstream file(dll, std::ios::binary);
+        file.write(reinterpret_cast<const char*>(image.data()), static_cast<std::streamsize>(image.size()));
+    }
+    const std::u16string filePath = (folder / "sample.exe").u16string();
+    Settings settings;
+    REQUIRE(settings.GetImportOrdinalName("gvordtest.dll", 7, filePath, true) == "Gamma");
+    REQUIRE(settings.GetImportOrdinalName("gvordtest.dll", 6, filePath, true).empty());
+    REQUIRE(settings.GetImportOrdinalName("..\\gview_import_ordinals_test\\gvordtest.dll", 5, filePath, true).empty());
+    REQUIRE(settings.GetImportOrdinalName("gvordmissing.dll", 5, filePath, true).empty());
+    std::filesystem::remove(dll);
+    REQUIRE(settings.GetImportOrdinalName("GVORDTEST.DLL", 5, filePath, true) == "Alpha");
+    std::filesystem::remove(folder);
+}
+
+TEST_CASE("X64FunctionChunks", "[Dissasm]Help")
+{
+    // x64 chained unwind data elsewhere: a chunk of the function (its cold code, reached by a jcc, jumping back), on the frame of the
+    // function after its prologue: rsp at -0x50, the biased rbp (-0x20) live; its slots are variables of the function
+    std::vector<unsigned char> file = {
+        0x53,                                           // 0x00: push rbx
+        0x55,                                           // 0x01: push rbp
+        0x48, 0x8D, 0x6C, 0x24, 0xF0,                   // 0x02: lea rbp, [rsp - 0x10]      (rbp: -0x20)
+        0x48, 0x83, 0xEC, 0x40,                         // 0x07: sub rsp, 0x40              (the body: -0x50)
+        0xC7, 0x44, 0x24, 0x30, 0x00, 0x00, 0x00, 0x00, // 0x0b: mov dword ptr [rsp + 0x30], 0 (the slot -0x20)
+        0x85, 0xC9,                                     // 0x13: test ecx, ecx
+        0x0F, 0x85, 0x65, 0x00, 0x00, 0x00,             // 0x15: jne 0x80                   (the chunk)
+        0x8B, 0x44, 0x24, 0x30,                         // 0x1b: mov eax, dword ptr [rsp + 0x30]
+        0x48, 0x83, 0xC4, 0x40,                         // 0x1f: add rsp, 0x40
+        0x5D,                                           // 0x23: pop rbp
+        0x5B,                                           // 0x24: pop rbx
+        0xC3,                                           // 0x25: ret
+    };
+    file.resize(0x80, 0xCC);
+    const std::vector<unsigned char> chunk = {
+        0xC7, 0x44, 0x24, 0x28, 0x01, 0x00, 0x00, 0x00, // 0x80: mov dword ptr [rsp + 0x28], 1 (the slot -0x28: only the chunk)
+        0xC7, 0x45, 0x08, 0x02, 0x00, 0x00, 0x00,       // 0x88: mov dword ptr [rbp + 8], 2    (the slot -0x18: only the chunk)
+        0xE9, 0x87, 0xFF, 0xFF, 0xFF,                   // 0x8f: jmp 0x1b
+        0xC7, 0x44, 0x24, 0x28, 0x03, 0x00, 0x00, 0x00, // 0x94: mov dword ptr [rsp + 0x28], 3 (another part: the depth of the body)
+        0xE9, 0x7A, 0xFF, 0xFF, 0xFF,                   // 0x9c: jmp 0x1b
+    };
+    file.insert(file.end(), chunk.begin(), chunk.end());
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0x00;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.functionEntries  = { { 0x00, { "", 0x26, false, {}, 0x0b, 0, 0, {}, { { 0x80, 0x21 } } } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    const auto* found = zone.FindChunkContaining(0x88);
+    REQUIRE(found != nullptr);
+    REQUIRE(found->function == 0x00);
+    REQUIRE(found->start == 0x80);
+    REQUIRE(zone.FormatCodeAddress(0x88) == zone.GetLabelNameAt(0x00) + "+0x88"); // an address of the chunk: in its function
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x28) != nullptr);
+    REQUIRE(frame->FindVariable(-0x18) != nullptr);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("var_28 = dword ptr -0x28") != std::string::npos);
+    REQUIRE(FindListingLine(listing, "0x00000080  mov    dword ptr [rsp + 0x50 + var_28], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000088  mov    dword ptr [rbp + 0x20 + var_18], 2").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000001b  mov    eax, dword ptr [rsp + 0x50 + var_20]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000094  mov    dword ptr [rsp + 0x50 + var_28], 3").size() > 0);
+}
+
+TEST_CASE("X64CppExceptionFunclets", "[Dissasm]Help")
+{
+    // the C++ exception handling of x64 (FuncInfo of __CxxFrameHandler4): a catch block of a try, an unwind funclet, a catch block of a try
+    // inside the catch block (its establisher frame is the one of the function too); no frame register: the rsp after the prologue
+    std::vector<unsigned char> file = {
+        0x53,                                           // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x40,                         // 0x01: sub rsp, 0x40
+        0xC7, 0x44, 0x24, 0x30, 0x00, 0x00, 0x00, 0x00, // 0x05: mov dword ptr [rsp + 0x30], 0   (try; the slot -0x18)
+        0xFF, 0x15, 0xED, 0x01, 0x00, 0x00,             // 0x0d: call qword ptr [rip + 0x1ed]   (Sleep: 0x200)
+        0x8B, 0x44, 0x24, 0x30,                         // 0x13: mov eax, dword ptr [rsp + 0x30]
+        0x48, 0x83, 0xC4, 0x40,                         // 0x17: add rsp, 0x40
+        0x5B,                                           // 0x1b: pop rbx
+        0xC3,                                           // 0x1c: ret
+        0xCC, 0xCC, 0xCC,
+        0x48, 0x89, 0x54, 0x24, 0x10,                   // 0x20: mov [rsp + 0x10], rdx           (the catch block)
+        0x55,                                           // 0x25: push rbp
+        0x48, 0x83, 0xEC, 0x20,                         // 0x26: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x2a: mov rbp, rdx
+        0xC7, 0x45, 0x30, 0x01, 0x00, 0x00, 0x00,       // 0x2d: mov dword ptr [rbp + 0x30], 1  (the try inside it)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x34: add rsp, 0x20
+        0x5D,                                           // 0x38: pop rbp
+        0xC3,                                           // 0x39: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x40: push rbp                       (the unwind funclet)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x41: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x45: mov rbp, rdx
+        0x8B, 0x4D, 0x30,                               // 0x48: mov ecx, dword ptr [rbp + 0x30]
+        0x48, 0x83, 0xC4, 0x20,                         // 0x4b: add rsp, 0x20
+        0x5D,                                           // 0x4f: pop rbp
+        0xC3,                                           // 0x50: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0x55,                                           // 0x60: push rbp                       (the catch block of the try of 0x20)
+        0x48, 0x83, 0xEC, 0x20,                         // 0x61: sub rsp, 0x20
+        0x48, 0x8B, 0xEA,                               // 0x65: mov rbp, rdx
+        0xC7, 0x45, 0x28, 0x02, 0x00, 0x00, 0x00,       // 0x68: mov dword ptr [rbp + 0x28], 2  (a slot only the funclet uses: -0x20)
+        0x48, 0x83, 0xC4, 0x20,                         // 0x6f: add rsp, 0x20
+        0x5D,                                           // 0x73: pop rbp
+        0xC3,                                           // 0x74: ret
+    };
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0x00;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = {
+        { 0x00, { "", 0x1d, false, {}, 5, 0, 0, { { 0x40, false, "", {} }, { 0x20, true, "std::bad_alloc &", { { 0x05, 0x13 } } } } } },
+        { 0x20, { "", 0x1a, false, {}, 0xd, 0, 0, { { 0x60, true, "...", { { 0x2d, 0x34 } } } } } },
+        { 0x40, { "", 0x11, false } },
+        { 0x60, { "", 0x15, false } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x20) == zone.GetLabelNameAt(0x00) + "$catch$0");
+    REQUIRE(zone.GetLabelNameAt(0x40) == zone.GetLabelNameAt(0x00) + "$dtor$0");
+    REQUIRE(zone.GetLabelNameAt(0x60) == zone.GetLabelNameAt(0x20) + "$catch$0");
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000005  mov").find("try {") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000000d  call").find("} // starts at ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000020  mov").find("catch(std::bad_alloc &) // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000060  push").find("catch(...) // owned by " + zone.GetLabelNameAt(0x20) + "+0xD") != std::string_view::npos);
+    // the slots of the funclets through rbp, the nested one too: the variables of the function
+    REQUIRE(FindListingLine(listing, "0x0000002d  mov    dword ptr [rbp + 0x48 + var_18], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000048  mov    ecx, dword ptr [rbp + 0x48 + var_18]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000068  mov    dword ptr [rbp + 0x48 + var_20], 2").size() > 0);
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->FindVariable(-0x20) != nullptr); // a variable of the function, its line below the label
+    REQUIRE(listing.find("var_20 = dword ptr -0x20") != std::string::npos);
+}
+
+TEST_CASE("UserFunctionsNoReturnName", "[Dissasm]UserData")
+{
+    // a function named exit by the plugin does not return; the user says it does
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x30, { "exit", 0, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.noReturnFunctions == std::vector<uint64>{ 0x00, 0x30 });
+    REQUIRE(zone.ToggleUserNoReturn(0x30));
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.noReturnFunctions.empty());
+    REQUIRE(zone.noReturnCalls.empty());
+}
+
+TEST_CASE("UserFunctionsCacheAndUndo", "[Dissasm]UserData")
+{
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // the record: magic, version, count, then address, flags
+    std::vector<std::byte> buffer;
+    const auto add = [&buffer](const auto& value) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    add(uint32{ 0x46554447 });
+    add(uint32{ 1 });
+    add(uint32{ 4 });
+    add(uint64{ 0x20 }), add(uint8{ USER_FUNCTION_CREATE });
+    add(uint64{ 0x30 }), add(uint8{ USER_FUNCTION_NORETURN });
+    add(uint64{ 0x10 }), add(uint8{ 0x30 });                     // unknown flags: dropped
+    add(uint64{ 0x1000 }), add(uint8{ USER_FUNCTION_DELETE }); // outside of the zone: dropped
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserFunctions.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    const auto functions = ReadUserFunctions(cache, zone);
+    REQUIRE(functions == std::map<uint64, uint8>{ { 0x20, USER_FUNCTION_CREATE }, { 0x30, USER_FUNCTION_NORETURN } });
+    buffer[0] = std::byte{ 0 };
+    DissasmCache wrong;
+    REQUIRE(wrong.AddRegion("DissasmUserFunctions.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserFunctions(wrong, zone).empty());
+
+    // P recorded: Ctrl+Z removes the function (the zone needs a new analysis), Ctrl+Y gives it back
+    auto before = zone.userFunctions;
+    REQUIRE(zone.CreateUserFunction(0x20));
+    zone.RecordUserFunctionsEdit(before, 0x20);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.CanUndoEdit()); // the history survives the new analysis
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->reanalyze);
+    REQUIRE(place->address == std::optional<uint64>(0x20));
+    REQUIRE(zone.userFunctions.empty());
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x30 });
+    place = zone.RedoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x10, 0x20, 0x30 });
+}
+
+TEST_CASE("UntrustedDocumentsFieldTypes", "[Dissasm]UserData")
+{
+    // the annotations and the signatures come from files: a field of another type is skipped or the document refused, never an exception
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    DissasmAnnotationsImport result;
+    std::string error;
+
+    auto document = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    document["format"] = 7; // a number instead of the text
+    REQUIRE_NOTHROW(ImportAnnotationsDocument(document, { &zone }, result, error));
+    REQUIRE_FALSE(ImportAnnotationsDocument(document, { &zone }, result, error));
+
+    document = nlohmann::json::parse(R"({"format": "gview-disassembly-annotations", "version": 1, "zones": [{"fileOffset": "0x0",
+        "comments": [{"address": "0x9", "kind": 5, "text": "a"}, {"address": 9, "kind": "variable", "frameOffset": "x", "text": "b"}],
+        "functions": [{"address": "0x20", "create": "yes"}, {"address": "0x30", "noreturn": 1}],
+        "collapsibleZones": [{"first": {"address": "0x0"}, "last": {"address": "0x5"}, "name": 3, "collapsed": "no"}],
+        "names": [{"address": [], "name": {}}], "variables": [{"function": null, "frameOffset": 1.5, "name": 2}],
+        "decimalOperands": [{"address": "0x5", "mask": -1}], "dataRanges": [{"address": "0x10", "size": "4", "unit": true}]}]})");
+    result = {};
+    REQUIRE_NOTHROW(ImportAnnotationsDocument(document, { &zone }, result, error));
+    REQUIRE(result.zones == 1);
+    REQUIRE(result.comments == 1); // a kind of another type: the default kind (an instruction); the variable without a frame offset: skipped
+    REQUIRE(result.functions == 0);
+    REQUIRE(zone.userFunctions.empty());
+
+    DissasmSignaturesApply applied;
+    auto signatures = BuildSignaturesDocument({ &zone });
+    signatures["architecture"] = 64;
+    REQUIRE_NOTHROW(ApplySignaturesDocument(signatures, { &zone }, applied, error));
+    signatures["format"] = nullptr;
+    REQUIRE_NOTHROW(ApplySignaturesDocument(signatures, { &zone }, applied, error));
+    REQUIRE_FALSE(ApplySignaturesDocument(signatures, { &zone }, applied, error));
+}
+
+TEST_CASE("UntrustedDocumentsFuzz", "[Dissasm]UserData")
+{
+    // the annotations and the signatures of a zone with every section, their values replaced by values of other types, their keys removed,
+    // their arrays repeated (a fixed seed; GVIEW_FUZZ_ROUNDS for a longer run): imported, never an exception
+    const auto file = UserFunctionsSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.ApplyUserLabelName(0x10, "helper"));
+    zone.userComments.Set({ DissasmCommentAnchor::Kind::Instruction, 0x05, 0 }, "a comment");
+    zone.userDataRanges = { { 0x18, 0x1C, 4 } };
+    zone.userFunctions  = { { 0x20, USER_FUNCTION_CREATE }, { 0x30, USER_FUNCTION_NORETURN } };
+    zone.userVariableStructures = { { { 0x00, -0x20 }, "SYSTEMTIME" }, { { 0x10, -8 }, "" } };
+    zone.operandStructures      = { { 0x05, "STARTUPINFOW" } };
+    zone.bookmarks              = { { 0x10, "the helper" } };
+    zone.repeatableComments     = { { 0x10, "returns 0" } };
+    zone.userPrototypes         = { { 0x10, "int helper(char* text, int size)" } };
+    const auto annotations = BuildAnnotationsDocument({ &zone }, "sample.bin");
+    const auto signatures  = BuildSignaturesDocument({ &zone });
+
+    const char* roundsText = std::getenv("GVIEW_FUZZ_ROUNDS");
+    const uint32 rounds    = roundsText ? static_cast<uint32>(std::strtoul(roundsText, nullptr, 10)) : 300u;
+    std::mt19937 random(0x1A2B3C4Du);
+    const std::vector<nlohmann::json> ODD = { nullptr, true, false, -1, 0, 1, UINT64_MAX, INT64_MIN, 1.5, -1e300, "", std::string(1000, 'x'), "0x",
+                                              "0xFFFFFFFFFFFFFFFF", "zz", nlohmann::json::array(), nlohmann::json::object(), nlohmann::json::array({ 1, 2 }) };
+    const auto mutate = [&](nlohmann::json document) {
+        for (uint32 count = 1 + random() % 4; count > 0; count--) {
+            const auto leaves = document.flatten();
+            if (leaves.empty())
+                break;
+            auto leaf = leaves.begin();
+            std::advance(leaf, random() % leaves.size());
+            const nlohmann::json::json_pointer pointer(leaf.key());
+            switch (random() % 4) {
+            case 0:
+            case 1:
+                document[pointer] = ODD[random() % ODD.size()];
+                break;
+            case 2: // the key / the item of the leaf removed
+                if (!pointer.empty() && document[pointer.parent_pointer()].is_object())
+                    document[pointer.parent_pointer()].erase(pointer.back());
+                break;
+            default: // the array of the leaf repeated
+                if (!pointer.empty() && document[pointer.parent_pointer()].is_array()) {
+                    auto& array = document[pointer.parent_pointer()];
+                    const auto copy = array;
+                    for (uint32 times = random() % 50; times > 0; times--)
+                        array.insert(array.end(), copy.begin(), copy.end());
+                }
+                break;
+            }
+        }
+        return document;
+    };
+    for (uint32 round = 0; round < rounds; round++) {
+        DissasmTestInstance target(file.data(), file.size(), false, layout);
+        DissasmAnnotationsImport result;
+        std::string error;
+        REQUIRE_NOTHROW(ImportAnnotationsDocument(mutate(annotations), { target.zone.get() }, result, error));
+        DissasmSignaturesApply applied;
+        REQUIRE_NOTHROW(ApplySignaturesDocument(mutate(signatures), { target.zone.get() }, applied, error));
+    }
+}
+
+TEST_CASE("UserDataRangesCache", "[Dissasm]UserData")
+{
+    const auto file = UserDataSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    // the record: magic, version, count, then start, end, unit
+    std::vector<std::byte> buffer;
+    const auto add = [&buffer](const auto& value) {
+        const auto* bytes = reinterpret_cast<const std::byte*>(&value);
+        buffer.insert(buffer.end(), bytes, bytes + sizeof(value));
+    };
+    add(uint32{ 0x44554447 });
+    add(uint32{ 1 });
+    add(uint32{ 3 });
+    add(uint64{ 0x10 }), add(uint64{ 0x19 }), add(uint8{ 0 });
+    add(uint64{ 0x19 }), add(uint64{ 0x1D }), add(uint8{ 4 });
+    add(uint64{ 0x28 }), add(uint64{ 0x1000 }), add(uint8{ 1 }); // outside of the zone: dropped
+    DissasmCache cache;
+    REQUIRE(cache.AddRegion("DissasmUserData.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    const auto ranges = ReadUserDataRanges(cache, *dissasmInstance.zone);
+    REQUIRE(ranges.size() == 2);
+    REQUIRE(ranges[1] == DissasmInstructionSet::DataRange{ 0x19, 0x1D, 4 });
+    // another magic: nothing
+    buffer[0] = std::byte{ 0 };
+    DissasmCache wrong;
+    REQUIRE(wrong.AddRegion("DissasmUserData.0", buffer.data(), static_cast<uint32>(buffer.size())));
+    REQUIRE(ReadUserDataRanges(wrong, *dissasmInstance.zone).empty());
+}
+
+TEST_CASE("UserDataUndo", "[Dissasm]UserData")
+{
+    const auto file = UserDataSample();
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // two edits: A on the string, then D on the dword; each one is recorded with the ranges it replaced
+    auto before = zone.userDataRanges;
+    REQUIRE(zone.DefineUserString(0x10));
+    zone.RecordUserDataEdit(before, 0x10);
+    before = zone.userDataRanges;
+    REQUIRE(zone.DefineUserData(0x19));
+    zone.RecordUserDataEdit(before, 0x19);
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.CanUndoEdit()); // the history survives the new analysis
+
+    // Ctrl+Z: the dword is code again (the zone needs a new analysis), the string stays
+    auto place = zone.UndoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(place->reanalyze);
+    REQUIRE(place->address == std::optional<uint64>(0x19));
+    REQUIRE(zone.userDataRanges.size() == 1);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(zone.CanRedoEdit());
+    REQUIRE(dissasmInstance.GetListing().find("db     0x11") == std::string::npos);
+    // Ctrl+Y: the db again
+    place = zone.RedoEdit();
+    REQUIRE(place.has_value());
+    REQUIRE(zone.userDataRanges.size() == 2);
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "db     0x11").size() > 0);
+    // the first edit is still there
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.UndoEdit().has_value());
+    REQUIRE(zone.userDataRanges.empty());
+}
+
+TEST_CASE("UserDataReanalysisInSteps", "[Dissasm]UserData")
+{
+    // many functions: the new analysis continues in steps; the names of the user come back when it ends
+    auto file = MakeManyFunctions(4000);
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(11 * 100) == "sub_14000144C");
+    REQUIRE(zone.ApplyUserLabelName(11 * 100, "function100"));
+    const uint32 linesBefore = zone.GetDisplayLinesCount();
+
+    REQUIRE(zone.DefineUserData(11 * 2000 + 4)); // the call of a function: db
+    auto initData           = dissasmInstance.lastInitData;
+    initData.deepScanBudget = std::chrono::milliseconds(0);
+    DissasmReanalysis state;
+    REQUIRE(BeginCodeZoneReanalysis(zone, initData, state));
+    REQUIRE(zone.IsDeepScanPending());
+    uint32 steps = 0;
+    while (!zone.ContinueDeepScan(std::chrono::steady_clock::now()))
+        REQUIRE(++steps < 100000);
+    zone.CommitDeepScan();
+    DissasmAnnotationsImport imported;
+    FinishCodeZoneReanalysis(zone, state, imported);
+    REQUIRE(imported.names == 1);
+    REQUIRE(zone.GetLabelNameAt(11 * 100) == "function100");
+    // db 0xe8, then the bytes of the call target decoded alone: more lines than before
+    REQUIRE(zone.GetDisplayLinesCount() > linesBefore);
+    REQUIRE(FindListingLine(dissasmInstance.GetListing(), "db     0xe8").size() > 0);
+}
+
+TEST_CASE("UserDataUtf16String", "[Dissasm]UserData")
+{
+    std::vector<unsigned char> file = { 0xC3, 0xCC, 0xCC, 0xCC }; // 0x00: ret
+    for (const char c : std::string_view("Hi there!")) {          // 0x04: L"Hi there!"
+        file.push_back(static_cast<unsigned char>(c));
+        file.push_back(0);
+    }
+    file.insert(file.end(), { 0x00, 0x00 });
+    file.resize(0x30, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.DefineUserString(0x04));
+    REQUIRE(zone.userDataRanges.size() == 1);
+    REQUIRE(zone.userDataRanges[0] == DissasmInstructionSet::DataRange{ 0x04, 0x04 + 20, DissasmInstructionSet::UTF16_STRING });
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(zone, dissasmInstance.lastInitData, imported));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "du     \"Hi there\"").size() > 0); // 8 characters per line
+    REQUIRE(FindListingLine(listing, "du     \"!\", 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "int3").size() > 0);
+}
+
+TEST_CASE("DataZoneRanges", "[Dissasm]DataZone")
+{
+    using DataRange = DissasmInstructionSet::DataRange;
+    std::vector<uint8> bytes(0x60, 0x11);
+    const auto put = [&bytes](size_t at, std::string_view text) { std::copy(text.begin(), text.end(), bytes.begin() + at); };
+    put(0x00, std::string_view("Hello world\0", 12));        // a string
+    put(0x0C, std::string_view("ab\0", 3));                  // too short (not referred to): a row
+    put(0x10, std::string_view("W\0i\0d\0e\0\0\0", 10));     // UTF-16
+    for (size_t index = 0; index < 16; index++)              // 0x20: two pointers
+        bytes[0x20 + index] = index == 1 ? 0x10 : (index == 9 ? 0x10 : 0x00);
+    put(0x40, std::string_view(":\0", 2));                   // a short string referred to by the code
+    const auto isPointer = [](uint64 value) { return value >= 0x1000 && value < 0x2000; };
+    const auto ranges    = BuildDataZoneRanges(bytes.data(), bytes.size(), { 0x40 }, {}, {}, 8, isPointer);
+    INFO(ranges.size());
+    REQUIRE(ranges.size() >= 6);
+    REQUIRE(ranges[0] == DataRange{ 0x00, 0x0C, DissasmInstructionSet::ASCII_STRING });
+    REQUIRE(ranges[1] == DataRange{ 0x0C, 0x10, DissasmInstructionSet::BYTES_ROW });
+    REQUIRE(ranges[2] == DataRange{ 0x10, 0x1A, DissasmInstructionSet::UTF16_STRING });
+    REQUIRE(ranges[3] == DataRange{ 0x1A, 0x20, DissasmInstructionSet::BYTES_ROW });
+    REQUIRE(ranges[4] == DataRange{ 0x20, 0x30, 8, true });
+    REQUIRE(ranges[5] == DataRange{ 0x30, 0x40, DissasmInstructionSet::BYTES_ROW }); // ends at the target
+    REQUIRE(ranges[6] == DataRange{ 0x40, 0x42, DissasmInstructionSet::ASCII_STRING });
+    REQUIRE(ranges.back().end == 0x60);
+    // a range of the user is kept as it is, the items around it end at it
+    const auto withUser = BuildDataZoneRanges(bytes.data(), bytes.size(), {}, {}, { DataRange{ 0x04, 0x08, 4 } }, 8, isPointer);
+    REQUIRE(withUser[0] == DataRange{ 0x00, 0x04, DissasmInstructionSet::BYTES_ROW }); // "Hell" is not a string any more (no zero)
+    REQUIRE(withUser[1] == DataRange{ 0x04, 0x08, 4 });
+
+    REQUIRE(MakeStringLabelName("Hello world", 0x1000) == "aHelloWorld");
+    REQUIRE(MakeStringLabelName("%s\\%s", 0x1000) == "aSS");
+    REQUIRE(MakeStringLabelName(":", 0x1234) == "asc_1234");
+}
+
+TEST_CASE("DataZoneListing", "[Dissasm]DataZone")
+{
+    // the code (VA 0x401000) refers to a string and to a table of pointers of the data zone (VA 0x401040)
+    std::vector<unsigned char> file = {
+        0x48, 0x8D, 0x0D, 0x39, 0x00, 0x00, 0x00, // 0x00: lea rcx, [rip + 0x39] (the string, 0x40)
+        0x48, 0x8D, 0x15, 0x3A, 0x00, 0x00, 0x00, // 0x07: lea rdx, [rip + 0x3a] (the pointers, 0x48)
+        0xFF, 0x15, 0x64, 0x00, 0x00, 0x00,       // 0x0e: call qword ptr [rip + 0x64] (an import slot, 0x78)
+        0xC3,                                     // 0x14: ret
+    };
+    file.resize(0x40, 0xCC);
+    for (const char c : std::string_view("Hello!"))
+        file.push_back(static_cast<unsigned char>(c)); // 0x40
+    file.push_back(0);
+    file.push_back(0);                                                // 0x47: padding
+    file.insert(file.end(), { 0x00, 0x10, 0x40, 0, 0, 0, 0, 0 });     // 0x48: 0x401000 (the code)
+    file.insert(file.end(), { 0x40, 0x10, 0x40, 0, 0, 0, 0, 0 });     // 0x50: 0x401040 (the string)
+    for (uint8 value = 1; file.size() < 0x80; value++)
+        file.push_back(value); // 0x58: other bytes
+    const uint64 fileSize = file.size();
+
+    ZoneLayout layout;
+    layout.size             = 0x20;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x401000;
+    layout.isFileAddress    = [fileSize](uint64 va) { return va >= 0x401000 && va - 0x401000 < fileSize; };
+    layout.addressToFileOffset = [fileSize](uint64 va) -> std::optional<uint64> {
+        return va >= 0x401000 && va - 0x401000 < fileSize ? std::optional<uint64>(va - 0x401000) : std::nullopt;
+    };
+    layout.imports = { { 0x401078, { "CreateFileW", MemoryMappingType::FunctionMapping } } }; // by the VA of the slot (no translation)
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    auto& codeZone = *code.zone;
+
+    layout.start            = 0x40;
+    layout.size             = 0x40;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x401040;
+    layout.isData           = true;
+    layout.siblings         = { &codeZone };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    auto& dataZone          = *data.zone;
+    codeZone.siblingZones   = { &dataZone };
+
+    REQUIRE(dataZone.GetLabelNameAt(0x00) == "aHello");
+    REQUIRE(dataZone.GetLabelNameAt(0x08) == "off_401048");
+    REQUIRE(dataZone.GetLabelNameAt(0x38) == "__imp_CreateFileW"); // the import slot used by the call
+    REQUIRE(dataZone.functionStarts.empty());
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "db     \"Hello!\", 0").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     EntryPoint").size() > 0); // the pointers with the names of what they point to
+    REQUIRE(FindListingLine(listing, "dq     aHello").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     CreateFileW").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08").size() > 0);
+    REQUIRE(FindListingLine(listing, "aHello:").ends_with("; xrefs: off_401048+0x8 (offset), EntryPoint (offset)")); // the table and the code
+    // the pointers are references to what they point to: the entry point is referred to by the table
+    REQUIRE(codeZone.FormatXrefsSummary(0x00) == "xref: off_401048 (offset)");
+}
+
+TEST_CASE("FunctionsFromTakenAddresses", "[Dissasm]Functions")
+{
+    // x86 at 0x401000: a callback pushed (a function), a string of the code pushed (data), a continuation returned by a catch block
+    std::vector<unsigned char> file = {
+        0x68, 0x20, 0x10, 0x40, 0x00, // 0x00: push 0x401020 (a callback)
+        0x68, 0x30, 0x10, 0x40, 0x00, // 0x05: push 0x401030 (a string in the code)
+        0xE8, 0x31, 0x00, 0x00, 0x00, // 0x0a: call 0x401040
+        0xC3,                         // 0x0f: ret
+        0xB8, 0x50, 0x10, 0x40, 0x00, // 0x10: mov eax, 0x401050 (the continuation of a catch block)
+        0xC3,                         // 0x15: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x33, 0xC0, 0x40, 0xC3 }); // 0x20: xor eax, eax; inc eax; ret (the callback)
+    file.resize(0x30, 0xCC);
+    for (const char c : std::string_view("Wide")) { // 0x30: L"Wide"
+        file.push_back(static_cast<unsigned char>(c));
+        file.push_back(0);
+    }
+    file.insert(file.end(), { 0x00, 0x00 });
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x40: the called function
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC9, 0xC3 }); // 0x50: xor ecx, ecx; ret (the continuation)
+    file.resize(0x60, 0xCC);
+
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x86;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& starts = dissasmInstance.zone->functionStarts;
+    INFO(dissasmInstance.GetListing());
+    const auto has = [&starts](uint64 address) { return std::find(starts.begin(), starts.end(), address) != starts.end(); };
+    REQUIRE(has(0x20));       // the callback
+    REQUIRE(has(0x40));       // the called function
+    REQUIRE_FALSE(has(0x30)); // the string: push edi; add byte ptr [ecx], ch ... is not code
+    REQUIRE_FALSE(has(0x50)); // mov eax, offset X; ret: where a function continues
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x20) == "sub_401020");
+}
+
+TEST_CASE("FunctionsFromDataPointers", "[Dissasm]Functions")
+{
+    // x64: a method reached only through a table of pointers of a data zone (a vtable)
+    std::vector<unsigned char> file = { 0xC3 }; // 0x00: ret (the entry point)
+    file.resize(0x10, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0xC1, 0xC3 }); // 0x10: mov rax, rcx; ret (the method)
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x48, 0x8B, 0xC2, 0xC3 }); // 0x20: mov rax, rdx; ret (nothing points to it)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x10, 0x10, 0x00, 0x40, 0x01, 0x00, 0x00, 0x00 }); // 0x40: dq 0x140001010
+    file.insert(file.end(), { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+    file.resize(0x60, 0x00);
+
+    DissasmCodeZone dataZone; // only its place in the file is read: the code zones are analyzed before the data zones
+    dataZone.zoneType                      = DissasmParseZoneType::DissasmCodeParseZone;
+    dataZone.zoneDetails.startingZonePoint = 0x40;
+    dataZone.zoneDetails.size              = 0x20;
+    dataZone.zoneDetails.isData            = true;
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x140001000;
+    layout.siblings         = { &dataZone };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    const auto& starts = dissasmInstance.zone->functionStarts;
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x10) != starts.end());
+    REQUIRE(std::find(starts.begin(), starts.end(), 0x20) == starts.end());
+}
+
+TEST_CASE("DataZoneTypedVariables", "[Dissasm]DataZone")
+{
+    // the code reads a dword, writes a qword and reads an xmmword of the data zone
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0x3A, 0x00, 0x00, 0x00,       // 0x00: mov eax, dword ptr [rip + 0x3a] (0x40)
+        0x48, 0x89, 0x05, 0x3B, 0x00, 0x00, 0x00, // 0x06: mov qword ptr [rip + 0x3b], rax (0x48)
+        0x0F, 0x28, 0x05, 0x3C, 0x00, 0x00, 0x00, // 0x0d: movaps xmm0, xmmword ptr [rip + 0x3c] (0x50)
+        0xC3,                                     // 0x14: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }); // 0x40: 0x41 (a number, not the text "A")
+    file.insert(file.end(), { 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11 }); // 0x48
+    file.resize(0x60, 0x00);
+
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    const auto [first, last] = code.zone->xrefs.To(0x401040);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->size == 4);
+
+    layout.start            = 0x40;
+    layout.size             = 0x20;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x401040;
+    layout.isData           = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "dword_401040");
+    REQUIRE(data.zone->GetLabelNameAt(0x08) == "qword_401048");
+    REQUIRE(data.zone->GetLabelNameAt(0x10) == "xmmword_401050");
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dd     0x00000041").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     0x1122334455667788").size() > 0);
+    REQUIRE(listing.find("\"A\"") == std::string::npos);
+}
+
+TEST_CASE("X86PicGlobalOffsetTable", "[Dissasm]Pic")
+{
+    // 32 bit PIC at VA 0x1000 (file offset = VA - 0x1000), the global offset table at 0x2000
+    std::vector<unsigned char> file = {
+        0xE8, 0x00, 0x00, 0x00, 0x00,       // 0x00: call $+5
+        0x5B,                               // 0x05: pop ebx (0x1005)
+        0x81, 0xC3, 0xFB, 0x0F, 0x00, 0x00, // 0x06: add ebx, 0xffb (0x2000: the table)
+        0x8D, 0x83, 0x40, 0xF0, 0xFF, 0xFF, // 0x0c: lea eax, [ebx - 0xfc0] (0x1040: the string)
+        0xE8, 0x09, 0x00, 0x00, 0x00,       // 0x12: call 0x20 (the stub)
+        0x8B, 0x83, 0x0C, 0x00, 0x00, 0x00, // 0x17: mov eax, dword ptr [ebx + 0xc] (the slot of puts)
+        0xC3,                               // 0x1d: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0xFF, 0xA3, 0x0C, 0x00, 0x00, 0x00 }); // 0x20: jmp dword ptr [ebx + 0xc] (the PLT stub of puts)
+    file.resize(0x40, 0xCC);
+    for (const char c : std::string_view("Hello"))
+        file.push_back(static_cast<unsigned char>(c)); // 0x40
+    file.resize(0x1010, 0x00);                         // 0x1000: the table, 0x100c the slot of puts
+    const uint64 fileSize = file.size();
+
+    ZoneLayout layout;
+    layout.size              = 0x30;
+    layout.entryPoint        = 0;
+    layout.language          = DisassemblyLanguage::x86;
+    layout.labelAddressBase  = 0x1000;
+    layout.globalOffsetTable = 0x2000;
+    layout.translateOffsets  = true; // the RVA of an address: the file offset (VA - 0x1000)
+    layout.isFileAddress     = [fileSize](uint64 va) { return va >= 0x1000 && va - 0x1000 < fileSize; };
+    layout.imports           = { { 0x100C, { "puts", MemoryMappingType::FunctionMapping } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), false, layout);
+    auto& zone = *dissasmInstance.zone;
+
+    // the stub: an import thunk through the table of the plugin (ebx of the caller)
+    REQUIRE(zone.GetLabelNameAt(0x20) == "j_puts");
+    // the function: ebx set by call $+5; pop ebx; add ebx, imm gives the string of lea eax, [ebx - 0xfc0]
+    REQUIRE(zone.resolvedAddresses.at(0x0C) == 0x40);
+    const auto [first, last] = zone.xrefs.To(0x1040);
+    REQUIRE(last - first == 1);
+    REQUIRE(first->kind == DissasmXrefKind::Offset);
+    // call $+5 takes the address of the code: no function at the pop
+    REQUIRE(std::find(zone.functionStarts.begin(), zone.functionStarts.end(), 0x05) == zone.functionStarts.end());
+    REQUIRE(zone.GetLabelNameAt(0x05).empty());
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "call   $+5").size() > 0);
+    REQUIRE(FindListingLine(listing, "call   j_puts").size() > 0);
+    // the slot relative to the table, as IDA writes it
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:(__imp_puts - _GLOBAL_OFFSET_TABLE_)[ebx]").size() > 0);
+}
+
+TEST_CASE("SelectionResizedLines", "[Dissasm]Selection")
+{
+    AdvancedSelection selection;
+    // three selections: above, inside and below the lines [100, 200) of a zone that grows by 50 lines
+    const int above  = selection.BeginSelection({ 10, 0 }, true, false);
+    selection.UpdateSelection(above, { 20, 5 }, true, false);
+    const int inside = selection.BeginSelection({ 150, 0 }, true, false);
+    selection.UpdateSelection(inside, { 160, 0 }, true, false);
+    const int below  = selection.BeginSelection({ 300, 2 }, true, false);
+    selection.UpdateSelection(below, { 310, 4 }, true, false);
+    REQUIRE(above >= 0);
+    REQUIRE(inside >= 0);
+    REQUIRE(below >= 0);
+
+    selection.AdjustToResizedLines(100, 200, 50);
+    REQUIRE(selection.GetSelectionStart(above).line == 10); // above: as it is
+    REQUIRE(selection.GetSelectionEnd(above).line == 20);
+    REQUIRE_FALSE(selection.HasSelection(inside));          // its lines changed
+    REQUIRE(selection.GetSelectionStart(below).line == 350); // below: with its lines
+    REQUIRE(selection.GetSelectionEnd(below).line == 360);
+    REQUIRE(selection.GetSelectionEnd(below).offset == 4);
+
+    // the zone shrinks: the selection below moves up
+    selection.AdjustToResizedLines(100, 250, -30);
+    REQUIRE(selection.GetSelectionStart(below).line == 320);
+}
+
+TEST_CASE("DataZoneReanalysis", "[Dissasm]DataZone")
+{
+    // a data zone analyzed before the code that refers to it has no labels; analyzed again, it gets them
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0x3A, 0x00, 0x00, 0x00, // 0x00: mov eax, dword ptr [rip + 0x3a] (0x40)
+        0xC3,                               // 0x06: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x07, 0x00, 0x00, 0x00 });
+    file.resize(0x60, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start            = 0x40;
+    layout.size             = 0x20;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x401040;
+    layout.isData           = true;
+    DissasmTestInstance data(file.data(), file.size(), false, layout); // no siblings yet
+    auto& dataZone = *data.zone;
+    REQUIRE(dataZone.GetLabelNameAt(0x00).empty());
+    dataZone.siblingZones = { code.zone.get() };
+    DissasmAnnotationsImport imported;
+    REQUIRE(ReanalyzeCodeZone(dataZone, data.lastInitData, imported));
+    REQUIRE(dataZone.GetLabelNameAt(0x00) == "dword_401040");
+    REQUIRE(FindListingLine(data.GetListing(), "dd     0x00000007").size() > 0);
+}
+
+// a graph of `count` blocks with the given forward edges (source, target)
+static DissasmFunctionGraph MakeLayoutGraph(size_t count, std::initializer_list<std::pair<size_t, size_t>> edges)
+{
+    DissasmFunctionGraph graph;
+    graph.blocks.resize(count);
+    for (size_t index = 0; index < count; index++)
+        graph.blocks[index].start = index * 0x10;
+    for (const auto& [from, to] : edges)
+        graph.blocks[from].successors.push_back({ to, DissasmGraphBlock::EdgeKind::Jump });
+    return graph;
+}
+
+TEST_CASE("FunctionGraphLayout", "[Dissasm]Graph")
+{
+    // 0 -> 1, 2; 1 -> 4; 2 -> 3: in the order of the addresses the edges 1 -> 4 and 2 -> 3 cross, the layout swaps 3 and 4
+    {
+        const auto graph  = MakeLayoutGraph(5, { { 0, 1 }, { 0, 2 }, { 1, 4 }, { 2, 3 } });
+        const auto layout = LayoutFunctionGraph(graph, std::vector<std::pair<int, int>>(5, { 20, 5 }));
+        REQUIRE(layout.nodes[3].layer == 2);
+        REQUIRE(layout.nodes[4].layer == 2);
+        REQUIRE(CountGraphCrossings(layout, graph) == 0);
+        REQUIRE(layout.nodes[4].x < layout.nodes[3].x);
+        for (int layer = 0; layer < 3; layer++) // no overlap in a layer
+            for (size_t first = 0; first < layout.nodes.size(); first++)
+                for (size_t second = first + 1; second < layout.nodes.size(); second++) {
+                    const auto& a = layout.nodes[first];
+                    const auto& b = layout.nodes[second];
+                    if (a.layer == layer && b.layer == layer)
+                        REQUIRE((a.x + a.width <= b.x || b.x + b.width <= a.x));
+                }
+    }
+    // a long edge 0 -> 3 next to the chain 0 -> 1 -> 2 -> 3: it passes through a dummy in the layers of 1 and 2, beside their boxes
+    {
+        const auto graph  = MakeLayoutGraph(4, { { 0, 1 }, { 0, 3 }, { 1, 2 }, { 2, 3 } });
+        const auto layout = LayoutFunctionGraph(graph, std::vector<std::pair<int, int>>(4, { 20, 5 }));
+        REQUIRE(layout.nodes[3].layer == 3);
+        const auto dummies = layout.edgeDummies.find({ 0, 1 });
+        REQUIRE(dummies != layout.edgeDummies.end());
+        REQUIRE(dummies->second.size() == 2);
+        for (const size_t dummy : dummies->second) {
+            const auto& column = layout.nodes[dummy];
+            REQUIRE(column.isDummy);
+            const auto& box = layout.nodes[column.layer]; // block 1 is in layer 1, block 2 in layer 2
+            REQUIRE((column.x < box.x || column.x >= box.x + box.width)); // never behind the box
+            REQUIRE(column.height == layout.layerHeight[column.layer]);
+        }
+        REQUIRE(layout.nodes[0].x >= 0);
+        REQUIRE(layout.width >= layout.nodes[1].x + layout.nodes[1].width);
+    }
+}
+
+TEST_CASE("ArmAccessSizes", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    const auto arm32 = [&decoder](std::initializer_list<uint8_t> bytes) {
+        uint8 size = 0xFF;
+        decoder.Decode(bytes, 0, false, [&size](const cs_insn& insn) { size = GetArm32AccessSize(insn); });
+        return size;
+    };
+    REQUIRE(arm32({ 0x00, 0x20, 0xD2, 0xE5 }) == 1); // ldrb r2, [r2]
+    REQUIRE(arm32({ 0xF0, 0x30, 0xD3, 0xE1 }) == 2); // ldrsh r3, [r3]
+    REQUIRE(arm32({ 0x00, 0x00, 0x90, 0xE5 }) == 4); // ldr r0, [r0]
+    REQUIRE(arm32({ 0x00, 0x10, 0x82, 0xE5 }) == 4); // str r1, [r2]
+    REQUIRE(arm32({ 0xD0, 0x00, 0xC2, 0xE1 }) == 8); // ldrd r0, r1, [r2]
+    REQUIRE(arm32({ 0x00, 0x0B, 0x90, 0xED }) == 8); // vldr d0, [r0]
+    REQUIRE(arm32({ 0x00, 0x0A, 0x90, 0xED }) == 4); // vldr s0, [r0]
+    REQUIRE(arm32({ 0x10, 0x40, 0x2D, 0xE9 }) == 0); // push {r4, lr}
+
+    csh handle = 0;
+    REQUIRE(cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle) == CS_ERR_OK);
+    REQUIRE(cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON) == CS_ERR_OK);
+    const auto arm64 = [handle](uint32 word) {
+        const uint8_t bytes[4] = { static_cast<uint8_t>(word), static_cast<uint8_t>(word >> 8), static_cast<uint8_t>(word >> 16), static_cast<uint8_t>(word >> 24) };
+        cs_insn* insn = nullptr;
+        REQUIRE(cs_disasm(handle, bytes, 4, 0, 1, &insn) == 1);
+        const uint8 size = GetArm64AccessSize(*insn);
+        cs_free(insn, 1);
+        return size;
+    };
+    CHECK(arm64(0xB9424908) == 4);  // ldr w8, [x8, #0x248]
+    CHECK(arm64(0xB9024900) == 4);  // str w0, [x8, #0x248]
+    CHECK(arm64(0x3949614A) == 1);  // ldrb w10, [x10, #0x258]
+    CHECK(arm64(0x79C4B96B) == 2);  // ldrsh w11, [x11, #0x25c]
+    CHECK(arm64(0xF9400020) == 8);  // ldr x0, [x1]
+    CHECK(arm64(0x3DC00020) == 16); // ldr q0, [x1]
+    CHECK(arm64(0xA8C17BFD) == 0);  // ldp x29, x30, [sp], #0x10
+    cs_close(&handle);
+}
+
+TEST_CASE("Arm32TrackerLiterals", "[Dissasm]Arm32")
+{
+    Arm32Decoder decoder;
+    using Result = Arm32Tracker::Result;
+    // ldr r0, =variable (ARM, no PIC): the word of the literal pool is an absolute address, the next load reads the variable there
+    {
+        Arm32Tracker tracker(0x10000, [](uint64 relativeAddress) -> std::optional<uint32> {
+            return relativeAddress == 0x18 ? std::optional<uint32>(0x10044) : std::nullopt;
+        });
+        std::optional<Result> result;
+        decoder.Decode({ 0x10, 0x00, 0x9F, 0xE5 }, 0x00, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, true); });
+        REQUIRE_FALSE(result.has_value()); // ldr r0, [pc, #0x10]: a word, not yet an access
+        decoder.Decode({ 0x00, 0x10, 0xD0, 0xE5 }, 0x04, false, [&](const cs_insn& insn) { result = tracker.Next(insn, false, false); });
+        REQUIRE(result.has_value()); // ldrb r1, [r0]
+        REQUIRE(result->address == 0x44);
+        REQUIRE(result->memoryAccess == CS_AC_READ);
+        REQUIRE(result->absolute); // checked against the file by the deep scan: a constant is not an address
+    }
+    // add r0, pc (Thumb) at an address that is not 4 bytes aligned: pc is the address + 4, not aligned (only the literals align it)
+    {
+        Arm32Tracker tracker(0x10268, [](uint64 relativeAddress) -> std::optional<uint32> {
+            return relativeAddress == 0x10288 - 0x10268 ? std::optional<uint32>(0x100) : std::nullopt;
+        });
+        std::optional<Result> result;
+        decoder.Decode({ 0x06, 0x48 }, 0x1026E - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        decoder.Decode({ 0x78, 0x44 }, 0x10272 - 0x10268, true, [&](const cs_insn& insn) { result = tracker.Next(insn, true, false); });
+        REQUIRE(result.has_value());
+        REQUIRE(0x10268 + result->address == 0x10276 + 0x100);
+        REQUIRE_FALSE(result->absolute);
+    }
+}
+
+TEST_CASE("ArmAddressTakenFunctions", "[Dissasm]Arm32")
+{
+    // ARM without the mapping symbols: the literal pool after the function becomes data lines (a load reads it), the function after the
+    // pool starts a block; its address is a word of the pool (ldr r2, =callback): a function. The pool word of a variable names its
+    // place in the data zone after the size of the access (ldrb: byte_)
+    std::vector<unsigned char> file = {
+        0x10, 0x00, 0x9F, 0xE5, // 0x00: ldr r0, [pc, #0x10]      (=0x10044, a variable of the data zone)
+        0x00, 0x10, 0xD0, 0xE5, // 0x04: ldrb r1, [r0]
+        0x0C, 0x20, 0x9F, 0xE5, // 0x08: ldr r2, [pc, #0xc]       (=0x10020, the callback)
+        0x1E, 0xFF, 0x2F, 0xE1, // 0x0c: bx lr
+        0x00, 0x00, 0xA0, 0xE1, // 0x10: nop
+        0x00, 0x00, 0xA0, 0xE1, // 0x14: nop
+        0x44, 0x00, 0x01, 0x00, // 0x18: .word 0x10044
+        0x20, 0x00, 0x01, 0x00, // 0x1c: .word 0x10020
+        0x01, 0x00, 0xA0, 0xE3, // 0x20: mov r0, #1                (the callback: no call reaches it)
+        0x1E, 0xFF, 0x2F, 0xE1, // 0x24: bx lr
+    };
+    file.resize(0x40, 0x00);
+    file.insert(file.end(), { 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00 }); // 0x40: the data zone (0x10040)
+    file.resize(0x50, 0x00);
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        return address >= 0x10000 && address < 0x10050 ? std::optional<uint64>(address - 0x10000) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.size                = 0x28;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::ARM;
+    layout.labelAddressBase    = 0x10000;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    auto& codeZone = *code.zone;
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(std::find(codeZone.functionStarts.begin(), codeZone.functionStarts.end(), 0x20) != codeZone.functionStarts.end());
+    REQUIRE(codeZone.GetLabelNameAt(0x20) == "sub_10020");
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x18) != nullptr); // the pool: data lines
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x1C) != nullptr);
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x18)->isOffset);
+    REQUIRE(codeZone.instructionSet.DataRangeAt(0x00) == nullptr);
+
+    layout.start            = 0x40;
+    layout.size             = 0x10;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x10040;
+    layout.isData           = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x04) == "byte_10044");
+}
+
+TEST_CASE("ArmDataZonePointerFunctions", "[Dissasm]Arm32")
+{
+    // a pointer of a data zone to Thumb code (bit 0 set: a callback table, .init_array of 32 bit ARM): a function at the address
+    std::vector<unsigned char> file = {
+        0x01, 0x20, // 0x00: movs r0, #1
+        0x70, 0x47, // 0x02: bx lr
+        0x02, 0x20, // 0x04: movs r0, #2                (reached only through the pointer)
+        0x70, 0x47, // 0x06: bx lr
+    };
+    file.resize(0x10, 0x00);
+    file.insert(file.end(), { 0x05, 0x00, 0x01, 0x00 }); // 0x10: the data zone (0x10010): 0x10005, the Thumb function at 0x10004
+    file.resize(0x20, 0x00);
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        return address >= 0x10000 && address < 0x10020 ? std::optional<uint64>(address - 0x10000) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start            = 0x10;
+    layout.size             = 0x10;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.language         = DisassemblyLanguage::Thumb;
+    layout.labelAddressBase = 0x10010;
+    layout.isData              = true;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+
+    layout.start            = 0;
+    layout.size             = 0x08;
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x10000;
+    layout.isData           = false;
+    layout.siblings         = { data.zone.get() };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    INFO(code.GetListing());
+    REQUIRE(code.zone->GetLabelNameAt(0x04) == "sub_10004");
+}
+
+TEST_CASE("ApplyRelocatedPointers", "[Dissasm]DataZone")
+{
+    std::vector<uint8> bytes(16, 0);
+    const std::map<uint64, uint64> relocations = { { 0xF8, 0x1 }, { 0x100, 0x1122334455667788ull }, { 0x10C, 0xAABBCCDD } };
+    ApplyRelocatedPointers(&relocations, 0x100, bytes.data(), bytes.size(), 8);
+    REQUIRE(bytes[0] == 0x88);
+    REQUIRE(bytes[7] == 0x11);
+    REQUIRE(std::all_of(bytes.begin() + 8, bytes.end(), [](uint8 value) { return value == 0; })); // 0x10c: 8 bytes do not fit, 0xf8: before
+    ApplyRelocatedPointers(nullptr, 0x100, bytes.data(), bytes.size(), 8); // no relocations: nothing
+}
+
+TEST_CASE("RelocatedPointerTables", "[Dissasm]DataZone")
+{
+    // a shared object linked at 0 (small VAs): a table of two function pointers in its data, 0 in the file, written by the loader
+    // (R_X86_64_RELATIVE). The table is a run of pointers to the functions, and the functions reached only through it are functions
+    std::vector<unsigned char> file = {
+        0x48, 0x8D, 0x0D, 0x39, 0x00, 0x00, 0x00, // 0x00: lea rcx, [rip + 0x39] (the table, 0x1040)
+        0xFF, 0x14, 0xC1,                         // 0x07: call qword ptr [rcx + rax*8]
+        0xC3,                                     // 0x0a: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC,             // 0x0b: padding
+        0x8D, 0x04, 0x37,                         // 0x10: lea eax, [rdi + rsi]      (op_add)
+        0xC3,                                     // 0x13: ret
+        0xCC, 0xCC, 0xCC, 0xCC,                   // 0x14: padding
+        0x89, 0xF8,                               // 0x18: mov eax, edi            (op_sub)
+        0x29, 0xF0,                               // 0x1a: sub eax, esi
+        0xC3,                                     // 0x1c: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.resize(0x50, 0x00); // 0x40: the table (0x1040), zeros in the file
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        return address >= 0x1000 && address < 0x1050 ? std::optional<uint64>(address - 0x1000) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start               = 0x40;
+    layout.size                = 0x10;
+    layout.entryPoint          = NO_ENTRY_POINT;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.labelAddressBase    = 0x1040;
+    layout.isData              = true;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    layout.relocatedPointers   = { { 0x40, 0x1010 }, { 0x48, 0x1018 } };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    // pointers for sure, although their addresses are below 0x10000 (a pointer of a PIE loaded at 0 is a small number otherwise)
+    const auto* range = data.zone->instructionSet.DataRangeAt(0x00);
+    REQUIRE(range != nullptr);
+    REQUIRE(range->isOffset);
+    REQUIRE(range->unit == 8);
+    REQUIRE(range->end == 0x10);
+    REQUIRE(data.zone->GetRelocatedPointer(0x08) == std::optional<uint64>(0x1018));
+    REQUIRE_FALSE(data.zone->GetRelocatedPointer(0x04).has_value());
+
+    layout.start            = 0;
+    layout.size             = 0x40;
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x1000;
+    layout.isData           = false;
+    layout.siblings         = { data.zone.get() };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    INFO(code.GetListing());
+    REQUIRE(code.zone->GetLabelNameAt(0x10) == "sub_1010");
+    REQUIRE(code.zone->GetLabelNameAt(0x18) == "sub_1018");
+
+    // the data zone analyzed again with the code: the table is named after the pointers (off_) and shows the functions
+    layout.start            = 0x40;
+    layout.size             = 0x10;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x1040;
+    layout.isData           = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance named(file.data(), file.size(), false, layout);
+    REQUIRE(named.zone->GetLabelNameAt(0x00) == "off_1040");
+}
+
+// the payload of LC_DYLD_CHAINED_FIXUPS for one segment of one page (at segmentOffset, its chain from the page start) and the imports
+// _lib_print / _lib_add (DYLD_CHAINED_IMPORT)
+static std::vector<uint8> MakeChainedFixups(uint16 pointerFormat, uint64 segmentOffset)
+{
+    std::vector<uint8> data;
+    const auto put = [&data](uint64 value, size_t size) {
+        for (size_t index = 0; index < size; index++)
+            data.push_back(static_cast<uint8>(value >> (8 * index)));
+    };
+    // dyld_chained_fixups_header: version, starts 32, imports 72, symbols 80, 2 imports, DYLD_CHAINED_IMPORT, names not compressed
+    for (const uint32 value : { 0u, 32u, 72u, 80u, 2u, 1u, 0u })
+        put(value, 4);
+    put(0, 4); // padding up to 32
+    // dyld_chained_starts_in_image: 3 segments, the third one has fixups (its starts at 32 + 16)
+    for (const uint32 value : { 3u, 0u, 0u, 16u })
+        put(value, 4);
+    // dyld_chained_starts_in_segment: size, page_size, pointer_format, segment_offset, max_valid_pointer, page_count, page_start[0]
+    put(24, 4);
+    put(0x4000, 2);
+    put(pointerFormat, 2);
+    put(segmentOffset, 8);
+    put(0, 4);
+    put(1, 2);
+    put(0, 2);
+    // the imports (lib_ordinal 1, name offsets 0 and 11) and their names
+    put(1 | (0u << 9), 4);
+    put(1 | (11u << 9), 4);
+    for (const char c : std::string_view("_lib_print\0_lib_add\0", 20))
+        data.push_back(static_cast<uint8>(c));
+    return data;
+}
+
+TEST_CASE("DyldBindOpcodes", "[Dissasm]MachO")
+{
+    // the bind opcodes of LC_DYLD_INFO: the segments 0 (__PAGEZERO), 1 (__TEXT), 2 (__DATA at 0x100003000)
+    const std::vector<uint64> segments = { 0, 0x100000000ull, 0x100003000ull };
+    std::vector<uint8> opcodes         = { 0x11, 0x40 }; // SET_DYLIB_ORDINAL_IMM 1, SET_SYMBOL_TRAILING_FLAGS_IMM
+    const auto text = [&opcodes](std::string_view name) {
+        opcodes.insert(opcodes.end(), name.begin(), name.end());
+        opcodes.push_back(0);
+    };
+    text("_OBJC_CLASS_$_NSObject");
+    opcodes.insert(opcodes.end(), { 0x51, 0x72, 0x10, 0x90 }); // SET_TYPE_IMM pointer, SET_SEGMENT_AND_OFFSET_ULEB 2 + 0x10, DO_BIND
+    opcodes.push_back(0x40);
+    text("__objc_empty_cache");
+    opcodes.push_back(0xB1); // DO_BIND_ADD_ADDR_IMM_SCALED 1: bind at 0x18, then 0x18 + 8 + 8
+    opcodes.insert(opcodes.end(), { 0x60, 0x7F, 0x40 }); // SET_ADDEND_SLEB -1
+    text("_puts");
+    opcodes.insert(opcodes.end(), { 0xC0, 0x02, 0x08 }); // DO_BIND_ULEB_TIMES_SKIPPING_ULEB 2, 8: binds at 0x28 and 0x38
+    opcodes.insert(opcodes.end(), { 0xA0, 0x10 });       // DO_BIND_ADD_ADDR_ULEB 0x10: a bind at 0x48
+    opcodes.insert(opcodes.end(), { 0x00, 0x90 });       // DONE: the rest is not read
+    std::vector<DyldBind> binds;
+    REQUIRE(DecodeDyldBindOpcodes(opcodes.data(), opcodes.size(), segments, 8, binds));
+    REQUIRE(binds.size() == 5);
+    const std::vector<std::pair<uint64, std::string>> expected = { { 0x100003010, "_OBJC_CLASS_$_NSObject" },
+                                                                   { 0x100003018, "__objc_empty_cache" },
+                                                                   { 0x100003028, "_puts" },
+                                                                   { 0x100003038, "_puts" },
+                                                                   { 0x100003048, "_puts" } };
+    for (size_t index = 0; index < expected.size(); index++) {
+        REQUIRE(binds[index].address == expected[index].first);
+        REQUIRE(binds[index].name == expected[index].second);
+    }
+    REQUIRE(binds[0].addend == 0);
+    REQUIRE(binds[2].addend == -1);
+
+    // a segment that does not exist, a truncated name, a truncated number
+    binds.clear();
+    const std::vector<uint8> badSegment = { 0x40, '_', 'a', 0, 0x75, 0x00, 0x90 };
+    REQUIRE_FALSE(DecodeDyldBindOpcodes(badSegment.data(), badSegment.size(), segments, 8, binds));
+    const std::vector<uint8> truncatedName = { 0x40, '_', 'a' };
+    REQUIRE_FALSE(DecodeDyldBindOpcodes(truncatedName.data(), truncatedName.size(), segments, 8, binds));
+    const std::vector<uint8> truncatedNumber = { 0x40, '_', 'a', 0, 0x72, 0x80 };
+    REQUIRE_FALSE(DecodeDyldBindOpcodes(truncatedNumber.data(), truncatedNumber.size(), segments, 8, binds));
+    REQUIRE(binds.empty());
+    // a 32 bit image: the address moves by 4
+    const std::vector<uint8> pointers32 = { 0x40, '_', 'a', 0, 0x71, 0x00, 0x90, 0x90 };
+    REQUIRE(DecodeDyldBindOpcodes(pointers32.data(), pointers32.size(), { 0, 0x1000 }, 4, binds));
+    REQUIRE(binds.size() == 2);
+    REQUIRE(binds[1].address == 0x1004);
+}
+
+TEST_CASE("BoundSymbolsOfTheBinds", "[Dissasm]MachO")
+{
+    // the binds of the opcodes applied: an import slot named after the symbol, its line the symbol and the addend (the vptr of a typeinfo:
+    // the vtable of __class_type_info + 0x10), a pointer of the view (0: the loader writes it)
+    std::vector<unsigned char> file(0x200, 0x00);
+    file[0] = 0xC3;
+    DissasmTestInstance instance(file.data(), file.size());
+    TestIdentityTranslation translation;
+    SettingsData settings;
+    settings.offsetTranslateCallback = &translation;
+    std::vector<uint8> opcodes       = { 0x11, 0x60, 0x10, 0x40 }; // ordinal 1, addend 0x10, the symbol
+    for (const char c : std::string_view("_ZTVN10__cxxabiv117__class_type_infoE"))
+        opcodes.push_back(static_cast<uint8>(c));
+    opcodes.insert(opcodes.end(), { 0x00, 0x70, 0x80, 0x02, 0x90, 0x00 }); // segment 0 + 0x100, DO_BIND, DONE
+    settings.dyldBindInfos.push_back({ opcodes, { 0 }, 8, 0 });
+    ApplyChainedFixups(settings, &instance.objects[0]);
+    REQUIRE(settings.dyldBindInfos.empty());
+    REQUIRE(settings.memoryMappings.at(0x100).name == "vtable for __cxxabiv1::__class_type_info"); // demangled
+    REQUIRE(settings.memoryMappings.at(0x100).type == MemoryMappingType::FunctionMapping);
+    REQUIRE(settings.boundSymbols.at(0x100) == "vtable for __cxxabiv1::__class_type_info+0x10");
+    REQUIRE(settings.relocatedPointers.at(0x100) == 0);
+}
+
+TEST_CASE("BoundPointerOfAStructure", "[Dissasm]MachO")
+{
+    // the isa of a metaclass (a pointer dyld binds to _OBJC_METACLASS_$_NSObject) at the start of the structure _OBJC_METACLASS_$_Dog: the
+    // line of the pointer shows the symbol and the field, not the name of the structure
+    std::vector<unsigned char> file = { 0xC3 }; // 0x00: ret (EntryPoint)
+    file.resize(0x120, 0x00);
+    ZoneLayout layout;
+    layout.size                = 0x100;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true; // the VA (and the RVA) is the file offset
+    layout.addressToFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start        = 0x100;
+    layout.size         = 0x20;
+    layout.entryPoint   = NO_ENTRY_POINT;
+    layout.isData       = true;
+    layout.siblings     = { code.zone.get() };
+    layout.dataFields   = { { 0x100, { 8, DataFieldType::Pointer, "isa" } }, { 0x108, { 8, DataFieldType::Pointer, "superclass" } } };
+    layout.boundSymbols = { { 0x100, "_OBJC_METACLASS_$_NSObject" } };
+    layout.imports      = { { 0x100, { "_OBJC_METACLASS_$_Dog", MemoryMappingType::TextMapping } } };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dq     _OBJC_METACLASS_$_NSObject").ends_with("; isa"));
+    REQUIRE(FindListingLine(listing, "dq     EntryPoint").ends_with("; superclass")); // not bound: its value (0, the entry point here)
+}
+
+TEST_CASE("ChainedFixups", "[Dissasm]MachO")
+{
+    constexpr uint64 imageBase = 0x100000000ull;
+    std::map<uint64, uint64> memory; // the pointers of the image, by VA
+    const auto readPointer = [&memory](uint64 address, uint8) -> std::optional<uint64> {
+        const auto it = memory.find(address);
+        return it != memory.end() ? std::optional<uint64>(it->second) : std::nullopt;
+    };
+    // DYLD_CHAINED_PTR_64_OFFSET (lld, ld64 on macOS 12+): a rebase (an offset in the image), a bind (import 1), a rebase; the next pointer
+    // is next * 4 bytes away
+    {
+        const auto data = MakeChainedFixups(6, 0x4000);
+        memory          = {
+            { imageBase + 0x4000, 0x530ull | (2ull << 51) },
+            { imageBase + 0x4008, (1ull << 63) | 1ull | (2ull << 51) },
+            { imageBase + 0x4010, 0x5A0ull },
+        };
+        std::vector<ChainedFixup> fixups;
+        REQUIRE(DecodeChainedFixups(data.data(), data.size(), imageBase, readPointer, fixups));
+        REQUIRE(fixups.size() == 3);
+        REQUIRE_FALSE(fixups[0].isBind);
+        REQUIRE(fixups[0].address == imageBase + 0x4000);
+        REQUIRE(fixups[0].target == imageBase + 0x530);
+        REQUIRE(fixups[1].isBind);
+        REQUIRE(fixups[1].name == "_lib_add");
+        REQUIRE(fixups[2].target == imageBase + 0x5A0);
+    }
+    // DYLD_CHAINED_PTR_ARM64E: a rebase to a VA, an authenticated rebase (an offset), a bind with a negative addend; next * 8 bytes
+    {
+        const auto data = MakeChainedFixups(1, 0x8000);
+        memory          = {
+            { imageBase + 0x8000, (imageBase + 0x600) | (1ull << 51) },
+            { imageBase + 0x8008, (1ull << 63) | 0x640ull | (1ull << 51) },
+            { imageBase + 0x8010, (1ull << 62) | 0ull | ((0x7FFFFull & static_cast<uint64>(-8)) << 32) },
+        };
+        std::vector<ChainedFixup> fixups;
+        REQUIRE(DecodeChainedFixups(data.data(), data.size(), imageBase, readPointer, fixups));
+        REQUIRE(fixups.size() == 3);
+        REQUIRE(fixups[0].target == imageBase + 0x600);
+        REQUIRE(fixups[1].target == imageBase + 0x640);
+        REQUIRE(fixups[2].isBind);
+        REQUIRE(fixups[2].name == "_lib_print");
+        REQUIRE(fixups[2].addend == -8);
+    }
+    // not a payload of a known version / a pointer format of the kernel: false
+    {
+        auto data = MakeChainedFixups(6, 0x4000);
+        data[0]   = 1;
+        std::vector<ChainedFixup> fixups;
+        REQUIRE_FALSE(DecodeChainedFixups(data.data(), data.size(), imageBase, readPointer, fixups));
+        REQUIRE_FALSE(DecodeChainedFixups(MakeChainedFixups(7, 0x4000).data(), MakeChainedFixups(7, 0x4000).size(), imageBase, readPointer, fixups));
+        REQUIRE(fixups.empty());
+    }
+}
+
+TEST_CASE("SymbolicOperandText", "[Dissasm]Operands")
+{
+    // x64: cs:name, the size dropped when the name says it, lea takes the name; fs: / gs: are not places of the file
+    CHECK(SubstituteX86MemoryOperand("eax, dword ptr [rip + 0xafd6]", "dword_14000C0D0", false, true) == std::optional<std::string>("eax, cs:dword_14000C0D0"));
+    CHECK(SubstituteX86MemoryOperand("qword ptr [rip - 0x10], rax", "qword_140010000", false, true) == std::optional<std::string>("cs:qword_140010000, rax"));
+    CHECK(SubstituteX86MemoryOperand("byte ptr [rip + 0x10], 1", "dword_14000C000", false, true) ==
+          std::optional<std::string>("byte ptr cs:dword_14000C000, 1"));
+    CHECK(SubstituteX86MemoryOperand("rcx, qword ptr [rip + 0x93a8]", "__imp_CreateFileW", false, true) == std::optional<std::string>("rcx, cs:__imp_CreateFileW"));
+    CHECK(SubstituteX86MemoryOperand("rcx, [rip + 0x2f45]", "aHelloWorld", true, true) == std::optional<std::string>("rcx, aHelloWorld"));
+    CHECK(SubstituteX86MemoryOperand("rax, qword ptr gs:[0x30]", "unk_30", false, true) == std::nullopt);
+    CHECK(SubstituteX86MemoryOperand("rax, qword ptr [rbx + 8]", "unk_30", false, true) == std::nullopt);
+    // ELF: the GOT slot of a variable is a pointer (IDA: mov rax, cs:stdout_ptr)
+    CHECK(SubstituteX86MemoryOperand("rax, qword ptr [rip + 0x10]", "stdout_ptr", false, true) == std::optional<std::string>("rax, cs:stdout_ptr"));
+    // x86: the absolute address, ds:name; an off_ pointer of 4 bytes says the size
+    CHECK(SubstituteX86MemoryOperand("eax, dword ptr [0x403000]", "off_403000", false, false) == std::optional<std::string>("eax, ds:off_403000"));
+    CHECK(SubstituteX86MemoryOperand("eax, dword ptr [eax*4 + 0x403000]", "off_403000", false, false) == std::nullopt);
+    CHECK(SubstituteX86Immediate("0x403000", 0x403000, "aText") == std::optional<std::string>("offset aText"));
+    CHECK(SubstituteX86Immediate("ecx, 0x403000", 0x403000, "aText") == std::optional<std::string>("ecx, offset aText"));
+    CHECK(SubstituteX86Immediate("ecx, 0x4030001", 0x403000, "aText") == std::nullopt); // another number
+    // 32 bit PIC: a slot relative to ebx (the global offset table)
+    CHECK(SubstituteX86RelativeOperand("eax, [ebx - 0x31c0]", "ebx", -0x31c0, "aText", "_GLOBAL_OFFSET_TABLE_", true) ==
+          std::optional<std::string>("eax, (aText - _GLOBAL_OFFSET_TABLE_)[ebx]"));
+    CHECK(SubstituteX86RelativeOperand("eax, dword ptr [ebx - 0x1004]", "ebx", -0x1004, "counter", "_GLOBAL_OFFSET_TABLE_", false) ==
+          std::optional<std::string>("eax, dword ptr ds:(counter - _GLOBAL_OFFSET_TABLE_)[ebx]"));
+    CHECK(SubstituteX86RelativeOperand("dword ptr [ebx + 0xc]", "ebx", 0xc, "__imp_puts", "_GLOBAL_OFFSET_TABLE_", false) ==
+          std::optional<std::string>("ds:(__imp_puts - _GLOBAL_OFFSET_TABLE_)[ebx]"));
+    CHECK(SubstituteX86RelativeOperand("dword ptr [ebx], 1", "ebx", 0, "dword_2000", "0x2000", false) ==
+          std::optional<std::string>("ds:(dword_2000 - 0x2000)[ebx], 1"));
+    CHECK(SubstituteX86RelativeOperand("eax, dword ptr [ebx - 0x1004]", "ebx", 0x1004, "counter", "_GLOBAL_OFFSET_TABLE_", false) == std::nullopt);
+    CHECK(SubstituteX86RelativeOperand("eax, dword ptr fs:[ebx + 4]", "ebx", 4, "counter", "_GLOBAL_OFFSET_TABLE_", false) == std::nullopt);
+    // ARM: the literal of the pool, the offset in the page of an adrp pair
+    CHECK(SubstituteArmLiteral("r0, [pc, #0x28]", "dword_30168") == std::optional<std::string>("r0, =dword_30168"));
+    CHECK(SubstituteArmLiteral("r0, [r1]", "dword_30168") == std::nullopt);
+    CHECK(SubstituteArm64PageOffset("w8, [x8, #0x248]", 0x248, "dword_220248") == std::optional<std::string>("w8, [x8, #dword_220248@PAGEOFF]"));
+    CHECK(SubstituteArm64PageOffset("x0, x0, #0x5a0", 0x5a0, "aCase0") == std::optional<std::string>("x0, x0, #aCase0@PAGEOFF"));
+    CHECK(SubstituteArm64PageOffset("x8, [x8]", 0, "dword_220000") == std::nullopt);
+}
+
+TEST_CASE("SymbolicDataOperands", "[Dissasm]Operands")
+{
+    // x64 code reads a dword and takes the address of a string of a data zone: the operands name them (IDA: cs:dword_40, lea rcx, aHello)
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0x3A, 0x00, 0x00, 0x00,       // 0x00: mov eax, dword ptr [rip + 0x3a] (0x40)
+        0x48, 0x8D, 0x0D, 0x3B, 0x00, 0x00, 0x00, // 0x06: lea rcx, [rip + 0x3b] (0x48)
+        0xC3,                                     // 0x0d: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }); // 0x40: a dword
+    for (const char c : std::string_view("Hello"))                              // 0x48: a string
+        file.push_back(static_cast<unsigned char>(c));
+    file.resize(0x60, 0x00);
+    ZoneLayout layout;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true;
+    layout.addressToFileOffset = [](uint64 address) -> std::optional<uint64> { return address < 0x60 ? std::optional<uint64>(address) : std::nullopt; };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    REQUIRE(FindListingLine(code.GetListing(), "mov    eax, dword ptr [rip + 0x3a]").size() > 0); // no data zone yet: no name
+
+    layout.start      = 0x40;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "dword_40");
+    REQUIRE(data.zone->GetLabelNameAt(0x08) == "aHello");
+
+    code.zone->siblingZones = { data.zone.get() };
+    code.zone->asmPreCacheData.Clear();
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "mov    eax, cs:dword_40").size() > 0);
+    REQUIRE(FindListingLine(listing, "lea    rcx, aHello").size() > 0);
+    // past the item of the last label: no name (a variable of the uninitialized part of the section)
+    REQUIRE(data.zone->FormatCodeAddress(0x02) == "dword_40+0x2");
+    REQUIRE(data.zone->FormatCodeAddress(0x1C).starts_with("0x"));
+}
+
+TEST_CASE("UninitializedDataZone", "[Dissasm]DataZone")
+{
+    // x64 code reads a dword and writes a qword of the uninitialized data (.bss at 0x402000, no bytes in the file): the zone has a line for
+    // each of them (dd ? / dq ?) and rows for the rest, the operands name them
+    std::vector<unsigned char> file = {
+        0x8B, 0x05, 0xFA, 0x0F, 0x00, 0x00,       // 0x00: mov eax, dword ptr [rip + 0xffa] (0x402000)
+        0x48, 0x89, 0x05, 0xFB, 0x0F, 0x00, 0x00, // 0x06: mov qword ptr [rip + 0xffb], rax (0x402008)
+        0xC3,                                     // 0x0d: ret
+    };
+    file.resize(0x40, 0xCC);
+    const auto toFileOffset = [](uint64 address) -> std::optional<uint64> {
+        if (address >= 0x401000 && address < 0x401040)
+            return address - 0x401000;
+        if (address >= 0x402000 && address < 0x402040) // the uninitialized zone: its own file offsets
+            return DISSASM_UNINITIALIZED_ZONES_BASE + (address - 0x402000);
+        return std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.labelAddressBase    = 0x401000;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start            = DISSASM_UNINITIALIZED_ZONES_BASE;
+    layout.size             = 0x40;
+    layout.entryPoint       = NO_ENTRY_POINT;
+    layout.labelAddressBase = 0x402000;
+    layout.isData           = true;
+    layout.isUninitialized  = true;
+    layout.siblings         = { code.zone.get() };
+    DissasmTestInstance bss(file.data(), file.size(), false, layout);
+    auto& zone = *bss.zone;
+    REQUIRE(zone.GetLabelNameAt(0x00) == "dword_402000");
+    REQUIRE(zone.GetLabelNameAt(0x08) == "qword_402008");
+    const std::string listing = bss.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dd     ?").size() > 0);
+    REQUIRE(FindListingLine(listing, "dq     ?").size() > 0);
+    REQUIRE(FindListingLine(listing, "db     0x10 dup(?)").size() > 0); // no zero trimmed: every byte of the zone has a line
+    REQUIRE(zone.GetDisplayLinesCount() == 2 + 2 + 1 + 3); // 2 labels, dd, dq, the row up to 0x10, the rows of 0x10 .. 0x40
+    // the bytes read as zeros (no file under these offsets)
+    const auto view = GetZoneBytes(nullptr, DISSASM_UNINITIALIZED_ZONES_BASE + 4, 8);
+    REQUIRE(view.GetLength() == 8);
+    REQUIRE(std::all_of(view.begin(), view.end(), [](uint8 value) { return value == 0; }));
+}
+
+TEST_CASE("DataZoneKeepsTrailingZeros", "[Dissasm]DataZone")
+{
+    // the zeros at the end of a data zone are variables initialized to 0 (a code zone trims them: the padding of its section)
+    std::vector<unsigned char> file(0x100, 0x00);
+    file[0] = 0x01;
+    ZoneLayout layout;
+    layout.size       = 0x100;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.language   = DisassemblyLanguage::x64;
+    layout.isData     = true;
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetDisplayLinesCount() == 0x100 / 16);
+}
+
+TEST_CASE("TableOperandText", "[Dissasm]Operands")
+{
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [eax*4 + 0x403000]", 0x403000, "dword_403000", false, false) ==
+          std::optional<std::string>("eax, ds:dword_403000[eax*4]"));
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [ebx + ecx*4 + 0x403000]", 0x403000, "off_403000", false, false) ==
+          std::optional<std::string>("eax, ds:off_403000[ebx + ecx*4]"));
+    CHECK(SubstituteX86TableOperand("byte ptr [esi + 0x403000], 1", 0x403000, "dword_403000", false, false) ==
+          std::optional<std::string>("byte ptr ds:dword_403000[esi], 1"));
+    CHECK(SubstituteX86TableOperand("edx, [ecx*4 + 0x403000]", 0x403000, "unk_403000", true, false) == std::optional<std::string>("edx, unk_403000[ecx*4]"));
+    CHECK(SubstituteX86TableOperand("qword ptr [rcx*8 + 0x202250], rax", 0x202250, "qword_202250", false, true) ==
+          std::optional<std::string>("ds:qword_202250[rcx*8], rax"));
+    CHECK(SubstituteX86TableOperand("eax, dword ptr fs:[ecx*4 + 0x403000]", 0x403000, "dword_403000", false, false) == std::nullopt);
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [ecx*4 + 0x4030000]", 0x403000, "dword_403000", false, false) == std::nullopt);
+}
+
+TEST_CASE("TableOperands", "[Dissasm]Operands")
+{
+    // 32 bit code reads two entries of tables of a data zone through index registers, and a value placed inside the code (the tables of
+    // .text after the IAT): the tables get labels (xrefs), the operands name them as IDA does
+    std::vector<unsigned char> file(0x10000, 0x00);
+    file.insert(file.end(), {
+                                  0x8B, 0x04, 0x8D, 0x40, 0x00, 0x01, 0x00, // 0x10000: mov eax, dword ptr [ecx*4 + 0x10040]
+                                  0x8B, 0x84, 0x8B, 0x48, 0x00, 0x01, 0x00, // 0x10007: mov eax, dword ptr [ebx + ecx*4 + 0x10048]
+                                  0xA1, 0x20, 0x00, 0x01, 0x00,             // 0x1000e: mov eax, dword ptr [0x10020] (inside the code)
+                                  0xC3,                                     // 0x10013: ret
+                              });
+    file.resize(0x10040, 0xCC);
+    file.resize(0x10080, 0x00); // 0x10040: the tables
+    const auto toFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start               = 0x10000;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0x10000;
+    layout.language            = DisassemblyLanguage::x86;
+    layout.translateOffsets    = true; // the VA is the file offset
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+
+    layout.start      = 0x10040;
+    layout.size       = 0x40;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "dword_10040");
+    REQUIRE(data.zone->GetLabelNameAt(0x08) == "dword_10048");
+
+    code.zone->siblingZones = { data.zone.get() };
+    code.zone->asmPreCacheData.Clear();
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10040[ecx*4]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10048[ebx + ecx*4]").size() > 0);
+    REQUIRE(FindListingLine(listing, "mov    eax, ds:dword_10020").size() > 0); // no label inside the code: the name of its access
+}
+
+TEST_CASE("ObjCMetadata", "[Dissasm]MachO")
+{
+    // a class Animal (a relative method list: -legs; its metaclass a classic one: +create), a category Extra of the imported NSObject (a
+    // bind: -eyes), two selector references and a class reference
+    std::map<uint64, uint64> pointers;
+    std::map<uint64, uint32> words;
+    std::map<uint64, std::string> strings = { { 0x5000, "Animal" }, { 0x5100, "legs" }, { 0x5200, "create" }, { 0x5300, "Extra" }, { 0x5400, "eyes" } };
+    const auto relative = [](uint64 from, uint64 to) { return static_cast<uint32>(static_cast<int32>(static_cast<int64>(to) - static_cast<int64>(from))); };
+    pointers[0x1000] = 0x2000;              // __objc_classlist
+    pointers[0x2000] = 0x2100;              // isa: the metaclass
+    pointers[0x2020] = 0x3000 | 1;          // data: the class_ro_t (and a flag in the low bits)
+    pointers[0x3018] = 0x5000;              // name
+    pointers[0x3020] = 0x4000;              // baseMethods
+    words[0x4000]    = 0x8000000C;          // a relative list of 12 bytes entries
+    words[0x4004]    = 1;
+    words[0x4008]    = relative(0x4008, 0x6000); // the name: a selector reference
+    words[0x4010]    = relative(0x4010, 0x7000); // the implementation
+    pointers[0x6000] = 0x5100;              // selRef: "legs"
+    pointers[0x2120] = 0x3100;              // the metaclass data
+    pointers[0x3118] = 0x5000;
+    pointers[0x3120] = 0x4100;
+    words[0x4100]    = 24;                  // a classic list: {name, types, imp}
+    words[0x4104]    = 1;
+    pointers[0x4108] = 0x5200;              // "create"
+    pointers[0x4118] = 0x7100;
+    pointers[0x1100] = 0x2200;              // __objc_catlist
+    pointers[0x2200] = 0x5300;              // "Extra"
+    pointers[0x2208] = 0;                   // cls: a bind
+    pointers[0x2210] = 0x4200;              // instanceMethods
+    words[0x4200]    = 0x8000000C;
+    words[0x4204]    = 1;
+    words[0x4208]    = relative(0x4208, 0x6008);
+    words[0x4210]    = relative(0x4210, 0x7200);
+    pointers[0x6008] = 0x5400;              // selRef: "eyes"
+    pointers[0x6100] = 0x2000;              // classRef: Animal
+
+    ObjCMemory memory;
+    memory.readPointer = [&pointers](uint64 address) -> std::optional<uint64> {
+        const auto it = pointers.find(address);
+        return it != pointers.end() ? std::optional<uint64>(it->second) : std::optional<uint64>(0);
+    };
+    memory.readU32 = [&words](uint64 address) -> std::optional<uint32> {
+        const auto it = words.find(address);
+        return it != words.end() ? std::optional<uint32>(it->second) : std::nullopt;
+    };
+    memory.readString = [&strings](uint64 address) {
+        const auto it = strings.find(address);
+        return it != strings.end() ? it->second : std::string();
+    };
+    memory.bindName = [](uint64 address) { return address == 0x2208 ? std::string("_OBJC_CLASS_$_NSObject") : std::string(); };
+    ObjCSections sections;
+    sections.classLists    = { { 0x1000, 8 } };
+    sections.categoryLists = { { 0x1100, 8 } };
+    sections.selectorRefs  = { { 0x6000, 0x10 } };
+    sections.classRefs     = { { 0x6100, 8 } };
+    ObjCMetadata metadata;
+    ParseObjCMetadata(sections, memory, metadata);
+
+    std::map<uint64, std::string> methods(metadata.methods.begin(), metadata.methods.end());
+    REQUIRE(methods.size() == 3);
+    REQUIRE(methods[0x7000] == "-[Animal legs]");
+    REQUIRE(methods[0x7100] == "+[Animal create]");
+    REQUIRE(methods[0x7200] == "-[NSObject(Extra) eyes]");
+    std::map<uint64, std::string> selectors(metadata.selectorRefs.begin(), metadata.selectorRefs.end());
+    REQUIRE(selectors[0x6000] == "legs");
+    REQUIRE(selectors[0x6008] == "eyes");
+    REQUIRE(metadata.classRefs.size() == 1);
+    REQUIRE(metadata.classRefs[0].second == "Animal");
+    std::map<uint64, std::string> structures(metadata.structures.begin(), metadata.structures.end());
+    REQUIRE(structures[0x2000] == "_OBJC_CLASS_$_Animal");
+    REQUIRE(structures[0x2100] == "_OBJC_METACLASS_$_Animal");
+    REQUIRE(structures[0x3000] == "__OBJC_CLASS_RO_$_Animal");
+    REQUIRE(structures[0x4000] == "__OBJC_$_INSTANCE_METHODS_Animal");
+    REQUIRE(structures[0x2200] == "__OBJC_$_CATEGORY_NSObject_$_Extra");
+}
+
+TEST_CASE("ImageBaseTables", "[Dissasm]Operands")
+{
+    // x64 MSVC: lea rdx, __ImageBase; movzx eax, byte ptr [rdx + rcx + 0x2000] reads the table at the image base + 0x2000; after a write of
+    // rdx the same form is not a table of the image
+    std::vector<unsigned char> file(0x11000, 0x00);
+    file.insert(file.end(), {
+                                  0x48, 0x8D, 0x15, 0xF9, 0xEF, 0xFF, 0xFF,       // 0x11000: lea rdx, [rip - 0x1007] (0x10000: the image base)
+                                  0x0F, 0xB6, 0x84, 0x0A, 0x00, 0x20, 0x00, 0x00, // 0x11007: movzx eax, byte ptr [rdx + rcx + 0x2000]
+                                  0x31, 0xD2,                                     // 0x1100f: xor edx, edx
+                                  0x0F, 0xB6, 0x84, 0x0A, 0x08, 0x20, 0x00, 0x00, // 0x11011: movzx eax, byte ptr [rdx + rcx + 0x2008]
+                                  0xC3,                                           // 0x11019: ret
+                              });
+    file.resize(0x12000, 0xCC);
+    file.resize(0x12020, 0x00); // 0x12000: the table
+    const auto toFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.start               = 0x11000;
+    layout.size                = 0x40;
+    layout.entryPoint          = 0x11000;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true; // the VA is the file offset
+    layout.imageBase           = 0x10000;
+    layout.addressToFileOffset = toFileOffset;
+    layout.isFileAddress       = [toFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    REQUIRE(code.zone->imageBaseTables.size() == 1);
+    REQUIRE(code.zone->imageBaseTables.at(0x07) == 0x12000);
+
+    layout.start      = 0x12000;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    REQUIRE(data.zone->GetLabelNameAt(0x00) == "byte_12000");
+    REQUIRE(data.zone->GetLabelNameAt(0x08).empty()); // rdx = 0 there
+
+    code.zone->siblingZones = { data.zone.get() };
+    code.zone->asmPreCacheData.Clear();
+    const std::string listing = code.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "movzx  eax, ds:(byte_12000 - __ImageBase)[rdx + rcx]").size() > 0);
+    REQUIRE(FindListingLine(listing, "movzx  eax, byte ptr [rdx + rcx + 0x2008]").size() > 0);
+    CHECK(SubstituteX86TableOperand("eax, dword ptr [rdx + rcx*8 + 0x1a8aa0]", 0x1a8aa0, "dword_1801A8AA0", false, true, true) ==
+          std::optional<std::string>("eax, ds:(dword_1801A8AA0 - __ImageBase)[rdx + rcx*8]"));
+}
+
+// a range of the RTTI tests: bytes written as 32 / 64 bit values and strings at offsets
+struct RttiTestRange {
+    RttiRange range;
+    explicit RttiTestRange(uint64 address, size_t size) : range{ address, std::vector<uint8>(size, 0) }
+    {
+    }
+    void Put(uint64 address, uint64 value, uint8 size)
+    {
+        memcpy(range.bytes.data() + (address - range.address), &value, size);
+    }
+    void Text(uint64 address, std::string_view text)
+    {
+        memcpy(range.bytes.data() + (address - range.address), text.data(), text.size());
+    }
+};
+
+TEST_CASE("CppRtti", "[Dissasm]Rtti")
+{
+    // MSVC x64 (image base 0x140000000): a type descriptor .?AUBird@zoo@@, its complete object locator (signature 1, the RVA of itself)
+    // and the vtable after a pointer to the locator
+    {
+        constexpr uint64 base = 0x140000000ull;
+        RttiTestRange rdata(0x140002000ull, 0x200);
+        rdata.Put(0x140002100, 0x140002300, 8); // the type descriptor: pVFTable, spare, name
+        rdata.Text(0x140002110, ".?AUBird@zoo@@");
+        rdata.Put(0x140002040, 1, 4); // the locator: signature, offset, cdOffset, TypeDescriptor, ClassDescriptor, self (RVAs)
+        rdata.Put(0x14000204C, 0x2100, 4);
+        rdata.Put(0x140002050, 0x2180, 4);
+        rdata.Put(0x140002054, 0x2040, 4);
+        rdata.Put(0x140002000, 0x140002040, 8); // the vtable: the locator, then the virtual functions
+        rdata.Put(0x140002008, 0x140001060, 8);
+        RttiInput input;
+        input.pointerSize = 8;
+        input.imageBase   = base;
+        input.ranges.push_back(rdata.range);
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x140002100] == "zoo::Bird::RTTI_Type_Descriptor");
+        REQUIRE(names[0x140002040] == "zoo::Bird::RTTI_Complete_Object_Locator");
+        REQUIRE(names[0x140002180] == "zoo::Bird::RTTI_Class_Hierarchy_Descriptor");
+        REQUIRE(names[0x140002008] == "zoo::Bird::vftable");
+        REQUIRE(result.classes.size() == 1);
+        REQUIRE(result.classes[0].second == "zoo::Bird");
+    }
+    // Itanium (an ELF shared object): the typeinfo of Dog (its vptr bound to __cxxabiv1::__class_type_info, its name 3Dog), the vtable
+    // {0, typeinfo, functions} and a secondary vtable {-16, typeinfo, functions}
+    {
+        RttiTestRange data(0x2000, 0x100);
+        data.Put(0x2080, 0, 8);           // vptr: a relocation bound to _ZTVN10__cxxabiv117__class_type_infoE (value 0 in the file)
+        data.Put(0x2088, 0x20C0, 8);      // the name
+        data.Text(0x20C0, "3Dog");
+        data.Put(0x2000, 0, 8);           // the vtable: offset to top, typeinfo, functions
+        data.Put(0x2008, 0x2080, 8);
+        data.Put(0x2010, 0x1B20, 8);
+        data.Put(0x2020, static_cast<uint64>(-16), 8); // a secondary vtable
+        data.Put(0x2028, 0x2080, 8);
+        data.Put(0x2040, 0x12345, 8);     // not a vtable: a positive offset to top
+        data.Put(0x2048, 0x2080, 8);
+        RttiInput input;
+        input.pointerSize = 8;
+        input.ranges.push_back(data.range);
+        input.slotName = [](uint64 address) { return address == 0x2080 ? std::string("_ZTVN10__cxxabiv117__class_type_infoE") : std::string(); };
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x2080] == "Dog::typeinfo");
+        REQUIRE(names[0x20C0] == "Dog::typeinfo_name");
+        REQUIRE(names[0x2000] == "Dog::vtable");
+        REQUIRE(names[0x2020] == "Dog::vtable_10");
+        REQUIRE_FALSE(names.contains(0x2040));
+    }
+}
+
+TEST_CASE("CppRttiBaseClasses", "[Dissasm]Rtti")
+{
+    const auto hasField = [](const RttiResult& result, uint64 address, std::string_view name) {
+        return std::any_of(result.fields.begin(), result.fields.end(), [&](const RttiField& field) { return field.address == address && field.name == name; });
+    };
+    // MSVC x86 (pointers): struct zoo::Bird : Animal, Flyer. Two locators (offsets 0 and 8) share the class hierarchy descriptor; its array
+    // lists the base class descriptors {pTypeDescriptor, numContainedBases, mdisp, pdisp, vdisp, attributes[, pClassDescriptor]}
+    {
+        RttiTestRange rdata(0x402000ull, 0x300);
+        rdata.Text(0x402208, ".?AUBird@zoo@@"); // the type descriptors: pVFTable, spare, name
+        rdata.Text(0x402248, ".?AUAnimal@@");
+        rdata.Text(0x402288, ".?AUFlyer@@");
+        for (const auto& [address, offset] : { std::pair<uint64, uint64>{ 0x402100, 0 }, { 0x402114, 8 } }) { // the locators
+            rdata.Put(address + 4, offset, 4);
+            rdata.Put(address + 12, 0x402200, 4);
+            rdata.Put(address + 16, 0x402140, 4);
+        }
+        rdata.Put(0x402148, 3, 4); // the hierarchy: signature, attributes, numBaseClasses, pBaseClassArray
+        rdata.Put(0x40214C, 0x402150, 4);
+        rdata.Put(0x402150, 0x402160, 4); // the array
+        rdata.Put(0x402154, 0x402180, 4);
+        rdata.Put(0x402158, 0x4021A0, 4);
+        const auto descriptor = [&rdata](uint64 address, uint64 type, int32 mdisp, uint32 attributes, uint64 hierarchy) {
+            rdata.Put(address, type, 4);
+            rdata.Put(address + 8, static_cast<uint32>(mdisp), 4);
+            rdata.Put(address + 12, 0xFFFFFFFF, 4); // pdisp -1
+            rdata.Put(address + 20, attributes, 4);
+            rdata.Put(address + 24, hierarchy, 4);
+        };
+        descriptor(0x402160, 0x402200, 0, 0x40, 0x402140);
+        descriptor(0x402180, 0x402240, 0, 0x40, 0x4021C0); // Animal: abstract, no locator; its hierarchy through pClassDescriptor
+        descriptor(0x4021A0, 0x402280, 8, 0, 0);
+        rdata.Put(0x4021C8, 1, 4); // the hierarchy of Animal and its array
+        rdata.Put(0x4021CC, 0x4021D0, 4);
+        rdata.Put(0x4021D0, 0x402180, 4);
+        rdata.Put(0x402000, 0x402100, 4); // the vtables: the locator, then the virtual functions
+        rdata.Put(0x402004, 0x401010, 4);
+        rdata.Put(0x402010, 0x402114, 4);
+        rdata.Put(0x402014, 0x401020, 4);
+        RttiInput input;
+        input.pointerSize = 4;
+        input.ranges.push_back(rdata.range);
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x402004] == "zoo::Bird::vftable");
+        REQUIRE(names[0x402014] == "zoo::Bird::vftable{for_Flyer}");
+        REQUIRE(names[0x402114] == "zoo::Bird::RTTI_Complete_Object_Locator{for_Flyer}");
+        REQUIRE(names[0x402150] == "zoo::Bird::RTTI_Base_Class_Array");
+        REQUIRE(names[0x402160] == "zoo::Bird::RTTI_Base_Class_Descriptor_at_(0,-1,0,64)");
+        REQUIRE(names[0x402180] == "Animal::RTTI_Base_Class_Descriptor_at_(0,-1,0,64)");
+        REQUIRE(names[0x4021A0] == "Flyer::RTTI_Base_Class_Descriptor_at_(8,-1,0,0)");
+        REQUIRE(names[0x4021C0] == "Animal::RTTI_Class_Hierarchy_Descriptor");
+        REQUIRE(names[0x4021D0] == "Animal::RTTI_Base_Class_Array");
+        REQUIRE(hasField(result, 0x402154, "pBaseClassDescriptor"));
+        REQUIRE(hasField(result, 0x4021A8, "mdisp"));
+        REQUIRE(hasField(result, 0x402178, "pClassDescriptor"));
+        REQUIRE_FALSE(hasField(result, 0x4021B8, "pClassDescriptor")); // attributes without BCD_HASPCHD
+    }
+    // Itanium: zoo::Bird (__vmi_class_type_info: Animal at 0, Flyer at 8), Dog (__si_class_type_info: Animal); the secondary vtable of
+    // Bird at -8 is the one of Flyer, one at -0x10 has no base there
+    {
+        RttiTestRange data(0x2000, 0x200);
+        const auto typeinfo = [&data](uint64 address, uint64 name, std::string_view mangled) {
+            data.Put(address + 8, name, 8);
+            data.Text(name, mangled);
+        };
+        typeinfo(0x2100, 0x2180, "6Animal");
+        typeinfo(0x2110, 0x2190, "5Flyer");
+        typeinfo(0x2120, 0x21A0, "N3zoo4BirdE");
+        data.Put(0x2134, 2, 4); // flags, base_count, {base_type, offset_flags}...
+        data.Put(0x2138, 0x2100, 8);
+        data.Put(0x2140, 0x2, 8);
+        data.Put(0x2148, 0x2110, 8);
+        data.Put(0x2150, 0x802, 8);
+        typeinfo(0x2160, 0x21B0, "3Dog");
+        data.Put(0x2170, 0x2100, 8); // base_type
+        data.Put(0x2008, 0x2120, 8); // the vtables of Bird: offset to top, typeinfo, functions
+        data.Put(0x2010, 0x1B20, 8);
+        data.Put(0x2018, static_cast<uint64>(-8), 8);
+        data.Put(0x2020, 0x2120, 8);
+        data.Put(0x2030, static_cast<uint64>(-16), 8);
+        data.Put(0x2038, 0x2120, 8);
+        data.Put(0x2050, 0x2160, 8); // the vtable of Dog
+        RttiInput input;
+        input.pointerSize = 8;
+        input.ranges.push_back(data.range);
+        input.slotName = [](uint64 address) {
+            if (address == 0x2120)
+                return std::string("_ZTVN10__cxxabiv121__vmi_class_type_infoE");
+            if (address == 0x2160)
+                return std::string("_ZTVN10__cxxabiv120__si_class_type_infoE");
+            return address == 0x2100 || address == 0x2110 ? std::string("_ZTVN10__cxxabiv117__class_type_infoE") : std::string();
+        };
+        RttiResult result;
+        ParseCppRtti(input, result);
+        std::map<uint64, std::string> names(result.names.begin(), result.names.end());
+        REQUIRE(names[0x2120] == "zoo::Bird::typeinfo");
+        REQUIRE(names[0x2000] == "zoo::Bird::vtable");
+        REQUIRE(names[0x2018] == "zoo::Bird::vtable{for_Flyer}");
+        REQUIRE(names[0x2030] == "zoo::Bird::vtable_10");
+        REQUIRE(names[0x2048] == "Dog::vtable");
+        REQUIRE(hasField(result, 0x2134, "base_count"));
+        REQUIRE(hasField(result, 0x2148, "base_type"));
+        REQUIRE(hasField(result, 0x2150, "offset_flags"));
+        REQUIRE(hasField(result, 0x2170, "base_type"));
+    }
+}
+
+TEST_CASE("DataFields", "[Dissasm]DataZone")
+{
+    // a structure of a data zone: a value, an RVA, a 32 bit offset from the field and a pointer, all to the entry point of the code; each
+    // field is a line with its name, the references show the name of their target
+    std::vector<unsigned char> file = { 0xC3 }; // 0x00: ret (EntryPoint)
+    file.resize(0x100, 0xCC);
+    const auto put = [&file](size_t offset, uint64 value, size_t size) {
+        for (size_t index = 0; index < size; index++)
+            file[offset + index] = static_cast<unsigned char>(value >> (8 * index));
+    };
+    file.resize(0x120, 0x00);
+    put(0x100, 0x20, 4);                                                   // Size
+    put(0x104, 0x0, 4);                                                    // an RVA: the image base (0) + 0
+    put(0x108, static_cast<uint32>(static_cast<int32>(0x0 - 0x108)), 4);  // an offset from 0x108: 0
+    put(0x110, 0x0, 8);                                                    // a pointer: 0
+    const auto toFileOffset = [size = file.size()](uint64 address) -> std::optional<uint64> {
+        return address < size ? std::optional<uint64>(address) : std::nullopt;
+    };
+    ZoneLayout layout;
+    layout.size                = 0x100;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    layout.translateOffsets    = true; // the VA (and the RVA) is the file offset
+    layout.addressToFileOffset = toFileOffset;
+    DissasmTestInstance code(file.data(), file.size(), false, layout);
+    REQUIRE(code.zone->GetLabelNameAt(0) == "EntryPoint");
+
+    layout.start      = 0x100;
+    layout.size       = 0x20;
+    layout.entryPoint = NO_ENTRY_POINT;
+    layout.isData     = true;
+    layout.siblings   = { code.zone.get() };
+    layout.dataFields = {
+        { 0x100, { 4, DataFieldType::Value, "Size" } },
+        { 0x104, { 4, DataFieldType::RVA, "pRva" } },
+        { 0x108, { 4, DataFieldType::Relative, "pRelative" } },
+        { 0x110, { 8, DataFieldType::Pointer, "pPointer" } },
+    };
+    DissasmTestInstance data(file.data(), file.size(), false, layout);
+    const std::string listing = data.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "dd     0x00000020").ends_with("; Size"));
+    REQUIRE(FindListingLine(listing, "dd     EntryPoint").ends_with("; pRva"));
+    REQUIRE(listing.find("0x00000108  dd     EntryPoint") != std::string::npos); // the offset from the field
+    REQUIRE(listing.find("; pRelative") != std::string::npos);
+    REQUIRE(FindListingLine(listing, "dq     EntryPoint").ends_with("; pPointer"));
+    REQUIRE(data.zone->fieldNames.size() == 4);
 }

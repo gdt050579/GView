@@ -1,6 +1,7 @@
 target_sources(GViewCore PRIVATE
     CharacterSet.cpp
     Demangle.cpp
+    ElfRelocations.cpp
     ErrorList.cpp
     DataCache.cpp
     Selection.cpp
@@ -9,5 +10,5 @@ target_sources(GViewCore PRIVATE
     JsonBuilder.cpp
 )
 
-add_testing_sources(GViewCore "tests_datacache.cpp;tests_encoding.cpp")
+add_testing_sources(GViewCore "tests_datacache.cpp;tests_encoding.cpp;tests_elfrelocations.cpp")
 

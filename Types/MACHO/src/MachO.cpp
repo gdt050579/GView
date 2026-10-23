@@ -172,6 +172,291 @@ GVIEW_PLUGIN_ENTRY_POINTS
         win->CreateViewer(settings);
     }
 
+    // the sections of machine code (__text, __stubs, __stub_helper)
+    bool IsInstructionsSection(const MachOFile::Section& section)
+    {
+        constexpr uint32 PURE_INSTRUCTIONS = static_cast<uint32>(MAC::SectionAttributtes::PURE_INSTRUCTIONS);
+        constexpr uint32 SOME_INSTRUCTIONS = static_cast<uint32>(MAC::SectionAttributtes::SOME_INSTRUCTIONS);
+        return (section.flags & (PURE_INSTRUCTIONS | SOME_INSTRUCTIONS)) != 0 && section.offset != 0 && section.size > 0;
+    }
+
+    // The imports of the code: the lazy / non-lazy symbol pointers (__la_symbol_ptr, __got) named through the indirect symbol table
+    // (LC_DYSYMTAB); the __stubs jump through them. The memory mappings of the disassembly are keyed by the RVA of the slot
+    void AddDissasmImports(DissasmViewer::Settings& settings, Reference<MachOFile> machO, Reference<GView::Object> obj)
+    {
+        struct DySymTabCommand // dysymtab_command
+        {
+            uint32 cmd, cmdsize;
+            uint32 ilocalsym, nlocalsym, iextdefsym, nextdefsym, iundefsym, nundefsym;
+            uint32 tocoff, ntoc, modtaboff, nmodtab, extrefsymoff, nextrefsyms;
+            uint32 indirectsymoff, nindirectsyms;
+            uint32 extreloff, nextrel, locreloff, nlocrel;
+        };
+        if (!machO->dySymTab.has_value())
+            return;
+        DySymTabCommand command{};
+        bool found = false;
+        for (const auto& loadCommand : machO->loadCommands)
+            if (loadCommand.value.cmd == MAC::LoadCommandType::DYSYMTAB && obj->GetData().Copy<DySymTabCommand>(loadCommand.offset, command))
+                found = true;
+        constexpr uint32 MAX_INDIRECT_SYMBOLS = 0x100000;
+        if (!found || command.nindirectsyms == 0 || command.nindirectsyms > MAX_INDIRECT_SYMBOLS)
+            return;
+        const auto indirectSymbols = obj->GetData().CopyToBuffer(command.indirectsymoff, command.nindirectsyms * sizeof(uint32));
+        if (indirectSymbols.GetLength() < command.nindirectsyms * sizeof(uint32))
+            return;
+        const auto symbols      = reinterpret_cast<const uint32*>(indirectSymbols.GetData());
+        const auto& names       = machO->dySymTab->objects;
+        const uint64 imageBase  = machO->dissasmTranslation.GetImageBase();
+        const uint32 pointerSize = machO->is64 ? 8 : 4;
+        constexpr uint32 LAZY_POINTERS     = static_cast<uint32>(MAC::SectionType::LAZY_SYMBOL_POINTERS);
+        constexpr uint32 NON_LAZY_POINTERS = static_cast<uint32>(MAC::SectionType::NON_LAZY_SYMBOL_POINTERS);
+        constexpr uint32 SYMBOL_STUBS      = static_cast<uint32>(MAC::SectionType::SYMBOL_STUBS);
+        constexpr uint32 INDIRECT_SYMBOL_LOCAL = 0x80000000; // a pointer to a local symbol / an absolute value: not an import
+        constexpr uint32 INDIRECT_SYMBOL_ABS   = 0x40000000;
+        for (const auto& segment : machO->segments)
+        {
+            for (const auto& section : segment.sections)
+            {
+                const uint32 type = section.flags & MAC::SECTION_TYPE;
+                if (type == SYMBOL_STUBS && section.reserved2 > 0)
+                {
+                    // __stubs: a stub of reserved2 bytes for every symbol (reserved1: the index of the first one); the stubs are named after
+                    // their import (j__malloc) for every CPU (an ARM64 stub, adrp / ldr / br, is not read as an import thunk)
+                    for (uint64 stub = 0; stub < section.size / section.reserved2; stub++)
+                    {
+                        const uint64 index = section.reserved1 + stub;
+                        if (index >= command.nindirectsyms)
+                            break;
+                        const uint32 symbol = symbols[index];
+                        if ((symbol & (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS)) != 0 || symbol >= names.size() ||
+                            names[symbol].symbolNameDemangled.empty())
+                            continue;
+                        settings.AddFunctionEntry(
+                              static_cast<uint64>(section.offset) + stub * section.reserved2,
+                              "j_" + names[symbol].symbolNameDemangled,
+                              DissasmViewer::FunctionEntryType::Symbol);
+                    }
+                    continue;
+                }
+                if (type != LAZY_POINTERS && type != NON_LAZY_POINTERS)
+                    continue;
+                // reserved1: the index of the first pointer in the indirect symbol table
+                for (uint64 slot = 0; slot < section.size / pointerSize; slot++)
+                {
+                    const uint64 index = section.reserved1 + slot;
+                    if (index >= command.nindirectsyms)
+                        break;
+                    const uint32 symbol = symbols[index];
+                    if ((symbol & (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS)) != 0 || symbol >= names.size() || names[symbol].symbolNameDemangled.empty())
+                        continue;
+                    const uint64 address = section.addr + slot * pointerSize;
+                    if (address >= imageBase)
+                        settings.AddMemoryMapping(address - imageBase, names[symbol].symbolNameDemangled, DissasmViewer::MemoryMappingType::FunctionMapping);
+                }
+            }
+        }
+    }
+
+    // The functions: the symbols of the instructions sections (the external ones are exports) and LC_FUNCTION_STARTS (every function
+    // start, without names: it is kept in stripped files)
+    void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<MachOFile> machO, Reference<GView::Object> obj)
+    {
+        auto& translation = machO->dissasmTranslation;
+        const bool isArm  = machO->header.cputype == MAC::CPU_TYPE_ARM;
+        constexpr uint32 VA = 2;
+        if (machO->dySymTab.has_value())
+        {
+            // the sections are numbered from 1, in the order of the segments
+            std::vector<bool> isCode{ false };
+            for (const auto& segment : machO->segments)
+                for (const auto& section : segment.sections)
+                    isCode.push_back(IsInstructionsSection(section));
+            constexpr uint8 STAB         = static_cast<uint8>(MAC::N_TYPE::STAB);
+            constexpr uint8 TYPE         = static_cast<uint8>(MAC::N_TYPE::TYPE);
+            constexpr uint8 EXT          = static_cast<uint8>(MAC::N_TYPE::EXT);
+            constexpr uint8 SECT         = static_cast<uint8>(MAC::N_TYPE_BITS::SECT);
+            for (const auto& symbol : machO->dySymTab->objects)
+            {
+                if ((symbol.n_type & STAB) != 0 || (symbol.n_type & TYPE) != SECT || symbol.n_sect >= isCode.size() || !isCode[symbol.n_sect] ||
+                    symbol.symbolNameDemangled.empty())
+                    continue;
+                const uint64 offset = translation.TranslateToFileOffset(symbol.n_value, VA);
+                if (offset == static_cast<uint64>(-1))
+                    continue;
+                settings.AddFunctionEntry(
+                      offset,
+                      symbol.symbolNameDemangled,
+                      (symbol.n_type & EXT) != 0 ? DissasmViewer::FunctionEntryType::Export : DissasmViewer::FunctionEntryType::Symbol);
+                if (isArm) // armv7: N_ARM_THUMB_DEF marks a Thumb function
+                    settings.AddArmCodeMode(
+                          offset,
+                          (symbol.n_desc & static_cast<uint16>(MAC::N_DESC_BIT_TYPE::ARM_THUMB_DEF)) ? DissasmViewer::ArmCodeMode::Thumb : DissasmViewer::ArmCodeMode::Arm);
+            }
+        }
+        // LC_FUNCTION_STARTS: ULEB128 distances, the first one from the start of the __TEXT segment
+        constexpr uint32 MAX_FUNCTION_STARTS_SIZE = 0x1000000;
+        for (const auto& data : machO->linkEditDatas)
+        {
+            if (data.cmd != MAC::LoadCommandType::FUNCTION_STARTS || data.datasize == 0 || data.datasize > MAX_FUNCTION_STARTS_SIZE)
+                continue;
+            const auto buffer = obj->GetData().CopyToBuffer(data.dataoff, data.datasize);
+            uint64 address    = translation.GetImageBase();
+            size_t position   = 0;
+            while (position < buffer.GetLength())
+            {
+                uint64 delta = 0;
+                uint32 shift = 0;
+                uint8 byte   = 0;
+                do
+                {
+                    byte = buffer.GetData()[position++];
+                    if (shift < 64)
+                        delta |= static_cast<uint64>(byte & 0x7F) << shift;
+                    shift += 7;
+                } while ((byte & 0x80) != 0 && position < buffer.GetLength());
+                if (delta == 0)
+                    break; // the end of the list
+                address += delta;
+                // armv7: the bit 0 of an address is the Thumb mode of the function
+                const uint64 offset = translation.TranslateToFileOffset(isArm ? address & ~static_cast<uint64>(1) : address, VA);
+                if (offset == static_cast<uint64>(-1))
+                    continue;
+                settings.AddFunctionEntry(offset, {}, DissasmViewer::FunctionEntryType::Symbol);
+                if (isArm)
+                    settings.AddArmCodeMode(offset, (address & 1) ? DissasmViewer::ArmCodeMode::Thumb : DissasmViewer::ArmCodeMode::Arm);
+            }
+        }
+    }
+
+    // The disassembly of the x86 / x64 / ARM64 code: one zone from the first to the last instructions section (__text, __stubs,
+    // __stub_helper), the entry point of LC_MAIN
+    void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
+    {
+        if (!machO->isMacho || machO->shouldSwapEndianess)
+            return;
+        DissasmViewer::DisassemblyLanguage language;
+        if (machO->header.cputype == MAC::CPU_TYPE_X86_64)
+            language = DissasmViewer::DisassemblyLanguage::x64;
+        else if (machO->header.cputype == MAC::CPU_TYPE_I386)
+            language = DissasmViewer::DisassemblyLanguage::x86;
+        else if (machO->header.cputype == MAC::CPU_TYPE_ARM64)
+            language = DissasmViewer::DisassemblyLanguage::ARM64;
+        else if (machO->header.cputype == MAC::CPU_TYPE_ARM) // armv7: Thumb-2 code mostly, the symbols give the mode of every function
+            language = DissasmViewer::DisassemblyLanguage::Thumb;
+        else
+            return; // the disassembly view decodes x86 / x64 / ARM64 / ARM
+        const bool isArm = machO->header.cputype == MAC::CPU_TYPE_ARM;
+
+        uint64 start = UINT64_MAX, end = 0;
+        std::vector<uint64> sectionStarts; // the padding between two sections never hides the start of the next one
+        for (const auto& segment : machO->segments)
+            for (const auto& section : segment.sections)
+                if (IsInstructionsSection(section))
+                {
+                    sectionStarts.push_back(section.offset);
+                    start = std::min<uint64>(start, section.offset);
+                    end   = std::max<uint64>(end, static_cast<uint64>(section.offset) + section.size);
+                }
+        // no usable instructions section (damaged section headers): the executable segments, after the mach header and the load
+        // commands
+        const uint64 dataSize = win->GetObject()->GetData().GetSize();
+        if (start >= std::min<uint64>(end, dataSize))
+        {
+            start = UINT64_MAX;
+            end   = 0;
+            // mach_header has the reserved field of the 64 bit header
+            const uint64 headerEnd = (machO->is64 ? sizeof(MAC::mach_header) : sizeof(MAC::mach_header) - sizeof(uint32)) + machO->header.sizeofcmds;
+            for (const auto& segment : machO->segments)
+            {
+                if ((segment.initprot & static_cast<uint32>(MAC::VMProtectionFlags::EXECUTE)) == 0 || segment.filesize == 0 || segment.fileoff >= dataSize)
+                    continue;
+                const uint64 segmentStart = std::max<uint64>(segment.fileoff, segment.fileoff == 0 ? headerEnd : 0);
+                const uint64 segmentEnd   = std::min<uint64>(segment.fileoff + segment.filesize, dataSize);
+                if (segmentStart >= segmentEnd)
+                    continue;
+                sectionStarts.push_back(segmentStart);
+                start = std::min(start, segmentStart);
+                end   = std::max(end, segmentEnd);
+            }
+        }
+        end = std::min<uint64>(end, dataSize);
+        if (start >= end)
+            return;
+        // LC_MAIN: the offset of the entry point from the start of the __TEXT segment (its file offset)
+        uint64 entryPoint = machO->main.has_value() ? machO->main->entryoff : DissasmViewer::NO_ENTRY_POINT; // a library has none
+        if (isArm && entryPoint != DissasmViewer::NO_ENTRY_POINT)
+            entryPoint &= ~static_cast<uint64>(1); // the Thumb bit
+        if (entryPoint < start || entryPoint >= end)
+            entryPoint = DissasmViewer::NO_ENTRY_POINT;
+
+        DissasmViewer::Settings settings;
+        settings.AddDisassemblyZone(start, end - start, entryPoint, language);
+        for (const uint64 sectionStart : sectionStarts)
+            settings.AddInstructionBoundary(sectionStart);
+        // the data sections (__cstring, __const, __data, __got, __la_symbol_ptr, __objc_*, ...): a data zone each; the zero fill sections
+        // have no bytes, the unwind data is for the unwinder
+        const uint64 fileSize = win->GetObject()->GetData().GetSize();
+        for (const auto& segment : machO->segments)
+            for (const auto& section : segment.sections)
+            {
+                const uint32 type    = section.flags & MAC::SECTION_TYPE;
+                const bool zeroFill  = type == static_cast<uint32>(MAC::SectionType::ZEROFILL) || type == static_cast<uint32>(MAC::SectionType::GB_ZEROFILL) ||
+                                       type == static_cast<uint32>(MAC::SectionType::THREAD_LOCAL_ZEROFILL);
+                const std::string_view sectionName(section.sectname, strnlen(section.sectname, sizeof(section.sectname)));
+                const std::string_view segmentName(section.segname, strnlen(section.segname, sizeof(section.segname)));
+                const uint64 offset = section.offset;
+                if (IsInstructionsSection(section) || zeroFill || offset == 0 || section.size == 0 || offset >= fileSize || segmentName == "__LINKEDIT" ||
+                    sectionName == "__unwind_info" || sectionName == "__eh_frame" || sectionName == "__compact_unwind" || (offset < end && start < offset + section.size))
+                    continue;
+                const std::string name = std::string(segmentName) + "," + std::string(sectionName);
+                settings.AddDataZone(offset, std::min<uint64>(section.size, fileSize - offset), language, name);
+            }
+        // the zero fill sections (__bss, __common): the uninitialized data, no bytes in the file (not the thread local ones)
+        for (const auto& segment : machO->segments)
+            for (const auto& section : segment.sections)
+            {
+                const uint32 type = section.flags & MAC::SECTION_TYPE;
+                if ((type != static_cast<uint32>(MAC::SectionType::ZEROFILL) && type != static_cast<uint32>(MAC::SectionType::GB_ZEROFILL)) ||
+                    section.size == 0 || section.addr == 0)
+                    continue;
+                const std::string_view sectionName(section.sectname, strnlen(section.sectname, sizeof(section.sectname)));
+                const std::string_view segmentName(section.segname, strnlen(section.segname, sizeof(section.segname)));
+                settings.AddUninitializedDataZone(section.addr, section.size, language, std::string(segmentName) + "," + std::string(sectionName));
+            }
+        if (isArm) // armv7: the stubs (__picsymbolstub4, __symbol_stub4) are ARM code, the other sections Thumb until the symbols say otherwise
+            for (const auto& segment : machO->segments)
+                for (const auto& section : segment.sections)
+                    if (IsInstructionsSection(section))
+                        settings.AddArmCodeMode(
+                              section.offset,
+                              (section.flags & MAC::SECTION_TYPE) == static_cast<uint32>(MAC::SectionType::SYMBOL_STUBS) ? DissasmViewer::ArmCodeMode::Arm
+                                                                                                                       : DissasmViewer::ArmCodeMode::Thumb);
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, &machO->dissasmTranslation);
+        AddDissasmImports(settings, machO, win->GetObject());
+        // LC_DYLD_CHAINED_FIXUPS (macOS 12+ / iOS 15+ binaries): the rebased pointers and the binds, followed by the viewer
+        constexpr uint32 MAX_CHAINED_FIXUPS_SIZE = 0x4000000;
+        for (const auto& data : machO->linkEditDatas)
+            if (data.cmd == MAC::LoadCommandType::DYLD_CHAINED_FIXUPS && data.datasize > 0 && data.datasize <= MAX_CHAINED_FIXUPS_SIZE)
+                settings.AddChainedFixups(win->GetObject()->GetData().CopyToBuffer(data.dataoff, data.datasize), machO->dissasmTranslation.GetImageBase());
+        // LC_DYLD_INFO (the binaries before macOS 12): the bind and weak bind opcodes; the lazy binds are the __la_symbol_ptr slots of the
+        // indirect symbols
+        constexpr uint32 MAX_BIND_INFO_SIZE = 0x4000000;
+        if (machO->dyldInfo.has_value()) {
+            std::vector<uint64> segmentAddresses;
+            for (const auto& segment : machO->segments)
+                segmentAddresses.push_back(segment.vmaddr);
+            const uint8 pointerSize = machO->is64 ? 8 : 4;
+            for (const auto& [offset, size] : { std::pair<uint32, uint32>{ machO->dyldInfo->bind_off, machO->dyldInfo->bind_size },
+                                                { machO->dyldInfo->weak_bind_off, machO->dyldInfo->weak_bind_size } })
+                if (offset != 0 && size > 0 && size <= MAX_BIND_INFO_SIZE)
+                    settings.AddDyldBindInfo(
+                          win->GetObject()->GetData().CopyToBuffer(offset, size), segmentAddresses, pointerSize, machO->dissasmTranslation.GetImageBase());
+        }
+        AddDissasmFunctionEntries(settings, machO, win->GetObject());
+        win->CreateViewer(settings);
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto machO = win->GetObject()->GetContentType<MachO::MachOFile>();
@@ -183,6 +468,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
         }
 
         CreateBufferView(win, machO);
+        CreateDissasmView(win, machO);
 
         if (machO->HasPanel(MachO::Panels::IDs::Information))
         {

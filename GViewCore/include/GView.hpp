@@ -217,6 +217,17 @@ namespace Utils
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
+    // ELF packed relocations. RELR (SHT_RELR, -z pack-relative-relocs): the addresses of the relative relocations (their addend is the
+    // value in place). Android APS2 (SHT_ANDROID_REL / SHT_ANDROID_RELA, --pack-dyn-relocs=android): the relocations (r_info as in the
+    // file: ELF32_R_SYM / ELF64_R_SYM). False when the data is malformed (the relocations found until then are kept)
+    struct ElfRelocation {
+        uint64 offset;
+        uint64 info;
+        int64 addend;
+    };
+    CORE_EXPORT bool DecodeElfRelr(BufferView data, bool is64, std::vector<uint64>& addresses);
+    CORE_EXPORT bool DecodeAndroidPackedRelocations(BufferView data, bool isRela, std::vector<ElfRelocation>& relocations);
+
     struct CORE_EXPORT SelectionZoneInterface {
         virtual uint32 GetSelectionZonesCount() const                                    = 0;
         virtual GView::TypeInterface::SelectionZone GetSelectionZone(uint32 index) const = 0;
@@ -1773,13 +1784,47 @@ namespace View
     {
         using TypeID = uint32;
 
-        enum class DisassemblyLanguage : uint32 { Default, x86, x64, JavaByteCode, Count };
+        // ARM / Thumb: 32 bit ARM code, the mode of the zone start (AddArmCodeMode changes it at other places: ARM and Thumb code mix)
+        enum class DisassemblyLanguage : uint32 { Default, x86, x64, JavaByteCode, ARM64, ARM, Thumb, Count };
+        enum class ArmCodeMode : uint8 { Arm, Thumb, Data }; // Data: a literal pool / a table inside the code (ELF $d)
 
         enum class VariableType : uint32 { UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, AsciiZ, Utf16Z, Utf32Z };
 
         enum class MemoryMappingType { FunctionMapping, TextMapping };
+        // a field of a structure of the data (AddDataField): a value, a pointer (a VA), an RVA (the image base plus the value), a 32 bit
+        // offset from the field itself (the relative method lists of Objective-C), a C string
+        enum class DataFieldType : uint8 { Value, Pointer, RVA, Relative, String };
+        enum class FunctionEntryType : uint8 { Export, ExceptionData, TlsCallback, Symbol }; // Symbol: a symbol table (an export name wins)
+        // a __try scope of x64 structured exception handling (the scope table of __C_specific_handler), file offsets: the guarded code
+        // [begin, end), the filter or the __finally funclet (handler; 0: the constant filter EXCEPTION_EXECUTE_HANDLER), the __except block
+        // (target; 0: a __finally)
+        struct ExceptionScope {
+            uint64 begin;
+            uint64 end;
+            uint64 handler;
+            uint64 target;
+        };
+        // a funclet of the C++ exception handling of x64 (the FuncInfo of __CxxFrameHandler3 / 4), file offsets: a catch block (the type
+        // it catches: "std::bad_alloc &", "..."; the code its try guards, one range or several) or an unwind funclet (the destructors of
+        // the objects of a state: no type, no range)
+        struct ExceptionFunclet {
+            uint64 fileOffset;
+            bool isCatch;
+            std::string catchType;
+            std::vector<std::pair<uint64, uint64>> tryRanges; // [begin, end)
+        };
+        // an object the C++ exception handling destroys when it unwinds the function (x64 FH4: the unwind map entries with a destructor):
+        // its offset from the establisher frame, its destructor (file offset; 0: not in the file), the slot a pointer to it (the
+        // destructor gets the value of the slot) or the object (its address)
+        struct ExceptionObject {
+            int32 frameOffset;
+            uint64 destructor;
+            bool isPointer;
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
+        // the entry point of a code zone that has none (an executable section that is not the one of the entry point)
+        constexpr uint64 NO_ENTRY_POINT = static_cast<uint64>(-1);
 
         struct CORE_EXPORT Settings {
             void* data;
@@ -1792,8 +1837,108 @@ namespace View
              */
             void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
             void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
+            // a code zone with a name shown in its title (a section: .text, PAGE, UPX1); zoneDissasmStartPoint: the entry point when it is
+            // inside the zone, NO_ENTRY_POINT otherwise
+            void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang, std::string_view name);
+            // a data zone (a section of initialized data: .rdata, .data): its bytes are shown as strings, pointers (the size of the pointers
+            // of `lang`, the language of the code) and rows of bytes, with labels where the code refers to them
+            void AddDataZone(uint64 zoneStart, uint64 zoneSize, DisassemblyLanguage lang, std::string_view name);
 
             void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
+            /**
+             * \brief Adds a known start of a function (an export, an exception data entry, a TLS callback): the deep scan labels it.
+             * \param fileOffset The file offset of the first instruction of the function.
+             * \param name The name of the label; empty: an automatic name (sub_..., TlsCallback_N).
+             * \param type Where the function was found. An export keeps its name over the other names found at the same offset.
+             * \param size The size of the function in bytes when it is known (exception data); 0: unknown.
+             */
+            void AddFunctionEntry(uint64 fileOffset, std::string_view name, FunctionEntryType type, uint64 size = 0);
+            /**
+             * \brief x64 structured exception handling: the __try scopes of the function at `functionFileOffset` (the scope table of
+             * __C_specific_handler in its unwind data) and its frame from the unwind data (the size of the prologue, the frame register and
+             * its scaled offset: the establisher frame its filters / __finally funclets receive in rdx). The viewer marks the scopes and
+             * names the funclets after the function (sub_X$fin$0, sub_X$filt$0); their accesses to the frame of the function use its
+             * variables.
+             */
+            void AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionScope>& scopes);
+            /**
+             * \brief The C++ exception handling of x64 (the FuncInfo of __CxxFrameHandler3 / __CxxFrameHandler4): the catch blocks and the
+             * unwind funclets of the function at `functionFileOffset`, its frame from the unwind data (as AddExceptionScopes). The viewer
+             * marks the try ranges and the catch blocks (catch(std::bad_alloc &)), names the funclets after the function (sub_X$catch$0,
+             * sub_X$dtor$0); their accesses to the frame of the function use its variables.
+             */
+            void AddExceptionFunclets(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionFunclet>& funclets);
+            /**
+             * \brief The objects the C++ exception handling destroys when it unwinds the function at `functionFileOffset` (FH4: the
+             * destructor and the frame offset of each), its frame from the unwind data (as AddExceptionScopes). The viewer makes their
+             * slots variables: destroyed by the destructor, typed after it when it tells the type (PropVariantClear: PROPVARIANT, a C++
+             * destructor X::~X: X).
+             */
+            void AddExceptionObjects(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionObject>& objects);
+            /**
+             * \brief A chunk of the function at `functionFileOffset` (its cold code elsewhere: x64 chained unwind data): `size` bytes at
+             * `chunkFileOffset`. The chunk runs on the frame of the function after its prologue (`functionPrologSize` bytes): its stack
+             * slots are the variables of the function.
+             */
+            void AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize);
+            /**
+             * \brief The name of an import by ordinal (Ordinal:357 of certcli.dll): the name the DLL exports that ordinal under, from its
+             * export table. The DLL is the one in the folder of the file (`filePath`), else the one of the system (Windows: SysWOW64 for a
+             * 32 bit image on a 64 bit Windows, System32): the names of another version of the DLL may differ. Empty when the DLL is not
+             * found or does not name the ordinal. The export tables read are kept by the settings.
+             */
+            std::string GetImportOrdinalName(std::string_view dllName, uint32 ordinal, std::u16string_view filePath, bool is32BitImage);
+            /**
+             * rief Adds a file offset where an instruction starts (the start of a code section): the disassembly never decodes an
+             * instruction across it (the padding between two sections does not hide the code that follows). The function entries are
+             * boundaries as well.
+             */
+            void AddInstructionBoundary(uint64 fileOffset);
+            // 32 bit x86 position independent code (an ELF shared object / PIE): the address of the global offset table, the value of ebx
+            // in the PLT stubs (jmp dword ptr [ebx + 0xc])
+            void SetGlobalOffsetTable(uint64 address);
+            /**
+             * \brief The value (a VA) of a pointer that the loader writes at a file offset: the relocations of a position independent
+             * image (ELF R_X86_64_RELATIVE / R_AARCH64_RELATIVE, a 64 bit pointer to a symbol of the file) whose bytes in the file are 0 or
+             * the addend. The pointer tables (.data.rel.ro, .init_array, the vtables) are read with these values.
+             */
+            void AddRelocatedPointer(uint64 fileOffset, uint64 value);
+            /**
+             * \brief Mach-O: the payload of LC_DYLD_CHAINED_FIXUPS (from its dyld_chained_fixups_header) and the VA of the mach header.
+             * The viewer follows the chains in the segments: a rebase becomes a relocated pointer, a bind an import slot named after its
+             * symbol (the pointers of __const, __objc_*, __got that dyld writes).
+             */
+            void AddChainedFixups(BufferView data, uint64 imageBase);
+            /**
+             * \brief Mach-O LC_DYLD_INFO(_ONLY): the bind (or weak bind) opcodes and the VA of every segment, in the order of the load
+             * commands (the opcodes refer to them by index). The viewer names every bound pointer after its symbol: the ones outside
+             * __got / __la_symbol_ptr (the superclass of an Objective-C class, __objc_empty_cache, a pointer to an imported function or
+             * variable in __data) have no indirect symbol. `imageBase`: the VA of the mach header.
+             */
+            void AddDyldBindInfo(BufferView opcodes, const std::vector<uint64>& segmentAddresses, uint8 pointerSize, uint64 imageBase);
+            /**
+             * \brief A pointer that the loader binds to a symbol of another module (ELF R_X86_64_64 / R_AARCH64_ABS64 / GLOB_DAT to an
+             * undefined symbol), at the RVA `rva`; `name` is its symbol, with the addend (_ZTVN10__cxxabiv117__class_type_infoE+0x10).
+             * The line of the pointer shows it even when a structure that starts there names the place (the vptr of a typeinfo).
+             */
+            void AddBoundSymbol(uint64 rva, std::string_view name);
+            /**
+             * \brief A data zone without bytes in the file: the uninitialized data of the program at the VA `address` (ELF .bss, Mach-O
+             * zero fill sections, the part of a PE section past its raw data). Its lines are the variables the code uses (dd ?), placed
+             * after the end of the file.
+             */
+            void AddUninitializedDataZone(uint64 address, uint64 size, DisassemblyLanguage lang, std::string_view name);
+            /**
+             * \brief A field of a structure of the data at the VA `address` (the load config directory, ...): its own line in the data zone
+             * (`size` bytes: 1, 2, 4, 8, or a row), its name as the comment, a pointer / an RVA / an offset shown as the name of what it
+             * points to.
+             */
+            void AddDataField(uint64 address, uint32 size, DataFieldType type, std::string_view name);
+            /**
+             * \brief 32 bit ARM: the code from the file offset is decoded in `mode` (until the next mode change); the ELF mapping symbols
+             * ($a, $t, $d), the Thumb bit of the function symbols, the ARM .plt of a Thumb file. A later call for the same offset wins.
+             */
+            void AddArmCodeMode(uint64 fileOffset, ArmCodeMode mode);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
@@ -1862,6 +2007,16 @@ namespace App
     bool CORE_EXPORT Init(bool isTestingEnabled);
     void CORE_EXPORT Run(std::string_view testing_script);
     bool CORE_EXPORT ResetConfiguration();
+    struct AnalyzeOptions {
+        std::string_view typeName;              // forces the type of the file (empty: the first type that matches)
+        std::filesystem::path annotations;      // a JSON annotations file (ExportAnnotations) added to the data of the user
+        std::filesystem::path signatures;       // a JSON signatures file (CreateSignatures): the sub_ functions that match get their names
+        std::filesystem::path signaturesOutput; // the signatures of the named functions are written to this file
+        std::filesystem::path listingOutput;    // the listing of every disassembly zone (the text of the F8 export) is written to this file
+    };
+    // the analysis of the disassembly of a file (functions, calls, strings, switches, the data of the user) as JSON, without a window;
+    // Init must be called first
+    bool CORE_EXPORT AnalyzeFile(const std::filesystem::path& path, const AnalyzeOptions& options, std::string& json, std::string& error);
     // Auto-updater: the command line is reused to restart GView after an update; call FinishPendingUpdate after Run
     // (it installs an update accepted by the user, restarts GView and returns the exit code to use, 0 when idle).
 #ifdef BUILD_FOR_WINDOWS

@@ -4,6 +4,8 @@
 #include "DissasmViewer.hpp"
 #include "DissasmCodeZone.hpp"
 #include "DissasmIOHelpers.hpp"
+#include "DissasmFunctionUtils.hpp"
+#include "x86_x64/DissasmX86LocalVariables.hpp"
 
 #include <algorithm>
 #include <map>
@@ -31,43 +33,117 @@ bool DissasmCache::AddRegion(std::string regionName, const std::byte* data, AppC
     return true;
 }
 
-std::filesystem::path DissasmCache::GetCacheFilePath(std::u16string_view fileLocation, bool cacheSameLocationAsAnalyzedFile)
+// the cache folder of the user: %LOCALAPPDATA%\GView\DissasmCache, $XDG_CACHE_HOME/gview/dissasm or ~/.cache/gview/dissasm
+static std::filesystem::path GetDefaultUserCacheFolder()
 {
-    constexpr char16 currentLoc  = '.';
-    const auto cacheDataLocation = cacheSameLocationAsAnalyzedFile ? fileLocation : std::u16string_view(&currentLoc, 1);
+#ifdef _WIN32
+    wchar_t* localAppData = nullptr;
+    size_t length         = 0;
+    std::filesystem::path folder;
+    if (_wdupenv_s(&localAppData, &length, L"LOCALAPPDATA") == 0 && localAppData && *localAppData)
+        folder = std::filesystem::path(localAppData) / "GView" / "DissasmCache";
+    free(localAppData);
+    return folder;
+#else
+    const char* xdgCache = getenv("XDG_CACHE_HOME");
+    if (xdgCache && *xdgCache)
+        return std::filesystem::path(xdgCache) / "gview" / "dissasm";
+    const char* home = getenv("HOME");
+    if (home && *home)
+        return std::filesystem::path(home) / ".cache" / "gview" / "dissasm";
+    return {};
+#endif
+}
 
-    std::filesystem::path path = cacheDataLocation;
-    path += ".dissasm.cache";
+std::filesystem::path DissasmCache::GetCacheFilePath(
+      std::u16string_view fileLocation, bool cacheSameLocationAsAnalyzedFile, const std::filesystem::path& userCacheFolder)
+{
+    std::filesystem::path analysedFile = fileLocation;
+    const auto folder                  = cacheSameLocationAsAnalyzedFile ? std::filesystem::path{}
+                                                                         : (userCacheFolder.empty() ? GetDefaultUserCacheFolder() : userCacheFolder);
+    if (folder.empty()) {
+        // next to the analysed file (also when the user has no cache folder: a single file shared by every analysed file mixed them)
+        analysedFile += ".dissasm.cache";
+        return analysedFile;
+    }
+
+    // one file per analysed file: the file name and a hash (FNV-1a) of the full path, so files with the same name do not share it
+    uint64 hash = 14695981039346656037ull;
+    for (const char16 c : fileLocation) {
+        hash ^= static_cast<uint64>(c);
+        hash *= 1099511628211ull;
+    }
+    LocalString<32> suffix;
+    suffix.SetFormat(".%016llx.dissasm.cache", static_cast<unsigned long long>(hash));
+    auto path = folder / analysedFile.filename();
+    path += suffix.GetText();
     return path;
 }
-    
+
 bool DissasmCache::SaveCacheFile(std::u16string_view location)
 {
     if (zonesData.empty())
         return false;
     const std::filesystem::path filePath(location.begin(), location.end());
-    bool created = cacheFile.Create(filePath, true);
-    if (!created)
+    std::error_code ec;
+    if (filePath.has_parent_path())
+        std::filesystem::create_directories(filePath.parent_path(), ec); // the cache folder of the user may not exist yet
+
+    // a cache file that could not be loaded is kept (it may hold the annotations of another version of the analysed file)
+    if (keepBackupOnSave && std::filesystem::exists(filePath, ec)) {
+        auto backupPath = filePath;
+        backupPath += ".bak";
+        std::filesystem::copy_file(filePath, backupPath, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec)
+            return false; // never overwrite it without its copy
+        keepBackupOnSave = false;
+    }
+
+    auto temporaryPath = filePath;
+    temporaryPath += ".tmp";
+    if (!cacheFile.Create(temporaryPath, true))
         return false;
-    const uint32 zonesCount = (uint32) zonesData.size();
+    bool written            = true;
+    auto write              = [this, &written](const void* data, uint32 size) { written = written && (size == 0 || cacheFile.Write(data, size)); };
+    zonesData.erase(std::string(DISSASM_CACHE_VERSION_RECORD)); // written below, once
+    const uint32 zonesCount = (uint32) zonesData.size() + 1u;
     uint32 entrySize;
-    cacheFile.Write((const char*) &zonesCount, sizeof(zonesCount));
+    write(&zonesCount, sizeof(zonesCount));
+
+    // the version record: a record as the others, the readers that do not know it ignore it
+    entrySize = static_cast<uint32>(DISSASM_CACHE_VERSION_RECORD.size());
+    write(&entrySize, sizeof(entrySize));
+    write(DISSASM_CACHE_VERSION_RECORD.data(), entrySize);
+    const uint32 version = DISSASM_CACHE_VERSION;
+    entrySize            = sizeof(version);
+    write(&entrySize, sizeof(entrySize));
+    write(&version, sizeof(version));
+
     for (auto& [name, entry] : zonesData) {
         entrySize = (uint32) name.size();
-        cacheFile.Write((const char*) &entrySize, sizeof(entrySize));
-        cacheFile.Write(name.data(), entrySize);
+        write(&entrySize, sizeof(entrySize));
+        write(name.data(), entrySize);
 
         entrySize = entry.size;
-        cacheFile.Write((const char*) &entrySize, sizeof(entrySize));
-        cacheFile.Write(reinterpret_cast<const char*>(entry.data.get()), entry.size);
+        write(&entrySize, sizeof(entrySize));
+        write(entry.data.get(), entry.size);
     }
     cacheFile.Close();
+    std::error_code renameError;
+    if (written)
+        std::filesystem::rename(temporaryPath, filePath, renameError); // replaces the previous cache file
+    if (!written || renameError) {
+        std::filesystem::remove(temporaryPath, ec);
+        return false;
+    }
+    fileVersion = DISSASM_CACHE_VERSION;
     return true;
 }
 
 bool DissasmCache::LoadCacheFile(std::u16string_view location)
 {
     const std::filesystem::path filePath(location.begin(), location.end());
+    fileVersion       = 1; // the files written before the version record
     const bool opened = cacheFile.OpenRead(filePath);
     if (!opened)
         return false;
@@ -115,23 +191,40 @@ bool DissasmCache::LoadCacheFile(std::u16string_view location)
         const auto entryData = buffer.data() + offset;
         offset += entrySize;
 
+        if (entryName == DISSASM_CACHE_VERSION_RECORD) {
+            if (entrySize != sizeof(fileVersion))
+                return false;
+            memcpy(&fileVersion, entryData, sizeof(fileVersion));
+            continue; // not a zone record
+        }
         auto newCacheEntry = DissasmCacheEntry{ std::make_unique<std::byte[]>(entrySize), entrySize };
         memcpy(newCacheEntry.data.get(), entryData, entrySize);
         zonesData.emplace(entryName, std::move(newCacheEntry));
     }
-    return true;
+    // a file written by a newer version may use a format this version does not know: it is not loaded (nor overwritten without a copy)
+    return fileVersion >= DISSASM_CACHE_OLDEST_LOADABLE_VERSION && fileVersion <= DISSASM_CACHE_VERSION;
 }
 
-bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj) const
+bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::Object> obj, bool hashWholeZone) const
 {
     Hashes::OpenSSLHash hash(Hashes::OpenSSLHashKind::Md5);
-    const auto zoneData = obj->GetData().Get(startingZonePoint, (uint32) size, false);
-    if (zoneData.Empty())
-        return false;
-    if (!hash.Update(zoneData.GetData(), (uint32) zoneData.GetLength()))
-        return false;
+    // the data cache returns at most one window: the whole zone is hashed window after window (the caches saved before hashed only the
+    // first window, ValidateCacheData still accepts them)
+    // an uninitialized zone: its bytes are zeros (GetZoneBytes)
+    const uint64 fileSize = isUninitialized ? startingZonePoint + size : obj->GetData().GetSize();
+    const uint64 end      = startingZonePoint < fileSize ? std::min(fileSize, startingZonePoint + std::min(size, fileSize)) : startingZonePoint;
+    uint64 position       = startingZonePoint;
+    do {
+        const uint64 remaining = end > position ? end - position : 0;
+        const auto zoneData    = GetZoneBytes(obj, position, static_cast<uint32>(std::min<uint64>(remaining, UINT32_MAX)));
+        if (zoneData.Empty())
+            return false;
+        if (!hash.Update(zoneData.GetData(), (uint32) zoneData.GetLength()))
+            return false;
+        position += zoneData.GetLength();
+    } while (hashWholeZone && position < end);
     const auto hashValue = hash.GetHexValue();
-    buffer.reserve(hashValue.size() + sizeof(DisassemblyZone));
+    buffer.reserve(hashValue.size() + 3 * sizeof(uint64) + sizeof(uint32));
     buffer.clear();
     buffer.insert(buffer.end(), (const std::byte*) hashValue.data(), (const std::byte*) hashValue.data() + hashValue.size());
     // field by field: the raw structure has padding bytes that are not initialized, they made the validation fail at random
@@ -142,17 +235,24 @@ bool DisassemblyZone::ToBuffer(std::vector<std::byte>& buffer, Reference<GView::
     return true;
 }
 
-// caches saved before the field by field format contain the hash followed by the raw DisassemblyZone structure
+// caches saved before the field by field format contain the hash followed by the raw DisassemblyZone structure of that time (the fields
+// before the name)
+struct LegacyDisassemblyZone {
+    uint64 startingZonePoint;
+    uint64 size;
+    uint64 entryPoint;
+    DisassemblyLanguage language;
+};
 static bool IsSameLegacyDisassemblyZone(const DissasmCacheEntry& entry, const std::vector<std::byte>& buffer, const DisassemblyZone& zone)
 {
     constexpr size_t fieldsSize = 3 * sizeof(uint64) + sizeof(uint32);
-    if (buffer.size() < fieldsSize || entry.size != buffer.size() - fieldsSize + sizeof(DisassemblyZone))
+    if (buffer.size() < fieldsSize || entry.size != buffer.size() - fieldsSize + sizeof(LegacyDisassemblyZone))
         return false;
     const size_t hashSize = buffer.size() - fieldsSize;
     if (memcmp(entry.data.get(), buffer.data(), hashSize) != 0)
         return false;
-    DisassemblyZone cached{};
-    memcpy(&cached, entry.data.get() + hashSize, sizeof(DisassemblyZone));
+    LegacyDisassemblyZone cached{};
+    memcpy(&cached, entry.data.get() + hashSize, sizeof(LegacyDisassemblyZone));
     return cached.startingZonePoint == zone.startingZonePoint && cached.size == zone.size && cached.entryPoint == zone.entryPoint &&
            cached.language == zone.language;
 }
@@ -253,17 +353,406 @@ void Instance::LoadCacheData()
     if (GView::Security::Learning::Hooks::IsMemoryOnlyObject(obj))
         return;
     const std::filesystem::path path = DissasmCache::GetCacheFilePath(obj->GetPath(), config.CacheSameLocationAsAnalyzedFile);
-    if (!cacheData.LoadCacheFile(path.u16string())) {
+    std::error_code ec;
+    const bool cacheFileExists = std::filesystem::exists(path, ec);
+    if (!cacheData.LoadCacheFile(path.u16string()) || !settings->ValidateCacheData(cacheData, obj)) {
         cacheData.ClearCache(true);
-        return;
-    }
-    if (!settings->ValidateCacheData(cacheData, obj)) {
-        cacheData.ClearCache(true);
+        // the next save replaces it: its annotations are kept in a copy instead of being lost
+        cacheData.keepBackupOnSave = cacheFileExists;
         return;
     }
     cacheData.hasCache = true;
     // the records keyed by the first line of the zone (old layout) are moved to the file offset key of their zone
     MigrateLegacyCodeZoneRecords(cacheData, settings->parseZones);
+}
+
+// The data defined by the user in a code zone (IDA D / A): [magic][version][count] then count x [start][end][unit], relative addresses.
+// A record of its own: it is read before the zone is analyzed (the lines are counted with the ranges), the zone record after.
+constexpr uint32 DISSASM_USER_DATA_MAGIC   = 0x44554447; // "GDUD"
+constexpr uint32 DISSASM_USER_DATA_VERSION = 1;
+constexpr uint32 DISSASM_MAX_USER_DATA     = 0x100000;
+
+static void FormatUserDataRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmUserData.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::vector<DissasmInstructionSet::DataRange> GView::View::DissasmViewer::ReadUserDataRanges(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::vector<DissasmInstructionSet::DataRange> ranges;
+    LocalString<64> name;
+    FormatUserDataRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return ranges;
+    const std::byte* data = entry->second.data.get();
+    const size_t size     = entry->second.size;
+    size_t position       = 0;
+    const auto read       = [&](void* value, size_t length) {
+        if (position + length > size)
+            return false;
+        memcpy(value, data + position, length);
+        position += length;
+        return true;
+    };
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read(&magic, sizeof(magic)) || magic != DISSASM_USER_DATA_MAGIC || !read(&version, sizeof(version)) || version != DISSASM_USER_DATA_VERSION ||
+        !read(&count, sizeof(count)) || count > DISSASM_MAX_USER_DATA)
+        return ranges;
+    for (uint32 index = 0; index < count; index++) {
+        DissasmInstructionSet::DataRange range{};
+        if (!read(&range.start, sizeof(range.start)) || !read(&range.end, sizeof(range.end)) || !read(&range.unit, sizeof(range.unit)))
+            return {};
+        const bool validUnit = DissasmInstructionSet::IsValidDataUnit(range.unit);
+        if (range.start < range.end && range.end <= zone.zoneDetails.size && validUnit && (ranges.empty() || ranges.back().end <= range.start))
+            ranges.push_back(range);
+    }
+    return ranges;
+}
+
+constexpr uint32 DISSASM_USER_FUNCTIONS_MAGIC   = 0x46554447; // "GDUF"
+constexpr uint32 DISSASM_USER_FUNCTIONS_VERSION = 1;
+
+static void FormatUserFunctionsRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmUserFunctions.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, uint8> GView::View::DissasmViewer::ReadUserFunctions(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, uint8> functions;
+    LocalString<64> name;
+    FormatUserFunctionsRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return functions;
+    const std::byte* data = entry->second.data.get();
+    const size_t size     = entry->second.size;
+    size_t position       = 0;
+    const auto read       = [&](void* value, size_t length) {
+        if (position + length > size)
+            return false;
+        memcpy(value, data + position, length);
+        position += length;
+        return true;
+    };
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read(&magic, sizeof(magic)) || magic != DISSASM_USER_FUNCTIONS_MAGIC || !read(&version, sizeof(version)) ||
+        version != DISSASM_USER_FUNCTIONS_VERSION || !read(&count, sizeof(count)) || count > DISSASM_MAX_USER_DATA)
+        return functions;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        uint8 flags    = 0;
+        if (!read(&address, sizeof(address)) || !read(&flags, sizeof(flags)))
+            return {};
+        if (address < zone.zoneDetails.size && flags != 0 && (flags & ~USER_FUNCTION_ALL) == 0)
+            functions[address] = flags;
+    }
+    return functions;
+}
+
+constexpr uint32 DISSASM_USER_STRUCTURES_MAGIC   = 0x56554447; // "GDUV"
+constexpr uint32 DISSASM_USER_STRUCTURES_VERSION = 1;
+constexpr uint32 DISSASM_MAX_STRUCTURE_NAME_SIZE = 64;
+
+static void FormatUserStructuresRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmUserStructures.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+bool GView::View::DissasmViewer::IsValidUserStructureName(std::string_view name)
+{
+    return name.size() <= DISSASM_MAX_STRUCTURE_NAME_SIZE &&
+           std::all_of(name.begin(), name.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'; });
+}
+
+std::map<std::pair<uint64, int32>, std::string> GView::View::DissasmViewer::ReadUserVariableStructures(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<std::pair<uint64, int32>, std::string> structures;
+    LocalString<64> name;
+    FormatUserStructuresRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return structures;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_USER_STRUCTURES_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_USER_STRUCTURES_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return structures;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 function = 0;
+        int32 offset    = 0;
+        std::string text;
+        if (!read_primitive(start, end, function) || !read_primitive(start, end, offset) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (function < zone.zoneDetails.size && IsValidUserStructureName(text))
+            structures[{ function, offset }] = std::move(text);
+    }
+    return structures;
+}
+
+void GView::View::DissasmViewer::UserVariableStructuresToBuffer(const std::map<std::pair<uint64, int32>, std::string>& structures, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_USER_STRUCTURES_MAGIC);
+    append_bytes(buffer, DISSASM_USER_STRUCTURES_VERSION);
+    append_bytes(buffer, static_cast<uint32>(structures.size()));
+    for (const auto& [key, structure] : structures) {
+        append_bytes(buffer, key.first);
+        append_bytes(buffer, key.second);
+        append_string(buffer, structure);
+    }
+}
+
+constexpr uint32 DISSASM_OPERAND_STRUCTURES_MAGIC   = 0x4F554447; // "GDUO"
+constexpr uint32 DISSASM_OPERAND_STRUCTURES_VERSION = 1;
+
+static void FormatOperandStructuresRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmOperandStructures.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadOperandStructures(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> structures;
+    LocalString<64> name;
+    FormatOperandStructuresRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return structures;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_OPERAND_STRUCTURES_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_OPERAND_STRUCTURES_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return structures;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && !text.empty() && IsValidUserStructureName(text))
+            structures[address] = std::move(text);
+    }
+    return structures;
+}
+
+void GView::View::DissasmViewer::OperandStructuresToBuffer(const std::map<uint64, std::string>& structures, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_OPERAND_STRUCTURES_MAGIC);
+    append_bytes(buffer, DISSASM_OPERAND_STRUCTURES_VERSION);
+    append_bytes(buffer, static_cast<uint32>(structures.size()));
+    for (const auto& [address, structure] : structures) {
+        append_bytes(buffer, address);
+        append_string(buffer, structure);
+    }
+}
+
+constexpr uint32 DISSASM_OPERAND_CONSTANTS_MAGIC   = 0x4B554447; // "GDUK"
+constexpr uint32 DISSASM_OPERAND_CONSTANTS_VERSION = 1;
+
+static void FormatOperandConstantsRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmOperandConstants.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadOperandConstants(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> constants;
+    LocalString<64> name;
+    FormatOperandConstantsRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return constants;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_OPERAND_CONSTANTS_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_OPERAND_CONSTANTS_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return constants;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && IsConstantSetName(text))
+            constants[address] = std::move(text);
+    }
+    return constants;
+}
+
+void GView::View::DissasmViewer::OperandConstantsToBuffer(const std::map<uint64, std::string>& constants, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_OPERAND_CONSTANTS_MAGIC);
+    append_bytes(buffer, DISSASM_OPERAND_CONSTANTS_VERSION);
+    append_bytes(buffer, static_cast<uint32>(constants.size()));
+    for (const auto& [address, set] : constants) {
+        append_bytes(buffer, address);
+        append_string(buffer, set);
+    }
+}
+
+constexpr uint32 DISSASM_BOOKMARKS_MAGIC   = 0x42554447; // "GDUB"
+constexpr uint32 DISSASM_BOOKMARKS_VERSION = 1;
+
+static void FormatBookmarksRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmBookmarks.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadBookmarks(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> bookmarks;
+    LocalString<64> name;
+    FormatBookmarksRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return bookmarks;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_BOOKMARKS_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_BOOKMARKS_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return bookmarks;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && !text.empty() && text.size() <= DISSASM_MAX_BOOKMARK_SIZE)
+            bookmarks[address] = std::move(text);
+    }
+    return bookmarks;
+}
+
+void GView::View::DissasmViewer::BookmarksToBuffer(const std::map<uint64, std::string>& bookmarks, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_BOOKMARKS_MAGIC);
+    append_bytes(buffer, DISSASM_BOOKMARKS_VERSION);
+    append_bytes(buffer, static_cast<uint32>(bookmarks.size()));
+    for (const auto& [address, description] : bookmarks) {
+        append_bytes(buffer, address);
+        append_string(buffer, description);
+    }
+}
+
+constexpr uint32 DISSASM_REPEATABLE_COMMENTS_MAGIC   = 0x52554447; // "GDUR"
+constexpr uint32 DISSASM_REPEATABLE_COMMENTS_VERSION = 1;
+
+static void FormatRepeatableCommentsRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmRepeatableComments.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadRepeatableComments(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> comments;
+    LocalString<64> name;
+    FormatRepeatableCommentsRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return comments;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_REPEATABLE_COMMENTS_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_REPEATABLE_COMMENTS_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return comments;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && !text.empty() && text.size() <= DISSASM_MAX_REPEATABLE_COMMENT_SIZE)
+            comments[address] = std::move(text);
+    }
+    return comments;
+}
+
+void GView::View::DissasmViewer::RepeatableCommentsToBuffer(const std::map<uint64, std::string>& comments, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_REPEATABLE_COMMENTS_MAGIC);
+    append_bytes(buffer, DISSASM_REPEATABLE_COMMENTS_VERSION);
+    append_bytes(buffer, static_cast<uint32>(comments.size()));
+    for (const auto& [address, text] : comments) {
+        append_bytes(buffer, address);
+        append_string(buffer, text);
+    }
+}
+
+constexpr uint32 DISSASM_USER_PROTOTYPES_MAGIC   = 0x54554447; // "GDUT"
+constexpr uint32 DISSASM_USER_PROTOTYPES_VERSION = 1;
+
+static void FormatUserPrototypesRecordName(LocalString<64>& name, const DissasmCodeZone& zone)
+{
+    name.SetFormat("DissasmUserPrototypes.%llu", static_cast<unsigned long long>(zone.zoneDetails.startingZonePoint));
+}
+
+std::map<uint64, std::string> GView::View::DissasmViewer::ReadUserPrototypes(const DissasmCache& cache, const DissasmCodeZone& zone)
+{
+    std::map<uint64, std::string> prototypes;
+    LocalString<64> name;
+    FormatUserPrototypesRecordName(name, zone);
+    const auto entry = cache.zonesData.find(name.GetText());
+    if (entry == cache.zonesData.end() || !entry->second.data)
+        return prototypes;
+    const std::byte* start = entry->second.data.get();
+    const std::byte* end   = start + entry->second.size;
+    uint32 magic = 0, version = 0, count = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_USER_PROTOTYPES_MAGIC || !read_primitive(start, end, version) ||
+        version != DISSASM_USER_PROTOTYPES_VERSION || !read_primitive(start, end, count) || count > DISSASM_MAX_USER_DATA)
+        return prototypes;
+    for (uint32 index = 0; index < count; index++) {
+        uint64 address = 0;
+        std::string text;
+        if (!read_primitive(start, end, address) || !read_u32_len_prefixed_string(start, end, text))
+            return {};
+        if (address < zone.zoneDetails.size && ParseUserPrototype(text))
+            prototypes[address] = std::move(text);
+    }
+    return prototypes;
+}
+
+void GView::View::DissasmViewer::UserPrototypesToBuffer(const std::map<uint64, std::string>& prototypes, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_USER_PROTOTYPES_MAGIC);
+    append_bytes(buffer, DISSASM_USER_PROTOTYPES_VERSION);
+    append_bytes(buffer, static_cast<uint32>(prototypes.size()));
+    for (const auto& [address, text] : prototypes) {
+        append_bytes(buffer, address);
+        append_string(buffer, text);
+    }
+}
+
+static void UserFunctionsToBuffer(const std::map<uint64, uint8>& functions, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_USER_FUNCTIONS_MAGIC);
+    append_bytes(buffer, DISSASM_USER_FUNCTIONS_VERSION);
+    append_bytes(buffer, static_cast<uint32>(functions.size()));
+    for (const auto& [address, flags] : functions) {
+        append_bytes(buffer, address);
+        append_bytes(buffer, flags);
+    }
+}
+
+static void UserDataRangesToBuffer(const std::vector<DissasmInstructionSet::DataRange>& ranges, std::vector<std::byte>& buffer)
+{
+    buffer.clear();
+    append_bytes(buffer, DISSASM_USER_DATA_MAGIC);
+    append_bytes(buffer, DISSASM_USER_DATA_VERSION);
+    append_bytes(buffer, static_cast<uint32>(ranges.size()));
+    for (const auto& range : ranges) {
+        append_bytes(buffer, range.start);
+        append_bytes(buffer, range.end);
+        append_bytes(buffer, range.unit);
+    }
 }
 
 void Instance::SaveCacheData()
@@ -280,11 +769,16 @@ void Instance::SaveCacheData()
     LocalString<64> zoneName;
     std::unordered_map<std::string, DissasmCacheEntry> keptRecords;
     std::unordered_set<std::string> claimedRecords;
+    std::unordered_set<std::string> mergedRecords; // the records kept aside that a zone merged: its data has them now
     for (auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
         const auto* dissasmZone = (DissasmCodeZone*) zone.get();
-        auto record             = FindCodeZoneRecord(cacheData, *dissasmZone);
+        if (dissasmZone->mergedUnappliedRecord) {
+            zoneName.SetFormat("DissasmCodeZoneUnapplied.%llu", static_cast<unsigned long long>(dissasmZone->zoneDetails.startingZonePoint));
+            mergedRecords.insert(zoneName.GetText());
+        }
+        auto record = FindCodeZoneRecord(cacheData, *dissasmZone);
         if (record == cacheData.zonesData.end())
             continue;
         claimedRecords.insert(record->first);
@@ -293,16 +787,46 @@ void Instance::SaveCacheData()
                 continue; // applied: the zone writes its data below
             // the record could not be applied to this analysis: kept aside instead of being lost under the record written below
             zoneName.SetFormat("DissasmCodeZoneUnapplied.%llu", static_cast<unsigned long long>(dissasmZone->zoneDetails.startingZonePoint));
-            if (!cacheData.zonesData.contains(zoneName.GetText())) // an older record kept aside stays as it is
+            // an older record kept aside stays as it is, unless the zone merged it
+            if (!cacheData.zonesData.contains(zoneName.GetText()) || mergedRecords.contains(zoneName.GetText()))
                 keptRecords.insert_or_assign(zoneName.GetText(), std::move(record->second));
             continue;
         }
         FormatCodeZoneRecordName(zoneName, *dissasmZone);
         keptRecords.insert_or_assign(zoneName.GetText(), std::move(record->second));
     }
+    // the data defined by the user in the zones not analyzed in this session: kept as they are
+    for (auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || static_cast<DissasmCodeZone*>(zone.get())->CanReachAsmLines())
+            continue;
+        FormatUserDataRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatUserFunctionsRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatUserStructuresRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatOperandStructuresRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatOperandConstantsRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatBookmarksRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatRepeatableCommentsRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+        FormatUserPrototypesRecordName(zoneName, *static_cast<DissasmCodeZone*>(zone.get()));
+        if (auto entry = cacheData.zonesData.find(zoneName.GetText()); entry != cacheData.zonesData.end() && entry->second.data)
+            keptRecords.insert_or_assign(zoneName.GetText(), std::move(entry->second));
+    }
     // the records of no zone: the legacy records that were not matched to a zone and the records kept aside before
     for (auto& [name, entry] : cacheData.zonesData) {
-        if (claimedRecords.contains(name) || !entry.data)
+        if (claimedRecords.contains(name) || mergedRecords.contains(name) || !entry.data)
             continue;
         if (name.starts_with(LEGACY_CODE_ZONE_RECORD_PREFIX) || name.starts_with(UNAPPLIED_CODE_ZONE_RECORD_PREFIX))
             keptRecords.try_emplace(name, std::move(entry));
@@ -317,7 +841,7 @@ void Instance::SaveCacheData()
     for (auto& zone : settings->parseZones) {
         if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
             continue;
-        const auto* dissasmZone = (DissasmCodeZone*) zone.get();
+        auto* dissasmZone = (DissasmCodeZone*) zone.get();
         FormatCodeZoneRecordName(zoneName, *dissasmZone);
         if (!dissasmZone->CanReachAsmLines()) {
             auto kept = keptRecords.find(zoneName.GetText());
@@ -331,6 +855,54 @@ void Instance::SaveCacheData()
             return;
         if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
             return;
+        if (!dissasmZone->userDataRanges.empty()) {
+            UserDataRangesToBuffer(dissasmZone->userDataRanges, buffer);
+            FormatUserDataRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->userFunctions.empty()) {
+            UserFunctionsToBuffer(dissasmZone->userFunctions, buffer);
+            FormatUserFunctionsRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->userVariableStructures.empty()) {
+            UserVariableStructuresToBuffer(dissasmZone->userVariableStructures, buffer);
+            FormatUserStructuresRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->operandStructures.empty()) {
+            OperandStructuresToBuffer(dissasmZone->operandStructures, buffer);
+            FormatOperandStructuresRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->operandConstants.empty()) {
+            OperandConstantsToBuffer(dissasmZone->operandConstants, buffer);
+            FormatOperandConstantsRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->bookmarks.empty()) {
+            BookmarksToBuffer(dissasmZone->bookmarks, buffer);
+            FormatBookmarksRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->repeatableComments.empty()) {
+            RepeatableCommentsToBuffer(dissasmZone->repeatableComments, buffer);
+            FormatRepeatableCommentsRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
+        if (!dissasmZone->userPrototypes.empty()) {
+            UserPrototypesToBuffer(dissasmZone->userPrototypes, buffer);
+            FormatUserPrototypesRecordName(zoneName, *dissasmZone);
+            if (!cacheData.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+                return;
+        }
     }
     // the records kept aside and the legacy records of no zone
     for (auto& [name, entry] : keptRecords)
@@ -346,9 +918,16 @@ bool SettingsData::SaveToCache(DissasmCache& cache, Reference<GView::Object> obj
     std::vector<std::byte> buffer;
     LocalString<64> zoneName;
     for (auto& [start, zone] : disassemblyZones) {
-        if (!zone.ToBuffer(buffer, obj))
+        // the version 1 record (the hash of the first data cache window): the readers of version 1 still validate the file
+        if (!zone.ToBuffer(buffer, obj, false))
             return false;
         zoneName.SetFormat("DisassemblyZone.%llu", start);
+        if (!cache.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
+            return false;
+        // version 2: the hash of the whole zone (a change after the first window is found as well)
+        if (!zone.ToBuffer(buffer, obj, true))
+            return false;
+        zoneName.SetFormat("DisassemblyZoneHash.%llu", start);
         if (!cache.AddRegion(zoneName.GetText(), buffer.data(), (uint32) buffer.size()))
             return false;
     }
@@ -359,28 +938,51 @@ bool SettingsData::ValidateCacheData(DissasmCache& cache, Reference<GView::Objec
 {
     std::vector<std::byte> buffer;
     LocalString<64> zoneName;
+    uint32 validatedZones = 0;
     for (auto& [start, zone] : disassemblyZones) {
+        // every version: the version 1 record (or the raw structure written before the field by field format). A zone without a record
+        // is a zone the plugin did not give when the cache was saved (the PE plugin gave only .text): the other zones validate the file
         zoneName.SetFormat("DisassemblyZone.%llu", start);
-        if (!cache.zonesData.contains(zoneName.GetText()))
-            return false;
-        const auto& entry = cache.zonesData[zoneName.GetText()];
-        if (!zone.ToBuffer(buffer, obj))
-            return false;
-        if (IsSameLegacyDisassemblyZone(entry, buffer, zone))
+        const auto entry = cache.zonesData.find(zoneName.GetText());
+        if (entry == cache.zonesData.end())
             continue;
-        if (entry.size != buffer.size())
+        if (!zone.ToBuffer(buffer, obj, false))
             return false;
-        if (memcmp(entry.data.get(), buffer.data(), buffer.size()) != 0)
+        const bool isSameZone = IsSameLegacyDisassemblyZone(entry->second, buffer, zone) ||
+                                (entry->second.size == buffer.size() && memcmp(entry->second.data.get(), buffer.data(), buffer.size()) == 0);
+        if (!isSameZone)
             return false;
+
+        // from version 2: the whole zone
+        if (cache.fileVersion < 2) {
+            validatedZones++;
+            continue;
+        }
+        zoneName.SetFormat("DisassemblyZoneHash.%llu", start);
+        const auto hashEntry = cache.zonesData.find(zoneName.GetText());
+        if (hashEntry == cache.zonesData.end() || !zone.ToBuffer(buffer, obj, true))
+            return false;
+        if (hashEntry->second.size != buffer.size() || memcmp(hashEntry->second.data.get(), buffer.data(), buffer.size()) != 0)
+            return false;
+        validatedZones++;
     }
-    return true;
+    return validatedZones > 0 || disassemblyZones.empty();
 }
 
-// Code zone records: [magic][version][comments][annotations][local variables] and, from version 2, [decimal operands]. The records saved
-// before the local variables existed start directly with the comments count (a count equal to the magic is not a realistic value) and
-// their lines do not contain the variable lines.
+// Code zone records: [magic][version] then
+//  - version 3: [comments by anchor][label names by address][local variables][decimal operands]. Nothing depends on the lines: a record
+//    applies to any analysis of the zone, what this analysis does not find (a label, a variable) is kept for later.
+//  - version 4: version 3 and [collapsible zones by the anchors of their first and last lines].
+//  - version 5: version 4 and [the comments of the assistant][the names it suggests].
+//  - version 6: version 5 and [the variables the user removed]. The variables of a record of a function are the ones of the analysis that
+//    saved it: one that the analysis finds now and the record does not have is a variable a newer analysis found, not a removal. The
+//    records before version 6 remove no variable.
+//  - versions 1 and 2 (read only): [comments by line][annotations by line][local variables] and, from version 2, [decimal operands].
+// The records saved before the local variables existed start directly with the comments count (a count equal to the magic is not a
+// realistic value) and their lines do not contain the variable lines.
 constexpr uint32 DISSASM_CODE_ZONE_CACHE_MAGIC   = 0x5A434447; // "GDCZ"
-constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 2;
+constexpr uint32 DISSASM_CODE_ZONE_CACHE_VERSION = 6; // 5: the suggestions of the assistant (comments, names), 6: the removed variables
+constexpr uint32 DISSASM_MAX_LABEL_NAME_SIZE     = 1024;
 
 // decimal operands: [count] then count x [instruction address (uint64)][numbers mask (uint32)]
 static void DecimalOperandsToBuffer(const std::map<uint64, uint32>& decimalOperands, std::vector<std::byte>& buffer)
@@ -409,24 +1011,224 @@ static bool DecimalOperandsFromBuffer(const std::byte*& start, const std::byte* 
     return true;
 }
 
-bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer) const
+// label names of the user: [count] then count x [relative address of the label (uint64)][name size (uint32)][name]
+static void LabelNamesToBuffer(const std::vector<std::pair<uint64, std::string>>& names, std::vector<std::byte>& buffer)
+{
+    append_bytes(buffer, static_cast<uint32>(names.size()));
+    for (const auto& [address, name] : names) {
+        append_bytes(buffer, address);
+        append_string(buffer, name);
+    }
+}
+
+static bool LabelNamesFromBuffer(const std::byte*& start, const std::byte* end, std::vector<std::pair<uint64, std::string>>& names)
+{
+    constexpr size_t MINIMUM_RECORD_SIZE = sizeof(uint64) + sizeof(uint32);
+    uint32 count                         = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / MINIMUM_RECORD_SIZE)
+        return false;
+    names.reserve(count);
+    for (uint32 i = 0; i < count; i++) {
+        uint64 address        = 0;
+        uint32 nameSize       = 0;
+        const std::byte* name = nullptr;
+        if (!read_primitive(start, end, address) || !read_primitive(start, end, nameSize) || nameSize == 0 || nameSize > DISSASM_MAX_LABEL_NAME_SIZE ||
+            !read_text_bytes(start, end, nameSize, name))
+            return false;
+        names.emplace_back(address, std::string(reinterpret_cast<const char*>(name), nameSize));
+    }
+    return true;
+}
+
+// collapsible zones: [count] then count x [first line anchor][last line anchor][collapsed (uint8)][name size (uint32)][name], an anchor is
+// [kind (uint8)][address (uint64)][frame offset (int32)]
+static void AppendAnchor(std::vector<std::byte>& buffer, const DissasmCommentAnchor& anchor)
+{
+    append_bytes(buffer, static_cast<uint8>(anchor.kind));
+    append_bytes(buffer, anchor.address);
+    append_bytes(buffer, anchor.frameOffset);
+}
+
+static bool ReadAnchor(const std::byte*& start, const std::byte* end, DissasmCommentAnchor& anchor)
+{
+    uint8 kind = 0;
+    if (!read_primitive(start, end, kind) || !read_primitive(start, end, anchor.address) || !read_primitive(start, end, anchor.frameOffset))
+        return false;
+    if (kind > static_cast<uint8>(DissasmCommentAnchor::Kind::Variable))
+        return false;
+    anchor.kind = static_cast<DissasmCommentAnchor::Kind>(kind);
+    return true;
+}
+
+// the variables the user removed: [count] then count x [function start (uint64)][frame offset (int32)]
+static void RemovedVariablesToBuffer(const std::set<std::pair<uint64, int32>>& removed, std::vector<std::byte>& buffer)
+{
+    append_bytes(buffer, static_cast<uint32>(removed.size()));
+    for (const auto& [function, frameOffset] : removed) {
+        append_bytes(buffer, function);
+        append_bytes(buffer, frameOffset);
+    }
+}
+
+static bool RemovedVariablesFromBuffer(const std::byte*& start, const std::byte* end, std::set<std::pair<uint64, int32>>& removed)
+{
+    constexpr size_t RECORD_SIZE = sizeof(uint64) + sizeof(int32);
+    uint32 count                 = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / RECORD_SIZE)
+        return false;
+    for (uint32 i = 0; i < count; i++) {
+        uint64 function   = 0;
+        int32 frameOffset = 0;
+        if (!read_primitive(start, end, function) || !read_primitive(start, end, frameOffset))
+            return false;
+        removed.emplace(function, frameOffset);
+    }
+    return true;
+}
+
+static void CollapsibleZonesToBuffer(const std::vector<DissasmCodeZone::CollapsibleZoneAnchors>& zones, std::vector<std::byte>& buffer)
+{
+    append_bytes(buffer, static_cast<uint32>(zones.size()));
+    for (const auto& zone : zones) {
+        AppendAnchor(buffer, zone.first);
+        AppendAnchor(buffer, zone.last);
+        append_bytes(buffer, static_cast<uint8>(zone.isCollapsed ? 1 : 0));
+        append_string(buffer, zone.name);
+    }
+}
+
+static bool CollapsibleZonesFromBuffer(const std::byte*& start, const std::byte* end, std::vector<DissasmCodeZone::CollapsibleZoneAnchors>& zones)
+{
+    constexpr size_t ANCHOR_SIZE         = sizeof(uint8) + sizeof(uint64) + sizeof(int32);
+    constexpr size_t MINIMUM_RECORD_SIZE = 2 * ANCHOR_SIZE + sizeof(uint8) + sizeof(uint32);
+    uint32 count                         = 0;
+    if (!read_primitive(start, end, count) || count > static_cast<size_t>(end - start) / MINIMUM_RECORD_SIZE)
+        return false;
+    zones.reserve(count);
+    for (uint32 i = 0; i < count; i++) {
+        DissasmCodeZone::CollapsibleZoneAnchors zone{};
+        uint8 isCollapsed     = 0;
+        uint32 nameSize       = 0;
+        const std::byte* name = nullptr;
+        if (!ReadAnchor(start, end, zone.first) || !ReadAnchor(start, end, zone.last) || !read_primitive(start, end, isCollapsed) ||
+            !read_primitive(start, end, nameSize) || nameSize > DISSASM_MAX_LABEL_NAME_SIZE || !read_text_bytes(start, end, nameSize, name))
+            return false;
+        zone.isCollapsed = isCollapsed != 0;
+        zone.name        = std::string(reinterpret_cast<const char*>(name), nameSize);
+        zones.push_back(std::move(zone));
+    }
+    return true;
+}
+
+bool DissasmCodeZone::ToBuffer(std::vector<std::byte>& buffer)
 {
     buffer.clear(); // the same buffer is used for every zone
-    uint32 reserveSize = 2 * sizeof(uint32) + dissasmType.commentsData.GetRequiredSizeForSerialization();
-    reserveSize += dissasmType.annotations.GetRequiredSizeForSerialization();
-    buffer.reserve(reserveSize);
-
     append_bytes(buffer, DISSASM_CODE_ZONE_CACHE_MAGIC);
     append_bytes(buffer, DISSASM_CODE_ZONE_CACHE_VERSION);
-    // comments
-    dissasmType.commentsData.ToBuffer(buffer);
-    // annotations
-    dissasmType.annotations.ToBuffer(buffer);
-    // local variables
-    localVariables.ToBuffer(buffer);
-    // numbers shown as decimal (version 2)
+    userComments.ToBuffer(buffer);
+    LabelNamesToBuffer(GetUserLabelNames(), buffer);
+    // the variables the user did not rename are saved with their default names (var_8): the next analysis names them again, a name that a
+    // newer version gives (6s: File, 6t: NumberOfBytesRead) is not taken back from the cache as a rename of the user. The name of the
+    // analysis stays when the default one is the name the user gave to another variable of the function
+    DissasmLocalVariables variables = localVariables;
+    std::string defaultName;
+    for (auto& function : variables.functions)
+        for (auto& variable : function.variables) {
+            if (variable.analysisName.empty() || variable.name != variable.analysisName)
+                continue;
+            FormatDefaultLocalVariableName(variable.frameOffset, Is64BitCode(), defaultName);
+            if (!function.HasVariableNamed(defaultName))
+                variable.name = defaultName;
+        }
+    variables.ToBuffer(buffer);
     DecimalOperandsToBuffer(decimalOperands, buffer);
+    CollapsibleZonesToBuffer(GetCollapsibleZoneAnchors(), buffer);
+    aiComments.ToBuffer(buffer);
+    LabelNamesToBuffer(std::vector<std::pair<uint64, std::string>>(suggestedNames.begin(), suggestedNames.end()), buffer);
+    RemovedVariablesToBuffer(removedLocalVariables, buffer);
     return true;
+}
+
+// Version 3: the variables of the record are matched by function start and frame offset. The names are given to the variables of the
+// analysis, the functions the analysis does not find are ignored. The variables the user removed (version 6) are removed from the
+// analysis; they stay removed for the next analyses even when this one does not find them. A variable of the analysis that the record
+// does not have is kept: before version 6 it was taken as removed by the user, and every variable a newer analysis found was lost.
+static void ApplyAddressKeyedVariables(
+      DissasmCodeZone& zone, const DissasmLocalVariables& variables, const std::set<std::pair<uint64, int32>>& removed, bool& zoneLinesChanged)
+{
+    zone.removedLocalVariables = removed;
+    std::vector<uint32> removedLines;
+    if (!removed.empty())
+        for (const auto& [line, details] : zone.dissasmType.annotations.mappings) {
+            if (!IsLocalVariableAnnotation(details))
+                continue;
+            if (removed.contains({ GetLocalVariableAnnotationFunction(details.second), GetLocalVariableAnnotationOffset(details.second) }))
+                removedLines.push_back(line); // sorted: the annotations are ordered by line
+        }
+    std::string defaultName;
+    for (const auto& cachedFunction : variables.functions) {
+        auto freshFunction = zone.localVariables.FindFunctionByStart(cachedFunction.startAddress);
+        if (!freshFunction)
+            continue;
+        for (const auto& cachedVariable : cachedFunction.variables) {
+            FormatDefaultLocalVariableName(cachedVariable.frameOffset, zone.Is64BitCode(), defaultName);
+            if (cachedVariable.name == defaultName)
+                continue; // not renamed by the user: the name of the analysis
+            auto freshVariable = freshFunction->FindVariable(cachedVariable.frameOffset);
+            if (freshVariable && freshVariable->name != cachedVariable.name && !freshFunction->HasVariableNamed(cachedVariable.name))
+                freshVariable->name = cachedVariable.name;
+        }
+    }
+    if (removedLines.empty())
+        return;
+    for (const uint32 line : removedLines) {
+        const auto value    = zone.dissasmType.annotations.mappings.at(line).second;
+        const auto function = zone.localVariables.FindFunctionByStart(GetLocalVariableAnnotationFunction(value));
+        if (!function)
+            continue;
+        if (const auto variable = function->FindVariable(GetLocalVariableAnnotationOffset(value)))
+            function->variables.erase(function->variables.begin() + (variable - function->variables.data()));
+        if (function->variables.empty())
+            zone.localVariables.functions.erase(zone.localVariables.functions.begin() + (function - zone.localVariables.functions.data()));
+    }
+    zone.RemoveRootAnnotationLines(removedLines);
+    zoneLinesChanged = true;
+}
+
+// a version 3 / 4 / 5 / 6 record: [comments][label names][local variables][decimal operands], from version 4 [collapsible zones], from
+// version 5 [comments of the assistant][names suggested by the assistant], from version 6 [the variables the user removed]
+struct AddressKeyedZoneRecord {
+    DissasmUserComments comments;
+    std::vector<std::pair<uint64, std::string>> labelNames;
+    DissasmLocalVariables variables;
+    std::map<uint64, uint32> decimalOperands;
+    std::vector<DissasmCodeZone::CollapsibleZoneAnchors> collapsibleZones;
+    DissasmUserComments aiComments;
+    std::vector<std::pair<uint64, std::string>> suggestedNames;
+    std::set<std::pair<uint64, int32>> removedVariables;
+
+    bool LoadFromBuffer(const std::byte*& start, const std::byte* end, uint32 version)
+    {
+        return comments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, labelNames) && variables.LoadFromBuffer(start, end) &&
+               DecimalOperandsFromBuffer(start, end, decimalOperands) && (version < 4 || CollapsibleZonesFromBuffer(start, end, collapsibleZones)) &&
+               (version < 5 || (aiComments.LoadFromBuffer(start, end) && LabelNamesFromBuffer(start, end, suggestedNames))) &&
+               (version < 6 || RemovedVariablesFromBuffer(start, end, removedVariables));
+    }
+};
+
+// the version 3 record in `data`; none for another version or a corrupted record
+static std::optional<AddressKeyedZoneRecord> ReadAddressKeyedZoneRecord(const DissasmCacheEntry& entry)
+{
+    const std::byte* start = entry.data.get();
+    const std::byte* end   = start + entry.size;
+    uint32 magic = 0, version = 0;
+    if (!read_primitive(start, end, magic) || magic != DISSASM_CODE_ZONE_CACHE_MAGIC || !read_primitive(start, end, version) || version < 3 ||
+        version > DISSASM_CODE_ZONE_CACHE_VERSION)
+        return {};
+    AddressKeyedZoneRecord record;
+    if (!record.LoadFromBuffer(start, end, version))
+        return {};
+    return record;
 }
 
 // The cache file is untrusted: it can only rename the labels / variables found by the analysis, remove variables and add comments.
@@ -435,7 +1237,7 @@ static bool ApplyCachedZoneData(
       DissasmCodeZone& zone, DissasmComments& comments, AnnotationContainer& annotations, DissasmLocalVariables& variables, bool& zoneLinesChanged)
 {
     auto& root = zone.dissasmType;
-    if (!root.internalTypes.empty())
+    if (!zone.collapsibleZones.empty())
         return false; // loaded right after the zone initialization
 
     // every cached variable is one of the analyzed variables (renamed or not), the missing ones were removed by the user
@@ -447,7 +1249,12 @@ static bool ApplyCachedZoneData(
             const auto freshVariable = freshFunction->FindVariable(cachedVariable.frameOffset);
             if (!freshVariable)
                 return false;
-            cachedVariable.size = freshVariable->size; // the analysis is the reference for everything but the name
+            // the analysis is the reference for everything but the name
+            cachedVariable.size         = freshVariable->size;
+            cachedVariable.analysisName = freshVariable->analysisName;
+            cachedVariable.type         = freshVariable->type;
+            cachedVariable.origin       = freshVariable->origin;
+            cachedVariable.structure    = freshVariable->structure;
         }
     }
 
@@ -484,14 +1291,9 @@ static bool ApplyCachedZoneData(
     }
     root.annotations    = std::move(annotations);
     zone.localVariables = std::move(variables);
-    if (!removedLines.empty()) {
-        const auto removedCount = static_cast<uint32>(removedLines.size());
-        root.indexZoneEnd -= std::min(removedCount, root.indexZoneEnd);
-        root.workingIndexZoneEnd = root.indexZoneEnd;
-        zone.offsetCacheMaxLine  = 0;
-        zone.ResetTypesReferenceList();
+    zone.RebuildLineIndex(); // the annotations of the record
+    if (!removedLines.empty())
         zoneLinesChanged = true;
-    }
     return true;
 }
 
@@ -499,7 +1301,7 @@ static bool ApplyCachedZoneData(
 static bool ApplyLegacyCachedZoneData(DissasmCodeZone& zone, DissasmComments& comments, AnnotationContainer& annotations)
 {
     auto& root = zone.dissasmType;
-    if (!root.internalTypes.empty())
+    if (!zone.collapsibleZones.empty())
         return false; // loaded right after the zone initialization
 
     std::vector<uint32> variableLines;
@@ -566,7 +1368,7 @@ static bool ApplyRemappedCachedZoneData(
       DissasmCodeZone& zone, DissasmComments& comments, AnnotationContainer& annotations, DissasmLocalVariables& variables, bool& zoneLinesChanged)
 {
     auto& root = zone.dissasmType;
-    if (!root.internalTypes.empty())
+    if (!zone.collapsibleZones.empty())
         return false; // loaded right after the zone initialization
 
     // the lines of the analysis: one label per address, one line per local variable
@@ -692,18 +1494,52 @@ static bool ApplyRemappedCachedZoneData(
 
 bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesChanged)
 {
-    zoneLinesChanged    = false;
-    cacheRecordRejected = false;
+    zoneLinesChanged      = false;
+    cacheRecordRejected   = false;
+    mergedUnappliedRecord = false;
     if (!cache.hasCache)
         return true;
     if (zoneType != DissasmParseZoneType::DissasmCodeParseZone)
         return false;
+    const bool loaded = TryLoadCodeZoneRecord(cache, zoneLinesChanged);
+    // a record that an older version could not apply (it was kept aside): its comments, names and zones come back
+    if (MergeUnappliedRecord(cache))
+        zoneLinesChanged = true;
+    RebuildLineIndex(); // the annotations of the record
+    return loaded;
+}
 
+bool DissasmCodeZone::TryLoadCodeZoneRecord(DissasmCache& cache, bool& zoneLinesChanged)
+{
     auto it = FindCodeZoneRecord(cache, *this);
     if (it == cache.zonesData.end())
         return false;
     // until it is applied: a record that can not be applied is kept aside by the next save (SaveCacheData)
-    cacheRecordRejected         = true;
+    cacheRecordRejected = true;
+    if (!collapsibleZones.empty())
+        return false; // loaded right after the zone initialization
+
+    // version 3: everything is keyed by address / anchor, it applies to this analysis whatever its lines are
+    if (auto record = ReadAddressKeyedZoneRecord(it->second); record.has_value()) {
+        ApplyAddressKeyedVariables(*this, record->variables, record->removedVariables, zoneLinesChanged);
+        for (const auto& [address, name] : record->labelNames)
+            ApplyUserLabelName(address, name);
+        userComments = std::move(record->comments);
+        aiComments   = std::move(record->aiComments);
+        const uint64 codeSize = GetCodeSize();
+        for (const auto& [address, mask] : record->decimalOperands)
+            if (codeSize == 0 || address < codeSize)
+                decimalOperands[address] = mask;
+        for (auto& [address, name] : record->suggestedNames)
+            if (codeSize == 0 || address < codeSize)
+                suggestedNames[address] = std::move(name);
+        RebuildLineIndex(); // the removed variables lines
+        if (ApplyCollapsibleZoneAnchors(record->collapsibleZones))
+            zoneLinesChanged = true; // collapsed zones: less lines are shown
+        cacheRecordRejected = false;
+        return true;
+    }
+
     const std::byte* dataPtr    = it->second.data.get();
     const std::byte* dataPtrEnd = dataPtr + it->second.size;
 
@@ -715,7 +1551,7 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         return false;
     if (magic == DISSASM_CODE_ZONE_CACHE_MAGIC) {
         uint32 version = 0;
-        if (!read_primitive(dataPtr, dataPtrEnd, version) || version < 1 || version > DISSASM_CODE_ZONE_CACHE_VERSION)
+        if (!read_primitive(dataPtr, dataPtrEnd, version) || version < 1 || version > 2) // a corrupted version 3 record, or a newer one
             return false;
         DissasmLocalVariables variables;
         if (!comments.LoadFromBuffer(dataPtr, dataPtrEnd) || !annotations.LoadFromBuffer(dataPtr, dataPtrEnd) || !variables.LoadFromBuffer(dataPtr, dataPtrEnd))
@@ -733,6 +1569,8 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         for (const auto& [address, mask] : cachedDecimalOperands)
             if (codeSize == 0 || address < codeSize)
                 decimalOperands[address] = mask;
+        MigrateLegacyLabelNames(); // the records saved before the VA names
+        MoveLineCommentsToAnchors();
         cacheRecordRejected = false;
         return true;
     }
@@ -745,6 +1583,45 @@ bool DissasmCodeZone::TryLoadDataFromCache(DissasmCache& cache, bool& zoneLinesC
         return false;
     if (!ApplyLegacyCachedZoneData(*this, comments, annotations))
         return false;
+    MigrateLegacyLabelNames();
+    MoveLineCommentsToAnchors();
     cacheRecordRejected = false;
     return true;
+}
+
+bool DissasmCodeZone::MergeUnappliedRecord(DissasmCache& cache)
+{
+    LocalString<64> recordName;
+    recordName.SetFormat("%.*s%llu",
+                         static_cast<int>(UNAPPLIED_CODE_ZONE_RECORD_PREFIX.size()),
+                         UNAPPLIED_CODE_ZONE_RECORD_PREFIX.data(),
+                         static_cast<unsigned long long>(zoneDetails.startingZonePoint));
+    const auto it = cache.zonesData.find(recordName.GetText());
+    if (it == cache.zonesData.end() || !it->second.data || !CanReachAsmLines())
+        return false;
+    // only the address keyed records can be merged into an analysis that already has its data (the line keyed ones need their layout)
+    auto record = ReadAddressKeyedZoneRecord(it->second);
+    if (!record.has_value())
+        return false;
+    // the data of the zone wins: only what it does not have is added
+    for (auto& [anchor, text] : record->comments.comments)
+        userComments.comments.try_emplace(anchor, std::move(text));
+    const auto currentNames = GetUserLabelNames();
+    for (const auto& [address, name] : record->labelNames) {
+        const bool named = std::any_of(currentNames.begin(), currentNames.end(), [address](const auto& entry) { return entry.first == address; });
+        if (!named)
+            ApplyUserLabelName(address, name);
+    }
+    for (const auto& [address, mask] : record->decimalOperands)
+        decimalOperands.try_emplace(address, mask);
+    for (auto& [anchor, text] : record->aiComments.comments)
+        aiComments.comments.try_emplace(anchor, std::move(text));
+    for (auto& [address, name] : record->suggestedNames)
+        suggestedNames.try_emplace(address, std::move(name));
+    mergedUnappliedRecord = true;
+    // the zones only when the zone has none (zones of two records may overlap)
+    if (!collapsibleZones.empty() || record->collapsibleZones.empty())
+        return false;
+    RebuildLineIndex();
+    return ApplyCollapsibleZoneAnchors(record->collapsibleZones);
 }

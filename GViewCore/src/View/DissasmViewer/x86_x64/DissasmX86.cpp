@@ -3,6 +3,9 @@
 #include "DissasmCodeZone.hpp"
 #include "DissasmFunctionUtils.hpp"
 #include "DissasmX86LocalVariables.hpp"
+#include "X86InstructionInfo.hpp"
+#include "DissasmAnnotations.hpp"
+#include "DissasmSignatures.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>
@@ -44,44 +47,46 @@ constexpr uint32 textTotalColumnLength =
 constexpr uint32 commentPaddingLength   = 10;
 constexpr uint32 textPaddingLabelsSpace = 3;
 
-// TODO: to be moved inside plugin for some sort of API for token<->color
-inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, DissasmColors& colors, const AsmData& data)
+ColorPair GView::View::DissasmViewer::GetX86MnemonicColor(X86InstructionKind kind, const DissasmColors& colors)
 {
-    if (keyword.empty())
-        return colors.AsmDefaultColor;
-    if (keyword[0] == 'j')
+    switch (kind) {
+    case X86InstructionKind::Call:
+    case X86InstructionKind::Return:
+        return colors.AsmFunctionColor;
+    case X86InstructionKind::Jump:
+    case X86InstructionKind::ConditionalJump:
         return colors.AsmJumpInstruction;
-
-    LocalString<4> holder;
-    holder.Set(keyword);
-    uint32 val;
-    memcpy(&val, holder.GetText(), sizeof(val));
-
-    const auto it = data.instructionToColor.find(val);
-    if (it != data.instructionToColor.end()) {
-        return it->second;
+    case X86InstructionKind::Compare:
+        return colors.AsmCompareInstructionColor;
+    case X86InstructionKind::Stack:
+        return colors.AsmStackRegisterColor;
+    case X86InstructionKind::Padding:
+        return colors.AsmIrrelevantInstructionColor;
+    case X86InstructionKind::Data:
+        return colors.AsmLocationInstruction;
+    case X86InstructionKind::System:
+        return colors.AsmSystemInstructionColor;
+    default:
+        return colors.AsmDefaultColor;
     }
+}
 
-    if (keyword.size() < 4) {
-        // General registers: EAX EBX ECX EDX -> AsmWorkRegisterColor
-        // 16 bits: AX BX CX DX -> AsmWorkRegisterColor
-        // 8 bits: AH AL BH BL CH CL DH DL -> AsmWorkRegisterColor
-        // Segment registers: CS DS ES FS GS SS -> AsmWorkRegisterColor
-        // Index and pointers: ESI EDI EBP EIP ESP along with variations (ESI, SI) AsmStackRegisterColor
-        switch (keyword[keyword.size() - 1]) {
-        case 'x':
-        case 's':
-        case 'l':
-        case 'h':
-            return colors.AsmWorkRegisterColor;
-        case 'p':
-        case 'i':
-            return colors.AsmStackRegisterColor;
-        default:
-            break;
-        }
+ColorPair GView::View::DissasmViewer::GetX86TokenColor(std::string_view token, const DissasmColors& colors)
+{
+    switch (GetX86RegisterKind(token)) {
+    case X86RegisterKind::General:
+        return colors.AsmWorkRegisterColor;
+    case X86RegisterKind::Pointer:
+        return colors.AsmStackRegisterColor;
+    default:
+        break;
     }
-
+    static constexpr std::string_view SIZE_KEYWORDS[] = { "byte", "word", "dword", "fword", "qword", "tbyte", "xmmword", "ymmword", "zmmword", "ptr" };
+    for (const auto keyword : SIZE_KEYWORDS)
+        if (token == keyword)
+            return colors.AsmLocationInstruction;
+    if (token.size() > 2 && token[0] == 'j' && token[1] == '_') // j_CreateFileW: an import thunk
+        return colors.AsmJumpInstruction;
     return colors.AsmDefaultColor;
 }
 
@@ -141,20 +146,27 @@ inline void DissasmAddColorsToInstruction(
     // AppCUI::Graphics:: GetCharacterCode
     // TODO: in loc de label jmp_address:
     LocalString<128> string;
-    string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
+    // the address column: VA / RVA / file offset (addressPadding is the address of the first decoded instruction)
+    string.SetFormat("0x%08" PRIx64, insn.address + addressPadding);
+    string.AddChars(' ', string.Len() + 1u < addressTotalLength ? addressTotalLength - 1u - string.Len() : 1u);
     cb.Add(string, colors.AsmOffsetColor);
 
     if (!cfg.ShowOnlyDissasm) {
         cb.InsertChar('|', cb.Len(), colors.AsmTitleColumnColor);
 
+        const uint32 shownBytes = insn.hasNoBytes ? 0u : static_cast<uint32>(insn.size); // an uninitialized zone has no bytes
         for (uint32 i = 0; i < opCodesGroupsShown; i++) {
-            if (i >= insn.size) {
+            if (i >= shownBytes) {
                 string.Clear();
                 const uint32 remaining = opCodesGroupsShown - i;
                 // const uint32 spaces    = remaining >= 2 ? remaining - 2 : 0;
                 string.SetChars(' ', remaining * 3);
                 cb.Add(string, colors.AsmDefaultColor);
                 break;
+            }
+            if (i == opCodesGroupsShown - 1 && insn.size > opCodesGroupsShown) {
+                cb.Add(".. ", colors.AsmDefaultColor); // the instruction is longer than the column: the last bytes are not shown
+                continue;
             }
             const uint8 byte = insn.bytes[i];
             string.SetFormat("%02x ", byte);
@@ -164,7 +176,7 @@ inline void DissasmAddColorsToInstruction(
         cb.InsertChar('|', cb.Len(), colors.AsmTitleColumnColor);
 
         for (uint32 i = 0; i < textColumnTextLength; i++) {
-            if (i >= insn.size) {
+            if (i >= shownBytes) {
                 string.Clear();
                 const uint32 remaining = textColumnTextLength - i - 1;
                 string.SetChars(' ', remaining);
@@ -217,9 +229,18 @@ inline void DissasmAddColorsToInstruction(
         cb.Add(string, colors.AsmDefaultColor);
     }
 
-    string.SetFormat("%-6s", insn.mnemonic);
-    const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, colors, data);
-    cb.Add(string, color);
+    const ColorPair color = insn.label.empty() ? GetX86MnemonicColor(static_cast<X86InstructionKind>(insn.instructionKind), colors)
+                                               : GetX86TokenColor(insn.label, colors);
+    if (insn.label.empty()) {
+        string.SetFormat("%-6s", insn.mnemonic);
+        cb.Add(string, color);
+    } else {
+        cb.Add(insn.label, color); // a label: its whole name
+        if (insn.label.size() < 6) {
+            string.SetChars(' ', static_cast<uint32>(6 - insn.label.size()));
+            cb.Add(string, color);
+        }
+    }
 
     if (insn.op_str) {
         const std::string_view op_str = insn.op_str;
@@ -233,16 +254,15 @@ inline void DissasmAddColorsToInstruction(
         };
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
-        auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer, &data](std::string_view token) {
+        auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer](std::string_view token) {
             lambdaBuffer.Clear();
             // numbers: hexadecimal (0x...) or decimal (small values, or switched to decimal with the H key)
-            if (!token.empty() && token[0] >= '0' && token[0] <= '9') {
+            if (!token.empty() && ((token[0] >= '0' && token[0] <= '9') || (token[0] == '#' && token.size() > 1))) { // ARM64: #0x10
                 cb.Add(token.data(), colors.AsmOffsetColor);
                 return;
             }
             lambdaBuffer.Set(token.data());
-            const ColorPair color = GetASMColorPairByKeyword(token, colors, data);
-            cb.Add(token, color);
+            cb.Add(token, GetX86TokenColor(token, colors));
         };
 
         if (op_str.length() > 2 && op_str[0] == '0' && op_str[1] == 'x') {
@@ -265,10 +285,15 @@ inline void DissasmAddColorsToInstruction(
             buffer.Clear();
         };
 
-        char lastOp = ' ';
+        char lastOp      = ' ';
+        uint32 nameDepth = 0; // inside the parentheses / angle brackets of a name (std::pair<int,int>, RTTI_Base_Class_Descriptor_at_(0,-1,0,64))
         for (size_t i = 0; i < op_str.size(); i++) {
             const char c = op_str[i];
-            if (c == ' ' || c == ',' || c == '[' || c == ']') {
+            if (buffer.Len() > 0 && (c == '(' || c == '<'))
+                nameDepth++;
+            else if (nameDepth > 0 && (c == ')' || c == '>'))
+                nameDepth--;
+            if (nameDepth == 0 && (c == ' ' || c == ',' || c == '[' || c == ']')) {
                 if (buffer.Len() > 0) {
                     if (lastOp != '[')
                         cb.Add(" ");
@@ -276,7 +301,9 @@ inline void DissasmAddColorsToInstruction(
                 }
                 if (c != ' ') {
                     const char tmp[3] = { ' ', c, '\0' };
-                    const char* start = (c == '[') ? tmp : tmp + 1;
+                    // ds:dword_403000[eax*4]: the index of a named table follows the name
+                    const bool afterName = c == '[' && i > 0 && op_str[i - 1] != ' ' && op_str[i - 1] != ',' && op_str[i - 1] != ':';
+                    const char* start    = (c == '[' && !afterName) ? tmp : tmp + 1;
                     cb.Add(start, colors.AsmCompareInstructionColor);
                 }
                 lastOp = c;
@@ -287,12 +314,14 @@ inline void DissasmAddColorsToInstruction(
             buffer.AddChar(c);
         }
         if (buffer.Len() > 0) {
-            cb.Add(" ");
+            const bool isWriteback = lastOp == ']' && buffer.Len() == 1 && buffer.GetText()[0] == '!'; // ARM64: [sp, #-0x10]!
+            if (!isWriteback)
+                cb.Add(" ");
             addToken();
         }
     } else {
         if (mappingPtr) {
-            string.SetFormat("%s", mappingPtr->name.data());
+            string.SetFormat(" %s", mappingPtr->name.data()); // separated from the mnemonic as the operands are
             const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? colors.AsmLocationInstruction : colors.AsmFunctionColor;
             cb.Add(string, mapColor);
         }
@@ -337,13 +366,11 @@ inline cs_insn* GetCurrentInstructionByLine(
         return nullptr;
     }
 
-    // TODO: keep the handle open and insn open until the program ends
-    csh handle;
-    const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(zone->internalArchitecture), &handle);
-    if (resCode != CS_ERR_OK) {
+    const csh handle = zone->GetDecodeHandle();
+    if (handle == 0) {
         zone->offsetCacheMaxLine = 0;
         if (dli)
-            dli->WriteErrorToScreen(cs_strerror(resCode));
+            dli->WriteErrorToScreen("ERROR: capstone could not be initialized!");
         return nullptr;
     }
 
@@ -353,21 +380,21 @@ inline cs_insn* GetCurrentInstructionByLine(
     size_t remainingSize = static_cast<size_t>(zone->asmSize);
     while (lineDifferences > 0) {
         // undecodable bytes are data lines (db): the same lines as the ones counted by the zone initialization
-        const bool decoded = DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn);
+        const bool decoded =
+              DecodeX86Line(handle, &zone->asmData, &remainingSize, &zone->asmAddress, insn, &zone->instructionBoundaries, zone->paddingAlignmentBase,
+                            &zone->instructionSet);
         zone->asmSize      = remainingSize;
         if (!decoded) { // no bytes left: the line is after the decoded code
             zone->offsetCacheMaxLine = 0;
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
             cs_free(insn, 1);
-            cs_close(&handle);
             return nullptr;
         }
         lineDifferences--;
     }
     zone->lastDrawnLine = lineToReach; // the decoding position is right after this line, whoever asked for it
 
-    cs_close(&handle);
     return insn;
 }
 
@@ -382,95 +409,70 @@ inline const MemoryMappingEntry* TryExtractMemoryMapping(const Pointer<SettingsD
     return nullptr;
 }
 
-inline optional<vector<uint8>> TryExtractPushText(Reference<GView::Object> obj, const uint64_t offset)
+// the text found at `offset`, quoted: "ascii" or L"utf-16" (printable characters only, at least DISSASM_MINIMUM_STRING_PREVIEW of them,
+// ended by a NUL or by the first non printable character); none when the bytes do not look like a string
+std::optional<std::string> TryExtractStringPreview(Reference<GView::Object> obj, const uint64 offset)
 {
     const auto stringBuffer = obj->GetData().Get(offset, DISSAM_MAXIMUM_STRING_PREVIEW * 2, false);
-    if (!stringBuffer.IsValid())
+    if (!stringBuffer.IsValid() || stringBuffer.GetLength() < 2)
         return {};
 
-    auto dataStart = stringBuffer.GetData();
-    auto dataEnd   = dataStart + stringBuffer.GetLength();
-
-    std::vector<uint8> textFound;
-    textFound.reserve(DISSAM_MAXIMUM_STRING_PREVIEW * 2);
-    textFound.push_back('"');
-    bool wasZero = true;
-
-    while (dataStart < dataEnd) {
-        if (*dataStart >= 32 && *dataStart <= 126) {
-            textFound.push_back(*dataStart);
-            wasZero = false;
-        } else if (*dataStart == '\0') {
-            if (wasZero)
-                break;
-            wasZero = true;
-        } else {
+    const uint8* data  = stringBuffer.GetData();
+    const size_t size  = stringBuffer.GetLength();
+    const bool isWide  = data[1] == 0 && data[0] != 0;
+    const size_t step  = isWide ? 2 : 1;
+    auto isPrintable   = [](uint8 c) { return c >= 32 && c <= 126; };
+    std::string text;
+    bool truncated = false;
+    for (size_t i = 0; i + step <= size; i += step) {
+        if (isWide && data[i + 1] != 0)
+            break; // not a latin UTF-16 character
+        const uint8 c = data[i];
+        if (!isPrintable(c))
+            break;
+        if (text.size() == DISSAM_MAXIMUM_STRING_PREVIEW) {
+            truncated = true;
             break;
         }
-        dataStart++;
+        text.push_back(static_cast<char>(c));
     }
+    if (text.size() < DISSASM_MINIMUM_STRING_PREVIEW)
+        return {};
+    std::string result = isWide ? "L\"" : "\"";
+    result += text;
+    if (truncated)
+        result += "...";
+    result += '"';
+    return result;
+}
 
-    if (textFound.size() >= DISSAM_MAXIMUM_STRING_PREVIEW) {
-        while (textFound.size() > DISSAM_MAXIMUM_STRING_PREVIEW)
-            textFound.erase(textFound.begin() + textFound.size() - 1);
-        textFound.push_back('.');
-        textFound.push_back('.');
-        textFound.push_back('.');
-    }
-    textFound.push_back('"');
-    textFound.push_back('\0');
-    return textFound;
+// file offset of an address used by the operands: a VA in 32 bit code (push offset aText / call [__imp_X]), an RVA otherwise
+static std::optional<uint64> TranslateOperandAddressToFileOffset(SettingsData* settings, uint64 value, bool isVA)
+{
+    if (!settings || !settings->offsetTranslateCallback.IsValid())
+        return {};
+    const auto type   = isVA ? DissasmPEConversionType::VA : DissasmPEConversionType::RVA;
+    const auto offset = settings->offsetTranslateCallback->TranslateToFileOffset(value, static_cast<uint32>(type));
+    if (offset == static_cast<uint64>(-1))
+        return isVA ? settings->GetUninitializedFileOffset(value) : std::nullopt; // a variable of the uninitialized data
+    return offset;
+}
+
+// RVA of the first decoded instruction (cachedCodeOffsets[0]): the decoded addresses are relative to it
+static uint64 GetCodeStartRVA(SettingsData* settings, const DissasmCodeZone* zone)
+{
+    return settings->offsetTranslateCallback->TranslateFromFileOffset(zone->cachedCodeOffsets[0].offset, static_cast<uint32>(DissasmPEConversionType::RVA));
 }
 
 std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine)
 {
-    // the same bookkeeping as the drawn lines: a second incremental walker counted the line it was already on (or the previous
-    // line) as the next one, so the instruction below the cursor was followed and the shared counters were left out of sync
+    // the instruction index of a shown line; none for a label / variable line, a collapsed zone or a line after the zone
     if (!zone->CanReachAsmLines())
         return {};
-    zone->ReachZoneLine(currentLine);
-
-    const DissasmCodeInternalType& currentType = zone->types.back();
-    if (currentType.annotations.contains(currentLine))
+    const auto place = zone->DisplayToExpanded(currentLine);
+    if (!place.has_value() || place->collapsedZone || zone->IsAnnotationLine(place->expandedLine))
         return {};
-
-    const uint32 value = currentType.GetCurrentAsmLine();
-    if (value == 0)
-        return {};
-
-    return value - 1u;
-}
-
-bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, DrawLineInfo* dli)
-{
-    const auto foundAnnotation = currentType.annotations.find(lineToSearch);
-    if (foundAnnotation == currentType.annotations.end()) {
-        if (dli)
-            dli->WriteErrorToScreen("ERROR: failed to find annotation for line!");
-        return false;
-    }
-
-    size        = 0;
-    currentLine = lineToSearch;
-    address     = foundAnnotation->second.second;
-
-    if (currentType.isCollapsed) {
-        op_str      = strdup(currentType.name.c_str());
-        op_str_size = static_cast<uint32>(currentType.name.size());
-        SetMnemonic("collapsed");
-        return true;
-    }
-
-    // labels can be renamed to any length, the mnemonic is always NUL terminated
-    SetMnemonic(foundAnnotation->second.first);
-    // strncpy((char*) bytes, "------", sizeof(bytes));
-    // size        = static_cast<uint32>(strlen((char*) bytes));
-
-    // op_str      = strdup("<--");
-    // op_str_size = static_cast<uint32>(strlen(op_str));
-    op_str      = nullptr;
-    op_str_size = 0;
-    return true;
+    return zone->ExpandedToInstructionIndex(place->expandedLine);
 }
 
 struct CsInsnDeleter {
@@ -493,20 +495,109 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         free(op_str);
         op_str = nullptr;
     }
-    const std::string_view text = operands ? operands : "";
+    std::string_view text = operands ? operands : "";
+    // M: the immediate as the symbolic constant the user chose (mov edx, GENERIC_READ)
+    std::string constantOperands;
+    if (zone)
+        if (const auto constant = zone->operandConstants.find(address); constant != zone->operandConstants.end())
+            if (auto rewritten = ApplyOperandConstant(text, constant->second); rewritten.has_value()) {
+                constantOperands = std::move(rewritten.value());
+                text             = constantOperands;
+                operands         = constantOperands.c_str();
+            }
 
     // [ebp - 8] -> [ebp + var_8] when the slot is a recognized variable of the function that contains the instruction
     const DissasmFunctionFrame* function = nullptr;
     const DissasmLocalVariable* variable = nullptr;
     X86FrameOperand frameOperand{};
-    if (zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)) {
-        function = zone->localVariables.FindFunctionByAddress(address);
-        variable = function ? function->FindVariable(frameOperand.frameOffset) : nullptr;
+    std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]; x64 without a frame register: [rsp + 0x38 + var_18]
+    std::string stackJoiner;
+    bool alignedStackOffset = false; // through esp in an aligned frame (and esp, -8): not the saved registers / the return address
+    if (zone && !zone->localVariables.Empty() && zone->IsArmCode()) {
+        // ARM: [x29, #var_8] / [fp, #var_8] / [r7, #var_8] / [sp, #var_10] / [sp] -> [sp, #var_18]
+        function = zone->FindFrameOfAddress(address); // a chunk: the frame of its function
+        Arm64FrameOperand slot{};
+        const std::string_view frameRegister =
+              zone->IsArm64Code() ? std::string_view("x29") : (function && function->frameRegister == 11 ? std::string_view("fp") : std::string_view("r7"));
+        if (function && FindArmFrameOperand(text, frameRegister, slot) && (slot.isStackPointerBased || function->usesFrameRegister)) {
+            frameOperand = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + function->stackOffset : slot.displacement };
+            variable     = function->FindVariableContaining(frameOperand.frameOffset);
+            joiner       = slot.needsSeparator ? std::string_view(", #") : std::string_view();
+        }
+    } else if (const auto* framed = zone && !zone->localVariables.Empty() && FindX86FrameOperand(text, zone->Is64BitCode(), frameOperand)
+                                         ? zone->FindFrameOfAddress(address) // a chunk: the frame of its function
+                                         : nullptr;
+               framed && framed->usesFrameRegister) {
+        function = framed;
+        variable = function->FindVariableContaining(frameOperand.frameOffset);
+    } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
+               stackFunction && (!stackFunction->usesFrameRegister || !stackFunction->stackDeltas.empty())) {
+        // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; an alias of
+        // it: a copy (mov r11, rsp: [r11 - 0x28] -> [r11 + var_28]), the biased frame pointer of MSVC x64 (lea rbp, [rsp - 0x5f]:
+        // [rbp + 0xf] -> [rbp + 0x5f + var_50]); a frame register function: its stack pointer from the frame register (MergeStackPointerSlots:
+        // [esp + 0x10] -> [esp + 0x200 + var_1F0])
+        // a funclet of x64 SEH: rbp is the establisher frame of its function, the slots are the variables of the function
+        std::optional<int32> delta;
+        // a chunk of a function (its cold code): the variables of the function
+        const DissasmFunctionFrame* owner =
+              stackFunction->variablesOf.has_value() ? zone->localVariables.FindFunctionByStart(stackFunction->variablesOf.value()) : stackFunction;
+        if (FindX86StackOperand(text, frameOperand, zone->Is64BitCode() ? "rsp" : "esp")) {
+            delta              = stackFunction->StackDeltaAt(address);
+            alignedStackOffset = stackFunction->usesFrameRegister && stackFunction->alignedStack;
+        } else
+            for (const auto& alias : stackFunction->stackAliases)
+                if (address >= alias.start && address < alias.end && FindX86StackOperand(text, frameOperand, alias.reg)) {
+                    delta = alias.delta;
+                    if (alias.frameOf.has_value())
+                        owner = zone->localVariables.FindFunctionByStart(alias.frameOf.value());
+                    break;
+                }
+        if (delta.has_value() && owner) {
+            function = owner;
+            frameOperand.frameOffset += delta.value();
+            variable = function->FindVariableContaining(frameOperand.frameOffset);
+            if (delta.value() != 0) {
+                char depth[24];
+                snprintf(depth, sizeof(depth), delta.value() < 0 ? " + 0x%x + " : " - 0x%x + ", static_cast<unsigned int>(delta.value() < 0 ? -delta.value() : delta.value()));
+                stackJoiner = depth;
+                joiner      = stackJoiner;
+            }
+        }
     }
     // numbers the user switched to decimal (H key)
     const uint32 decimalMask = zone ? zone->GetDecimalOperandsMask(address) : 0u;
 
+    // the return address of the function (IDA: retaddr; wil logs _ReturnAddress(): mov rcx, [rsp + 0x28]): not a variable of the frame,
+    // its slot named; at the stack pointer of the entry, above the saved frame register. The slots of the registers the prologue pushed
+    // (IDA: var_s0 the lowest, var_s8): not variables either (the epilogue of MSVC x64: lea r11, [rsp + 0x80 + var_s0]; GCC: mov rbx,
+    // qword ptr [rbp + var_s0])
+    const bool namesSlot = !variable && function && zone && !zone->IsArmCode() && decimalMask == 0 && !alignedStackOffset;
+    char savedSlot[24]   = {};
+    if (namesSlot && function->IsSavedRegisterSlot(frameOperand.frameOffset))
+        snprintf(savedSlot, sizeof(savedSlot), "var_s%X", static_cast<unsigned int>(frameOperand.frameOffset - function->savedRegistersOffset));
+    if (namesSlot && (savedSlot[0] != 0 || frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0))) {
+        std::string rewritten(text.substr(0, frameOperand.replaceStart));
+        rewritten.append(joiner);
+        rewritten.append(savedSlot[0] != 0 ? savedSlot : "retaddr");
+        rewritten.append(text.substr(frameOperand.replaceEnd));
+        op_str      = portable_strdup(rewritten.c_str());
+        op_str_size = static_cast<uint32>(rewritten.size());
+        return;
+    }
+
     if (!variable) {
+        // T: the displacement of the memory operand as a field of the structure the user gave ([rbx + STARTUPINFOW.dwFlags])
+        const auto operandStructure = zone ? zone->operandStructures.find(address) : std::map<uint64, std::string>::const_iterator{};
+        if (zone && operandStructure != zone->operandStructures.end()) {
+            const auto arch       = zone->GetArchAt(address);
+            const auto* structure = FindApiStructure(operandStructure->second, arch == DissasmArch::X64 || arch == DissasmArch::Arm64);
+            const std::string numbers = decimalMask != 0 ? FormatOperandNumbers(text, decimalMask) : std::string(text);
+            if (const auto rewritten = structure ? ApplyOperandStructure(numbers, *structure, zone->IsArmCode()) : std::nullopt; rewritten.has_value()) {
+                op_str      = portable_strdup(rewritten->c_str());
+                op_str_size = static_cast<uint32>(rewritten->size());
+                return;
+            }
+        }
         if (decimalMask != 0) {
             const auto formatted = FormatOperandNumbers(text, decimalMask);
             op_str               = portable_strdup(formatted.c_str());
@@ -518,12 +609,18 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         return;
     }
 
+    // a field of a structure: [rbp + StartupInfo.dwFlags], the first one for an access at its start ([rbp + StartupInfo.cb]; lea: the
+    // structure). The line refers to the structure: a rename renames it
+    std::string name = variable->name;
+    if (variable->structure)
+        name += FormatApiStructureMember(
+              *variable->structure, static_cast<uint32>(frameOperand.frameOffset - variable->frameOffset), strcmp(mnemonic, "lea") != 0);
     std::string rewritten;
-    rewritten.reserve(text.size() + variable->name.size() + 3u);
+    rewritten.reserve(text.size() + name.size() + 3u);
     rewritten.append(text.substr(0, frameOperand.replaceStart));
-    rewritten.append(" + ");
+    rewritten.append(joiner);
     localVariableNameStart = static_cast<uint32>(rewritten.size());
-    rewritten.append(variable->name);
+    rewritten.append(name);
     rewritten.append(text.substr(frameOperand.replaceEnd));
     if (decimalMask != 0)
         rewritten = FormatOperandNumbers(rewritten, decimalMask, &localVariableNameStart);
@@ -532,36 +629,362 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     op_str_size           = static_cast<uint32>(rewritten.size());
     localVariableKind     = LocalVariableKind::Reference;
     localVariableFunction = function->startAddress;
-    localVariableOffset   = frameOperand.frameOffset;
-    localVariableNameSize = static_cast<uint32>(variable->name.size());
+    localVariableOffset   = variable->frameOffset;
+    localVariableNameSize = static_cast<uint32>(name.size());
 }
 
-// "qword ptr [rip + 0x1234]" -> 0x1234 ("[rip - 0x10]" -> -0x10 as two's complement): the displacement of a RIP relative operand
-static std::optional<uint64> GetRipRelativeDisplacement(std::string_view operands)
+const MemoryMappingEntry* GView::View::DissasmViewer::FindX86OperandsImport(SettingsData* settings, const DissasmCodeZone* zone, const X86OperandsInfo& operands)
 {
-    const auto ripPosition = operands.find("[rip ");
-    if (ripPosition == std::string_view::npos)
-        return {};
-    size_t pos = ripPosition + 5;
-    if (pos + 4 > operands.size() || (operands[pos] != '+' && operands[pos] != '-') || operands[pos + 1] != ' ' || operands[pos + 2] != '0' ||
-        operands[pos + 3] != 'x')
-        return {};
-    const bool isNegative = operands[pos] == '-';
-    pos += 4;
-    uint64 value  = 0;
-    uint32 digits = 0;
-    for (; pos < operands.size() && digits < 16; pos++, digits++) {
-        const char c = operands[pos];
-        if (c >= '0' && c <= '9')
-            value = (value << 4) | static_cast<uint64>(c - '0');
-        else if (c >= 'a' && c <= 'f')
-            value = (value << 4) | static_cast<uint64>(c - 'a' + 10);
-        else
-            break;
+    if (!settings)
+        return nullptr;
+    const auto& mappings = settings->memoryMappings;
+    if (mappings.empty())
+        return nullptr;
+    auto find = [&mappings](uint64 key) -> const MemoryMappingEntry* {
+        const auto it = mappings.find(key);
+        return it != mappings.end() ? &it->second : nullptr;
+    };
+
+    // the plugins without an offset translation (RVA) do not set the callback: only an absolute address can be looked up as it is
+    if (!settings->offsetTranslateCallback.IsValid())
+        return operands.absoluteMemory.has_value() ? find(operands.absoluteMemory.value()) : nullptr;
+
+    if (operands.ripTarget.has_value()) // the decoded addresses are relative to the first decoded instruction
+        return zone->cachedCodeOffsets.empty() ? nullptr
+                                               : find((GetCodeStartRVA(settings, zone) + operands.ripTarget.value()) & (zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull));
+    if (operands.absoluteMemory.has_value()) {
+        const auto offset = TranslateOperandAddressToFileOffset(settings, operands.absoluteMemory.value(), true);
+        if (!offset.has_value())
+            return nullptr;
+        return find(settings->offsetTranslateCallback->TranslateFromFileOffset(offset.value(), static_cast<uint32>(DissasmPEConversionType::RVA)));
     }
-    if (digits == 0 || pos >= operands.size() || operands[pos] != ']')
+    return nullptr;
+}
+
+// an address of the listing (VA) as text: 0x...
+static std::string FormatAddress(uint64 address)
+{
+    LocalString<32> text;
+    text.SetFormat("0x%llx", static_cast<unsigned long long>(address));
+    return text.GetText();
+}
+
+// an address (VA) that the code reads, writes or takes: its name in a data zone (dword_30168, off_1048+0x8), the label of code placed
+// there (a callback), else 0x...
+static std::string FormatDataAddress(const DissasmCodeZone* zone, uint64 address)
+{
+    const auto other = zone->FindCodeZoneOfAddress(address);
+    if (other && !other->IsDeepScanPending()) {
+        if (other->zoneDetails.isData)
+            return other->FormatCodeAddress(address - other->labelAddressBase);
+        if (auto label = other->GetLabelNameAt(address - other->labelAddressBase); !label.empty())
+            return label;
+    }
+    return FormatAddress(address);
+}
+
+// the name of the place (VA) that an operand refers to: an import slot (__imp_Name), a label of a data zone (dword_, off_+0x8, aText),
+// a label of code (a callback), data inside a code zone read / written with a size (IDA: dword_40118C, a table after the IAT of .text),
+// the image base (__ImageBase: the PE header); empty when the place has no name
+static std::string GetDataOperandName(DissasmInsnExtractLineParams& params, const X86OperandsInfo& operands, uint64 address, uint8 accessSize = 0)
+{
+    if (const auto* import = FindX86OperandsImport(params.settings, params.zone, operands); import && !import->name.empty())
+        return import->type == MemoryMappingType::FunctionMapping ? "__imp_" + import->name : import->name; // selRef_alloc
+    // a known GUID first: in a code zone it can have a label (the .rdata merged in .text of 32 bit programs: push offset loc_40F6E0)
+    if (const auto zone = params.zone->FindCodeZoneOfAddress(address); zone && !zone->zoneDetails.isData)
+        if (const auto offset = zone->GetFileOffsetOfAddress(address - zone->labelAddressBase); offset.has_value()) {
+            const auto bytes = params.obj->GetData().Get(offset.value(), 16, true);
+            if (bytes.IsValid() && bytes.GetLength() == 16)
+                if (const std::string_view guid = FindGuidName(bytes.GetData()); !guid.empty())
+                    return std::string(guid); // IID_IShellLinkW
+        }
+    std::string name = FormatDataAddress(params.zone, address);
+    if (!name.starts_with("0x"))
+        return name;
+    const char* sizePrefix = accessSize == 1    ? "byte_"
+                             : accessSize == 2  ? "word_"
+                             : accessSize == 4  ? "dword_"
+                             : accessSize == 8  ? "qword_"
+                             : accessSize == 16 ? "xmmword_"
+                                                : nullptr;
+    if (const auto zone = params.zone->FindCodeZoneOfAddress(address); sizePrefix && zone && !zone->zoneDetails.isData) {
+        LocalString<48> text;
+        text.SetFormat("%s%llX", sizePrefix, static_cast<unsigned long long>(address));
+        return text.GetText();
+    }
+    // the header of the image (the page before the first section): __ImageBase, __ImageBase+0x3C (e_lfanew)
+    const uint64 codeStartRVA = GetCodeStartRVA(params.settings, params.zone);
+    if (params.zone->labelAddressBase <= codeStartRVA)
         return {};
-    return isNegative ? static_cast<uint64>(0) - value : value;
+    const uint64 imageBase = params.zone->labelAddressBase - codeStartRVA;
+    if (address < imageBase || address - imageBase >= std::min<uint64>(codeStartRVA, 0x1000))
+        return {};
+    if (address == imageBase)
+        return "__ImageBase";
+    LocalString<32> offset;
+    offset.SetFormat("__ImageBase+0x%llX", static_cast<unsigned long long>(address - imageBase));
+    return offset.GetText();
+}
+
+// x86 / x64: the operands with the names of the data at the fixed addresses (mov eax, cs:dword_14000C0D0 / lea rcx, aText / push offset
+// aText); none when they refer to no named place
+static std::optional<std::string> GetX86SymbolicOperands(const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    const auto zone = params.zone;
+    if (zone->IsArmCode() || !params.settings || !params.settings->offsetTranslateCallback.IsValid() || zone->cachedCodeOffsets.empty())
+        return {};
+    const bool is64 = zone->Is64BitCode();
+    // the size of the memory operand (the name of data without a label: dword_ / qword_ ...)
+    uint8 accessSize = 0;
+    if (insn.detail && insn.id != X86_INS_LEA)
+        for (uint8 index = 0; index < insn.detail->x86.op_count; index++)
+            if (insn.detail->x86.operands[index].type == X86_OP_MEM)
+                accessSize = insn.detail->x86.operands[index].size;
+    std::optional<uint64> address;
+    if (is64 && operands.ripTarget.has_value())
+        address = zone->labelAddressBase + operands.ripTarget.value();
+    else if (!is64 && operands.absoluteMemory.has_value())
+        address = operands.absoluteMemory.value();
+    if (address.has_value()) {
+        const std::string name = GetDataOperandName(params, operands, address.value(), accessSize);
+        return name.empty() ? std::nullopt : SubstituteX86MemoryOperand(insn.op_str, name, insn.id == X86_INS_LEA, is64);
+    }
+    // x64 (MSVC): a table read through a register holding the image base, its displacement an RVA: ds:(byte_14002D9F0 - __ImageBase)[rdx + rcx]
+    if (const auto table = zone->imageBaseTables.find(insn.address); table != zone->imageBaseTables.end() && insn.detail) {
+        X86OperandsInfo slot;
+        slot.absoluteMemory    = table->second;
+        const std::string name = GetDataOperandName(params, slot, table->second, accessSize);
+        uint64 displacement    = 0;
+        for (uint8 index = 0; index < insn.detail->x86.op_count; index++)
+            if (insn.detail->x86.operands[index].type == X86_OP_MEM)
+                displacement = static_cast<uint64>(insn.detail->x86.operands[index].mem.disp);
+        if (!name.empty())
+            if (auto replaced = SubstituteX86TableOperand(insn.op_str, displacement, name, insn.id == X86_INS_LEA, is64, true))
+                return replaced;
+    }
+    // a table at a fixed address indexed by registers: ds:dword_403000[eax*4] (the start of the table, the registers choose the entry)
+    if (operands.tableMemory.has_value() && operands.tableMemory.value() >= 0x10000 &&
+        TranslateOperandAddressToFileOffset(params.settings, operands.tableMemory.value(), true).has_value()) {
+        X86OperandsInfo table;
+        table.absoluteMemory   = operands.tableMemory;
+        const std::string name = GetDataOperandName(params, table, operands.tableMemory.value(), accessSize);
+        if (!name.empty())
+            if (auto replaced = SubstituteX86TableOperand(insn.op_str, operands.tableMemory.value(), name, insn.id == X86_INS_LEA, is64))
+                return replaced;
+    }
+    // 32 bit PIC: [ebx - 0x31c0] with the value of ebx known (resolvedAddresses): (aText - _GLOBAL_OFFSET_TABLE_)[ebx] (IDA); a value of
+    // ebx that is not the global offset table (call $+5; pop ebx alone) is written as a number
+    if (!is64 && operands.ripTarget.has_value() && insn.detail && zone->resolvedAddresses.contains(insn.address)) {
+        for (uint8 index = 0; index < insn.detail->x86.op_count; index++) {
+            const auto& op = insn.detail->x86.operands[index];
+            if (op.type != X86_OP_MEM || op.mem.base != X86_REG_EBX || op.mem.index != X86_REG_INVALID)
+                continue;
+            const uint64 target    = (zone->labelAddressBase + operands.ripTarget.value()) & 0xFFFFFFFFull;
+            const uint64 ebx       = (target - static_cast<uint64>(op.mem.disp)) & 0xFFFFFFFFull;
+            const std::string name = GetDataOperandName(params, operands, target, accessSize);
+            LocalString<24> base;
+            if (params.settings->globalOffsetTable == std::optional<uint64>(ebx))
+                base.Set("_GLOBAL_OFFSET_TABLE_");
+            else
+                base.SetFormat("0x%llx", static_cast<unsigned long long>(ebx));
+            if (!name.empty())
+                return SubstituteX86RelativeOperand(insn.op_str, "ebx", op.mem.disp, name, base.GetText(), insn.id == X86_INS_LEA);
+            break;
+        }
+    }
+    if (is64)
+        return {};
+    for (const uint64 value : operands.immediates) { // push 0x403000 / mov ecx, 0x403000: small values are counters, sizes, flags
+        if (value < 0x10000 || !TranslateOperandAddressToFileOffset(params.settings, value, true).has_value())
+            continue;
+        X86OperandsInfo slot;
+        slot.absoluteMemory    = value;
+        const std::string name = GetDataOperandName(params, slot, value);
+        if (!name.empty())
+            return SubstituteX86Immediate(insn.op_str, value, name);
+    }
+    return {};
+}
+
+// 32 bit ARM: the import of a slot; a literal load (ldr r0, [pc, #off]): the string its word points to (an absolute address) or the word
+// itself (=0x...: a PIC offset, a constant); an address taken (adr, add r0, pc, #imm, the PIC add pc of a literal): its string or the
+// address; a slot read / written through the registers: the address
+static void AddArm32DataComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    if (!operands.ripTarget.has_value())
+        return;
+    const auto settings = params.settings;
+    const uint64 rva    = GetCodeStartRVA(settings, params.zone) + operands.ripTarget.value();
+    const auto mapping  = settings->memoryMappings.find(rva);
+    if (mapping != settings->memoryMappings.end()) {
+        line.autoComment = mapping->second.name;
+        return;
+    }
+    const auto stringAt = [&line, &params](std::optional<uint64> offset) {
+        if (!offset.has_value() || offset.value() >= params.obj->GetData().GetSize())
+            return false;
+        auto text = TryExtractStringPreview(params.obj, offset.value());
+        if (!text.has_value())
+            return false;
+        line.autoComment = std::move(text.value());
+        return true;
+    };
+    const auto fileOffset  = TranslateOperandAddressToFileOffset(settings, rva, false);
+    const bool isResolved  = params.zone->resolvedAddresses.contains(insn.address);
+    const bool isLiteral   = insn.id == ARM_INS_LDR && operands.memoryAccess == CS_AC_READ && !isResolved;
+    if (isLiteral) {
+        uint32 word = 0;
+        if (!fileOffset.has_value() || !params.obj->GetData().Copy<uint32>(fileOffset.value(), word))
+            return;
+        const auto wordOffset = TranslateOperandAddressToFileOffset(settings, word, true);
+        // ldr r0, =variable (IDA): the name of the variable, the string or the function (a Thumb function: bit 0 set); else the word (a
+        // PIC offset, a constant). The string itself is the comment
+        std::string name;
+        if (word >= 0x10000 && wordOffset.has_value()) {
+            name = FormatDataAddress(params.zone, word);
+            if (name.starts_with("0x") && (word & 1) != 0)
+                name = FormatDataAddress(params.zone, word & ~1u);
+        }
+        if (name.empty() || name.starts_with("0x")) {
+            LocalString<24> text;
+            text.SetFormat("0x%x", word);
+            name = text.GetText();
+        }
+        if (const auto replaced = SubstituteArmLiteral({ line.op_str ? line.op_str : "", line.op_str_size }, name); replaced.has_value())
+            line.SetOperands(replaced->c_str(), params.zone);
+        else
+            line.autoComment = "=" + name;
+        stringAt(wordOffset);
+        return;
+    }
+    if (operands.memoryAccess == 0 && stringAt(fileOffset))
+        return;
+    if (operands.memoryAccess == 0 || isResolved)
+        line.autoComment = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());
+}
+
+// ARM64: the offset in the page of an adrp pair as the name (IDA: ldr w8, [x8, #dword_220248@PAGEOFF]) and the comment; the address when the
+// place has no name
+static void NameArm64PageOffset(DissasmAsmPreCacheLine& line, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    const uint64 target    = params.zone->labelAddressBase + operands.ripTarget.value();
+    const std::string name = FormatDataAddress(params.zone, target);
+    if (!name.starts_with("0x"))
+        if (const auto replaced = SubstituteArm64PageOffset({ line.op_str ? line.op_str : "", line.op_str_size }, target & 0xFFF, name))
+            line.SetOperands(replaced->c_str(), params.zone);
+    line.autoComment = name;
+}
+
+// the data referenced by the operands, shown as an automatic comment (never saved): the import loaded by mov rax, [rip + 0x...] or the
+// string of lea rcx, [rip + 0x...] on x64, the string of push / mov offset aText (an immediate VA) on x86
+static void AddReferencedDataComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    const auto settings = params.settings;
+    if (!settings->offsetTranslateCallback.IsValid() || params.zone->cachedCodeOffsets.empty())
+        return;
+    if (params.zone->IsArm32Code()) {
+        AddArm32DataComment(line, insn, operands, params);
+        return;
+    }
+
+    std::optional<uint64> fileOffset;
+    // x64: [rip + ...]; 32 bit PIC: [ebx + ...] with the value of ebx known (the global offset table, resolvedAddresses)
+    if (params.zone->Is64BitCode() || operands.ripTarget.has_value()) {
+        if (!operands.ripTarget.has_value())
+            return;
+        // 32 bit code: an address below the code ([ebx - 0x31c0]) is a relative address that wraps around at 4 GB
+        const uint64 rva   = (GetCodeStartRVA(settings, params.zone) + operands.ripTarget.value()) & (params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull);
+        const auto mapping = settings->memoryMappings.find(rva);
+        if (mapping != settings->memoryMappings.end()) {
+            line.autoComment = mapping->second.name;
+            // ARM64: the pair that loads the slot (ldr x1, [x1, #selRef_alloc@PAGEOFF] / ldr x16, [x16, #__imp_malloc@PAGEOFF])
+            if (params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address)) {
+                const std::string name = mapping->second.type == MemoryMappingType::FunctionMapping ? "__imp_" + mapping->second.name : mapping->second.name;
+                const uint64 target    = params.zone->labelAddressBase + operands.ripTarget.value();
+                if (const auto replaced = SubstituteArm64PageOffset({ line.op_str ? line.op_str : "", line.op_str_size }, target & 0xFFF, name))
+                    line.SetOperands(replaced->c_str(), params.zone);
+            }
+            return;
+        }
+        const bool takesAddress = params.zone->IsArm64Code() ? insn.id == ARM64_INS_ADR || insn.id == ARM64_INS_ADD : insn.id == X86_INS_LEA;
+        if (!takesAddress) {
+            // the other instructions read / write the data (a variable, a pointer), only lea / adr / add take the address of a string. The
+            // address of an ARM64 adrp pair is not in the operands: it is shown
+            if (params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address))
+                NameArm64PageOffset(line, operands, params);
+            return;
+        }
+        fileOffset = TranslateOperandAddressToFileOffset(settings, rva, false);
+    } else {
+        // the immediates only: a memory operand ([0x403000]) reads a variable, it is not the string itself
+        for (const uint64 value : operands.immediates) {
+            if (value < 0x10000)
+                continue; // small values are counters, sizes or flags
+            fileOffset = TranslateOperandAddressToFileOffset(settings, value, true);
+            if (fileOffset.has_value())
+                break;
+        }
+    }
+    const bool isAdrpPair = params.zone->IsArm64Code() && params.zone->resolvedAddresses.contains(insn.address);
+    if (isAdrpPair && operands.ripTarget.has_value())
+        NameArm64PageOffset(line, operands, params); // add x0, x0, #off: the address, when it is not a string
+    if (!fileOffset.has_value() || fileOffset.value() >= params.obj->GetData().GetSize())
+        return;
+    auto text = TryExtractStringPreview(params.obj, fileOffset.value());
+    if (text.has_value())
+        line.autoComment = std::move(text.value());
+}
+
+// the constants of the line: the one compared with the value an API returned (the deep scan: cmp eax, 0x102 ; WAIT_TIMEOUT), a status /
+// an HRESULT wherever it is (mov ebx, 0xc0000034 ; STATUS_OBJECT_NAME_NOT_FOUND: mov / push / cmp only, not the masks of and / test)
+static void AddConstantComment(DissasmAsmPreCacheLine& line, const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    if (!line.autoComment.empty())
+        return;
+    if (const auto compared = params.zone->returnValueConstants.find(insn.address); compared != params.zone->returnValueConstants.end()) {
+        line.autoComment = compared->second;
+        return;
+    }
+    if (params.zone->IsArmCode() || (insn.id != X86_INS_MOV && insn.id != X86_INS_PUSH && insn.id != X86_INS_CMP))
+        return;
+    for (const uint64 value : operands.immediates)
+        if (auto name = FormatDistinctiveConstant(value); !name.empty()) {
+            line.autoComment     = std::move(name);
+            line.constantComment = true;
+            return;
+        }
+}
+
+// ARM64: the operands before the last one, the address (cbz x0, / tbnz w1, #3, / adr x0,). Empty for x86 / x64
+static std::string GetArm64BranchOperandsPrefix(const cs_insn& insn, const DissasmCodeZone* zone)
+{
+    if (!zone->IsArmCode())
+        return {};
+    const std::string_view operands = insn.op_str;
+    const auto separator            = operands.rfind(", ");
+    return separator == std::string_view::npos ? std::string() : std::string(operands.substr(0, separator + 2));
+}
+
+// a call to a known API (FindApiPrototype): its arguments are named on the lines prepared before the call (x86 / x64 calling
+// conventions); not when the lines are built without the known functions (asmData.functions empty: the cursor line)
+static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, const AsmFunctionDetails* details)
+{
+    if (params.asmData->functions.empty() || !details)
+        return;
+    // x64 / ARM: the registers; x86: the pushes and mov [esp + n]
+    params.zone->asmPreCacheData.AnnounceCallInstruction(details, params.zone->Is64BitCode() || params.zone->IsArmCode());
+}
+
+static void AnnounceKnownFunctionCall(DissasmInsnExtractLineParams& params, std::string_view functionName)
+{
+    AnnounceKnownFunctionCall(params, FindApiPrototype(functionName));
+}
+
+// the label of an address (VA) in another code zone of the file; empty when no analyzed zone has a label there
+static std::string FindLabelInOtherZones(const SettingsData* settings, const DissasmCodeZone* zone, uint64 address)
+{
+    const auto other = zone->FindCodeZoneOfAddress(address);
+    return other && other != zone ? other->GetLabelNameAt(address - other->labelAddressBase) : std::string();
 }
 
 bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& params)
@@ -574,176 +997,245 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
     address = insn->address;
     memcpy(bytes, insn->bytes, std::min<uint32>(sizeof(bytes), sizeof(insn->bytes)));
+    hasNoBytes = params.zone->zoneDetails.isUninitialized;
     size        = insn->size;
     currentLine = params.actualLine;
 
-    if (params.isCollapsed && params.zoneName) {
-        op_str      = strdup(params.zoneName->c_str());
-        op_str_size = static_cast<uint32>(params.zoneName->size());
-        SetMnemonic("collapsed");
-        return true;
-    }
-
     SetMnemonic(insn->mnemonic);
+    instructionKind = static_cast<uint8>(GetInstructionKind(insn->id, insn->mnemonic, params.zone->GetArch()));
 
     if (!params.settings || !params.asmData) {
         SetOperands(insn->op_str, params.zone);
         return true;
     }
 
-    switch (TextPrefixAsUInt32(insn->mnemonic)) {
-    case pushOP:
-        flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
-        break;
-    case callOP:
-        flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
-        break;
-    default:
-        if (insn->mnemonic[0] == 'j') {
-            flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
-        } else {
-            SetOperands(insn->op_str, params.zone);
+    // a field of a structure: its name is the comment of its line
+    if (insn->id == 0 && !params.zone->fieldNames.empty())
+        if (const auto field = params.zone->fieldNames.find(insn->address); field != params.zone->fieldNames.end())
+            autoComment = field->second;
+
+    // an import slot of a data zone: the name of the import (its bytes are the RVA of the name until the loader writes the address; a
+    // pointer to an import that the loader writes is 0 in the file)
+    if (insn->id == 0 && params.zone->zoneDetails.isData && insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
+        X86OperandsInfo slot;
+        slot.absoluteMemory = params.zone->labelAddressBase + insn->address;
+        const auto* import = FindX86OperandsImport(params.settings, params.zone, slot);
+        if (import && !import->name.empty() && import->type == MemoryMappingType::FunctionMapping) {
+            SetOperands(import->name.c_str(), params.zone);
+            if (autoComment == import->name)
+                autoComment.clear();
             return true;
         }
     }
 
-    // TODO: improve efficiency by filtering instructions
-    uint64 hexVal = 0; // memory mappings (imports) and pushed strings
-    if (CheckExtractInsnHexValue(insn->op_str, hexVal, params.settings->maxLocationMemoryMappingSize))
-        hexValue = hexVal;
-    // direct jump / call: the target has the same base as `address`; only a target inside the decoded code has a file offset
-    std::optional<uint64> targetFileOffset;
-    if (flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag)) {
-        const auto target = GetDirectBranchTarget(insn->op_str);
-        if (target.has_value()) {
-            targetFileOffset = params.zone->GetFileOffsetOfAddress(target.value());
-            if (targetFileOffset.has_value())
-                branchTarget = target; // used by the jump arrows
+    // a pointer that dyld binds (Mach-O) at the start of a structure named otherwise: its symbol (dq _OBJC_METACLASS_$_NSObject ; isa)
+    if (insn->id == 0 && params.zone->zoneDetails.isData && !params.settings->boundSymbols.empty() && params.settings->offsetTranslateCallback.IsValid() &&
+        insn->size == (params.zone->Is64BitCode() ? 8u : 4u)) {
+        const auto bound = params.settings->boundSymbols.find(GetCodeStartRVA(params.settings, params.zone) + insn->address);
+        if (bound != params.settings->boundSymbols.end()) {
+            SetOperands(bound->second.c_str(), params.zone);
+            return true;
         }
     }
-    bool alreadyInitComment = false;
-    if (params.zone->asmPreCacheData.HasAnyFlag(params.asmLine))
-        alreadyInitComment = true;
 
-    // the plugins without an offset translation (RVA) do not set the callback
-    const bool hasOffsetTranslation = params.settings->offsetTranslateCallback.IsValid();
-    // RVA of the next instruction: the decoded addresses start at the first decoded instruction (cachedCodeOffsets[0]), not at the
-    // entry point
-    const uint64 finalIndex =
-          hasOffsetTranslation ? insn->address + insn->size + params.settings->offsetTranslateCallback->TranslateFromFileOffset(
-                                                                    params.zone->cachedCodeOffsets[0].offset, (uint32) DissasmPEConversionType::RVA)
-                               : 0;
-    auto& lastZone          = params.zone->types.back().get();
-    bool shouldConsiderCall = false;
-    if (flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) {
-        const MemoryMappingEntry* mappingPtr = nullptr; // TryExtractMemoryMapping(params.settings, hexVal, finalIndex);
-
-        // x64 imports: call qword ptr [rip + 0x...], the import slot is relative to the next instruction
-        const auto ripDisplacement =
-              hasOffsetTranslation && params.zone->Is64BitCode() ? GetRipRelativeDisplacement(insn->op_str) : std::optional<uint64>{};
-
-        const auto& mapping_ptr = params.settings->memoryMappings.find(hexVal);
-        if (ripDisplacement.has_value()) {
-            const auto& ripMapping = params.settings->memoryMappings.find(finalIndex + ripDisplacement.value());
-            if (ripMapping != params.settings->memoryMappings.end())
-                mappingPtr = &ripMapping->second;
-        } else if (mapping_ptr != params.settings->memoryMappings.end())
-            mappingPtr = &mapping_ptr->second;
-        else if (hasOffsetTranslation) {
-            const auto& mapping2 = params.settings->memoryMappings.find(hexVal + finalIndex);
-            if (mapping2 != params.settings->memoryMappings.end())
-                mappingPtr = &mapping2->second;
+    // a pointer of a data zone: the name of what it points to (a label of any zone), else its value
+    if (insn->id == 0) {
+        const auto* range = params.zone->instructionSet.DataRangeAt(insn->address);
+        if (range && range->isOffset && insn->size == range->unit && range->unit <= 8) {
+            uint64 value = 0;
+            for (uint32 index = 0; index < range->unit; index++)
+                value |= static_cast<uint64>(insn->bytes[index]) << (8 * index);
+            value = params.zone->GetRelocatedPointer(insn->address).value_or(value); // written by the loader (PIE)
+            if (range->reference == DissasmInstructionSet::REFERENCE_RVA && params.settings->offsetTranslateCallback.IsValid()) {
+                const uint64 zoneRVA = GetCodeStartRVA(params.settings, params.zone);
+                value += params.zone->labelAddressBase - zoneRVA; // the image base
+            } else if (range->reference == DissasmInstructionSet::REFERENCE_RELATIVE) {
+                const int64 offset = range->unit == 4 ? static_cast<int32>(value) : (range->unit == 2 ? static_cast<int16>(value) : static_cast<int64>(value));
+                value              = params.zone->labelAddressBase + insn->address + static_cast<uint64>(offset);
+            }
+            // the label at the address (IDA: dd offset stru_51423C / offset loc_X), else the place in its function
+            const auto target = params.zone->FindCodeZoneOfAddress(value);
+            std::string name  = target ? target->GetLabelNameAt(value - target->labelAddressBase) : std::string();
+            if (name.empty())
+                name = target ? target->FormatCodeAddress(value - target->labelAddressBase) : FormatAddress(value);
+            SetOperands(name.c_str(), params.zone);
+            if (autoComment == name) // a field named after what it points to (an export)
+                autoComment.clear();
+            return true;
         }
+    }
 
+    // an entry of a jump table: the name of its case (IDA: dd offset loc_...)
+    if (insn->id == 0 && !params.zone->tableEntries.empty()) {
+        const auto entry = params.zone->tableEntries.find(insn->address);
+        if (entry != params.zone->tableEntries.end()) {
+            const auto name = params.zone->GetLabelNameAt(entry->second);
+            SetOperands((name.empty() ? FormatAddress(params.zone->labelAddressBase + entry->second) : name).c_str(), params.zone);
+            return true;
+        }
+    }
+
+    // the meaning of the instruction from the capstone details (groups, operands), not from its text
+    const auto flow     = GetInstructionFlow(*insn, params.zone->GetArch());
+    const auto operands = params.zone->GetOperandsInfo(*insn);
+    {
+        // mov rcx, ... / mov [rsp + 0x20], ... / mov x0, ... / mov r1, ... / mov [esp + 4], ...: an argument of the next call
+        const auto slot = GetArgumentSlot(*insn, params.zone->GetArchAt(insn->address), params.zone->systemVCalls);
+        argumentSlot    = slot.has_value() ? slot.value() : NO_ARGUMENT;
+    }
+    calleePushes    = NO_PUSHES;
+    constantComment = false;
+    if (flow == X86Flow::Call) {
+        flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
+        // the method of a COM interface (TrackComInterfaces): call [rax + 0x18], call esi, the CFG dispatch (call cs:__guard_dispatch_icall_fptr
+        // or its thunk: a direct call)
+        if (const auto method = params.zone->interfaceCalls.find(address); method != params.zone->interfaceCalls.end()) {
+            autoComment = method->second;
+            AnnounceKnownFunctionCall(params, FindComMethodPrototype(method->second)); // its arguments: This, strNetworkResource, ...
+        }
+        if (operands.directTarget.has_value())
+            if (const auto purge = params.zone->calleeStackPurges.find(operands.directTarget.value()); purge != params.zone->calleeStackPurges.end())
+                calleePushes = static_cast<uint8>(std::min<uint32>(purge->second / 4, NO_PUSHES - 1u)); // ret 0x10: 4 pushes
+    }
+    else if (flow == X86Flow::Jump || flow == X86Flow::ConditionalJump)
+        flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
+    else if (insn->id == X86_INS_PUSH && !params.zone->IsArmCode())
+        flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
+    else {
+        if (params.zone->IsArm64Code() && insn->id == ARM64_INS_ADRP) {
+            // adrp x0, page: the page of the VA (capstone decodes from the zone start); the name of the place of its first pair (IDA: adrp
+            // x8, dword_220248@PAGE)
+            const uint64 page = params.zone->labelAddressBase + GetArm64AdrpPage(*insn, params.zone->labelAddressBase);
+            std::string target;
+            if (const auto pair = params.zone->adrpPages.find(insn->address); pair != params.zone->adrpPages.end()) {
+                X86OperandsInfo slot;
+                slot.ripTarget          = pair->second;
+                const uint64 pairTarget = params.zone->labelAddressBase + pair->second;
+                if ((pairTarget & ~0xFFFull) == page)
+                    if (const std::string name = GetDataOperandName(params, slot, pairTarget); !name.empty() && !name.starts_with("0x"))
+                        target = name + "@PAGE";
+            }
+            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (target.empty() ? FormatAddress(page) : target)).c_str(), params.zone);
+        } else if (params.zone->IsArm64Code() && GetArm64OperandsInfo(*insn).ripTarget.has_value()) {
+            // adr x0, label / ldr x0, label: capstone writes the address relative to the zone start, the listing shows the VA (its name)
+            const std::string target = FormatDataAddress(params.zone, params.zone->labelAddressBase + operands.ripTarget.value());
+            SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + target).c_str(), params.zone);
+        } else
+            SetSymbolicOperands(*insn, operands, params);
+#ifndef DISSASM_DISABLE_STRING_PREVIEW
+        AddReferencedDataComment(*this, *insn, operands, params); // lea rcx, [rip + 0x...] / mov ecx, 0x403000
+        DropCommentShownInOperands();
+#endif
+        AddConstantComment(*this, *insn, operands, params);
+        return true;
+    }
+
+    // direct jump / call: the target has the same base as `address`; only a target inside the decoded code has a file offset
+    std::optional<uint64> targetFileOffset;
+    // call $+5 (call next; pop ebx: the address of the code, 32 bit PIC): no call, no arrow
+    if (flow == X86Flow::Call && operands.directTarget == std::optional<uint64>(insn->address + insn->size)) {
+        SetOperands("$+5", params.zone);
+        return true;
+    }
+    if (operands.directTarget.has_value() && flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
+        targetFileOffset = params.zone->GetFileOffsetOfAddress(operands.directTarget.value());
+        if (targetFileOffset.has_value())
+            branchTarget = operands.directTarget; // used by the jump arrows
+    }
+
+    bool shouldConsiderCall = false;
+    if (flags & (DissasmAsmPreCacheLine::InstructionFlag::CallFlag | DissasmAsmPreCacheLine::InstructionFlag::JmpFlag) && !targetFileOffset.has_value()) {
+        // call / jmp through an import slot: call qword ptr [rip + 0x...], jmp dword ptr [0x402010] (import thunks)
+        const auto mappingPtr = FindX86OperandsImport(params.settings, params.zone, operands);
+        if (mappingPtr && params.zone->IsArm32Code() && insn->id == ARM_INS_LDR) {
+            // ldr pc, [ip, #off]! (a PLT stub): the operands stay (pc is the target), the import is the comment
+            SetOperands(insn->op_str, params.zone);
+            autoComment = mappingPtr->name;
+            return true;
+        }
         if (mappingPtr) {
             mapping     = mappingPtr;
             op_str_size = (uint32) mappingPtr->name.size();
-            if (mappingPtr->type == MemoryMappingType::FunctionMapping) {
-                if (!alreadyInitComment) {
-                    // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
-                    GView::Hashes::CRC32 crc32{};
-                    uint32 hash    = 0;
-                    const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
-                                     crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
-                                     crc32.Final(hash);
-                    if (res) {
-                        const auto it = params.asmData->functions.find(hash);
-                        if (it != params.asmData->functions.end()) {
-                            params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.commentsData);
-                            params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::CallFlag);
-                        }
-                    }
-                } else {
-                    op_str      = strdup(mappingPtr->name.data());
-                    op_str_size = (uint32) mappingPtr->name.size();
-                }
-            }
-        } else {
-            shouldConsiderCall = true;
+            if (flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag && mappingPtr->type == MemoryMappingType::FunctionMapping)
+                AnnounceKnownFunctionCall(params, mappingPtr->name);
+            return true; // the import name is drawn instead of the operands
         }
+    }
+    if (flags & DissasmAsmPreCacheLine::InstructionFlag::CallFlag) {
+        shouldConsiderCall = true;
     } else if (flags & DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
 #ifndef DISSASM_DISABLE_STRING_PREVIEW
-        // the comments are keyed by line - 1; the pushed value is an RVA: no string preview without the offset translation
-        if (hasOffsetTranslation && !alreadyInitComment && !lastZone.commentsData.HasComment(params.actualLine)) {
-            const auto offset = params.settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
-            if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < params.obj->GetData().GetSize()) {
-                const auto textFoundOption = TryExtractPushText(params.obj, offset);
-                if (textFoundOption.has_value()) {
-                    const auto& textFound = textFoundOption.value();
-                    if (textFound.size() > 3) {
-                        lastZone.commentsData.AddOrUpdateComment(params.actualLine, (const char*) textFound.data());
-                        params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::PushFlag);
-                    }
-                }
-            }
-        }
+        AddReferencedDataComment(*this, *insn, operands, params); // push offset aText
 #endif
+        AddConstantComment(*this, *insn, operands, params); // push 0x80070057
     }
 
     if (flags & DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall) {
-        if (!targetFileOffset.has_value()) { // indirect, or outside of the decoded code: the operands are shown as they are
+        if (!targetFileOffset.has_value()) {
             flags = 0;
-            SetOperands(insn->op_str, params.zone);
+            if (operands.directTarget.has_value()) {
+                // outside of the decoded code (another section): its address (VA), the decoded addresses are relative to the zone
+                LocalString<32> target;
+                const uint64 addressMask = params.zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull; // 32 bit addresses wrap around
+                const uint64 targetVA = (params.zone->labelAddressBase + operands.directTarget.value()) & addressMask;
+                target.SetFormat("0x%llx", static_cast<unsigned long long>(targetVA));
+                // another code zone of the file (a call from .text to PAGE): the label there, once that zone is analyzed
+                const std::string otherLabel = FindLabelInOtherZones(params.settings, params.zone, targetVA);
+                if (shouldConsiderCall && !otherLabel.empty())
+                    AnnounceKnownFunctionCall(params, otherLabel); // a PLT stub of another section: j_getenv
+                SetOperands((GetArm64BranchOperandsPrefix(*insn, params.zone) + (otherLabel.empty() ? std::string(target.GetText()) : otherLabel)).c_str(), params.zone);
+            } else {
+                SetSymbolicOperands(*insn, operands, params); // indirect: call cs:__guard_dispatch_icall_fptr, jmp [rax*8 + table]
+                const auto switchJump = params.zone->switchJumps.find(address);
+                if (switchJump != params.zone->switchJumps.end())
+                    autoComment = "switch: " + std::to_string(switchJump->second) + " cases";
+            }
             return true;
         }
 
-        const char* prefix = !shouldConsiderCall ? "offset_0x" : "sub_0x";
-
-        auto fnName = FormatFunctionName(targetFileOffset.value(), prefix);
-        // fnName.AddFormat(" (%s)", res.data());
-
-        if (parent) {
-            auto new_name = parent->annotations.get_name_change(fnName.GetText());
-            if (!new_name.empty())
-                fnName.Set(new_name.c_str(), (uint32) new_name.size());
+        // a call through an import thunk (call j_CreateFileW): the arguments of the import
+        std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
+        if (shouldConsiderCall) {
+            const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
+            if (const auto* user = params.zone->FindFunctionPrototype(operands.directTarget.value()))
+                AnnounceKnownFunctionCall(params, user); // the prototype the user gave (Y), else the inferred one
+            else if (thunk != params.zone->thunkImports.end())
+                AnnounceKnownFunctionCall(params, thunk->second);
+            else if (!labelName.empty())
+                AnnounceKnownFunctionCall(params, labelName); // a function of the file named so (a static binary: getenv)
         }
 
-        op_str      = strdup(fnName.GetText());
-        op_str_size = static_cast<uint32>(fnName.Len());
+        // the label of the target with its current name (renamed, an export, a function reached by a jmp keeps its sub_ label); a target
+        // without a label (the deep scan is disabled): the name it would have
+        if (labelName.empty())
+            labelName = params.zone->GetLabelName(shouldConsiderCall ? "sub_" : "loc_", operands.directTarget.value());
+        labelName = GetArm64BranchOperandsPrefix(*insn, params.zone) + labelName; // cbz x0, loc_... / tbnz w1, #3, loc_...
+        op_str      = portable_strdup(labelName.c_str());
+        op_str_size = static_cast<uint32>(labelName.size());
     }
 
-    if (!op_str && !mapping)
-        SetOperands(insn->op_str, params.zone);
+    if (!op_str && !mapping) {
+        SetSymbolicOperands(*insn, operands, params); // push offset aText
+        DropCommentShownInOperands();
+    }
     return true;
 }
 
-// bool DissasmAsmPreCacheLine::TryGetDataFromInsn(cs_insn* insn, uint32 currentLine)
-//{
-//     if (!insn)
-//         return false;
-//     this->address     = insn->address;
-//     memcpy(bytes, insn->bytes, std::min<uint32>(sizeof(bytes), sizeof(insn->bytes)));
-//     this->size        = insn->size;
-//     memcpy(mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
-//     this->currentLine = currentLine;
-//
-//     this->op_str      = strdup(insn->op_str);
-//     this->op_str_size = (uint32) strlen(this->op_str);
-//     strcpy(this->mnemonic, insn->mnemonic);
-//
-//     this->hexValue = currentLine; //??
-//     return true;
-// }
+void DissasmAsmPreCacheLine::SetSymbolicOperands(const cs_insn& insn, const X86OperandsInfo& operands, DissasmInsnExtractLineParams& params)
+{
+    const auto symbolic = GetX86SymbolicOperands(insn, operands, params);
+    SetOperands(symbolic.has_value() ? symbolic->c_str() : insn.op_str, params.zone);
+}
+
+void DissasmAsmPreCacheLine::DropCommentShownInOperands()
+{
+    // the import / the label of the comment is in the operands now (cs:__imp_CreateFileW, =dword_30168): a string preview stays
+    if (!autoComment.empty() && op_str && std::string_view(op_str, op_str_size).find(autoComment) != std::string_view::npos)
+        autoComment.clear();
+    else if (autoComment.size() > 1 && autoComment[0] == '=' && op_str &&
+             std::string_view(op_str, op_str_size).find(std::string_view(autoComment).substr(1)) != std::string_view::npos)
+        autoComment.clear();
+}
 
 void DissasmAsmPreCacheData::PrepareLabelArrows()
 {
@@ -757,14 +1249,19 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     const uint64 minimalAddress = cachedAsmLines.front().address;
     const uint64 maximalAddress = cachedAsmLines.back().address;
 
-    // the branches going to the same line share one arrow: its lane spans the target and all its sources
+    // the branches going to the same line share one arrow: its lane spans the target and all its sources. A jump to a line that is not
+    // drawn (above or below the view) gets an arrow to the edge of the view, without a head (IDA like)
     constexpr uint32 NO_LANE = UINT32_MAX;
+    enum class Edge : uint8 { None, Above, Below };
     struct Arrow {
-        size_t first, last, target;
+        size_t first, last;
+        size_t target;        // the target line (Edge::None)
+        uint64 targetAddress; // the target of the arrows that go to an edge
+        Edge edge;
         uint32 lane;
+        std::vector<size_t> sources;
     };
     std::vector<Arrow> arrows;
-    std::vector<size_t> targetOfLine(linesCount, SIZE_MAX);
     for (size_t sourceIndex = 0; sourceIndex < linesCount; sourceIndex++) {
         const auto& source = cachedAsmLines[sourceIndex];
         if (source.flags != Line::InstructionFlag::CallFlag && source.flags != Line::InstructionFlag::JmpFlag)
@@ -772,8 +1269,23 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
         if (!source.branchTarget.has_value())
             continue;
         const uint64 target = source.branchTarget.value();
-        if (target < minimalAddress || target > maximalAddress)
+        if (target < minimalAddress || target > maximalAddress) {
+            // only the jumps (the calls go to other functions, their arrows would cover the view)
+            if (source.flags != Line::InstructionFlag::JmpFlag)
+                continue;
+            const Edge edge = target < minimalAddress ? Edge::Above : Edge::Below;
+            auto arrow      = std::find_if(arrows.begin(), arrows.end(), [&](const Arrow& a) { return a.edge == edge && a.targetAddress == target; });
+            if (arrow == arrows.end()) {
+                const size_t first = edge == Edge::Above ? 0 : sourceIndex;
+                const size_t last  = edge == Edge::Above ? sourceIndex : linesCount - 1;
+                arrows.push_back({ first, last, SIZE_MAX, target, edge, NO_LANE, { sourceIndex } });
+            } else {
+                arrow->first = std::min(arrow->first, sourceIndex);
+                arrow->last  = std::max(arrow->last, sourceIndex);
+                arrow->sources.push_back(sourceIndex);
+            }
             continue;
+        }
         // first visible line placed at the target (its label when it has one); a target in the middle of an instruction has no line
         const auto targetIt = std::find_if(cachedAsmLines.begin(), cachedAsmLines.end(), [target](const Line& line) { return line.address == target; });
         if (targetIt == cachedAsmLines.end())
@@ -782,22 +1294,24 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
         if (targetIndex == sourceIndex)
             continue;
 
-        targetOfLine[sourceIndex] = targetIndex;
-        const auto arrow          = std::find_if(arrows.begin(), arrows.end(), [targetIndex](const Arrow& a) { return a.target == targetIndex; });
+        const auto arrow = std::find_if(arrows.begin(), arrows.end(), [targetIndex](const Arrow& a) { return a.edge == Edge::None && a.target == targetIndex; });
         if (arrow == arrows.end()) {
-            arrows.push_back({ std::min(sourceIndex, targetIndex), std::max(sourceIndex, targetIndex), targetIndex, NO_LANE });
+            arrows.push_back({ std::min(sourceIndex, targetIndex), std::max(sourceIndex, targetIndex), targetIndex, target, Edge::None, NO_LANE, { sourceIndex } });
         } else {
             arrow->first = std::min(arrow->first, sourceIndex);
             arrow->last  = std::max(arrow->last, sourceIndex);
+            arrow->sources.push_back(sourceIndex);
         }
     }
 
-    // the shortest arrows get the lanes next to the code and the longer ones go around them; arrows sharing a line never share a
-    // lane, the ones that do not fit are not drawn
+    // the arrows that are drawn whole get the lanes first; the shortest arrows get the lanes next to the code and the longer ones go
+    // around them; arrows sharing a line never share a lane, the ones that do not fit are not drawn
     std::sort(arrows.begin(), arrows.end(), [](const Arrow& a, const Arrow& b) {
+        if ((a.edge == Edge::None) != (b.edge == Edge::None))
+            return a.edge == Edge::None;
         if (a.last - a.first != b.last - b.first)
             return a.last - a.first < b.last - b.first;
-        return a.target < b.target; // one arrow per target
+        return a.targetAddress < b.targetAddress;
     });
     for (size_t i = 0; i < arrows.size(); i++) {
         for (uint32 lane = Line::ARROW_LANES; lane-- > 0;) {
@@ -818,22 +1332,25 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
             line.arrowCells[column] |= Line::ArrowLeft | Line::ArrowRight;
         line.arrowCells[Line::ARROW_LANES] |= Line::ArrowLeft | (isTarget ? Line::ArrowHead : Line::ArrowNone);
     };
-    std::vector<uint32> laneOfTarget(linesCount, NO_LANE);
     for (const auto& arrow : arrows) {
         if (arrow.lane == NO_LANE)
             continue;
-        laneOfTarget[arrow.target] = arrow.lane;
         for (size_t i = arrow.first; i <= arrow.last; i++) {
             if (i > arrow.first)
                 cachedAsmLines[i].arrowCells[arrow.lane] |= Line::ArrowUp;
             if (i < arrow.last)
                 cachedAsmLines[i].arrowCells[arrow.lane] |= Line::ArrowDown;
         }
-        addHorizontalLine(cachedAsmLines[arrow.target], arrow.lane, true);
+        // the line continues out of the view
+        if (arrow.edge == Edge::Above)
+            cachedAsmLines[arrow.first].arrowCells[arrow.lane] |= Line::ArrowUp;
+        else if (arrow.edge == Edge::Below)
+            cachedAsmLines[arrow.last].arrowCells[arrow.lane] |= Line::ArrowDown;
+        else
+            addHorizontalLine(cachedAsmLines[arrow.target], arrow.lane, true);
+        for (const size_t source : arrow.sources)
+            addHorizontalLine(cachedAsmLines[source], arrow.lane, false);
     }
-    for (size_t i = 0; i < linesCount; i++)
-        if (targetOfLine[i] != SIZE_MAX && laneOfTarget[targetOfLine[i]] != NO_LANE)
-            addHorizontalLine(cachedAsmLines[i], laneOfTarget[targetOfLine[i]], false);
 }
 
 bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
@@ -858,19 +1375,52 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     chars.Set(spaces);
 
     if (dli.textLineToDraw == 0) {
-        constexpr std::string_view zoneName = "Dissasm zone";
-        chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
+        // the zone is prepared before its title is drawn: the title shows the progress of the deep scan from the first paint
+        if (!zone->isInit && !InitDissasmCodeZone(&dli, zone))
+            return false;
+        // a GoTo that waited for the zone (GoToFileOffset): the cursor moves now, the lines are drawn again at the next frame
+        if (pendingGoTo.has_value() && pendingGoTo.value() >= zone->zoneDetails.startingZonePoint &&
+            pendingGoTo.value() - zone->zoneDetails.startingZonePoint < zone->zoneDetails.size) {
+            const uint64 fileOffset = pendingGoTo.value();
+            pendingGoTo.reset();
+            movedCursorWhileDrawing = MoveCursorToZoneFileOffset(zone, fileOffset, true);
+            repaintRequested        = true;
+        }
+
+        const std::string_view zoneName = zone->zoneDetails.isData ? std::string_view("Data zone") : std::string_view("Dissasm zone");
+        chars.Add(zoneName, ColorMan.Colors.StructureColor);
+        uint32 titleSize = static_cast<uint32>(zoneName.size());
+        if (!zone->zoneDetails.name.empty()) { // the section of the zone (a file with several executable sections)
+            const std::string sectionName = " " + zone->zoneDetails.name;
+            chars.Add(sectionName, ColorMan.Colors.StructureColor);
+            titleSize += static_cast<uint32>(sectionName.size());
+        }
+        if (zone->cacheRecordRejected) {
+            // the saved annotations do not match this analysis: they are kept aside in the cache file, the user must know they are not shown
+            constexpr std::string_view warning = " - the saved comments and labels could not be applied (kept in the cache file)";
+            chars.Add(warning.data(), ColorMan.Colors.AsmComment);
+            titleSize += static_cast<uint32>(warning.size());
+        }
+        if (aiNaming.zone == zone) {
+            LocalString<64> progress;
+            progress.SetFormat(" - assistant naming %u/%u (Esc stops it)", aiNaming.answered, aiNaming.total);
+            chars.Add(progress, ColorMan.Colors.AsmComment);
+            titleSize += progress.Len();
+        }
+        if (zone->IsDeepScanPending()) {
+            LocalString<64> progress;
+            progress.SetFormat(zone->IsCountingLines() ? " - reading the code %u%% (Esc: no analysis)" : " - analyzing %u%% (Esc stops it)",
+                               static_cast<uint32>(zone->GetDeepScanProgress() * 100.0f));
+            chars.Add(progress, ColorMan.Colors.AsmComment);
+            titleSize += progress.Len();
+        }
 
         updateLinePointers();
-        HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(zoneName.size()), static_cast<uint32>(zoneName.size()) + Layout.startingTextLineOffset);
+        HighlightSelectionAndDrawCursorText(dli, titleSize, titleSize + Layout.startingTextLineOffset);
 
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
         RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
-
-        if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
-            return false;
-
         return true;
     }
 
@@ -878,8 +1428,10 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (dli.textLineToDraw == 1 || firstLineToDraw) {
         const ColorPair titleColumnColor = { ColorMan.Colors.AsmTitleColumnColor.Foreground, ColorMan.Colors.AsmTitleColor.Background };
 
-        constexpr std::string_view address = "File address";
-        chars.Add(address.data(), ColorMan.Colors.AsmTitleColor);
+        const std::string_view address = !settings->offsetTranslateCallback.IsValid() || config.AddressMode == static_cast<uint8>(DissasmPEConversionType::FileOffset)
+                                               ? "File offset"
+                                               : (config.AddressMode == static_cast<uint8>(DissasmPEConversionType::RVA) ? "Address (RVA)" : "Address (VA)");
+        chars.Add(address, ColorMan.Colors.AsmTitleColor);
 
         spaces.Clear();
         spaces.SetChars(' ', addressTotalLength - static_cast<uint32>(address.size()) - 1u);
@@ -925,7 +1477,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (firstLineToDraw)
         --currentLine;
 
-    if (!zone->isInit && !InitDissasmCodeZone(dli, zone))
+    if (!zone->isInit && !InitDissasmCodeZone(&dli, zone))
         return false;
     if (!zone->CanReachAsmLines()) { // the initialization failed after the zone was marked as initialized
         dli.WriteErrorToScreen("ERROR: the dissasm zone could not be initialized!");
@@ -969,12 +1521,30 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
     uint32 arrowsColumn = UINT32_MAX;
-    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, nullptr, &arrowsColumn);
-    std::string comment;
-    if (!asmCacheLine->parent)
-        return false;
-    if (asmCacheLine->parent && !asmCacheLine->parent->isCollapsed && asmCacheLine->parent->commentsData.GetComment(currentLine, comment)) {
-        uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
+    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone), nullptr, &arrowsColumn);
+    std::string comment, aiComment;
+    const bool showComments   = !asmCacheLine->isCollapsedLine;
+    bool hasUserComment = showComments && zone->GetComment(*asmCacheLine, comment);
+    // the repeatable comment of the line, or of what it refers to (IDA ;), after the comment of the user
+    if (std::string repeatable; showComments && zone->GetRepeatableComment(*asmCacheLine, repeatable)) {
+        comment        = hasUserComment ? comment + " ; " + repeatable : repeatable;
+        hasUserComment = true;
+    }
+    const bool hasAutoComment = showComments && !asmCacheLine->autoComment.empty();
+    // the suggestions of the assistant (Ctrl+Shift+A hides them): a comment, a name for a label
+    const auto suggestedName = showAISuggestions ? zone->GetSuggestedName(*asmCacheLine) : std::nullopt;
+    if (showAISuggestions && zone->GetAIComment(*asmCacheLine, aiComment))
+        aiComment = "AI: " + aiComment;
+    else
+        aiComment.clear();
+    if (suggestedName.has_value())
+        aiComment = "AI name: " + suggestedName.value() + " (A accepts)" + (aiComment.empty() ? "" : " ; " + aiComment);
+    const bool hasAIComment = !aiComment.empty();
+    if (hasUserComment || hasAutoComment || hasAIComment) {
+        // the comments are aligned after the longest line, up to a limit: a long operand (a demangled import name) would push the comments
+        // of all the drawn lines out of the screen; a longer line has its comment right after it
+        constexpr uint32 MAX_ALIGNED_LINE_SIZE = 64;
+        uint32 diffLine = std::min(zone->asmPreCacheData.maxLineSize, MAX_ALIGNED_LINE_SIZE) + textTotalColumnLength + commentPaddingLength;
         if (config.ShowOnlyDissasm)
             diffLine -= textAndOpCodesTotalLength;
         if (chars.Len() > diffLine)
@@ -985,7 +1555,29 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         spaces.AddChars(' ', diffLine);
         spaces.AddChars(';', 1);
         chars.Add(spaces, ColorMan.Colors.AsmComment);
-        chars.Add(comment, ColorMan.Colors.AsmComment);
+        if (hasUserComment)
+            chars.Add(comment, ColorMan.Colors.AsmComment);
+        if (hasAIComment) {
+            // the suggestion of the assistant after the comment of the user, in the color of the local variables (not the user's text)
+            if (hasUserComment)
+                chars.Add(" ;", ColorMan.Colors.AsmComment);
+            chars.Add(" ", ColorMan.Colors.AsmComment);
+            chars.Add(aiComment, ColorMan.Colors.AsmLocalVariableColor);
+        }
+        if (hasAutoComment) {
+            // the generated text after the comment of the user, in the color of the referenced locations
+            if (hasUserComment || hasAIComment)
+                chars.Add(" ;", ColorMan.Colors.AsmComment);
+            chars.Add(" ", ColorMan.Colors.AsmComment);
+            chars.Add(asmCacheLine->autoComment, ColorMan.Colors.AsmLocationInstruction);
+        }
+    }
+
+    // every occurrence of the name / register / number under the cursor (IDA like), in the instructions and the comments
+    if (arrowsColumn != UINT32_MAX) {
+        const std::string token = GetCursorToken();
+        if (!token.empty())
+            HighlightTokenOccurrences(chars, arrowsColumn + DissasmAsmPreCacheLine::ARROW_COLUMNS, token, ColorMan.Colors.Highlight);
     }
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
@@ -1009,6 +1601,17 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
                   static_cast<int>(column), static_cast<int>(dli.screenLineToDraw) + 1, GetArrowCellCharacter(cell).special, bufferToDraw[column].Color);
         }
     }
+    // the label of a function: a line in the empty columns of the bytes, it separates the functions
+    const bool isFunctionLabel = asmCacheLine->size == 0 && !asmCacheLine->isCollapsedLine &&
+                                 asmCacheLine->localVariableKind != DissasmAsmPreCacheLine::LocalVariableKind::Definition &&
+                                 std::binary_search(zone->functionStarts.begin(), zone->functionStarts.end(), asmCacheLine->address);
+    if (isFunctionLabel && arrowsColumn != UINT32_MAX) {
+        const uint32 columnsStart = Layout.startingTextLineOffset + addressTotalLength;
+        for (uint32 column = columnsStart; column < arrowsColumn && column < bufferToDraw.length(); column++)
+            if (bufferToDraw[column].Code == ' ')
+                dli.renderer.WriteSpecialCharacter(
+                      static_cast<int>(column), static_cast<int>(dli.screenLineToDraw) + 1, SpecialChars::BoxHorizontalSingleLine, ColorMan.Colors.AsmTitleColumnColor);
+    }
     // poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
     bool foundZone = false;
     for (const auto& z : asmData.zonesToClear)
@@ -1021,21 +1624,50 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     return true;
 }
 
-bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
+void Instance::FillCodeZoneInitData(DissasmCodeZoneInitData& initData, DrawLineInfo* dli, DissasmCodeZone* zone)
 {
-    DissasmCodeZoneInitData initData{};
     // the local variables are recognized inside the functions found by the deep scan
     initData.enableDeepScanDissasmOnStart  = config.EnableDeepScanDissasmOnStart;
     initData.enableLocalVariablesDetection = config.EnableDeepScanDissasmOnStart;
+    initData.alignPadding                  = config.AlignPadding;
     initData.obj                           = obj;
-    initData.dli                           = &dli;
-    initData.maxLocationMemoryMappingSize  = settings->maxLocationMemoryMappingSize;
+    initData.dli                           = dli;
     initData.visibleRows                   = Layout.visibleRows;
+    // a big zone is shown before its deep scan ends: the scan continues in the frame updates (OnFrameUpdate)
+    constexpr auto DEEP_SCAN_BUDGET_IN_INIT = std::chrono::milliseconds(150);
+    initData.deepScanBudget                 = DEEP_SCAN_BUDGET_IN_INIT;
+    // a big zone shows its first lines before the end of its code is read: the count continues in the frame updates (a frontend without
+    // frame updates ends it at the first key, as the deep scan)
+    constexpr auto LINE_COUNT_BUDGET_IN_INIT = std::chrono::milliseconds(100);
+    initData.lineCountBudget                 = LINE_COUNT_BUDGET_IN_INIT;
+    PrepareCodeZoneInitData(settings.get(), obj, zone, initData);
+}
+
+bool Instance::InitDissasmCodeZone(DrawLineInfo* dli, DissasmCodeZone* zone)
+{
+    // a data zone: its labels are the places the code refers to, the code zones are analyzed first
+    if (zone->zoneDetails.isData)
+        PrepareCodeOnlyZones();
+    DissasmCodeZoneInitData initData{};
+    FillCodeZoneInitData(initData, dli, zone);
+    // the data defined by the user (D / A) are saved apart: the lines are counted with them
+    if (cacheData.hasCache) {
+        zone->userDataRanges = ReadUserDataRanges(cacheData, *zone);
+        zone->userFunctions  = ReadUserFunctions(cacheData, *zone); // P / Delete function / noreturn
+        zone->userVariableStructures = ReadUserVariableStructures(cacheData, *zone); // Alt+Q
+        zone->operandStructures      = ReadOperandStructures(cacheData, *zone);      // T
+        zone->operandConstants       = ReadOperandConstants(cacheData, *zone);       // M
+        zone->bookmarks              = ReadBookmarks(cacheData, *zone);              // Alt+M
+        zone->repeatableComments     = ReadRepeatableComments(cacheData, *zone);     // ;
+        zone->userPrototypes         = ReadUserPrototypes(cacheData, *zone);         // Y
+    }
 
     if (!zone->InitZone(initData))
         return false;
     if (initData.hasAdjustedSize)
         AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
+    if (zone->IsDeepScanPending())
+        return true; // the user data of the cache needs the labels: applied when the scan ends (EndDeepScan)
 
     bool zoneLinesChanged = false;
     if (!zone->TryLoadDataFromCache(cacheData, zoneLinesChanged)) {
@@ -1044,79 +1676,597 @@ bool Instance::InitDissasmCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         // return false;
     }
     if (zoneLinesChanged)                                                 // local variables removed by the user in a previous session
-        AdjustZoneExtendedSize(zone, zone->GetRootZoneLinesCount() + 1u); // +1 for the title
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+    ForgetLinesReferringTo(zone);
     return true;
+}
+
+void Instance::ForgetLinesReferringTo(DissasmCodeZone* zone)
+{
+    for (auto* sibling : zone->siblingZones)
+        sibling->asmPreCacheData.Clear();
+}
+
+void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings, Reference<GView::Object> obj, DissasmCodeZone* zone, DissasmCodeZoneInitData& initData)
+{
+    initData.obj = obj;
+    // the labels are named after the VA (as IDA), when the plugin translates the file offsets; an uninitialized zone has its own VA
+    if (zone->zoneDetails.isUninitialized)
+        initData.labelAddressBase = zone->zoneDetails.virtualAddress;
+    else if (settings->offsetTranslateCallback.IsValid()) {
+        const auto va = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::VA));
+        if (va != static_cast<uint64>(-1))
+            initData.labelAddressBase = va;
+    }
+    // the cross references of the immediates / absolute operands: only the addresses that are locations of the file
+    const uint64 fileSize = obj->GetData().GetSize();
+    if (initData.labelAddressBase.has_value()) {
+        auto* settingsData           = settings;
+        initData.addressToFileOffset = [settingsData, fileSize](uint64 va) -> std::optional<uint64> {
+            const auto offset = settingsData->offsetTranslateCallback->TranslateToFileOffset(va, static_cast<uint32>(DissasmPEConversionType::VA));
+            // a variable of the uninitialized data: the offset of its zone (its bytes are zeros)
+            return offset < fileSize ? std::optional<uint64>(offset) : settingsData->GetUninitializedFileOffset(va);
+        };
+        // the image base: the VA of the zone start minus its RVA
+        const auto rva = settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.startingZonePoint, static_cast<uint32>(DissasmPEConversionType::RVA));
+        if (rva != static_cast<uint64>(-1) && rva <= initData.labelAddressBase.value())
+            initData.imageBase = initData.labelAddressBase.value() - rva;
+    } else {
+        initData.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+            return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+        };
+    }
+    initData.isFileAddress = [toFileOffset = initData.addressToFileOffset](uint64 address) { return toFileOffset(address).has_value(); };
+    initData.functionEntries       = &settings->functionEntries;
+    initData.instructionBoundaries = &settings->instructionBoundaries;
+    initData.globalOffsetTable     = settings->globalOffsetTable;
+    initData.armCodeModes          = &settings->armCodeModes;
+    initData.relocatedPointers     = &settings->relocatedPointers;
+    initData.memoryMappings        = &settings->memoryMappings;
+    initData.dataFields            = &settings->dataFields;
+    if (!settings->memoryMappings.empty()) {
+        auto* settingsData  = settings;
+        initData.findImport = [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); };
+    }
+
+}
+
+bool Instance::HasPendingDeepScans() const
+{
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<const DissasmCodeZone*>(zone.get())->IsDeepScanPending())
+            return true;
+    return false;
+}
+
+void Instance::EndDeepScan(DissasmCodeZone* zone, bool cancel)
+{
+    // the end of a new analysis (D / A / U, an undo of them): the annotations of the user come back (not the data of the cache, older)
+    if (zone->pendingReanalysis) {
+        if (cancel)
+            zone->CancelDeepScan();
+        else
+            zone->CommitDeepScan();
+        DissasmAnnotationsImport imported;
+        FinishCodeZoneReanalysis(*zone, *zone->pendingReanalysis, imported);
+        const auto address = zone->pendingReanalysisAddress;
+        zone->pendingReanalysis.reset();
+        zone->pendingReanalysisAddress.reset();
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+        zone->asmPreCacheData.Clear();
+        if (address.has_value())
+            MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + address.value(), false);
+        if (!zone->zoneDetails.isData)
+            RefreshDataZones(); // their labels are the places this code refers to
+        ForgetLinesReferringTo(zone);
+        return;
+    }
+    // until the scan ends the lines of the zone are its instructions: the cursor stays on the same instruction (the view moves with it)
+    const uint32 cursorLine = Cursor.startViewLine + Cursor.lineInView;
+    const uint32 firstLine  = zone->startLineIndex + 2u; // +1 for the title, +1 for the columns header
+    std::optional<uint32> cursorInstruction;
+    if (cursorLine >= firstLine && cursorLine - firstLine < zone->asmLinesCount)
+        cursorInstruction = cursorLine - firstLine;
+
+    if (cancel)
+        zone->CancelDeepScan();
+    else
+        zone->CommitDeepScan();
+    AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+    bool zoneLinesChanged = false;
+    zone->TryLoadDataFromCache(cacheData, zoneLinesChanged); // the user data was waiting for the labels
+    if (zoneLinesChanged)
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
+
+    if (cursorInstruction.has_value()) {
+        const uint32 newLine = firstLine + zone->ExpandedToDisplay(zone->InstructionIndexToExpanded(cursorInstruction.value()));
+        if (newLine >= cursorLine)
+            Cursor.startViewLine += newLine - cursorLine;
+        else
+            Cursor.startViewLine -= std::min(Cursor.startViewLine, cursorLine - newLine);
+        Cursor.hasMovedView = true;
+    }
+    zone->asmPreCacheData.Clear();
+    ForgetLinesReferringTo(zone);
+}
+
+bool Instance::PrepareNextCodeZone()
+{
+    if (!config.EnableDeepScanDissasmOnStart)
+        return false; // without the analysis there are no references between the zones: a zone is prepared when it is shown
+    // the code zones first: the labels of the data zones are the places the code refers to
+    for (const bool data : { false, true }) {
+        for (const auto& zone : settings->parseZones) {
+            if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+                continue;
+            const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+            if (codeZone->zoneDetails.isData != data || codeZone->isInit || codeZone->initTried ||
+                !DissasmCodeZone::IsNativeCodeLanguage(codeZone->zoneDetails.language))
+                continue;
+            if (data && HasPendingDeepScans())
+                return false; // the data zones wait for the analysis of the code
+            InitDissasmCodeZone(nullptr, codeZone);
+            return true;
+        }
+    }
+    return LinkDataZones();
+}
+
+bool Instance::LinkDataZones()
+{
+    if (dataZonesLinked || HasPendingDeepScans())
+        return false;
+    dataZonesLinked = true;
+    // only when a data zone points into another one: its labels there come from these pointers
+    bool linked = false;
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto dataZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        if (!dataZone->zoneDetails.isData || !dataZone->CanReachAsmLines())
+            continue;
+        for (const auto& xref : dataZone->xrefs.byTarget) {
+            const auto target = dataZone->FindCodeZoneOfAddress(xref.to);
+            if (target && target->zoneDetails.isData) { // also a pointer to its own data (labels from its own pointers)
+                linked = true;
+                break;
+            }
+        }
+        if (linked)
+            break;
+    }
+    if (!linked)
+        return false;
+    RefreshDataZones();
+    return true;
+}
+
+void Instance::PrepareCodeOnlyZones()
+{
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        if (codeZone->zoneDetails.isData || !DissasmCodeZone::IsNativeCodeLanguage(codeZone->zoneDetails.language))
+            continue;
+        if (!codeZone->isInit && !codeZone->initTried && config.EnableDeepScanDissasmOnStart)
+            InitDissasmCodeZone(nullptr, codeZone);
+        if (codeZone->IsDeepScanPending()) {
+            codeZone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
+            EndDeepScan(codeZone, false);
+        }
+    }
+}
+
+void Instance::PrepareCodeZones()
+{
+    while (PrepareNextCodeZone()) {
+    }
+}
+
+void Instance::FinishDeepScans()
+{
+    // the actions that need the labels also need the references from the zones never shown: the code zones, then the data zones (they
+    // wait for the analysis of the code)
+    for (uint32 round = 0; round < 2; round++) {
+        PrepareCodeZones();
+        for (const auto& zone : settings->parseZones) {
+            if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+                continue;
+            const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+            if (!codeZone->IsDeepScanPending())
+                continue;
+            codeZone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
+            EndDeepScan(codeZone, false);
+        }
+    }
+}
+
+void Instance::CancelDeepScans()
+{
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(zone.get())->IsDeepScanPending())
+            EndDeepScan(static_cast<DissasmCodeZone*>(zone.get()), true);
+}
+
+bool Instance::OnFrameUpdate()
+{
+    frameUpdatesSeen   = true;
+    bool repaintAsked  = repaintRequested;
+    repaintRequested   = false;
+    if (aiNaming.zone && !HasPendingDeepScans()) { // the requests of the assistant (the labels must be known)
+        const uint32 answered = aiNaming.answered;
+        if (!RunAINamingStep(false) || aiNaming.answered != answered) {
+            RefreshDrawnLines(); // a new suggestion, the progress in the title
+            repaintAsked = true;
+        }
+    }
+    if (!HasPendingDeepScans()) // the analysis of the shown zones ended: the next zone that was never shown (one per frame)
+        return PrepareNextCodeZone() || repaintAsked;
+    // a slice of every frame (~30 per second): the UI stays responsive while the scan runs
+    constexpr auto DEEP_SCAN_SLICE = std::chrono::milliseconds(12);
+    constexpr uint32 PROGRESS_REPAINT_FRAMES = 8; // the progress in the title of the zone
+    bool repaint = repaintAsked || ++deepScanFrames % PROGRESS_REPAINT_FRAMES == 0;
+    for (const auto& zone : settings->parseZones) {
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        if (!codeZone->IsDeepScanPending())
+            continue;
+        const bool counting = codeZone->IsCountingLines();
+        const bool ended    = codeZone->ContinueDeepScan(std::chrono::steady_clock::now() + DEEP_SCAN_SLICE);
+        if (ended) {
+            EndDeepScan(codeZone, false);
+            repaint = true;
+        } else if (counting) {
+            AdjustZoneExtendedSize(codeZone, codeZone->GetDisplayLinesCount() + 1u); // the lines read in this frame (+1 for the title)
+            repaint = true;
+        }
+    }
+    return repaint;
+}
+
+uint32 GView::View::DissasmViewer::GetCodeZoneLinesCount(const DissasmCodeZone& zone)
+{
+    return zone.GetDisplayLinesCount();
+}
+
+bool GView::View::DissasmViewer::BuildX86AsmListing(
+      DissasmCodeZone& zone, Reference<GView::Object> obj, SettingsData* settings, AsmData* asmData, std::string& listing)
+{
+    listing.clear();
+    if (!zone.CanReachAsmLines() || zone.cachedCodeOffsets.empty())
+        return false;
+
+    const uint64 codeStart  = zone.labelAddressBase; // the addresses of the labels: VA (or file offset when there is no translation)
+    const uint32 linesCount = GetCodeZoneLinesCount(zone);
+
+    LocalString<256> text;
+    text.SetFormat(
+          "; GView disassembly listing (%s)\n; code: file offset 0x%" PRIx64 ", size 0x%" PRIx64 ", entry point %s\n"
+          "; the addresses are %s\n",
+          zone.GetArchitectureName(),
+          zone.zoneDetails.startingZonePoint,
+          zone.zoneDetails.size,
+          zone.zoneDetails.HasEntryPoint() ? FormatAddress(zone.zoneDetails.entryPoint).c_str() : "none",
+          zone.labelAddressBase != zone.zoneDetails.startingZonePoint ? "virtual addresses (VA)" : "file offsets");
+    listing.append(text.GetText(), text.Len());
+
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings;
+    params.asmData  = asmData;
+    params.zone     = &zone;
+
+    // address + mnemonic + operands, then the comments (user first, generated after)
+    constexpr size_t commentsColumn = 60;
+    std::string comment;
+    bool hasCollapsedZones = false;
+    auto appendLine        = [&](const DissasmAsmPreCacheLine& asmLine) {
+        const std::string_view operands =
+              asmLine.op_str ? std::string_view{ asmLine.op_str, asmLine.op_str_size }
+                             : (asmLine.mapping ? std::string_view{ static_cast<const MemoryMappingEntry*>(asmLine.mapping)->name } : std::string_view{});
+
+        const size_t lineStart = listing.size();
+        if (strcmp(asmLine.mnemonic, "collapsed") == 0) {
+            hasCollapsedZones = true;
+            listing.append("; collapsed zone: ").append(operands);
+        } else if (asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition) {
+            listing.append("                    ").append(operands); // var_8 = dword ptr -8
+        } else if (asmLine.size == 0) {
+            listing.append("\n").append(asmLine.GetMnemonicText()).append(":"); // label
+        } else {
+            if (operands.empty()) // ret, int3: no padding after the mnemonic
+                text.SetFormat("0x%08" PRIx64 "  %s", asmLine.address + codeStart, asmLine.mnemonic);
+            else
+                text.SetFormat("0x%08" PRIx64 "  %-7s", asmLine.address + codeStart, asmLine.mnemonic);
+            listing.append(text.GetText(), text.Len()).append(operands);
+        }
+
+        bool hasComment = !asmLine.isCollapsedLine && zone.GetComment(asmLine, comment);
+        if (std::string repeatable; !asmLine.isCollapsedLine && zone.GetRepeatableComment(asmLine, repeatable)) {
+            comment    = hasComment ? comment + " ; " + repeatable : repeatable;
+            hasComment = true;
+        }
+        // the suggestions of the assistant, marked, after the comment of the user
+        std::string aiComment;
+        if (zone.GetAIComment(asmLine, aiComment))
+            aiComment = "AI: " + aiComment;
+        if (const auto name = zone.GetSuggestedName(asmLine); name.has_value())
+            aiComment = "AI name: " + name.value() + (aiComment.empty() ? "" : " ; " + aiComment);
+        if (!aiComment.empty()) {
+            comment    = hasComment ? comment + " ; " + aiComment : aiComment;
+            hasComment = true;
+        }
+        if (hasComment || !asmLine.autoComment.empty()) {
+            const size_t written = listing.size() - lineStart;
+            listing.append(written < commentsColumn ? commentsColumn - written : 1, ' ').append(";");
+            if (hasComment)
+                listing.append(" ").append(comment);
+            if (hasComment && !asmLine.autoComment.empty())
+                listing.append(" ;");
+            if (!asmLine.autoComment.empty())
+                listing.append(" ").append(asmLine.autoComment);
+        }
+        listing.append("\n");
+    };
+
+    // the lines wait in the drawn lines cache before they are written: a call names its arguments on the lines placed before it (as on
+    // the screen, AnnounceCallInstruction): at least as many as it looks back (32 lines for the pushes of 32 bit code)
+    constexpr size_t WAITING_LINES = 32;
+    auto& waitingLines             = zone.asmPreCacheData.cachedAsmLines;
+    waitingLines.clear();
+    auto writeWaitingLines = [&](size_t linesToKeep) {
+        if (waitingLines.size() <= linesToKeep)
+            return;
+        const size_t linesToWrite = waitingLines.size() - linesToKeep;
+        for (size_t index = 0; index < linesToWrite; index++)
+            appendLine(waitingLines[index]);
+        std::vector<DissasmAsmPreCacheLine> kept; // the lines can not be assigned (they own their operands): moved in a new vector
+        kept.reserve(WAITING_LINES * 2);
+        for (size_t index = linesToWrite; index < waitingLines.size(); index++)
+            kept.emplace_back(std::move(waitingLines[index]));
+        waitingLines.swap(kept);
+    };
+    for (uint32 line = 0; line < linesCount; line++) {
+        auto asmLine = zone.GetCurrentAsmLine(line, obj, &params);
+        waitingLines.emplace_back(std::move(asmLine));
+        if (waitingLines.size() >= WAITING_LINES * 2)
+            writeWaitingLines(WAITING_LINES);
+    }
+    writeWaitingLines(0);
+    if (hasCollapsedZones)
+        listing.append("; some zones are collapsed: expand them in the viewer to export their lines\n");
+    zone.asmPreCacheData.Clear(); // the drawn lines are prepared again (the decoding position moved)
+    return true;
+}
+
+// the code zones whose lines are ready (the annotations are read from / written to them)
+static std::vector<DissasmCodeZone*> GetAnalysedCodeZones(SettingsData* settings)
+{
+    std::vector<DissasmCodeZone*> zones;
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(zone.get())->CanReachAsmLines())
+            zones.push_back(static_cast<DissasmCodeZone*>(zone.get()));
+    return zones;
+}
+
+// a JSON document chosen by the user (at most 64 MB); false (the error was shown) when it can not be read or parsed
+static bool ReadJsonFile(const std::filesystem::path& path, std::string_view what, nlohmann::json& document)
+{
+    constexpr uint64 MAX_JSON_FILE_SIZE = 64ull * 1024 * 1024;
+    AppCUI::OS::File f;
+    std::string text;
+    LocalString<128> message;
+    if (!f.OpenRead(path) || f.GetSize() > MAX_JSON_FILE_SIZE) {
+        f.Close();
+        message.SetFormat("Failed to read the %.*s file!", static_cast<int>(what.size()), what.data());
+        Dialogs::MessageBox::ShowError("Error", message);
+        return false;
+    }
+    text.resize(static_cast<size_t>(f.GetSize()));
+    const bool read = text.empty() || f.Read(text.data(), static_cast<uint32>(text.size()));
+    f.Close();
+    document = nlohmann::json::parse(text, nullptr, false);
+    if (!read || document.is_discarded()) {
+        message.SetFormat("The %.*s file is not a valid JSON file!", static_cast<int>(what.size()), what.data());
+        Dialogs::MessageBox::ShowError("Error", message);
+        return false;
+    }
+    return true;
+}
+
+// writes the text to a file chosen by the user; false (the error was shown) when it can not be written
+static bool WriteTextFile(const std::filesystem::path& path, const std::string& text, std::string_view what)
+{
+    AppCUI::OS::File f;
+    if (!f.Create(path, true) || !f.Write(text.data(), static_cast<uint32>(text.size()))) {
+        f.Close();
+        LocalString<128> message;
+        message.SetFormat("Failed to write the %.*s file!", static_cast<int>(what.size()), what.data());
+        Dialogs::MessageBox::ShowError("Error", message);
+        return false;
+    }
+    f.Close();
+    return true;
+}
+
+void Instance::ExportAnnotations()
+{
+    if (GView::App::IsExportBlockedFor(obj, "exporting the annotations of the disassembly"))
+        return;
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and export again!");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto fileName                  = filePath.filename().u8string();
+    LocalString<256> defaultName;
+    defaultName.SetFormat("%s.annotations.json", reinterpret_cast<const char*>(fileName.c_str()));
+    const auto selectedPath = Dialogs::FileDialog::ShowSaveFileWindow(defaultName, "Annotations:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+
+    const std::string text = BuildAnnotationsDocument(zones, std::string_view(reinterpret_cast<const char*>(fileName.data()), fileName.size())).dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n";
+    if (!WriteTextFile(selectedPath.value(), text, "annotations"))
+        return;
+    Dialogs::MessageBox::ShowNotification("Info", "The annotations were written (names, comments, variables, zones, suggestions).");
+}
+
+void Instance::ImportAnnotations()
+{
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and import again!");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto selectedPath              = Dialogs::FileDialog::ShowOpenFileWindow("", "Annotations:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+    nlohmann::json document;
+    if (!ReadJsonFile(selectedPath.value(), "annotations", document))
+        return;
+
+    DissasmAnnotationsImport result;
+    std::string error;
+    FinishDeepScans(); // the labels of the analysis receive the names
+    // the zones whose data (D / A) changed are analyzed again (at once: the names of the document go to the new labels)
+    if (!ImportAnnotationsDocument(document, zones, result, error, [this](DissasmCodeZone& zone) { return ReanalyzeZone(&zone, std::nullopt, false); })) {
+        Dialogs::MessageBox::ShowError("Error", error);
+        return;
+    }
+    for (auto* zone : result.zonesWithNewLines) // a collapsed zone was placed
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u);
+    RefreshDrawnLines();
+    LocalString<256> summary;
+    summary.SetFormat(
+          "Imported: %u names, %u comments (%u repeatable), %u variables, %u structures, %u numbers in decimal, %u zones, %u functions (%u prototypes), %u bookmarks, %u suggestions%s",
+          result.names,
+          result.comments,
+          result.repeatableComments,
+          result.variables,
+          result.structures + result.operandStructures + result.operandConstants,
+          result.decimalOperands,
+          result.collapsibleZones,
+          result.functions,
+          result.prototypes,
+          result.bookmarks,
+          result.suggestedNames + result.aiComments,
+          result.skipped > 0 ? " (some entries do not match this analysis: skipped)" : "");
+    Dialogs::MessageBox::ShowNotification("Annotations", summary.GetText());
+}
+
+void Instance::CreateSignatures()
+{
+    if (GView::App::IsExportBlockedFor(obj, "exporting the function signatures of the disassembly"))
+        return;
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and create the signatures again!");
+        return;
+    }
+    if (HasPendingDeepScans()) { // the functions and their names come from the analysis
+        Dialogs::MessageBox::ShowNotification("Info", "The analysis is still running: create the signatures when it ends!");
+        return;
+    }
+    const auto document = BuildSignaturesDocument(zones);
+    const auto count    = document["signatures"].size();
+    if (count == 0) {
+        Dialogs::MessageBox::ShowNotification(
+              "Info", "No named function has a signature: the functions need names (symbols, renames) and enough bytes that do not depend on addresses.");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    LocalString<256> defaultName;
+    defaultName.SetFormat("%s.signatures.json", reinterpret_cast<const char*>(filePath.filename().u8string().c_str()));
+    const auto selectedPath = Dialogs::FileDialog::ShowSaveFileWindow(defaultName, "Signatures:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+    if (!WriteTextFile(selectedPath.value(), document.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n", "signatures"))
+        return;
+    LocalString<128> summary;
+    summary.SetFormat("Signatures written: %u (one for every named function long enough).", static_cast<uint32>(count));
+    Dialogs::MessageBox::ShowNotification("Signatures", summary.GetText());
+}
+
+void Instance::ApplySignatures()
+{
+    const auto zones = GetAnalysedCodeZones(settings.get());
+    if (zones.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The dissasm zones are not analysed yet: scroll to them once and apply the signatures again!");
+        return;
+    }
+    if (HasPendingDeepScans()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The analysis is still running: apply the signatures when it ends!");
+        return;
+    }
+    const std::filesystem::path filePath = obj->GetPath();
+    const auto selectedPath              = Dialogs::FileDialog::ShowOpenFileWindow("", "Signatures:json", filePath.parent_path());
+    if (!selectedPath.has_value())
+        return;
+    nlohmann::json document;
+    if (!ReadJsonFile(selectedPath.value(), "signatures", document))
+        return;
+    DissasmSignaturesApply result;
+    std::string error;
+    if (!ApplySignaturesDocument(document, zones, result, error)) {
+        Dialogs::MessageBox::ShowError("Error", error);
+        return;
+    }
+    RefreshDrawnLines();
+    LocalString<256> summary;
+    summary.SetFormat(
+          "Functions named: %u (signatures read: %u)%s",
+          result.named,
+          result.signatures,
+          result.ambiguous > 0 ? " (some functions match several names or a name matches several functions: left as they are)" : "");
+    Dialogs::MessageBox::ShowNotification("Signatures", summary.GetText());
 }
 
 void Instance::CommandExportAsmFile()
 {
     if (GView::App::IsExportBlockedFor(obj, "exporting the disassembly to .asm files"))
         return;
-    int zoneIndex = 0;
-    LocalString<128> string;
+    uint32 zoneIndex = 0;
     for (const auto& zone : settings->parseZones) {
-        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone) {
-            AppCUI::Utils::UnicodeStringBuilder sb;
-            sb.Add(obj->GetPath());
-            LocalString<32> fileName;
-            fileName.SetFormat(".x86.z%d.asm", zoneIndex);
-            sb.Add(fileName);
-
-            AppCUI::OS::File f;
-            if (!f.Create(sb.ToStringView(), true)) {
-                continue;
-            }
-            if (!f.OpenWrite(sb.ToStringView())) {
-                f.Close();
-                continue;
-            }
-
-            f.Write("ASMZoneZone\n", sizeof("ASMZoneZone\n") - 1);
-
-            const auto dissamZone = static_cast<DissasmCodeZone*>(zone.get());
-            const auto language   = dissamZone->zoneDetails.language;
-            if (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64) {
-                f.Write("Only x86/x64 zones can be exported!");
-                f.Close();
-                continue;
-            }
-            const uint64 staringOffset = dissamZone->cachedCodeOffsets[0].offset;
-            if (staringOffset < dissamZone->zoneDetails.startingZonePoint ||
-                staringOffset - dissamZone->zoneDetails.startingZonePoint >= dissamZone->zoneDetails.size) {
-                f.Write("Invalid zone!");
-                f.Close();
-                continue;
-            }
-            const uint64 size = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
-
-            csh handle;
-            const auto resCode = cs_open(CS_ARCH_X86, language == DisassemblyLanguage::x64 ? CS_MODE_64 : CS_MODE_32, &handle);
-            if (resCode != CS_ERR_OK) {
-                f.Write(cs_strerror(resCode));
-                f.Close();
-                continue;
-            }
-
-            cs_insn* insn = cs_malloc(handle);
-
-            // the same lines as the view: the undecodable bytes are data lines (db), the whole zone is read (window after window)
-            DissasmCodeLinesWalker walker(obj, staringOffset, size, handle);
-            bool hasLines = false;
-            while (walker.Next(insn)) {
-                hasLines = true;
-                string.SetFormat("0x%" PRIx64 ":     %-10s %s\n", insn->address + staringOffset, insn->mnemonic, insn->op_str);
-                f.Write(string.GetText(), string.Len());
-            }
-            if (!hasLines)
-                f.Write("Failed to get data from file!");
-
-            cs_free(insn, 1);
-            cs_close(&handle);
-            f.Close();
-            zoneIndex++;
-
-            GView::App::OpenFile(sb.ToStringView(), App::OpenMethod::BestMatch);
+        if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(zone.get());
+        const uint32 index  = zoneIndex++; // every code zone keeps its own number, the files of two zones never overwrite each other
+        const auto language = codeZone->zoneDetails.language;
+        if (!DissasmCodeZone::IsNativeCodeLanguage(language)) {
+            Dialogs::MessageBox::ShowNotification("Warning", "Only the x86 / x64 / ARM zones can be exported!");
+            continue;
         }
+        if (!codeZone->CanReachAsmLines()) {
+            Dialogs::MessageBox::ShowNotification("Warning", "The dissasm zone is not analysed yet: scroll to it once and export it again!");
+            continue;
+        }
+
+        // the default file: next to the analysed file, the user picks the location (the folder of the file can be read only)
+        const std::filesystem::path filePath = obj->GetPath();
+        LocalString<256> fileName;
+        fileName.SetFormat("%s.z%u.%s.asm", reinterpret_cast<const char*>(filePath.filename().u8string().c_str()), index, codeZone->GetArchitectureName());
+        const auto selectedPath = Dialogs::FileDialog::ShowSaveFileWindow(fileName, "Assembly:asm", filePath.parent_path());
+        if (!selectedPath.has_value())
+            continue;
+
+        std::string listing;
+        if (!BuildX86AsmListing(*codeZone, obj, settings.get(), &asmData, listing)) {
+            Dialogs::MessageBox::ShowError("Error", "Failed to build the listing of the dissasm zone!");
+            continue;
+        }
+
+        AppCUI::OS::File f;
+        if (!f.Create(selectedPath.value(), true) || !f.Write(listing.data(), static_cast<uint32>(listing.size()))) {
+            f.Close();
+            Dialogs::MessageBox::ShowError("Error", "Failed to write the .asm file!");
+            continue;
+        }
+        f.Close();
+        GView::App::OpenFile(selectedPath.value(), App::OpenMethod::BestMatch);
     }
 }
 
@@ -1129,7 +2279,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint64 jumpFromAddress = 0;
     char jumpMnemonic[16]  = {};
     if (!zone->CanReachAsmLines()) {
-        Dialogs::MessageBox::ShowNotification("Warning", "This dissasm zone is not an initialized x86/x64 zone!");
+        Dialogs::MessageBox::ShowNotification("Warning", "This dissasm zone is not an initialized code zone!");
         return;
     }
     if (!offsetToReach) {
@@ -1147,21 +2297,59 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] != 'j' && TextPrefixAsUInt32(insn->mnemonic) != callOP) {
+        // a pointer of a data zone: what it points to
+        if (insn->id == 0) {
+            const auto* range = zone->instructionSet.DataRangeAt(insn->address);
+            uint64 value      = 0;
+            const bool isPointer = range && range->isOffset && insn->size == range->unit && range->unit <= 8;
+            for (uint32 index = 0; isPointer && index < range->unit; index++)
+                value |= static_cast<uint64>(insn->bytes[index]) << (8 * index);
+            if (isPointer)
+                value = zone->GetRelocatedPointer(insn->address).value_or(value);
             cs_free(insn, 1);
+            const auto fileOffset = isPointer ? TranslateOperandAddressToFileOffset(settings.get(), value, true) : std::nullopt;
+            if (fileOffset.has_value() && !GoToFileOffset(fileOffset.value()))
+                Dialogs::MessageBox::ShowNotification("Warning", "The address is outside of the zones of the view!");
             return;
         }
         // file offsets, like the displayed operand (TryGetDataFromInsn): the decoded addresses start at the first decoded instruction
         jumpFromAddress = zone->GetFileOffsetOfAddress(insn->address).value_or(0);
         for (size_t i = 0; i + 1 < sizeof(jumpMnemonic) && insn->mnemonic[i] != 0; i++)
             jumpMnemonic[i] = insn->mnemonic[i];
-        const auto target       = GetDirectBranchTarget(insn->op_str);
+        const auto operands     = zone->GetOperandsInfo(*insn);
+        const auto target       = operands.directTarget;
         const auto targetOffset = target.has_value() ? zone->GetFileOffsetOfAddress(target.value()) : std::nullopt;
         cs_free(insn, 1);
+        if (!target.has_value()) {
+            // the data the instruction refers to (lea rcx, [rip + ...], mov eax, [0x403000], push offset aText): its zone, when it has one
+            const uint64 addressMask = zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+            std::optional<uint64> address;
+            if (operands.ripTarget.has_value())
+                address = (zone->labelAddressBase + operands.ripTarget.value()) & addressMask;
+            else if (operands.absoluteMemory.has_value())
+                address = operands.absoluteMemory.value();
+            else
+                for (const uint64 value : operands.immediates)
+                    if (value >= 0x10000 && zone->FindCodeZoneOfAddress(value)) {
+                        address = value;
+                        break;
+                    }
+            const auto fileOffset = address.has_value() ? TranslateOperandAddressToFileOffset(settings.get(), address.value(), true) : std::nullopt;
+            if (fileOffset.has_value() && GoToFileOffset(fileOffset.value()))
+                return;
+            if (address.has_value())
+                Dialogs::MessageBox::ShowNotification("Warning", "The address is outside of the zones of the view!");
+            return;
+        }
         if (!targetOffset.has_value()) {
-            if (target.has_value())
-                Dialogs::MessageBox::ShowNotification("Warning", "The target is outside of this dissasm zone!");
-            return; // indirect jump / call: nothing to follow
+            if (!target.has_value())
+                return; // indirect jump / call: nothing to follow
+            // another code zone of the file (another executable section): through its file offset
+            const uint64 addressMask = zone->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+            const auto fileOffset    = TranslateOperandAddressToFileOffset(settings.get(), (zone->labelAddressBase + target.value()) & addressMask, true);
+            if (!fileOffset.has_value() || !GoToFileOffset(fileOffset.value()))
+                Dialogs::MessageBox::ShowNotification("Warning", "The target is outside of the dissasm zones!");
+            return;
         }
         computedValue = targetOffset.value();
     } else {
@@ -1170,48 +2358,69 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             return;
     }
 
-    // computedValue = 1064;
-
-    diffLines = 0;
-    insn      = GetCurrentInstructionByOffset(computedValue, zone, obj, diffLines);
-    if (!insn) {
-        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+    if (!MoveCursorToZoneFileOffset(zone, computedValue, true))
         return;
-    }
-    cs_free(insn, 1);
-
-    // diffLines++; // increased because of the menu bar
-
-    // TODO: can be improved by extracting the common part of the calculation of the actual line and to search for the closest zone directly
-    DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
-    const auto& targetType  = zone->types.back().get();
-
-    // diffLines is the instruction index: every text line (label, local variable) placed before the instruction moves it down
-    uint32 instructionLine = diffLines + targetType.beforeTextLines;
-    for (const auto& entry : targetType.annotations.mappings) { // no std::views::keys on mac
-        if (entry.first > instructionLine)
-            break;
-        instructionLine++;
-    }
-    // land on the label (and the local variables) placed right above the instruction
-    uint32 landingLine = instructionLine;
-    while (landingLine > 0 && targetType.annotations.contains(landingLine - 1u))
-        landingLine--;
-
-    // if (adjustedLine.has_value())
-    //     actualLine += adjustedLine.value() + 1;
-
-    diffLines = landingLine + 2u; //+1 for menu, +1 for title
-
-    const auto from      = SaveCursorState();
-    Cursor.lineInView    = std::min<uint32>(5, diffLines);
-    Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
-    Cursor.hasMovedView  = true;
-    RecordJump(from);
     if (offsetToReach != nullptr)
         GView::Security::Learning::Hooks::OnSimpleEvent(obj, GView::Security::Learning::Hooks::SimpleEvent::GotoEntrypoint);
     else
         GView::Security::Learning::Hooks::OnJumpFollow(obj, jumpFromAddress, computedValue, jumpMnemonic);
+}
+
+uint64 Instance::GetDisplayAddressBase(DissasmCodeZone* zone)
+{
+    if (zone->zoneDetails.isUninitialized)
+        return zone->labelAddressBase; // no file offset: its VA
+    const uint64 codeStart = zone->cachedCodeOffsets[0].offset;
+    if (!settings->offsetTranslateCallback.IsValid() || config.AddressMode == static_cast<uint8>(DissasmPEConversionType::FileOffset))
+        return codeStart;
+    // inside the zone (one section) the addresses grow with the file offsets: the address of the first instruction is enough
+    const auto address = settings->offsetTranslateCallback->TranslateFromFileOffset(codeStart, config.AddressMode);
+    return address != static_cast<uint64>(-1) ? address : codeStart;
+}
+
+void Instance::ChangeAddressMode()
+{
+    if (!settings->offsetTranslateCallback.IsValid()) {
+        Dialogs::MessageBox::ShowNotification("Info", "This file has only file offsets!");
+        return;
+    }
+    switch (static_cast<DissasmPEConversionType>(config.AddressMode)) {
+    case DissasmPEConversionType::VA:
+        config.AddressMode = static_cast<uint8>(DissasmPEConversionType::RVA);
+        break;
+    case DissasmPEConversionType::RVA:
+        config.AddressMode = static_cast<uint8>(DissasmPEConversionType::FileOffset);
+        break;
+    default:
+        config.AddressMode = static_cast<uint8>(DissasmPEConversionType::VA);
+        break;
+    }
+    RefreshDrawnLines(); // the address column changes its width: the columns of the numbers move
+}
+
+bool Instance::MoveCursorToZoneFileOffset(DissasmCodeZone* zone, uint64 fileOffset, bool landOnLabels)
+{
+    uint32 instructionIndex = 0;
+    cs_insn* insn           = GetCurrentInstructionByOffset(fileOffset, zone, obj, instructionIndex);
+    if (!insn) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+        return false;
+    }
+    cs_free(insn, 1);
+
+    // the line of the instruction, or (landOnLabels) the label / local variables placed right above it; a hidden line: the line of the
+    // collapsed zone that hides it
+    uint32 landingExpandedLine = zone->InstructionIndexToExpanded(instructionIndex);
+    while (landOnLabels && landingExpandedLine > 0 && zone->IsAnnotationLine(landingExpandedLine - 1u))
+        landingExpandedLine--;
+    const uint32 zoneLine = zone->ExpandedToDisplay(landingExpandedLine) + 2u; // +1 for the title, +1 for the columns header
+
+    const auto from      = SaveCursorState();
+    Cursor.lineInView    = std::min<uint32>(5, zoneLine);
+    Cursor.startViewLine = zoneLine + zone->startLineIndex - Cursor.lineInView;
+    Cursor.hasMovedView  = true;
+    RecordJump(from);
+    return true;
 }
 
 void Instance::RefreshCursorLineNumbers()
@@ -1225,6 +2434,10 @@ void Instance::RefreshCursorLineNumbers()
     cursorLineNumbers.valid      = false;
     cursorLineNumbers.zone       = nullptr;
     cursorLineNumbers.numbers.clear();
+    cursorLineNumbers.location.clear();
+    cursorLineNumbers.instruction.clear();
+    cursorLineNumbers.operands.clear();
+    cursorLineNumbers.operandColumns.clear();
 
     const auto zonesFound = GetZonesIndexesFromLinePosition(line);
     if (zonesFound.size() != 1)
@@ -1234,36 +2447,79 @@ void Instance::RefreshCursorLineNumbers()
         return;
     const auto zone     = static_cast<DissasmCodeZone*>(parseZone.get());
     const auto language = zone->zoneDetails.language;
-    if (!zone->isInit || zone->cachedCodeOffsets.empty() || (language != DisassemblyLanguage::x86 && language != DisassemblyLanguage::x64))
+    if (!zone->isInit || zone->cachedCodeOffsets.empty() || !DissasmCodeZone::IsNativeCodeLanguage(language))
         return;
     // zone line 0 is the title and line 1 the columns header; when the zone title is scrolled out, the first row shows the header
     const uint32 zoneLine = zonesFound[0].startingLine;
     if (zoneLine < 2 || Cursor.lineInView == 0)
         return;
 
-    // the same line (and layout) as the one that is drawn
+    // the same line (and layout) as the one that is drawn; without the known functions: a call would name the arguments on the drawn lines
+    // (AnnounceCallInstruction), this line is built while they are drawn
+    AsmData withoutKnownFunctions;
     DissasmInsnExtractLineParams params{};
     params.obj      = obj;
     params.settings = settings.get();
-    params.asmData  = &asmData;
+    params.asmData  = &withoutKnownFunctions;
     params.dli      = nullptr;
     params.zone     = zone;
     auto asmLine    = zone->GetCurrentAsmLine(zoneLine - 2u, obj, &params);
 
+    // where the cursor is: sub_140001010+0x1A, the file offset (labels and local variables included)
+    if (!asmLine.isCollapsedLine) {
+        LocalString<48> fileOffset;
+        if (zone->zoneDetails.isUninitialized)
+            fileOffset.SetFormat("  uninitialized (no bytes in the file)");
+        else
+            fileOffset.SetFormat("  file offset 0x%llX", static_cast<unsigned long long>(zone->cachedCodeOffsets[0].offset + asmLine.address));
+        cursorLineNumbers.location = zone->FormatCodeAddress(asmLine.address) + fileOffset.GetText();
+    }
+
+    // a call / jmp through an import slot (the name of the import is drawn instead of the operands): the prototype of the import
+    if (const auto* import = static_cast<const MemoryMappingEntry*>(asmLine.mapping);
+        import && import->type == MemoryMappingType::FunctionMapping && !asmLine.isCollapsedLine)
+        if (const auto* prototype = FindApiPrototype(import->name))
+            cursorLineNumbers.instruction = std::string(prototype->prototype);
+
     // only instructions: not labels, local variable lines or collapsed zones
-    const bool isCollapsedZoneLine = asmLine.shouldAddButton && asmLine.isZoneCollapsed;
+    const bool isCollapsedZoneLine = asmLine.isCollapsedLine;
     if (!asmLine.op_str || asmLine.size == 0 || isCollapsedZoneLine || asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition)
         return;
+    // what the instruction does (explain on hover): the status bar; a call / jmp to a known API: its prototype
+    const std::string_view lineOperands(asmLine.op_str, asmLine.op_str_size);
+    const auto lineKind = static_cast<X86InstructionKind>(asmLine.instructionKind);
+    if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump) &&
+        asmLine.branchTarget.has_value())
+        if (const auto* user = zone->FindUserPrototype(asmLine.branchTarget.value())) // the prototype the user gave (Y)
+            cursorLineNumbers.instruction = std::string(user->prototype);
+        else if (const auto* inferred = zone->FindInferredPrototype(asmLine.branchTarget.value())) // the one inferred from its calls
+            cursorLineNumbers.instruction = std::string(inferred->prototype) + " (inferred)";
+    if (cursorLineNumbers.instruction.empty() && (lineKind == X86InstructionKind::Call || lineKind == X86InstructionKind::Jump)) {
+        // the last name of the operands: call CreateFileW / call cs:__imp_CreateFileW / jmp j_connect
+        size_t end = lineOperands.size();
+        while (end > 0 && !IsTokenCharacter(lineOperands[end - 1]))
+            end--;
+        size_t start = end;
+        while (start > 0 && IsTokenCharacter(lineOperands[start - 1]))
+            start--;
+        if (const auto* prototype = start < end ? FindApiPrototype(lineOperands.substr(start, end - start)) : nullptr)
+            cursorLineNumbers.instruction = std::string(prototype->prototype);
+    }
+    if (cursorLineNumbers.instruction.empty())
+        if (const auto help = DescribeInstruction(asmLine.mnemonic, lineOperands, zone->GetArchAt(asmLine.address)); !help.empty())
+            cursorLineNumbers.instruction = std::string(asmLine.mnemonic) + ": " + help;
 
     CharacterBuffer lineText; // drawn without the left margin: its columns have the same base as Cursor.offset
     std::vector<uint32> opStrColumns;
-    DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset, &opStrColumns);
+    DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone), &opStrColumns);
     if (opStrColumns.size() != asmLine.op_str_size)
         return;
 
     cursorLineNumbers.valid   = true;
     cursorLineNumbers.zone    = zone;
     cursorLineNumbers.address = asmLine.address;
+    cursorLineNumbers.operands.assign(asmLine.op_str, asmLine.op_str_size);
+    cursorLineNumbers.operandColumns = opStrColumns;
 
     const auto numbers = FindOperandNumbers({ asmLine.op_str, asmLine.op_str_size });
     for (uint32 index = 0; index < static_cast<uint32>(numbers.size()) && index < 32u; index++) {
@@ -1272,6 +2528,108 @@ void Instance::RefreshCursorLineNumbers()
         if (column != UINT32_MAX)
             cursorLineNumbers.numbers.push_back({ column, number.length, index, number.value, number.isHex });
     }
+}
+
+bool Instance::TryGetCodeZoneSelectionText(uint32 index, std::string& text)
+{
+    text.clear();
+    const auto selectionStart = selection.GetSelectionStart(index);
+    const auto selectionEnd   = selection.GetSelectionEnd(index);
+    const auto zonesFound     = GetZonesIndexesFromLinePosition(selectionStart.line, selectionEnd.line);
+    if (zonesFound.size() != 1)
+        return false;
+    const auto& parseZone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed)
+        return false;
+    const auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
+    if (!zone->CanReachAsmLines() || zone->cachedCodeOffsets.empty())
+        return false;
+
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    params.zone     = zone;
+
+    // zone line 0 is the title, 1 the columns header; the selected text of a line starts at the selection offset on its first line (on
+    // every line for a column selection) and ends with the line, as the drawn selection
+    const bool isColumnSelection = selection.IsAltPressed(index);
+    const uint32 zoneLinesCount  = GetCodeZoneLinesCount(*zone);
+    std::string comment;
+    for (uint32 line = selectionStart.line; line <= selectionEnd.line; line++) {
+        const uint32 zoneLine = zonesFound[0].startingLine + (line - selectionStart.line);
+        if (zoneLine < 2 || zoneLine - 2 >= zoneLinesCount)
+            continue;
+        auto asmLine = zone->GetCurrentAsmLine(zoneLine - 2, obj, &params);
+        CharacterBuffer lineText;
+        DissasmAddColorsToInstruction(asmLine, lineText, config, ColorMan.Colors, asmData, codePage, GetDisplayAddressBase(zone));
+
+        std::string lineString;
+        lineString.reserve(lineText.Len() + 32);
+        for (uint32 i = 0; i < lineText.Len(); i++) {
+            const auto code = lineText.GetBuffer()[i].Code;
+            lineString.push_back(code < 128 ? static_cast<char>(code) : '?');
+        }
+        const bool hasComment = !asmLine.isCollapsedLine && zone->GetComment(asmLine, comment);
+        if (hasComment || !asmLine.autoComment.empty()) {
+            lineString += "  ;";
+            if (hasComment)
+                lineString += ' ' + comment;
+            if (hasComment && !asmLine.autoComment.empty())
+                lineString += " ;";
+            if (!asmLine.autoComment.empty())
+                lineString += ' ' + asmLine.autoComment;
+        }
+        const uint32 startOffset = (line == selectionStart.line || isColumnSelection) ? selectionStart.offset : 0;
+        if (startOffset < lineString.size())
+            text.append(lineString, startOffset, std::string::npos);
+        text.push_back('\n');
+    }
+    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+    return true;
+}
+
+std::string Instance::GetCursorToken()
+{
+    RefreshCursorLineNumbers();
+    if (!cursorLineNumbers.valid)
+        return {};
+    const auto& operands = cursorLineNumbers.operands;
+    const auto& columns  = cursorLineNumbers.operandColumns;
+    size_t position      = SIZE_MAX;
+    for (size_t index = 0; index < columns.size() && index < operands.size(); index++)
+        if (columns[index] == Cursor.offset) {
+            position = index;
+            break;
+        }
+    if (position == SIZE_MAX || !IsTokenCharacter(static_cast<unsigned char>(operands[position])))
+        return {};
+    size_t start = position, end = position + 1;
+    while (start > 0 && IsTokenCharacter(static_cast<unsigned char>(operands[start - 1])))
+        start--;
+    while (end < operands.size() && IsTokenCharacter(static_cast<unsigned char>(operands[end])))
+        end++;
+    return operands.substr(start, end - start);
+}
+
+int Instance::PrintCursorInstructionInfo(int x, int y, Renderer& r)
+{
+    RefreshCursorLineNumbers();
+    if (cursorLineNumbers.instruction.empty())
+        return x;
+    r.WriteSingleLineText(x, y, "Op:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 4, y, cursorLineNumbers.instruction, this->ColorMan.Colors.CursorNormal);
+    return x + 4 + static_cast<int>(cursorLineNumbers.instruction.size()) + 1;
+}
+
+int Instance::PrintCursorLocationInfo(int x, int y, Renderer& r)
+{
+    RefreshCursorLineNumbers();
+    if (cursorLineNumbers.location.empty())
+        return x;
+    r.WriteSingleLineText(x, y, "At:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 4, y, cursorLineNumbers.location, this->ColorMan.Colors.CursorNormal);
+    return x + 4 + static_cast<int>(cursorLineNumbers.location.size()) + 1;
 }
 
 const Instance::CursorLineNumber* Instance::GetCursorLineNumber()
@@ -1286,6 +2644,631 @@ const Instance::CursorLineNumber* Instance::GetCursorLineNumber()
     if (cursorLineNumbers.numbers.size() == 1)
         return &cursorLineNumbers.numbers[0];
     return nullptr;
+}
+
+void Instance::DefineUserData(UserDataEdit edit)
+{
+    FinishDeepScans(); // the labels (and the data of the cache) are there before the zone is analyzed again
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please expand the collapsed zone first!");
+        return;
+    }
+    const uint64 address = asmLine.address; // a label / a variable: the instruction they belong to
+    const auto before    = zone->userDataRanges;
+    bool changed         = false;
+    if (edit == UserDataEdit::Data)
+        changed = zone->DefineUserData(address);
+    else if (edit == UserDataEdit::String) {
+        changed = zone->DefineUserString(address);
+        if (!changed)
+            Dialogs::MessageBox::ShowNotification("Info", "There is no text at this address!");
+    } else {
+        changed = zone->UndefineUserData(address);
+        if (!changed)
+            Dialogs::MessageBox::ShowNotification("Info", "This line is not data defined with D / string!");
+    }
+    if (!changed)
+        return;
+    zone->RecordUserDataEdit(before, address); // Ctrl+Z gives the previous data back
+    ReanalyzeZone(zone, address, true);
+}
+
+void Instance::EditUserFunction(UserFunctionEdit edit)
+{
+    FinishDeepScans(); // the functions of the analysis are known
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please expand the collapsed zone first!");
+        return;
+    }
+    const uint64 address = asmLine.address; // a label / a variable: the instruction they belong to
+    const auto before    = zone->userFunctions;
+    std::optional<uint64> function;
+    if (edit == UserFunctionEdit::Create) {
+        const bool isData = std::any_of(zone->instructionSet.dataRanges.begin(), zone->instructionSet.dataRanges.end(), [address](const auto& range) {
+            return address >= range.start && address < range.end;
+        });
+        if (isData) {
+            Dialogs::MessageBox::ShowNotification("Info", "This line is data: undefine it first (U)!");
+            return;
+        }
+        if (!zone->CreateUserFunction(address)) {
+            Dialogs::MessageBox::ShowNotification("Info", "A function starts here already!");
+            return;
+        }
+        function = address;
+    } else {
+        function = zone->GetFunctionContaining(address);
+        const bool changed = function.has_value() &&
+                             (edit == UserFunctionEdit::Delete ? zone->DeleteUserFunction(function.value()) : zone->ToggleUserNoReturn(function.value()));
+        if (!changed) {
+            Dialogs::MessageBox::ShowNotification(
+                  "Info", function.has_value() ? "The entry point stays a function!" : "This line is not inside a function!");
+            return;
+        }
+    }
+    zone->RecordUserFunctionsEdit(before, function.value()); // Ctrl+Z gives the previous functions back
+    ReanalyzeZone(zone, address, true);
+    if (edit == UserFunctionEdit::ToggleNoReturn) {
+        const auto flags = zone->userFunctions.find(function.value());
+        std::string name = zone->GetLabelNameAt(function.value());
+        if (name.empty())
+            name = zone->GetLabelName("sub_", function.value());
+        LocalString<128> text;
+        text.SetFormat("%s %s", name.c_str(), flags != zone->userFunctions.end() && (flags->second & USER_FUNCTION_NORETURN) ? "does not return" : "returns");
+        Dialogs::MessageBox::ShowNotification("Function", text.GetText());
+    }
+}
+
+// IDA Alt+Q / T: the structures of the code (their size), the search bar filters them; "(none)" removes the structure of the variable /
+// the operand
+class StructuresWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_OK     = 1;
+    static constexpr int BTN_CANCEL = 2;
+    Reference<ListView> list;
+    std::vector<std::string> names; // by the data of the items: "" for (none)
+    std::optional<std::string> selected;
+
+  public:
+    StructuresWindow(std::string_view variable, std::string_view current, bool is64)
+        : Window("Structure", "d:c,w:70,h:80%", WindowFlags::Sizeable)
+    {
+        LocalString<128> text;
+        text.SetFormat("The structure of %.*s (%s code):", static_cast<int>(variable.size()), variable.data(), is64 ? "64 bit" : "32 bit");
+        Factory::Label::Create(this, text.GetText(), "l:1,t:0,r:1,h:1");
+        list = Factory::ListView::Create(this, "l:1,t:1,r:1,b:3", { "n:Structure,w:40", "n:Size,w:12,a:r" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        names.emplace_back();
+        auto none = list->AddItem({ "(none)", "" });
+        none.SetData(0);
+        ListViewItem currentItem = none;
+        std::vector<const DissasmApiStructure*> structures;
+        ForEachApiStructure(is64, [&structures](const DissasmApiStructure& structure) { structures.push_back(&structure); });
+        std::sort(structures.begin(), structures.end(), [](const auto* a, const auto* b) { return a->name < b->name; });
+        LocalString<16> size;
+        for (const auto* structure : structures) {
+            size.SetFormat("0x%x", structure->size);
+            auto item = list->AddItem({ std::string_view(structure->name), size.ToStringView() });
+            item.SetData(static_cast<uint64>(names.size()));
+            names.push_back(structure->name);
+            if (structure->name == current)
+                currentItem = item;
+        }
+        list->SetCurrentItem(currentItem);
+        Factory::Button::Create(this, "&OK", "l:1,b:0,w:10", BTN_OK);
+        Factory::Button::Create(this, "&Cancel", "r:1,b:0,w:10", BTN_CANCEL);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_OK)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid() && item.GetData(UINT64_MAX) < names.size())
+                selected = names[static_cast<size_t>(item.GetData(UINT64_MAX))];
+            Exit(selected.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if ((eventType == Event::ButtonClicked && ID == BTN_CANCEL) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    const std::optional<std::string>& GetSelected() const
+    {
+        return selected;
+    }
+};
+
+void Instance::SetVariableStructure()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    // the variable: its line or an instruction that uses it (a field of a structure: the structure)
+    uint64 functionStart = 0;
+    int32 frameOffset    = 0;
+    const auto* frame    = zone->GetLocalVariableFromLine(zonesFound[0].startingLine - 2u, obj, functionStart, frameOffset)
+                                 ? zone->localVariables.FindFunctionByStart(functionStart)
+                                 : nullptr;
+    const auto* variable = frame ? frame->FindVariable(frameOffset) : nullptr;
+    if (!variable) {
+        Dialogs::MessageBox::ShowNotification("Info", "Please select a local variable (its line or an instruction that uses it)!");
+        return;
+    }
+    const auto arch = zone->GetArchAt(functionStart);
+    StructuresWindow window(variable->name, variable->structure ? std::string_view(variable->structure->name) : std::string_view(), arch == DissasmArch::X64 || arch == DissasmArch::Arm64);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelected().has_value())
+        return;
+    const std::string& structure = window.GetSelected().value();
+    const auto user              = zone->userVariableStructures.find({ functionStart, frameOffset });
+    if (user != zone->userVariableStructures.end() && user->second == structure)
+        return;
+    const auto before                                        = zone->userVariableStructures;
+    zone->userVariableStructures[{ functionStart, frameOffset }] = structure;
+    zone->RecordUserVariableStructuresEdit(before, functionStart); // Ctrl+Z gives the previous structures back
+    ReanalyzeZone(zone, functionStart, true); // the variables inside the structure become its fields
+}
+
+void Instance::SetOperandStructure()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.size == 0 || asmLine.isCollapsedLine || !asmLine.op_str) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select an instruction with a memory operand ([rbx + 0x3c])!");
+        return;
+    }
+    if (asmLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Reference) {
+        Dialogs::MessageBox::ShowNotification("Info", "The operand is a local variable: give it a structure with Alt+Q!");
+        return;
+    }
+    // the operand must take a field: a probe structure on the operands as they are drawn without one
+    const auto arch       = zone->GetArchAt(asmLine.address);
+    const bool is64       = arch == DissasmArch::X64 || arch == DissasmArch::Arm64;
+    const auto current    = zone->operandStructures.find(asmLine.address);
+    const auto* structure = current != zone->operandStructures.end() ? FindApiStructure(current->second, is64) : nullptr;
+    if (!structure) {
+        const auto* probe = FindApiStructure("FILETIME", is64);
+        if (!probe || !ApplyOperandStructure({ asmLine.op_str, asmLine.op_str_size }, *probe, zone->IsArmCode()).has_value()) {
+            Dialogs::MessageBox::ShowNotification("Info", "The instruction has no memory operand with a base register and a positive displacement!");
+            return;
+        }
+    }
+    LocalString<64> operand;
+    operand.SetFormat("the operand of 0x%llx", static_cast<unsigned long long>(zone->labelAddressBase + asmLine.address));
+    StructuresWindow window(operand.ToStringView(), structure ? std::string_view(structure->name) : std::string_view(), is64);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelected().has_value())
+        return;
+    if (zone->SetOperandStructure(asmLine.address, window.GetSelected().value())) // Ctrl+Z gives the previous one back
+        drawnLinesGeneration++;
+}
+
+// M: the sets of constants that name the value of an operand (the name in each), the current one selected; (none: the number) first
+class ConstantsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_OK     = 1;
+    static constexpr int BTN_CANCEL = 2;
+    Reference<ListView> list;
+    std::vector<std::string> sets; // by the data of the items: "" for (none)
+    std::optional<std::string> selected;
+
+  public:
+    ConstantsWindow(std::string_view operand, uint64 value, std::string_view current) : Window("Symbolic constant", "d:c,w:90,h:70%", WindowFlags::Sizeable)
+    {
+        LocalString<128> text;
+        text.SetFormat("The constant 0x%llX of %.*s:", static_cast<unsigned long long>(value), static_cast<int>(operand.size()), operand.data());
+        Factory::Label::Create(this, text.GetText(), "l:1,t:0,r:1,h:1");
+        list = Factory::ListView::Create(this, "l:1,t:1,r:1,b:3", { "n:Name,w:44", "n:Set,w:40" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        sets.emplace_back();
+        auto none = list->AddItem({ "(none: the number)", "" });
+        none.SetData(0);
+        ListViewItem currentItem = none;
+        // the single names first (OPEN_EXISTING for 3), then the combinations of flags (FILE_READ_DATA | FILE_WRITE_DATA)
+        std::vector<std::tuple<std::string, std::string_view, std::string_view>> choices; // the name, the set, its title
+        ForEachConstantSet([&](std::string_view id, std::string_view title) {
+            if (std::string name = FormatConstantOfSet(id, value); !name.empty())
+                choices.emplace_back(std::move(name), id, title);
+        });
+        std::stable_sort(choices.begin(), choices.end(), [](const auto& a, const auto& b) {
+            return (std::get<0>(a).find('|') == std::string::npos) > (std::get<0>(b).find('|') == std::string::npos);
+        });
+        for (const auto& [name, id, title] : choices) {
+            auto item = list->AddItem({ std::string_view(name), title });
+            item.SetData(static_cast<uint64>(sets.size()));
+            sets.emplace_back(id);
+            if (id == current)
+                currentItem = item;
+        }
+        list->SetCurrentItem(currentItem);
+        Factory::Button::Create(this, "&OK", "l:1,b:0,w:10", BTN_OK);
+        Factory::Button::Create(this, "&Cancel", "r:1,b:0,w:10", BTN_CANCEL);
+        list->SetFocus();
+    }
+
+    size_t GetChoicesCount() const
+    {
+        return sets.size() - 1u;
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_OK)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid() && item.GetData(UINT64_MAX) < sets.size())
+                selected = sets[static_cast<size_t>(item.GetData(UINT64_MAX))];
+            Exit(selected.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if ((eventType == Event::ButtonClicked && ID == BTN_CANCEL) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    const std::optional<std::string>& GetSelected() const
+    {
+        return selected;
+    }
+};
+
+void Instance::SetOperandConstant()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.zone     = zone;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.size == 0 || asmLine.isCollapsedLine || !asmLine.op_str) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select an instruction with an immediate operand (mov edx, 0x80000000)!");
+        return;
+    }
+    // the number: the line drawn without the constant of the user
+    const auto current = zone->operandConstants.find(asmLine.address);
+    std::string currentSet;
+    std::optional<uint64> value;
+    if (current != zone->operandConstants.end()) {
+        currentSet = current->second;
+        zone->operandConstants.erase(current);
+        const auto plainLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+        value                = plainLine.op_str ? GetLastOperandImmediate({ plainLine.op_str, plainLine.op_str_size }) : std::nullopt;
+        zone->operandConstants[asmLine.address] = currentSet;
+    } else {
+        value = GetLastOperandImmediate({ asmLine.op_str, asmLine.op_str_size });
+    }
+    if (!value.has_value()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The last operand of the instruction is not an immediate!");
+        return;
+    }
+    LocalString<64> operand;
+    operand.SetFormat("the instruction at 0x%llx", static_cast<unsigned long long>(zone->labelAddressBase + asmLine.address));
+    ConstantsWindow window(operand.ToStringView(), value.value(), currentSet);
+    if (window.GetChoicesCount() == 0 && currentSet.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "No set of constants names this value!");
+        return;
+    }
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelected().has_value())
+        return;
+    if (zone->SetOperandConstant(asmLine.address, window.GetSelected().value())) // Ctrl+Z gives the previous one back
+        drawnLinesGeneration++;
+}
+
+void Instance::MarkPosition()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    if (asmLine.isCollapsedLine) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please expand the collapsed zone first!");
+        return;
+    }
+    // a label / a variable line: the instruction it belongs to; the description proposed: the place (sub_401000+0x1A)
+    const uint64 address = asmLine.address;
+    const auto existing  = zone->bookmarks.find(address);
+    SingleLineEditWindow dialog(existing != zone->bookmarks.end() ? existing->second : zone->FormatCodeAddress(address), "Bookmark");
+    if (dialog.Show() != Dialogs::Result::Ok)
+        return;
+    std::string description = dialog.GetResult();
+    if (description.size() > DISSASM_MAX_BOOKMARK_SIZE)
+        description.resize(DISSASM_MAX_BOOKMARK_SIZE);
+    zone->bookmarks[address] = std::move(description);
+}
+
+// IDA Ctrl+M: the bookmarks of every code zone; Enter / Go jumps to one, Delete removes the selected one
+class BookmarksWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO     = 1;
+    static constexpr int BTN_DELETE = 2;
+    static constexpr int BTN_CLOSE  = 3;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+    std::function<void(size_t)> deleteRow;
+    const std::vector<std::array<std::string, 3>>& rows;
+    std::vector<bool> deleted;
+
+    // the list has no removal of one item: it is filled again without the deleted rows
+    void FillList()
+    {
+        list->DeleteAllItems();
+        for (size_t index = 0; index < rows.size(); index++)
+            if (!deleted[index]) {
+                auto item = list->AddItem({ std::string_view(rows[index][0]), std::string_view(rows[index][1]), std::string_view(rows[index][2]) });
+                item.SetData(static_cast<uint64>(index));
+            }
+    }
+
+  public:
+    BookmarksWindow(const std::vector<std::array<std::string, 3>>& rows, std::function<void(size_t)> onDelete)
+        : Window("Bookmarks", "d:c,w:90%,h:60%", WindowFlags::Sizeable), deleteRow(std::move(onDelete)), rows(rows), deleted(rows.size(), false)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:Description,w:50", "n:Address,w:20", "n:Location,w:40" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        FillList();
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Delete", "l:13,b:0,w:12", BTN_DELETE);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_DELETE) {
+            auto item = list->GetCurrentItem();
+            if (const size_t row = item.IsValid() ? static_cast<size_t>(item.GetData(UINT64_MAX)) : rows.size(); row < rows.size()) {
+                deleteRow(row);
+                deleted[row] = true;
+                FillList();
+            }
+            list->SetFocus();
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowBookmarks()
+{
+    struct Place {
+        DissasmCodeZone* zone;
+        uint64 address;
+    };
+    std::vector<Place> places;
+    std::vector<std::array<std::string, 3>> rows;
+    LocalString<32> address;
+    for (auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        auto* zone = static_cast<DissasmCodeZone*>(parseZone.get());
+        for (const auto& [relative, description] : zone->bookmarks) {
+            address.SetFormat("0x%016llx", static_cast<unsigned long long>(zone->labelAddressBase + relative));
+            rows.push_back({ description, std::string(address.ToStringView()), zone->FormatCodeAddress(relative) });
+            places.push_back({ zone, relative });
+        }
+    }
+    if (rows.empty()) {
+        Dialogs::MessageBox::ShowNotification("Bookmarks", "There is no bookmark: Alt+M bookmarks the line of the cursor!");
+        return;
+    }
+    BookmarksWindow window(rows, [&places](size_t row) {
+        if (row < places.size())
+            places[row].zone->bookmarks.erase(places[row].address);
+    });
+    const bool go = window.Show() == Dialogs::Result::Ok && window.GetSelectedRow().has_value();
+    navigationBandKey = 0; // the dots of the band
+    if (!go || window.GetSelectedRow().value() >= places.size())
+        return;
+    const auto& place = places[window.GetSelectedRow().value()];
+    if (place.zone->CanReachAsmLines())
+        MoveCursorToZoneFileOffset(place.zone, place.zone->cachedCodeOffsets[0].offset + place.address, true);
+}
+
+void Instance::SetFunctionPrototype()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    if (!zone->CanReachAsmLines() || zone->isCollapsed || zone->zoneDetails.isData)
+        return;
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    const auto function = asmLine.isCollapsedLine ? std::nullopt : zone->GetFunctionContaining(asmLine.address);
+    if (!function.has_value()) {
+        Dialogs::MessageBox::ShowNotification("Warning", "This line is not inside a function!");
+        return;
+    }
+    // the text proposed: the prototype of the user, the one of the API the function is (a thunk, a function of a static binary), else an
+    // empty one with the name of the function
+    std::string name = zone->GetLabelNameAt(function.value());
+    if (name.empty())
+        name = zone->GetLabelName("sub_", function.value());
+    std::string text;
+    if (const auto user = zone->userPrototypes.find(function.value()); user != zone->userPrototypes.end())
+        text = user->second;
+    else if (const auto* inferred = zone->FindInferredPrototype(function.value())) {
+        // the inferred one as a prototype: the parameters it does not know are int a1, a2, ...; int when its return is not known
+        text = (inferred->returnType.empty() ? std::string("int") : std::string(inferred->returnType)) + " " + name + "(";
+        for (size_t index = 0; index < inferred->params.size(); index++) {
+            if (index > 0)
+                text += ", ";
+            const std::string_view parameter = inferred->params[index].name;
+            text += parameter.empty() ? "int a" + std::to_string(index + 1) : std::string(inferred->params[index].type) + " " + std::string(parameter);
+        }
+        text += ")";
+    }
+    else if (const auto thunk = zone->thunkImports.find(function.value()); thunk != zone->thunkImports.end() && FindApiPrototype(thunk->second))
+        text = std::string(FindApiPrototype(thunk->second)->prototype);
+    else if (const auto* api = FindApiPrototype(name))
+        text = std::string(api->prototype);
+    else
+        text = "int " + name + "()";
+    for (;;) {
+        SingleLineEditWindow dialog(text, "Function prototype (empty: none)", true);
+        if (dialog.Show() != Dialogs::Result::Ok)
+            return;
+        text = dialog.GetResult();
+        if (text.empty() || ParseUserPrototype(text))
+            break;
+        Dialogs::MessageBox::ShowError("Prototype", "Expecting a prototype: int decrypt(char* buffer, int size) (named parameters)!");
+    }
+    const auto before = zone->userPrototypes;
+    if (text.empty())
+        zone->userPrototypes.erase(function.value());
+    else
+        zone->userPrototypes[function.value()] = text;
+    if (zone->userPrototypes == before)
+        return;
+    zone->RecordUserPrototypesEdit(before, function.value()); // Ctrl+Z gives the previous prototype back
+    ReanalyzeZone(zone, asmLine.address, true);                // the variables named after the arguments
+}
+
+bool Instance::ReanalyzeZone(DissasmCodeZone* zone, std::optional<uint64> keepAddress, bool background)
+{
+    if (zone->IsDeepScanPending()) {
+        zone->ContinueDeepScan(std::chrono::steady_clock::time_point::max());
+        EndDeepScan(zone, false);
+    }
+    DissasmCodeZoneInitData initData{};
+    FillCodeZoneInitData(initData, nullptr, zone);
+    if (!background) {
+        initData.deepScanBudget.reset();
+        initData.lineCountBudget.reset();
+    }
+    auto state = std::make_unique<DissasmReanalysis>();
+    if (!BeginCodeZoneReanalysis(*zone, initData, *state)) {
+        Dialogs::MessageBox::ShowError("Error", "The dissasm zone could not be analyzed again!");
+        return false;
+    }
+    AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title
+    zone->asmPreCacheData.Clear();
+    drawnLinesGeneration++;
+    if (zone->IsDeepScanPending()) {
+        // a big zone: its instructions are shown now, the labels and the annotations when the scan ends (EndDeepScan)
+        zone->pendingReanalysis        = std::move(state);
+        zone->pendingReanalysisAddress = keepAddress;
+    } else {
+        DissasmAnnotationsImport imported;
+        FinishCodeZoneReanalysis(*zone, *state, imported);
+        AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // a collapsed zone placed again
+        if (!zone->zoneDetails.isData)
+            RefreshDataZones(); // their labels are the places this code refers to
+        ForgetLinesReferringTo(zone);
+    }
+    if (keepAddress.has_value())
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + keepAddress.value(), false);
+    return true;
+}
+
+void Instance::RefreshDataZones()
+{
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto dataZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        if (dataZone->zoneDetails.isData && dataZone->CanReachAsmLines() && !dataZone->IsDeepScanPending())
+            ReanalyzeZone(dataZone, std::nullopt, false); // quick: no instructions; its annotations are kept
+    }
 }
 
 void Instance::ToggleNumberBase()
@@ -1391,62 +3374,34 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
     }
 }
 
-using ValidChildCallback = bool(DissasmCodeInternalType*, void*);
-
-DissasmCodeInternalType* SearchBottomWithFnUpCollapsibleZoneRecursive(
-      DissasmCodeInternalType& parent, uint32 line, ValidChildCallback isValidChild, void* context = nullptr)
-{
-    for (auto& zone : parent.internalTypes) {
-        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
-            auto child = SearchBottomWithFnUpCollapsibleZoneRecursive(zone, line, isValidChild, context);
-            if (child && isValidChild(child, context))
-                return child;
-            if (isValidChild(&zone, context))
-                return &zone;
-            return nullptr;
-        }
-    }
-
-    return nullptr;
-}
-
-DissasmCodeInternalType* SearchBottomWithFnUpCollapsibleZone(
-      DissasmCodeInternalType& parent, uint32 line, ValidChildCallback isValidChild, void* context = nullptr)
-{
-    if (parent.internalTypes.empty()) {
-        if (isValidChild(&parent, context))
-            return &parent;
-        return nullptr;
-    }
-    return SearchBottomWithFnUpCollapsibleZoneRecursive(parent, line, isValidChild, context);
-}
-
-DissasmCodeInternalType* GetRecursiveCollpasedZoneByLineRecursive(DissasmCodeInternalType& parent, uint32 line)
-{
-    for (auto& zone : parent.internalTypes) {
-        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
-            auto child = GetRecursiveCollpasedZoneByLineRecursive(zone, line);
-            if (child)
-                return child;
-            return &zone;
-        }
-    }
-
-    return nullptr;
-}
-
-DissasmCodeInternalType* GView::View::DissasmViewer::GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType& parent, uint32 line)
-{
-    if (parent.internalTypes.empty())
-        return &parent;
-    return GetRecursiveCollpasedZoneByLineRecursive(parent, line);
-}
-
 GStatus DissasmCodeZone::TryRenameLine(
       uint32 line, Reference<GView::Object> obj, std::string_view* newName, DissasmInsnExtractLineParams* params)
 {
     if (!CanReachAsmLines())
         return GStatus::Error("Renaming is available only for the initialized x86/x64 dissasm zones!");
+    const auto place = DisplayToExpanded(line);
+    if (!place.has_value())
+        return GStatus::Error("Failed to rename line");
+
+    // the line of a collapsed zone: the name of the zone
+    if (place->collapsedZone) {
+        auto& zone = collapsibleZones[place->collapsedZone - collapsibleZones.data()];
+        std::string name;
+        if (newName) {
+            name = std::string(*newName);
+        } else {
+            SingleLineEditWindow dlg(zone.name, "Edit collapsed zone label");
+            if (dlg.Show() != Dialogs::Result::Ok)
+                return GStatus::Ok();
+            name = dlg.GetResult();
+        }
+        if (name.empty() || name == zone.name)
+            return GStatus::Ok();
+        zone.name = std::move(name);
+        ResetZoneCaching();
+        return GStatus{ .ok = true, .message = "renamed" };
+    }
+
     if (!newName) {
         // local variable: its definition line or an instruction that uses it
         uint64 functionStart = 0;
@@ -1469,35 +3424,34 @@ GStatus DissasmCodeZone::TryRenameLine(
         }
     }
 
-    // TODO: improve, add searching function to search inside types for the current annotation
-    std::string currentName = {};
+    // a label line (the annotations are keyed by the expanded lines)
+    std::string currentName;
+    uint32 labelLine  = place->expandedLine;
     auto& annotations = dissasmType.annotations;
-    {
-        auto it = annotations.find(line);
-        if (it != annotations.end()) {
-            if (newName) {
-                // through the name links, as the dialog rename: the jumps / calls to the label show the new name as well
-                const std::string newNameText(*newName);
-                if (newNameText.empty() || newNameText == it->second.first)
-                    return GStatus::Ok();
-                const std::string labelName = it->second.first;
-                if (!annotations.add_name_change(labelName, newNameText, line))
-                    return GStatus::Error("Name already exists!");
-                return GStatus{ .ok = true, .message = "renamed" };
-            }
-            currentName = it->second.first;
+    const auto label  = annotations.find(labelLine);
+    if (label != annotations.end() && !IsLocalVariableAnnotation(label->second)) {
+        if (newName) {
+            // through the name links, as the dialog rename: the jumps / calls to the label show the new name as well
+            const std::string newNameText(*newName);
+            if (newNameText.empty() || newNameText == label->second.first)
+                return GStatus::Ok();
+            const std::string labelName = label->second.first;
+            if (!RenameLabel(labelLine, labelName, newNameText))
+                return GStatus::Error("Name already exists!");
+            return GStatus{ .ok = true, .message = "renamed" };
         }
+        currentName = label->second.first;
     }
 
+    // a jump / call: the label of its target
     if (currentName.empty()) {
-        auto asmLine = GetCurrentAsmLine(line, obj, params);
-        if (asmLine.flags == DissasmAsmPreCacheLine::InstructionFlag::JmpFlag) {
-            //TODO: change to std::sting_view
-            std::string annotation_name = std::string(asmLine.op_str, asmLine.op_str_size);
-            auto res                    = annotations.get_line_by_annotation_name(annotation_name);
-            if (res.has_value()) {
-                currentName = std::move(annotation_name);
-                line = res.value();
+        const auto asmLine = GetCurrentAsmLine(line, obj, params);
+        if (asmLine.op_str && (asmLine.flags & (DissasmAsmPreCacheLine::InstructionFlag::JmpFlag | DissasmAsmPreCacheLine::InstructionFlag::CallFlag))) {
+            std::string targetName(asmLine.op_str, asmLine.op_str_size);
+            const auto targetLine = annotations.get_line_by_annotation_name(targetName);
+            if (targetLine.has_value()) {
+                currentName = std::move(targetName);
+                labelLine   = targetLine.value();
             }
         }
     }
@@ -1507,7 +3461,7 @@ GStatus DissasmCodeZone::TryRenameLine(
         if (dlg.Show() == Dialogs::Result::Ok) {
             const auto res = dlg.GetResult();
             if (!res.empty()) {
-                if (!annotations.add_name_change(currentName, res, line)) {
+                if (!RenameLabel(labelLine, currentName, res)) {
                     // TODO: do this check inside the SingleLineEditWindow
                     return GStatus::Error("Name already exists!");
                 }
@@ -1517,487 +3471,1522 @@ GStatus DissasmCodeZone::TryRenameLine(
         return GStatus::Ok();
     }
 
-    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->isCollapsed; };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
-    if (collapsedZone) {
-        SingleLineEditWindow dlg(collapsedZone->name, "Edit collapsed zone label");
-        if (dlg.Show() == Dialogs::Result::Ok) {
-            const auto res = dlg.GetResult();
-            if (!res.empty()) {
-                collapsedZone->name = res;
-                return GStatus{ .ok = true, .message = "renamed" };
-            }
-        }
-        return GStatus::Ok();
-    }
-
     return GStatus::Error("Failed to rename line");
 }
 
-bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
+// the cross references to an address: one row per reference, Enter (or Go) closes the window on the selected reference
+class XrefsWindow : public AppCUI::Controls::Window
 {
-    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
-    if (collapsedZone) {
-        if (!collapsedZone->commentsData.GetComment(line, comment)) {
-            Dialogs::MessageBox::ShowError("Error processing comments", "Invalid behaviour");
-            return false;
+  public:
+    struct Row {
+        uint64 from; // relative address of the instruction (in `zone`)
+        DissasmCodeZone* zone;
+        std::string address, kind, function, instruction;
+    };
+
+  private:
+    static constexpr int BTN_GO    = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    XrefsWindow(const std::string& title, const std::vector<Row>& rows) : Window(title, "d:c,w:90%,h:60%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:Address,w:20", "n:Type,w:8", "n:From,w:40", "n:Instruction,w:80" }, ListViewFlags::PopupSearchBar);
+        for (size_t i = 0; i < rows.size(); i++) {
+            const auto& row = rows[i];
+            auto item       = list->AddItem({ std::string_view(row.address), std::string_view(row.kind), std::string_view(row.function), std::string_view(row.instruction) });
+            item.SetData(static_cast<uint64>(i));
         }
-        return true;
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
     }
 
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowXrefs()
+{
+    const auto linePos    = Cursor.ToLinePosition();
+    const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto& parseZone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of an expanded dissasm code zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
+    if (!zone->CanReachAsmLines())
+        return;
+    if (zone->xrefs.byTarget.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The cross references are found by the deep scan (Config.DeepScanDissasmOnStart)!");
+        return;
+    }
+
+    // a label (or a collapsed zone): its address; a jump / call: its target; another instruction: its address
+    DissasmInsnExtractLineParams params{};
+    params.obj         = obj;
+    params.zone        = zone;
+    params.settings    = settings.get();
+    params.asmData     = &asmData;
+    const auto asmLine = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+    uint64 target      = asmLine.address;
+    if (asmLine.size > 0 && asmLine.branchTarget.has_value())
+        target = asmLine.branchTarget.value();
+    std::string targetName = zone->GetLabelNameAt(target);
+    if (targetName.empty())
+        targetName = zone->FormatCodeAddress(target);
+    ShowXrefsTo(zone, zone->labelAddressBase + target, targetName);
+}
+
+void Instance::ShowXrefsTo(DissasmCodeZone* zone, uint64 target, const std::string& targetName)
+{
+    ShowXrefsTo(zone, std::vector<uint64>{ target }, {}, targetName);
+}
+
+void Instance::ShowXrefsTo(
+      DissasmCodeZone* zone, const std::vector<uint64>& targets, const std::vector<std::pair<uint64, uint64>>& ignored, const std::string& targetName)
+{
+    // the references from this zone and from the other code zones of the file (the other executable sections)
+    std::vector<DissasmZoneXref> references;
+    for (const uint64 target : targets)
+        for (const auto& reference : zone->GetXrefsTo(target))
+            if (std::none_of(ignored.begin(), ignored.end(), [&reference](const auto& range) {
+                    return reference.xref->from >= range.first && reference.xref->from < range.second;
+                }))
+                references.push_back(reference);
+    if (references.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "There are no cross references to " + targetName);
+        return;
+    }
+
+    constexpr size_t MAX_ROWS = 5000;
+    std::vector<XrefsWindow::Row> rows;
+    rows.reserve(std::min<size_t>(references.size(), MAX_ROWS));
+    LocalString<64> text;
+    for (const auto& [xref, sourceZone] : references) {
+        if (rows.size() >= MAX_ROWS)
+            break;
+        XrefsWindow::Row row;
+        row.zone = sourceZone;
+        row.from = xref->from - sourceZone->labelAddressBase;
+        text.SetFormat("0x%llx", static_cast<unsigned long long>(xref->from));
+        row.address  = text.GetText();
+        row.kind     = std::string(GetXrefKindName(xref->kind));
+        row.function = sourceZone->FormatCodeAddress(row.from);
+        // the instruction as capstone writes it, a branch with the name of its target (capstone writes the zone relative address)
+        uint32 instructionIndex = 0;
+        if (const auto fileOffset = sourceZone->GetFileOffsetOfAddress(row.from); fileOffset.has_value()) {
+            if (cs_insn* insn = GetCurrentInstructionByOffset(fileOffset.value(), sourceZone, obj, instructionIndex)) {
+                row.instruction = std::string(insn->mnemonic) + " ";
+                const auto operands =
+                      IsX86Branch(GetInstructionFlow(*insn, sourceZone->GetArch())) ? GetInstructionOperands(*insn, sourceZone->GetArch()) : X86OperandsInfo{};
+                if (operands.directTarget.has_value()) {
+                    std::string branchName = sourceZone->GetLabelNameAt(operands.directTarget.value());
+                    row.instruction += branchName.empty() ? sourceZone->FormatCodeAddress(operands.directTarget.value()) : branchName;
+                } else {
+                    row.instruction += insn->op_str;
+                }
+                cs_free(insn, 1);
+            }
+        }
+        sourceZone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+        rows.push_back(std::move(row));
+    }
+
+    LocalString<256> title;
+    title.SetFormat("Cross references to %s (%zu)", targetName.c_str(), references.size());
+    XrefsWindow dlg(title.GetText(), rows);
+    if (dlg.Show() != Dialogs::Result::Ok)
+        return;
+    const auto selected = dlg.GetSelectedRow();
+    if (selected.has_value() && selected.value() < rows.size()) {
+        const auto& row = rows[selected.value()];
+        MoveCursorToZoneFileOffset(row.zone, row.zone->cachedCodeOffsets[0].offset + row.from, false);
+    }
+}
+
+std::vector<DissasmImportUse> GView::View::DissasmViewer::CollectImportUses(SettingsData* settings, const std::vector<DissasmCodeZone*>& zones)
+{
+    std::map<std::string, DissasmImportUse> imports;
+    const DissasmCodeZone* reference = nullptr; // a zone to turn the RVAs of the slots into VAs (the zones share the image base)
+    for (const auto* zone : zones)
+        if (!reference && zone->CanReachAsmLines() && !zone->cachedCodeOffsets.empty())
+            reference = zone;
+    if (!reference)
+        return {};
+    // the slots: RVAs with an offset translation, VAs without
+    const bool translated   = settings->offsetTranslateCallback.IsValid();
+    const uint64 codeRVA    = translated ? GetCodeStartRVA(settings, reference) : 0;
+    const uint64 addressMask = reference->Is64BitCode() ? UINT64_MAX : 0xFFFFFFFFull;
+    for (const auto& [key, mapping] : settings->memoryMappings) {
+        if (mapping.type != MemoryMappingType::FunctionMapping || mapping.name.empty())
+            continue;
+        auto& import = imports[mapping.name];
+        import.name  = mapping.name;
+        import.targets.push_back(translated ? (reference->labelAddressBase + key - codeRVA) & addressMask : key);
+    }
+    for (const auto* zone : zones)
+        for (const auto& [relative, name] : zone->thunkImports) {
+            auto& import = imports[name];
+            import.name  = name;
+            import.thunks.push_back(zone->labelAddressBase + relative);
+            import.thunkCode.emplace_back(zone->labelAddressBase + relative, zone->labelAddressBase + std::max(relative + 1, zone->GetFunctionEnd(relative)));
+        }
+    std::vector<DissasmImportUse> result;
+    result.reserve(imports.size());
+    for (auto& [name, import] : imports) {
+        std::sort(import.targets.begin(), import.targets.end());
+        std::sort(import.thunks.begin(), import.thunks.end());
+        import.targets.insert(import.targets.end(), import.thunks.begin(), import.thunks.end());
+        for (const uint64 target : import.targets)
+            for (const auto& use : reference->GetXrefsTo(target))
+                if (std::none_of(import.thunkCode.begin(), import.thunkCode.end(), [&use](const auto& code) {
+                        return use.xref->from >= code.first && use.xref->from < code.second;
+                    }))
+                    import.uses++;
+        result.push_back(std::move(import));
+    }
+    return result;
+}
+
+// The imports (IDA's Imports, and beyond: the category of the API, the places that use it, its prototype); the search bar filters them,
+// Enter / Uses shows the instructions that use the selected one
+class ImportsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_USES  = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    ImportsWindow(const std::vector<DissasmImportUse>& imports) : Window("Imports", "d:c,w:95%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this,
+              "l:1,t:1,r:1,b:3",
+              { "n:Name,w:36", "n:Uses,w:7,a:r", "n:Tags,w:22", "n:Address,w:20", "n:Prototype,w:120" },
+              ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        LocalString<32> uses, address;
+        for (size_t index = 0; index < imports.size(); index++) {
+            const auto& import = imports[index];
+            uses.SetFormat("%6u", import.uses); // padded: the columns are sorted by their text
+            if (!import.targets.empty())
+                address.SetFormat("0x%016llx", static_cast<unsigned long long>(import.targets.front()));
+            else
+                address.Clear();
+            const uint32 categories = GetApiCategories(import.name);
+            const std::string tags  = FormatApiCategories(categories);
+            const auto* prototype   = FindApiPrototype(import.name);
+            auto item               = list->AddItem({ std::string_view(import.name),
+                                                      uses.ToStringView(),
+                                                      std::string_view(tags),
+                                                      address.ToStringView(),
+                                                      prototype ? prototype->prototype : std::string_view() });
+            item.SetData(static_cast<uint64>(index));
+            // the colors of the triage, as in the Functions window and the navigation band
+            if (const uint32 category = GetMainApiCategory(categories); category != 0)
+                item.SetColor(ColorPair{ GetDissasmBandColor(GetDissasmBandCellOfCategory(category)), Color::Transparent });
+        }
+        Factory::Button::Create(this, "&Uses", "l:1,b:0,w:10", BTN_USES);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_USES)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowImports()
+{
+    std::vector<DissasmCodeZone*> zones;
+    for (auto& parseZone : settings->parseZones)
+        if (parseZone->zoneType == DissasmParseZoneType::DissasmCodeParseZone && static_cast<DissasmCodeZone*>(parseZone.get())->CanReachAsmLines())
+            zones.push_back(static_cast<DissasmCodeZone*>(parseZone.get()));
+    const auto imports = CollectImportUses(settings.get(), zones);
+    if (imports.empty()) {
+        Dialogs::MessageBox::ShowNotification("Imports", "No import is known (the plugin gives none, or the disassembly zone is not shown)!");
+        return;
+    }
+    ImportsWindow window(imports);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value() || window.GetSelectedRow().value() >= imports.size())
+        return;
+    const auto& import = imports[window.GetSelectedRow().value()];
+    ShowXrefsTo(zones.front(), import.targets, import.thunkCode, import.name);
+}
+
+// The functions of the analysis (IDA Shift+F3): name, address, size, references; the search bar filters them, Enter / Go jumps to one
+class FunctionsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO    = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    FunctionsWindow(const std::vector<DissasmFunctionInfo>& functions, uint64 labelAddressBase)
+        : Window("Functions", "d:c,w:90%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this,
+              "l:1,t:1,r:1,b:3",
+              { "n:Name,w:50", "n:Address,w:20", "n:Size,w:12,a:r", "n:Xrefs,w:8,a:r", "n:Kind,w:18", "n:Tags,w:30" },
+              ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        LocalString<32> address, size, xrefs;
+        for (size_t index = 0; index < functions.size(); index++) {
+            const auto& function = functions[index];
+            // the numbers are padded: the columns are sorted by their text
+            address.SetFormat("0x%016llx", static_cast<unsigned long long>(labelAddressBase + function.start));
+            size.SetFormat("%10llu", static_cast<unsigned long long>(function.size));
+            xrefs.SetFormat("%6u", function.xrefs);
+            std::string kind(function.isEntryPoint ? "entry" : (function.isExport ? "export" : (function.isThunk ? "thunk" : "")));
+            if (function.isNoReturn) // IDA: the noreturn attribute
+                kind += kind.empty() ? "noreturn" : ", noreturn";
+            const std::string tags = FormatApiCategories(function.apiCategories); // the triage: net, crypto, proc, ...
+            auto item              = list->AddItem(
+                  { std::string_view(function.name), address.ToStringView(), size.ToStringView(), xrefs.ToStringView(), std::string_view(kind), std::string_view(tags) });
+            item.SetData(static_cast<uint64>(index));
+            // the color of its most telling category, as in the navigation band (the injection red, the network aqua, ...)
+            if (const uint32 category = GetMainApiCategory(function.apiCategories); category != 0)
+                item.SetColor(ColorPair{ GetDissasmBandColor(GetDissasmBandCellOfCategory(category)), Color::Transparent });
+        }
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowFunctions()
+{
+    // the code zone of the cursor, or the first code zone
+    DissasmCodeZone* zone = nullptr;
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+        zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    for (size_t index = 0; !zone && index < settings->parseZones.size(); index++)
+        if (settings->parseZones[index]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found when the disassembly zone is shown!");
+        return;
+    }
+    const auto functions = zone->GetFunctions(&settings->functionEntries);
+    if (functions.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan (Config.DeepScanDissasmOnStart)!");
+        return;
+    }
+    FunctionsWindow window(functions, zone->labelAddressBase);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
+        return;
+    MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + functions[window.GetSelectedRow().value()].start, true);
+}
+
+// The search (Ctrl+F): the text of the listing, a byte pattern or an immediate value; F6 finds the next match
+class FindDialog : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_OK         = 1;
+    static constexpr int BTN_CANCEL     = 2;
+    static constexpr int KIND_GROUP     = 3;
+    static constexpr int KIND_TEXT      = 10;
+    static constexpr int KIND_BYTES     = 11;
+    static constexpr int KIND_IMMEDIATE = 12;
+    Reference<TextField> textField;
+    Reference<RadioBox> textKind, bytesKind, immediateKind;
+    Reference<CheckBox> matchCase;
+    DissasmSearch result;
+
+    void Validate()
+    {
+        LocalString<256> text;
+        if (!text.Set(textField->GetText()) || text.Len() == 0) {
+            Dialogs::MessageBox::ShowError("Error", "Please write what to search!");
+            textField->SetFocus();
+            return;
+        }
+        result.text      = text.GetText();
+        result.matchCase = matchCase->IsChecked();
+        result.kind      = bytesKind->IsChecked() ? DissasmSearchKind::Bytes
+                                                  : (immediateKind->IsChecked() ? DissasmSearchKind::Immediate : DissasmSearchKind::Text);
+        if (result.kind == DissasmSearchKind::Bytes && !ParseDissasmBytePattern(result.text).has_value()) {
+            Dialogs::MessageBox::ShowError("Error", "Expecting hexadecimal bytes, ?? for any byte (48 8B ?? 05)!");
+            textField->SetFocus();
+            return;
+        }
+        if (result.kind == DissasmSearchKind::Immediate && !ParseDissasmSearchNumber(result.text).has_value()) {
+            Dialogs::MessageBox::ShowError("Error", "Expecting a decimal number, or hexadecimal with 0x / h (0x1000, 1000h)!");
+            textField->SetFocus();
+            return;
+        }
+        Exit(Dialogs::Result::Ok);
+    }
+
+  public:
+    FindDialog(const std::optional<DissasmSearch>& last) : Window("Find", "d:c,w:70,h:13", WindowFlags::ProcessReturn)
+    {
+        Factory::Label::Create(this, "&Find:", "x:1,y:1,w:8");
+        textField = Factory::TextField::Create(this, last.has_value() ? std::string_view(last->text) : std::string_view(), "x:10,y:1,w:56");
+        textField->SetHotKey('F');
+        const auto kind = last.has_value() ? last->kind : DissasmSearchKind::Text;
+        textKind  = Factory::RadioBox::Create(this, "&Text of the listing (labels, instructions, comments)", "x:1,y:3,w:64", KIND_GROUP, KIND_TEXT,
+                                             kind == DissasmSearchKind::Text);
+        bytesKind = Factory::RadioBox::Create(this, "&Bytes (48 8B ?? 05, ?? is any byte)", "x:1,y:4,w:64", KIND_GROUP, KIND_BYTES,
+                                              kind == DissasmSearchKind::Bytes);
+        immediateKind = Factory::RadioBox::Create(this, "&Immediate value (4096, 0x1000, 1000h)", "x:1,y:5,w:64", KIND_GROUP, KIND_IMMEDIATE,
+                                                  kind == DissasmSearchKind::Immediate);
+        matchCase = Factory::CheckBox::Create(this, "&Match case (text)", "x:1,y:7,w:30");
+        matchCase->SetChecked(last.has_value() && last->matchCase);
+        Factory::Label::Create(this, "The search starts after the cursor; F6 finds the next match", "x:1,y:8,w:66");
+        Factory::Button::Create(this, "&OK", "l:21,b:0,w:13", BTN_OK);
+        Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_CANCEL);
+        textField->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (eventType == Event::ButtonClicked && ID == BTN_OK) {
+            Validate();
+            return true;
+        }
+        if ((eventType == Event::ButtonClicked && ID == BTN_CANCEL) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::WindowAccept) {
+            Validate();
+            return true;
+        }
+        return Window::OnEvent(control, eventType, ID);
+    }
+
+    const DissasmSearch& GetResult() const
+    {
+        return result;
+    }
+};
+
+bool Instance::ShowFindDialog()
+{
+    FindDialog dialog(lastSearch);
+    if (dialog.Show() != Dialogs::Result::Ok)
+        return true;
+    lastSearch = dialog.GetResult();
+    RunSearch(lastSearch.value(), true);
+    return true;
+}
+
+void Instance::FindNext()
+{
+    if (!lastSearch.has_value()) {
+        ShowFindDialog();
+        return;
+    }
+    RunSearch(lastSearch.value(), true);
+}
+
+bool Instance::RunSearch(const DissasmSearch& search, bool showErrors)
+{
+    FinishDeepScans(); // the labels are searched too
+
+    // every shown code zone (the executable sections), in their order; the search starts after the cursor, continues in the next zones and
+    // ends at the cursor
+    std::vector<DissasmCodeZone*> zones;
+    DissasmCodeZone* cursorZone = nullptr;
+    std::optional<uint32> cursorZoneLine;
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex]->zoneType == DissasmParseZoneType::DissasmCodeParseZone) {
+        cursorZone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+        if (zonesFound[0].startingLine >= 2)
+            cursorZoneLine = zonesFound[0].startingLine - 2u; // the title and the columns header
+    }
+    size_t startZone = 0;
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone || parseZone->isCollapsed)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        if (!codeZone->isInit || !codeZone->CanReachAsmLines())
+            continue;
+        if (codeZone == cursorZone)
+            startZone = zones.size();
+        zones.push_back(codeZone);
+    }
+    if (zones.empty()) {
+        if (showErrors)
+            Dialogs::MessageBox::ShowNotification("Info", "The search needs a shown disassembly zone!");
+        return false;
+    }
+
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    // the line after the cursor (a text); the bytes are searched after the first byte of its instruction, the immediates from the next one
+    uint64 from = 0;
+    if (cursorZone && zones[startZone] == cursorZone && cursorZoneLine.has_value() && cursorZoneLine.value() < cursorZone->GetDisplayLinesCount()) {
+        if (search.kind == DissasmSearchKind::Text)
+            from = cursorZoneLine.value() + 1u;
+        else {
+            params.zone           = cursorZone;
+            const auto cursorLine = cursorZone->GetCurrentAsmLine(cursorZoneLine.value(), obj, &params);
+            from                  = cursorLine.address + (cursorLine.size == 0 ? 0u : (search.kind == DissasmSearchKind::Bytes ? 1u : cursorLine.size));
+        }
+    }
+    const auto hit = SearchCodeZones(zones, startZone, from, search, [&params](DissasmCodeZone* zone) {
+        params.zone = zone;
+        return &params;
+    });
+    bool found = false;
+    if (hit.has_value() && search.kind == DissasmSearchKind::Text) {
+        // the found line gets the cursor, a few lines below the top of the view
+        const uint32 zoneLine = static_cast<uint32>(hit->position) + 2u;
+        const auto previous   = SaveCursorState();
+        Cursor.lineInView     = std::min<uint32>(5, zoneLine);
+        Cursor.startViewLine  = zoneLine + hit->zone->startLineIndex - Cursor.lineInView;
+        Cursor.hasMovedView   = true;
+        RecordJump(previous);
+        found = true;
+    } else if (hit.has_value())
+        found = MoveCursorToZoneFileOffset(hit->zone, hit->zone->cachedCodeOffsets[0].offset + hit->position, false);
+    for (auto* zone : zones)
+        zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+    if (!found && showErrors)
+        Dialogs::MessageBox::ShowNotification("Find", "`" + search.text + "` was not found!");
+    return found;
+}
+
+// The strings used by the code (IDA Shift+F12): the search bar filters them, Enter shows the instructions that use the selected one
+class StringsWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO    = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    StringsWindow(const std::vector<DissasmStringReference>& strings) : Window("Strings", "d:c,w:90%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:String,w:90", "n:Address,w:20", "n:Xrefs,w:8,a:r" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        LocalString<32> address, xrefs;
+        for (size_t index = 0; index < strings.size(); index++) {
+            address.SetFormat("0x%016llx", static_cast<unsigned long long>(strings[index].address));
+            xrefs.SetFormat("%6u", strings[index].xrefs); // padded: the columns are sorted by their text
+            auto item = list->AddItem({ std::string_view(strings[index].text), address.ToStringView(), xrefs.ToStringView() });
+            item.SetData(static_cast<uint64>(index));
+        }
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_GO)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowStrings()
+{
+    DissasmCodeZone* zone = nullptr;
+    for (size_t index = 0; !zone && index < settings->parseZones.size(); index++)
+        if (settings->parseZones[index]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            zone = static_cast<DissasmCodeZone*>(settings->parseZones[index].get());
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The strings are found when the disassembly zone is shown!");
+        return;
+    }
+    // the addresses of the labels are VAs when the plugin translates the offsets, file offsets otherwise
+    const uint64 fileSize          = obj->GetData().GetSize();
+    auto* settingsData             = settings.get();
+    const bool labelsAreVirtual    = settingsData->offsetTranslateCallback.IsValid() && zone->labelAddressBase != zone->zoneDetails.startingZonePoint;
+    const auto addressToFileOffset = [settingsData, fileSize, labelsAreVirtual](uint64 address) -> std::optional<uint64> {
+        const uint64 offset =
+              labelsAreVirtual ? settingsData->offsetTranslateCallback->TranslateToFileOffset(address, static_cast<uint32>(DissasmPEConversionType::VA))
+                               : address;
+        return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+    };
+    FinishDeepScans(); // the strings of every code zone (the executable sections)
+    const auto strings = zone->GetReferencedStringsOfFile(addressToFileOffset);
+    if (strings.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "No strings are used by the code (they are found by the deep scan)!");
+        return;
+    }
+    StringsWindow window(strings);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
+        return;
+    const auto& selected  = strings[window.GetSelectedRow().value()];
+    const auto references = zone->GetXrefsTo(selected.address); // from any code zone
+    if (references.size() == 1) {                               // used once: the instruction that uses it
+        auto* source = references[0].zone;
+        MoveCursorToZoneFileOffset(source, source->cachedCodeOffsets[0].offset + (references[0].xref->from - source->labelAddressBase), false);
+    } else
+        ShowXrefsTo(zone, selected.address, selected.text);
+}
+
+DissasmCodeZone* Instance::GetCursorOrFirstCodeZone()
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex]->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+        return static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    for (const auto& zone : settings->parseZones)
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+            return static_cast<DissasmCodeZone*>(zone.get());
+    return nullptr;
+}
+
+void Instance::UndoOrRedo(bool redo)
+{
+    FinishDeepScans(); // a new analysis in progress ends first (its history comes back with it)
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines())
+        return;
+    if (redo ? !zone->CanRedoEdit() : !zone->CanUndoEdit()) {
+        Dialogs::MessageBox::ShowNotification(redo ? "Redo" : "Undo", redo ? "There is nothing to redo!" : "There is nothing to undo!");
+        return;
+    }
+    const auto place = redo ? zone->RedoEdit() : zone->UndoEdit();
+    if (!place.has_value()) {
+        Dialogs::MessageBox::ShowNotification(redo ? "Redo" : "Undo", "The edit can not be applied any more (its line changed)!");
+        return;
+    }
+    if (place->reanalyze) { // D / A / U: the previous data ranges, the zone is analyzed again
+        ReanalyzeZone(zone, place->address, true);
+        return;
+    }
+    AdjustZoneExtendedSize(zone, zone->GetDisplayLinesCount() + 1u); // +1 for the title: a zone added / removed changes the lines
+    zone->asmPreCacheData.Clear();
+
+    // the cursor goes to the edit
+    if (place->address.has_value()) {
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + place->address.value(), place->onLabel);
+    } else if (place->expandedLine.has_value()) {
+        const uint32 zoneLine = zone->ExpandedToDisplay(place->expandedLine.value()) + 2u; // +1 for the title, +1 for the columns header
+        const auto from       = SaveCursorState();
+        Cursor.lineInView     = std::min<uint32>(5, zoneLine);
+        Cursor.startViewLine  = zoneLine + zone->startLineIndex - Cursor.lineInView;
+        Cursor.hasMovedView   = true;
+        RecordJump(from);
+    }
+}
+
+// Every action of the view with its key (Ctrl+P): the search bar filters them, Enter runs the selected one
+class CommandPaletteWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_RUN   = 1;
+    static constexpr int BTN_CLOSE = 2;
+    Reference<ListView> list;
+    std::optional<size_t> selectedRow;
+
+  public:
+    struct Row {
+        std::string key, caption, explanation;
+    };
+
+    CommandPaletteWindow(const std::vector<Row>& rows) : Window("Commands", "d:c,w:90%,h:80%", WindowFlags::Sizeable)
+    {
+        list = Factory::ListView::Create(
+              this, "l:1,t:1,r:1,b:3", { "n:Key,w:16", "n:Command,w:28", "n:Description,w:100" }, ListViewFlags::PopupSearchBar | ListViewFlags::Sortable);
+        for (size_t index = 0; index < rows.size(); index++) {
+            auto item = list->AddItem({ std::string_view(rows[index].key), std::string_view(rows[index].caption), std::string_view(rows[index].explanation) });
+            item.SetData(static_cast<uint64>(index));
+        }
+        Factory::Button::Create(this, "&Run", "l:1,b:0,w:10", BTN_RUN);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        list->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewItemPressed || (eventType == Event::ButtonClicked && ID == BTN_RUN)) {
+            auto item = list->GetCurrentItem();
+            if (item.IsValid())
+                selectedRow = static_cast<size_t>(item.GetData(UINT64_MAX));
+            Exit(selectedRow.has_value() ? Dialogs::Result::Ok : Dialogs::Result::Cancel);
+            return true;
+        }
+        if (eventType == Event::ButtonClicked && ID == BTN_CLOSE) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<size_t> GetSelectedRow() const
+    {
+        return selectedRow;
+    }
+};
+
+void Instance::ShowCommandPalette()
+{
+    // the commands of the command bar, the keys of the view (comments, rename, zones) and the GoTo / Find of the window
+    enum class Target : uint8 { Command, KeyCommand, GoTo, Find };
+    struct Action {
+        Target target;
+        uint32 commandId;
+    };
+    std::vector<CommandPaletteWindow::Row> rows;
+    std::vector<Action> actions;
+    LocalString<64> keyName;
+    auto add = [&](const KeyboardControl& control, Target target) {
+        if (!KeyUtils::ToString(control.Key, keyName))
+            keyName.Clear();
+        rows.push_back({ keyName.GetText(), control.Caption ? control.Caption : "", control.Explanation ? control.Explanation : "" });
+        actions.push_back({ target, control.CommandId });
+    };
+    for (const auto& control : config.AllKeyboardCommands)
+        add(control.get(), Target::Command);
+    for (const auto* control : config.KeyEventCommands) {
+        const bool isMove = control->CommandId >= COMMAND_NAV_DOWN && control->CommandId <= COMMAND_NAV_SCROLL_RIGHT;
+        const bool listed = std::any_of(config.AllKeyboardCommands.begin(), config.AllKeyboardCommands.end(), [control](const auto& other) {
+            return other.get().CommandId == control->CommandId;
+        });
+        if (!isMove && !listed) // the moves are not actions; a key of both lists is listed once
+            add(*control, Target::KeyCommand);
+    }
+    rows.push_back({ "F5", "GoTo", "Go to an address (VA / RVA / file offset) or a label name" });
+    actions.push_back({ Target::GoTo, 0 });
+    rows.push_back({ "Ctrl+F", "Find", "Find a text, a byte pattern or an immediate value" });
+    actions.push_back({ Target::Find, 0 });
+
+    CommandPaletteWindow window(rows);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetSelectedRow().has_value())
+        return;
+    const auto& action = actions[window.GetSelectedRow().value()];
+    switch (action.target) {
+    case Target::Command:
+        OnEvent(nullptr, Event::Command, static_cast<int>(action.commandId));
+        break;
+    case Target::KeyCommand:
+        FinishDeepScans();
+        ExecuteNavigationCommand(action.commandId, false);
+        break;
+    case Target::GoTo:
+        ShowGoToDialog();
+        break;
+    case Target::Find:
+        ShowFindDialog();
+        break;
+    }
+}
+
+// The callers and the callees of a function (Ctrl+R): Enter on a function shows its own calls (Back returns), Go jumps to the selected
+// function, Call site to the instruction of the call
+class CallTreeWindow : public AppCUI::Controls::Window
+{
+    static constexpr int BTN_GO        = 1;
+    static constexpr int BTN_CALL_SITE = 2;
+    static constexpr int BTN_BACK      = 3;
+    static constexpr int BTN_CLOSE     = 4;
+
+    // the function shown: its zone (the functions of every code zone of the file, the executable sections) and its relative address
+    struct Function {
+        DissasmCodeZone* zone;
+        uint64 start;
+    };
+    SettingsData* settings;
+    Function current{};
+    Reference<Label> title;
+    Reference<ListView> callersList, calleesList, lastList;
+    std::vector<DissasmCallReference> callers, callees;
+    std::vector<Function> history; // the functions shown before the current one
+    std::optional<uint64> result;  // a file offset
+    bool resultIsCallSite = false;
+
+    void Fill(Reference<ListView> list, const std::vector<DissasmCallReference>& references, bool sitesInOtherZones)
+    {
+        list->DeleteAllItems();
+        for (size_t index = 0; index < references.size(); index++) {
+            const auto& reference  = references[index];
+            // the call site of a caller is in its own zone, the call site of a callee in the current function
+            const auto* siteZone   = sitesInOtherZones && reference.zone ? reference.zone : current.zone;
+            const std::string site = siteZone->FormatCodeAddress(reference.site) + (reference.isTailJump ? " (jmp)" : "");
+            auto item              = list->AddItem({ std::string_view(reference.function), std::string_view(site) });
+            item.SetData(static_cast<uint64>(index));
+        }
+    }
+
+    void ShowFunction(Function function)
+    {
+        current          = function;
+        auto* zone       = function.zone;
+        auto* settingsData = settings;
+        callers          = zone->GetCallers(function.start);
+        callees = zone->GetCallees(function.start, [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); });
+        zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+        Fill(callersList, callers, true);
+        Fill(calleesList, callees, false);
+        std::string name = zone->GetLabelNameAt(function.start);
+        if (name.empty())
+            name = zone->GetLabelName("sub_", function.start);
+        LocalString<256> text;
+        text.SetFormat("%s: called by %zu, calls %zu", name.c_str(), callers.size(), callees.size());
+        title->SetText(text.GetText());
+    }
+
+    // the reference selected in the list used last
+    const DissasmCallReference* GetSelected()
+    {
+        const bool fromCallees = lastList == calleesList;
+        auto item              = (fromCallees ? calleesList : callersList)->GetCurrentItem();
+        if (!item.IsValid())
+            return nullptr;
+        const auto index = static_cast<size_t>(item.GetData(UINT64_MAX));
+        const auto& list = fromCallees ? callees : callers;
+        return index < list.size() ? &list[index] : nullptr;
+    }
+
+  public:
+    CallTreeWindow(SettingsData* settings, DissasmCodeZone* zone, uint64 functionStart)
+        : Window("Call tree", "d:c,w:90%,h:80%", WindowFlags::Sizeable), settings(settings)
+    {
+        title = Factory::Label::Create(this, "", "l:1,t:0,r:1,h:1");
+        Factory::Label::Create(this, "Called by", "l:1,t:1,w:20");
+        Factory::Label::Create(this, "Calls", "l:51%,t:1,w:20");
+        callersList = Factory::ListView::Create(this, "l:1,t:2,r:51%,b:3", { "n:Function,w:40", "n:Call site,w:30" }, ListViewFlags::PopupSearchBar);
+        calleesList = Factory::ListView::Create(this, "l:51%,t:2,r:1,b:3", { "n:Function,w:40", "n:Call site,w:30" }, ListViewFlags::PopupSearchBar);
+        Factory::Button::Create(this, "&Go", "l:1,b:0,w:10", BTN_GO);
+        Factory::Button::Create(this, "Call &site", "l:13,b:0,w:14", BTN_CALL_SITE);
+        Factory::Button::Create(this, "&Back", "l:29,b:0,w:10", BTN_BACK);
+        Factory::Button::Create(this, "&Close", "r:1,b:0,w:10", BTN_CLOSE);
+        ShowFunction({ zone, functionStart });
+        lastList = callees.empty() && !callers.empty() ? callersList : calleesList;
+        lastList->SetFocus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if (Window::OnEvent(control, eventType, ID))
+            return true;
+        if (eventType == Event::ListViewCurrentItemChanged) {
+            lastList = control == calleesList.ToBase<Control>() ? calleesList : callersList;
+            return false;
+        }
+        if (eventType == Event::ListViewItemPressed) {
+            // the calls of the selected function (an import or an indirect call has none)
+            lastList           = control == calleesList.ToBase<Control>() ? calleesList : callersList;
+            const auto selected = GetSelected();
+            if (selected && selected->functionStart.has_value()) {
+                history.push_back(current);
+                ShowFunction({ selected->zone ? selected->zone : current.zone, selected->functionStart.value() });
+            }
+            return true;
+        }
+        if (eventType != Event::ButtonClicked)
+            return false;
+        switch (ID) {
+        case BTN_GO:
+        case BTN_CALL_SITE: {
+            const auto selected = GetSelected();
+            if (!selected)
+                return true;
+            // an import (or an indirect call) is not in the code: its call site. The call site of a callee is in the current function, the
+            // other addresses are in the zone of the reference
+            resultIsCallSite      = ID == BTN_CALL_SITE || !selected->functionStart.has_value();
+            const bool isCallee   = lastList == calleesList;
+            const auto* zone      = resultIsCallSite && isCallee ? current.zone : (selected->zone ? selected->zone : current.zone);
+            const uint64 relative = resultIsCallSite ? selected->site : selected->functionStart.value();
+            result                = zone->cachedCodeOffsets[0].offset + relative;
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        case BTN_BACK:
+            if (!history.empty()) {
+                const auto previous = history.back();
+                history.pop_back();
+                ShowFunction(previous);
+            }
+            return true;
+        case BTN_CLOSE:
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<uint64> GetResult() const
+    {
+        return result;
+    }
+    bool IsCallSite() const
+    {
+        return resultIsCallSite;
+    }
+};
+
+void Instance::ShowCallTree()
+{
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The calls are found when the disassembly zone is shown!");
+        return;
+    }
+    if (zone->functionStarts.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan (Config.DeepScanDissasmOnStart)!");
+        return;
+    }
+    // the function of the cursor line (the first function when the cursor is before the functions)
+    uint64 functionStart  = zone->functionStarts.front();
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex].get() == zone && zonesFound[0].startingLine >= 2) {
+        AsmData withoutKnownFunctions;
+        DissasmInsnExtractLineParams params{};
+        params.obj        = obj;
+        params.zone       = zone;
+        params.settings   = settings.get();
+        params.asmData    = &withoutKnownFunctions;
+        const auto line   = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params);
+        const auto start  = zone->GetFunctionContaining(line.address);
+        if (start.has_value())
+            functionStart = start.value();
+    }
+    CallTreeWindow window(settings.get(), zone, functionStart);
+    if (window.Show() != Dialogs::Result::Ok || !window.GetResult().has_value())
+        return;
+    // a file offset of any code zone (a function of another section)
+    const uint64 fileOffset = window.GetResult().value();
+    for (const auto& parseZone : settings->parseZones) {
+        if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+            continue;
+        const auto codeZone = static_cast<DissasmCodeZone*>(parseZone.get());
+        const auto& details = codeZone->zoneDetails;
+        if (codeZone->CanReachAsmLines() && fileOffset >= details.startingZonePoint && fileOffset - details.startingZonePoint < details.size) {
+            MoveCursorToZoneFileOffset(codeZone, fileOffset, !window.IsCallSite());
+            return;
+        }
+    }
+}
+
+void Instance::AcceptOrDismissAISuggestion(bool accept)
+{
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() != 1 || zonesFound[0].startingLine < 2 ||
+        settings->parseZones[zonesFound[0].zoneIndex]->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please select a line of a dissasm zone!");
+        return;
+    }
+    const auto zone = static_cast<DissasmCodeZone*>(settings->parseZones[zonesFound[0].zoneIndex].get());
+    const uint32 line = zonesFound[0].startingLine - 2u; // the title and the columns header
+    if (accept) {
+        const auto status = zone->AcceptAISuggestion(line);
+        if (!status.ok)
+            Dialogs::MessageBox::ShowNotification("Warning", status.message);
+    } else if (!zone->DismissAISuggestion(line)) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There is no suggestion of the assistant on this line!");
+    }
+    zone->asmPreCacheData.Clear();
+}
+
+void Instance::StartAINaming()
+{
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines() || zone->functionStarts.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan of a shown disassembly zone!");
+        return;
+    }
+    if (!queryInterface || !queryInterface->GetSmartAssistantInterface()) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There is no digital assistant available!");
+        return;
+    }
+    // the function of the cursor and the functions it calls; only the ones with an automatic name and no suggestion yet
+    uint64 functionStart  = zone->functionStarts.front();
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex].get() == zone && zonesFound[0].startingLine >= 2) {
+        AsmData withoutKnownFunctions;
+        DissasmInsnExtractLineParams params{};
+        params.obj      = obj;
+        params.zone     = zone;
+        params.settings = settings.get();
+        params.asmData  = &withoutKnownFunctions;
+        const auto start = zone->GetFunctionContaining(zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params).address);
+        if (start.has_value())
+            functionStart = start.value();
+    }
+    auto* settingsData = settings.get();
+    std::vector<uint64> candidates{ functionStart };
+    for (const auto& callee : zone->GetCallees(
+               functionStart, [settingsData, zone](const X86OperandsInfo& operands) { return FindX86OperandsImport(settingsData, zone, operands); }))
+        if (callee.functionStart.has_value())
+            candidates.push_back(callee.functionStart.value());
+    zone->asmPreCacheData.Clear();
+
+    constexpr size_t MAX_FUNCTIONS = 50;
+    StopAINaming();
+    aiNaming.zone = zone;
+    for (const uint64 candidate : candidates) {
+        const bool hasAutomaticName = zone->GetLabelNameAt(candidate).starts_with("sub_");
+        const bool listed = std::find(aiNaming.functions.begin(), aiNaming.functions.end(), candidate) != aiNaming.functions.end();
+        if (hasAutomaticName && !listed && !zone->suggestedNames.contains(candidate) && aiNaming.functions.size() < MAX_FUNCTIONS)
+            aiNaming.functions.push_back(candidate);
+    }
+    aiNaming.total = static_cast<uint32>(aiNaming.functions.size());
+    if (aiNaming.functions.empty()) {
+        aiNaming = {};
+        Dialogs::MessageBox::ShowNotification("Info", "The function and the functions it calls already have names!");
+        return;
+    }
+    // a frontend without frame updates (no FPS mode): every request now
+    if (!frameUpdatesSeen)
+        while (RunAINamingStep(true)) {
+        }
+}
+
+void Instance::StopAINaming()
+{
+    aiNaming.request.Abandon(abandonedAssistantRequests); // an answer that is on its way is dropped; the names received so far stay
+    aiNaming = {};
+}
+
+// One step of the naming (Ctrl+Shift+K): the answer of the running request is applied once it is ready, then the request of the next
+// function is started on a worker thread: the UI stays responsive while the assistant answers. `wait`: the frontend has no frame
+// updates, every request is answered at once. False when the naming ended.
+bool Instance::RunAINamingStep(bool wait)
+{
+    const auto zone = aiNaming.zone;
+    if (!zone)
+        return false;
+    if (aiNaming.request.IsRunning()) {
+        if (!wait && !aiNaming.request.IsReady())
+            return true;
+        const auto answer = aiNaming.request.Take();
+        const auto name   = answer.success ? ParseAssistantSuggestedName(answer.text) : std::string();
+        if (!name.empty())
+            zone->suggestedNames[aiNaming.requestFunction] = name;
+        aiNaming.answered++;
+    }
+    const auto assistantInterface = queryInterface ? queryInterface->GetSmartAssistantInterface() : nullptr;
+    while (assistantInterface && !aiNaming.functions.empty()) {
+        const uint64 functionStart = aiNaming.functions.front();
+        aiNaming.functions.pop_front();
+        DissasmInsnExtractLineParams params{};
+        params.obj      = obj;
+        params.zone     = zone;
+        params.settings = settings.get();
+        params.asmData  = &asmData;
+        const std::string code = zone->BuildAssistantFunctionText(functionStart, &params);
+        zone->asmPreCacheData.Clear(); // the lines were built for the request
+        if (code.empty()) {
+            aiNaming.answered++;
+            continue;
+        }
+        std::string prompt = "Suggest one name for this function based on what it does. Write only the name, in CamelCase, without any other text or symbols. " + code;
+        std::string displayPrompt = "Give me a name for the function " + zone->GetLabelNameAt(functionStart);
+        aiNaming.requestFunction  = functionStart;
+        aiNaming.request.Start(assistantInterface, std::move(prompt), std::move(displayPrompt), !wait);
+        return true;
+    }
+    aiNaming = {}; // no request is running
     return false;
 }
 
-bool DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr)
+// The canvas of the graph: scrolled (arrows, Shift+arrows, PageUp / PageDown, the wheel, a drag), a block selected (Tab / Shift+Tab,
+// Home: the entry, a click); Enter or a double click jumps to the selected block in the listing
+class FunctionGraphCanvas : public AppCUI::Controls::UserControl
 {
-    const auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
+  public:
+    struct Rect {
+        int x = 0, y = 0, width = 0, height = 0;
+    };
 
-    if (!collapsedZone) {
-        if (showErr)
-            Dialogs::MessageBox::ShowError("Error at processing comments", "Failed to find the required line!");
-        return false;
+    FunctionGraphCanvas(
+          std::vector<Rect> blockRects, size_t selectedBlock, std::function<void()> activate, ColorPair normalColor, ColorPair selectionColor)
+        : UserControl(
+                "l:0,t:0,r:0,b:0",
+                UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ShowHorizontalScrollBar | UserControlFlags::ScrollBarOutsideControl),
+          rects(std::move(blockRects)), selected(selectedBlock), onActivate(std::move(activate)), normal(normalColor), selection(selectionColor)
+    {
     }
 
-    collapsedZone->commentsData.AddOrUpdateComment(line, comment);
-    return true;
-}
+    Graphics::Canvas canvas;
 
-bool DissasmCodeZone::RemoveComment(uint32 line, bool showErr)
-{
-    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
-    if (!collapsedZone) {
-        if (showErr)
-            Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
-        return false;
+    size_t GetSelectedBlock() const
+    {
+        return selected;
     }
 
-    collapsedZone->commentsData.RemoveComment(line);
-    return true;
-}
-
-DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
-{
-    if (!CanReachAsmLines())
-        return {}; // not an initialized x86/x64 zone: there are no lines to decode
-    ReachZoneLine(currentLine);
-
-    const DissasmCodeInternalType& currentType = types.back();
-
-    DissasmAsmPreCacheLine asmCacheLine{};
-    asmCacheLine.parent = &currentType;
-    if (changedLevel && newLevelChangeData.hasName) {
-        asmCacheLine.shouldAddButton = true;
-        asmCacheLine.isZoneCollapsed = newLevelChangeData.isCollapsed;
-    }
-
-    if (currentType.isCollapsed) {
-        assert(!currentType.name.empty());
-    }
-
-    if (!currentType.isCollapsed) {
-        const auto annotation = currentType.annotations.find(currentLine);
-        if (annotation != currentType.annotations.end() && IsLocalVariableAnnotation(annotation->second)) {
-            const uint64 functionStart = GetLocalVariableAnnotationFunction(annotation->second.second);
-            const int32 frameOffset    = GetLocalVariableAnnotationOffset(annotation->second.second);
-            const auto function        = localVariables.FindFunctionByStart(functionStart);
-            const auto variable        = function ? function->FindVariable(frameOffset) : nullptr;
-
-            asmCacheLine.size        = 0;
-            asmCacheLine.currentLine = currentLine;
-            asmCacheLine.address     = functionStart;
-            std::string text         = "<unknown local variable>"; // the lines and the variables are always updated together
-            uint32 nameSize          = 0;
-            if (variable) {
-                FormatLocalVariableDefinition(*variable, text, nameSize);
-                asmCacheLine.localVariableKind     = DissasmAsmPreCacheLine::LocalVariableKind::Definition;
-                asmCacheLine.localVariableFunction = functionStart;
-                asmCacheLine.localVariableOffset   = frameOffset;
-                asmCacheLine.localVariableNameSize = nameSize;
-            }
-            asmCacheLine.op_str      = portable_strdup(text.c_str());
-            asmCacheLine.op_str_size = static_cast<uint32>(text.size());
-            return asmCacheLine;
+    void Paint(Graphics::Renderer& renderer) override
+    {
+        if (revealPending && GetWidth() > 0 && GetHeight() > 0) {
+            revealPending = false; // the size of the control is known at the first paint
+            Reveal(selected);
+        }
+        renderer.Clear(' ', normal);
+        renderer.DrawCanvas(-scrollX, -scrollY, canvas);
+        if (selected < rects.size()) {
+            const auto& rect = rects[selected];
+            renderer.DrawRect(
+                  rect.x - scrollX, rect.y - scrollY, rect.x + rect.width - 1 - scrollX, rect.y + rect.height - 1 - scrollY, selection, LineType::Double);
         }
     }
 
-    if (asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine)) {
-        return asmCacheLine;
+    void OnUpdateScrollBars() override
+    {
+        UpdateHScrollBar(static_cast<uint64>(scrollX), static_cast<uint64>(MaxScrollX()));
+        UpdateVScrollBar(static_cast<uint64>(scrollY), static_cast<uint64>(MaxScrollY()));
     }
 
-    const uint32 value = currentType.GetCurrentAsmLine();
-    assert(value != 0);
-
-    uint32 asmLine = value - 1u;
-
-    DissasmInsnExtractLineParams* paramsPtr = params;
-    DissasmInsnExtractLineParams newParams{};
-    if (paramsPtr == nullptr) {
-        paramsPtr = &newParams;
-    }
-    paramsPtr->asmLine     = asmLine;
-    paramsPtr->obj         = obj;
-    paramsPtr->actualLine  = currentLine;
-    paramsPtr->zone        = this;
-    paramsPtr->isCollapsed = currentType.isCollapsed;
-    paramsPtr->zoneName    = &currentType.name;
-
-    [[maybe_unused]] const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
-    assert(isValidData);
-    lastDrawnLine = asmLine;
-
-    // uint32 difflines = 0;
-    // auto insn        = GetCurrentInstructionByLine(value - 1, this, obj, difflines);
-
-    // assert(asmCacheLine.TryGetDataFromInsn(insn, currentLine));
-    // cs_free(insn, 1);
-    return asmCacheLine;
-}
-
-#pragma region CollapsibleZoneOperations
-
-bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, DissasmCodeZone::CollapseExpandType collapse, int32& difference)
-{
-    for (auto& zone : parent.internalTypes) {
-        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
-            if (GetRecursiveZoneByLine(zone, line, collapse, difference)) {
-                zone.indexZoneEnd += difference;
-                continue;
-            }
-
-            if (!zone.internalTypes.empty() || zone.name.empty())
-                return false;
-
-            if ((collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed) ||
-                (collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed))
-                return false;
-
-            if (collapse == DissasmCodeZone::CollapseExpandType::NegateCurrentState)
-                collapse = zone.isCollapsed ? DissasmCodeZone::CollapseExpandType::Expand : DissasmCodeZone::CollapseExpandType::Collapse;
-
-            difference = static_cast<int32>(zone.workingIndexZoneEnd - zone.workingIndexZoneStart - 1);
-            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse)
-                difference = -difference;
-            zone.isCollapsed = collapse == DissasmCodeZone::CollapseExpandType::Collapse;
-            zone.indexZoneEnd += difference;
-            continue;
+    bool OnKeyEvent(Input::Key keyCode, char16 unicodeChar) override
+    {
+        switch (keyCode) {
+        case Key::Up:
+            return ScrollTo(scrollX, scrollY - 1);
+        case Key::Down:
+            return ScrollTo(scrollX, scrollY + 1);
+        case Key::Left:
+            return ScrollTo(scrollX - 1, scrollY);
+        case Key::Right:
+            return ScrollTo(scrollX + 1, scrollY);
+        case Key::Shift | Key::Up:
+            return ScrollTo(scrollX, scrollY - 10);
+        case Key::Shift | Key::Down:
+            return ScrollTo(scrollX, scrollY + 10);
+        case Key::Shift | Key::Left:
+            return ScrollTo(scrollX - 20, scrollY);
+        case Key::Shift | Key::Right:
+            return ScrollTo(scrollX + 20, scrollY);
+        case Key::PageUp:
+            return ScrollTo(scrollX, scrollY - std::max(1, static_cast<int>(GetHeight()) - 2));
+        case Key::PageDown:
+            return ScrollTo(scrollX, scrollY + std::max(1, static_cast<int>(GetHeight()) - 2));
+        case Key::Tab:
+            return Select((selected + 1) % rects.size());
+        case Key::Shift | Key::Tab:
+            return Select((selected + rects.size() - 1) % rects.size());
+        case Key::Home:
+            return Select(0);
+        case Key::Enter:
+            onActivate();
+            return true;
+        default:
+            break;
         }
-        if (difference && line < zone.indexZoneStart) {
-            zone.indexZoneStart += difference;
-            zone.indexZoneEnd += difference;
-
-            AnnotationContainer zoneAnnotations = std::move(zone.annotations);
-            zone.annotations                    = {};
-            for (auto& annotation : zoneAnnotations.mappings) {
-                zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
-            }
-
-            DissasmComments odlComments = std::move(zone.commentsData);
-            zone.commentsData           = {};
-            for (auto& comment : odlComments.comments) {
-                zone.commentsData.comments.insert({ comment.first + difference, std::move(comment.second) });
-            }
-        }
-    }
-    return difference != 0;
-}
-
-bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference)
-{
-    difference = 0;
-    if (!GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference))
-        return false;
-
-    if (difference) {
-        // the new zone size: the children of the root are contiguous and their indexes are the shown lines (the root keeps the
-        // expanded size, adding the difference to it was wrong once a second zone was collapsed / expanded)
-        assert(!dissasmType.internalTypes.empty());
-        difference = (int32) this->dissasmType.internalTypes.back().indexZoneEnd - 1;
+        return UserControl::OnKeyEvent(keyCode, unicodeChar);
     }
 
-    return true;
-}
-
-bool DissasmCodeZone::RemoveCollapsibleZone(uint32 zoneLine)
-{
-    const auto zoneDetailsData = dissasmType.GetRemoveZoneCollapsibleDetails(zoneLine);
-    if (!zoneDetailsData.zone)
-        return false;
-    if (!dissasmType.RemoveCollapsibleZone(zoneLine, zoneDetailsData))
-        return false;
-    ResetTypesReferenceList();
-    return true;
-}
-
-void DissasmCodeZone::ResetZoneCaching()
-{
-    asmPreCacheData.Clear();
-    for (auto& type : types) {
-        type.get().asmLinesPassed  = 0;
-        type.get().textLinesPassed = 0;
-    }
-}
-
-bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd)
-{
-    if (!this->CanAddNewZone(zoneLineStart, zoneLineEnd)) {
-        return false;
-    }
-
-    if (!dissasmType.AddNewZone(zoneLineStart, zoneLineEnd))
-        return false;
-    ResetTypesReferenceList();
-    return true;
-}
-
-bool DissasmCodeInternalType::CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
-{
-    // TODO: add similar optimization like GetRemoveZoneCollapsibleDetails to end when too big interval is given
-    for (const auto& zone : internalTypes) {
-        if (zone.indexZoneStart <= zoneLineStart && zoneLineStart < zone.indexZoneEnd) {
-            if (zone.indexZoneStart <= zoneLineStart && zoneLineEnd <= zone.indexZoneEnd) {
-                if (!zone.name.empty() && zone.indexZoneStart == zoneLineStart && zone.indexZoneEnd == zoneLineEnd)
-                    return false;
-                return zone.CanAddNewZone(zoneLineStart, zoneLineEnd);
-            }
+    bool OnMouseWheel(int, int, Input::MouseWheel direction, Input::Key) override
+    {
+        switch (direction) {
+        case Input::MouseWheel::Up:
+            return ScrollTo(scrollX, scrollY - 3);
+        case Input::MouseWheel::Down:
+            return ScrollTo(scrollX, scrollY + 3);
+        case Input::MouseWheel::Left:
+            return ScrollTo(scrollX - 6, scrollY);
+        case Input::MouseWheel::Right:
+            return ScrollTo(scrollX + 6, scrollY);
+        default:
             return false;
         }
     }
-    return true;
-}
 
-bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd)
-{
-    Reference<DissasmCodeInternalType> parentZone     = this;
-    uint32 indexFound                                 = 0;
-    bool doNotDeleteOldZone                           = internalTypes.empty();
-    bool hasParent                                    = false;
-    std::vector<DissasmCodeInternalType>* zonesHolder = &internalTypes;
-    for (auto& zone : internalTypes) {
-        if (zone.indexZoneStart <= zoneLineStart && zoneLineEnd <= zone.indexZoneEnd) {
-            if (zone.name.empty() && zone.indexZoneStart == zoneLineStart && zone.indexZoneEnd == zoneLineEnd) {
-                LocalString<128> zoneName;
-                zoneName.SetFormat("Zone-IndexStart %u -IndexEnd %u", zoneLineStart, zoneLineEnd);
-                zone.name = zoneName.GetText();
-                return true;
-            }
-            parentZone = &zone;
-            if (!zone.name.empty()) {
-                // a zone that is already split: the new zone is added among its children (their indexes are relative to them)
-                if (!zone.internalTypes.empty())
-                    return zone.AddNewZone(zoneLineStart, zoneLineEnd);
-                zonesHolder        = &zone.internalTypes;
-                indexFound         = 0;
-                doNotDeleteOldZone = true;
-                hasParent          = true;
-            }
-            break;
+    void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override
+    {
+        dragging = false;
+        if (const auto block = BlockAt(x + scrollX, y + scrollY); block.has_value()) {
+            selected = block.value();
+            if ((button & Input::MouseButton::DoubleClicked) != Input::MouseButton::None)
+                onActivate();
+            return;
         }
-        indexFound++;
+        // outside the blocks: the graph is dragged
+        dragging = true;
+        dragX    = scrollX + x;
+        dragY    = scrollY + y;
     }
 
-    LocalString<128> zoneName;
-    zoneName.SetFormat("Zone-IndexStart %u -IndexEnd %u", zoneLineStart, zoneLineEnd);
-
-    DissasmCodeInternalType newZone = {};
-    newZone.name                    = zoneName.GetText();
-    newZone.indexZoneStart          = zoneLineStart;
-    newZone.workingIndexZoneStart   = newZone.indexZoneStart;
-    newZone.indexZoneEnd            = zoneLineEnd;
-    newZone.workingIndexZoneEnd     = newZone.indexZoneEnd;
-
-    // TODO: improve annotations moving
-    decltype(annotations) annotationsBefore, annotationCurrent, annotationAfter;
-    // TODO: check this ??
-    for (const auto& zoneVal : parentZone->annotations.mappings) {
-        if (zoneVal.first < zoneLineStart)
-            annotationsBefore.insert(zoneVal);
-        else if (zoneVal.first >= zoneLineStart && zoneVal.first < zoneLineEnd)
-            annotationCurrent.insert(zoneVal);
-        else if (zoneVal.first >= zoneLineEnd)
-            annotationAfter.insert(zoneVal);
+    bool OnMouseDrag(int x, int y, Input::MouseButton, Input::Key) override
+    {
+        if (!dragging)
+            return false;
+        return ScrollTo(dragX - x, dragY - y);
     }
 
-    // TODO: improve annotations moving
-    uint32 commentsZoneLineStart = zoneLineStart - 1;
-    if (zoneLineStart == 0)
-        commentsZoneLineStart = 0;
-    uint32 commentsZoneLineEnd = zoneLineEnd - 1;
-    decltype(commentsData.comments) commentsBefore, commentsCurrent, commentsAfter;
-    for (const auto& commentsVal : parentZone->commentsData.comments) {
-        if (commentsVal.first < commentsZoneLineStart)
-            commentsBefore.insert(commentsVal);
-        else if (commentsVal.first >= commentsZoneLineStart && commentsVal.first < commentsZoneLineEnd)
-            commentsCurrent.insert(commentsVal);
-        else if (commentsVal.first >= commentsZoneLineEnd)
-            commentsAfter.insert(commentsVal);
+    void OnMouseReleased(int x, int y, Input::MouseButton button, Input::Key keyCode) override
+    {
+        OnMouseDrag(x, y, button, keyCode);
+        dragging = false;
     }
 
-    newZone.annotations           = std::move(annotationCurrent);
-    newZone.commentsData.comments = std::move(commentsCurrent);
-
-    DissasmCodeInternalType firstZone = {};
-    firstZone.indexZoneStart          = std::min(parentZone->indexZoneStart, zoneLineStart);
-    firstZone.workingIndexZoneStart   = firstZone.indexZoneStart;
-    firstZone.annotations             = std::move(annotationsBefore);
-    firstZone.commentsData.comments   = std::move(commentsBefore);
-
-    DissasmCodeInternalType lastZone = {};
-
-    if (indexFound > 0) {
-        const auto& prevZone = (*zonesHolder)[indexFound - 1];
-        firstZone.UpdateDataLineFromPrevious(prevZone);
-    } else if (!hasParent) {
-        // the first zone starts where the split zone starts (0 for the root, the parent position for the children of a zone)
-        firstZone.beforeAsmLines  = parentZone->beforeAsmLines;
-        firstZone.beforeTextLines = parentZone->beforeTextLines;
-    }
-    if (hasParent) {
-        firstZone.beforeAsmLines  = parentZone->beforeAsmLines;
-        firstZone.beforeTextLines = parentZone->beforeTextLines;
-    }
-
-    if (zoneLineStart == parentZone->indexZoneStart) { // first line
-        firstZone.name                = newZone.name;
-        firstZone.indexZoneEnd        = zoneLineEnd;
-        firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
-        firstZone.annotations.populate_annotations_from_other_storage(newZone.annotations);
-        firstZone.commentsData.comments.insert(newZone.commentsData.comments.begin(), newZone.commentsData.comments.end());
-        // newZone.UpdateDataLineFromPrevious(firstZone);
-        lastZone.UpdateDataLineFromPrevious(firstZone);
-        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
-    } else {
-        firstZone.indexZoneEnd        = zoneLineStart;
-        firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
-
-        newZone.UpdateDataLineFromPrevious(firstZone);
-        lastZone.UpdateDataLineFromPrevious(newZone);
-
-        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
-        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(newZone));
-    }
-
-    // the children of a zone end where their parent ends, the zones of this type end at its end (or at the next zone)
-    const uint32 holderEnd         = hasParent ? parentZone->indexZoneEnd : indexZoneEnd;
-    lastZone.annotations           = std::move(annotationAfter);
-    lastZone.commentsData.comments = std::move(commentsAfter);
-    lastZone.indexZoneEnd          = holderEnd;
-    lastZone.workingIndexZoneEnd   = lastZone.indexZoneEnd;
-    if (zoneLineEnd == indexZoneEnd) {
-        lastZone.indexZoneStart        = zoneLineStart;
-        lastZone.workingIndexZoneStart = lastZone.indexZoneStart;
-    } else {
-        lastZone.indexZoneStart        = zoneLineEnd;
-        lastZone.workingIndexZoneStart = lastZone.indexZoneStart;
-        lastZone.indexZoneEnd          = holderEnd;
-        lastZone.workingIndexZoneEnd   = lastZone.indexZoneEnd;
-
-        if (indexFound + 1 < zonesHolder->size()) {
-            auto& nextZone               = (*zonesHolder)[indexFound + 1];
-            lastZone.indexZoneEnd        = nextZone.indexZoneStart;
-            lastZone.workingIndexZoneEnd = lastZone.indexZoneEnd;
-        }
-    }
-
-    zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(lastZone));
-
-    if (indexFound < internalTypes.size() && !doNotDeleteOldZone) {
-        internalTypes.erase(internalTypes.begin() + indexFound);
-    }
-    return true;
-}
-
-DissasmCodeRemovableZoneDetails DissasmCodeInternalType::GetRemoveZoneCollapsibleDetails(uint32 zoneLine, uint32 depthLevel)
-{
-    if (internalTypes.empty())
-        return {};
-    if (zoneLine > internalTypes.back().indexZoneEnd)
-        return {};
-    uint32 zoneIndex = 0;
-    for (auto& zone : internalTypes) {
-        if (zone.indexZoneStart <= zoneLine && zoneLine < zone.indexZoneEnd) {
-            if (!zone.name.empty() && !zone.isCollapsed) {
-                return { &zone, depthLevel == 0 ? this : nullptr, zoneIndex };
-            }
-            const auto result = zone.GetRemoveZoneCollapsibleDetails(zoneLine, depthLevel + 1);
-            if (!result.zone)
-                return {};
-            if (result.parent)
-                return result;
-            return { result.zone, &zone, result.zoneIndex };
-        }
-        zoneIndex++;
-    }
-    return {};
-}
-
-bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const DissasmCodeRemovableZoneDetails& removableDetails)
-{
-    auto& parentInternalTypes = removableDetails.parent->internalTypes;
-    if (parentInternalTypes.size() == 2) { // last two zone, we clear them
-        for (const auto& zone : parentInternalTypes) {
-            if (zone.isCollapsed)
-                return false; // TODO: remove special case for the last two zones when one of them is collapsed
-        }
-        parentInternalTypes.clear();
+    bool OnMouseEnter() override
+    {
         return true;
     }
 
-    // special case: when we have 3 zones and only the middle one is collpasible
-    // after we remove it, we need to merge the first and the last one since they are not collapsible
-    // so having only 3 zones => we can remove all since we never have only one zone
-    if (parentInternalTypes.size() == 3 && removableDetails.zoneIndex == 1) {
-        for (const auto& zone : parentInternalTypes) {
-            if (zone.isCollapsed)
-                return false; // TODO: remove special case when we have 3 zones and only the middle one is collapsible and some of them are collapsed
-        }
-        if (parentInternalTypes[0].name.empty() && parentInternalTypes[2].name.empty()) {
-            parentInternalTypes.clear();
-            return true;
-        }
+    bool OnMouseLeave() override
+    {
+        return true;
     }
 
-    // TODO: optimize this
-    std::vector<uint32> indexesToRemove;
-    indexesToRemove.reserve(2);
+  private:
+    std::vector<Rect> rects;
+    size_t selected;
+    std::function<void()> onActivate;
+    ColorPair normal, selection;
+    int scrollX = 0, scrollY = 0;
+    int dragX = 0, dragY = 0;
+    bool dragging      = false;
+    bool revealPending = true;
 
-    DissasmCodeInternalType* zoneToUpdate = removableDetails.zone;
-    if (removableDetails.zoneIndex > 0)
-        zoneToUpdate = &parentInternalTypes[removableDetails.zoneIndex - 1];
+    int MaxScrollX() const
+    {
+        return std::max(0, static_cast<int>(canvas.GetWidth()) - static_cast<int>(GetWidth()));
+    }
+    int MaxScrollY() const
+    {
+        return std::max(0, static_cast<int>(canvas.GetHeight()) - static_cast<int>(GetHeight()));
+    }
+    bool ScrollTo(int x, int y)
+    {
+        scrollX = std::clamp(x, 0, MaxScrollX());
+        scrollY = std::clamp(y, 0, MaxScrollY());
+        return true;
+    }
+    std::optional<size_t> BlockAt(int x, int y) const
+    {
+        for (size_t index = 0; index < rects.size(); index++) {
+            const auto& rect = rects[index];
+            if (x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height)
+                return index;
+        }
+        return std::nullopt;
+    }
+    // a block that is not entirely shown is centered (its top is shown when it is taller than the view)
+    void Reveal(size_t index)
+    {
+        if (index >= rects.size())
+            return;
+        const auto& rect = rects[index];
+        const int width = static_cast<int>(GetWidth()), height = static_cast<int>(GetHeight());
+        int x = scrollX, y = scrollY;
+        if (rect.x < scrollX || rect.x + rect.width > scrollX + width)
+            x = rect.width < width ? rect.x + rect.width / 2 - width / 2 : rect.x - 1;
+        if (rect.y < scrollY || rect.y + rect.height > scrollY + height)
+            y = rect.height < height ? rect.y + rect.height / 2 - height / 2 : rect.y - 1;
+        ScrollTo(x, y);
+    }
+    bool Select(size_t index)
+    {
+        if (index < rects.size()) {
+            selected = index;
+            Reveal(index);
+        }
+        return true;
+    }
+};
 
-    if (removableDetails.zoneIndex < static_cast<uint32>(parentInternalTypes.size()) - 1) {
-        const auto& nextZone = parentInternalTypes[removableDetails.zoneIndex + 1];
-        if (nextZone.name.empty()) {
-            {
-                indexesToRemove.push_back(removableDetails.zoneIndex + 1);
-                zoneToUpdate->indexZoneEnd        = nextZone.indexZoneEnd;
-                zoneToUpdate->workingIndexZoneEnd = nextZone.workingIndexZoneEnd;
-                zoneToUpdate->annotations.populate_annotations_from_other_storage(nextZone.annotations);
+// The graph of a function (Ctrl+B): its basic blocks as boxes in layers (the longest path from the entry), every block under its
+// predecessors; the branches are green (taken) / red (not taken), the jumps aqua, the switch cases yellow, the loops go around on the right
+class FunctionGraphWindow : public AppCUI::Controls::Window
+{
+    struct Box {
+        int x = 0, y = 0, width = 0, height = 0;
+        int layer = 0;
+        std::string title;
+        std::vector<std::string> lines;
+    };
+
+  public:
+    FunctionGraphWindow(
+          const std::string& title,
+          const DissasmFunctionGraph& graph,
+          const std::vector<std::string>& titles,
+          const std::vector<std::vector<std::string>>& texts,
+          std::optional<size_t> currentBlock,
+          const DissasmColors& colors)
+        : Window(title, "d:c,w:95%,h:90%", WindowFlags::Sizeable)
+    {
+        constexpr int MIN_BOX_WIDTH = 16, MAX_BOX_WIDTH = 64, MARGIN = 2;
+        const size_t count = graph.blocks.size();
+        std::vector<Box> boxes(count);
+        for (size_t index = 0; index < count; index++) {
+            auto& box   = boxes[index];
+            box.title   = titles[index];
+            box.lines   = texts[index];
+            int longest = static_cast<int>(box.title.size());
+            for (const auto& line : box.lines)
+                longest = std::max(longest, static_cast<int>(line.size()));
+            box.width  = std::clamp(longest + 4, MIN_BOX_WIDTH, MAX_BOX_WIDTH);
+            box.height = static_cast<int>(box.lines.size()) + 3; // the borders and the title
+        }
+        // the places: the layered layout (LayoutFunctionGraph: the long edges through columns between the boxes, the crossings reduced)
+        std::vector<std::pair<int, int>> sizes;
+        for (const auto& box : boxes)
+            sizes.emplace_back(box.width, box.height);
+        const auto layout = LayoutFunctionGraph(graph, sizes);
+        for (size_t index = 0; index < count; index++) {
+            boxes[index].x     = layout.nodes[index].x;
+            boxes[index].y     = layout.nodes[index].y;
+            boxes[index].layer = layout.nodes[index].layer;
+        }
+        const auto& layerTop    = layout.layerTop;
+        const auto& layerHeight = layout.layerHeight;
+        const int top           = layout.height - MARGIN;
+        const int width         = layout.width - MARGIN;
+        // the loops (back edges) go up on the right of the graph, one column each
+        int backEdges = 0;
+        for (size_t index = 0; index < count; index++)
+            for (const auto& edge : graph.blocks[index].successors)
+                if (edge.target <= index)
+                    backEdges++;
+        constexpr int MAX_CANVAS_WIDTH = 4000, MAX_CANVAS_HEIGHT = 20000;
+        const int canvasWidth  = std::min(width + MARGIN * 2 + backEdges * 2 + 2, MAX_CANVAS_WIDTH);
+        const int canvasHeight = std::min(top + MARGIN, MAX_CANVAS_HEIGHT);
+
+        // the block of the cursor is selected, else the entry
+        std::vector<FunctionGraphCanvas::Rect> rects;
+        for (const auto& box : boxes)
+            rects.push_back({ box.x, box.y, box.width, box.height });
+        viewer = this->CreateChildControl<FunctionGraphCanvas>(
+              std::move(rects), currentBlock.value_or(0), [this]() { Exit(Dialogs::Result::Ok); }, colors.Normal, colors.Selection);
+        viewer->canvas.Create(canvasWidth, canvasHeight, ' ', colors.Normal);
+        auto canvas = &viewer->canvas;
+
+        const ColorPair taken{ Color::Green, Color::Transparent }, notTaken{ Color::Red, Color::Transparent };
+        const ColorPair jump{ Color::Aqua, Color::Transparent }, switchCase{ Color::Yellow, Color::Transparent }, loop{ Color::Blue, Color::Transparent };
+        const auto edgeColor = [&](DissasmGraphBlock::EdgeKind kind) {
+            switch (kind) {
+            case DissasmGraphBlock::EdgeKind::True:
+                return taken;
+            case DissasmGraphBlock::EdgeKind::False:
+                return notTaken;
+            case DissasmGraphBlock::EdgeKind::Switch:
+                return switchCase;
+            default:
+                return jump;
+            }
+        };
+        // the edges first: the boxes are drawn over the lines that cross them
+        int backColumn = width + MARGIN + 1;
+        for (size_t index = 0; index < count; index++) {
+            const auto& source     = boxes[index];
+            const auto& successors = graph.blocks[index].successors;
+            for (size_t edgeIndex = 0; edgeIndex < successors.size(); edgeIndex++) {
+                const auto& edge   = successors[edgeIndex];
+                const auto& target = boxes[edge.target];
+                if (edge.target > index) {
+                    // down from the bottom of the source to the gap below its layer, across to the column of the next layer (a dummy
+                    // between the boxes of a layer the edge crosses, else the target), down, ... then down to the top of the target
+                    const int spread = successors.size() > 1 ? static_cast<int>(edgeIndex * 4) - static_cast<int>((successors.size() - 1) * 2) : 0;
+                    const auto color = edgeColor(edge.kind);
+                    int x            = std::clamp(source.x + source.width / 2 + spread, source.x + 1, source.x + source.width - 2);
+                    int y            = source.y + source.height;
+                    int layer        = source.layer;
+                    const auto dummies = layout.edgeDummies.find({ index, edgeIndex });
+                    std::vector<size_t> path;
+                    if (dummies != layout.edgeDummies.end())
+                        path = dummies->second;
+                    path.push_back(edge.target);
+                    for (const size_t node : path) {
+                        const auto& next  = layout.nodes[node];
+                        const int channel = layerTop[layer] + layerHeight[layer] + 1 + static_cast<int>(edgeIndex % 3);
+                        const int nextX   = next.isDummy ? next.x : next.x + next.width / 2;
+                        canvas->DrawVerticalLine(x, y, channel, color);
+                        canvas->DrawHorizontalLine(std::min(x, nextX), channel, std::max(x, nextX), color);
+                        x     = nextX;
+                        y     = channel;
+                        layer = next.layer;
+                    }
+                    const int toY = target.y - 1;
+                    canvas->DrawVerticalLine(x, y, toY, color);
+                    canvas->WriteSpecialCharacter(x, toY, SpecialChars::TriangleDown, color);
+                } else {
+                    // a loop: right from the source, up on its own column, left into the target
+                    const int fromY = source.y + source.height / 2;
+                    const int toY   = target.y + 1;
+                    canvas->DrawHorizontalLine(source.x + source.width, fromY, backColumn, loop);
+                    canvas->DrawVerticalLine(backColumn, toY, fromY, loop);
+                    canvas->DrawHorizontalLine(target.x + target.width, toY, backColumn, loop);
+                    canvas->WriteSpecialCharacter(target.x + target.width, toY, SpecialChars::TriangleLeft, loop);
+                    backColumn += 2;
+                }
             }
         }
-    }
-    if (removableDetails.zoneIndex > 0) {
-        const auto& prevZone = parentInternalTypes[removableDetails.zoneIndex - 1];
-        if (prevZone.name.empty()) {
-            {
-                indexesToRemove.push_back(removableDetails.zoneIndex);
-                zoneToUpdate->indexZoneStart        = prevZone.indexZoneStart;
-                zoneToUpdate->workingIndexZoneStart = prevZone.workingIndexZoneStart;
-                zoneToUpdate->annotations.populate_annotations_from_other_storage(prevZone.annotations);
-            }
+        for (size_t index = 0; index < count; index++) {
+            const auto& box       = boxes[index];
+            const bool isCurrent  = currentBlock == index; // the block of the cursor; the selected one has a double frame
+            const ColorPair frame = isCurrent ? colors.AsmJumpInstruction : colors.AsmTitleColumnColor;
+            canvas->FillRect(box.x, box.y, box.x + box.width - 1, box.y + box.height - 1, ' ', colors.Normal);
+            canvas->DrawRect(box.x, box.y, box.x + box.width - 1, box.y + box.height - 1, frame, LineType::Single);
+            const auto clip = [&box](const std::string& text) { return text.size() > static_cast<size_t>(box.width - 4) ? text.substr(0, box.width - 5) + "~" : text; };
+            canvas->WriteSingleLineText(box.x + 2, box.y + 1, clip(box.title), colors.AsmFunctionColor);
+            for (size_t line = 0; line < box.lines.size(); line++)
+                canvas->WriteSingleLineText(box.x + 2, box.y + 2 + static_cast<int>(line), clip(box.lines[line]), colors.Normal);
+            if (graph.blocks[index].exits)
+                canvas->WriteSingleLineText(box.x + box.width - 7, box.y + box.height - 1, " end ", colors.AsmComment);
         }
-    }
-    for (const auto index : indexesToRemove) {
-        parentInternalTypes.erase(parentInternalTypes.begin() + index);
+        viewer->SetFocus();
     }
 
-    zoneToUpdate->name.clear();
+    size_t GetSelectedBlock()
+    {
+        return viewer->GetSelectedBlock();
+    }
 
-    return true;
+  private:
+    Reference<FunctionGraphCanvas> viewer;
+};
+
+void Instance::ShowFunctionGraph()
+{
+    const auto zone = GetCursorOrFirstCodeZone();
+    if (!zone || !zone->isInit || !zone->CanReachAsmLines() || zone->functionStarts.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The functions are found by the deep scan of a shown disassembly zone!");
+        return;
+    }
+    // the function and the address of the cursor line
+    AsmData withoutKnownFunctions;
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.zone     = zone;
+    params.settings = settings.get();
+    params.asmData  = &withoutKnownFunctions;
+    uint64 functionStart = zone->functionStarts.front();
+    std::optional<uint64> cursorAddress;
+    const auto zonesFound = GetZonesIndexesFromLinePosition(Cursor.ToLinePosition().line);
+    if (zonesFound.size() == 1 && settings->parseZones[zonesFound[0].zoneIndex].get() == zone && zonesFound[0].startingLine >= 2) {
+        cursorAddress    = zone->GetCurrentAsmLine(zonesFound[0].startingLine - 2u, obj, &params).address;
+        const auto start = zone->GetFunctionContaining(cursorAddress.value());
+        if (start.has_value())
+            functionStart = start.value();
+    }
+    const auto graph = zone->BuildFunctionGraph(functionStart);
+    if (graph.blocks.empty()) {
+        Dialogs::MessageBox::ShowNotification("Info", "The function has no instructions!");
+        return;
+    }
+
+    // the text of the blocks: the lines of the listing (labels, imports, the numbers base of the user)
+    uint32 firstInstruction = 0;
+    if (cs_insn* insn = GetCurrentInstructionByOffset(zone->cachedCodeOffsets[0].offset + functionStart, zone, obj, firstInstruction))
+        cs_free(insn, 1);
+    std::vector<std::string> titles;
+    std::vector<std::vector<std::string>> texts;
+    std::optional<size_t> currentBlock;
+    std::string comment;
+    for (size_t index = 0; index < graph.blocks.size(); index++) {
+        const auto& block = graph.blocks[index];
+        std::string title = zone->GetLabelNameAt(block.start);
+        titles.push_back(title.empty() ? zone->GetLabelName("loc_", block.start) : title);
+        auto& lines = texts.emplace_back();
+        for (const uint32 ordinal : block.instructions) {
+            const uint32 line  = zone->ExpandedToDisplay(zone->InstructionIndexToExpanded(firstInstruction + ordinal));
+            const auto asmLine = zone->GetCurrentAsmLine(line, obj, &params);
+            std::string text   = asmLine.mnemonic;
+            if (asmLine.op_str)
+                text.append(" ").append(asmLine.op_str, asmLine.op_str_size);
+            else if (asmLine.mapping)
+                text.append(" ").append(static_cast<const MemoryMappingEntry*>(asmLine.mapping)->name);
+            if (zone->GetComment(asmLine, comment))
+                text.append(" ; ").append(comment);
+            lines.push_back(std::move(text));
+        }
+        if (cursorAddress.has_value() && cursorAddress.value() >= block.start && cursorAddress.value() < block.end)
+            currentBlock = index;
+    }
+    zone->asmPreCacheData.Clear(); // the decoding position moved: the drawn lines are prepared again
+
+    LocalString<320> title;
+    // the keys in the title: the scroll bars of the canvas use the bottom line
+    title.SetFormat("Graph of %s (%zu blocks%s) - arrows / mouse: scroll, Tab / click: a block, Enter / double click: go to it, Esc: close",
+                    titles.front().c_str(),
+                    graph.blocks.size(),
+                    graph.truncated ? ", too big: it stops at the limit" : "");
+    FunctionGraphWindow window(title.GetText(), graph, titles, texts, currentBlock, ColorMan.Colors);
+    if (window.Show() != Dialogs::Result::Ok)
+        return;
+    const size_t selected = window.GetSelectedBlock();
+    if (selected < graph.blocks.size()) // the label of the block (a jump target) is shown above it
+        MoveCursorToZoneFileOffset(zone, zone->cachedCodeOffsets[0].offset + graph.blocks[selected].start, true);
 }
-
-#pragma endregion
 
 constexpr uint32 BTN_CLOSE_ID   = 0;
 constexpr uint32 BTN_APPLY_ID   = 1;
@@ -2338,6 +5327,74 @@ static const char* GetAssistantOperands(const DissasmAsmPreCacheLine& line)
     return "";
 }
 
+// Shown while the assistant answers on a worker thread: the time the request takes; Esc / Cancel stop waiting for it
+class AssistantWaitWindow : public AppCUI::Controls::Window
+{
+    static constexpr int CANCEL_ID = 1;
+
+  public:
+    AssistantWaitWindow(const DissasmAssistantRequest& request, std::string_view what)
+        : Window("Smart assistant", "d:c,w:64,h:8", WindowFlags::None), request(request), start(std::chrono::steady_clock::now())
+    {
+        Factory::Label::Create(this, what, "l:1,t:1,r:1,h:1");
+        status = Factory::Label::Create(this, "", "l:1,t:2,r:1,h:1");
+        Factory::Button::Create(this, "&Cancel", "x:50%,y:100%,a:b,w:14", CANCEL_ID);
+        UpdateStatus();
+    }
+
+    bool OnFrameUpdate() override
+    {
+        if (request.IsReady()) {
+            Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        return UpdateStatus();
+    }
+
+    bool OnEvent(Reference<Control> control, Event eventType, int ID) override
+    {
+        if ((eventType == Event::ButtonClicked && ID == CANCEL_ID) || eventType == Event::WindowClose) {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return Window::OnEvent(control, eventType, ID);
+    }
+
+  private:
+    const DissasmAssistantRequest& request;
+    std::chrono::steady_clock::time_point start;
+    Reference<Label> status;
+    int64 shownSeconds = -1;
+
+    bool UpdateStatus()
+    {
+        const int64 seconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start).count();
+        if (seconds == shownSeconds)
+            return false;
+        shownSeconds = seconds;
+        LocalString<96> text;
+        text.SetFormat("Waiting for the answer... %llds (Esc: cancel)", static_cast<long long>(seconds));
+        status->SetText(text.GetText());
+        return true;
+    }
+};
+
+std::optional<DissasmAssistantAnswer> Instance::AskAssistantWaiting(
+      DissasmAssistantRequest::Assistant* assistant, std::string prompt, std::string displayPrompt)
+{
+    DissasmAssistantRequest request;
+    // a frontend without frame updates could not see the end of the request: it is answered at once
+    request.Start(assistant, std::move(prompt), displayPrompt, frameUpdatesSeen);
+    if (!request.IsReady()) {
+        AssistantWaitWindow window(request, displayPrompt);
+        if (window.Show() != Dialogs::Result::Ok) {
+            request.Abandon(abandonedAssistantRequests); // it goes on in the background, its answer is dropped
+            return std::nullopt;
+        }
+    }
+    return request.Take();
+}
+
 void Instance::QuerySmartAssistantX86X64(
       DissasmCodeZone* codeZone, uint32 line, const QuerySmartAssistantParams& queryParams, QueryTypeSmartAssistant queryType)
 {
@@ -2353,7 +5410,7 @@ void Instance::QuerySmartAssistantX86X64(
 
     LocalString<128> displayPrompt;
 
-    displayPrompt.SetFormat(queryParams.displayPrompt.data());
+    displayPrompt.Set(queryParams.displayPrompt); // not a format string: the prompts can contain '%'
     if (!queryParams.mnemonicStarsWith.empty()) {
         auto data = codeZone->GetCurrentAsmLine(line, obj, &params);
         if (memcmp(data.mnemonic, queryParams.mnemonicStarsWith.data(), queryParams.mnemonicStarsWith.size()) != 0) {
@@ -2364,33 +5421,39 @@ void Instance::QuerySmartAssistantX86X64(
             displayPrompt.AddFormat("%s", data.mnemonic);
     }
 
-    const auto assistantInterface = queryInterface->GetSmartAssistantInterface();
+    const auto assistantInterface = queryInterface ? queryInterface->GetSmartAssistantInterface() : nullptr;
     if (!assistantInterface) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There is no digital assistant available!");
         return;
     }
 
-    uint32 actualLineInDocument = line + codeZone->startLineIndex + 1; // +1 for the function
+    // the code starts below the function label, or at the first selected line
+    const uint32 firstLine      = queryParams.startsAtSelectedLine ? line : line + 1u;
+    uint32 actualLineInDocument = firstLine + codeZone->startLineIndex;
     uint32 lineIndex            = 0;
-    uint32 currentDissasmLine   = line + 1; // +1 for the function
+    uint32 currentDissasmLine   = firstLine;
     // zone lines (relative to the zone, without the title): the extended size counts the title as well
     const uint32 zoneLinesCount = codeZone->extendedSize > 0 ? codeZone->extendedSize - 1u : 0u;
+    const uint32 linesToAnalyse = queryParams.maxLines > 0 ? std::min(queryParams.maxLines, DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED)
+                                                           : DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED;
 
     std::vector<std::string> apisInstructions;
-    apisInstructions.reserve(DISSASM_ASSISTANT_MAX_API_CALLS / 2);
+    apisInstructions.reserve(DISSASM_ASSISTANT_MAX_API_CALLS);
 
     std::vector<std::string> assemblyLines;
-    apisInstructions.reserve(DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT);
+    assemblyLines.reserve(DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT);
 
     LocalString<64> currentBuffer;
     std::string comment;
-    while (actualLineInDocument < codeZone->endingLineIndex && currentDissasmLine < zoneLinesCount &&
-           lineIndex < DISSASM_ASSISTANT_MAX_DISSASM_LINES_ANALYSED) {
+    while (actualLineInDocument < codeZone->endingLineIndex && currentDissasmLine < zoneLinesCount && lineIndex < linesToAnalyse) {
         auto currentLine = codeZone->GetCurrentAsmLine(currentDissasmLine, obj, &params);
         if (currentLine.size > 0) {
             currentBuffer.SetFormat("   %s %s", currentLine.mnemonic, GetAssistantOperands(currentLine));
+            if (!currentLine.autoComment.empty()) // the referenced string / import helps the assistant
+                currentBuffer.AddFormat(" ; %s", currentLine.autoComment.c_str());
             if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
                 if (queryParams.includeComments) {
-                    if (codeZone->GetComment(currentDissasmLine, comment)) {
+                    if (codeZone->GetComment(currentLine, comment)) {
                         currentBuffer.AddFormat(" ; %s", comment.data());
                     }
                 }
@@ -2403,10 +5466,13 @@ void Instance::QuerySmartAssistantX86X64(
             if (assemblyLines.size() < DISSASM_ASSISTANT_MAX_DISSASM_LINES_SENT) {
                 // labels are sent by name, the local variables with their definition
                 const bool isVariable = currentLine.localVariableKind == DissasmAsmPreCacheLine::LocalVariableKind::Definition && currentLine.op_str;
-                assemblyLines.emplace_back(isVariable ? currentLine.op_str : currentLine.mnemonic);
+                if (isVariable)
+                    assemblyLines.emplace_back(currentLine.op_str);
+                else
+                    assemblyLines.emplace_back(currentLine.GetMnemonicText());
             }
         }
-        if (queryParams.stopAtTheEndOfTheFunction && TextPrefixAsUInt32(currentLine.mnemonic) == retOP)
+        if (queryParams.stopAtTheEndOfTheFunction && strcmp(currentLine.mnemonic, "ret") == 0)
             break;
         actualLineInDocument++;
         lineIndex++;
@@ -2419,7 +5485,7 @@ void Instance::QuerySmartAssistantX86X64(
 
     LocalString<DISSASM_ASSISTANT_MAX_BYTE_TO_SEND> bufferToSendToAssistant;
     bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
-    bufferToSendToAssistant.AddFormat("Here is x86 assembly code: \n");
+    bufferToSendToAssistant.AddFormat("Here is %s assembly code: \n", codeZone->GetArchitectureName());
     // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
     // bufferToSendToAssistant.SetFormat("I am going to provide a list of assembly instructions and some OS functions used. The list of instructions is: ");
     for (const auto& asmLine : assemblyLines) {
@@ -2435,8 +5501,11 @@ void Instance::QuerySmartAssistantX86X64(
     // bufferToSendToAssistant.AddFormat("%s", queryParams.prompt.data());
     auto textData = bufferToSendToAssistant.GetText();
 
-    bool isSuccess = false;
-    auto result    = assistantInterface->AskSmartAssistant(textData, displayPrompt, isSuccess);
+    const auto answer = AskAssistantWaiting(assistantInterface, textData, displayPrompt.GetText());
+    if (!answer.has_value())
+        return; // cancelled
+    bool isSuccess = answer->success;
+    auto result    = answer->text;
     if (!isSuccess) {
         bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
         Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());
@@ -2468,7 +5537,11 @@ void Instance::QuerySmartAssistantX86X64(
             if (--retriesNumber == 0)
                 break;
             names.clear();
-            result = assistantInterface->AskSmartAssistant(textData, displayPrompt, isSuccess);
+            const auto retry = AskAssistantWaiting(assistantInterface, textData, displayPrompt.GetText());
+            if (!retry.has_value())
+                return; // cancelled
+            result    = retry->text;
+            isSuccess = retry->success;
             if (!isSuccess) {
                 bufferToSendToAssistant.SetFormat("The assistant did not provide a result: %s", result.data());
                 Dialogs::MessageBox::ShowNotification("Warning", bufferToSendToAssistant.GetText());
@@ -2506,7 +5579,7 @@ void Instance::QuerySmartAssistantX86X64(
                 Dialogs::MessageBox::ShowNotification("Warning", "No comments found!");
                 return;
             }
-            currentDissasmLine = line + 1;
+            currentDissasmLine = firstLine;
             if (currentDissasmLine >= zoneLinesCount) {
                 Dialogs::MessageBox::ShowNotification("Warning", "No instructions found!");
                 return;
@@ -2535,20 +5608,14 @@ void Instance::QuerySmartAssistantX86X64(
                 if (reachedZoneEnd)
                     break;
 
-                std::string initialComment;
-                if (codeZone->GetComment(currentDissasmLine, initialComment)) {
-                    bufferToSendToAssistant.SetFormat("%s; %s", comment.data(), initialComment.data());
-                    initialComment = bufferToSendToAssistant.GetText();
-                } else {
-                    initialComment = comment;
-                }
-                codeZone->AddOrUpdateComment(currentDissasmLine, initialComment, false);
+                // kept apart from the comments of the user: A accepts it, Shift+A dismisses it
+                codeZone->SetAIComment(currentDissasmLine, comment);
                 currentDissasmLine++;
             }
             selection.Clear();
         }
     } else if (queryType == QueryTypeSmartAssistant::ConvertToHighLevel) {
-        QueryShowCodeDialog dlg(result, "Code explanation", true, false);
+        QueryShowCodeDialog dlg(result, "High level code", true, false);
         dlg.Show();
 
         if (dlg.GetOpenOrApply()) {

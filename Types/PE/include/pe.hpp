@@ -783,6 +783,10 @@ namespace Type
             GView::Utils::ErrorList errList;
             std::vector<ExportedFunction> exp;
             std::vector<ResourceInformation> res;
+            // the resource directories already walked and the entries left to read: a directory that points back to itself (or
+            // to a parent) is walked once, a crafted tree can not make the walk exponential
+            std::vector<uint64> resourceDirectoriesVisited;
+            uint32 resourceEntriesBudget = 0;
             std::vector<ImportDllInformation> impDLL;
             std::vector<ImageDebugDirectory> debugData;
             std::vector<ImportFunctionInformation> impFunc;

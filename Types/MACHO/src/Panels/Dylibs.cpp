@@ -70,7 +70,7 @@ void Dylib::Update()
     {
         tmp.Format(
               "%s (%s)",
-              std::string(MAC::LoadCommandNames.at(d.value.cmd)).c_str(),
+              std::string(MAC::NameOf(MAC::LoadCommandNames, d.value.cmd)).c_str(),
               GetValue(n, static_cast<uint32_t>(d.value.cmd)).data());
         auto item = list->AddItem(tmp);
 
