@@ -9226,6 +9226,80 @@ TEST_CASE("X86ExceptionMarks", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00401033  mov").find("catch(...) // owned by ") != std::string_view::npos);
 }
 
+TEST_CASE("X86FuncletFrames", "[Dissasm]Help")
+{
+    // 32 bit MSVC: the catch blocks and the unwind funclets run with the ebp of their function: their slots are variables of its frame,
+    // their operands named with them (a slot only the catch block uses, the object the unwind funclet destroys)
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x401000: push ebp
+        0x8B, 0xEC,                   // 0x401001: mov ebp, esp
+        0xB8, 0x50, 0x10, 0x40, 0x00, // 0x401003: mov eax, 0x401050        (the __ehhandler stub)
+        0xC6, 0x45, 0xFC, 0x00,       // 0x401008: mov byte ptr [ebp - 4], 0 (try {: state 0)
+        0x90,                         // 0x40100c: nop
+        0xC6, 0x45, 0xFC, 0xFF,       // 0x40100d: mov byte ptr [ebp - 4], -1 (})
+        0x5D,                         // 0x401011: pop ebp
+        0xC3,                         // 0x401012: ret
+        0x8B, 0x55, 0xEC,             // 0x401013: mov edx, dword ptr [ebp - 0x14] (the catch block: a slot of its own)
+        0xB8, 0x11, 0x10, 0x40, 0x00, // 0x401016: mov eax, 0x401011        (where it goes on)
+        0xC3,                         // 0x40101b: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x8D, 0x4D, 0xF0,             // 0x401040: lea ecx, [ebp - 0x10]    (the unwind funclet)
+                                  0xE9, 0xB8, 0xFF, 0xFF, 0xFF, // 0x401043: jmp 0x401000
+                            });
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), {
+                                  0xB8, 0xA0, 0x10, 0x40, 0x00, // 0x401050: mov eax, 0x4010a0        (the stub: the FuncInfo)
+                                  0xE9, 0xA6, 0xFF, 0xFF, 0xFF, // 0x401055: jmp 0x401000
+                            });
+    file.resize(0xA0, 0xCC);
+    const std::vector<uint32> tables = {
+        0x19930522, 1, 0x4010C4, 1, 0x4010CC, 0, 0, 0, 0, // 0x4010a0: FuncInfo
+        0xFFFFFFFF, 0x401040,                             // 0x4010c4: UnwindMap[0]
+        0, 0, 1, 1, 0x4010E0,                             // 0x4010cc: TryBlockMap[0]: states 0-0, a catch
+        0x40, 0, 0, 0x401013,                             // 0x4010e0: HandlerType[0]: catch(...)
+        0,
+    };
+    for (const uint32 value : tables)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    ZoneLayout layout;
+    layout.size             = file.size();
+    layout.entryPoint       = 0;
+    layout.labelAddressBase = 0x401000;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone        = *dissasmInstance.zone;
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->endAddress == 0x13); // the walk of the function: up to its ret
+    REQUIRE(CheckFrameVariables(*frame, { { -0x14, 4, "var_14" }, { -0x10, 0, "var_10" }, { -4, 1, "var_4" } }));
+    const auto* catchFrame = zone.localVariables.FindFunctionByAddress(0x16);
+    REQUIRE(catchFrame != nullptr);
+    REQUIRE(catchFrame->variablesOf == std::optional<uint64>(0x00));
+    REQUIRE(catchFrame->variables.empty());
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00401013  mov    edx, dword ptr [ebp + var_14]").find("catch(...) // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00401040  lea    ecx, [ebp + var_10]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00401008  mov    byte ptr [ebp + var_4], 0").size() > 0);
+
+    // the walk of a funclet: no prologue, its slots through ebp up to its end
+    DetailHandle x86(CS_MODE_32);
+    DissasmFunctionFrame funclet{};
+    REQUIRE(AnalyzeX86FuncletFrame(x86.handle, file.data() + 0x13, 0x2d, 0x13, 0x40, false, funclet));
+    REQUIRE(funclet.endAddress == 0x1c);
+    REQUIRE(CheckFrameVariables(funclet, { { -0x14, 4, "var_14" } }));
+    // the fields of the SEH record of the function (__SEH_prolog4): named as in its frame
+    const std::vector<unsigned char> filter = {
+        0x8B, 0x45, 0xEC, // mov eax, dword ptr [ebp - 0x14] (ms_exc.exc_ptr)
+        0x8B, 0x00,       // mov eax, dword ptr [eax]
+        0xC3,             // ret
+    };
+    REQUIRE(AnalyzeX86FuncletFrame(x86.handle, filter.data(), filter.size(), 0, filter.size(), true, funclet));
+    REQUIRE(CheckFrameVariables(funclet, { { -0x14, 4, "ms_exc.exc_ptr" } }));
+}
+
 TEST_CASE("X86ReturnAddressSlot", "[Dissasm]Help")
 {
     // the return address of the function read from its slot (wil: _ReturnAddress()): retaddr, in a frame without a frame register (the
@@ -9441,6 +9515,180 @@ TEST_CASE("X86SavedRegisterSlots", "[Dissasm]Help")
     INFO(listing32);
     REQUIRE(FindListingLine(listing32, "0x00000002  mov    eax, dword ptr [esp + 0x8 + arg_0]").size() > 0);
     REQUIRE(FindListingLine(listing32, "0x00000006  mov    esi, dword ptr [esp + 0x8 + var_s4]").size() > 0);
+}
+
+TEST_CASE("X86SwitchCaseFrames", "[Dissasm]Help")
+{
+    // the cases of a switch (GCC: jmp rax through a table of offsets) are code of the function: the frame goes on with them, with the depth
+    // and the aliases of the jump; without them the walk ends at the first ret after the jump
+    std::vector<unsigned char> file = {
+        0x55,                                     // 0x00: push rbp
+        0x48, 0x89, 0xE5,                         // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x20,                   // 0x04: sub rsp, 0x20
+        0x89, 0x7D, 0xFC,                         // 0x08: mov dword ptr [rbp - 4], edi (var_4)
+        0x89, 0xF8,                               // 0x0b: mov eax, edi
+        0x83, 0xF8, 0x02,                         // 0x0d: cmp eax, 2
+        0x77, 0x10,                               // 0x10: ja 0x22
+        0x48, 0x8D, 0x15, 0x67, 0x00, 0x00, 0x00, // 0x12: lea rdx, [rip + 0x67] (the table, 0x80)
+        0x48, 0x63, 0x04, 0x82,                   // 0x19: movsxd rax, dword ptr [rdx + rax*4]
+        0x48, 0x01, 0xD0,                         // 0x1d: add rax, rdx
+        0xFF, 0xE0,                               // 0x20: jmp rax
+        0x8B, 0x45, 0xFC,                         // 0x22: mov eax, dword ptr [rbp - 4] (the default)
+        0xC9,                                     // 0x25: leave
+        0xC3,                                     // 0x26: ret
+    };
+    const auto writeCase = [&file](size_t at, std::initializer_list<unsigned char> slot) {
+        file.resize(at, 0xCC);
+        file.insert(file.end(), slot.begin(), slot.end());
+        const auto back = static_cast<unsigned char>(0x22 - static_cast<int64>(file.size() + 2)); // jmp 0x22
+        file.insert(file.end(), { 0xEB, back });
+    };
+    writeCase(0x28, { 0xC7, 0x45, 0xF8, 0x01, 0x00, 0x00, 0x00 }); // 0x28: mov dword ptr [rbp - 8], 1 (var_8)
+    writeCase(0x38, { 0xC7, 0x45, 0xF4, 0x02, 0x00, 0x00, 0x00 }); // 0x38: mov dword ptr [rbp - 0xc], 2 (var_C)
+    writeCase(0x48, { 0x48, 0x89, 0x75, 0xE8 });                   // 0x48: mov qword ptr [rbp - 0x18], rsi (var_18)
+    file.resize(0x80, 0xCC);
+    WriteDword(file, 0x80, static_cast<uint32>(-0x58)); // the offsets of the cases from the table
+    WriteDword(file, 0x84, static_cast<uint32>(-0x48));
+    WriteDword(file, 0x88, static_cast<uint32>(-0x38));
+
+    DetailHandle x64(CS_MODE_64);
+    const std::vector<uint64> frameCases = { 0x28, 0x38, 0x48 };
+    const X86SwitchCases switchCases     = [&frameCases](const cs_insn& jump) { return jump.address == 0x20 ? &frameCases : nullptr; };
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX86FunctionFrame(x64.handle, file.data(), 0x80, 0, 0x80, true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -4, 4, "var_4" } })); // the frame ended at the ret of the default
+    REQUIRE(AnalyzeX86FunctionFrame(x64.handle, file.data(), 0x80, 0, 0x80, true, frame, {}, {}, switchCases));
+    REQUIRE(CheckFrameVariables(frame, { { -0x18, 8, "var_18" }, { -0xc, 4, "var_C" }, { -8, 4, "var_8" }, { -4, 4, "var_4" } }));
+    REQUIRE(frame.endAddress == 0x4e);
+
+    // without a frame register: the cases with the depth of the jump (before them only a ret: the frame had no slot at all)
+    const std::vector<unsigned char> stack = {
+        0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+        0x89, 0xC8,                               // 0x04: mov eax, ecx
+        0x83, 0xF8, 0x01,                         // 0x06: cmp eax, 1
+        0x77, 0x10,                               // 0x09: ja 0x1b
+        0x48, 0x8D, 0x15, 0x00, 0x01, 0x00, 0x00, // 0x0b: lea rdx, [rip + 0x100]
+        0x48, 0x63, 0x04, 0x82,                   // 0x12: movsxd rax, dword ptr [rdx + rax*4]
+        0x48, 0x01, 0xD0,                         // 0x16: add rax, rdx
+        0xFF, 0xE0,                               // 0x19: jmp rax
+        0x48, 0x83, 0xC4, 0x28,                   // 0x1b: add rsp, 0x28 (the default)
+        0xC3,                                     // 0x1f: ret
+        0x89, 0x4C, 0x24, 0x20,                   // 0x20: mov dword ptr [rsp + 0x20], ecx (var_8)
+        0xEB, 0xF5,                               // 0x24: jmp 0x1b
+        0x48, 0x89, 0x54, 0x24, 0x10,             // 0x26: mov qword ptr [rsp + 0x10], rdx (var_18)
+        0xEB, 0xEE,                               // 0x2b: jmp 0x1b
+    };
+    const std::vector<uint64> stackCases = { 0x20, 0x26 };
+    const X86SwitchCases stackSwitch     = [&stackCases](const cs_insn& jump) { return jump.address == 0x19 ? &stackCases : nullptr; };
+    REQUIRE(!AnalyzeX86StackFrame(x64.handle, stack.data(), stack.size(), 0, stack.size(), true, frame));
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, stack.data(), stack.size(), 0, stack.size(), true, frame, {}, {}, stackSwitch));
+    REQUIRE(CheckFrameVariables(frame, { { -0x18, 8, "var_18" }, { -8, 4, "var_8" } }));
+    REQUIRE(frame.StackDeltaAt(0x20) == -0x28);
+    REQUIRE(frame.StackDeltaAt(0x26) == -0x28);
+    // a case before the jump, or after the limit of the function: not followed
+    const std::vector<uint64> outside = { 0x10, 0x26 };
+    const X86SwitchCases outsideSwitch = [&outside](const cs_insn& jump) { return jump.address == 0x19 ? &outside : nullptr; };
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, stack.data(), stack.size(), 0, 0x26, true, frame, {}, {}, outsideSwitch) == false);
+
+    // the deep scan: the cases of the table it reads
+    ZoneLayout layout;
+    layout.size                = 0x80;
+    layout.entryPoint          = 0;
+    layout.language            = DisassemblyLanguage::x64;
+    const uint64 fileSize      = file.size();
+    layout.addressToFileOffset = [fileSize](uint64 offset) -> std::optional<uint64> {
+        return offset < fileSize ? std::optional<uint64>(offset) : std::nullopt;
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.zone->switchJumps.size() == 1);
+    const auto* zoneFrame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(zoneFrame != nullptr);
+    REQUIRE(zoneFrame->variables.size() == 4);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000028  mov    dword ptr [rbp + var_8], 1").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000038  mov    dword ptr [rbp + var_C], 2").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000048  mov    qword ptr [rbp + var_18], rsi").size() > 0);
+}
+
+TEST_CASE("X64ComputedGotoTargets", "[Dissasm]Help")
+{
+    // GCC with CET: the labels of a computed goto start with an endbr64 after a jmp, as the functions: locations of their function when
+    // their code reads its frame (rbp not written) or jumps into its body; endbr64; push rbp; mov rbp, rsp is one function, at its endbr64
+    std::vector<unsigned char> file = {
+        0x55,                   // 0x00: push rbp
+        0x48, 0x89, 0xE5,       // 0x01: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x20, // 0x04: sub rsp, 0x20
+        0x48, 0x89, 0x7D, 0xF8, // 0x08: mov qword ptr [rbp - 8], rdi (var_8)
+        0x48, 0x8B, 0x4D, 0xE8, // 0x0c: mov rcx, qword ptr [rbp - 0x18] (var_18: the label)
+        0xFF, 0xE1,             // 0x10: jmp rcx (goto *label)
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), {
+                                  0xF3, 0x0F, 0x1E, 0xFA, // 0x20: endbr64 (a label: loc_20)
+                                  0x48, 0x8B, 0x7D, 0xF8, // 0x24: mov rdi, qword ptr [rbp - 8]
+                                  0x48, 0x89, 0x7D, 0xF0, // 0x28: mov qword ptr [rbp - 0x10], rdi (var_10)
+                                  0xC9,                   // 0x2c: leave
+                                  0xC3,                   // 0x2d: ret
+                            });
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), {
+                                  0xF3, 0x0F, 0x1E, 0xFA,             // 0x30: endbr64 (a label: loc_30)
+                                  0x41, 0xBB, 0x08, 0x00, 0x00, 0x00, // 0x34: mov r11d, 8
+                                  0xEB, 0xE8,                         // 0x3a: jmp 0x24 (into the body of sub_0)
+                            });
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0xF3, 0x0F, 0x1E, 0xFA, // 0x40: endbr64 (a function: sub_40)
+                                  0x55,                   // 0x44: push rbp (not another function)
+                                  0x48, 0x89, 0xE5,       // 0x45: mov rbp, rsp
+                                  0x89, 0x7D, 0xFC,       // 0x48: mov dword ptr [rbp - 4], edi (var_4)
+                                  0x5D,                   // 0x4b: pop rbp
+                                  0xC3,                   // 0x4c: ret
+                            });
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), {
+                                  0xF3, 0x0F, 0x1E, 0xFA, // 0x50: endbr64 (a function: its code uses no frame of another one)
+                                  0x48, 0x89, 0xF8,       // 0x54: mov rax, rdi
+                                  0xC3,                   // 0x57: ret
+                            });
+    file.resize(0x100, 0xCC);
+    ZoneLayout layout;
+    layout.size       = 0x100;
+    layout.entryPoint = 0x00;
+    layout.language   = DisassemblyLanguage::x64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x50 });
+    REQUIRE(zone.functionEnds.size() == 3);
+    REQUIRE(zone.functionEnds[0] == 0x3c); // the code of the computed goto is reached
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x18, 8, "var_18" }, { -0x10, 8, "var_10" }, { -8, 8, "var_8" } }));
+    const auto* framed = zone.localVariables.FindFunctionByStart(0x40);
+    REQUIRE(framed != nullptr);
+    REQUIRE(CheckFrameVariables(*framed, { { -4, 4, "var_4" } }));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "loc_20:").size() > 0);
+    REQUIRE(FindListingLine(listing, "loc_30:").size() > 0);
+    REQUIRE(FindListingLine(listing, "sub_50:").size() > 0);
+    REQUIRE(listing.find("sub_44:") == std::string::npos);
+    REQUIRE(FindListingLine(listing, "0x00000028  mov    qword ptr [rbp + var_10], rdi").size() > 0);
+
+    // the frame register walk: after a flow end only an endbr64 goes on (the padding skipped), anything else ends the function
+    DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame walked{};
+    REQUIRE(AnalyzeX86FunctionFrame(x64.handle, file.data(), 0x40, 0, 0x40, true, walked));
+    REQUIRE(walked.endAddress == 0x3c);
+    std::vector<unsigned char> noEndbr(file.begin(), file.begin() + 0x40);
+    noEndbr[0x20] = 0x90; // nop; nop; nop; nop instead of the endbr64: padding, then mov rdi, [rbp - 8] is not reached
+    noEndbr[0x21] = 0x90;
+    noEndbr[0x22] = 0x90;
+    noEndbr[0x23] = 0x90;
+    REQUIRE(AnalyzeX86FunctionFrame(x64.handle, noEndbr.data(), noEndbr.size(), 0, noEndbr.size(), true, walked));
+    REQUIRE(walked.endAddress == 0x12);
+    REQUIRE(CheckFrameVariables(walked, { { -0x18, 8, "var_18" }, { -8, 8, "var_8" } }));
 }
 
 TEST_CASE("ImportOrdinalNames", "[Dissasm]Imports")

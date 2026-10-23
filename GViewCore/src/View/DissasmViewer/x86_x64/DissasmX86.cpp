@@ -528,8 +528,9 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
                                          ? zone->FindFrameOfAddress(address) // a chunk: the frame of its function
                                          : nullptr;
                framed && framed->usesFrameRegister) {
-        function = framed;
-        variable = function->FindVariableContaining(frameOperand.frameOffset);
+        // a funclet of the 32 bit exception handling (a catch block, an unwind funclet): the ebp of its function, its variables
+        function = framed->variablesOf.has_value() ? zone->localVariables.FindFunctionByStart(framed->variablesOf.value()) : framed;
+        variable = function ? function->FindVariableContaining(frameOperand.frameOffset) : nullptr;
     } else if (const auto* stackFunction = zone && !zone->localVariables.Empty() ? zone->localVariables.FindFunctionByAddress(address) : nullptr;
                stackFunction && (!stackFunction->usesFrameRegister || !stackFunction->stackDeltas.empty())) {
         // without a frame register: [rsp + 0x20] -> [rsp + 0x38 + var_18] (IDA), the slot from the stack pointer of the entry; an alias of

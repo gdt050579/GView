@@ -983,8 +983,10 @@ std::optional<uint64> X86PrologueDetector::Next(const cs_insn& insn, uint64 file
 
     const bool wasAfterPadding = afterPadding;
     const bool wasAfterJump    = afterJump;
+    const auto endbrBefore     = previousEndbr;
     afterPadding               = IsFlowEndOrPadding(insn);
     afterJump                  = insn.id == X86_INS_JMP || insn.id == X86_INS_LJMP;
+    previousEndbr              = insn.id == X86_INS_ENDBR32 || insn.id == X86_INS_ENDBR64 ? std::optional<uint64>(fileOffset) : std::nullopt;
 
     // the second line of a prologue
     const Pending previous = pending;
@@ -1014,7 +1016,7 @@ std::optional<uint64> X86PrologueDetector::Next(const cs_insn& insn, uint64 file
     // the first line of a prologue
     if (isPush && operands == framePointer) {
         pending             = Pending::FramePush;
-        pendingOffset       = fileOffset;
+        pendingOffset       = endbrBefore.value_or(fileOffset); // endbr64; push rbp; mov rbp, rsp: the function starts at its endbr64
         pendingAfterPadding = wasAfterPadding;
         return {};
     }

@@ -136,7 +136,7 @@ std::optional<std::string> TryExtractStringPreview(Reference<GView::Object> obj,
 
 // Recognizes the functions that are not reached by a direct call (callbacks, virtual methods, exports) by their prologue. It is fed with
 // every decoded line of the code, in order (DecodeX86Line); Next returns the file offset of a function start once a prologue is complete:
-//  - push ebp / rbp; mov ebp, esp / rbp, rsp                          anywhere (the frame pointer setup)
+//  - push ebp / rbp; mov ebp, esp / rbp, rsp                          anywhere (the frame pointer setup; at the endbr32 / endbr64 before it)
 //  - at the start of the code or right after a ret / padding (int3, nop, undecodable bytes, zeros):
 //      x86: mov edi, edi; push ebp; mov ebp, esp (hot patching)
 //      x64: mov qword ptr [rsp + 8..0x20], rcx/rdx/r8/r9/rbx/rsi/rdi/rbp (home space), sub rsp, N, mov rax / r11, rsp
@@ -150,6 +150,7 @@ class X86PrologueDetector
     bool afterPadding = true; // start of the code, or the previous line ends the code flow (ret) or is padding
     bool afterJump    = false;
     Pending pending   = Pending::None;
+    std::optional<AppCUI::uint64> previousEndbr; // the file offset of the previous line when it is an endbr32 / endbr64
     bool pendingAfterPadding = false;
     AppCUI::uint64 pendingOffset = 0;
 

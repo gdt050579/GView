@@ -245,7 +245,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     };
     std::vector<FuncletLink> funcletLinks;
     std::unordered_multimap<uint64, size_t> funcletsOfParent; // the funclets of a function (their top function), by its start
-    std::vector<DissasmFunctionFrame> pendingChunkFrames;      // AddChunkFrames: the frames of the chunks, until Commit
+    std::vector<DissasmFunctionFrame> pendingChunkFrames;      // AddChunkFrames / AddX86FuncletSlots: the frames of the chunks / funclets, until Commit
+    // 32 bit MSVC: the code the exception handling runs on the frame of a function (its ebp: the catch blocks, the unwind funclets, the
+    // filters / __finally / __except blocks of SEH4), by the start of the function (MarkX86ExceptionScopes)
+    std::unordered_multimap<uint64, uint64> x86FuncletsOfParent;
     std::unordered_map<uint64, std::vector<DissasmCodeZone::ExceptionMark>> exceptionMarks; // DissasmCodeZone::exceptionMarks
     std::unordered_map<std::string, uint64> localFunctionNames; // the names of the plugin of the functions of the zone -> relative start
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
@@ -297,6 +300,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
     std::vector<uint64> functionEnds; // ComputeFunctionEnds
+    std::unordered_map<uint64, std::vector<uint64>> switchCaseTargets; // SwitchCases() once the sweeps end: the frames go on with the cases
+    std::vector<uint64> computedGotoTargets; // DemoteComputedGotoTargets: the endbr64 starts that are locations of their function (sorted)
     std::vector<DissasmFunctionChunk> chunks; // DetectFunctionChunks
     std::vector<uint32> functionApiCategories; // ComputeApiCategories
     size_t labelIndex = 0; // the next label placed on its line
@@ -513,6 +518,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         conditionalTargets.clear();
         addressTakenTargets.clear();
         dataPointerTargets.clear();
+        computedGotoTargets.clear();
+        x86FuncletsOfParent.clear();
         returnedAddress.reset();
         ebxValue.reset();
         functionEbx.reset();
@@ -1001,6 +1008,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         };
         using Mark = DissasmCodeZone::ExceptionMark;
         constexpr uint32 MAX_DEPTH = 64;
+        // the code the exception handling runs on the frame of the function (once each)
+        std::set<std::pair<uint64, uint64>> funclets;
+        x86FuncletsOfParent.clear();
+        const auto addFunclet = [&](uint64 parent, uint64 funclet) {
+            if (funclet != NO_TARGET && funclet < codeSize && funclet != parent && funclets.emplace(parent, funclet).second)
+                x86FuncletsOfParent.emplace(parent, funclet);
+        };
         // SEH4: the function that pushes the scope table
         std::set<uint64> markedTables;
         for (const auto& [value, from] : exceptionTableCandidates) {
@@ -1047,9 +1061,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 auto mark        = scopeMark(level, records[level].filter == 0 ? Mark::Kind::Finally : Mark::Kind::Except, begin != firstBegin.end() ? begin->second : 0);
                 mark.owned       = begin != firstBegin.end();
                 AddExceptionMark(records[level].handler, mark);
+                addFunclet(functionStarts[function.value()], records[level].handler);
                 if (const auto filter = records[level].filter > 1 ? CodeAddressOf(records[level].filter) : std::nullopt; filter.has_value()) {
                     mark.kind = Mark::Kind::Filter;
                     AddExceptionMark(filter.value(), mark);
+                    addFunclet(functionStarts[function.value()], filter.value());
                 }
             }
         }
@@ -1102,10 +1118,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             for (size_t index = 0; index < tryBlocks.size(); index++) {
                 const auto begin = firstBegin.find(static_cast<int32>(index));
                 for (const auto& [handler, type] : tryBlocks[index].catches)
-                    if (handler != NO_TARGET)
+                    if (handler != NO_TARGET) {
                         AddExceptionMark(handler, Mark{ Mark::Kind::Catch, begin != firstBegin.end() ? begin->second : 0, std::nullopt, std::nullopt, type,
                                                         begin != firstBegin.end() });
+                        addFunclet(functionStarts[parent.value()], handler);
+                    }
             }
+            for (const uint64 action : info->second.actions)
+                addFunclet(functionStarts[parent.value()], action);
             // the unwind funclets: sub_X$dtor$N (once each, not over a name of the plugin)
             const auto* parentLabel = labelOf(codeStart + functionStarts[parent.value()]);
             if (!parentLabel)
@@ -1298,8 +1318,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             TrackGlobalOffsetTable(isBlockStart, instructionOffset, flow, operands);
         else
             TrackImageBase(isBlockStart, instructionOffset, flow, operands);
-        if (isBlockStart && insn->address < blockStarts.size() && insn->id != X86_INS_INVALID && insn->id != X86_INS_INT3 && insn->id != X86_INS_NOP)
-            blockStarts[insn->address] = true; // not the padding (int3, nop, align, db)
+        // not the padding (int3, nop, align, db); not the line after the endbr64 that starts the block (the lazy slots of .got.plt point to
+        // the push of their .plt stub: endbr64; push 3; jmp the first stub, one function)
+        if (isBlockStart && insn->address < blockStarts.size() && insn->id != X86_INS_INVALID && insn->id != X86_INS_INT3 && insn->id != X86_INS_NOP &&
+            !blockEndbr.has_value())
+            blockStarts[insn->address] = true;
         const uint64 thunkStart = blockEndbr.value_or(instructionOffset);
         blockEndbr              = isBlockStart && isEndbr ? std::optional<uint64>(instructionOffset) : std::nullopt;
         // the padding between the blocks: nop, int3 (an interrupt), the undecodable bytes (db)
@@ -1495,6 +1518,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto switchCases = SwitchCases();
         std::vector<uint64> seeds = addressTakenTargets; // sorted by FinishSweep
         seeds.insert(seeds.end(), dataPointerTargets.begin(), dataPointerTargets.end());
+        seeds.insert(seeds.end(), computedGotoTargets.begin(), computedGotoTargets.end()); // the code of a computed goto of the function
         std::sort(seeds.begin(), seeds.end());
         seeds.erase(std::unique(seeds.begin(), seeds.end()), seeds.end());
         std::vector<size_t> pending;
@@ -2203,6 +2227,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 callsMap[call.first]   = true;
             }
         }
+        if (!IsArmArch(arch))
+            DemoteComputedGotoTargets();
 
         // relative addresses, every function is bounded by the next one (or by its size, when the plugin knows it)
         for (const auto& call : callsFound)
@@ -2254,6 +2280,129 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 hasDetailHandle = false;
             }
         }
+    }
+
+    // GCC with CET (an endbr64 at every target of an indirect branch): the labels of a computed goto (glibc's printf: goto *(base +
+    // table[i]), jmp rcx) start with an endbr64 after a jmp / the padding, as the functions do (X86PrologueDetector). Such a start is a
+    // location of the function before it when its code can not be the entry of a function: it reads the memory through a callee saved
+    // register before writing it (mov rdi, qword ptr [rbp - 0x498]: the frame of the function it belongs to), or it moves registers only and
+    // jumps into the code of another function (mov r11d, 8; jmp loc_3E8F9: a shared tail). Not when the plugin / the user knows it, when its
+    // address is taken, when something else than a jump from the code it joins refers to it (a call: a function)
+    void DemoteComputedGotoTargets()
+    {
+        constexpr uint32 MAX_ENTRY_INSTRUCTIONS = 16;
+        constexpr uint32 ENTRY_BYTES            = 128;
+        std::vector<size_t> subs; // the indexes of the function starts in callsFound (sorted by address)
+        for (size_t index = 0; index < callsFound.size(); index++)
+            if (callsFound[index].first >= codeStart && (GetLabelType(callsFound[index].second) == SUB || callsFound[index].second == "EntryPoint"))
+                subs.push_back(index);
+        if (subs.size() < 2)
+            return;
+        std::unordered_set<uint64> takenAddresses(addressTakenTargets.begin(), addressTakenTargets.end());
+        takenAddresses.insert(dataPointerTargets.begin(), dataPointerTargets.end());
+        const uint32 calleeSavedFamilies = is64 ? (1u << 3) | (1u << 5) | (0xFu << 12) : (1u << 3) | (1u << 5) | (1u << 6) | (1u << 7);
+        cs_insn* decoded                 = cs_malloc(handle);
+        if (!decoded)
+            return;
+
+        std::vector<size_t> candidates; // positions in subs
+        for (size_t position = 0; position < subs.size(); position++) {
+            const uint64 fileOffset = callsFound[subs[position]].first;
+            const uint64 start      = fileOffset - codeStart;
+            const uint64 nextStart  = position + 1 < subs.size() ? callsFound[subs[position + 1]].first - codeStart : codeSize;
+            if (start >= codeSize || fileOffset == zone->zoneDetails.entryPoint || (functionEntries && functionEntries->contains(fileOffset)) ||
+                zone->userFunctions.contains(start) || takenAddresses.contains(start))
+                continue;
+            const auto bytes = obj->GetData().CopyToBuffer(fileOffset, static_cast<uint32>(std::min<uint64>(codeSize - start, ENTRY_BYTES)), false);
+            if (!bytes.IsValid())
+                continue;
+            const uint8* data  = bytes.GetData();
+            size_t size        = bytes.GetLength();
+            uint64 address     = start;
+            uint32 written     = 0;     // the families written so far
+            bool touchesMemory = false; // a memory operand, a push / pop
+            bool sawEndbr      = false;
+            bool notEntry      = false;
+            for (uint32 count = 0; count < MAX_ENTRY_INSTRUCTIONS && cs_disasm_iter(handle, &data, &size, &address, decoded); count++) {
+                const cs_x86& x86 = decoded->detail->x86;
+                if (decoded->id == X86_INS_ENDBR64 || decoded->id == X86_INS_ENDBR32) {
+                    sawEndbr = true;
+                    continue;
+                }
+                if (!sawEndbr)
+                    break; // the endbr64 rule of X86PrologueDetector only
+                for (uint8 index = 0; index < x86.op_count && !notEntry; index++) {
+                    if (x86.operands[index].type != X86_OP_MEM)
+                        continue;
+                    touchesMemory = true;
+                    for (const x86_reg reg : { x86.operands[index].mem.base, x86.operands[index].mem.index }) {
+                        const int family = reg != X86_REG_INVALID ? GetX64RegisterFamily(reg) : -1;
+                        if (family >= 0 && (calleeSavedFamilies & (1u << family)) && (written & (1u << family)) == 0)
+                            notEntry = true; // [rbp - 0x498] before rbp is written: the frame of the caller
+                    }
+                }
+                if (notEntry)
+                    break;
+                touchesMemory |= decoded->id == X86_INS_PUSH || decoded->id == X86_INS_POP; // the stubs of .plt: push 3; jmp the first one
+                for (uint8 index = 0; index < x86.op_count; index++)
+                    if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                        if (const int family = GetX64RegisterFamily(x86.operands[index].reg); family >= 0)
+                            written |= 1u << family;
+                const auto flow = GetX86Flow(*decoded);
+                if (flow == X86Flow::Jump && !touchesMemory && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) {
+                    const uint64 target = static_cast<uint64>(x86.operands[0].imm);
+                    const auto label    = callsMap.find(codeStart + target);
+                    notEntry = target < codeSize && (target < start || target >= nextStart) && (label == callsMap.end() || label->second);
+                }
+                if (flow != X86Flow::None && flow != X86Flow::ConditionalJump)
+                    break; // the fall through of a jcc goes on
+            }
+            if (notEntry)
+                candidates.push_back(position);
+        }
+        cs_free(decoded, 1);
+
+        // every reference to a candidate: a jump from another candidate (the code of the same computed goto); a jump from the function
+        // before it makes it a chunk of that function (DetectFunctionChunks), a call / a taken address a function. A candidate joins the
+        // function kept before it (none: it stays a function). The candidates that stay functions change the others: until nothing changes
+        std::vector<uint64> subStarts(subs.size());
+        for (size_t position = 0; position < subs.size(); position++)
+            subStarts[position] = callsFound[subs[position]].first - codeStart;
+        constexpr uint32 MAX_PASSES = 8; // a chain of candidates that stay functions (hostile code): the last state is kept
+        std::vector<bool> demoted(subs.size(), false);
+        for (const size_t position : candidates)
+            demoted[position] = true;
+        bool changed = !candidates.empty();
+        for (uint32 pass = 0; changed && pass < MAX_PASSES; pass++) {
+            changed = false;
+            for (const size_t position : candidates) {
+                if (!demoted[position])
+                    continue;
+                size_t previous = position;
+                while (previous > 0 && demoted[previous - 1])
+                    previous--;
+                bool joins = previous > 0;
+                for (auto [xref, last] = xrefs.To(labelBase + subStarts[position]); xref != last && joins; ++xref) {
+                    const bool isJump = xref->kind == DissasmXrefKind::Jump || xref->kind == DissasmXrefKind::ConditionalJump ||
+                                        xref->kind == DissasmXrefKind::Switch;
+                    const auto source = isJump && xref->from >= labelBase + subStarts[0]
+                                              ? std::upper_bound(subStarts.begin(), subStarts.end(), xref->from - labelBase)
+                                              : subStarts.begin();
+                    joins = source != subStarts.begin() && demoted[static_cast<size_t>(source - subStarts.begin()) - 1];
+                }
+                if (!joins) {
+                    demoted[position] = false;
+                    changed           = true;
+                }
+            }
+        }
+        for (const size_t position : candidates)
+            if (demoted[position]) {
+                auto& call           = callsFound[subs[position]];
+                call.second          = zone->GetLabelName("loc_", call.first - codeStart);
+                callsMap[call.first] = true;
+                computedGotoTargets.push_back(call.first - codeStart);
+            }
     }
 
     // x64 structured exception handling (Settings::AddExceptionScopes): the funclets named after their function as IDA (sub_X$fin$0: a
@@ -2556,6 +2705,33 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             frames.insert(next, std::move(chunk));
         }
         pendingChunkFrames.clear();
+    }
+
+    // 32 bit MSVC: the code the exception handling runs with the ebp of the function (x86FuncletsOfParent): its slots are variables of the
+    // frame; the code outside of the frame gets a frame of its own without variables, the ones of the function (variablesOf)
+    void AddX86FuncletSlots(DissasmFunctionFrame& frame)
+    {
+        const bool sehRecord = std::any_of(frame.variables.begin(), frame.variables.end(), [](const auto& variable) { return variable.name.starts_with("ms_exc."); });
+        const auto [first, last] = x86FuncletsOfParent.equal_range(frame.startAddress);
+        for (auto it = first; it != last; ++it) {
+            const uint64 start = it->second;
+            const auto next    = std::upper_bound(functionStarts.begin(), functionStarts.end(), start);
+            const uint64 limit = std::min<uint64>({ next != functionStarts.end() ? *next : codeSize, codeSize, start + DISSASM_MAX_ANALYZED_FUNCTION_SIZE });
+            const auto bytes   = obj->GetData().CopyToBuffer(codeStart + start, static_cast<uint32>(limit - start), false);
+            DissasmFunctionFrame funclet{};
+            if (!bytes.IsValid() ||
+                !AnalyzeX86FuncletFrame(detailHandle, bytes.GetData(), bytes.GetLength(), start, limit, sehRecord, funclet, [this](const cs_insn& call) {
+                    return noReturnCalls.contains(call.address);
+                }))
+                continue;
+            if (!MergeFrameVariables(frame, std::move(funclet.variables)))
+                return; // too many
+            funclet.variables.clear();
+            if (start >= frame.startAddress && start < frame.endAddress)
+                continue; // the walk of the function reached it: its frame
+            funclet.variablesOf = frame.startAddress;
+            pendingChunkFrames.push_back(std::move(funclet));
+        }
     }
 
     // the slots the funclets of the function use (through the establisher frame) are variables of its frame
@@ -4396,6 +4572,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                   frame,
                   [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
         else {
+            const auto noReturn    = [this](const cs_insn& call) { return noReturnCalls.contains(call.address); };
+            const auto switchCases = [this](const cs_insn& jump) -> const std::vector<uint64>* {
+                const auto cases = switchCaseTargets.find(jump.address);
+                return cases != switchCaseTargets.end() ? &cases->second : nullptr;
+            };
             analyzed = AnalyzeX86FunctionFrame(
                   detailHandle,
                   functionData.GetData(),
@@ -4407,24 +4588,28 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                   is64 ? X86FrameHelperCheck{} : X86FrameHelperCheck([this](const cs_insn& call) {
                       return IsFrameHelper(static_cast<uint64>(call.detail->x86.operands[0].imm));
                   }),
-                  [this](const cs_insn& call) { return noReturnCalls.contains(call.address); });
+                  noReturn,
+                  switchCases);
             const auto stackPurge = is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); });
-            const auto noReturn   = [this](const cs_insn& call) { return noReturnCalls.contains(call.address); };
             if (!analyzed) // no frame register (MSVC x64, x86 FPO / GCC -O2): the slots through the stack pointer
                 analyzed = AnalyzeX86StackFrame(
-                      detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame, stackPurge, noReturn);
+                      detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, frame, stackPurge, noReturn, switchCases);
             else if (frame.usesFrameRegister) {
                 // its stack pointer too: the slots through rsp / esp (the arguments stored for the calls, the locals of an aligned frame:
                 // and esp, -8; IDA: [esp+1F8h+var_1F4]) in the offsets of the frame register
                 DissasmFunctionFrame stackFrame{};
                 if (AnalyzeX86StackFrame(
-                          detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, stackFrame, stackPurge, noReturn))
+                          detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, is64, stackFrame, stackPurge, noReturn, switchCases))
                     MergeStackPointerSlots(frame, std::move(stackFrame), is64);
             }
         }
         bool readOtherCode = false;
         if (analyzed && functionArch == DissasmArch::X64 && funcletsOfParent.contains(relativeAddress)) {
             AddFuncletSlots(frame); // x64 SEH / C++ EH: the slots of the frame only the funclets use
+            readOtherCode = true;
+        }
+        if (analyzed && functionArch == DissasmArch::X86 && frame.usesFrameRegister && x86FuncletsOfParent.contains(relativeAddress)) {
+            AddX86FuncletSlots(frame); // 32 bit C++ EH / SEH: the code run on the frame of the function, its slots
             readOtherCode = true;
         }
         if (analyzed && functionArch == DissasmArch::X64 && !frame.usesFrameRegister && functionEntries)
@@ -4593,6 +4778,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             instructionSet.reachablePadding = reachedBefore;
         }
         FinishSweep();
+        switchCaseTargets = SwitchCases();
         ComputeFunctionEnds();
         DetectFunctionChunks();
         ComputeApiCategories();

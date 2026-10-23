@@ -10,6 +10,9 @@ namespace GView::View::DissasmViewer
 using X86FrameHelperCheck = std::function<bool(const cs_insn& call)>;
 // true when the callee of a call never returns (exit, abort, __stack_chk_fail): the path of the function ends with the call
 using X86CallNoReturn = std::function<bool(const cs_insn& call)>;
+// the cases of the switch an indirect jump dispatches (jmp rax / jmp dword ptr [eax*4 + table]), relative addresses; none when the jump is
+// not a switch: the walks of the frames go on with the code of its cases, reached from the jump with its stack
+using X86SwitchCases = std::function<const std::vector<uint64>*(const cs_insn& jump)>;
 
 // Recognizes a frame based function (push ebp; mov ebp, esp / push rbp; mov rbp, rsp / enter; 32 bit: push 0x10; push offset scopetable;
 // call __SEH_prolog4 / push 8; mov eax, offset handler; call __EH_prolog3 / mov eax, offset handler; call _EH_prolog, when `frameHelper`
@@ -28,7 +31,22 @@ bool AnalyzeX86FunctionFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86FrameHelperCheck& frameHelper = {},
-      const X86CallNoReturn& callNoReturn    = {});
+      const X86CallNoReturn& callNoReturn    = {},
+      const X86SwitchCases& switchCases      = {});
+
+// 32 bit MSVC: the code the exception handling runs with the frame register of its function (ebp: a catch block, an unwind funclet of the C++
+// exception handling, a filter / a __finally / an __except block of SEH4), from `codeAddress`, no prologue: frame.variables receives its
+// slots through ebp in the offsets of the frame of that function (the fields of its SEH record named when `sehRecord`), frame.endAddress
+// its end (as AnalyzeX86FunctionFrame: a flow end no forward branch passes, a write of ebp, `limitAddress`)
+bool AnalyzeX86FuncletFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool sehRecord,
+      DissasmFunctionFrame& frame,
+      const X86CallNoReturn& callNoReturn = {});
 
 // 32 bit code: the bytes a callee pops from the stack of its caller (stdcall / thiscall: ret 8; cdecl: 0), none when it is not known
 using X86CalleeStackPurge = std::function<std::optional<uint32>(const cs_insn& call)>;
@@ -51,7 +69,8 @@ bool AnalyzeX86StackFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86CalleeStackPurge& calleePurge = {},
-      const X86CallNoReturn& callNoReturn    = {});
+      const X86CallNoReturn& callNoReturn    = {},
+      const X86SwitchCases& switchCases      = {});
 
 // x64 structured exception handling: a filter / a __finally funclet receives the establisher frame of its function in rdx and keeps it in
 // rbp (mov rbp, rdx / lea rbp, [rdx + 0x20], in its prologue, before rdx is written): the alias of rbp from there until rbp is written

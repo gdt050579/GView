@@ -92,6 +92,21 @@ std::string_view GetOperandSizeName(uint16 size)
     }
 }
 
+// jmp rax / jmp qword ptr [rax*8 + table] / notrack jmp rax: the jump of a switch
+bool IsIndirectJump(const cs_insn& insn)
+{
+    const cs_x86& x86 = insn.detail->x86;
+    return insn.id == X86_INS_JMP && x86.op_count == 1 && (x86.operands[0].type == X86_OP_REG || x86.operands[0].type == X86_OP_MEM);
+}
+
+// after the end of the flow of a function, only its padding and the code of a computed goto (an endbr64: a function start would bound the
+// walk, DemoteComputedGotoTargets made it a location) go on: true when the walk stops at `current`
+bool EndsAfterFlowEnd(const cs_insn& current, bool& skip)
+{
+    skip = current.id == X86_INS_NOP || current.id == X86_INS_INT3;
+    return !skip && current.id != X86_INS_ENDBR64 && current.id != X86_INS_ENDBR32;
+}
+
 bool IsNameStartCharacter(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '@' || c == '$' || c == '?';
@@ -101,9 +116,9 @@ bool IsNameCharacter(char c)
 {
     return IsNameStartCharacter(c) || (c >= '0' && c <= '9') || c == '.';
 }
-} // namespace
 
-bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
+// AnalyzeX86FunctionFrame; a funclet (AnalyzeX86FuncletFrame): no prologue, its frame register the one of its function from its start
+bool AnalyzeFramePointerCode(
       csh detailHandle,
       const uint8* code,
       size_t codeSize,
@@ -112,7 +127,10 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86FrameHelperCheck& frameHelper,
-      const X86CallNoReturn& callNoReturn)
+      const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases,
+      bool funclet,
+      bool funcletSehRecord)
 {
     frame.startAddress = codeAddress;
     frame.endAddress   = codeAddress;
@@ -133,9 +151,10 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
     uint64 furthestBranchTarget                                    = 0;
     uint64 endAddress                                              = codeAddress;
     uint32 decodedInstructions                                     = 0;
-    enum class State : uint8 { ExpectPush, ExpectMov, Body } state = State::ExpectPush;
+    enum class State : uint8 { ExpectPush, ExpectMov, Body } state = funclet ? State::Body : State::ExpectPush;
     uint32 helperSetup = 0, helperPushes = 0; // push 0x10; push offset scopetable / mov eax, offset handler before the frame helper
-    bool sehRecord     = false;               // __SEH_prolog4: the SEH record (CPPEH_RECORD) is at [ebp - 0x18]
+    bool sehRecord     = funcletSehRecord;    // __SEH_prolog4: the SEH record (CPPEH_RECORD) is at [ebp - 0x18]
+    bool flowEnd       = false;               // a flow end no branch of the function goes past: EndsAfterFlowEnd
 
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
@@ -145,7 +164,15 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
         const cs_insn* current   = insn.get();
         const cs_x86& x86        = current->detail->x86;
         const uint64 nextAddress = current->address + current->size;
-        endAddress               = nextAddress;
+        if (flowEnd) {
+            bool padding = false;
+            if (EndsAfterFlowEnd(*current, padding))
+                break;
+            if (padding)
+                continue;
+            flowEnd = false;
+        }
+        endAddress = nextAddress;
 
         if (state == State::ExpectPush) {
             if (current->id == X86_INS_PUSH && IsRegisterOperand(x86, 0, frameRegister)) {
@@ -212,6 +239,10 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
             const uint64 target = static_cast<uint64>(x86.operands[0].imm);
             if (target > current->address && target < limitAddress)
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
+        } else if (const auto* cases = IsIndirectJump(*current) && switchCases ? switchCases(*current) : nullptr) {
+            for (const uint64 target : *cases) // the cases of a switch: the code of the function up to the last one
+                if (target > current->address && target < limitAddress)
+                    furthestBranchTarget = std::max(furthestBranchTarget, target);
         }
 
         bool endsFlow = false;
@@ -232,9 +263,9 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
         default:
             break;
         }
-        // the code that follows belongs to the function only when one of its branches reaches it
+        // the code that follows belongs to the function only when one of its branches reaches it (or a computed goto: an endbr64)
         if (endsFlow && furthestBranchTarget < nextAddress)
-            break;
+            flowEnd = true;
     }
 
     if (state != State::Body)
@@ -258,6 +289,35 @@ bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
         frame.variables.push_back(std::move(variable));
     }
     return true;
+}
+} // namespace
+
+bool GView::View::DissasmViewer::AnalyzeX86FunctionFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      DissasmFunctionFrame& frame,
+      const X86FrameHelperCheck& frameHelper,
+      const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases)
+{
+    return AnalyzeFramePointerCode(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, frameHelper, callNoReturn, switchCases, false, false);
+}
+
+bool GView::View::DissasmViewer::AnalyzeX86FuncletFrame(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool sehRecord,
+      DissasmFunctionFrame& frame,
+      const X86CallNoReturn& callNoReturn)
+{
+    return AnalyzeFramePointerCode(detailHandle, code, codeSize, codeAddress, limitAddress, false, frame, {}, callNoReturn, {}, true, sehRecord);
 }
 
 namespace
@@ -287,6 +347,7 @@ StackFrameResult AnalyzeStackPointerFrame(
       DissasmFunctionFrame& frame,
       const X86CalleeStackPurge& calleePurge,
       const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases,
       uint8 reading,
       uint8& ambiguousPushes,
       const ChunkEntry* chunk = nullptr)
@@ -330,6 +391,7 @@ StackFrameResult AnalyzeStackPointerFrame(
     std::optional<int64> accumulator;    // mov eax, 0x2000: eax keeps it through the call __chkstk that follows
     bool accumulatorAfterCall = false;
     bool flowEnded            = false;
+    bool lastFlowEnd          = false; // a flow end no branch of the function goes past: EndsAfterFlowEnd
     bool reachedRet           = false; // 32 bit: a function chunk (the cold code of a function, reached by a jcc) has no ret
     // a dynamic allocation (alloca: sub rsp, rax; the probing loop of GCC: sub rsp, 0x1000 until rsp reaches its end): the depth is not
     // known until the stack pointer is restored from a callee saved alias (lea rsp, [rbp - 0x28]); the slots through rsp are not read there
@@ -401,8 +463,16 @@ StackFrameResult AnalyzeStackPointerFrame(
         const cs_insn* current   = insn.get();
         const cs_x86& x86        = current->detail->x86;
         const uint64 nextAddress = current->address + current->size;
+        if (lastFlowEnd) {
+            bool padding = false;
+            if (EndsAfterFlowEnd(*current, padding))
+                break;
+            if (padding)
+                continue;
+            lastFlowEnd = false;
+        }
         frame.endAddress         = nextAddress;
-        const auto immediate     = [&x86](uint8 index) -> std::optional<int64> {
+        const auto immediate     =[&x86](uint8 index) -> std::optional<int64> {
             return index < x86.op_count && x86.operands[index].type == X86_OP_IMM ? std::optional<int64>(x86.operands[index].imm) : std::nullopt;
         };
         const bool adjustsStack = (current->id == X86_INS_SUB || current->id == X86_INS_ADD) && IsRegisterOperand(x86, 0, stackRegister);
@@ -679,17 +749,21 @@ StackFrameResult AnalyzeStackPointerFrame(
         else
             accumulator.reset();
 
+        // a forward branch: the depth and the aliases at its target
+        const auto recordBranch = [&](uint64 target) {
+            furthestBranchTarget = std::max(furthestBranchTarget, target);
+            // a target reached with an unknown depth stays unknown (whatever the other branches to it)
+            const auto [branch, added] = branchDeltas.emplace(target, std::pair<int64, uint64>(unknownDepth ? UNKNOWN_DEPTH : delta, current->address));
+            if (!added && unknownDepth)
+                branch->second = { UNKNOWN_DEPTH, current->address };
+            unknownBranches |= unknownDepth;
+            if (!aliases.empty())
+                branchAliases.emplace(target, aliases);
+        };
         if (cs_insn_group(detailHandle, current, CS_GRP_JUMP) && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) {
             const uint64 target = static_cast<uint64>(x86.operands[0].imm);
             if (target > current->address && target < limitAddress) {
-                furthestBranchTarget = std::max(furthestBranchTarget, target);
-                // a target reached with an unknown depth stays unknown (whatever the other branches to it)
-                const auto [branch, added] = branchDeltas.emplace(target, std::pair<int64, uint64>(unknownDepth ? UNKNOWN_DEPTH : delta, current->address));
-                if (!added && unknownDepth)
-                    branch->second = { UNKNOWN_DEPTH, current->address };
-                unknownBranches |= unknownDepth;
-                if (!aliases.empty())
-                    branchAliases.emplace(target, aliases);
+                recordBranch(target);
             } else if (target > codeAddress && target <= pageAllocation && is64 && !unknownDepth && aliasKeepsStack() &&
                        probingLoops < MAX_PROBING_LOOPS) {
                 // the probing loop of a dynamic allocation (GCC -fstack-clash-protection: sub rsp, 0x1000; or [rsp + 0xff8], 0; jmp to
@@ -711,6 +785,10 @@ StackFrameResult AnalyzeStackPointerFrame(
                             deepest = std::min<int64>(deepest, known.second);
                 }
             }
+        } else if (const auto* cases = IsIndirectJump(*current) && switchCases ? switchCases(*current) : nullptr) {
+            for (const uint64 target : *cases) // the cases of a switch: reached with the stack of the jump
+                if (target > current->address && target < limitAddress)
+                    recordBranch(target);
         }
         bool endsFlow = false;
         switch (current->id) {
@@ -731,7 +809,7 @@ StackFrameResult AnalyzeStackPointerFrame(
         }
         if (endsFlow) {
             if (furthestBranchTarget < nextAddress && !chunk) // a chunk: its parts up to its end
-                break;
+                lastFlowEnd = true;
             flowEnded = true; // the code after an epilogue: reached through a branch of the body
         }
     }
@@ -765,16 +843,19 @@ bool GView::View::DissasmViewer::AnalyzeX86StackFrame(
       bool is64,
       DissasmFunctionFrame& frame,
       const X86CalleeStackPurge& calleePurge,
-      const X86CallNoReturn& callNoReturn)
+      const X86CallNoReturn& callNoReturn,
+      const X86SwitchCases& switchCases)
 {
     // push ecx at the entry: a local (MSVC: sub esp, 4) or the argument of the first call; push esi after a call: a saved register or an
     // argument. The other readings of the pushes the function has, while the stack stays unbalanced
     uint8 ambiguousPushes = 0;
-    auto result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, 0, ambiguousPushes);
+    auto result =
+          AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, switchCases, 0, ambiguousPushes);
     const uint8 firstAmbiguousPushes = ambiguousPushes;
     for (uint8 reading = 1; reading <= (ENTRY_PUSHES_ARE_ARGUMENTS | LATE_SAVES_ARE_ARGUMENTS) && result == StackFrameResult::Unbalanced; reading++)
         if ((reading & ~firstAmbiguousPushes) == 0)
-            result = AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, reading, ambiguousPushes);
+            result = AnalyzeStackPointerFrame(
+                  detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, switchCases, reading, ambiguousPushes);
     return result == StackFrameResult::Accepted;
 }
 
@@ -791,7 +872,7 @@ bool GView::View::DissasmViewer::AnalyzeX64ChunkFrame(
 {
     uint8 ambiguousPushes = 0;
     const ChunkEntry chunk{ entryDelta, &entryAliases };
-    return AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, true, frame, {}, callNoReturn, 0, ambiguousPushes, &chunk) ==
+    return AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, true, frame, {}, callNoReturn, {}, 0, ambiguousPushes, &chunk) ==
            StackFrameResult::Accepted;
 }
 
