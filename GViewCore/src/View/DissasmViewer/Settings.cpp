@@ -92,6 +92,11 @@ void Settings::AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 func
     entry.chunks.emplace_back(chunkFileOffset, size);
 }
 
+void Settings::AddCodeLocation(uint64 fileOffset)
+{
+    INTERNAL_SETTINGS->codeLocations.insert(fileOffset);
+}
+
 void Settings::AddInstructionBoundary(uint64 fileOffset)
 {
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);

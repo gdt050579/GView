@@ -158,6 +158,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     bool detectLocalVariables;
     std::function<bool(uint64)> isFileAddress;
     const std::map<uint64, DissasmFunctionEntry>* functionEntries;
+    const std::set<uint64>* codeLocations; // Settings::AddCodeLocation (file offsets): never function starts
     std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
     std::function<std::optional<uint64>(uint64)> addressToFileOffset;
 
@@ -303,22 +304,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, std::vector<uint64>> switchCaseTargets; // SwitchCases() once the sweeps end: the frames go on with the cases
     std::vector<uint64> computedGotoTargets; // DemoteComputedGotoTargets: the endbr64 starts that are locations of their function (sorted)
     std::vector<DissasmFunctionChunk> chunks; // DetectFunctionChunks
-    std::vector<DissasmFunctionChunk> coldChunks;         // DetectColdBlocks (in chunks too): their slots on the frame of their function
+    std::vector<DissasmFunctionChunk> coldChunks;         // the chunks the jumps tell, the code locations: their slots on the frame of their function
     std::unordered_multimap<uint64, size_t> coldChunksOf; // the cold chunks of a function (indexes in coldChunks), by its start
     std::vector<uint32> functionApiCategories; // ComputeApiCategories
     size_t labelIndex = 0; // the next label placed on its line
     uint32 extraLines = 0;
 
     DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
-        : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture),
-          detectLocalVariables(initData.enableLocalVariablesDetection),
-          isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), findImport(initData.findImport),
-          addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()),
-          lines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
+        : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture), detectLocalVariables(initData.enableLocalVariablesDetection),
+          isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), codeLocations(initData.codeLocations),
+          findImport(initData.findImport), addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset),
+          codeSize(zone->GetCodeSize()), lines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
           labelBase(zone->labelAddressBase), arch(zone->GetArch()), imageBase(initData.imageBase), instructionSet(zone->instructionSet),
-          walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
-          switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase),
-          arm32Tracker(zone->labelAddressBase, LiteralReader())
+          walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64), switchDetector(is64, zone->labelAddressBase, initData.imageBase),
+          adrpTracker(zone->labelAddressBase), arm32Tracker(zone->labelAddressBase, LiteralReader())
     {
         globalOffsetTable = initData.globalOffsetTable;
     }
@@ -1713,22 +1712,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 return (chunk - 1)->function;
             return std::nullopt;
         };
-        const auto isJump = [](DissasmXrefKind kind) {
-            return kind == DissasmXrefKind::Jump || kind == DissasmXrefKind::ConditionalJump || kind == DissasmXrefKind::Switch;
+        // a jump; the address of a code location taken by the code (lea rdx, loc_X; call _local_unwind: the code goes on there)
+        const auto isJump = [this](const DissasmXref& xref) {
+            return xref.kind == DissasmXrefKind::Jump || xref.kind == DissasmXrefKind::ConditionalJump || xref.kind == DissasmXrefKind::Switch ||
+                   (xref.kind == DissasmXrefKind::Offset && xref.to >= labelBase && IsCodeLocation(xref.to - labelBase));
         };
         struct ColdBlock {
             uint64 start, end;
             std::optional<uint64> owner;
             bool rejected;
         };
-        std::vector<ColdBlock> blocks; // by address, never overlapping
-        for (const auto& xref : xrefs.byTarget) {
-            if (!isJump(xref.kind) || xref.to < labelBase || xref.to - labelBase >= codeSize)
-                continue;
-            const uint64 target = xref.to - labelBase;
-            if ((!blocks.empty() && target < blocks.back().end) || bodyOwner(target).has_value())
-                continue; // inside the previous block (sorted by target), or code of a function
-            // its path: up to a ret / jmp / trap / call that does not return / padding, the next function or chunk
+        // the path from a target: up to a ret / jmp / trap / call that does not return / padding, the next function or chunk
+        const auto pathEnd = [&](uint64 target) {
             const auto nextFunction = std::upper_bound(functionStarts.begin(), functionStarts.end(), target);
             const auto nextChunk    = std::upper_bound(chunks.begin(), chunks.end(), target, [](uint64 value, const auto& item) { return value < item.start; });
             const uint64 limit      = std::min<uint64>(
@@ -1750,9 +1745,25 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     (record.kind == FlowKind::Call && RecordReachesNoReturn(record)))
                     break;
             }
-            if (end > target)
+            return end;
+        };
+        std::vector<ColdBlock> blocks; // by address, never overlapping
+        for (const auto& xref : xrefs.byTarget) {
+            if (!isJump(xref) || xref.to < labelBase || xref.to - labelBase >= codeSize)
+                continue;
+            const uint64 target = xref.to - labelBase;
+            if ((!blocks.empty() && target < blocks.back().end) || bodyOwner(target).has_value())
+                continue; // inside the previous block (sorted by target), or code of a function
+            if (const uint64 end = pathEnd(target); end > target)
                 blocks.push_back({ target, end, std::nullopt, false });
         }
+        // the places the plugin knows inside the code of a function (an EH continuation target after its ret): their path on its frame
+        // too (AddColdChunkSlots: the walks of the frame end at the ret before them), not chunks (the body of the function)
+        if (codeLocations)
+            for (auto location = codeLocations->lower_bound(codeStart); location != codeLocations->end() && *location - codeStart < codeSize; ++location)
+                if (const auto owner = bodyOwner(*location - codeStart); owner.has_value())
+                    if (const uint64 end = pathEnd(*location - codeStart); end > *location - codeStart)
+                        coldChunks.push_back({ *location - codeStart, end, owner.value() });
         if (blocks.empty())
             return;
         const auto blockOf = [&blocks](uint64 address) -> ColdBlock* {
@@ -1768,7 +1779,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             auto from = std::lower_bound(
                   xrefs.byTarget.begin(), xrefs.byTarget.end(), labelBase + block.start, [](const auto& item, uint64 value) { return item.to < value; });
             for (; from != xrefs.byTarget.end() && from->to < labelBase + block.end; ++from) {
-                if (!isJump(from->kind) || from->from < labelBase || from->from - labelBase >= codeSize) {
+                if (!isJump(*from) || from->from < labelBase || from->from - labelBase >= codeSize) {
                     foreign = true; // a call / a taken address / a read: not a tail of a function
                     return owners;
                 }
@@ -1839,6 +1850,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         coldChunksOf.clear();
         for (size_t index = 0; index < coldChunks.size(); index++)
             coldChunksOf.emplace(coldChunks[index].function, index);
+    }
+
+    // a place inside a function that the plugin knows (Settings::AddCodeLocation), relative
+    bool IsCodeLocation(uint64 address) const
+    {
+        return codeLocations && codeLocations->contains(codeStart + address);
     }
 
     // the code whose address is taken (relative): by the code, by a pointer of a data zone (sorted by FinishSweep)
@@ -2424,7 +2441,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             std::sort(addressTakenTargets.begin(), addressTakenTargets.end());
             addressTakenTargets.erase(std::unique(addressTakenTargets.begin(), addressTakenTargets.end()), addressTakenTargets.end());
             for (const uint64 target : addressTakenTargets)
-                if (target < blockStarts.size() && blockStarts[target] && !insideFunctions.contains(target) && LooksLikeCode(target))
+                if (IsCodeLocation(target)) { // a place inside its function (an __except block, the continuation of a local unwind): a label
+                    if (target < codeSize && callsMap.insert({ codeStart + target, true }).second)
+                        callsFound.emplace_back(codeStart + target, zone->GetLabelName("loc_", target));
+                } else if (target < blockStarts.size() && blockStarts[target] && !insideFunctions.contains(target) && LooksLikeCode(target))
                     AddFunctionStart(codeStart + target);
         }
         // the __except blocks of x64 SEH (reached by the unwinding only, after the jmp that ends their __try): a label, as IDA
@@ -2469,6 +2489,14 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 callsMap[call.first]   = true;
             }
         }
+        // the places the plugin knows inside the functions (the EH continuation targets): locations, whatever found them
+        if (codeLocations && !codeLocations->empty())
+            for (auto& call : callsFound)
+                if (call.first >= codeStart && IsCodeLocation(call.first - codeStart) && GetLabelType(call.second) == SUB &&
+                    call.first != zone->zoneDetails.entryPoint && !(functionEntries && functionEntries->contains(call.first))) {
+                    call.second          = zone->GetLabelName("loc_", call.first - codeStart);
+                    callsMap[call.first] = true;
+                }
         if (!IsArmArch(arch))
             DemoteComputedGotoTargets();
 
@@ -3011,6 +3039,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     return; // too many
                 start = walked.endAddress;
             }
+            DissasmFunctionFrame part{}; // the listing: the variables of the function there (a code location is no chunk of it)
+            part.startAddress = chunk.start;
+            part.endAddress   = chunk.end;
+            part.variablesOf  = frame.startAddress;
+            pendingChunkFrames.push_back(std::move(part));
         }
     }
 
@@ -5146,6 +5179,24 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return 1.0f;
     }
 
+    // the last instruction of every chunk (DissasmCodeZone::chunkEnds): not its padding (int3, nop, align)
+    std::unordered_map<uint64, uint64> LastInstructionsOfChunks()
+    {
+        constexpr uint32 MAX_CHUNK_INSTRUCTIONS = 0x10000;
+        std::unordered_map<uint64, uint64> ends;
+        for (const auto& chunk : chunks) {
+            DissasmCodeLinesWalker probe(
+                  obj, codeStart, codeSize, handle, chunk.start, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+            std::optional<uint64> last;
+            for (uint32 count = 0; count < MAX_CHUNK_INSTRUCTIONS && probe.Next(insn) && insn->address < chunk.end; count++)
+                if (insn->id != 0 && (IsArmArch(arch) || (insn->id != X86_INS_INT3 && insn->id != X86_INS_NOP)))
+                    last = insn->address;
+            if (last.has_value())
+                ends[last.value()] = chunk.function;
+        }
+        return ends;
+    }
+
     // the results become the analysis of the zone; the number of lines added to the instructions (labels, local variables)
     uint32 Commit()
     {
@@ -5171,6 +5222,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->imageBaseTables           = std::move(imageBaseTables);
         zone->functionStarts            = std::move(functionStarts);
         zone->functionEnds              = std::move(functionEnds);
+        zone->chunkEnds                 = LastInstructionsOfChunks();
         zone->functionChunks            = std::move(chunks);
         zone->functionApiCategories     = std::move(functionApiCategories);
         zone->inferredPrototypes        = std::move(inferredPrototypes);
@@ -7955,6 +8007,15 @@ DissasmAsmPreCacheLine DissasmCodeZone::BuildExpandedLine(uint32 expandedLine, u
         if (auto marks = FormatExceptionMarks(line.address); !marks.empty()) {
             line.autoComment     = line.autoComment.empty() ? std::move(marks) : marks + "; " + line.autoComment;
             line.constantComment = false; // the comment is not only the constant (the value of an argument) any more
+        }
+    if (!chunkEnds.empty()) // IDA: END OF FUNCTION CHUNK FOR sub_X
+        if (const auto chunkEnd = chunkEnds.find(line.address); chunkEnd != chunkEnds.end()) {
+            std::string function = GetLabelNameAt(chunkEnd->second);
+            if (function.empty())
+                function = GetLabelName("sub_", chunkEnd->second);
+            const std::string mark = "end of chunk of " + function;
+            line.autoComment       = line.autoComment.empty() ? mark : line.autoComment + "; " + mark;
+            line.constantComment   = false;
         }
     lastDrawnLine = instructionIndex;
     return line;

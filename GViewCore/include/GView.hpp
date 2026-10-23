@@ -1882,6 +1882,12 @@ namespace View
              */
             void AddFunctionChunk(uint64 chunkFileOffset, uint64 size, uint64 functionFileOffset, uint8 functionPrologSize);
             /**
+             * \brief A place inside a function where its code goes on, never the start of a function: the targets of the EH continuation
+             * table of the load config (an __except block, the code after a local unwind: _local_unwind receives its address) and of the
+             * longjmp target table. The code that takes its address is its function.
+             */
+            void AddCodeLocation(uint64 fileOffset);
+            /**
              * \brief The name of an import by ordinal (Ordinal:357 of certcli.dll): the name the DLL exports that ordinal under, from its
              * export table. The DLL is the one in the folder of the file (`filePath`), else the one of the system (Windows: SysWOW64 for a
              * 32 bit image on a 64 bit Windows, System32): the names of another version of the DLL may differ. Empty when the DLL is not

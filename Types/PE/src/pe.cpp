@@ -460,16 +460,18 @@ bool ReadCppExceptionFunclets(
 }
 
 // the language specific data of a function with an exception handler (x64 / ARM64) at `handlerData` (the file offset after the RVA of the
-// handler), [begin, end): RVAs. The scope table of __C_specific_handler (a count, then the scopes { begin, end, handler, target }: every
-// scope inside the function, its handler EXCEPTION_EXECUTE_HANDLER (1) or a function of .pdata, its target 0 (__finally) or in the
-// function; `leafHandlers`: ARM64, a filter can be a leaf function without .pdata, a handler in the code), else the FuncInfo of the C++
-// exception handling (the same word is its RVA). The data of another handler (the GS cookie) fails the checks
+// handler), [begin, end): RVAs; `parts`: its other code (x64: the chained entries, its cold code elsewhere), RVA ranges. The scope table of
+// __C_specific_handler (a count, then the scopes { begin, end, handler, target }: every scope inside the function or one of its parts, its
+// handler EXCEPTION_EXECUTE_HANDLER (1) or a function of .pdata, its target 0 (__finally) or in the function; `leafHandlers`: ARM64, a
+// filter can be a leaf function without .pdata, a handler in the code), else the FuncInfo of the C++ exception handling (the same word is
+// its RVA). The data of another handler (the GS cookie) fails the checks
 void AddFunctionExceptionData(
       DissasmViewer::Settings& settings,
       Reference<PE::PEFile> pe,
       GView::Utils::DataCache& data,
       uint32 begin,
       uint32 end,
+      const std::vector<std::pair<uint32, uint32>>& parts,
       uint64 handlerData,
       const std::unordered_set<uint32>& functionStarts,
       uint8 prologSize,
@@ -496,6 +498,15 @@ void AddFunctionExceptionData(
         }
         return false;
     };
+    // the end of the part of the function that contains an RVA (0: none)
+    const auto partEnd = [&](uint32 rva) -> uint32 {
+        if (rva >= begin && rva < end)
+            return end;
+        for (const auto& [partBegin, partLimit] : parts)
+            if (rva >= partBegin && rva < partLimit)
+                return partLimit;
+        return 0;
+    };
     std::vector<DissasmViewer::ExceptionScope> scopes;
     bool valid = scopeCount > 0 && scopeCount <= MAX_SCOPES;
     for (uint32 index = 0; index < scopeCount && valid; index++) {
@@ -504,9 +515,10 @@ void AddFunctionExceptionData(
             valid = false;
             break;
         }
-        valid = scope.BeginAddress >= begin && scope.BeginAddress < scope.EndAddress && scope.EndAddress <= end + 1 &&
+        const uint32 scopePartEnd = partEnd(scope.BeginAddress);
+        valid                     = scopePartEnd != 0 && scope.BeginAddress < scope.EndAddress && scope.EndAddress <= scopePartEnd + 1 &&
                 (scope.HandlerAddress == 1 || functionStarts.contains(scope.HandlerAddress) || (leafHandlers && isCode(scope.HandlerAddress))) &&
-                (scope.JumpTarget == 0 ? scope.HandlerAddress != 1 : scope.JumpTarget >= begin && scope.JumpTarget < end);
+                (scope.JumpTarget == 0 ? scope.HandlerAddress != 1 : partEnd(scope.JumpTarget) != 0);
         if (!valid)
             break;
         const auto scopeBegin = pe->RVAToFA(scope.BeginAddress);
@@ -607,7 +619,7 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
         }
         // the scope tables of __C_specific_handler, the FuncInfo of the C++ exception handling (as x64; no frame register in the data)
         for (const auto& function : handled)
-            AddFunctionExceptionData(settings, pe, data, function.begin, function.end, function.handlerData, functionStarts, 0, 0, 0, true);
+            AddFunctionExceptionData(settings, pe, data, function.begin, function.end, {}, function.handlerData, functionStarts, 0, 0, 0, true);
     }
     // x64 exception data (.pdata): a RUNTIME_FUNCTION for nearly every function that is not a leaf, with its size
     else if (pe->hdr64) {
@@ -708,7 +720,15 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
                 settings.AddFunctionChunk(fa, chunk.end - chunk.begin, functionFa, primaries[chunk.function].prologSize);
         }
 
-        // the language specific data of the functions with a handler: the scope tables of __C_specific_handler, the FuncInfo of C++
+        // the language specific data of the functions with a handler: the scope tables of __C_specific_handler, the FuncInfo of C++; the
+        // scopes can be in the other parts of the function (its cold code)
+        std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> partsOf;
+        for (const auto& [root, end] : functionEnds)
+            if (end > primaries[root].end)
+                partsOf[root].emplace_back(primaries[root].end, end);
+        for (const auto& chunk : chunks)
+            partsOf[chunk.function].emplace_back(chunk.begin, chunk.end);
+        const std::vector<std::pair<uint32, uint32>> noParts;
         for (const auto& function : handled) {
             const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
             struct UnwindHeader {
@@ -717,8 +737,20 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
             if (!data.Copy<UnwindHeader>(unwindInfo, header))
                 continue;
             const uint64 handlerData = unwindInfo + 4 + 2ull * ((header.codeCount + 1u) & ~1u) + 4; // the codes (an even count), the handler RVA
+            const auto parts         = partsOf.find(function.BeginAddress);
             AddFunctionExceptionData(
-                  settings, pe, data, function.BeginAddress, function.EndAddress, handlerData, functionStarts, header.prologSize, header.frame & 0xF, header.frame >> 4, false);
+                  settings,
+                  pe,
+                  data,
+                  function.BeginAddress,
+                  function.EndAddress,
+                  parts != partsOf.end() ? parts->second : noParts,
+                  handlerData,
+                  functionStarts,
+                  header.prologSize,
+                  header.frame & 0xF,
+                  header.frame >> 4,
+                  false);
         }
     }
 
@@ -1045,22 +1077,28 @@ void AddDissasmLoadConfig(DissasmViewer::Settings& settings, Reference<PE::PEFil
         struct GuardTable {
             uint32 table32, table64, count32, count64;
             std::string_view entry;
+            bool locations; // the targets are places inside the functions (Settings::AddCodeLocation)
         };
         constexpr GuardTable tables[] = {
-            { 80, 128, 84, 136, "function" },
-            { 104, 160, 108, 168, "iat entry" },
-            { 112, 176, 116, 184, "longjmp target" },
-            { 164, 264, 168, 272, "eh continuation" },
+            { 80, 128, 84, 136, "function", false },
+            { 104, 160, 108, 168, "iat entry", false },
+            { 112, 176, 116, 184, "longjmp target", true },
+            { 164, 264, 168, 272, "eh continuation", true },
         };
         for (const auto& table : tables) {
             const uint64 tableVA = readField(table.table32, table.table64);
             const uint64 count   = readField(table.count32, table.count64);
             if (tableVA <= pe->imageBase || count > MAX_TABLE_ENTRIES)
                 continue;
+            const auto tableFa = table.locations ? pe->RVAToFA(tableVA - pe->imageBase) : PE_INVALID_ADDRESS;
             for (uint64 index = 0; index < count; index++) {
                 settings.AddDataField(tableVA + index * entrySize, 4, DissasmViewer::DataFieldType::RVA, table.entry);
                 if (entrySize > 4)
                     settings.AddDataField(tableVA + index * entrySize + 4, entrySize - 4, DissasmViewer::DataFieldType::Value, "flags");
+                uint32 rva = 0;
+                if (tableFa != PE_INVALID_ADDRESS && data.Copy<uint32>(tableFa + index * entrySize, rva))
+                    if (const auto fa = pe->RVAToFA(rva); fa != PE_INVALID_ADDRESS)
+                        settings.AddCodeLocation(fa);
             }
         }
     }

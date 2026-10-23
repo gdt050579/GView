@@ -242,6 +242,9 @@ struct DissasmCodeZone : public ParseZone {
     uint64 GetFunctionEnd(uint64 functionStart) const;
     // the chunks of the functions (DissasmFunctionChunk), sorted by start; the chunk that contains an address
     std::vector<DissasmFunctionChunk> functionChunks;
+    // the last instruction of every chunk (relative, its padding excluded) -> its function: the listing ends the chunk there (IDA: END OF
+    // FUNCTION CHUNK FOR sub_X)
+    std::unordered_map<uint64, uint64> chunkEnds;
     // the categories of the APIs every function of functionStarts calls / jumps to directly (DissasmApiCategory, the same index)
     std::vector<uint32> functionApiCategories;
     // 32 bit x86: the bytes the functions take from the stack of their callers (ret 8 -> 8; 0: a function that reads no stack argument),

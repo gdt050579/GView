@@ -284,6 +284,7 @@ struct ZoneLayout {
     std::optional<uint64> labelAddressBase; // the VA of the zone start (the plugins with an offset translation)
     std::function<bool(uint64)> isFileAddress; // the addresses of the file (cross references of the immediates)
     std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
+    std::set<uint64> codeLocations;                         // the places inside the functions given by the plugin (AddCodeLocation)
     std::unordered_map<uint64, MemoryMappingEntry> imports;  // the imports by the RVA of their slot (the VA for x86 without translation)
     bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
     std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
@@ -384,6 +385,7 @@ class DissasmTestInstance
         initData.labelAddressBase             = layout.labelAddressBase;
         initData.isFileAddress                = layout.isFileAddress;
         initData.functionEntries              = &layout.functionEntries;
+        initData.codeLocations                = &layout.codeLocations;
         if (layout.translateOffsets)
             settingsData.offsetTranslateCallback = &translation;
         settingsData.memoryMappings = layout.imports;
@@ -8999,6 +9001,62 @@ TEST_CASE("X64ExceptionScopes", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000089  mov    dword ptr [rbp - 0x10 + var_4], 0").size() > 0);
 }
 
+TEST_CASE("X64ExceptionScopesInChunks", "[Dissasm]Help")
+{
+    // x64 SEH in the cold code of a function (a chunk of the chained unwind data): the __try, its __except block and the scope all in the
+    // chunk, the filter on the frame of the function
+    std::vector<unsigned char> file = {
+        0x53,                               // 0x00: push rbx
+        0x48, 0x83, 0xEC, 0x30,             // 0x01: sub rsp, 0x30
+        0x85, 0xC9,                         // 0x05: test ecx, ecx
+        0x0F, 0x85, 0x93, 0x00, 0x00, 0x00, // 0x07: jne 0xa0                     (the chunk)
+        0x8B, 0x44, 0x24, 0x20,             // 0x0d: mov eax, dword ptr [rsp + 0x20] (the slot -0x18)
+        0x48, 0x83, 0xC4, 0x30,             // 0x11: add rsp, 0x30
+        0x5B,                               // 0x15: pop rbx
+        0xC3,                               // 0x16: ret
+    };
+    file.resize(0x30, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,                   // 0x30: push rbp                       (the filter)
+                                  0x48, 0x83, 0xEC, 0x20, // 0x31: sub rsp, 0x20
+                                  0x48, 0x8B, 0xEA,       // 0x35: mov rbp, rdx                   (the establisher frame)
+                                  0x8B, 0x45, 0x20,       // 0x38: mov eax, dword ptr [rbp + 0x20] (the slot -0x18 of 0x00)
+                                  0x48, 0x83, 0xC4, 0x20, // 0x3b: add rsp, 0x20
+                                  0x5D,                   // 0x3f: pop rbp
+                                  0xC3,                   // 0x40: ret
+                            });
+    file.resize(0xA0, 0xCC);
+    file.insert(file.end(), {
+                                  0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00, // 0xa0: mov dword ptr [rsp + 0x20], 0 (__try)
+                                  0xFF, 0x15, 0x52, 0x01, 0x00, 0x00,             // 0xa8: call qword ptr [rip + 0x152] (Sleep: 0x200)
+                                  0xEB, 0x05,                                     // 0xae: jmp 0xb5
+                                  0xB8, 0x01, 0x00, 0x00, 0x00,                   // 0xb0: mov eax, 1                     (__except)
+                                  0xE9, 0x53, 0xFF, 0xFF, 0xFF,                   // 0xb5: jmp 0x0d
+                            });
+    file.resize(0x220, 0xCC);
+    ZoneLayout layout;
+    layout.size             = 0x200;
+    layout.entryPoint       = 0x00;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x200, { "Sleep", MemoryMappingType::FunctionMapping } } };
+    layout.functionEntries  = {
+        { 0x00, { "", 0x17, false, { { 0xa0, 0xae, 0x30, 0xb0 } }, 5, 0, 0, {}, { { 0xa0, 0x1a } } } }, // the scope in the chunk
+        { 0x30, { "", 0x11, false } },
+    };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.GetLabelNameAt(0x30) == zone.GetLabelNameAt(0x00) + "$filt$0");
+    REQUIRE(zone.GetFunctionContaining(0xb0) == 0x0ull);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const std::string filter = zone.GetLabelNameAt(0x30);
+    REQUIRE(FindListingLine(listing, "0x000000a0  mov    dword ptr [rsp + 0x38 + var_18], 0").find("__try { // __except at " + zone.GetLabelNameAt(0xb0)) !=
+            std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x000000b0  mov").find("__except(" + filter + ") // owned by ") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000038  mov    eax, dword ptr [rbp + 0x38 + var_18]").size() > 0);
+}
+
 TEST_CASE("X86StackPointerOfFrameRegisterFunctions", "[Dissasm]Help")
 {
     // a frame register function (MSVC x86, an aligned frame): the locals through esp in the offsets of ebp (the alignment as no change)
@@ -9356,7 +9414,9 @@ TEST_CASE("ColdBlockChunks", "[Dissasm]Help")
     REQUIRE(listing.find("Chunk of EntryPoint; xref: EntryPoint+0x8 (jcc)") != std::string::npos);
     REQUIRE(FindListingLine(listing, "0x00000040  mov    eax, dword ptr [ebp + var_8]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000043  mov    dword ptr [ebp + var_4], eax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000046  jmp").find("end of chunk of EntryPoint") != std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000050  mov    eax, dword ptr [ebp - 0xc]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000053  jmp").find("end of chunk") == std::string_view::npos); // nobody's
 
     // x64 without a frame register: the depth of the stack at the jump to the block
     std::vector<unsigned char> x64 = {
@@ -9386,6 +9446,49 @@ TEST_CASE("ColdBlockChunks", "[Dissasm]Help")
     const std::string stackListing = stackInstance.GetListing();
     INFO(stackListing);
     REQUIRE(FindListingLine(stackListing, "0x00000040  mov    dword ptr [rsp + 0x28 + var_8], edx").size() > 0);
+}
+
+TEST_CASE("X64CodeLocations", "[Dissasm]Help")
+{
+    // a place inside a function the plugin knows (the EH continuation table of the load config): its address taken for the unwinding (lea
+    // rdx, loc_40; call _local_unwind), it starts a block after the padding: a location of the function, on its frame, not a function
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,                   // 0x00: sub rsp, 0x28
+        0x48, 0x89, 0x4C, 0x24, 0x30,             // 0x04: mov qword ptr [rsp + 0x30], rcx (arg_0)
+        0x48, 0x8D, 0x15, 0x30, 0x00, 0x00, 0x00, // 0x09: lea rdx, [rip + 0x30]             (0x40: where the code goes on)
+        0xE8, 0x6B, 0x00, 0x00, 0x00,             // 0x10: call 0x80                         (the local unwind)
+        0x48, 0x83, 0xC4, 0x28,                   // 0x15: add rsp, 0x28
+        0xC3,                                     // 0x19: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x8B, 0x44, 0x24, 0x20, // 0x40: mov eax, dword ptr [rsp + 0x20] (var_8)
+                                  0xEB, 0xCF,             // 0x44: jmp 0x15
+                            });
+    file.resize(0x80, 0xCC);
+    file.push_back(0xC3); // 0x80: ret
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size          = file.size();
+    layout.entryPoint    = 0;
+    layout.language      = DisassemblyLanguage::x64;
+    layout.codeLocations = { 0x40 };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x80 });
+    REQUIRE(zone.GetLabelNameAt(0x40) == "loc_40");
+    REQUIRE(zone.functionChunks.empty()); // the code of the function: its end reaches it (its address taken), its frame walk does not
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(CheckFrameVariables(*frame, { { -8, 4, "var_8" }, { 8, 8, "arg_0" } }));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000040  mov    eax, dword ptr [rsp + 0x28 + var_8]").size() > 0);
+
+    // without the location: a function (the code whose address is taken, at the start of a block)
+    layout.codeLocations.clear();
+    DissasmTestInstance withoutLocation(file.data(), file.size(), true, layout);
+    REQUIRE(withoutLocation.zone->functionStarts == std::vector<uint64>{ 0x00, 0x40, 0x80 });
 }
 
 TEST_CASE("PluginFunctionParts", "[Dissasm]Help")
@@ -9445,6 +9548,9 @@ TEST_CASE("PluginFunctionParts", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "f.cold:").find("Chunk of f; xref: f+0xA (jcc)") != std::string_view::npos);
     REQUIRE(FindListingLine(listing, "loc_60:").find("Chunk of f") != std::string_view::npos);
     REQUIRE(FindListingLine(listing, "0x00000063  mov    qword ptr [rbp + var_18], rcx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000048  ud2").find("end of chunk of f") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000067  jmp").find("end of chunk of f") != std::string_view::npos);
+    REQUIRE(zone.chunkEnds.size() == 2);
     REQUIRE(listing.find("\nsub_80:") != std::string::npos);
 }
 

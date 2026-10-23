@@ -1723,6 +1723,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.globalOffsetTable     = settings->globalOffsetTable;
     initData.armCodeModes          = &settings->armCodeModes;
     initData.relocatedPointers     = &settings->relocatedPointers;
+    initData.codeLocations         = &settings->codeLocations;
     initData.memoryMappings        = &settings->memoryMappings;
     initData.dataFields            = &settings->dataFields;
     if (!settings->memoryMappings.empty()) {

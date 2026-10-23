@@ -6,6 +6,7 @@
 #include <utility>
 #include <deque>
 #include <optional>
+#include <set>
 #include <chrono>
 #include <list>
 #include <cassert>
@@ -622,6 +623,8 @@ namespace View
             const std::map<uint64, ArmCodeMode>* armCodeModes = nullptr;
             // the pointers the loader writes, by file offset (SettingsData::relocatedPointers); can be null
             const std::map<uint64, uint64>* relocatedPointers = nullptr;
+            // the places inside the functions that are never function starts, by file offset (SettingsData::codeLocations); can be null
+            const std::set<uint64>* codeLocations = nullptr;
             // the fields of the structures of the data, by VA; can be null
             const std::map<uint64, DissasmDataField>* dataFields = nullptr;
             // the named places of the plugin (imports, Objective-C references), keyed by RVA (by VA without an offset translation); can be null
@@ -674,6 +677,7 @@ namespace View
             std::optional<uint64> globalOffsetTable;                         // 32 bit x86 PIC: the value of ebx in the PLT stubs
             std::map<uint64, ArmCodeMode> armCodeModes;                     // 32 bit ARM: the mode from a file offset on
             std::map<uint64, uint64> relocatedPointers;                     // the pointers the loader writes (file offset -> VA)
+            std::set<uint64> codeLocations;                                 // Settings::AddCodeLocation: never function starts (file offsets)
             // Mach-O LC_DYLD_CHAINED_FIXUPS (Settings::AddChainedFixups): decoded into relocatedPointers / memoryMappings when the viewer
             // (or the headless analysis) takes the settings
             std::vector<uint8> chainedFixups;
