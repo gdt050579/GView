@@ -4,6 +4,7 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <set>
 
 using namespace GView::View::DissasmViewer;
 
@@ -313,11 +314,12 @@ bool GView::View::DissasmViewer::AnalyzeX86FuncletFrame(
       size_t codeSize,
       uint64 codeAddress,
       uint64 limitAddress,
+      bool is64,
       bool sehRecord,
       DissasmFunctionFrame& frame,
       const X86CallNoReturn& callNoReturn)
 {
-    return AnalyzeFramePointerCode(detailHandle, code, codeSize, codeAddress, limitAddress, false, frame, {}, callNoReturn, {}, true, sehRecord);
+    return AnalyzeFramePointerCode(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, {}, callNoReturn, {}, true, sehRecord);
 }
 
 namespace
@@ -336,7 +338,16 @@ struct ChunkEntry {
     const std::vector<DissasmFunctionFrame::StackAlias>* aliases;
 };
 
-// AnalyzeX86StackFrame with a reading of the ambiguous pushes; `ambiguousPushes` receives the readings that the function needs
+// the cases of a switch placed before their jump, reached by the walk after a ret / jmp with a guessed depth (the deepest one): the depth
+// and the aliases of the stack pointer at the jump (by the address of the case), for a second walk
+struct LateCase {
+    int64 delta;
+    std::vector<std::pair<x86_reg, int64>> aliases;
+};
+using LateCases = std::map<uint64, LateCase>;
+
+// AnalyzeX86StackFrame with a reading of the ambiguous pushes; `ambiguousPushes` receives the readings that the function needs; `late`
+// receives the cases of the switches the walk reached before their jump, `seeds` gives them to a second walk
 StackFrameResult AnalyzeStackPointerFrame(
       csh detailHandle,
       const uint8* code,
@@ -350,7 +361,9 @@ StackFrameResult AnalyzeStackPointerFrame(
       const X86SwitchCases& switchCases,
       uint8 reading,
       uint8& ambiguousPushes,
-      const ChunkEntry* chunk = nullptr)
+      const ChunkEntry* chunk = nullptr,
+      const LateCases* seeds  = nullptr,
+      LateCases* late         = nullptr)
 {
     frame.startAddress      = codeAddress;
     frame.endAddress        = codeAddress;
@@ -458,6 +471,17 @@ StackFrameResult AnalyzeStackPointerFrame(
             }
     };
     openAliases(chunkAliases, codeAddress);
+    // a second walk: the cases before their jump get the depth and the aliases of the jump, as the targets of the forward branches
+    std::set<uint64> guessedStarts; // the code after a ret / jmp that no branch seen before reaches: its depth guessed
+    if (seeds)
+        for (const auto& [target, seed] : *seeds) {
+            branchDeltas.emplace(target, std::pair<int64, uint64>(seed.delta, target));
+            std::vector<ActiveAlias> opened;
+            for (const auto& [reg, aliasDelta] : seed.aliases)
+                opened.push_back({ reg, aliasDelta, 0 });
+            if (!opened.empty())
+                branchAliases.emplace(target, std::move(opened));
+        }
     while (decodedInstructions < MAX_FUNCTION_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get())) {
         decodedInstructions++;
         const cs_insn* current   = insn.get();
@@ -472,7 +496,7 @@ StackFrameResult AnalyzeStackPointerFrame(
             lastFlowEnd = false;
         }
         frame.endAddress         = nextAddress;
-        const auto immediate     =[&x86](uint8 index) -> std::optional<int64> {
+        const auto immediate     = [&x86](uint8 index) -> std::optional<int64> {
             return index < x86.op_count && x86.operands[index].type == X86_OP_IMM ? std::optional<int64>(x86.operands[index].imm) : std::nullopt;
         };
         const bool adjustsStack = (current->id == X86_INS_SUB || current->id == X86_INS_ADD) && IsRegisterOperand(x86, 0, stackRegister);
@@ -488,6 +512,8 @@ StackFrameResult AnalyzeStackPointerFrame(
         if (flowEnded) {
             // a chunk: the next part is reached from the body of the function, with its depth
             const auto known = branchDeltas.find(current->address);
+            if (known == branchDeltas.end() && !chunk)
+                guessedStarts.insert(current->address);
             if (known != branchDeltas.end() && known->second.first == UNKNOWN_DEPTH)
                 setUnknownDepth(current->address);
             else
@@ -786,9 +812,17 @@ StackFrameResult AnalyzeStackPointerFrame(
                 }
             }
         } else if (const auto* cases = IsIndirectJump(*current) && switchCases ? switchCases(*current) : nullptr) {
-            for (const uint64 target : *cases) // the cases of a switch: reached with the stack of the jump
+            for (const uint64 target : *cases) { // the cases of a switch: reached with the stack of the jump
                 if (target > current->address && target < limitAddress)
                     recordBranch(target);
+                else if (late && !unknownDepth && target >= codeAddress && target < current->address && guessedStarts.contains(target)) {
+                    auto& lateCase = (*late)[target];
+                    lateCase.delta = delta;
+                    lateCase.aliases.clear();
+                    for (const auto& alias : aliases)
+                        lateCase.aliases.emplace_back(alias.reg, alias.delta);
+                }
+            }
         }
         bool endsFlow = false;
         switch (current->id) {
@@ -849,14 +883,69 @@ bool GView::View::DissasmViewer::AnalyzeX86StackFrame(
     // push ecx at the entry: a local (MSVC: sub esp, 4) or the argument of the first call; push esi after a call: a saved register or an
     // argument. The other readings of the pushes the function has, while the stack stays unbalanced
     uint8 ambiguousPushes = 0;
-    auto result =
-          AnalyzeStackPointerFrame(detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, switchCases, 0, ambiguousPushes);
+    LateCases late;
+    uint8 accepted = 0;
+    auto result    = AnalyzeStackPointerFrame(
+          detailHandle,
+          code,
+          codeSize,
+          codeAddress,
+          limitAddress,
+          is64,
+          frame,
+          calleePurge,
+          callNoReturn,
+          switchCases,
+          0,
+          ambiguousPushes,
+          nullptr,
+          nullptr,
+          &late);
     const uint8 firstAmbiguousPushes = ambiguousPushes;
     for (uint8 reading = 1; reading <= (ENTRY_PUSHES_ARE_ARGUMENTS | LATE_SAVES_ARE_ARGUMENTS) && result == StackFrameResult::Unbalanced; reading++)
-        if ((reading & ~firstAmbiguousPushes) == 0)
-            result = AnalyzeStackPointerFrame(
-                  detailHandle, code, codeSize, codeAddress, limitAddress, is64, frame, calleePurge, callNoReturn, switchCases, reading, ambiguousPushes);
-    return result == StackFrameResult::Accepted;
+        if ((reading & ~firstAmbiguousPushes) == 0) {
+            late.clear();
+            accepted = reading;
+            result   = AnalyzeStackPointerFrame(
+                  detailHandle,
+                  code,
+                  codeSize,
+                  codeAddress,
+                  limitAddress,
+                  is64,
+                  frame,
+                  calleePurge,
+                  callNoReturn,
+                  switchCases,
+                  reading,
+                  ambiguousPushes,
+                  nullptr,
+                  nullptr,
+                  &late);
+        }
+    if (result != StackFrameResult::Accepted)
+        return false;
+    // the cases of a switch placed before their jump: the walk again, their depth the one of the jump
+    if (!late.empty()) {
+        DissasmFunctionFrame again{};
+        if (AnalyzeStackPointerFrame(
+                  detailHandle,
+                  code,
+                  codeSize,
+                  codeAddress,
+                  limitAddress,
+                  is64,
+                  again,
+                  calleePurge,
+                  callNoReturn,
+                  switchCases,
+                  accepted,
+                  ambiguousPushes,
+                  nullptr,
+                  &late) == StackFrameResult::Accepted)
+            frame = std::move(again);
+    }
+    return true;
 }
 
 bool GView::View::DissasmViewer::AnalyzeX64ChunkFrame(

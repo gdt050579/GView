@@ -9287,7 +9287,7 @@ TEST_CASE("X86FuncletFrames", "[Dissasm]Help")
     // the walk of a funclet: no prologue, its slots through ebp up to its end
     DetailHandle x86(CS_MODE_32);
     DissasmFunctionFrame funclet{};
-    REQUIRE(AnalyzeX86FuncletFrame(x86.handle, file.data() + 0x13, 0x2d, 0x13, 0x40, false, funclet));
+    REQUIRE(AnalyzeX86FuncletFrame(x86.handle, file.data() + 0x13, 0x2d, 0x13, 0x40, false, false, funclet));
     REQUIRE(funclet.endAddress == 0x1c);
     REQUIRE(CheckFrameVariables(funclet, { { -0x14, 4, "var_14" } }));
     // the fields of the SEH record of the function (__SEH_prolog4): named as in its frame
@@ -9296,8 +9296,156 @@ TEST_CASE("X86FuncletFrames", "[Dissasm]Help")
         0x8B, 0x00,       // mov eax, dword ptr [eax]
         0xC3,             // ret
     };
-    REQUIRE(AnalyzeX86FuncletFrame(x86.handle, filter.data(), filter.size(), 0, filter.size(), true, funclet));
+    REQUIRE(AnalyzeX86FuncletFrame(x86.handle, filter.data(), filter.size(), 0, filter.size(), false, true, funclet));
     REQUIRE(CheckFrameVariables(funclet, { { -0x14, 4, "ms_exc.exc_ptr" } }));
+}
+
+TEST_CASE("ColdBlockChunks", "[Dissasm]Help")
+{
+    // the cold code of MSVC: a block after another function that only the jumps of one function reach is a chunk of it, on its frame (a
+    // slot only the block uses); a block the jumps of two functions reach is nobody's
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push ebp
+        0x8B, 0xEC,                         // 0x01: mov ebp, esp
+        0x89, 0x4D, 0xFC,                   // 0x03: mov dword ptr [ebp - 4], ecx (var_4)
+        0x85, 0xC9,                         // 0x06: test ecx, ecx
+        0x0F, 0x85, 0x32, 0x00, 0x00, 0x00, // 0x08: jne 0x40
+        0x0F, 0x84, 0x3C, 0x00, 0x00, 0x00, // 0x0e: je 0x50
+        0x5D,                               // 0x14: pop ebp
+        0xC3,                               // 0x15: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,       // 0x20: push ebp (another function)
+                                  0x8B, 0xEC, // 0x21: mov ebp, esp
+                                  0x5D,       // 0x23: pop ebp
+                                  0xC3,       // 0x24: ret
+                            });
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x8B, 0x45, 0xF8, // 0x40: mov eax, dword ptr [ebp - 8] (the cold block of sub_0: var_8)
+                                  0x89, 0x45, 0xFC, // 0x43: mov dword ptr [ebp - 4], eax
+                                  0xEB, 0xCC,       // 0x46: jmp 0x14
+                            });
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), {
+                                  0x8B, 0x45, 0xF4, // 0x50: mov eax, dword ptr [ebp - 0xc] (reached by sub_0 and sub_60)
+                                  0xEB, 0xBF,       // 0x53: jmp 0x14
+                            });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), {
+                                  0x55,       // 0x60: push ebp (a third function)
+                                  0x8B, 0xEC, // 0x61: mov ebp, esp
+                                  0xEB, 0xEB, // 0x63: jmp 0x50
+                            });
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::x86;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x60 });
+    REQUIRE(zone.functionChunks == std::vector<DissasmFunctionChunk>{ { 0x40, 0x48, 0x00 } });
+    REQUIRE(zone.GetFunctionContaining(0x43) == 0x0ull);
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(CheckFrameVariables(*frame, { { -8, 4, "var_8" }, { -4, 4, "var_4" } }));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("Chunk of EntryPoint; xref: EntryPoint+0x8 (jcc)") != std::string::npos);
+    REQUIRE(FindListingLine(listing, "0x00000040  mov    eax, dword ptr [ebp + var_8]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000043  mov    dword ptr [ebp + var_4], eax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000050  mov    eax, dword ptr [ebp - 0xc]").size() > 0);
+
+    // x64 without a frame register: the depth of the stack at the jump to the block
+    std::vector<unsigned char> x64 = {
+        0x48, 0x83, 0xEC, 0x28,             // 0x00: sub rsp, 0x28
+        0x48, 0x89, 0x4C, 0x24, 0x30,       // 0x04: mov qword ptr [rsp + 0x30], rcx (arg_0)
+        0x85, 0xC9,                         // 0x09: test ecx, ecx
+        0x0F, 0x85, 0x2F, 0x00, 0x00, 0x00, // 0x0b: jne 0x40
+        0x48, 0x83, 0xC4, 0x28,             // 0x11: add rsp, 0x28
+        0xC3,                               // 0x15: ret
+    };
+    x64.resize(0x20, 0xCC);
+    x64.insert(x64.end(), { 0x48, 0x83, 0xEC, 0x28, 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x20: sub rsp, 0x28; add rsp, 0x28; ret
+    x64.resize(0x40, 0xCC);
+    x64.insert(x64.end(), {
+                                0x89, 0x54, 0x24, 0x20, // 0x40: mov dword ptr [rsp + 0x20], edx (var_8)
+                                0xEB, 0xCB,             // 0x44: jmp 0x11
+                          });
+    x64.resize(0x200, 0xCC);
+    layout.size     = x64.size();
+    layout.language = DisassemblyLanguage::x64;
+    DissasmTestInstance stackInstance(x64.data(), x64.size(), true, layout);
+    const auto& stackZone = *stackInstance.zone;
+    REQUIRE(stackZone.functionChunks == std::vector<DissasmFunctionChunk>{ { 0x40, 0x46, 0x00 } });
+    const auto* stackFrame = stackZone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(stackFrame != nullptr);
+    REQUIRE(CheckFrameVariables(*stackFrame, { { -8, 4, "var_8" }, { 8, 8, "arg_0" } }));
+    const std::string stackListing = stackInstance.GetListing();
+    INFO(stackListing);
+    REQUIRE(FindListingLine(stackListing, "0x00000040  mov    dword ptr [rsp + 0x28 + var_8], edx").size() > 0);
+}
+
+TEST_CASE("PluginFunctionParts", "[Dissasm]Help")
+{
+    // the functions of the plugin that are parts of another one: a cold partition of GCC (f.cold, it ends with a trap), an entry of the
+    // unwind data that uses the callee saved registers of its function (mov rcx, rbx); an entry with a prologue stays a function
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push rbp                      (f)
+        0x48, 0x89, 0xE5,                   // 0x01: mov rbp, rsp
+        0x48, 0x89, 0x7D, 0xF8,             // 0x04: mov qword ptr [rbp - 8], rdi  (var_8)
+        0x85, 0xFF,                         // 0x08: test edi, edi
+        0x0F, 0x84, 0x30, 0x00, 0x00, 0x00, // 0x0a: je 0x40
+        0x0F, 0x88, 0x4A, 0x00, 0x00, 0x00, // 0x10: js 0x60
+        0x5D,                               // 0x16: pop rbp
+        0xE9, 0x64, 0x00, 0x00, 0x00,       // 0x17: jmp 0x80                      (a tail call)
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x48, 0x8B, 0x7D, 0xF8, // 0x40: mov rdi, qword ptr [rbp - 8]    (f.cold)
+                                  0x48, 0x89, 0x7D, 0xF0, // 0x44: mov qword ptr [rbp - 0x10], rdi (var_10)
+                                  0x0F, 0x0B,             // 0x48: ud2
+                            });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), {
+                                  0x48, 0x89, 0xD9,       // 0x60: mov rcx, rbx                    (rbx of f)
+                                  0x48, 0x89, 0x4D, 0xE8, // 0x63: mov qword ptr [rbp - 0x18], rcx (var_18)
+                                  0xEB, 0xAD,             // 0x67: jmp 0x16
+                            });
+    file.resize(0x80, 0xCC);
+    file.insert(file.end(), {
+                                  0x53,                   // 0x80: push rbx       (a function)
+                                  0x48, 0x83, 0xEC, 0x20, // 0x81: sub rsp, 0x20
+                                  0x83, 0xCB, 0xFF,       // 0x85: or ebx, -1     (writes ebx only)
+                                  0x89, 0xD8,             // 0x88: mov eax, ebx
+                                  0x48, 0x83, 0xC4, 0x20, // 0x8a: add rsp, 0x20
+                                  0x5B,                   // 0x8e: pop rbx
+                                  0xC3,                   // 0x8f: ret
+                            });
+    file.resize(0x100, 0xCC);
+    file.push_back(0xC3); // 0x100: ret (the entry point)
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0x100;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x00, { "f", 0, false } }, { 0x40, { "f.cold", 0, false } }, { 0x60, { "", 0, false } }, { 0x80, { "", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x80, 0x100 });
+    REQUIRE(zone.functionChunks == std::vector<DissasmFunctionChunk>{ { 0x40, 0x4a, 0x00 }, { 0x60, 0x69, 0x00 } });
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x18, 8, "var_18" }, { -0x10, 8, "var_10" }, { -8, 8, "var_8" } }));
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(listing.find("f.cold:") != std::string::npos);
+    REQUIRE(FindListingLine(listing, "f.cold:").find("Chunk of f; xref: f+0xA (jcc)") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "loc_60:").find("Chunk of f") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000063  mov    qword ptr [rbp + var_18], rcx").size() > 0);
+    REQUIRE(listing.find("\nsub_80:") != std::string::npos);
 }
 
 TEST_CASE("X86ReturnAddressSlot", "[Dissasm]Help")
@@ -9609,6 +9757,44 @@ TEST_CASE("X86SwitchCaseFrames", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x00000028  mov    dword ptr [rbp + var_8], 1").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000038  mov    dword ptr [rbp + var_C], 2").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000048  mov    qword ptr [rbp + var_18], rsi").size() > 0);
+}
+
+TEST_CASE("X64SwitchCasesBeforeTheJump", "[Dissasm]Help")
+{
+    // a case of a switch placed before its jump: the walk reaches it after a jmp with a guessed depth (the deepest one: the pushes of a call
+    // made it 0x38), the second walk gives it the depth of the jump (0x28)
+    const std::vector<unsigned char> code = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28                     (-0x28)
+        0x6A, 0x01,                   // 0x04: push 1                            (-0x30)
+        0x6A, 0x02,                   // 0x06: push 2                            (-0x38)
+        0xE8, 0x53, 0x00, 0x00, 0x00, // 0x08: call 0x60
+        0x48, 0x83, 0xC4, 0x10,       // 0x0d: add rsp, 0x10                     (-0x28)
+        0x89, 0xC8,                   // 0x11: mov eax, ecx
+        0xEB, 0x0B,                   // 0x13: jmp 0x20
+        0x89, 0x4C, 0x24, 0x20,       // 0x15: mov dword ptr [rsp + 0x20], ecx   (case 0: var_8)
+        0x48, 0x83, 0xC4, 0x28,       // 0x19: add rsp, 0x28
+        0xC3,                         // 0x1d: ret
+        0xCC, 0xCC,                   // 0x1e
+        0x83, 0xF8, 0x01,             // 0x20: cmp eax, 1
+        0x77, 0xF4,                   // 0x23: ja 0x19
+        0x48, 0x8D, 0x15, 0x30, 0x00, 0x00, 0x00, // 0x25: lea rdx, [rip + 0x30] (the table)
+        0x48, 0x63, 0x04, 0x82,       // 0x2c: movsxd rax, dword ptr [rdx + rax*4]
+        0x48, 0x01, 0xD0,             // 0x30: add rax, rdx
+        0xFF, 0xE0,                   // 0x33: jmp rax
+        0x89, 0x54, 0x24, 0x20,       // 0x35: mov dword ptr [rsp + 0x20], edx   (case 1: var_8)
+        0xEB, 0xDE,                   // 0x39: jmp 0x19
+    };
+    DetailHandle x64(CS_MODE_64);
+    const std::vector<uint64> cases = { 0x15, 0x35 };
+    const X86SwitchCases switchCases = [&cases](const cs_insn& jump) { return jump.address == 0x33 ? &cases : nullptr; };
+    DissasmFunctionFrame frame{};
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, code.data(), code.size(), 0, code.size(), true, frame));
+    REQUIRE(CheckFrameVariables(frame, { { -0x18, 4, "var_18" } })); // the guess: the deepest depth, then the end at the jump
+    REQUIRE(AnalyzeX86StackFrame(x64.handle, code.data(), code.size(), 0, code.size(), true, frame, {}, {}, switchCases));
+    REQUIRE(CheckFrameVariables(frame, { { -8, 4, "var_8" } }));
+    REQUIRE(frame.StackDeltaAt(0x15) == -0x28);
+    REQUIRE(frame.StackDeltaAt(0x35) == -0x28);
+    REQUIRE(frame.StackDeltaAt(0x20) == -0x28);
 }
 
 TEST_CASE("X64ComputedGotoTargets", "[Dissasm]Help")

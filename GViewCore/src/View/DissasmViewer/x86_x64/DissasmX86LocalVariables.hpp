@@ -34,16 +34,18 @@ bool AnalyzeX86FunctionFrame(
       const X86CallNoReturn& callNoReturn    = {},
       const X86SwitchCases& switchCases      = {});
 
-// 32 bit MSVC: the code the exception handling runs with the frame register of its function (ebp: a catch block, an unwind funclet of the C++
-// exception handling, a filter / a __finally / an __except block of SEH4), from `codeAddress`, no prologue: frame.variables receives its
-// slots through ebp in the offsets of the frame of that function (the fields of its SEH record named when `sehRecord`), frame.endAddress
-// its end (as AnalyzeX86FunctionFrame: a flow end no forward branch passes, a write of ebp, `limitAddress`)
+// The code run with the frame register of its function (32 bit MSVC: a catch block, an unwind funclet of the C++ exception handling, a
+// filter / a __finally / an __except block of SEH4, all with the ebp of the function; a chunk of a frame register function: its cold code),
+// from `codeAddress`, no prologue: frame.variables receives its slots through ebp / rbp in the offsets of the frame of that function (the
+// fields of its SEH record named when `sehRecord`), frame.endAddress its end (as AnalyzeX86FunctionFrame: a flow end no forward branch
+// passes, a write of the frame register, `limitAddress`)
 bool AnalyzeX86FuncletFrame(
       csh detailHandle,
       const uint8* code,
       size_t codeSize,
       uint64 codeAddress,
       uint64 limitAddress,
+      bool is64,
       bool sehRecord,
       DissasmFunctionFrame& frame,
       const X86CallNoReturn& callNoReturn = {});

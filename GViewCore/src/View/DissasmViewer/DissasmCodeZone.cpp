@@ -303,6 +303,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_map<uint64, std::vector<uint64>> switchCaseTargets; // SwitchCases() once the sweeps end: the frames go on with the cases
     std::vector<uint64> computedGotoTargets; // DemoteComputedGotoTargets: the endbr64 starts that are locations of their function (sorted)
     std::vector<DissasmFunctionChunk> chunks; // DetectFunctionChunks
+    std::vector<DissasmFunctionChunk> coldChunks;         // DetectColdBlocks (in chunks too): their slots on the frame of their function
+    std::unordered_multimap<uint64, size_t> coldChunksOf; // the cold chunks of a function (indexes in coldChunks), by its start
     std::vector<uint32> functionApiCategories; // ComputeApiCategories
     size_t labelIndex = 0; // the next label placed on its line
     uint32 extraLines = 0;
@@ -520,6 +522,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         dataPointerTargets.clear();
         computedGotoTargets.clear();
         x86FuncletsOfParent.clear();
+        coldChunks.clear();
+        coldChunksOf.clear();
         returnedAddress.reset();
         ebxValue.reset();
         functionEbx.reset();
@@ -1589,6 +1593,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the function (DissasmCodeZone::functionChunks), the ends of the functions are computed again
     void DetectFunctionChunks()
     {
+        coldChunks.clear();
+        coldChunksOf.clear();
         if (functionStarts.empty() || functionEnds.size() != functionStarts.size())
             return;
         const auto containing = [this](uint64 address) -> std::optional<size_t> {
@@ -1613,10 +1619,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::unordered_map<size_t, size_t> parentOf; // index of a chunk -> index of its function
         for (size_t index = 0; index < functionStarts.size(); index++) {
             const uint64 start = functionStarts[index];
-            if (inPluginChunk(start))
+            if (inPluginChunk(start) || IsTakenAddress(start)) // a vtable, a callback: a function
                 continue;
-            if ((zone->zoneDetails.HasEntryPoint() && codeStart + start == zone->zoneDetails.entryPoint) ||
-                (functionEntries && functionEntries->contains(codeStart + start)) || thunkImports.contains(start))
+            // a function of the plugin: a part of another one when it is a cold partition of GCC (X.cold), or an unnamed one (an entry of the
+            // x64 unwind data) whose code can not be the entry of a function (ReadsCalleeSavedAtEntry)
+            const DissasmFunctionEntry* entry = nullptr;
+            if (functionEntries)
+                if (const auto found = functionEntries->find(codeStart + start); found != functionEntries->end())
+                    entry = &found->second;
+            const bool pluginKnown = entry != nullptr;
+            const bool coldPart    = pluginKnown && IsColdPartitionName(entry->name);
+            if ((zone->zoneDetails.HasEntryPoint() && codeStart + start == zone->zoneDetails.entryPoint) || thunkImports.contains(start) ||
+                (pluginKnown && !coldPart && (!entry->name.empty() || entry->isExport)))
                 continue;
             if (const auto user = zone->userFunctions.find(start); user != zone->userFunctions.end() && (user->second & USER_FUNCTION_CREATE))
                 continue;
@@ -1638,7 +1652,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
             if (!onlyJumps || !parent.has_value())
                 continue;
-            // its code jumps back into the function
+            // its code jumps back into the function; or it is a part of the function for sure (a cold partition, code that uses the callee
+            // saved registers of the function: it may end its path elsewhere, a call that does not return). A function of the plugin: only
+            // the latter
             const uint64 parentStart = functionStarts[parent.value()];
             const uint64 parentLimit = parent.value() + 1 < functionStarts.size() ? functionStarts[parent.value() + 1] : codeSize;
             bool jumpsBack           = false;
@@ -1647,7 +1663,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 jumpsBack = (record.kind == FlowKind::Jump || record.kind == FlowKind::ConditionalJump) && record.target != NO_TARGET &&
                             record.target >= parentStart && record.target < parentLimit;
             }
-            if (jumpsBack)
+            if ((jumpsBack && !pluginKnown) || coldPart || ReadsCalleeSavedAtEntry(start))
                 parentOf[index] = parent.value();
         }
         if (parentOf.empty() && chunks.empty())
@@ -1660,6 +1676,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (parentOf.contains(root))
                 continue; // a cycle: none of them is a function's
             chunks.push_back({ functionStarts[index], functionEnds[index], functionStarts[root] });
+            coldChunks.push_back(chunks.back()); // their slots on the frame of the function (AddColdChunkSlots)
         }
         std::sort(chunks.begin(), chunks.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
         // they are not functions any more: their labels are locations
@@ -1674,6 +1691,229 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 callsMap[call.first] = true;
             }
         ComputeFunctionEnds(); // the functions before them reach further
+    }
+
+    // the cold code of the functions (MSVC PGO: blocks placed after other functions, far from theirs; 32 bit: no unwind data tells them): a
+    // block past the end of every function and chunk that only the jumps of one function reach (from its code, its chunks, or other such
+    // blocks of it), up to the end of its path (a ret / jmp / trap / call that does not return, the next function): a chunk of that function
+    // (IDA: a function tail). A block reached otherwise (a call, a taken address, the jumps of two functions) stays code of nobody
+    void DetectColdBlocks()
+    {
+        constexpr uint32 MAX_BLOCK_RECORDS = 4096;
+        constexpr uint32 MAX_PASSES        = 8;
+        if (IsArmArch(arch) || functionStarts.empty() || functionEnds.size() != functionStarts.size())
+            return;
+        // the function whose code (its body up to its end, its chunks) contains an address
+        const auto bodyOwner = [this](uint64 address) -> std::optional<uint64> {
+            const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), address);
+            if (next != functionStarts.begin() && address < functionEnds[static_cast<size_t>(next - functionStarts.begin()) - 1])
+                return *(next - 1);
+            const auto chunk = std::upper_bound(chunks.begin(), chunks.end(), address, [](uint64 value, const auto& item) { return value < item.start; });
+            if (chunk != chunks.begin() && address < (chunk - 1)->end)
+                return (chunk - 1)->function;
+            return std::nullopt;
+        };
+        const auto isJump = [](DissasmXrefKind kind) {
+            return kind == DissasmXrefKind::Jump || kind == DissasmXrefKind::ConditionalJump || kind == DissasmXrefKind::Switch;
+        };
+        struct ColdBlock {
+            uint64 start, end;
+            std::optional<uint64> owner;
+            bool rejected;
+        };
+        std::vector<ColdBlock> blocks; // by address, never overlapping
+        for (const auto& xref : xrefs.byTarget) {
+            if (!isJump(xref.kind) || xref.to < labelBase || xref.to - labelBase >= codeSize)
+                continue;
+            const uint64 target = xref.to - labelBase;
+            if ((!blocks.empty() && target < blocks.back().end) || bodyOwner(target).has_value())
+                continue; // inside the previous block (sorted by target), or code of a function
+            // its path: up to a ret / jmp / trap / call that does not return / padding, the next function or chunk
+            const auto nextFunction = std::upper_bound(functionStarts.begin(), functionStarts.end(), target);
+            const auto nextChunk    = std::upper_bound(chunks.begin(), chunks.end(), target, [](uint64 value, const auto& item) { return value < item.start; });
+            const uint64 limit      = std::min<uint64>(
+                  { nextFunction != functionStarts.end() ? *nextFunction : codeSize, nextChunk != chunks.end() ? nextChunk->start : codeSize, codeSize });
+            uint64 end   = target;
+            uint32 steps = 0;
+            for (size_t position = FirstRecordAt(target);
+                 position < flowRecords.size() && flowRecords[position].address < limit && ++steps <= MAX_BLOCK_RECORDS;
+                 position++) {
+                const auto& record = flowRecords[position];
+                if (record.kind == FlowKind::Unknown) {
+                    if (std::binary_search(instructionSet.reachablePadding.begin(), instructionSet.reachablePadding.end(), record.address))
+                        continue;
+                    end = std::max(end, record.address);
+                    break;
+                }
+                end = std::min(std::max(end, record.address + record.size), limit);
+                if (record.kind == FlowKind::Return || record.kind == FlowKind::Trap || record.kind == FlowKind::Jump ||
+                    (record.kind == FlowKind::Call && RecordReachesNoReturn(record)))
+                    break;
+            }
+            if (end > target)
+                blocks.push_back({ target, end, std::nullopt, false });
+        }
+        if (blocks.empty())
+            return;
+        const auto blockOf = [&blocks](uint64 address) -> ColdBlock* {
+            const auto next = std::upper_bound(blocks.begin(), blocks.end(), address, [](uint64 value, const ColdBlock& block) { return value < block.start; });
+            return next != blocks.begin() && address < (next - 1)->end ? &*(next - 1) : nullptr;
+        };
+        // the owners: from the references into each block; a source in a block not resolved yet waits for it (a pass later), once a
+        // resolved source names one (a cycle of blocks reached from their function)
+        const auto ownersOf = [&](const ColdBlock& block, bool& waits, bool& foreign) {
+            std::set<uint64> owners;
+            waits     = false;
+            foreign   = false;
+            auto from = std::lower_bound(
+                  xrefs.byTarget.begin(), xrefs.byTarget.end(), labelBase + block.start, [](const auto& item, uint64 value) { return item.to < value; });
+            for (; from != xrefs.byTarget.end() && from->to < labelBase + block.end; ++from) {
+                if (!isJump(from->kind) || from->from < labelBase || from->from - labelBase >= codeSize) {
+                    foreign = true; // a call / a taken address / a read: not a tail of a function
+                    return owners;
+                }
+                const uint64 source = from->from - labelBase;
+                if (const auto owner = bodyOwner(source); owner.has_value())
+                    owners.insert(owner.value());
+                else if (const auto* other = blockOf(source); !other || other->rejected) {
+                    foreign = true; // from code of nobody
+                    return owners;
+                } else if (other != &block) {
+                    if (other->owner.has_value())
+                        owners.insert(other->owner.value());
+                    else
+                        waits = true;
+                }
+            }
+            return owners;
+        };
+        bool changed = true;
+        for (uint32 pass = 0; changed && pass < MAX_PASSES; pass++) {
+            changed = false;
+            for (auto& block : blocks) {
+                if (block.owner.has_value() || block.rejected)
+                    continue;
+                bool waits = false, foreign = false;
+                const auto owners = ownersOf(block, waits, foreign);
+                if (foreign || owners.size() > 1 || (owners.empty() && !waits)) {
+                    block.rejected = true;
+                    changed        = true;
+                } else if (owners.size() == 1 && (!waits || pass > 0)) {
+                    block.owner = *owners.begin();
+                    changed     = true;
+                }
+            }
+        }
+        // the owners again, now that every block has one or none: a block whose sources disagree is nobody's (until nothing changes)
+        changed = true;
+        for (uint32 pass = 0; changed && pass < MAX_PASSES; pass++) {
+            changed = false;
+            for (auto& block : blocks) {
+                if (!block.owner.has_value())
+                    continue;
+                bool waits = false, foreign = false;
+                const auto owners = ownersOf(block, waits, foreign);
+                if (foreign || waits || owners.size() != 1 || *owners.begin() != block.owner.value()) {
+                    block.owner.reset();
+                    block.rejected = true;
+                    changed        = true;
+                }
+            }
+        }
+        const size_t firstBlock = coldChunks.size();
+        for (const auto& block : blocks) {
+            if (!block.owner.has_value())
+                continue;
+            if (coldChunks.size() > firstBlock && coldChunks.back().end == block.start && coldChunks.back().function == block.owner.value())
+                coldChunks.back().end = block.end; // the next block of the same function: one chunk
+            else
+                coldChunks.push_back({ block.start, block.end, block.owner.value() });
+        }
+        chunks.insert(chunks.end(), coldChunks.begin() + static_cast<std::ptrdiff_t>(firstBlock), coldChunks.end());
+        std::sort(chunks.begin(), chunks.end(), [](const auto& left, const auto& right) { return left.start < right.start; });
+    }
+
+    // the chunks the jumps tell (DetectFunctionChunks, DetectColdBlocks) by their function: AddColdChunkSlots
+    void IndexColdChunks()
+    {
+        coldChunksOf.clear();
+        for (size_t index = 0; index < coldChunks.size(); index++)
+            coldChunksOf.emplace(coldChunks[index].function, index);
+    }
+
+    // the code whose address is taken (relative): by the code, by a pointer of a data zone (sorted by FinishSweep)
+    bool IsTakenAddress(uint64 address) const
+    {
+        return std::binary_search(addressTakenTargets.begin(), addressTakenTargets.end(), address) ||
+               std::binary_search(dataPointerTargets.begin(), dataPointerTargets.end(), address);
+    }
+
+    // a cold partition of GCC (-freorder-blocks-and-partition): its symbol is the one of its function + .cold (main.cold, f.cold.12)
+    static bool IsColdPartitionName(std::string_view name)
+    {
+        const auto at = name.rfind(".cold");
+        if (at == std::string_view::npos || at == 0)
+            return false;
+        const auto rest = name.substr(at + 5);
+        return rest.empty() || (rest.size() > 1 && rest[0] == '.' && std::all_of(rest.begin() + 1, rest.end(), [](char c) { return c >= '0' && c <= '9'; }));
+    }
+
+    // the code at `start` (relative) reads a callee saved register of its convention before writing it (rbx, rbp, r12-r15; Windows x64 and
+    // 32 bit: rsi, rdi too), as a pointer or as an operand (mov rcx, r14; test rbx, rbx), the first lines up to a jmp / ret / call (the jccs
+    // fall through): it is no entry of a function (the registers hold the values of its caller), but the code of the function that set them.
+    // Not their saves (push rbx, mov qword ptr [rsp + 0x18], rbx), the idioms that only write (xor ebx, ebx, or ebx, -1), mov edi, edi
+    bool ReadsCalleeSavedAtEntry(uint64 start)
+    {
+        constexpr uint32 MAX_ENTRY_INSTRUCTIONS = 16;
+        constexpr uint32 ENTRY_BYTES            = 128;
+        if (IsArmArch(arch) || start >= codeSize)
+            return false;
+        const uint32 calleeSaved =
+              is64 ? ((1u << 3) | (1u << 5) | (0xFu << 12) | (zone->systemVCalls ? 0u : (1u << 6) | (1u << 7))) : (1u << 3) | (1u << 5) | (1u << 6) | (1u << 7);
+        const auto bytes = obj->GetData().CopyToBuffer(codeStart + start, static_cast<uint32>(std::min<uint64>(codeSize - start, ENTRY_BYTES)), false);
+        cs_insn* decoded = bytes.IsValid() ? cs_malloc(handle) : nullptr;
+        if (!decoded)
+            return false;
+        const uint8* data    = bytes.GetData();
+        size_t size          = bytes.GetLength();
+        uint64 address       = start;
+        uint32 written       = 0;
+        bool reads           = false;
+        const auto unwritten = [&](unsigned int reg) {
+            const int family = reg != X86_REG_INVALID ? GetX64RegisterFamily(reg) : -1;
+            return family >= 0 && (calleeSaved & (1u << family)) && (written & (1u << family)) == 0;
+        };
+        for (uint32 count = 0; count < MAX_ENTRY_INSTRUCTIONS && !reads && cs_disasm_iter(handle, &data, &size, &address, decoded); count++) {
+            const cs_x86& x86 = decoded->detail->x86;
+            if (decoded->id == X86_INS_ENDBR64 || decoded->id == X86_INS_ENDBR32 || decoded->id == X86_INS_NOP || decoded->id == X86_INS_PUSH ||
+                (decoded->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[1].type == X86_OP_REG &&
+                 x86.operands[0].reg == x86.operands[1].reg))
+                continue; // a push saves the register; mov edi, edi (hot patching)
+            const bool sameRegisters =
+                  x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[1].type == X86_OP_REG && x86.operands[0].reg == x86.operands[1].reg;
+            const uint64 sizeMask = x86.op_count == 2 && x86.operands[0].size < 8 ? (1ull << (8 * x86.operands[0].size)) - 1 : ~0ull;
+            const bool constant   = x86.op_count == 2 && x86.operands[1].type == X86_OP_IMM &&
+                                  ((decoded->id == X86_INS_OR && (static_cast<uint64>(x86.operands[1].imm) & sizeMask) == sizeMask) ||
+                                   (decoded->id == X86_INS_AND && (static_cast<uint64>(x86.operands[1].imm) & sizeMask) == 0));
+            const bool zeroes = ((decoded->id == X86_INS_XOR || decoded->id == X86_INS_SUB) && sameRegisters) || constant; // or ebx, -1: writes only
+            const bool stores = decoded->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_MEM && x86.operands[1].type == X86_OP_REG;
+            for (uint8 index = 0; index < x86.op_count && !reads; index++) {
+                const cs_x86_op& op = x86.operands[index];
+                if (op.type == X86_OP_MEM)
+                    reads = unwritten(op.mem.base) || unwritten(op.mem.index);
+                else if (op.type == X86_OP_REG && (op.access & CS_AC_READ) && !zeroes && !(stores && index == 1))
+                    reads = unwritten(op.reg);
+            }
+            for (uint8 index = 0; index < x86.op_count; index++)
+                if (x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE))
+                    if (const int family = GetX64RegisterFamily(x86.operands[index].reg); family >= 0)
+                        written |= 1u << family;
+            const auto flow = GetX86Flow(*decoded);
+            if (flow != X86Flow::None && flow != X86Flow::ConditionalJump)
+                break;
+        }
+        cs_free(decoded, 1);
+        return reads;
     }
 
     // what the APIs every function calls / jumps to do (the triage: network, crypto, processes, ...): the imports through their slots, the
@@ -2174,6 +2414,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         // callbacks): a function when it starts a block
         // (not a case of a switch, an absolute jump table of GCC in .rodata; not the target of a conditional jump, inside a function)
         AddDataZonePointerTargets();
+        std::sort(dataPointerTargets.begin(), dataPointerTargets.end()); // IsTakenAddress
+        dataPointerTargets.erase(std::unique(dataPointerTargets.begin(), dataPointerTargets.end()), dataPointerTargets.end());
         if (!addressTakenTargets.empty()) {
             std::unordered_set<uint64> insideFunctions;
             for (const auto& xref : xrefs.byTarget)
@@ -2298,8 +2540,6 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 subs.push_back(index);
         if (subs.size() < 2)
             return;
-        std::unordered_set<uint64> takenAddresses(addressTakenTargets.begin(), addressTakenTargets.end());
-        takenAddresses.insert(dataPointerTargets.begin(), dataPointerTargets.end());
         const uint32 calleeSavedFamilies = is64 ? (1u << 3) | (1u << 5) | (0xFu << 12) : (1u << 3) | (1u << 5) | (1u << 6) | (1u << 7);
         cs_insn* decoded                 = cs_malloc(handle);
         if (!decoded)
@@ -2311,7 +2551,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const uint64 start      = fileOffset - codeStart;
             const uint64 nextStart  = position + 1 < subs.size() ? callsFound[subs[position + 1]].first - codeStart : codeSize;
             if (start >= codeSize || fileOffset == zone->zoneDetails.entryPoint || (functionEntries && functionEntries->contains(fileOffset)) ||
-                zone->userFunctions.contains(start) || takenAddresses.contains(start))
+                zone->userFunctions.contains(start) || IsTakenAddress(start))
                 continue;
             const auto bytes = obj->GetData().CopyToBuffer(fileOffset, static_cast<uint32>(std::min<uint64>(codeSize - start, ENTRY_BYTES)), false);
             if (!bytes.IsValid())
@@ -2720,7 +2960,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto bytes   = obj->GetData().CopyToBuffer(codeStart + start, static_cast<uint32>(limit - start), false);
             DissasmFunctionFrame funclet{};
             if (!bytes.IsValid() ||
-                !AnalyzeX86FuncletFrame(detailHandle, bytes.GetData(), bytes.GetLength(), start, limit, sehRecord, funclet, [this](const cs_insn& call) {
+                !AnalyzeX86FuncletFrame(detailHandle, bytes.GetData(), bytes.GetLength(), start, limit, false, sehRecord, funclet, [this](const cs_insn& call) {
                     return noReturnCalls.contains(call.address);
                 }))
                 continue;
@@ -2732,6 +2972,85 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             funclet.variablesOf = frame.startAddress;
             pendingChunkFrames.push_back(std::move(funclet));
         }
+    }
+
+    // the cold chunks of a function (DetectColdBlocks): with a frame register, their slots through it are variables of the frame (the
+    // listing finds the frame through the chunk); without one (x64), their stack from the depth of the body, as the chunks of its unwind data
+    void AddColdChunkSlots(DissasmFunctionFrame& frame)
+    {
+        const auto [first, last] = coldChunksOf.equal_range(frame.startAddress);
+        if (!frame.usesFrameRegister) {
+            if (is64)
+                for (auto it = first; it != last; ++it)
+                    AddColdChunkFrame(frame, coldChunks[it->second]);
+            return; // x86 without a frame register: no walk of a chunk from a depth
+        }
+        for (auto it = first; it != last; ++it) {
+            const auto& chunk = coldChunks[it->second];
+            const auto bytes  = obj->GetData().CopyToBuffer(
+                  codeStart + chunk.start, static_cast<uint32>(std::min<uint64>(chunk.end - chunk.start, DISSASM_MAX_ANALYZED_FUNCTION_SIZE)), false);
+            if (!bytes.IsValid())
+                continue;
+            // its blocks one after the other (the walk ends with the path of each)
+            for (uint64 start = chunk.start; start < chunk.start + bytes.GetLength();) {
+                DissasmFunctionFrame walked{};
+                const uint64 offset = start - chunk.start;
+                if (!AnalyzeX86FuncletFrame(
+                          detailHandle,
+                          bytes.GetData() + offset,
+                          bytes.GetLength() - offset,
+                          start,
+                          chunk.start + bytes.GetLength(),
+                          is64,
+                          false,
+                          walked,
+                          [this](const cs_insn& call) { return noReturnCalls.contains(call.address); }) ||
+                    walked.endAddress <= start)
+                    break;
+                if (!MergeFrameVariables(frame, std::move(walked.variables)))
+                    return; // too many
+                start = walked.endAddress;
+            }
+        }
+    }
+
+    // x64 without a frame register: a cold chunk from the depth of the stack (and the callee saved aliases) at a jump of the function to it;
+    // its slots are variables of the frame, its own frame has the variables of the function (variablesOf)
+    void AddColdChunkFrame(DissasmFunctionFrame& frame, const DissasmFunctionChunk& chunk)
+    {
+        std::optional<int32> entryDelta;
+        uint64 source = 0;
+        auto xref     = std::lower_bound(
+              xrefs.byTarget.begin(), xrefs.byTarget.end(), labelBase + chunk.start, [](const auto& item, uint64 value) { return item.to < value; });
+        for (; xref != xrefs.byTarget.end() && xref->to < labelBase + chunk.end && !entryDelta.has_value(); ++xref)
+            if (xref->to == labelBase + chunk.start && xref->from >= labelBase + frame.startAddress && xref->from < labelBase + frame.endAddress) {
+                source     = xref->from - labelBase;
+                entryDelta = frame.StackDeltaAt(source);
+            }
+        if (!entryDelta.has_value())
+            return; // reached from another cold block only, or with a depth not known
+        std::vector<DissasmFunctionFrame::StackAlias> aliases;
+        for (const auto& alias : frame.stackAliases)
+            if (!alias.frameOf.has_value() && alias.start <= source && source < alias.end)
+                aliases.push_back(alias);
+        const uint64 size = std::min<uint64>(chunk.end - chunk.start, DISSASM_MAX_ANALYZED_FUNCTION_SIZE);
+        const auto bytes  = obj->GetData().CopyToBuffer(codeStart + chunk.start, static_cast<uint32>(size), false);
+        DissasmFunctionFrame chunkFrame{};
+        if (!bytes.IsValid() || !AnalyzeX64ChunkFrame(
+                                      detailHandle,
+                                      bytes.GetData(),
+                                      bytes.GetLength(),
+                                      chunk.start,
+                                      chunk.start + size,
+                                      entryDelta.value(),
+                                      aliases,
+                                      chunkFrame,
+                                      [this](const cs_insn& call) { return noReturnCalls.contains(call.address); }))
+            return;
+        MergeFrameVariables(frame, std::move(chunkFrame.variables));
+        chunkFrame.variables.clear();
+        chunkFrame.variablesOf = frame.startAddress;
+        pendingChunkFrames.push_back(std::move(chunkFrame));
     }
 
     // the slots the funclets of the function use (through the establisher frame) are variables of its frame
@@ -4617,6 +4936,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 AddChunkFrames(frame, entry->second); // x64: the chunks of the function (its cold code), on its frame
                 readOtherCode = true;
             }
+        if (analyzed && (functionArch == DissasmArch::X86 || functionArch == DissasmArch::X64) && coldChunksOf.contains(relativeAddress)) {
+            AddColdChunkSlots(frame); // the cold blocks of the function (DetectColdBlocks)
+            readOtherCode = true;
+        }
         if (readOtherCode) { // the bytes of the funclets / chunks were read through the same cache: the view of the function is read again
             functionData = obj->GetData().Get(codeStart + relativeAddress, static_cast<uint32>(bytesToRead), false);
             if (!functionData.IsValid())
@@ -4781,6 +5104,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         switchCaseTargets = SwitchCases();
         ComputeFunctionEnds();
         DetectFunctionChunks();
+        DetectColdBlocks();
+        IndexColdChunks();
         ComputeApiCategories();
         InferPrototypes();
         TrackComInterfaces();
