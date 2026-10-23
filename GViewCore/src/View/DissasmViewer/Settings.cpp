@@ -56,6 +56,8 @@ void Settings::AddFunctionEntry(uint64 fileOffset, std::string_view name, Functi
     }
     if (size > 0)
         entry.size = size;
+    if (type == FunctionEntryType::ExceptionData)
+        entry.exceptionData = true;
 }
 
 void Settings::AddExceptionScopes(uint64 functionFileOffset, uint8 prologSize, uint8 frameRegister, uint8 frameOffset, const std::vector<ExceptionScope>& scopes)

@@ -11,6 +11,7 @@ using namespace GView::View::DissasmViewer;
 namespace
 {
 constexpr uint32 MAX_PROLOGUE_PADDING_INSTRUCTIONS = 2;        // mov edi, edi (hot patching), endbr32/64, nop before push ebp
+constexpr uint32 MAX_HOME_SPACE_SAVES              = 4;        // MSVC x64: mov qword ptr [rsp + 8..0x20], reg before push rbp
 constexpr uint32 MAX_FUNCTION_INSTRUCTIONS         = 1u << 20; // hard stop for malformed code
 constexpr int64 MAX_FRAME_DISPLACEMENT             = 0x100000; // larger displacements are not stack slots
 constexpr size_t ACCESSES_COMPACT_THRESHOLD        = 4096;     // bounds the memory used while scanning huge functions
@@ -156,6 +157,7 @@ bool AnalyzeFramePointerCode(
     uint32 helperSetup = 0, helperPushes = 0; // push 0x10; push offset scopetable / mov eax, offset handler before the frame helper
     bool sehRecord     = funcletSehRecord;    // __SEH_prolog4: the SEH record (CPPEH_RECORD) is at [ebp - 0x18]
     bool flowEnd       = false;               // a flow end no branch of the function goes past: EndsAfterFlowEnd
+    x86_reg homeCopy   = X86_REG_INVALID;     // MSVC x64: mov rax, rsp before the saves of the home space
 
     std::vector<FrameAccess> accesses;
     accesses.reserve(32);
@@ -186,6 +188,20 @@ bool AnalyzeFramePointerCode(
             }
             if (decodedInstructions <= MAX_PROLOGUE_PADDING_INSTRUCTIONS && helperSetup == 0 && IsProloguePadding(current))
                 continue;
+            // MSVC x64: the registers saved in the home space before push rbp (mov qword ptr [rsp + 0x10], rbx, mov dword ptr [rsp + 0x20],
+            // r9d; or through a copy of rsp: mov rax, rsp; mov qword ptr [rax + 8], rbx): the stack pointer unchanged
+            if (is64 && decodedInstructions <= MAX_HOME_SPACE_SAVES + 1 && helperSetup == 0) {
+                if (current->id == X86_INS_MOV && homeCopy == X86_REG_INVALID && decodedInstructions == 1 && x86.op_count == 2 &&
+                    x86.operands[0].type == X86_OP_REG && x86.operands[0].size == 8 && IsRegisterOperand(x86, 1, stackRegister)) {
+                    homeCopy = x86.operands[0].reg;
+                    continue;
+                }
+                if (current->id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_MEM && x86.operands[1].type == X86_OP_REG &&
+                    (x86.operands[0].mem.base == stackRegister || x86.operands[0].mem.base == homeCopy) && x86.operands[0].mem.index == X86_REG_INVALID &&
+                    x86.operands[0].mem.segment == X86_REG_INVALID && x86.operands[0].mem.disp >= 8 && x86.operands[0].mem.disp <= 0x20 &&
+                    x86.operands[1].reg != homeCopy)
+                    continue;
+            }
             // MSVC: the frame built by a helper (push 0x10; push offset scopetable; call __SEH_prolog4 / push 8; mov eax, offset handler;
             // call __EH_prolog3 / mov eax, offset handler; call _EH_prolog)
             if (frameHelper && !is64 && helperSetup < 2 &&
@@ -406,6 +422,7 @@ StackFrameResult AnalyzeStackPointerFrame(
     bool flowEnded            = false;
     bool lastFlowEnd          = false; // a flow end no branch of the function goes past: EndsAfterFlowEnd
     bool reachedRet           = false; // 32 bit: a function chunk (the cold code of a function, reached by a jcc) has no ret
+    bool frameFromEntry       = false; // 32 bit: push ebp; mov ebp, esp at the entry (the depth of a function: no ret needed)
     // a dynamic allocation (alloca: sub rsp, rax; the probing loop of GCC: sub rsp, 0x1000 until rsp reaches its end): the depth is not
     // known until the stack pointer is restored from a callee saved alias (lea rsp, [rbp - 0x28]); the slots through rsp are not read there
     bool unknownDepth                  = false;
@@ -746,6 +763,9 @@ StackFrameResult AnalyzeStackPointerFrame(
             frame.stackAliases.push_back({ cs_reg_name(detailHandle, x86.operands[0].reg), static_cast<int32>(aliasDelta), nextAddress, nextAddress });
         }
         if (inPrologue) {
+            // the frame register set right after its save, the first one (a function that does not return has no ret to confirm it)
+            if (copiesStack && prologueSaves == 1 && delta == -pointerSize && IsRegisterOperand(x86, 0, is64 ? X86_REG_RBP : X86_REG_EBP))
+                frameFromEntry = true;
             if (savesRegister && !unknownDepth && delta == -static_cast<int64>(prologueSaves) * pointerSize)
                 prologueSaves++;
             else if (change.has_value() || writesStack || cs_insn_group(detailHandle, current, CS_GRP_JUMP) ||
@@ -847,7 +867,7 @@ StackFrameResult AnalyzeStackPointerFrame(
             flowEnded = true; // the code after an epilogue: reached through a branch of the body
         }
     }
-    if (!is64 && !reachedRet)
+    if (!is64 && !reachedRet && !frameFromEntry)
         return StackFrameResult::Rejected; // no ret: the depth of the entry is not the one of a function (a chunk of another one)
     if ((accesses.empty() && !chunk) || !CompactAccesses(accesses)) // a chunk without slots: its aliases, its depths
         return StackFrameResult::Rejected;

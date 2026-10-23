@@ -298,6 +298,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<uint64> functionStarts;
     std::unordered_map<uint64, std::optional<uint32>> calleePurges; // 32 bit: what the functions of the zone pop (ret 8), by start
     std::unordered_map<uint64, bool> frameHelpers;                  // 32 bit: the functions that build the frame of their caller, by start
+    std::unordered_set<uint64> helperFrameStarts;                   // 32 bit: the jump targets that start with a frame helper (FinishSweep)
     AnnotationContainer annotations;
     std::vector<DissasmFunctionFrame> frames;
     std::vector<uint64> functionEnds; // ComputeFunctionEnds
@@ -521,6 +522,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         dataPointerTargets.clear();
         computedGotoTargets.clear();
         x86FuncletsOfParent.clear();
+        helperFrameStarts.clear();
         coldChunks.clear();
         coldChunksOf.clear();
         returnedAddress.reset();
@@ -1193,7 +1195,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const bool isArm32             = insnArch == DissasmArch::Arm || insnArch == DissasmArch::Thumb;
         if (!isArm64 && !isArm32) { // the x86 / x64 prologues (the ARM functions: the calls, the plugin, IsArm*PrologueStart)
             const auto prologueStart = prologueDetector.Next(*insn, instructionOffset);
-            if (prologueStart.has_value())
+            if (prologueStart.has_value() && !IsInsideUnwindFunction(prologueStart.value()))
                 AddFunctionStart(prologueStart.value());
         }
 
@@ -1618,7 +1620,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::unordered_map<size_t, size_t> parentOf; // index of a chunk -> index of its function
         for (size_t index = 0; index < functionStarts.size(); index++) {
             const uint64 start = functionStarts[index];
-            if (inPluginChunk(start) || IsTakenAddress(start)) // a vtable, a callback: a function
+            if (inPluginChunk(start) || IsTakenAddress(start) || helperFrameStarts.contains(start)) // a vtable, a callback, a helper frame
                 continue;
             // a function of the plugin: a part of another one when it is a cold partition of GCC (X.cold), or an unnamed one (an entry of the
             // x64 unwind data) whose code can not be the entry of a function (ReadsCalleeSavedAtEntry)
@@ -1850,6 +1852,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         coldChunksOf.clear();
         for (size_t index = 0; index < coldChunks.size(); index++)
             coldChunksOf.emplace(coldChunks[index].function, index);
+    }
+
+    // a file offset strictly inside the code of a function of the exception data (x64 .pdata: the unwinding needs the code of every
+    // function that is not a leaf, its prologue at its start): the push rbp; mov rbp, rsp after the saves of the home space of MSVC x64
+    // is its prologue, not another function (the symbols of ELF do not tell it: GCC places push rbp after the early exits, shrink wrapping)
+    bool IsInsideUnwindFunction(uint64 fileOffset) const
+    {
+        if (!functionEntries)
+            return false;
+        auto entry = functionEntries->lower_bound(fileOffset);
+        if (entry == functionEntries->begin())
+            return false;
+        --entry;
+        return entry->second.exceptionData && entry->second.size > 0 && fileOffset - entry->first < entry->second.size;
     }
 
     // a place inside a function that the plugin knows (Settings::AddCodeLocation), relative
@@ -2447,6 +2463,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 } else if (target < blockStarts.size() && blockStarts[target] && !insideFunctions.contains(target) && LooksLikeCode(target))
                     AddFunctionStart(codeStart + target);
         }
+        // 32 bit MSVC: a jump to the frame of a function built by a helper (push 0x28; mov eax, offset handler; call __EH_prolog3 / push
+        // 0x10; push offset scopetable; call __SEH_prolog4) is a tail call: the target is a function (the entry point: jmp
+        // __scrt_common_main_seh), not cold code of the function that jumps (DetectColdBlocks, DetectFunctionChunks)
+        if (arch == DissasmArch::X86)
+            for (const auto& xref : xrefs.byTarget)
+                if ((xref.kind == DissasmXrefKind::Jump || xref.kind == DissasmXrefKind::ConditionalJump) && xref.to >= labelBase &&
+                    xref.to - labelBase < blockStarts.size() && blockStarts[xref.to - labelBase] && !helperFrameStarts.contains(xref.to - labelBase) &&
+                    StartsWithFrameHelper(xref.to - labelBase)) {
+                    helperFrameStarts.insert(xref.to - labelBase);
+                    AddFunctionStart(codeStart + xref.to - labelBase);
+                }
         // the __except blocks of x64 SEH (reached by the unwinding only, after the jmp that ends their __try): a label, as IDA
         // the chunks of the functions (x64 chained unwind data) as well
         if (functionEntries)
@@ -3242,9 +3269,41 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return !usesStack && address > start;
     }
 
+    // 32 bit: the code at `start` (relative) builds its frame with a helper: push 0x28 / push 0x10; push offset scopetable / mov eax, offset
+    // handler (one or two of them), then the call of a frame helper (IsFrameHelper)
+    bool StartsWithFrameHelper(uint64 start)
+    {
+        constexpr uint32 PROLOGUE_BYTES = 16; // push imm32; push imm32; call rel32
+        std::array<uint8, PROLOGUE_BYTES> bytes{};
+        if (start >= codeSize || codeSize - start < PROLOGUE_BYTES || !obj->GetData().Copy(codeStart + start, bytes))
+            return false;
+        cs_insn* prologue = cs_malloc(handle);
+        if (!prologue)
+            return false;
+        const uint8* data = bytes.data();
+        size_t size       = bytes.size();
+        uint64 address    = start;
+        uint32 setup      = 0;
+        std::optional<uint64> helper;
+        while (!helper.has_value() && setup <= 2 && cs_disasm_iter(handle, &data, &size, &address, prologue)) {
+            const cs_x86& x86  = prologue->detail->x86;
+            const bool hasImm  = x86.op_count >= 1 && x86.operands[x86.op_count - 1].type == X86_OP_IMM;
+            const bool pushImm = prologue->id == X86_INS_PUSH && x86.op_count == 1 && hasImm;
+            const bool movEax  = prologue->id == X86_INS_MOV && x86.op_count == 2 && IsRegisterOperandOf(x86, 0, X86_REG_EAX) && hasImm;
+            if (pushImm || movEax)
+                setup++;
+            else if (prologue->id == X86_INS_CALL && setup > 0 && x86.op_count == 1 && hasImm)
+                helper = static_cast<uint64>(x86.operands[0].imm);
+            else
+                break;
+        }
+        cs_free(prologue, 1);
+        return helper.has_value() && setup <= 2 && helper.value() < codeSize && IsFrameHelper(helper.value());
+    }
+
     // 32 bit: a function of the zone that builds the ebp frame of its caller (MSVC __SEH_prolog4 / __EH_prolog3 / _EH_prolog): it stores
     // ebp in the stack (mov [esp + 0x10], ebp / mov [eax], ebp), points ebp into the stack (lea ebp, [esp + 0x10] / mov ebp, eax) and
-    // returns without restoring it
+    // returns without restoring it (decoded with the handle of the sweep: FinishSweep asks it before the local variables)
     bool IsFrameHelper(uint64 target)
     {
         constexpr uint32 MAX_HELPER_INSTRUCTIONS = 48;
@@ -3254,12 +3313,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         bool storesFrame = false, setsFrame = false, helper = false;
         const auto helperData = target < codeSize ? obj->GetData().Get(codeStart + target, static_cast<uint32>(std::min<uint64>(codeSize - target, 0x200)), false)
                                                   : BufferView{};
-        cs_insn* helperInsn = helperData.IsValid() ? cs_malloc(detailHandle) : nullptr;
+        cs_insn* helperInsn   = helperData.IsValid() ? cs_malloc(handle) : nullptr;
         if (helperInsn) {
             const uint8* data = helperData.GetData();
             size_t size       = helperData.GetLength();
             uint64 address    = target;
-            for (uint32 decoded = 0; decoded < MAX_HELPER_INSTRUCTIONS && cs_disasm_iter(detailHandle, &data, &size, &address, helperInsn); decoded++) {
+            for (uint32 decoded = 0; decoded < MAX_HELPER_INSTRUCTIONS && cs_disasm_iter(handle, &data, &size, &address, helperInsn); decoded++) {
                 const cs_x86& x86 = helperInsn->detail->x86;
                 if (helperInsn->id == X86_INS_RET) {
                     helper = storesFrame && setsFrame && x86.op_count == 0;
@@ -3275,7 +3334,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     for (uint8 index = 0; index < x86.op_count; index++)
                         writesFrame |= x86.operands[index].type == X86_OP_REG && (x86.operands[index].access & CS_AC_WRITE) &&
                                        x86.operands[index].reg == X86_REG_EBP;
-                    if (writesFrame || helperInsn->id == X86_INS_CALL || helperInsn->id == X86_INS_JMP || cs_insn_group(detailHandle, helperInsn, CS_GRP_JUMP))
+                    if (writesFrame || helperInsn->id == X86_INS_CALL || helperInsn->id == X86_INS_JMP || cs_insn_group(handle, helperInsn, CS_GRP_JUMP))
                         break; // pop ebp / a branch: a regular function
                 }
             }
