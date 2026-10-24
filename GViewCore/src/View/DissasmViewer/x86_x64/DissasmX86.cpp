@@ -513,6 +513,7 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     std::string_view joiner = " + "; // [ebp + var_8]; ARM64: [x29, #var_8]; x64 without a frame register: [rsp + 0x38 + var_18]
     std::string stackJoiner;
     bool alignedStackOffset = false; // through esp in an aligned frame (and esp, -8): not the saved registers / the return address
+    bool armStackOperand    = false; // ARM: a slot of the frame found in the operands
     if (zone && !zone->localVariables.Empty() && zone->IsArmCode()) {
         // ARM: [x29, #var_8] / [fp, #var_8] / [r7, #var_8] / [sp, #var_10] / [sp] -> [sp, #var_18]
         function = zone->FindFrameOfAddress(address); // a chunk: the frame of its function
@@ -520,7 +521,12 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         const std::string_view frameRegister =
               zone->IsArm64Code() ? std::string_view("x29") : (function && function->frameRegister == 11 ? std::string_view("fp") : std::string_view("r7"));
         if (function && FindArmFrameOperand(text, frameRegister, slot) && (slot.isStackPointerBased || function->usesFrameRegister)) {
-            frameOperand = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + function->stackOffset : slot.displacement };
+            // sp: its depth at the instruction when the frame has them (ARM64: the prologue before the last sub sp), else the one of the body
+            int32 depth = function->stackOffset;
+            if (address >= function->startAddress && address < function->endAddress)
+                depth = function->StackDeltaAt(address).value_or(depth);
+            frameOperand    = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + depth : slot.displacement };
+            armStackOperand = true;
             variable     = function->FindVariableContaining(frameOperand.frameOffset);
             joiner       = slot.needsSeparator ? std::string_view(", #") : std::string_view();
         }
@@ -572,11 +578,15 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
     // its slot named; at the stack pointer of the entry, above the saved frame register. The slots of the registers the prologue pushed
     // (IDA: var_s0 the lowest, var_s8): not variables either (the epilogue of MSVC x64: lea r11, [rsp + 0x80 + var_s0]; GCC: mov rbx,
     // qword ptr [rbp + var_s0])
-    const bool namesSlot = !variable && function && zone && !zone->IsArmCode() && decimalMask == 0 && !alignedStackOffset;
+    // ARM64: the registers its prologue saves (stp x29, x30, [sp, #var_s10]), in the code of the function itself (a funclet saves its own on
+    // its own stack, its x29 the frame of its function); no return address on the stack
+    const bool armCode   = zone && zone->IsArmCode();
+    const bool armSlot   = armCode && zone->IsArm64Code() && armStackOperand && function && address >= function->startAddress && address < function->endAddress;
+    const bool namesSlot = !variable && function && zone && (!armCode || armSlot) && decimalMask == 0 && !alignedStackOffset;
     char savedSlot[24]   = {};
     if (namesSlot && function->IsSavedRegisterSlot(frameOperand.frameOffset))
         snprintf(savedSlot, sizeof(savedSlot), "var_s%X", static_cast<unsigned int>(frameOperand.frameOffset - function->savedRegistersOffset));
-    if (namesSlot && (savedSlot[0] != 0 || frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0))) {
+    if (namesSlot && (savedSlot[0] != 0 || (!armCode && frameOperand.frameOffset == (function->usesFrameRegister ? (zone->Is64BitCode() ? 8 : 4) : 0)))) {
         std::string rewritten(text.substr(0, frameOperand.replaceStart));
         rewritten.append(joiner);
         rewritten.append(savedSlot[0] != 0 ? savedSlot : "retaddr");

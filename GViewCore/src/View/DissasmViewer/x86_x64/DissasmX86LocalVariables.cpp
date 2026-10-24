@@ -15,6 +15,7 @@ constexpr uint32 MAX_PROLOGUE_PADDING_INSTRUCTIONS = 2;        // mov edi, edi (
 constexpr uint32 MAX_HOME_SPACE_SAVES              = 4;        // MSVC x64: mov qword ptr [rsp + 8..0x20], reg before push rbp
 constexpr uint32 MAX_EARLY_EXIT_INSTRUCTIONS       = 16;       // GCC shrink wrapping: test rdi, rdi; je; ... before push rbp
 constexpr uint32 MAX_SCHEDULED_MOVES               = 2;        // GCC: push rbp; mov r10, rcx; mov rbp, rsp
+constexpr size_t MAX_ARM64_STACK_DELTAS            = 4096;     // the changes of sp an ARM64 frame records
 constexpr uint32 MAX_FUNCTION_INSTRUCTIONS         = 1u << 20; // hard stop for malformed code
 constexpr int64 MAX_FRAME_DISPLACEMENT             = 0x100000; // larger displacements are not stack slots
 constexpr size_t ACCESSES_COMPACT_THRESHOLD        = 4096;     // bounds the memory used while scanning huge functions
@@ -1456,6 +1457,9 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
     frame.endAddress   = codeAddress;
     frame.stackOffset  = 0;
     frame.variables.clear();
+    frame.stackDeltas.clear();
+    frame.savedRegistersOffset = 0;
+    frame.savedRegistersSize   = 0;
     if (!code || codeSize == 0 || limitAddress <= codeAddress)
         return false;
     const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
@@ -1463,6 +1467,10 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         return false;
 
     constexpr uint32 MAX_PROLOGUE_INSTRUCTIONS = 12;
+    // the registers the prologue saves (stp x19, x20, [sp, #0x20]; stp x29, x30, [sp, #0x30]): their slots from the sp of the entry, not
+    // variables (IDA: var_s0); the depths of the prologue from the sp of the entry, in x29 offsets once the frame register is set
+    std::optional<int64> savedLow, savedHigh;
+    std::vector<std::pair<uint64, int64>> prologueDeltas{ { codeAddress, 0 } };
     const uint8* data           = code;
     size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
     uint64 address              = codeAddress;
@@ -1513,6 +1521,14 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                 const int64 offset = current.id == ARM64_INS_ADD ? immediateAt(2).value() : 0;
                 stackPointer       = -offset;
                 hasFrame           = true;
+                // x29 - the sp of the entry: the depths and the saved registers of the prologue in x29 offsets
+                const int64 frameRegister = entryDelta + offset;
+                for (const auto& [at, delta] : prologueDeltas)
+                    frame.stackDeltas.emplace_back(at, static_cast<int32>(delta - frameRegister));
+                if (savedLow.has_value()) {
+                    frame.savedRegistersOffset = static_cast<int32>(savedLow.value() - frameRegister);
+                    frame.savedRegistersSize   = static_cast<uint32>(savedHigh.value() - savedLow.value());
+                }
                 continue;
             }
             // the prologue: sub sp, stp / str of the saved registers, pacibsp, bti
@@ -1523,7 +1539,19 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
             const bool isPrologue = spChange != 0 || savesOnStack || current.id == ARM64_INS_PACIBSP || current.id == ARM64_INS_PACIASP ||
                                     current.id == ARM64_INS_BTI;
             if (isPrologue && decodedInstructions < MAX_PROLOGUE_INSTRUCTIONS) {
+                bool pair             = false;
+                const uint16 saveSize = savesOnStack ? Arm64AccessSize(current, pair) : 0;
+                if (saveSize != 0 && arm64.operands[0].type == ARM64_OP_REG && IsArm64CalleeSaved(arm64.operands[0].reg))
+                    for (uint8 index = 0; index < arm64.op_count; index++)
+                        if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP) {
+                            // [sp, #n] and [sp, #-n]! at the sp before the instruction plus n; [sp], #n at the sp before it
+                            const int64 slot = entryDelta + (arm64.writeback && arm64.post_index ? 0 : arm64.operands[index].mem.disp);
+                            savedLow         = std::min(savedLow.value_or(slot), slot);
+                            savedHigh        = std::max(savedHigh.value_or(slot), slot + saveSize * (pair ? 2 : 1));
+                        }
                 entryDelta += spChange;
+                if (spChange != 0)
+                    prologueDeltas.emplace_back(address, entryDelta);
                 continue;
             }
             if (entryDelta >= 0)
@@ -1533,8 +1561,16 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
             stackOnly    = true;
             stackPointer = entryDelta;
             spChange     = 0; // counted in the prologue
+            for (const auto& [at, delta] : prologueDeltas)
+                frame.stackDeltas.emplace_back(at, static_cast<int32>(delta));
+            if (savedLow.has_value()) {
+                frame.savedRegistersOffset = static_cast<int32>(savedLow.value());
+                frame.savedRegistersSize   = static_cast<uint32>(savedHigh.value() - savedLow.value());
+            }
         }
         stackPointer += spChange;
+        if (spChange != 0 && frame.stackDeltas.size() < MAX_ARM64_STACK_DELTAS)
+            frame.stackDeltas.emplace_back(address, static_cast<int32>(stackPointer));
 
         bool writesFrameRegister = false;
         bool isPair              = false;
@@ -1601,6 +1637,8 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
     frame.usesFrameRegister = !stackOnly;
     frame.variables.reserve(accesses.size());
     for (const auto& access : accesses) {
+        if (frame.IsSavedRegisterSlot(access.frameOffset))
+            continue; // ldr x19, [sp, #0x10] of the epilogue: the slot of a saved register (var_s0)
         DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
         FormatDefaultLocalVariableName(access.frameOffset, true, variable.name);
         frame.variables.push_back(std::move(variable));

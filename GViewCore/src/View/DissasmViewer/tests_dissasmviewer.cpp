@@ -6377,7 +6377,48 @@ TEST_CASE("Arm64FrameVariables", "[Dissasm]Arm64")
     REQUIRE(listing.find("stur   w0, [x29, #var_4]") != std::string::npos);
     REQUIRE(listing.find("str    x1, [sp, #var_18]") != std::string::npos);
     REQUIRE(listing.find("str    w0, [sp, #var_4]") != std::string::npos);
-    REQUIRE(listing.find("stp    x29, x30, [sp, #0x20]") != std::string::npos); // the saved registers keep their operands
+    REQUIRE(listing.find("stp    x29, x30, [sp, #var_s0]") != std::string::npos); // the saved registers: var_s0 (8r)
+    REQUIRE(listing.find("ldp    x29, x30, [sp, #var_s0]") != std::string::npos);
+    REQUIRE(listing.find("sub    sp, sp, #0x30") != std::string::npos);
+}
+
+TEST_CASE("Arm64SavedRegisterSlots", "[Dissasm]Arm64")
+{
+    // the registers the prologue saves (MSVC: the pairs first, the frame record, then sub sp for the locals): their slots var_s0 (the lowest),
+    // named at the depth of sp at each instruction (the prologue is above the depth of the body), not variables
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BE53F3); // 0x00: stp x19, x20, [sp, #-0x20]!
+    word(0xA9017BFD); // 0x04: stp x29, x30, [sp, #0x10]   (the frame record: x29 + 0)
+    word(0x910043FD); // 0x08: add x29, sp, #0x10
+    word(0xD10043FF); // 0x0c: sub sp, sp, #0x10
+    word(0xB9000FE0); // 0x10: str w0, [sp, #0xc]          (x29 - 0x14: var_14)
+    word(0xB85EC3A0); // 0x14: ldur w0, [x29, #-0x14]
+    word(0x910043FF); // 0x18: add sp, sp, #0x10
+    word(0xA9417BFD); // 0x1c: ldp x29, x30, [sp, #0x10]
+    word(0xA8C253F3); // 0x20: ldp x19, x20, [sp], #0x20
+    word(0xD65F03C0); // 0x24: ret
+    file.resize(0x40, 0);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->savedRegistersOffset == -0x10); // x19, x20 below x29, the frame record at x29
+    REQUIRE(frame->savedRegistersSize == 0x20);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x14, 4, "var_14" } }));
+    REQUIRE(FindListingLine(listing, "0x00000000  stp    x19, x20, [sp, #-0x20]!").size() > 0); // a writeback keeps its operand
+    REQUIRE(FindListingLine(listing, "0x00000004  stp    x29, x30, [sp, #var_s10]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000010  str    w0, [sp, #var_14]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000014  ldur   w0, [x29, #var_14]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000001c  ldp    x29, x30, [sp, #var_s10]").size() > 0);
 }
 
 TEST_CASE("Arm64FrameOperands", "[Dissasm]Arm64")
@@ -9758,6 +9799,96 @@ TEST_CASE("X64ShrinkWrappedFrames", "[Dissasm]Help")
     REQUIRE(CheckFrameVariables(walked, { { -8, 8, "var_8" } }));
     // a ret no branch goes past: the code after it is not the function's (xor eax, eax; ret; push rbp; mov rbp, rsp; ...)
     REQUIRE_FALSE(analyze({ 0x31, 0xC0, 0xC3, 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x7D, 0xF8, 0x5D, 0xC3 }));
+}
+
+TEST_CASE("X86EhHandlerStubsWithPadding", "[Dissasm]Help")
+{
+    // 32 bit MSVC: the __ehhandler stub starts with nop; nop (an align line when the padding is aligned): the nops at the entry of a function
+    // are its code, the stub loads the FuncInfo, its unwind funclet and catch block are on the frame of the function, named after it
+    std::vector<unsigned char> file = {
+        0x55,                         // 0x401000: push ebp
+        0x8B, 0xEC,                   // 0x401001: mov ebp, esp
+        0xB8, 0x54, 0x10, 0x40, 0x00, // 0x401003: mov eax, 0x401054        (the __ehhandler stub)
+        0xC6, 0x45, 0xFC, 0x00,       // 0x401008: mov byte ptr [ebp - 4], 0 (try {: state 0)
+        0x90,                         // 0x40100c: nop
+        0xC6, 0x45, 0xFC, 0xFF,       // 0x40100d: mov byte ptr [ebp - 4], -1 (})
+        0x5D,                         // 0x401011: pop ebp
+        0xC3,                         // 0x401012: ret
+        0x8B, 0x55, 0xEC,             // 0x401013: mov edx, dword ptr [ebp - 0x14] (the catch block)
+        0xB8, 0x11, 0x10, 0x40, 0x00, // 0x401016: mov eax, 0x401011
+        0xC3,                         // 0x40101b: ret
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x8D, 0x4D, 0xF0,             // 0x401040: lea ecx, [ebp - 0x10]    (the unwind funclet)
+                                  0xE9, 0xB8, 0xFF, 0xFF, 0xFF, // 0x401043: jmp 0x401000
+                            });
+    file.resize(0x54, 0xCC);
+    file.insert(file.end(), {
+                                  0x90, 0x90,                   // 0x401054: nop; nop                 (the stub)
+                                  0xB8, 0xA0, 0x10, 0x40, 0x00, // 0x401056: mov eax, 0x4010a0        (the FuncInfo)
+                                  0xE9, 0xA0, 0xFF, 0xFF, 0xFF, // 0x40105b: jmp 0x401000
+                            });
+    file.resize(0xA0, 0xCC);
+    const std::vector<uint32> tables = {
+        0x19930522, 1, 0x4010C4, 1, 0x4010CC, 0, 0, 0, 0, // 0x4010a0: FuncInfo
+        0xFFFFFFFF, 0x401040,                             // 0x4010c4: UnwindMap[0]
+        0, 0, 1, 1, 0x4010E0,                             // 0x4010cc: TryBlockMap[0]: states 0-0, a catch
+        0x40, 0, 0, 0x401013,                             // 0x4010e0: HandlerType[0]: catch(...)
+        0,
+    };
+    for (const uint32 value : tables)
+        for (uint32 index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    ZoneLayout layout;
+    layout.size                  = file.size();
+    layout.entryPoint            = 0;
+    layout.labelAddressBase      = 0x401000;
+    layout.alignPadding          = true;
+    layout.functionEntries       = { { 0x54, { "", 0, false } } }; // the stub: a function of the plugin (certutil32: SafeSEH handlers)
+    layout.instructionBoundaries = { 0x54 };                       // the plugin: its functions start instructions
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    auto& zone = *dissasmInstance.zone;
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(zone.GetFunctionEnd(0x54) > 0x56); // the stub: its nops, then its code
+    REQUIRE(zone.GetLabelNameAt(0x40) == "EntryPoint$dtor$0");
+    REQUIRE(FindListingLine(listing, "0x00401040  lea    ecx, [ebp + var_10]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00401013  mov    edx, dword ptr [ebp + var_14]").find("catch(...) // owned by ") != std::string_view::npos);
+}
+
+TEST_CASE("ElfLandingPadsInsideSymbols", "[Dissasm]Help")
+{
+    // GCC: the landing pad of the unwinding after the ret of its function (the unwinder jumps to it: endbr64; mov r12, rax; jmp f.cold),
+    // inside the symbol of the function (its size): no function start; without the size, one (the rule of the endbr64 after a ret)
+    std::vector<unsigned char> file = {
+        0xF3, 0x0F, 0x1E, 0xFA,       // 0x00: endbr64
+        0x55,                         // 0x04: push rbp
+        0x48, 0x89, 0xE5,             // 0x05: mov rbp, rsp
+        0x41, 0x54,                   // 0x08: push r12
+        0x48, 0x83, 0xEC, 0x08,       // 0x0a: sub rsp, 8
+        0xE8, 0x2D, 0x00, 0x00, 0x00, // 0x0e: call 0x40
+        0x48, 0x83, 0xC4, 0x08,       // 0x13: add rsp, 8
+        0x41, 0x5C,                   // 0x17: pop r12
+        0x5D,                         // 0x19: pop rbp
+        0xC3,                         // 0x1a: ret
+        0xF3, 0x0F, 0x1E, 0xFA,       // 0x1b: endbr64 (the landing pad)
+        0x49, 0x89, 0xC4,             // 0x1f: mov r12, rax
+        0xEB, 0x1C,                   // 0x22: jmp 0x40
+    };
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3); // 0x40: ret
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x00, { "f", 0x24, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    REQUIRE(dissasmInstance.zone->functionStarts == std::vector<uint64>{ 0x00, 0x40 });
+    layout.functionEntries[0x00].size = 0;
+    DissasmTestInstance withoutSize(file.data(), file.size(), true, layout);
+    REQUIRE(withoutSize.zone->functionStarts == std::vector<uint64>{ 0x00, 0x1b, 0x40 });
 }
 
 TEST_CASE("X64ReturnAddressWithoutVariables", "[Dissasm]Help")

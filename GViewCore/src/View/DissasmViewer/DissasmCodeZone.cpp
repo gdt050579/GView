@@ -1195,7 +1195,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const bool isArm32             = insnArch == DissasmArch::Arm || insnArch == DissasmArch::Thumb;
         if (!isArm64 && !isArm32) { // the x86 / x64 prologues (the ARM functions: the calls, the plugin, IsArm*PrologueStart)
             const auto prologueStart = prologueDetector.Next(*insn, instructionOffset);
-            if (prologueStart.has_value() && !IsInsidePluginFunction(prologueStart.value(), *insn))
+            if (prologueStart.has_value() && !IsInsidePluginFunction(prologueStart.value()))
                 AddFunctionStart(prologueStart.value());
         }
 
@@ -1516,6 +1516,27 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // the end of every function (functionEnds): the paths from its start (and from the code of the function whose address is taken: a
     // handler of its exceptions, a callback) through the flow records, up to a ret / a jump out / a trap / a call that does not return /
     // padding (an align line, undecodable bytes); a path that goes on into the next function (or past the record budget) ends there
+    // the bytes [from, to) are nops: 0x90, 66 90, the long nops (66 0f 1f ...)
+    bool IsNopPadding(uint64 from, uint64 to)
+    {
+        constexpr uint64 MAX_PADDING = 16;
+        uint8 bytes[MAX_PADDING]     = {};
+        if (to <= from || to - from > MAX_PADDING || to > codeSize)
+            return false;
+        for (uint64 address = from; address < to; address++)
+            if (!obj->GetData().Copy<uint8>(codeStart + address, bytes[address - from]))
+                return false;
+        size_t index = 0;
+        while (index < to - from && bytes[index] == 0x66)
+            index++; // the operand size prefixes of the long nops
+        if (index + 1 < to - from && bytes[index] == 0x0F && bytes[index + 1] == 0x1F)
+            return true;
+        for (; index < to - from; index++)
+            if (bytes[index] != 0x90)
+                return false;
+        return true;
+    }
+
     void ComputeFunctionEnds()
     {
         constexpr uint32 MAX_PATH_STEPS = 4096;
@@ -1551,8 +1572,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const auto& record = flowRecords[position];
                     if (record.kind == FlowKind::Unknown) {
                         // padding the code reaches (6f: instructions after the sweep, an align line in it) goes on; the other padding / the
-                        // bytes after the code: the function ends before them
-                        if (std::binary_search(instructionSet.reachablePadding.begin(), instructionSet.reachablePadding.end(), record.address))
+                        // bytes after the code: the function ends before them. The nops at the entry of the function are its code (the
+                        // __ehhandler stubs of MSVC x86: nop; nop shown as align 0x2)
+                        if (std::binary_search(instructionSet.reachablePadding.begin(), instructionSet.reachablePadding.end(), record.address) ||
+                            (record.address == start && IsNopPadding(record.address, record.address + record.size)))
                             continue;
                         end = std::max(end, record.address);
                         break;
@@ -1854,11 +1877,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             coldChunksOf.emplace(coldChunks[index].function, index);
     }
 
-    // a start of the prologue rules (`completing`: the instruction that completed it) strictly inside the code of a function whose size the
-    // plugin knows: of the exception data (x64 .pdata: the unwinding needs the code of every function that is not a leaf, its prologue at
-    // its start), any such start (the push rbp; mov rbp, rsp after the saves of the home space of MSVC x64); of the symbols (ELF), a frame
-    // set up there (push rbp; mov rbp, rsp after the early exits: GCC shrink wrapping, AnalyzeX86FunctionFrame walks them)
-    bool IsInsidePluginFunction(uint64 fileOffset, const cs_insn& completing) const
+    // a start of the prologue rules strictly inside the code of a function whose size the plugin knows is code of that function: the
+    // exception data (x64 .pdata: the unwinding needs the code of every function that is not a leaf, its prologue at its start: the push
+    // rbp; mov rbp, rsp after the saves of the home space of MSVC x64), the symbols of ELF (a frame set up after the early exits: GCC
+    // shrink wrapping, AnalyzeX86FunctionFrame walks them; the landing pads of the unwinding: endbr64; mov r12, rax; jmp f.cold)
+    bool IsInsidePluginFunction(uint64 fileOffset) const
     {
         if (!functionEntries)
             return false;
@@ -1866,13 +1889,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (entry == functionEntries->begin())
             return false;
         --entry;
-        if (entry->second.size == 0 || fileOffset - entry->first >= entry->second.size)
-            return false;
-        const cs_x86& x86    = completing.detail->x86;
-        const bool setsFrame = completing.id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[1].type == X86_OP_REG &&
-                               (is64 ? x86.operands[0].reg == X86_REG_RBP && x86.operands[1].reg == X86_REG_RSP
-                                     : x86.operands[0].reg == X86_REG_EBP && x86.operands[1].reg == X86_REG_ESP);
-        return entry->second.exceptionData || setsFrame;
+        return entry->second.size != 0 && fileOffset - entry->first < entry->second.size;
     }
 
     // a place inside a function that the plugin knows (Settings::AddCodeLocation), relative
