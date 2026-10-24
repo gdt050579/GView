@@ -1822,7 +1822,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(const AsmFunctionDetails* f
             // the marks of the exception scopes are not a part of the value: dwBytes; try {
             const std::string_view comment = line.autoComment;
             const bool exceptionMark       = comment.starts_with("try {") || comment.starts_with("__try {") || comment.starts_with("} // starts at") ||
-                                       comment.starts_with("__except(") || comment.starts_with("catch(");
+                                       comment.starts_with("__except(") || comment.starts_with("catch(") || comment.starts_with("cleanup()");
             text += exceptionMark ? "; " : " ";
             text += line.autoComment;
             line.autoComment = std::move(text);

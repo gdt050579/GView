@@ -99,6 +99,14 @@ void Settings::AddCodeLocation(uint64 fileOffset)
     INTERNAL_SETTINGS->codeLocations.insert(fileOffset);
 }
 
+void Settings::AddLandingPads(const std::vector<LandingPad>& pads)
+{
+    auto& landingPads = INTERNAL_SETTINGS->landingPads;
+    landingPads.insert(landingPads.end(), pads.begin(), pads.end());
+    for (const auto& pad : pads)
+        INTERNAL_SETTINGS->codeLocations.insert(pad.pad); // a place inside its function, never a function start
+}
+
 void Settings::AddInstructionBoundary(uint64 fileOffset)
 {
     INTERNAL_SETTINGS->instructionBoundaries.push_back(fileOffset);

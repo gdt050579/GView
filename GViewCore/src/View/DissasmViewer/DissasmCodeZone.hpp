@@ -407,10 +407,12 @@ struct DissasmCodeZone : public ParseZone {
     // x64 structured exception handling (Settings::AddExceptionScopes, as IDA): the __try scopes marked on their first instruction
     // (__try { // __except at loc_X / __try { // __finally(sub_X$fin$0)), their last one (} // starts at sub_X+0x24) and the __except block
     // (__except(sub_X$filt$0) // owned by sub_X+0x24); the C++ ones (Settings::AddExceptionFunclets): a range of a try (try {, } // starts
-    // at) and its catch blocks on their funclet (catch(std::bad_alloc &) // owned by sub_X+0x24); by relative address. Recomputed by the
-    // deep scan, not saved
+    // at) and its catch blocks on their funclet (catch(std::bad_alloc &) // owned by sub_X+0x24); the call sites of GCC / clang
+    // (Settings::AddLandingPads: try {, } // starts at) and their landing pads (catch(MyError) / cleanup() // owned by sub_X+0x24); by
+    // relative address. Recomputed by the deep scan, not saved
     struct ExceptionMark {
-        enum class Kind : uint8 { TryBegin, TryEnd, Except, CppTryBegin, Catch, Finally, Filter }; // Finally / Filter: the blocks of x86
+        // Finally / Filter: the blocks of x86; Cleanup: a landing pad of GCC
+        enum class Kind : uint8 { TryBegin, TryEnd, Except, CppTryBegin, Catch, Finally, Filter, Cleanup };
         Kind kind;
         uint64 begin;                  // the first instruction of the scope (of the first range of the try of a catch)
         std::optional<uint64> handler; // the filter / the __finally funclet; none: the constant filter EXCEPTION_EXECUTE_HANDLER

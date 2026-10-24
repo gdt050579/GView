@@ -126,10 +126,403 @@ GVIEW_PLUGIN_ENTRY_POINTS
         elf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
-    // The imports of the code: the GOT slots of the dynamic relocations (the PLT stubs jump through them, -fno-plt calls use them), named
-    // after their dynamic symbols; the memory mappings of the disassembly are keyed by the RVA of the slot
-    void AddDissasmImports(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf, Reference<GView::Object> obj)
+    // The exception handling of GCC / clang: the call sites of the LSDA of each FDE of .eh_frame (.gcc_except_table) that have a landing
+    // pad (VAs), the types their catches take: the entries of the type table, a typeinfo object or the slot that points to it (DW.ref.*,
+    // an indirect entry: the loader fills it, AddDissasmImports reads its relocation into `typeinfoSlots`)
+    struct DissasmTypeinfoSlot
     {
+        uint64 value = 0; // the VA of the typeinfo (a relative relocation, a symbol of the file)
+        std::string name; // the typeinfo of another module (the symbol of an absolute relocation)
+    };
+    struct DissasmLandingPads
+    {
+        struct CatchType
+        {
+            uint64 value;  // the typeinfo, or the slot of an indirect entry; 0: a catch-all
+            bool indirect; // `value` is a slot of typeinfoSlots
+            bool known;    // the entry was read (its encoding is supported)
+        };
+        struct CallSite
+        {
+            uint64 begin, end, pad;
+            bool isCleanup;
+            std::vector<CatchType> types;
+        };
+        std::vector<CallSite> callSites;
+        std::unordered_map<uint64, DissasmTypeinfoSlot> typeinfoSlots;
+    };
+
+    // a value of the exception tables (DW_EH_PE_*): the format of the low 4 bits, absolute or relative to its own address (pcrel: `address`
+    // is the VA of data[0]); a raw 0 is a null pointer. The other applications (textrel, datarel, funcrel, aligned) are not read. The
+    // indirect bit (0x80) is the caller's
+    bool ReadEhValue(const uint8* data, size_t size, size_t& position, uint8 encoding, uint64 address, bool is64, uint64& value)
+    {
+        const auto readUnsigned = [&](size_t bytes) {
+            if (position + bytes > size)
+                return false;
+            value = 0;
+            for (size_t index = 0; index < bytes; index++)
+                value |= static_cast<uint64>(data[position + index]) << (8 * index);
+            position += bytes;
+            return true;
+        };
+        const auto readSigned = [&](size_t bytes) {
+            if (!readUnsigned(bytes))
+                return false;
+            if (bytes < 8 && (value >> (8 * bytes - 1)) & 1)
+                value |= ~static_cast<uint64>(0) << (8 * bytes);
+            return true;
+        };
+        const auto readLeb = [&](bool isSigned) {
+            value          = 0;
+            uint32 shift   = 0;
+            uint8 byte     = 0x80;
+            for (; (byte & 0x80) != 0; shift += 7)
+            {
+                if (position >= size || shift > 63)
+                    return false;
+                byte = data[position++];
+                value |= static_cast<uint64>(byte & 0x7F) << shift;
+            }
+            if (isSigned && shift < 64 && (byte & 0x40))
+                value |= ~static_cast<uint64>(0) << shift;
+            return true;
+        };
+        const uint64 fieldAddress = address + position;
+        bool read                 = false;
+        switch (encoding & 0x0F)
+        {
+        case 0x00:
+            read = readUnsigned(is64 ? 8 : 4);
+            break;
+        case 0x01:
+            read = readLeb(false);
+            break;
+        case 0x02:
+            read = readUnsigned(2);
+            break;
+        case 0x03:
+            read = readUnsigned(4);
+            break;
+        case 0x04:
+            read = readUnsigned(8);
+            break;
+        case 0x09:
+            read = readLeb(true);
+            break;
+        case 0x0A:
+            read = readSigned(2);
+            break;
+        case 0x0B:
+            read = readSigned(4);
+            break;
+        case 0x0C:
+            read = readSigned(8);
+            break;
+        default:
+            return false;
+        }
+        if (!read)
+            return false;
+        const uint8 application = encoding & 0x70;
+        if (application == 0x10 && value != 0)
+            value += fieldAddress;
+        else if (application != 0x00 && application != 0x10)
+            return false;
+        if (!is64)
+            value &= 0xFFFFFFFF;
+        return true;
+    }
+
+    void ReadDissasmLandingPads(Reference<ELF::ELFFile> elf, Reference<GView::Object> obj, DissasmLandingPads& result)
+    {
+        constexpr uint64 MAX_TABLE_SIZE      = 0x4000000; // 64 MB of .eh_frame / .gcc_except_table
+        constexpr size_t MAX_CALL_SITES      = 0x40000;
+        constexpr uint32 MAX_ACTION_RECORDS  = 64; // the catches of one call site
+        // the address, the file offset and the size of a section, by its name
+        const auto findSection = [&](std::string_view name, uint64& address, uint64& offset, uint64& size) {
+            const size_t count = elf->is64 ? elf->sections64.size() : elf->sections32.size();
+            for (size_t index = 0; index < count && index < elf->sectionNames.size(); index++)
+            {
+                if (elf->sectionNames[index] != name)
+                    continue;
+                address = elf->is64 ? elf->sections64[index].sh_addr : elf->sections32[index].sh_addr;
+                offset  = elf->is64 ? elf->sections64[index].sh_offset : elf->sections32[index].sh_offset;
+                size    = elf->is64 ? elf->sections64[index].sh_size : elf->sections32[index].sh_size;
+                const uint32 type = elf->is64 ? elf->sections64[index].sh_type : elf->sections32[index].sh_type;
+                return type != ELF::SHT_NOBITS && size > 0 && size <= MAX_TABLE_SIZE && offset < obj->GetData().GetSize();
+            }
+            return false;
+        };
+        uint64 frameAddress = 0, frameOffset = 0, frameSize = 0, tableAddress = 0, tableOffset = 0, tableSize = 0;
+        if (!findSection(".eh_frame", frameAddress, frameOffset, frameSize) || !findSection(".gcc_except_table", tableAddress, tableOffset, tableSize))
+            return;
+        const auto frameBuffer = obj->GetData().CopyToBuffer(frameOffset, static_cast<uint32>(frameSize));
+        const auto tableBuffer = obj->GetData().CopyToBuffer(tableOffset, static_cast<uint32>(tableSize));
+        if (!frameBuffer.IsValid() || !tableBuffer.IsValid())
+            return;
+        const uint8* frame     = frameBuffer.GetData();
+        const size_t frameEnd  = frameBuffer.GetLength();
+        const uint8* table     = tableBuffer.GetData();
+        const size_t tableEnd  = tableBuffer.GetLength();
+        const bool is64        = elf->is64;
+        uint64 unused          = 0;
+
+        // the LSDA of the function at `start`: its call sites with a landing pad (a cleanup, the types of the catches of their actions)
+        const auto readLsda = [&](uint64 lsda, uint64 start) {
+            if (lsda < tableAddress || lsda - tableAddress >= tableEnd)
+                return;
+            size_t position = static_cast<size_t>(lsda - tableAddress);
+            uint64 landingPadBase = start;
+            const uint8 landingPadEncoding = table[position++];
+            if (landingPadEncoding != 0xFF && !ReadEhValue(table, tableEnd, position, landingPadEncoding, tableAddress, is64, landingPadBase))
+                return;
+            if (position >= tableEnd)
+                return;
+            const uint8 typeEncoding = table[position++];
+            std::optional<size_t> typeBase; // the type table ends there (its entries are read backwards)
+            if (typeEncoding != 0xFF)
+            {
+                uint64 typeOffset = 0;
+                if (!ReadEhValue(table, tableEnd, position, 0x01, tableAddress, is64, typeOffset) || typeOffset > tableEnd - position)
+                    return;
+                typeBase = position + static_cast<size_t>(typeOffset);
+            }
+            if (position >= tableEnd)
+                return;
+            const uint8 callSiteEncoding = table[position++];
+            uint64 callSitesLength       = 0;
+            if (!ReadEhValue(table, tableEnd, position, 0x01, tableAddress, is64, callSitesLength) || callSitesLength > tableEnd - position)
+                return;
+            const size_t callSitesEnd = position + static_cast<size_t>(callSitesLength);
+            const size_t actionTable  = callSitesEnd;
+            // the size of an entry of the type table (the LEB128 formats have none)
+            size_t typeSize = 0;
+            switch (typeEncoding & 0x0F)
+            {
+            case 0x00:
+                typeSize = is64 ? 8 : 4;
+                break;
+            case 0x02:
+            case 0x0A:
+                typeSize = 2;
+                break;
+            case 0x03:
+            case 0x0B:
+                typeSize = 4;
+                break;
+            case 0x04:
+            case 0x0C:
+                typeSize = 8;
+                break;
+            }
+            while (position < callSitesEnd && result.callSites.size() < MAX_CALL_SITES)
+            {
+                uint64 siteStart = 0, siteLength = 0, landingPad = 0, action = 0;
+                // the start and the length of a call site are offsets from the start of the function, its landing pad from the base
+                if (!ReadEhValue(table, callSitesEnd, position, callSiteEncoding & 0x0F, tableAddress, is64, siteStart) ||
+                    !ReadEhValue(table, callSitesEnd, position, callSiteEncoding & 0x0F, tableAddress, is64, siteLength) ||
+                    !ReadEhValue(table, callSitesEnd, position, callSiteEncoding & 0x0F, tableAddress, is64, landingPad) ||
+                    !ReadEhValue(table, callSitesEnd, position, 0x01, tableAddress, is64, action))
+                    return;
+                if (landingPad == 0 || siteLength == 0)
+                    continue; // no landing pad: the unwinding goes on to the caller
+                DissasmLandingPads::CallSite site{ start + siteStart, start + siteStart + siteLength, landingPadBase + landingPad, action == 0, {} };
+                // the action records (filter, offset of the next one): 0 a cleanup, > 0 the index of a type (catch), < 0 an exception
+                // specification
+                size_t record = tableEnd;
+                if (action != 0 && action - 1 < tableEnd - actionTable)
+                    record = actionTable + static_cast<size_t>(action - 1);
+                for (uint32 count = 0; count < MAX_ACTION_RECORDS && record < tableEnd; count++)
+                {
+                    uint64 filter = 0, next = 0;
+                    if (!ReadEhValue(table, tableEnd, record, 0x09, tableAddress, is64, filter))
+                        break;
+                    const size_t nextField = record;
+                    if (!ReadEhValue(table, tableEnd, record, 0x09, tableAddress, is64, next))
+                        break;
+                    const int64 index = static_cast<int64>(filter);
+                    if (index == 0)
+                        site.isCleanup = true;
+                    else if (index > 0)
+                    {
+                        DissasmLandingPads::CatchType type{ 0, false, false };
+                        if (typeBase.has_value() && typeSize != 0 && static_cast<uint64>(index) <= typeBase.value() / typeSize)
+                        {
+                            size_t entry = typeBase.value() - static_cast<size_t>(index) * typeSize;
+                            if (ReadEhValue(table, tableEnd, entry, typeEncoding & 0x7F, tableAddress, is64, type.value))
+                            {
+                                type.known    = true;
+                                type.indirect = (typeEncoding & 0x80) != 0 && type.value != 0;
+                                if (type.indirect)
+                                    result.typeinfoSlots.emplace(type.value, DissasmTypeinfoSlot{});
+                            }
+                        }
+                        site.types.push_back(type);
+                    }
+                    const int64 offset = static_cast<int64>(next);
+                    if (offset == 0 || (offset < 0 && static_cast<uint64>(-offset) > nextField))
+                        break;
+                    record = static_cast<size_t>(static_cast<int64>(nextField) + offset);
+                }
+                result.callSites.push_back(std::move(site));
+            }
+        };
+
+        // the CIEs (their encodings of the FDE pointers and of the LSDA), by their offset in .eh_frame; their FDEs follow them
+        struct CieEncodings
+        {
+            uint8 pointers;
+            uint8 lsda;
+            bool hasAugmentationData;
+        };
+        std::unordered_map<size_t, CieEncodings> cies;
+        size_t position = 0;
+        while (position + 4 <= frameEnd && result.callSites.size() < MAX_CALL_SITES)
+        {
+            const size_t recordOffset = position;
+            uint64 length             = 0;
+            ReadEhValue(frame, frameEnd, position, 0x03, frameAddress, is64, length);
+            if (length == 0)
+                break; // the terminator
+            if (length == 0xFFFFFFFF && !ReadEhValue(frame, frameEnd, position, 0x04, frameAddress, is64, length))
+                break;
+            if (length > frameEnd - position || length < 4)
+                break;
+            const size_t recordEnd = position + static_cast<size_t>(length);
+            const size_t idField   = position;
+            uint64 id              = 0;
+            ReadEhValue(frame, recordEnd, position, 0x03, frameAddress, is64, id);
+            if (id == 0)
+            {
+                // a CIE: its version, its augmentation string ("zR", "zPLR"), the alignments, the return register, the augmentation data
+                CieEncodings encodings{ 0x00, 0xFF, false };
+                const uint8 version = position < recordEnd ? frame[position++] : 0;
+                std::string augmentation;
+                while (position < recordEnd && frame[position] != 0 && augmentation.size() < 16)
+                    augmentation.push_back(static_cast<char>(frame[position++]));
+                position++;
+                if (version >= 4)
+                    position += 2; // the address size, the segment size
+                bool valid = position < recordEnd && ReadEhValue(frame, recordEnd, position, 0x01, frameAddress, is64, unused) &&
+                             ReadEhValue(frame, recordEnd, position, 0x09, frameAddress, is64, unused);
+                if (valid && version == 1)
+                    position++;
+                else if (valid)
+                    valid = ReadEhValue(frame, recordEnd, position, 0x01, frameAddress, is64, unused);
+                if (valid && !augmentation.empty() && augmentation[0] == 'z')
+                {
+                    uint64 dataLength = 0;
+                    valid             = ReadEhValue(frame, recordEnd, position, 0x01, frameAddress, is64, dataLength) && dataLength <= recordEnd - position;
+                    encodings.hasAugmentationData = true;
+                    for (size_t index = 1; valid && index < augmentation.size() && position < recordEnd; index++)
+                    {
+                        if (augmentation[index] == 'L')
+                            encodings.lsda = frame[position++];
+                        else if (augmentation[index] == 'R')
+                            encodings.pointers = frame[position++];
+                        else if (augmentation[index] == 'P')
+                        {
+                            const uint8 personality = frame[position++];
+                            valid                   = ReadEhValue(frame, recordEnd, position, personality & 0x7F, frameAddress, is64, unused);
+                        }
+                        else if (augmentation[index] != 'S' && augmentation[index] != 'B' && augmentation[index] != 'G')
+                            break; // not known: the rest of its data is not read
+                    }
+                }
+                if (valid)
+                    cies[recordOffset] = encodings;
+            }
+            else if (id <= idField)
+            {
+                // an FDE: its CIE (the offset back from the field), the start of its function, the length, its LSDA
+                const auto cie = cies.find(idField - static_cast<size_t>(id));
+                uint64 start = 0, range = 0, lsda = 0, dataLength = 0;
+                if (cie != cies.end() && cie->second.lsda != 0xFF && (cie->second.lsda & 0x80) == 0 && cie->second.hasAugmentationData &&
+                    ReadEhValue(frame, recordEnd, position, cie->second.pointers & 0x7F, frameAddress, is64, start) &&
+                    ReadEhValue(frame, recordEnd, position, cie->second.pointers & 0x0F, frameAddress, is64, range) &&
+                    ReadEhValue(frame, recordEnd, position, 0x01, frameAddress, is64, dataLength) && dataLength <= recordEnd - position &&
+                    ReadEhValue(frame, position + static_cast<size_t>(dataLength), position, cie->second.lsda & 0x7F, frameAddress, is64, lsda) && lsda != 0 &&
+                    start != 0)
+                    readLsda(lsda, start);
+            }
+            position = recordEnd;
+        }
+    }
+
+    // the call sites of the exception handling (ReadDissasmLandingPads) as file offsets, the names of the types of their catches (the
+    // typeinfo objects: "typeinfo for std::runtime_error" -> std::runtime_error)
+    void AddDissasmLandingPads(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf, const DissasmLandingPads& landingPads)
+    {
+        if (landingPads.callSites.empty())
+            return;
+        constexpr std::string_view TYPEINFO = "typeinfo for ";
+        std::unordered_map<uint64, std::string_view> typeinfos; // the typeinfo objects of the file, by VA
+        const auto addTypeinfos = [&](const auto& symbols, const std::vector<std::string>& names) {
+            for (size_t index = 0; index < symbols.size() && index < names.size(); index++)
+                if (symbols[index].st_shndx != ELF::SHN_UNDEF && names[index].starts_with(TYPEINFO))
+                    typeinfos.emplace(symbols[index].st_value, std::string_view(names[index]).substr(TYPEINFO.size()));
+        };
+        if (elf->is64)
+        {
+            addTypeinfos(elf->dynamicSymbols64, elf->dynamicSymbolsNames);
+            addTypeinfos(elf->staticSymbols64, elf->staticSymbolsNames);
+        }
+        else
+        {
+            addTypeinfos(elf->dynamicSymbols32, elf->dynamicSymbolsNames);
+            addTypeinfos(elf->staticSymbols32, elf->staticSymbolsNames);
+        }
+        const auto typeName = [&](const DissasmLandingPads::CatchType& type) -> std::string {
+            if (!type.known)
+                return "?";
+            if (type.value == 0)
+                return "...";
+            uint64 value = type.value;
+            if (type.indirect)
+            {
+                const auto slot = landingPads.typeinfoSlots.find(type.value);
+                if (slot == landingPads.typeinfoSlots.end())
+                    return "?";
+                if (!slot->second.name.empty())
+                    return slot->second.name.starts_with(TYPEINFO) ? slot->second.name.substr(TYPEINFO.size()) : slot->second.name;
+                value = slot->second.value;
+            }
+            const auto typeinfo = typeinfos.find(value);
+            return typeinfo != typeinfos.end() ? std::string(typeinfo->second) : "?";
+        };
+        std::vector<DissasmViewer::LandingPad> pads;
+        pads.reserve(landingPads.callSites.size());
+        for (const auto& site : landingPads.callSites)
+        {
+            const uint64 begin = elf->VAToFileOffset(site.begin);
+            const uint64 last  = elf->VAToFileOffset(site.end - 1);
+            const uint64 pad   = elf->VAToFileOffset(site.pad);
+            if (begin == ELF::ELF_INVALID_ADDRESS || last == ELF::ELF_INVALID_ADDRESS || pad == ELF::ELF_INVALID_ADDRESS || last < begin)
+                continue;
+            DissasmViewer::LandingPad landingPad{ begin, last + 1, pad, site.isCleanup, {} };
+            for (const auto& type : site.types)
+                landingPad.catchTypes.push_back(typeName(type));
+            pads.push_back(std::move(landingPad));
+        }
+        settings.AddLandingPads(pads);
+    }
+
+    // The imports of the code: the GOT slots of the dynamic relocations (the PLT stubs jump through them, -fno-plt calls use them), named
+    // after their dynamic symbols; the memory mappings of the disassembly are keyed by the RVA of the slot. The slots of `typeinfoSlots`
+    // (the indirect entries of the type tables of the exception handling) get the typeinfo their relocation points to
+    void AddDissasmImports(
+          DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf, Reference<GView::Object> obj, std::unordered_map<uint64, DissasmTypeinfoSlot>& typeinfoSlots)
+    {
+        // a slot of a type table: the typeinfo its relocation points to (a VA of the file, or the name of an import)
+        const auto setTypeinfo = [&](uint64 slot, uint64 value, const std::string* name) {
+            if (const auto typeinfo = typeinfoSlots.find(slot); typeinfo != typeinfoSlots.end())
+            {
+                typeinfo->second.value = value;
+                if (name)
+                    typeinfo->second.name = *name;
+            }
+        };
         const uint64 imageBase = elf->GetImageBase() == static_cast<uint64>(-1) ? 0 : elf->GetImageBase();
         const auto machine     = elf->is64 ? elf->header64.e_machine : elf->header32.e_machine;
         constexpr unsigned R_ARM_GLOB_DAT  = 21;
@@ -229,11 +622,14 @@ GVIEW_PLUGIN_ENTRY_POINTS
                         return;
                     // its line: the symbol and the addend (a typeinfo: vptr = the vtable of __class_type_info + 0x10)
                     addImportPointer(slot, symbolIndex, addend);
+                    setTypeinfo(slot, 0, &elf->dynamicSymbolsNames[symbolIndex]);
                     value = 0;
                 }
                 else
                     value += symbol.st_value;
             }
+            if (value != 0)
+                setTypeinfo(slot, value, nullptr);
             const uint64 offset = elf->VAToFileOffset(slot);
             if (offset != ELF::ELF_INVALID_ADDRESS)
                 settings.AddRelocatedPointer(offset, value);
@@ -257,6 +653,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
             if (isRelative) // the image base (0 here) plus the value in place: a pointer of the file (a vtable entry, a callback)
             {
                 settings.AddRelocatedPointer(offset, addend);
+                setTypeinfo(slot, addend, nullptr);
                 return;
             }
             if (symbolIndex == 0 || symbolIndex >= elf->dynamicSymbols32.size())
@@ -265,11 +662,13 @@ GVIEW_PLUGIN_ENTRY_POINTS
             if (symbol.st_shndx != ELF::SHN_UNDEF)
             {
                 settings.AddRelocatedPointer(offset, static_cast<uint32>(symbol.st_value + addend));
+                setTypeinfo(slot, static_cast<uint32>(symbol.st_value + addend), nullptr);
                 return;
             }
             if (symbolIndex >= elf->dynamicSymbolsNames.size() || elf->dynamicSymbolsNames[symbolIndex].empty())
                 return;
             addImportPointer(slot, symbolIndex, static_cast<int32>(addend));
+            setTypeinfo(slot, 0, &elf->dynamicSymbolsNames[symbolIndex]);
             settings.AddRelocatedPointer(offset, 0); // its value is not known
         };
         auto readRelocations                  = [&](uint64 offset, uint64 size, uint32 type) {
@@ -328,7 +727,10 @@ GVIEW_PLUGIN_ENTRY_POINTS
                     uint32 value32 = 0;
                     const bool read = elf->is64 ? obj->GetData().Copy<uint64>(fileOffset, value) : obj->GetData().Copy<uint32>(fileOffset, value32);
                     if (read)
+                    {
                         settings.AddRelocatedPointer(fileOffset, elf->is64 ? value : value32);
+                        setTypeinfo(address, elf->is64 ? value : value32, nullptr);
+                    }
                 }
                 return;
             }
@@ -618,7 +1020,10 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 settings.SetGlobalOffsetTable(gotPlt != 0 ? gotPlt : got);
         }
         settings.SetOffsetTranslationList({ "RVA", "VA" }, &elf->dissasmTranslation);
-        AddDissasmImports(settings, elf, win->GetObject());
+        DissasmLandingPads landingPads; // the slots of their typeinfo objects are relocated
+        ReadDissasmLandingPads(elf, win->GetObject(), landingPads);
+        AddDissasmImports(settings, elf, win->GetObject(), landingPads.typeinfoSlots);
+        AddDissasmLandingPads(settings, elf, landingPads);
         if (isArm)
             AddDissasmArmModes(settings, elf, language == DissasmViewer::DisassemblyLanguage::Thumb);
         AddDissasmFunctionEntries(settings, elf); // the Thumb bit of the function symbols

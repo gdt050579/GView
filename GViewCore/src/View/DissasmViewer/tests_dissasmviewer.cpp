@@ -285,6 +285,7 @@ struct ZoneLayout {
     std::function<bool(uint64)> isFileAddress; // the addresses of the file (cross references of the immediates)
     std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
     std::set<uint64> codeLocations;                         // the places inside the functions given by the plugin (AddCodeLocation)
+    std::vector<LandingPad> landingPads;                    // the call sites of GCC / clang (AddLandingPads; their pads as codeLocations)
     std::unordered_map<uint64, MemoryMappingEntry> imports;  // the imports by the RVA of their slot (the VA for x86 without translation)
     bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
     std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
@@ -386,6 +387,7 @@ class DissasmTestInstance
         initData.isFileAddress                = layout.isFileAddress;
         initData.functionEntries              = &layout.functionEntries;
         initData.codeLocations                = &layout.codeLocations;
+        initData.landingPads                  = &layout.landingPads;
         if (layout.translateOffsets)
             settingsData.offsetTranslateCallback = &translation;
         settingsData.memoryMappings = layout.imports;
@@ -3505,6 +3507,108 @@ TEST_CASE("ElfPublicNamesOfAliases", "[Dissasm]FunctionEntries")
     REQUIRE(FindListingLine(listing, "0x00000000  mov    ecx, ebx").find("; fd") != std::string_view::npos);
 }
 
+TEST_CASE("ApiPrototypesOfTheSamples", "[Dissasm]Help")
+{
+    // the most called APIs of the samples without a prototype before: the shell, the kernel, the console, the UCRT forwarders, glibc
+    REQUIRE(FindApiPrototype("ILFree") != nullptr);
+    REQUIRE(FindApiPrototype("FsRtlCheckOplockEx")->params.size() == 6);
+    REQUIRE(std::string_view(FindApiPrototype("ClfsLsnLess")->params[1].name) == "plsn2");
+    REQUIRE(FindApiPrototype("GetConsoleScreenBufferInfo") != nullptr);
+    REQUIRE(FindApiPrototype("j__o_towlower")->functionName == "towlower");
+    REQUIRE(FindApiPrototype("j__CxxThrowException")->functionName == "_CxxThrowException");
+    REQUIRE(std::string_view(FindApiPrototype("j___fprintf_chk")->params[0].name) == "stream");
+    REQUIRE(std::string_view(FindApiPrototype("__libc_assert_fail")->params[2].name) == "line");
+    REQUIRE(FindApiPrototype("DrawTextW") != nullptr); // the A and the W function of a line
+    // 32 bit: a POINT and a LONGLONG passed by value take two pushes
+    REQUIRE(GetX86StdcallPushes(*FindApiPrototype("PtInRect")) == 3u);
+    REQUIRE(GetX86StdcallPushes(*FindApiPrototype("FsRtlRemoveBaseMcbEntry")) == 5u);
+    REQUIRE(!GetX86StdcallPushes(*FindApiPrototype("memcpy_s")).has_value()); // the C run-time: cdecl
+
+    // the arguments of a call: x64 (rcx) and the pushes of 32 bit
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xD9,             // 0x00: mov rcx, rbx (the first argument of the test zone)
+        0xE8, 0x18, 0x00, 0x00, 0x00, // 0x03: call 0x20 (ILFree)
+        0xC3,                         // 0x08: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: ILFree: xor eax, eax; ret
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x20, { "ILFree", 3, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000003  call   ILFree").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rcx, rbx").find("; pidl") != std::string_view::npos);
+
+    std::vector<unsigned char> file32 = {
+        0x53,                         // 0x00: push ebx (pidl2)
+        0x56,                         // 0x01: push esi (pidl1)
+        0xE8, 0x19, 0x00, 0x00, 0x00, // 0x02: call 0x20 (ILIsEqual, stdcall)
+        0xC3,                         // 0x07: ret
+    };
+    file32.resize(0x20, 0xCC);
+    file32.insert(file32.end(), { 0x31, 0xC0, 0xC2, 0x08, 0x00 }); // 0x20: ILIsEqual: xor eax, eax; ret 8
+    file32.resize(0x40, 0xCC);
+    ZoneLayout layout32;
+    layout32.size            = file32.size();
+    layout32.entryPoint      = 0;
+    layout32.functionEntries = { { 0x20, { "ILIsEqual", 5, true } } };
+    DissasmTestInstance dissasmInstance32(file32.data(), file32.size(), false, layout32);
+    const std::string listing32 = dissasmInstance32.GetListing();
+    INFO(listing32);
+    REQUIRE(FindListingLine(listing32, "0x00000000  push   ebx").find("; pidl2") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing32, "0x00000001  push   esi").find("; pidl1") != std::string_view::npos);
+}
+
+TEST_CASE("ElfLandingPads", "[Dissasm]ExceptionScopes")
+{
+    // the exception handling of GCC (the LSDA of the FDE of f, read by the ELF plugin): the call of 0x01 goes to the landing pad 0x08 after
+    // the ret (its catches), the one of 0x0f to the cleanup pad 0x1b; stripped: no symbol size, the pads would be functions (endbr64)
+    std::vector<unsigned char> file = {
+        0x53,                         // 0x00: f: push rbx
+        0xE8, 0x3A, 0x00, 0x00, 0x00, // 0x01: call 0x40 (try)
+        0x5B,                         // 0x06: pop rbx
+        0xC3,                         // 0x07: ret
+        0xF3, 0x0F, 0x1E, 0xFA,       // 0x08: endbr64 (catch(std::runtime_error), catch(...))
+        0x48, 0x89, 0xC7,             // 0x0c: mov rdi, rax
+        0xE8, 0x2C, 0x00, 0x00, 0x00, // 0x0f: call 0x40 (try)
+        0x5B,                         // 0x14: pop rbx
+        0xC3,                         // 0x15: ret
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, // 0x16: int3
+        0xF3, 0x0F, 0x1E, 0xFA,       // 0x1b: endbr64 (cleanup)
+        0x48, 0x89, 0xC7,             // 0x1f: mov rdi, rax
+        0xE8, 0x29, 0x00, 0x00, 0x00, // 0x22: call 0x50 (abort)
+    };
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x40: g: xor eax, eax; ret
+    file.resize(0x50, 0xCC);
+    file.insert(file.end(), { 0xC3 }); // 0x50: abort
+    file.resize(0x60, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0x40;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x00, { "f", 0, true } }, { 0x40, { "g", 0, true } }, { 0x50, { "abort", 0, true } } };
+    layout.landingPads     = { { 0x01, 0x06, 0x08, false, { "std::runtime_error", "..." } }, { 0x0f, 0x14, 0x1b, true, {} } };
+    layout.codeLocations   = { 0x08, 0x1b }; // Settings::AddLandingPads
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000001  call   EntryPoint").find("try {; } // starts at f+0x1") != std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x00000008  endbr64").find("catch(std::runtime_error) // owned by f+0x1; catch(...) // owned by f+0x1") !=
+            std::string_view::npos);
+    REQUIRE(FindListingLine(listing, "0x0000001b  endbr64").find("cleanup() // owned by f+0xF") != std::string_view::npos);
+    // the pads: labels, code of f (no function starts there: f+0xF, not a function of its own)
+    REQUIRE(listing.find("\nloc_8:") != std::string::npos);
+    REQUIRE(listing.find("\nloc_1B:") != std::string::npos);
+    REQUIRE(listing.find("sub_8") == std::string::npos);
+    REQUIRE(listing.find("sub_1B") == std::string::npos);
+}
+
 TEST_CASE("ImportThunksX86", "[Dissasm]Thunks")
 {
     std::vector<unsigned char> file = {
@@ -4982,7 +5086,7 @@ TEST_CASE("FunctionFramesNoReturn", "[Dissasm]NoReturn")
     const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
     REQUIRE(frame != nullptr);
     REQUIRE(frame->variables.size() == 1);
-    REQUIRE(frame->variables[0].frameOffset == 0x1C);
+    REQUIRE(frame->variables[0].frameOffset == -4); // x29 + 0x1c: 4 bytes below the sp of the entry (the frame record below the locals)
     REQUIRE(zone.GetFunctionEnd(0x00) == 0x10);
     REQUIRE(zone.FormatFunctionAttributes(0x00) == "noreturn bp-based frame");
 }
@@ -6452,6 +6556,52 @@ TEST_CASE("Arm64SavedRegisterSlots", "[Dissasm]Arm64")
     REQUIRE(FindListingLine(listing, "0x00000010  str    w0, [sp, #var_14]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000014  ldur   w0, [x29, #var_14]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x0000001c  ldp    x29, x30, [sp, #var_s10]").size() > 0);
+}
+
+TEST_CASE("Arm64FrameRecordBelowLocals", "[Dissasm]Arm64")
+{
+    // MSVC: the saves, then the frame record allocated with the locals (stp x29, x30, [sp, #-0x20]!; mov x29, sp): the local between the
+    // record and the saved x19, its offsets from the top of the locals (IDA); an epilogue in the middle, the code after it at the depth of
+    // the branch to it
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xF81F0FF3); // 0x00: str x19, [sp, #-0x10]!
+    word(0xA9BE7BFD); // 0x04: stp x29, x30, [sp, #-0x20]!
+    word(0x910003FD); // 0x08: mov x29, sp
+    word(0x52800068); // 0x0c: mov w8, #3
+    word(0xB90013E8); // 0x10: str w8, [sp, #0x10]     (x29 + 0x10: the local var_10, below the saved x19)
+    word(0x910043E1); // 0x14: add x1, sp, #0x10       (its address)
+    word(0x340000A0); // 0x18: cbz w0, 0x2c
+    word(0x52800020); // 0x1c: mov w0, #1
+    word(0xA8C27BFD); // 0x20: ldp x29, x30, [sp], #0x20
+    word(0xF84107F3); // 0x24: ldr x19, [sp], #0x10
+    word(0xD65F03C0); // 0x28: ret
+    word(0xB94013E9); // 0x2c: ldr w9, [sp, #0x10]     (the depth of the cbz: the local again)
+    word(0xB94013AA); // 0x30: ldr w10, [x29, #0x10]
+    word(0x2A0903E0); // 0x34: mov w0, w9
+    word(0xA8C27BFD); // 0x38: ldp x29, x30, [sp], #0x20
+    word(0xF84107F3); // 0x3c: ldr x19, [sp], #0x10
+    word(0xD65F03C0); // 0x40: ret
+    file.resize(0x60, 0);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->frameRegisterOffset == -0x20); // x29 is 0x20 below the top of the locals
+    REQUIRE(frame->savedRegistersOffset == 0);    // the saved x19 at the top, the frame record not with it
+    REQUIRE(frame->savedRegistersSize == 8);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x10, 4, "var_10" } }));
+    REQUIRE(FindListingLine(listing, "0x00000010  str    w8, [sp, #var_10]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000002c  ldr    w9, [sp, #var_10]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000030  ldr    w10, [x29, #var_10]").size() > 0);
 }
 
 TEST_CASE("Arm64FrameOperands", "[Dissasm]Arm64")

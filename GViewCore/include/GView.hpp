@@ -1821,6 +1821,17 @@ namespace View
             uint64 destructor;
             bool isPointer;
         };
+        // a call site of the exception handling of GCC / clang (ELF: the call-site table of the LSDA of an FDE, .gcc_except_table), file
+        // offsets: the code [begin, end) whose exceptions go to the landing pad `pad`, a place inside the function; a cleanup (the
+        // destructors, the cleanup attributes of C, then _Unwind_Resume) and / or the types its catches take, in the order they are tried
+        // ("std::runtime_error", "..." for a catch-all; empty: a type not known)
+        struct LandingPad {
+            uint64 begin;
+            uint64 end;
+            uint64 pad;
+            bool isCleanup;
+            std::vector<std::string> catchTypes;
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
         // the entry point of a code zone that has none (an executable section that is not the one of the entry point)
@@ -1887,6 +1898,12 @@ namespace View
              * longjmp target table. The code that takes its address is its function.
              */
             void AddCodeLocation(uint64 fileOffset);
+            /**
+             * \brief The exception handling of GCC / clang (ELF: .eh_frame, .gcc_except_table): the call sites with a landing pad. The
+             * viewer labels the landing pads (places inside their function, never function starts: AddCodeLocation) and marks, as IDA,
+             * the code of each call site (try {, } // starts at) and its landing pad (cleanup() / catch(type), owned by the call site).
+             */
+            void AddLandingPads(const std::vector<LandingPad>& pads);
             /**
              * \brief The name of an import by ordinal (Ordinal:357 of certcli.dll): the name the DLL exports that ordinal under, from its
              * export table. The DLL is the one in the folder of the file (`filePath`), else the one of the system (Windows: SysWOW64 for a

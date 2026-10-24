@@ -159,6 +159,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::function<bool(uint64)> isFileAddress;
     const std::map<uint64, DissasmFunctionEntry>* functionEntries;
     const std::set<uint64>* codeLocations; // Settings::AddCodeLocation (file offsets): never function starts
+    const std::vector<LandingPad>* landingPads; // Settings::AddLandingPads (file offsets): the exception handling of GCC / clang
     std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
     std::function<std::optional<uint64>(uint64)> addressToFileOffset;
 
@@ -304,6 +305,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::vector<uint64> functionEnds; // ComputeFunctionEnds
     std::unordered_map<uint64, std::vector<uint64>> switchCaseTargets; // SwitchCases() once the sweeps end: the frames go on with the cases
     std::vector<uint64> computedGotoTargets; // DemoteComputedGotoTargets: the endbr64 starts that are locations of their function (sorted)
+    // the landing pads of the unwinding (Settings::AddLandingPads) and their call sites, relative, sorted: a pad is code of the function or
+    // of the chunk of its call site (the unwinder goes there from it, as a jump)
+    std::vector<std::pair<uint64, uint64>> landingPadSources;
     std::vector<DissasmFunctionChunk> chunks; // DetectFunctionChunks
     std::vector<DissasmFunctionChunk> coldChunks;         // the chunks the jumps tell, the code locations: their slots on the frame of their function
     std::unordered_multimap<uint64, size_t> coldChunksOf; // the cold chunks of a function (indexes in coldChunks), by its start
@@ -314,11 +318,12 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
         : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture), detectLocalVariables(initData.enableLocalVariablesDetection),
           isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), codeLocations(initData.codeLocations),
-          findImport(initData.findImport), addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset),
-          codeSize(zone->GetCodeSize()), lines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull),
-          labelBase(zone->labelAddressBase), arch(zone->GetArch()), imageBase(initData.imageBase), instructionSet(zone->instructionSet),
-          walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64), switchDetector(is64, zone->labelAddressBase, initData.imageBase),
-          adrpTracker(zone->labelAddressBase), arm32Tracker(zone->labelAddressBase, LiteralReader())
+          landingPads(initData.landingPads), findImport(initData.findImport), addressToFileOffset(initData.addressToFileOffset),
+          codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()), lines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()),
+          addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull), labelBase(zone->labelAddressBase), arch(zone->GetArch()), imageBase(initData.imageBase),
+          instructionSet(zone->instructionSet), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
+          switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase),
+          arm32Tracker(zone->labelAddressBase, LiteralReader())
     {
         globalOffsetTable = initData.globalOffsetTable;
     }
@@ -1550,62 +1555,106 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         std::vector<size_t> pending;
         std::unordered_set<size_t> seen;
         for (size_t index = 0; index < functionStarts.size(); index++) {
-            const uint64 start = functionStarts[index];
-            const uint64 limit = std::min<uint64>(index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize, codeSize);
-            const auto inside  = [start, limit](uint64 target) { return target >= start && target < limit; };
-            uint64 end         = start;
-            uint32 steps       = 0;
+            const uint64 start     = functionStarts[index];
+            const uint64 nextStart = std::min<uint64>(index + 1 < functionStarts.size() ? functionStarts[index + 1] : codeSize, codeSize);
+            const auto firstPad    = std::upper_bound(landingPadSources.begin(), landingPadSources.end(), std::make_pair(start, UINT64_MAX));
+            uint64 limit           = start;    // the code of the function is before it
+            auto scan              = firstPad; // the pads before it are its own (once its own, a pad stays its own: the end only grows)
+            std::vector<uint64> beyond;        // the targets past the end so far: walked once a pad of its own moves the end past them
+            const auto follow = [&](uint64 target) {
+                if (target >= start && target < limit)
+                    pending.push_back(FirstRecordAt(target));
+                else if (target >= limit && target < nextStart)
+                    beyond.push_back(target);
+            };
+            uint64 end     = start;
+            uint32 steps   = 0;
+            bool intoLimit = false; // a path went past the end
             pending.assign(1, FirstRecordAt(start));
-            for (auto seed = std::upper_bound(seeds.begin(), seeds.end(), start); seed != seeds.end() && *seed < limit; ++seed)
-                pending.push_back(FirstRecordAt(*seed));
             seen.clear();
-            while (!pending.empty() && end < limit) {
-                size_t position = pending.back();
-                pending.pop_back();
-                for (bool walking = true; walking; position++) {
-                    if (position >= flowRecords.size() || flowRecords[position].address >= limit || ++steps > MAX_PATH_STEPS) {
-                        end = limit; // into the next function
+            for (;;) {
+                // the function ends at the next start, or at the first landing pad that is not its own (no call site of it in the code walked
+                // so far: stripped, a cold fragment of another function after it, as a function start); its own pads are its code too
+                // (after its ret), walked with the seeds before the end
+                uint64 newLimit = nextStart;
+                while (scan != landingPadSources.end() && scan->first < nextStart) {
+                    const uint64 address = scan->first;
+                    bool own             = false;
+                    auto next            = scan;
+                    for (; next != landingPadSources.end() && next->first == address; ++next)
+                        own = own || (next->second >= start && next->second < end);
+                    if (!own) {
+                        newLimit = address;
                         break;
                     }
-                    if (!seen.insert(position).second)
-                        break;
-                    const auto& record = flowRecords[position];
-                    if (record.kind == FlowKind::Unknown) {
-                        // padding the code reaches (6f: instructions after the sweep, an align line in it) goes on; the other padding / the
-                        // bytes after the code: the function ends before them. The nops at the entry of the function are its code (the
-                        // __ehhandler stubs of MSVC x86: nop; nop shown as align 0x2)
-                        if (std::binary_search(instructionSet.reachablePadding.begin(), instructionSet.reachablePadding.end(), record.address) ||
-                            (record.address == start && IsNopPadding(record.address, record.address + record.size)))
-                            continue;
-                        end = std::max(end, record.address);
-                        break;
-                    }
-                    end = std::max(end, record.address + record.size);
-                    switch (record.kind) {
-                    case FlowKind::Return:
-                    case FlowKind::Trap:
-                        walking = false;
-                        break;
-                    case FlowKind::Call:
-                        walking = !RecordReachesNoReturn(record);
-                        break;
-                    case FlowKind::ConditionalJump:
-                        if (record.target != NO_TARGET && inside(record.target))
-                            pending.push_back(FirstRecordAt(record.target));
-                        break;
-                    case FlowKind::Jump:
-                        walking = false;
-                        if (const auto cases = switchCases.find(record.address); cases != switchCases.end()) {
-                            for (const uint64 target : cases->second)
-                                if (inside(target))
-                                    pending.push_back(FirstRecordAt(target));
-                        } else if (record.target != NO_TARGET && inside(record.target))
-                            pending.push_back(FirstRecordAt(record.target));
-                        break;
-                    default:
-                        break;
+                    scan = next;
+                }
+                if (newLimit > limit) {
+                    for (auto seed = std::lower_bound(seeds.begin(), seeds.end(), std::max(limit, start + 1)); seed != seeds.end() && *seed < newLimit; ++seed)
+                        pending.push_back(FirstRecordAt(*seed));
+                    for (auto pad = std::lower_bound(
+                               landingPadSources.begin(), landingPadSources.end(), std::make_pair(std::max(limit, start + 1), static_cast<uint64>(0)));
+                         pad != landingPadSources.end() && pad->first < newLimit;
+                         ++pad)
+                        pending.push_back(FirstRecordAt(pad->first));
+                    for (const uint64 target : beyond)
+                        if (target < newLimit)
+                            pending.push_back(FirstRecordAt(target));
+                    beyond.erase(std::remove_if(beyond.begin(), beyond.end(), [newLimit](uint64 target) { return target < newLimit; }), beyond.end());
+                    limit = newLimit;
+                }
+                if (pending.empty() || end >= limit)
+                    break;
+                while (!pending.empty() && end < limit) {
+                    size_t position = pending.back();
+                    pending.pop_back();
+                    for (bool walking = true; walking; position++) {
+                        if (position >= flowRecords.size() || flowRecords[position].address >= limit || ++steps > MAX_PATH_STEPS) {
+                            end       = limit; // into the next function
+                            intoLimit = true;
+                            break;
+                        }
+                        if (!seen.insert(position).second)
+                            break;
+                        const auto& record = flowRecords[position];
+                        if (record.kind == FlowKind::Unknown) {
+                            // padding the code reaches (6f: instructions after the sweep, an align line in it) goes on; the other padding / the
+                            // bytes after the code: the function ends before them. The nops at the entry of the function are its code (the
+                            // __ehhandler stubs of MSVC x86: nop; nop shown as align 0x2)
+                            if (std::binary_search(instructionSet.reachablePadding.begin(), instructionSet.reachablePadding.end(), record.address) ||
+                                (record.address == start && IsNopPadding(record.address, record.address + record.size)))
+                                continue;
+                            end = std::max(end, record.address);
+                            break;
+                        }
+                        end = std::max(end, record.address + record.size);
+                        switch (record.kind) {
+                        case FlowKind::Return:
+                        case FlowKind::Trap:
+                            walking = false;
+                            break;
+                        case FlowKind::Call:
+                            walking = !RecordReachesNoReturn(record);
+                            break;
+                        case FlowKind::ConditionalJump:
+                            if (record.target != NO_TARGET)
+                                follow(record.target);
+                            break;
+                        case FlowKind::Jump:
+                            walking = false;
+                            if (const auto cases = switchCases.find(record.address); cases != switchCases.end()) {
+                                for (const uint64 target : cases->second)
+                                    follow(target);
+                            } else if (record.target != NO_TARGET)
+                                follow(record.target);
+                            break;
+                        default:
+                            break;
+                        }
                     }
                 }
+                if (intoLimit)
+                    break; // into the next function: no pad of it is its own
             }
             functionEnds[index] = std::max(std::min(end, limit), std::min(start + 1, limit));
         }
@@ -1773,10 +1822,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return end;
         };
         std::vector<ColdBlock> blocks; // by address, never overlapping
-        for (const auto& xref : xrefs.byTarget) {
-            if (!isJump(xref) || xref.to < labelBase || xref.to - labelBase >= codeSize)
-                continue;
-            const uint64 target = xref.to - labelBase;
+        // the targets of the jumps, the landing pads (the unwinder goes there from their call site)
+        std::vector<uint64> targets;
+        for (const auto& xref : xrefs.byTarget)
+            if (isJump(xref) && xref.to >= labelBase && xref.to - labelBase < codeSize)
+                targets.push_back(xref.to - labelBase);
+        if (!landingPadSources.empty()) {
+            for (const auto& source : landingPadSources)
+                targets.push_back(source.first);
+            std::sort(targets.begin(), targets.end());
+        }
+        for (const uint64 target : targets) {
             if ((!blocks.empty() && target < blocks.back().end) || bodyOwner(target).has_value())
                 continue; // inside the previous block (sorted by target), or code of a function
             if (const uint64 end = pathEnd(target); end > target)
@@ -1801,6 +1857,20 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             std::set<uint64> owners;
             waits     = false;
             foreign   = false;
+            // a jump from `source`: false when it is from code of nobody
+            const auto addSource = [&](uint64 source) {
+                if (const auto owner = bodyOwner(source); owner.has_value())
+                    owners.insert(owner.value());
+                else if (const auto* other = blockOf(source); !other || other->rejected)
+                    return false;
+                else if (other != &block) {
+                    if (other->owner.has_value())
+                        owners.insert(other->owner.value());
+                    else
+                        waits = true;
+                }
+                return true;
+            };
             auto from = std::lower_bound(
                   xrefs.byTarget.begin(), xrefs.byTarget.end(), labelBase + block.start, [](const auto& item, uint64 value) { return item.to < value; });
             for (; from != xrefs.byTarget.end() && from->to < labelBase + block.end; ++from) {
@@ -1808,19 +1878,18 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     foreign = true; // a call / a taken address / a read: not a tail of a function
                     return owners;
                 }
-                const uint64 source = from->from - labelBase;
-                if (const auto owner = bodyOwner(source); owner.has_value())
-                    owners.insert(owner.value());
-                else if (const auto* other = blockOf(source); !other || other->rejected) {
+                if (!addSource(from->from - labelBase)) {
                     foreign = true; // from code of nobody
                     return owners;
-                } else if (other != &block) {
-                    if (other->owner.has_value())
-                        owners.insert(other->owner.value());
-                    else
-                        waits = true;
                 }
             }
+            for (auto pad = std::lower_bound(landingPadSources.begin(), landingPadSources.end(), std::make_pair(block.start, static_cast<uint64>(0)));
+                 pad != landingPadSources.end() && pad->first < block.end;
+                 ++pad)
+                if (!addSource(pad->second)) {
+                    foreign = true;
+                    return owners;
+                }
             return owners;
         };
         bool changed = true;
@@ -2515,6 +2584,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                         callsMap.insert({ chunk.first, true }).second)
                         callsFound.emplace_back(chunk.first, zone->GetLabelName("loc_", chunk.first - codeStart));
             }
+        // the landing pads of the exception handling of GCC / clang (reached by the unwinding only): a label, as IDA
+        if (landingPads) {
+            for (const auto& landingPad : *landingPads) {
+                if (landingPad.pad < codeStart || landingPad.pad - codeStart >= blockStarts.size() || !blockStarts[landingPad.pad - codeStart])
+                    continue;
+                if (callsMap.insert({ landingPad.pad, true }).second)
+                    callsFound.emplace_back(landingPad.pad, zone->GetLabelName("loc_", landingPad.pad - codeStart));
+                if (landingPad.begin >= codeStart && landingPad.begin - codeStart < codeSize)
+                    landingPadSources.emplace_back(landingPad.pad - codeStart, landingPad.begin - codeStart);
+            }
+            std::sort(landingPadSources.begin(), landingPadSources.end());
+            landingPadSources.erase(std::unique(landingPadSources.begin(), landingPadSources.end()), landingPadSources.end());
+        }
         // every label found at the entry point (a call and a prologue can both find it): the entry point keeps its own name
         if (zone->zoneDetails.HasEntryPoint()) {
             callsFound.erase(
@@ -2592,6 +2674,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (hasFunctionEntries && (!IsArmArch(arch) || arch == DissasmArch::Arm64)) // the exception data of x64 / ARM64 PE
                 CollectExceptionScopes(usedNames, namedByPlugin);
         }
+        if (landingPads && !landingPads->empty()) // the exception handling of GCC / clang (ELF)
+            MarkLandingPads();
 
         // local variables: a dedicated handle with the instruction details (operands, registers access) enabled
         if (detectLocalVariables) {
@@ -2724,12 +2808,56 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
     }
 
+    // the last instruction of [begin, end) (relative): } // starts at
+    std::optional<uint64> LastInstructionOf(uint64 begin, uint64 end)
+    {
+        constexpr uint32 MAX_SCOPE_INSTRUCTIONS = 0x10000;
+        DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, begin, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
+        std::optional<uint64> last;
+        for (uint32 count = 0; count < MAX_SCOPE_INSTRUCTIONS && probe.Next(insn) && insn->address < end; count++)
+            last = insn->address;
+        return last;
+    }
+
+    // the exception handling of GCC / clang (Settings::AddLandingPads), as IDA: the code of each call site (try {, } // starts at) and its
+    // landing pad (catch(type) in the order they are tried, cleanup(); owned by the first call site that goes to the pad)
+    void MarkLandingPads()
+    {
+        constexpr uint64 MAX_CALL_SITE_SIZE = 0x10000;   // the ranges of GCC: a few KB
+        constexpr uint64 MAX_WALKED_SIZE    = 0x1000000; // the code walked for the last instructions of the ranges, in all
+        uint64 walked                       = 0;
+        const auto inCode                   = [this](uint64 fileOffset) { return fileOffset >= codeStart && fileOffset - codeStart < codeSize; };
+        // a mark of the pad once (the call sites of a pad share it)
+        const auto addPadMark = [this](uint64 pad, const DissasmCodeZone::ExceptionMark& mark) {
+            auto& marks = exceptionMarks[pad];
+            if (std::none_of(marks.begin(), marks.end(), [&mark](const auto& other) { return other.kind == mark.kind && other.catchType == mark.catchType; }))
+                marks.push_back(mark);
+        };
+        for (const auto& landingPad : *landingPads) {
+            if (!inCode(landingPad.begin) || landingPad.end <= landingPad.begin || !inCode(landingPad.end - 1) || !inCode(landingPad.pad) ||
+                landingPad.end - landingPad.begin > MAX_CALL_SITE_SIZE)
+                continue;
+            DissasmCodeZone::ExceptionMark mark{
+                DissasmCodeZone::ExceptionMark::Kind::CppTryBegin, landingPad.begin - codeStart, std::nullopt, std::nullopt, {}, true
+            };
+            AddExceptionMark(mark.begin, mark);
+            walked += landingPad.end - landingPad.begin;
+            if (const auto last = walked <= MAX_WALKED_SIZE ? LastInstructionOf(mark.begin, landingPad.end - codeStart) : std::nullopt; last.has_value()) {
+                mark.kind = DissasmCodeZone::ExceptionMark::Kind::TryEnd;
+                AddExceptionMark(last.value(), mark);
+            }
+            for (const auto& type : landingPad.catchTypes)
+                addPadMark(landingPad.pad - codeStart, { DissasmCodeZone::ExceptionMark::Kind::Catch, mark.begin, std::nullopt, std::nullopt, type, true });
+            if (landingPad.isCleanup)
+                addPadMark(landingPad.pad - codeStart, { DissasmCodeZone::ExceptionMark::Kind::Cleanup, mark.begin, std::nullopt, std::nullopt, {}, true });
+        }
+    }
+
     // x64 structured exception handling (Settings::AddExceptionScopes): the funclets named after their function as IDA (sub_X$fin$0: a
     // __finally, sub_X$filt$0: a filter), the marks of the scopes on their instructions (DissasmCodeZone::exceptionMarks), the funclets
     // that receive the frame of their function (LinkFuncletFrames)
     void CollectExceptionScopes(std::unordered_set<std::string>& usedNames, const std::unordered_set<uint64>& namedByPlugin)
     {
-        constexpr uint32 MAX_SCOPE_INSTRUCTIONS = 0x10000;
         const auto labelOf = [this](uint64 fileOffset) -> std::pair<uint64, std::string>* {
             const auto call = std::lower_bound(
                   callsFound.begin(), callsFound.end(), fileOffset, [](const auto& item, uint64 value) { return item.first < value; });
@@ -2763,14 +2891,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             };
             // a mark, not twice the same one (the ranges shared by the try blocks of a function)
             const auto addMark = [this](uint64 address, const DissasmCodeZone::ExceptionMark& mark) { AddExceptionMark(address, mark); };
-            // the last instruction of [begin, end) (relative): } // starts at
-            const auto lastInstruction = [this](uint64 begin, uint64 end) {
-                DissasmCodeLinesWalker probe(obj, codeStart, codeSize, handle, begin, &zone->instructionBoundaries, zone->paddingAlignmentBase, &instructionSet);
-                std::optional<uint64> last;
-                for (uint32 count = 0; count < MAX_SCOPE_INSTRUCTIONS && probe.Next(insn) && insn->address < end; count++)
-                    last = insn->address;
-                return last;
-            };
+            const auto lastInstruction = [this](uint64 begin, uint64 end) { return LastInstructionOf(begin, end); };
             for (const auto& funclet : entry.exceptionFunclets) {
                 if (!inCode(funclet.fileOffset))
                     continue;
@@ -4726,7 +4847,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const auto frameOffsetOf = [&](unsigned int base, unsigned int index, int64 disp, uint64 address) -> std::optional<int32> {
             if (isArm64) {
                 if (base == ARM64_REG_X29 && frame.usesFrameRegister)
-                    return static_cast<int32>(disp);
+                    return static_cast<int32>(disp + frame.frameRegisterOffset);
                 if (base == ARM64_REG_SP)
                     return static_cast<int32>(disp + frame.stackOffset);
                 return {};
@@ -7299,6 +7420,9 @@ std::string DissasmCodeZone::FormatExceptionMarks(uint64 relativeAddress) const
             break;
         case ExceptionMark::Kind::Catch:
             text += "catch(" + mark.catchType + ")" + (mark.owned ? " // owned by " + FormatCodeAddress(mark.begin) : std::string());
+            break;
+        case ExceptionMark::Kind::Cleanup:
+            text += "cleanup() // owned by " + FormatCodeAddress(mark.begin);
             break;
         }
     }

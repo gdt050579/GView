@@ -6,6 +6,7 @@
 #include <memory>
 #include <set>
 #include <span>
+#include <unordered_map>
 
 using namespace GView::View::DissasmViewer;
 
@@ -1471,7 +1472,13 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
     // the registers the prologue saves (stp x19, x20, [sp, #0x20]; stp x29, x30, [sp, #0x30]): their slots from the sp of the entry, not
     // variables (IDA: var_s0); the depths of the prologue from the sp of the entry, in x29 offsets once the frame register is set
     std::optional<int64> savedLow, savedHigh;
+    std::optional<int64> frameRecord; // stp x29, x30 of the prologue: the saved area too, unless locals separate it from the other saves
+    std::optional<int64> rebase;      // MSVC's frame record below the locals: the top of the locals (x29 offsets), the base of the offsets
     std::vector<std::pair<uint64, int64>> prologueDeltas{ { codeAddress, 0 } };
+    // the depth of sp at the targets of the forward branches: the code after a ret / b in the middle of the function (an epilogue
+    // restored sp before it) goes on at the depth of the branches to it
+    std::unordered_map<uint64, int64> branchDepths;
+    bool afterFlowEnd           = false;
     const uint8* data           = code;
     size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
     uint64 address              = codeAddress;
@@ -1498,6 +1505,13 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         frame.endAddress      = address;
         const cs_insn& current = *insn;
         const cs_arm64& arm64 = current.detail->arm64;
+        if (afterFlowEnd && hasFrame)
+            if (const auto depth = branchDepths.find(current.address); depth != branchDepths.end() && depth->second != stackPointer) {
+                stackPointer = depth->second;
+                if (frame.stackDeltas.size() < MAX_ARM64_STACK_DELTAS)
+                    frame.stackDeltas.emplace_back(current.address, static_cast<int32>(stackPointer));
+            }
+        afterFlowEnd          = false;
         const auto isRegister = [&arm64](uint8 index, arm64_reg reg) {
             return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_REG && arm64.operands[index].reg == reg;
         };
@@ -1526,6 +1540,25 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                 const int64 frameRegister = entryDelta + offset;
                 for (const auto& [at, delta] : prologueDeltas)
                     frame.stackDeltas.emplace_back(at, static_cast<int32>(delta - frameRegister));
+                // the frame record and the other saves: one area when they touch; MSVC puts the record below the locals (stp x29, x30,
+                // [sp, #-0x80]!; mov x29, sp after the saves): the saved area is then the other saves, the offsets of the frame are from
+                // the top of the locals (the first saved register, or the sp of the entry without one: IDA var_s0)
+                std::optional<int64> top;
+                if (frameRecord.has_value()) {
+                    const int64 record = frameRecord.value();
+                    if (!savedLow.has_value()) {
+                        savedLow  = record;
+                        savedHigh = record + 16;
+                        if (record == frameRegister && record + 16 < 0)
+                            top = 0;
+                    } else if (record + 16 == savedLow.value() || record == savedHigh.value()) {
+                        savedLow  = std::min(savedLow.value(), record);
+                        savedHigh = std::max(savedHigh.value(), record + 16);
+                    } else if (record == frameRegister && record + 16 < savedLow.value())
+                        top = savedLow.value();
+                }
+                if (top.has_value())
+                    rebase = top.value() - frameRegister;
                 if (savedLow.has_value()) {
                     frame.savedRegistersOffset = static_cast<int32>(savedLow.value() - frameRegister);
                     frame.savedRegistersSize   = static_cast<uint32>(savedHigh.value() - savedLow.value());
@@ -1547,8 +1580,12 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                         if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP) {
                             // [sp, #n] and [sp, #-n]! at the sp before the instruction plus n; [sp], #n at the sp before it
                             const int64 slot = entryDelta + (arm64.writeback && arm64.post_index ? 0 : arm64.operands[index].mem.disp);
-                            savedLow         = std::min(savedLow.value_or(slot), slot);
-                            savedHigh        = std::max(savedHigh.value_or(slot), slot + saveSize * (pair ? 2 : 1));
+                            if (pair && arm64.operands[0].reg == ARM64_REG_X29 && !frameRecord.has_value()) {
+                                frameRecord = slot;
+                                continue;
+                            }
+                            savedLow  = std::min(savedLow.value_or(slot), slot);
+                            savedHigh = std::max(savedHigh.value_or(slot), slot + saveSize * (pair ? 2 : 1));
                         }
                 entryDelta += spChange;
                 if (spChange != 0)
@@ -1564,6 +1601,10 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
             spChange     = 0; // counted in the prologue
             for (const auto& [at, delta] : prologueDeltas)
                 frame.stackDeltas.emplace_back(at, static_cast<int32>(delta));
+            if (frameRecord.has_value()) {
+                savedLow  = std::min(savedLow.value_or(frameRecord.value()), frameRecord.value());
+                savedHigh = std::max(savedHigh.value_or(frameRecord.value() + 16), frameRecord.value() + 16);
+            }
             if (savedLow.has_value()) {
                 frame.savedRegistersOffset = static_cast<int32>(savedLow.value());
                 frame.savedRegistersSize   = static_cast<uint32>(savedHigh.value() - savedLow.value());
@@ -1576,18 +1617,26 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         bool writesFrameRegister = false;
         bool isPair              = false;
         const uint16 accessSize  = Arm64AccessSize(current, isPair);
-        const bool savesRegisters = isPair && arm64.op_count > 1 && arm64.operands[0].type == ARM64_OP_REG && IsArm64CalleeSaved(arm64.operands[0].reg);
+        // a pair of callee saved registers loaded (ldp x23, x24, [sp, #0x20] of an epilogue after its ldp x29, x30, [sp], #0x20): not the
+        // depth of the body; stored in the body (stp x24, xzr, [sp, #0x28]: a copy in a local) a slot of the saved area only when it is in
+        // it (filtered with the variables)
+        const bool restoresRegisters = (current.id == ARM64_INS_LDP || current.id == ARM64_INS_LDNP) && arm64.op_count > 1 &&
+                                       arm64.operands[0].type == ARM64_OP_REG && IsArm64CalleeSaved(arm64.operands[0].reg);
+        // the locals: below x29, and above the frame record of MSVC below the top of the locals (x29 offsets)
+        const auto isLocal = [&rebase](int64 offset) { return offset < 0 || (rebase.has_value() && offset >= 16 && offset < rebase.value()); };
         for (uint8 index = 0; index < arm64.op_count; index++) {
             const cs_arm64_op& op = arm64.operands[index];
             if (op.type == ARM64_OP_REG && (op.access & CS_AC_WRITE) && op.reg == ARM64_REG_X29)
                 writesFrameRegister = true;
-            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback || savesRegisters || accessSize == 0)
+            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback || accessSize == 0)
                 continue;
             int64 offset = 0;
             if (op.mem.base == ARM64_REG_X29 && !stackOnly)
                 offset = op.mem.disp;
             else if (op.mem.base == ARM64_REG_SP) {
                 // the slots addressed through sp are kept in x29 offsets: sp stays the same in the body of the function
+                if (!bodyStackPointer.has_value() && restoresRegisters)
+                    continue;
                 if (!bodyStackPointer.has_value())
                     bodyStackPointer = stackPointer;
                 if (stackPointer != bodyStackPointer.value())
@@ -1607,9 +1656,9 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         if ((current.id == ARM64_INS_ADD || current.id == ARM64_INS_SUB) && arm64.op_count == 3 && immediateAt(2) &&
             !isRegister(0, ARM64_REG_SP) && !isRegister(0, ARM64_REG_X29)) {
             const int64 value = current.id == ARM64_INS_SUB ? -immediateAt(2).value() : immediateAt(2).value();
-            if (isRegister(1, ARM64_REG_X29) && value < 0 && !stackOnly)
+            if (isRegister(1, ARM64_REG_X29) && isLocal(value) && !stackOnly)
                 accesses.push_back({ static_cast<int32>(value), 0 });
-            else if (isRegister(1, ARM64_REG_SP) && bodyStackPointer.value_or(stackPointer) == stackPointer && value + stackPointer < 0) {
+            else if (isRegister(1, ARM64_REG_SP) && bodyStackPointer.value_or(stackPointer) == stackPointer && isLocal(value + stackPointer)) {
                 if (!bodyStackPointer.has_value())
                     bodyStackPointer = stackPointer;
                 accesses.push_back({ static_cast<int32>(value + stackPointer), 0 });
@@ -1625,17 +1674,30 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         const auto operands = GetArm64OperandsInfo(current);
         if ((flow == X86Flow::ConditionalJump || flow == X86Flow::Jump) && operands.directTarget.has_value()) {
             const uint64 target = operands.directTarget.value();
-            if (target > current.address && target < limitAddress)
+            if (target > current.address && target < limitAddress) {
                 furthestBranchTarget = std::max(furthestBranchTarget, target);
+                branchDepths.emplace(target, stackPointer);
+            }
         }
         const bool noReturnCall = flow == X86Flow::Call && callNoReturn && callNoReturn(current); // bl abort
-        if ((flow == X86Flow::Return || flow == X86Flow::Jump || noReturnCall) && furthestBranchTarget < address)
+        afterFlowEnd            = flow == X86Flow::Return || flow == X86Flow::Jump || noReturnCall;
+        if (afterFlowEnd && furthestBranchTarget < address)
             break;
     }
     if (!hasFrame || !CompactAccesses(accesses))
         return false;
     frame.stackOffset       = static_cast<int32>(bodyStackPointer.value_or(stackPointer));
     frame.usesFrameRegister = !stackOnly;
+    if (rebase.has_value() && !stackOnly) {
+        const int32 base = static_cast<int32>(rebase.value());
+        for (auto& access : accesses)
+            access.frameOffset -= base;
+        for (auto& delta : frame.stackDeltas)
+            delta.second -= base;
+        frame.stackOffset -= base;
+        frame.savedRegistersOffset -= base;
+        frame.frameRegisterOffset = -base;
+    }
     frame.variables.reserve(accesses.size());
     for (const auto& access : accesses) {
         if (frame.IsSavedRegisterSlot(access.frameOffset))

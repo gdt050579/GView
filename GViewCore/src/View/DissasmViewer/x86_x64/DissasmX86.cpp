@@ -525,7 +525,9 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
             int32 depth = function->stackOffset;
             if (address >= function->startAddress && address < function->endAddress)
                 depth = function->StackDeltaAt(address).value_or(depth);
-            frameOperand    = { slot.replaceStart, slot.replaceEnd, slot.isStackPointerBased ? slot.displacement + depth : slot.displacement };
+            frameOperand    = { slot.replaceStart,
+                                slot.replaceEnd,
+                             slot.isStackPointerBased ? slot.displacement + depth : slot.displacement + function->frameRegisterOffset };
             armStackOperand = true;
             variable     = function->FindVariableContaining(frameOperand.frameOffset);
             joiner       = slot.needsSeparator ? std::string_view(", #") : std::string_view();
@@ -1740,6 +1742,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.armCodeModes          = &settings->armCodeModes;
     initData.relocatedPointers     = &settings->relocatedPointers;
     initData.codeLocations         = &settings->codeLocations;
+    initData.landingPads           = &settings->landingPads;
     initData.memoryMappings        = &settings->memoryMappings;
     initData.dataFields            = &settings->dataFields;
     if (!settings->memoryMappings.empty()) {
