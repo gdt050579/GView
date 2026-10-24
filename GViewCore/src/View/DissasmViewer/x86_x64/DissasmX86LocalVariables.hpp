@@ -82,6 +82,10 @@ std::optional<DissasmFunctionFrame::StackAlias> FindX64EstablisherFrameAlias(csh
 // the frame of the function of the funclet) added to the variables of `frame` that it does not have (a slot only the catch block or the
 // __finally uses: the exception code a filter keeps, an object its unwind funclet destroys). False when the frame would have too many
 bool AddX64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, const DissasmFunctionFrame::StackAlias& alias, DissasmFunctionFrame& frame);
+// ARM64 SEH / C++ EH: a funclet (code at `codeAddress`) runs with the x29 of its function (the unwinder gives it: mov x29, x1, or x29 as it
+// is): the slots it uses through x29 added to the variables of `frame` (the frame of its function) that it does not have; read up to its
+// ret, an unconditional branch or another write of x29. False when the frame would have too many
+bool AddArm64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame);
 // a chunk of an x64 function without a frame register (its cold code: the chained unwind data elsewhere): its stack from `entryDelta` (the
 // depth of the body of the function), with the callee saved aliases of the function live there (`entryAliases`: the biased rbp of MSVC);
 // frame.variables receives its slots (in the offsets of the frame of the function, named as the ones of the function). False when its
@@ -143,7 +147,9 @@ bool FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std
 // through x29 ([x29, #-0x8] -> var_8) and the ones addressed through sp, kept in x29 offsets (frame.stackOffset: sp - x29 in the body of
 // the function). The saved registers (the frame record, stp x20, x19, ...) are not variables. A function without x29 that reserves stack
 // (sub sp, sp, #N) has its slots relative to the sp of its entry (frame.usesFrameRegister = false). False when it has neither.
-// `callNoReturn`: a call that does not return ends a path (as a ret), the code after it belongs to the function only through a branch
+// `callNoReturn`: a call that does not return ends a path (as a ret), the code after it belongs to the function only through a branch;
+// `pathsEnd` (the end of the paths of the function: its switch cases): the code after a ret before it is the function's too, at the depth
+// of the branches to it or of the body (0: only through a direct branch)
 bool AnalyzeArm64FunctionFrame(
       csh detailHandle,
       const uint8* code,
@@ -151,7 +157,8 @@ bool AnalyzeArm64FunctionFrame(
       uint64 codeAddress,
       uint64 limitAddress,
       DissasmFunctionFrame& frame,
-      const std::function<bool(const cs_insn& call)>& callNoReturn = {});
+      const std::function<bool(const cs_insn& call)>& callNoReturn = {},
+      uint64 pathsEnd                                              = 0);
 
 struct Arm64FrameOperand {
     uint32 replaceStart; // first character after "#"

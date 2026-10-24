@@ -160,6 +160,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     const std::map<uint64, DissasmFunctionEntry>* functionEntries;
     const std::set<uint64>* codeLocations; // Settings::AddCodeLocation (file offsets): never function starts
     const std::vector<LandingPad>* landingPads; // Settings::AddLandingPads (file offsets): the exception handling of GCC / clang
+    const std::map<uint64, uint64>* codeRanges; // Settings::AddCodeRange (file offset -> size): the FDEs of ELF
     std::function<const MemoryMappingEntry*(const X86OperandsInfo&)> findImport;
     std::function<std::optional<uint64>(uint64)> addressToFileOffset;
 
@@ -247,6 +248,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     };
     std::vector<FuncletLink> funcletLinks;
     std::unordered_multimap<uint64, size_t> funcletsOfParent; // the funclets of a function (their top function), by its start
+    // ARM64: the funclets of a function (SEH / C++ EH: their x29 is its frame, the unwinder gives it: mov x29, x1 / used as it is), relative
+    // starts: the top function of each funclet, the funclets of a function
+    std::unordered_map<uint64, uint64> arm64FuncletParents;
+    std::unordered_multimap<uint64, uint64> arm64FuncletsOfParent;
     std::vector<DissasmFunctionFrame> pendingChunkFrames;      // AddChunkFrames / AddX86FuncletSlots: the frames of the chunks / funclets, until Commit
     // 32 bit MSVC: the code the exception handling runs on the frame of a function (its ebp: the catch blocks, the unwind funclets, the
     // filters / __finally / __except blocks of SEH4), by the start of the function (MarkX86ExceptionScopes)
@@ -318,11 +323,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     DissasmDeepScan(DissasmCodeZone* zone, const DissasmCodeZoneInitData& initData, int internalArchitecture, uint32 asmLines)
         : zone(zone), obj(initData.obj), internalArchitecture(internalArchitecture), detectLocalVariables(initData.enableLocalVariablesDetection),
           isFileAddress(initData.isFileAddress), functionEntries(initData.functionEntries), codeLocations(initData.codeLocations),
-          landingPads(initData.landingPads), findImport(initData.findImport), addressToFileOffset(initData.addressToFileOffset),
-          codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()), lines(asmLines), linesToDecode(asmLines), is64(zone->Is64BitCode()),
-          addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull), labelBase(zone->labelAddressBase), arch(zone->GetArch()), imageBase(initData.imageBase),
-          instructionSet(zone->instructionSet), walker(initData.obj, codeStart, codeSize, 0), prologueDetector(is64),
-          switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase),
+          landingPads(initData.landingPads), codeRanges(initData.codeRanges), findImport(initData.findImport),
+          addressToFileOffset(initData.addressToFileOffset), codeStart(zone->cachedCodeOffsets[0].offset), codeSize(zone->GetCodeSize()), lines(asmLines),
+          linesToDecode(asmLines), is64(zone->Is64BitCode()), addressMask(is64 ? UINT64_MAX : 0xFFFFFFFFull), labelBase(zone->labelAddressBase),
+          arch(zone->GetArch()), imageBase(initData.imageBase), instructionSet(zone->instructionSet), walker(initData.obj, codeStart, codeSize, 0),
+          prologueDetector(is64), switchDetector(is64, zone->labelAddressBase, initData.imageBase), adrpTracker(zone->labelAddressBase),
           arm32Tracker(zone->labelAddressBase, LiteralReader())
     {
         globalOffsetTable = initData.globalOffsetTable;
@@ -1952,6 +1957,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // shrink wrapping, AnalyzeX86FunctionFrame walks them; the landing pads of the unwinding: endbr64; mov r12, rax; jmp f.cold)
     bool IsInsidePluginFunction(uint64 fileOffset) const
     {
+        // the code ranges of the plugin (the FDEs of a stripped ELF: a function or a fragment of one) as well
+        if (codeRanges && !codeRanges->empty())
+            if (auto range = codeRanges->lower_bound(fileOffset); range != codeRanges->begin() && fileOffset - (--range)->first < range->second)
+                return true;
         if (!functionEntries)
             return false;
         auto entry = functionEntries->lower_bound(fileOffset);
@@ -2888,6 +2897,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 if (arch == DissasmArch::X64 && funcletEntry != functionEntries->end()) // the frame of the function: x64 (mov rbp, rdx)
                     funcletLinks.push_back(
                           { fileOffset - codeStart, it->first - codeStart, funcletEntry->second.size, entry.prologSize, entry.frameRegister, entry.frameOffset });
+                else if (arch == DissasmArch::Arm64 && fileOffset != it->first) // ARM64: its x29 is the one of the function
+                    arm64FuncletParents.emplace(fileOffset - codeStart, it->first - codeStart);
             };
             // a mark, not twice the same one (the ranges shared by the try blocks of a function)
             const auto addMark = [this](uint64 address, const DissasmCodeZone::ExceptionMark& mark) { AddExceptionMark(address, mark); };
@@ -2975,6 +2986,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 link.frameOffset      = outerLink.frameOffset;
             }
             funcletsOfParent.emplace(link.parent, &link - funcletLinks.data());
+        }
+        // ARM64: a funclet of a funclet has the x29 of the top function
+        for (auto& [funclet, parent] : arm64FuncletParents) {
+            for (uint32 depth = 0; depth < 8; depth++) {
+                const auto outer = arm64FuncletParents.find(parent);
+                if (outer == arm64FuncletParents.end() || outer->second == parent || outer->first == funclet)
+                    break;
+                parent = outer->second;
+            }
+            arm64FuncletsOfParent.emplace(parent, funclet);
         }
     }
 
@@ -3286,6 +3307,55 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         chunkFrame.variables.clear();
         chunkFrame.variablesOf = frame.startAddress;
         pendingChunkFrames.push_back(std::move(chunkFrame));
+    }
+
+    // ARM64: the slots the funclets of the function use through x29 (its frame: sub_X$dtor$0: ldr w8, [x29, #0x10]) are variables of its
+    // frame (AddArm64FuncletSlots of DissasmX86LocalVariables)
+    void AddArm64FuncletSlots(DissasmFunctionFrame& frame)
+    {
+        constexpr uint32 MAX_FUNCLET_SIZE = 0x1000;
+        if (!frame.usesFrameRegister)
+            return;
+        const auto [first, last] = arm64FuncletsOfParent.equal_range(frame.startAddress);
+        for (auto it = first; it != last; ++it) {
+            const uint64 funclet = it->second;
+            if (funclet >= codeSize)
+                continue;
+            const auto bytes =
+                  obj->GetData().CopyToBuffer(codeStart + funclet, static_cast<uint32>(std::min<uint64>(codeSize - funclet, MAX_FUNCLET_SIZE)), false);
+            if (bytes.IsValid() && !GView::View::DissasmViewer::AddArm64FuncletSlots(detailHandle, bytes.GetData(), bytes.GetLength(), funclet, frame))
+                return;
+        }
+    }
+
+    // ARM64: the frames of the funclets name their x29 slots with the variables of their function (DissasmFunctionFrame::frameRegisterOf);
+    // a funclet without a frame of its own gets one (no slot of its own)
+    void LinkArm64FuncletFrames()
+    {
+        const auto byStart = [](const DissasmFunctionFrame& frame, uint64 value) { return frame.startAddress < value; };
+        for (const auto& [funclet, parent] : arm64FuncletParents) {
+            const auto parentFrame = std::lower_bound(frames.begin(), frames.end(), parent, byStart);
+            if (parentFrame == frames.end() || parentFrame->startAddress != parent || !parentFrame->usesFrameRegister)
+                continue;
+            auto funcletFrame = std::lower_bound(frames.begin(), frames.end(), funclet, byStart);
+            if (funcletFrame != frames.end() && funcletFrame->startAddress == funclet) {
+                funcletFrame->frameRegisterOf = parent;
+                continue;
+            }
+            const auto next = std::upper_bound(functionStarts.begin(), functionStarts.end(), funclet);
+            if (next == functionStarts.begin() || *(next - 1) != funclet || functionEnds.size() != functionStarts.size())
+                continue;
+            const uint64 end = functionEnds[static_cast<size_t>(next - functionStarts.begin()) - 1];
+            if ((funcletFrame != frames.end() && funcletFrame->startAddress < end) ||
+                (funcletFrame != frames.begin() && (funcletFrame - 1)->endAddress > funclet))
+                continue; // the ranges of the frames never overlap
+            DissasmFunctionFrame frame{};
+            frame.startAddress      = funclet;
+            frame.endAddress        = end;
+            frame.usesFrameRegister = false;
+            frame.frameRegisterOf   = parent;
+            frames.insert(funcletFrame, std::move(frame));
+        }
     }
 
     // the slots the funclets of the function use (through the establisher frame) are variables of its frame
@@ -5147,12 +5217,22 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         DissasmFunctionFrame frame{};
         const auto functionArch = zone->GetArchAt(relativeAddress);
         bool analyzed           = false;
-        if (functionArch == DissasmArch::Arm64)
-            analyzed = AnalyzeArm64FunctionFrame(
-                  detailHandle, functionData.GetData(), functionData.GetLength(), relativeAddress, limit, frame, [this](const cs_insn& call) {
-                      return noReturnCalls.contains(call.address);
-                  });
-        else if (functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb)
+        if (functionArch == DissasmArch::Arm64) {
+            // the end of its paths (ComputeFunctionEnds: the cases of its switches): the code after its rets before it is its own
+            const auto start      = std::lower_bound(functionStarts.begin(), functionStarts.end(), relativeAddress);
+            const uint64 pathsEnd = start != functionStarts.end() && *start == relativeAddress && functionEnds.size() == functionStarts.size()
+                                          ? std::min<uint64>(functionEnds[static_cast<size_t>(start - functionStarts.begin())], limit)
+                                          : 0;
+            analyzed              = AnalyzeArm64FunctionFrame(
+                  detailHandle,
+                  functionData.GetData(),
+                  functionData.GetLength(),
+                  relativeAddress,
+                  limit,
+                  frame,
+                  [this](const cs_insn& call) { return noReturnCalls.contains(call.address); },
+                  pathsEnd);
+        } else if (functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb)
             analyzed = AnalyzeArm32FunctionFrame(
                   detailHandle,
                   functionData.GetData(),
@@ -5195,6 +5275,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             }
         }
         bool readOtherCode = false;
+        if (analyzed && functionArch == DissasmArch::Arm64 && arm64FuncletsOfParent.contains(relativeAddress)) {
+            AddArm64FuncletSlots(frame); // ARM64 SEH / C++ EH: the slots of the frame the funclets use through x29
+            readOtherCode = true;
+        }
         if (analyzed && functionArch == DissasmArch::X64 && funcletsOfParent.contains(relativeAddress)) {
             AddFuncletSlots(frame); // x64 SEH / C++ EH: the slots of the frame only the funclets use
             readOtherCode = true;
@@ -5473,6 +5557,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         zone->dissasmType.annotations   = std::move(annotations);
         MergeChunkFrames();
         LinkFuncletFrames();
+        LinkArm64FuncletFrames();
         zone->localVariables.functions  = std::move(frames);
         zone->exceptionMarks            = std::move(exceptionMarks);
         for (auto& [address, name] : exceptionFieldNames) // 32 bit: the fields of the exception tables (AddExceptionData)

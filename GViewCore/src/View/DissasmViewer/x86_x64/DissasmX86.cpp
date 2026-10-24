@@ -461,6 +461,8 @@ static std::optional<uint64> TranslateOperandAddressToFileOffset(SettingsData* s
 // RVA of the first decoded instruction (cachedCodeOffsets[0]): the decoded addresses are relative to it
 static uint64 GetCodeStartRVA(SettingsData* settings, const DissasmCodeZone* zone)
 {
+    if (!settings->offsetTranslateCallback.IsValid()) // a plugin without an offset translation: the file offset
+        return zone->cachedCodeOffsets[0].offset;
     return settings->offsetTranslateCallback->TranslateFromFileOffset(zone->cachedCodeOffsets[0].offset, static_cast<uint32>(DissasmPEConversionType::RVA));
 }
 
@@ -520,7 +522,12 @@ void DissasmAsmPreCacheLine::SetOperands(const char* operands, const DissasmCode
         Arm64FrameOperand slot{};
         const std::string_view frameRegister =
               zone->IsArm64Code() ? std::string_view("x29") : (function && function->frameRegister == 11 ? std::string_view("fp") : std::string_view("r7"));
-        if (function && FindArmFrameOperand(text, frameRegister, slot) && (slot.isStackPointerBased || function->usesFrameRegister)) {
+        const bool frameOperandFound = function && FindArmFrameOperand(text, frameRegister, slot);
+        // an ARM64 funclet: its x29 is the frame of its function, its slots the variables of that frame
+        if (frameOperandFound && !slot.isStackPointerBased && function->frameRegisterOf.has_value())
+            if (const auto* owner = zone->localVariables.FindFunctionByStart(function->frameRegisterOf.value()))
+                function = owner;
+        if (frameOperandFound && (slot.isStackPointerBased || function->usesFrameRegister)) {
             // sp: its depth at the instruction when the frame has them (ARM64: the prologue before the last sub sp), else the one of the body
             int32 depth = function->stackOffset;
             if (address >= function->startAddress && address < function->endAddress)
@@ -1743,6 +1750,7 @@ void GView::View::DissasmViewer::PrepareCodeZoneInitData(SettingsData* settings,
     initData.relocatedPointers     = &settings->relocatedPointers;
     initData.codeLocations         = &settings->codeLocations;
     initData.landingPads           = &settings->landingPads;
+    initData.codeRanges            = &settings->codeRanges;
     initData.memoryMappings        = &settings->memoryMappings;
     initData.dataFields            = &settings->dataFields;
     if (!settings->memoryMappings.empty()) {

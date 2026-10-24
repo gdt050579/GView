@@ -1905,6 +1905,12 @@ namespace View
              */
             void AddLandingPads(const std::vector<LandingPad>& pads);
             /**
+             * \brief The code of one function or of one fragment of it (ELF: an FDE of .eh_frame): `size` bytes at `fileOffset`. The
+             * viewer starts no function strictly inside it by the prologue rules (a stripped file: the frame GCC sets up after the early
+             * exits); it starts none at it either (a fragment is a chunk of its function).
+             */
+            void AddCodeRange(uint64 fileOffset, uint64 size);
+            /**
              * \brief The name of an import by ordinal (Ordinal:357 of certcli.dll): the name the DLL exports that ordinal under, from its
              * export table. The DLL is the one in the folder of the file (`filePath`), else the one of the system (Windows: SysWOW64 for a
              * 32 bit image on a 64 bit Windows, System32): the names of another version of the DLL may differ. Empty when the DLL is not

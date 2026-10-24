@@ -628,6 +628,8 @@ namespace View
             const std::set<uint64>* codeLocations = nullptr;
             // the call sites of the exception handling of GCC / clang (SettingsData::landingPads); can be null
             const std::vector<LandingPad>* landingPads = nullptr;
+            // the code of one function or fragment, by file offset -> size (SettingsData::codeRanges); can be null
+            const std::map<uint64, uint64>* codeRanges = nullptr;
             // the fields of the structures of the data, by VA; can be null
             const std::map<uint64, DissasmDataField>* dataFields = nullptr;
             // the named places of the plugin (imports, Objective-C references), keyed by RVA (by VA without an offset translation); can be null
@@ -682,6 +684,7 @@ namespace View
             std::map<uint64, uint64> relocatedPointers;                     // the pointers the loader writes (file offset -> VA)
             std::set<uint64> codeLocations;                                 // Settings::AddCodeLocation: never function starts (file offsets)
             std::vector<LandingPad> landingPads;                            // Settings::AddLandingPads: the call sites of GCC / clang
+            std::map<uint64, uint64> codeRanges;                            // Settings::AddCodeRange: the FDEs (file offset -> size)
             // Mach-O LC_DYLD_CHAINED_FIXUPS (Settings::AddChainedFixups): decoded into relocatedPointers / memoryMappings when the viewer
             // (or the headless analysis) takes the settings
             std::vector<uint8> chainedFixups;

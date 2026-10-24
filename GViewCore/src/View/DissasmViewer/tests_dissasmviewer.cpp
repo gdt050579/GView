@@ -286,6 +286,7 @@ struct ZoneLayout {
     std::map<uint64, DissasmFunctionEntry> functionEntries; // the function starts given by the plugin, by file offset
     std::set<uint64> codeLocations;                         // the places inside the functions given by the plugin (AddCodeLocation)
     std::vector<LandingPad> landingPads;                    // the call sites of GCC / clang (AddLandingPads; their pads as codeLocations)
+    std::map<uint64, uint64> codeRanges;                    // the code of a function or of a fragment (AddCodeRange: the FDEs)
     std::unordered_map<uint64, MemoryMappingEntry> imports;  // the imports by the RVA of their slot (the VA for x86 without translation)
     bool translateOffsets = false;                           // a plugin translation: the RVA is the file offset
     std::function<std::optional<uint64>(uint64)> addressToFileOffset; // the jump tables are read there (empty: no jump tables)
@@ -388,6 +389,7 @@ class DissasmTestInstance
         initData.functionEntries              = &layout.functionEntries;
         initData.codeLocations                = &layout.codeLocations;
         initData.landingPads                  = &layout.landingPads;
+        initData.codeRanges                   = &layout.codeRanges;
         if (layout.translateOffsets)
             settingsData.offsetTranslateCallback = &translation;
         settingsData.memoryMappings = layout.imports;
@@ -3564,6 +3566,39 @@ TEST_CASE("ApiPrototypesOfTheSamples", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing32, "0x00000001  push   esi").find("; pidl1") != std::string_view::npos);
 }
 
+TEST_CASE("ElfFrameDescriptionRanges", "[Dissasm]FunctionEntries")
+{
+    // a stripped ELF: GCC sets the frame up after the early exit (shrink wrapping), the prologue rules would start a function at its push
+    // rbp; the FDE of the function (Settings::AddCodeRange) says it is code of the function
+    std::vector<unsigned char> file = {
+        0x48, 0x85, 0xF6,       // 0x00: test rsi, rsi
+        0x75, 0x03,             // 0x03: jne 0x08
+        0x31, 0xC0,             // 0x05: xor eax, eax
+        0xC3,                   // 0x07: ret
+        0x55,                   // 0x08: push rbp
+        0x48, 0x89, 0xE5,       // 0x09: mov rbp, rsp
+        0x48, 0x89, 0x7D, 0xF8, // 0x0c: mov qword ptr [rbp - 8], rdi
+        0x48, 0x8B, 0x45, 0xF8, // 0x10: mov rax, qword ptr [rbp - 8]
+        0x5D,                   // 0x14: pop rbp
+        0xC3,                   // 0x15: ret
+    };
+    file.resize(0x40, 0xCC);
+    for (const bool withRange : { false, true }) {
+        ZoneLayout layout;
+        layout.size       = file.size();
+        layout.entryPoint = 0;
+        layout.language   = DisassemblyLanguage::x64;
+        if (withRange)
+            layout.codeRanges = { { 0x00, 0x16 } };
+        DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+        const std::string listing = dissasmInstance.GetListing();
+        INFO(listing);
+        REQUIRE((listing.find("\nsub_8:") != std::string::npos) == !withRange);
+        if (withRange)
+            REQUIRE(FindListingLine(listing, "0x0000000c  mov    qword ptr [rbp + var_8], rdi").size() > 0);
+    }
+}
+
 TEST_CASE("ElfLandingPads", "[Dissasm]ExceptionScopes")
 {
     // the exception handling of GCC (the LSDA of the FDE of f, read by the ELF plugin): the call of 0x01 goes to the landing pad 0x08 after
@@ -6602,6 +6637,93 @@ TEST_CASE("Arm64FrameRecordBelowLocals", "[Dissasm]Arm64")
     REQUIRE(FindListingLine(listing, "0x00000010  str    w8, [sp, #var_10]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x0000002c  ldr    w9, [sp, #var_10]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000030  ldr    w10, [x29, #var_10]").size() > 0);
+}
+
+TEST_CASE("Arm64FuncletFrameRegister", "[Dissasm]Arm64")
+{
+    // the unwind funclet of a function (MSVC C++ EH: the unwinder runs it with the x29 of the function): its [x29, #n] are the slots of
+    // the frame of the function, a slot only the funclet uses is a variable of that frame
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xA9BE7BFD); // 0x00: f: stp x29, x30, [sp, #-0x20]!
+    word(0x910003FD); // 0x04: mov x29, sp
+    word(0xB9001BA0); // 0x08: str w0, [x29, #0x18]    (var_8: 8 bytes below the sp of the entry)
+    word(0xA8C27BFD); // 0x0c: ldp x29, x30, [sp], #0x20
+    word(0xD65F03C0); // 0x10: ret
+    file.resize(0x20, 0);
+    word(0xA9BF7BFD); // 0x20: f$dtor$0: stp x29, x30, [sp, #-0x10]!
+    word(0xB9401BA8); // 0x24: ldr w8, [x29, #0x18]    (var_8 of f)
+    word(0xB94013A9); // 0x28: ldr w9, [x29, #0x10]    (var_10 of f, only the funclet uses it)
+    word(0xA8C17BFD); // 0x2c: ldp x29, x30, [sp], #0x10
+    word(0xD65F03C0); // 0x30: ret
+    file.resize(0x40, 0);
+    ZoneLayout layout;
+    layout.size                                    = file.size();
+    layout.entryPoint                              = 0;
+    layout.language                                = DisassemblyLanguage::ARM64;
+    layout.functionEntries[0x00].size              = 0x14;
+    layout.functionEntries[0x00].exceptionFunclets = { { 0x20, false, {}, {} } };
+    layout.functionEntries[0x20].size              = 0x14;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(CheckFrameVariables(*frame, { { -0x10, 4, "var_10" }, { -8, 4, "var_8" } }));
+    const auto* funclet = dissasmInstance.zone->localVariables.FindFunctionByStart(0x20);
+    REQUIRE(funclet != nullptr);
+    REQUIRE(funclet->frameRegisterOf == std::optional<uint64>(0x00));
+    REQUIRE(FindListingLine(listing, "0x00000008  str    w0, [x29, #var_8]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000024  ldr    w8, [x29, #var_8]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000028  ldr    w9, [x29, #var_10]").size() > 0);
+}
+
+TEST_CASE("Arm64StackProbeFrames", "[Dissasm]Arm64")
+{
+    // MSVC: a frame of 0x1000 bytes reserved after the probe of the stack (mov x15, #0x100; bl __chkstk; sub sp, sp, x15, lsl #4) and
+    // released by add sp, sp, #1, lsl #12: the depth of the body is the one after the probe; the code after the epilogue in the middle at
+    // the depth of the branch to it
+    std::vector<unsigned char> file;
+    const auto word = [&file](uint32 value) {
+        for (int index = 0; index < 4; index++)
+            file.push_back(static_cast<unsigned char>(value >> (8 * index)));
+    };
+    word(0xF81F0FF3); // 0x00: str x19, [sp, #-0x10]!
+    word(0xA9BF7BFD); // 0x04: stp x29, x30, [sp, #-0x10]!
+    word(0x910003FD); // 0x08: mov x29, sp
+    word(0xD280200F); // 0x0c: mov x15, #0x100
+    word(0x94000014); // 0x10: bl 0x60 (__chkstk)
+    word(0xCB2F73FF); // 0x14: sub sp, sp, x15, lsl #4    (sp = x29 - 0x1000)
+    word(0xB90013E0); // 0x18: str w0, [sp, #0x10]          (x29 - 0xff0: var_FF0)
+    word(0x340000A0); // 0x1c: cbz w0, 0x30
+    word(0x914007FF); // 0x20: add sp, sp, #1, lsl #12
+    word(0xA8C17BFD); // 0x24: ldp x29, x30, [sp], #0x10
+    word(0xF84107F3); // 0x28: ldr x19, [sp], #0x10
+    word(0xD65F03C0); // 0x2c: ret
+    word(0xB94013E1); // 0x30: ldr w1, [sp, #0x10]          (the depth of the cbz: var_FF0)
+    word(0x914007FF); // 0x34: add sp, sp, #1, lsl #12
+    word(0xA8C17BFD); // 0x38: ldp x29, x30, [sp], #0x10
+    word(0xF84107F3); // 0x3c: ldr x19, [sp], #0x10
+    word(0xD65F03C0); // 0x40: ret
+    file.resize(0x60, 0);
+    word(0xD65F03C0); // 0x60: __chkstk: ret
+    file.resize(0x80, 0);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    layout.language   = DisassemblyLanguage::ARM64;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = dissasmInstance.zone->localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->stackOffset == -0x1000);
+    REQUIRE(CheckFrameVariables(*frame, { { -0xFF0, 4, "var_FF0" } }));
+    REQUIRE(FindListingLine(listing, "0x00000018  str    w0, [sp, #var_FF0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000030  ldr    w1, [sp, #var_FF0]").size() > 0);
 }
 
 TEST_CASE("Arm64FrameOperands", "[Dissasm]Arm64")

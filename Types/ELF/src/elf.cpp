@@ -150,6 +150,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
         };
         std::vector<CallSite> callSites;
         std::unordered_map<uint64, DissasmTypeinfoSlot> typeinfoSlots;
+        std::vector<std::pair<uint64, uint64>> frameRanges; // every FDE: the start and the length of a function or of a fragment of one (VAs)
     };
 
     // a value of the exception tables (DW_EH_PE_*): the format of the low 4 bits, absolute or relative to its own address (pcrel: `address`
@@ -254,23 +255,28 @@ GVIEW_PLUGIN_ENTRY_POINTS
             }
             return false;
         };
+        constexpr uint64 MAX_FRAME_RANGE  = 0x1000000; // 16 MB of code in one FDE
+        constexpr size_t MAX_FRAME_RANGES = 0x100000;
         uint64 frameAddress = 0, frameOffset = 0, frameSize = 0, tableAddress = 0, tableOffset = 0, tableSize = 0;
-        if (!findSection(".eh_frame", frameAddress, frameOffset, frameSize) || !findSection(".gcc_except_table", tableAddress, tableOffset, tableSize))
+        if (!findSection(".eh_frame", frameAddress, frameOffset, frameSize))
             return;
         const auto frameBuffer = obj->GetData().CopyToBuffer(frameOffset, static_cast<uint32>(frameSize));
-        const auto tableBuffer = obj->GetData().CopyToBuffer(tableOffset, static_cast<uint32>(tableSize));
-        if (!frameBuffer.IsValid() || !tableBuffer.IsValid())
+        // without .gcc_except_table (C code): the ranges of the FDEs only
+        Buffer tableBuffer;
+        if (findSection(".gcc_except_table", tableAddress, tableOffset, tableSize))
+            tableBuffer = obj->GetData().CopyToBuffer(tableOffset, static_cast<uint32>(tableSize));
+        if (!frameBuffer.IsValid())
             return;
         const uint8* frame     = frameBuffer.GetData();
         const size_t frameEnd  = frameBuffer.GetLength();
-        const uint8* table     = tableBuffer.GetData();
-        const size_t tableEnd  = tableBuffer.GetLength();
+        const uint8* table     = tableBuffer.IsValid() ? tableBuffer.GetData() : nullptr;
+        const size_t tableEnd  = tableBuffer.IsValid() ? tableBuffer.GetLength() : 0;
         const bool is64        = elf->is64;
         uint64 unused          = 0;
 
         // the LSDA of the function at `start`: its call sites with a landing pad (a cleanup, the types of the catches of their actions)
         const auto readLsda = [&](uint64 lsda, uint64 start) {
-            if (lsda < tableAddress || lsda - tableAddress >= tableEnd)
+            if (!table || lsda < tableAddress || lsda - tableAddress >= tableEnd)
                 return;
             size_t position = static_cast<size_t>(lsda - tableAddress);
             uint64 landingPadBase = start;
@@ -438,15 +444,39 @@ GVIEW_PLUGIN_ENTRY_POINTS
                 // an FDE: its CIE (the offset back from the field), the start of its function, the length, its LSDA
                 const auto cie = cies.find(idField - static_cast<size_t>(id));
                 uint64 start = 0, range = 0, lsda = 0, dataLength = 0;
-                if (cie != cies.end() && cie->second.lsda != 0xFF && (cie->second.lsda & 0x80) == 0 && cie->second.hasAugmentationData &&
-                    ReadEhValue(frame, recordEnd, position, cie->second.pointers & 0x7F, frameAddress, is64, start) &&
-                    ReadEhValue(frame, recordEnd, position, cie->second.pointers & 0x0F, frameAddress, is64, range) &&
-                    ReadEhValue(frame, recordEnd, position, 0x01, frameAddress, is64, dataLength) && dataLength <= recordEnd - position &&
-                    ReadEhValue(frame, position + static_cast<size_t>(dataLength), position, cie->second.lsda & 0x7F, frameAddress, is64, lsda) && lsda != 0 &&
-                    start != 0)
-                    readLsda(lsda, start);
+                if (cie != cies.end() && ReadEhValue(frame, recordEnd, position, cie->second.pointers & 0x7F, frameAddress, is64, start) &&
+                    ReadEhValue(frame, recordEnd, position, cie->second.pointers & 0x0F, frameAddress, is64, range) && start != 0)
+                {
+                    if (range != 0 && range <= MAX_FRAME_RANGE && result.frameRanges.size() < MAX_FRAME_RANGES)
+                        result.frameRanges.emplace_back(start, range);
+                    if (cie->second.lsda != 0xFF && (cie->second.lsda & 0x80) == 0 && cie->second.hasAugmentationData &&
+                        ReadEhValue(frame, recordEnd, position, 0x01, frameAddress, is64, dataLength) && dataLength <= recordEnd - position &&
+                        ReadEhValue(frame, position + static_cast<size_t>(dataLength), position, cie->second.lsda & 0x7F, frameAddress, is64, lsda) && lsda != 0)
+                        readLsda(lsda, start);
+                }
             }
             position = recordEnd;
+        }
+    }
+
+    // the ranges of the FDEs (ReadDissasmLandingPads) as file offsets: the code of one function or of one fragment (a stripped file: no
+    // start of the prologue rules inside, GCC's frame set up after the early exits); not the ones of the PLT (one FDE for all the stubs)
+    void AddDissasmCodeRanges(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf, const DissasmLandingPads& tables)
+    {
+        std::vector<std::pair<uint64, uint64>> plt;
+        const size_t count = elf->is64 ? elf->sections64.size() : elf->sections32.size();
+        for (size_t index = 0; index < count && index < elf->sectionNames.size(); index++)
+            if (elf->sectionNames[index].starts_with(".plt"))
+                plt.emplace_back(elf->is64 ? elf->sections64[index].sh_addr : elf->sections32[index].sh_addr,
+                                 elf->is64 ? elf->sections64[index].sh_size : elf->sections32[index].sh_size);
+        for (const auto& [start, length] : tables.frameRanges)
+        {
+            if (std::any_of(plt.begin(), plt.end(), [start](const auto& section) { return start >= section.first && start - section.first < section.second; }))
+                continue;
+            const uint64 first = elf->VAToFileOffset(start);
+            const uint64 last  = elf->VAToFileOffset(start + length - 1);
+            if (first != ELF::ELF_INVALID_ADDRESS && last != ELF::ELF_INVALID_ADDRESS && last - first == length - 1)
+                settings.AddCodeRange(first, length);
         }
     }
 
@@ -1024,6 +1054,7 @@ GVIEW_PLUGIN_ENTRY_POINTS
         ReadDissasmLandingPads(elf, win->GetObject(), landingPads);
         AddDissasmImports(settings, elf, win->GetObject(), landingPads.typeinfoSlots);
         AddDissasmLandingPads(settings, elf, landingPads);
+        AddDissasmCodeRanges(settings, elf, landingPads);
         if (isArm)
             AddDissasmArmModes(settings, elf, language == DissasmViewer::DisassemblyLanguage::Thumb);
         AddDissasmFunctionEntries(settings, elf); // the Thumb bit of the function symbols

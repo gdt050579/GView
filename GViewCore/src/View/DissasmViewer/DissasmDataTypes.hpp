@@ -303,6 +303,8 @@ namespace View
             // ARM64: x29 in the offsets of the frame ([x29, #n] is the slot n + frameRegisterOffset): 0, but for MSVC's frame record below
             // the locals (stp x29, x30, [sp, #-0x80]!; mov x29, sp after the saves): the offsets are then from the top of the locals (IDA)
             int32 frameRegisterOffset = 0;
+            // ARM64: a funclet (SEH / C++ EH) whose x29 is the frame of that function (by start): its [x29, #n] are the slots of that frame
+            std::optional<uint64> frameRegisterOf;
             // x64 without a frame register: rsp - the rsp of the entry from an address on (push / pop / sub / add rsp), sorted; the slots
             // ([rsp + 0x20]) are kept in offsets from the rsp of the entry (the return address at 0). Recomputed by the deep scan
             std::vector<std::pair<uint64, int32>> stackDeltas;

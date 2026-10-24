@@ -99,6 +99,14 @@ void Settings::AddCodeLocation(uint64 fileOffset)
     INTERNAL_SETTINGS->codeLocations.insert(fileOffset);
 }
 
+void Settings::AddCodeRange(uint64 fileOffset, uint64 size)
+{
+    if (size == 0)
+        return;
+    auto& range = INTERNAL_SETTINGS->codeRanges[fileOffset];
+    range       = std::max(range, size);
+}
+
 void Settings::AddLandingPads(const std::vector<LandingPad>& pads)
 {
     auto& landingPads = INTERNAL_SETTINGS->landingPads;
