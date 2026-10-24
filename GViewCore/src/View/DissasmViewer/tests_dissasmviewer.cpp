@@ -9542,12 +9542,16 @@ TEST_CASE("X64HomeSpaceSavesBeforeTheFrame", "[Dissasm]Help")
     DissasmFunctionFrame walked;
     REQUIRE(AnalyzeX86FunctionFrame(x64.handle, copied.data(), copied.size(), 0, copied.size(), true, walked));
     REQUIRE(CheckFrameVariables(walked, { { -8, 8, "var_8" } }));
-    // a save that is no home space slot (the stack pointer then is not the one of the entry): no frame register function
-    const std::vector<unsigned char> notHome = { 0x48, 0x89, 0x5C, 0x24, 0x28, 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x4D, 0xF8, 0x5D, 0xC3 };
-    REQUIRE_FALSE(AnalyzeX86FunctionFrame(x64.handle, notHome.data(), notHome.size(), 0, notHome.size(), true, walked));
+    // the stack pointer changed before push rbp (sub rsp, 8: the frame register is not 0x10 below the arguments): no frame register frame
+    const std::vector<unsigned char> moved = { 0x48, 0x83, 0xEC, 0x08, 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x4D, 0xF8, 0x5D, 0xC3 };
+    REQUIRE_FALSE(AnalyzeX86FunctionFrame(x64.handle, moved.data(), moved.size(), 0, moved.size(), true, walked));
 
-    // a function of the symbols (ELF: its size, no exception data): its push rbp; mov rbp, rsp is another function start (as before)
+    // a function of the symbols (ELF: its size, no exception data): a frame set up inside it is its frame too (8n)
     layout.functionEntries[0x00].exceptionData = false;
+    DissasmTestInstance symbol(file.data(), file.size(), true, layout);
+    REQUIRE(symbol.zone->functionStarts == std::vector<uint64>{ 0x00 });
+    // without its size: its push rbp; mov rbp, rsp is another function start (as before)
+    layout.functionEntries[0x00].size = 0;
     DissasmTestInstance withoutSize(file.data(), file.size(), true, layout);
     REQUIRE(withoutSize.zone->functionStarts == std::vector<uint64>{ 0x00, 0x0a });
 }
@@ -9654,6 +9658,143 @@ TEST_CASE("X86TailCallsToHelperFrames", "[Dissasm]Help")
     REQUIRE(FindListingLine(listing, "0x0000006c  mov    dword ptr [ebp + ms_exc.registration.TryLevel], eax").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000072  mov    dword ptr [ebp + var_20], eax").size() > 0);
     REQUIRE(listing.find("Chunk of EntryPoint") != std::string::npos); // the block at 0xd0
+}
+
+TEST_CASE("X86AlignedFrameColdChunks", "[Dissasm]Help")
+{
+    // 32 bit: a cold block of an aligned frame (and esp, -8: the locals through esp) is walked from the depth of the stack at the jump of
+    // the body to it: its slots through esp are variables of the frame (one only the block uses), the depth after the call of a stdcall
+    // function in it known
+    std::vector<unsigned char> file = {
+        0x55,                               // 0x00: push ebp
+        0x8B, 0xEC,                         // 0x01: mov ebp, esp
+        0x83, 0xE4, 0xF8,                   // 0x03: and esp, 0xfffffff8
+        0x83, 0xEC, 0x10,                   // 0x06: sub esp, 0x10
+        0x89, 0x4C, 0x24, 0x04,             // 0x09: mov dword ptr [esp + 4], ecx (var_C)
+        0x85, 0xC9,                         // 0x0d: test ecx, ecx
+        0x0F, 0x85, 0x2B, 0x00, 0x00, 0x00, // 0x0f: jne 0x40
+        0x8B, 0xE5,                         // 0x15: mov esp, ebp
+        0x5D,                               // 0x17: pop ebp
+        0xC3,                               // 0x18: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x55, 0x8B, 0xEC, 0x5D, 0xC3 }); // 0x20: push ebp; mov ebp, esp; pop ebp; ret (another function)
+    file.resize(0x40, 0xCC);
+    file.insert(file.end(), {
+                                  0x8B, 0x44, 0x24, 0x04,       // 0x40: mov eax, dword ptr [esp + 4] (var_C)
+                                  0x89, 0x44, 0x24, 0x08,       // 0x44: mov dword ptr [esp + 8], eax (var_8, the block only)
+                                  0x51,                         // 0x48: push ecx
+                                  0xE8, 0x12, 0x00, 0x00, 0x00, // 0x49: call 0x60 (ret 4)
+                                  0x8B, 0x4C, 0x24, 0x08,       // 0x4e: mov ecx, dword ptr [esp + 8] (var_8)
+                                  0xEB, 0xC1,                   // 0x52: jmp 0x15
+                            });
+    file.resize(0x60, 0xCC);
+    file.insert(file.end(), { 0xC2, 0x04, 0x00 }); // 0x60: ret 4
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size       = file.size();
+    layout.entryPoint = 0;
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00, 0x20, 0x60 });
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(CheckFrameVariables(*frame, { { -0xC, 4, "var_C" }, { -8, 4, "var_8" } }));
+    REQUIRE(listing.find("Chunk of EntryPoint") != std::string::npos);
+    REQUIRE(FindListingLine(listing, "0x00000009  mov    dword ptr [esp + 0x10 + var_C], ecx").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000040  mov    eax, dword ptr [esp + 0x10 + var_C]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000044  mov    dword ptr [esp + 0x10 + var_8], eax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000004e  mov    ecx, dword ptr [esp + 0x10 + var_8]").size() > 0);
+}
+
+TEST_CASE("X64ShrinkWrappedFrames", "[Dissasm]Help")
+{
+    // GCC shrink wrapping: the frame set up after the early exits, inside the symbol of the function (its size): one function, the frame of
+    // its frame register from push rbp on
+    std::vector<unsigned char> file = {
+        0xF3, 0x0F, 0x1E, 0xFA, // 0x00: endbr64
+        0x48, 0x85, 0xFF,       // 0x04: test rdi, rdi
+        0x74, 0x17,             // 0x07: je 0x20 (the early exit)
+        0x55,                   // 0x09: push rbp
+        0x48, 0x89, 0xE5,       // 0x0a: mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x10, // 0x0d: sub rsp, 0x10
+        0x48, 0x89, 0x7D, 0xF8, // 0x11: mov qword ptr [rbp - 8], rdi (var_8)
+        0x48, 0x8B, 0x45, 0xF8, // 0x15: mov rax, qword ptr [rbp - 8]
+        0xC9,                   // 0x19: leave
+        0xC3,                   // 0x1a: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: xor eax, eax; ret
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x00, { "f", 0x23, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone = *dissasmInstance.zone;
+    REQUIRE(zone.functionStarts == std::vector<uint64>{ 0x00 });
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->usesFrameRegister);
+    REQUIRE(CheckFrameVariables(*frame, { { -8, 8, "var_8" } }));
+    REQUIRE(FindListingLine(listing, "0x00000011  mov    qword ptr [rbp + var_8], rdi").size() > 0);
+
+    const DetailHandle x64(CS_MODE_64);
+    DissasmFunctionFrame walked;
+    const auto analyze = [&](const std::vector<uint8>& code) { return AnalyzeX86FunctionFrame(x64.handle, code.data(), code.size(), 0, code.size(), true, walked); };
+    // the realigned stack of GCC: lea r10, [rsp + 8]; and rsp, -0x10; push qword ptr [r10 - 8]; push rbp; mov rbp, rsp; mov [rbp - 0x10], rdi;
+    // leave; ret
+    REQUIRE(analyze({ 0x4C, 0x8D, 0x54, 0x24, 0x08, 0x48, 0x83, 0xE4, 0xF0, 0x41, 0xFF, 0x72, 0xF8, 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x7D, 0xF0, 0xC9, 0xC3 }));
+    REQUIRE(CheckFrameVariables(walked, { { -0x10, 8, "var_10" } }));
+    // the frame after a tail jump, at the target of the jb: cmp rdi, 1; jb 0x10; jmp 0x40; int3 x4; push rbp; mov rbp, rsp; mov [rbp - 8], rdi;
+    // pop rbp; ret
+    REQUIRE(analyze({ 0x48, 0x83, 0xFF, 0x01, 0x72, 0x0A, 0xE9, 0x35, 0x00, 0x00, 0x00, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89,
+                      0x7D, 0xF8, 0x5D, 0xC3 }));
+    REQUIRE(CheckFrameVariables(walked, { { -8, 8, "var_8" } }));
+    // a ret no branch goes past: the code after it is not the function's (xor eax, eax; ret; push rbp; mov rbp, rsp; ...)
+    REQUIRE_FALSE(analyze({ 0x31, 0xC0, 0xC3, 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x7D, 0xF8, 0x5D, 0xC3 }));
+}
+
+TEST_CASE("X64ReturnAddressWithoutVariables", "[Dissasm]Help")
+{
+    // wil: a function without variables passes its return address to the failure report (mov rcx, qword ptr [rsp + 0x28]: _ReturnAddress());
+    // its frame is kept for its depths: the slot named retaddr, as in the functions with variables
+    std::vector<unsigned char> file = {
+        0x48, 0x83, 0xEC, 0x28,       // 0x00: sub rsp, 0x28
+        0x85, 0xC9,                   // 0x04: test ecx, ecx
+        0x74, 0x05,                   // 0x06: je 0x0d
+        0x48, 0x83, 0xC4, 0x28,       // 0x08: add rsp, 0x28
+        0xC3,                         // 0x0c: ret
+        0x48, 0x8B, 0x4C, 0x24, 0x28, // 0x0d: mov rcx, qword ptr [rsp + 0x28] (the return address)
+        0xE8, 0x29, 0x00, 0x00, 0x00, // 0x12: call 0x40
+        0x48, 0x83, 0xC4, 0x28,       // 0x17: add rsp, 0x28
+        0xC3,                         // 0x1b: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x48, 0x83, 0xEC, 0x28, 0x31, 0xC0, 0x48, 0x83, 0xC4, 0x28, 0xC3 }); // 0x20: no slot, no frame
+    file.resize(0x40, 0xCC);
+    file.push_back(0xC3); // 0x40: ret
+    file.resize(0x200, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x20, { "", 0, false } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const auto& zone = *dissasmInstance.zone;
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    const auto* frame = zone.localVariables.FindFunctionByStart(0x00);
+    REQUIRE(frame != nullptr);
+    REQUIRE(frame->variables.empty());
+    REQUIRE(frame->readsReturnAddress);
+    REQUIRE(zone.localVariables.FindFunctionByStart(0x20) == nullptr);
+    REQUIRE(FindListingLine(listing, "0x0000000d  mov    rcx, qword ptr [rsp + 0x28 + retaddr]").size() > 0);
 }
 
 TEST_CASE("PluginFunctionParts", "[Dissasm]Help")
@@ -9850,11 +9991,11 @@ TEST_CASE("X64AllocaFrames", "[Dissasm]Help")
     DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
     const std::string listing = dissasmInstance.GetListing();
     INFO(listing);
-    REQUIRE(FindListingLine(listing, "0x0000000c  mov    qword ptr [rbp + 0x8 + var_20], rdi").size() > 0);
-    REQUIRE(FindListingLine(listing, "0x00000010  mov    qword ptr [rsp + 0x38 + var_30], rsi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000000c  mov    qword ptr [rbp + var_18], rdi").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000010  mov    qword ptr [rsp + 0x30 + var_28], rsi").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000031  mov    qword ptr [rsp + 8], rdx").size() > 0);
-    REQUIRE(FindListingLine(listing, "0x00000036  mov    qword ptr [rbp + 0x8 + var_28], rax").size() > 0);
-    REQUIRE(FindListingLine(listing, "0x0000003a  lea    rsp, [rbp + 0x8 + var_s0]").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000036  mov    qword ptr [rbp + var_20], rax").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x0000003a  lea    rsp, [rbp + var_s0]").size() > 0);
     REQUIRE(FindListingLine(listing, "0x00000088  mov    qword ptr [rsp + 0x20 + var_18], rcx").size() > 0);
     REQUIRE(FindListingLine(listing, "0x000000a9  or     qword ptr [rsp + 0xff8], 0").size() > 0);
     REQUIRE(FindListingLine(listing, "0x000000b4  mov    qword ptr [rbp + var_10], rax").size() > 0);

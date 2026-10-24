@@ -325,6 +325,9 @@ namespace View
             // and esp, -8 (an aligned frame of a frame register function): the depths of the stack pointer are not the ones of the frame
             // register above the alignment (a local through esp may fall on the saved registers / the return address)
             bool alignedStack = false;
+            // without a frame register: the code reads the return address through the stack pointer (wil passes _ReturnAddress(): mov rcx,
+            // qword ptr [rsp + 0x28]): the frame is kept without variables, its depths name the slot (retaddr)
+            bool readsReturnAddress = false;
             bool IsSavedRegisterSlot(int32 frameOffset) const
             {
                 return savedRegistersSize != 0 && frameOffset >= savedRegistersOffset &&

@@ -96,6 +96,22 @@ bool AnalyzeX64ChunkFrame(
       const std::vector<DissasmFunctionFrame::StackAlias>& entryAliases,
       DissasmFunctionFrame& frame,
       const X86CallNoReturn& callNoReturn = {});
+// a chunk of a frame register function (its cold code, reached by a jump of the body): its stack pointer from `entryDelta` (the depth at the
+// jump, from the stack pointer of the entry), the frame register an alias of it (`frameRegisterDelta`, from the same); frame receives its
+// depths and its slots in the offsets of the frame register (as MergeStackPointerSlots: [esp + 0x20] of an aligned frame). False when its
+// stack pointer is not followed
+bool AnalyzeFrameRegisterChunk(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      uint64 limitAddress,
+      bool is64,
+      int32 entryDelta,
+      int32 frameRegisterDelta,
+      DissasmFunctionFrame& frame,
+      const X86CalleeStackPurge& calleePurge = {},
+      const X86CallNoReturn& callNoReturn    = {});
 // a frame register function (push rbp; mov rbp, rsp) with its stack pointer followed (`stackFrame`: AnalyzeX86StackFrame of the same code,
 // the frame register an alias of the stack pointer there): frame.stackDeltas receives rsp - rbp, the slots of the stack pointer the frame
 // does not have become variables in the offsets of the frame register (the arguments stored for the calls, the locals of an aligned frame:

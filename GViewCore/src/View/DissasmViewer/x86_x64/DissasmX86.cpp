@@ -1197,13 +1197,19 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         // a call through an import thunk (call j_CreateFileW): the arguments of the import
         std::string labelName = params.zone->GetLabelNameAt(operands.directTarget.value());
         if (shouldConsiderCall) {
+            // the prototype the user gave (Y), else the one of the API the function is (an import thunk; a function of the file named so: a
+            // static binary's getenv, libc's own closedir), else the inferred one
             const auto thunk = params.zone->thunkImports.find(operands.directTarget.value());
-            if (const auto* user = params.zone->FindFunctionPrototype(operands.directTarget.value()))
-                AnnounceKnownFunctionCall(params, user); // the prototype the user gave (Y), else the inferred one
+            if (const auto* user = params.zone->FindUserPrototype(operands.directTarget.value()))
+                AnnounceKnownFunctionCall(params, user);
             else if (thunk != params.zone->thunkImports.end())
                 AnnounceKnownFunctionCall(params, thunk->second);
+            else if (!labelName.empty() && FindApiPrototype(labelName))
+                AnnounceKnownFunctionCall(params, labelName);
+            else if (const auto* inferred = params.zone->FindInferredPrototype(operands.directTarget.value()))
+                AnnounceKnownFunctionCall(params, inferred);
             else if (!labelName.empty())
-                AnnounceKnownFunctionCall(params, labelName); // a function of the file named so (a static binary: getenv)
+                AnnounceKnownFunctionCall(params, labelName);
         }
 
         // the label of the target with its current name (renamed, an export, a function reached by a jmp keeps its sub_ label); a target

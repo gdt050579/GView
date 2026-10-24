@@ -1195,7 +1195,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         const bool isArm32             = insnArch == DissasmArch::Arm || insnArch == DissasmArch::Thumb;
         if (!isArm64 && !isArm32) { // the x86 / x64 prologues (the ARM functions: the calls, the plugin, IsArm*PrologueStart)
             const auto prologueStart = prologueDetector.Next(*insn, instructionOffset);
-            if (prologueStart.has_value() && !IsInsideUnwindFunction(prologueStart.value()))
+            if (prologueStart.has_value() && !IsInsidePluginFunction(prologueStart.value(), *insn))
                 AddFunctionStart(prologueStart.value());
         }
 
@@ -1854,10 +1854,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             coldChunksOf.emplace(coldChunks[index].function, index);
     }
 
-    // a file offset strictly inside the code of a function of the exception data (x64 .pdata: the unwinding needs the code of every
-    // function that is not a leaf, its prologue at its start): the push rbp; mov rbp, rsp after the saves of the home space of MSVC x64
-    // is its prologue, not another function (the symbols of ELF do not tell it: GCC places push rbp after the early exits, shrink wrapping)
-    bool IsInsideUnwindFunction(uint64 fileOffset) const
+    // a start of the prologue rules (`completing`: the instruction that completed it) strictly inside the code of a function whose size the
+    // plugin knows: of the exception data (x64 .pdata: the unwinding needs the code of every function that is not a leaf, its prologue at
+    // its start), any such start (the push rbp; mov rbp, rsp after the saves of the home space of MSVC x64); of the symbols (ELF), a frame
+    // set up there (push rbp; mov rbp, rsp after the early exits: GCC shrink wrapping, AnalyzeX86FunctionFrame walks them)
+    bool IsInsidePluginFunction(uint64 fileOffset, const cs_insn& completing) const
     {
         if (!functionEntries)
             return false;
@@ -1865,7 +1866,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         if (entry == functionEntries->begin())
             return false;
         --entry;
-        return entry->second.exceptionData && entry->second.size > 0 && fileOffset - entry->first < entry->second.size;
+        if (entry->second.size == 0 || fileOffset - entry->first >= entry->second.size)
+            return false;
+        const cs_x86& x86    = completing.detail->x86;
+        const bool setsFrame = completing.id == X86_INS_MOV && x86.op_count == 2 && x86.operands[0].type == X86_OP_REG && x86.operands[1].type == X86_OP_REG &&
+                               (is64 ? x86.operands[0].reg == X86_REG_RBP && x86.operands[1].reg == X86_REG_RSP
+                                     : x86.operands[0].reg == X86_REG_EBP && x86.operands[1].reg == X86_REG_ESP);
+        return entry->second.exceptionData || setsFrame;
     }
 
     // a place inside a function that the plugin knows (Settings::AddCodeLocation), relative
@@ -3066,7 +3073,31 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     return; // too many
                 start = walked.endAddress;
             }
-            DissasmFunctionFrame part{}; // the listing: the variables of the function there (a code location is no chunk of it)
+            // the listing: the variables of the function there (a code location is no chunk of it); its stack pointer from the depth at a
+            // jump of the body when the function follows it (the locals of an aligned frame through esp: [esp + 0x28 + var_18])
+            DissasmFunctionFrame part{};
+            const auto entry = ColdChunkEntry(frame, chunk);
+            if (entry.has_value() && !frame.stackDeltas.empty() && frame.stackDeltas.front().first == frame.startAddress) {
+                const int32 base = frame.stackDeltas.front().second; // the stack pointer of the entry - the frame register
+                if (AnalyzeFrameRegisterChunk(
+                          detailHandle,
+                          bytes.GetData(),
+                          bytes.GetLength(),
+                          chunk.start,
+                          chunk.start + bytes.GetLength(),
+                          is64,
+                          entry->second - base,
+                          -base,
+                          part,
+                          is64 ? X86CalleeStackPurge{} : X86CalleeStackPurge([this](const cs_insn& call) { return CalleeStackPurge(call); }),
+                          [this](const cs_insn& call) { return noReturnCalls.contains(call.address); })) {
+                    if (!MergeFrameVariables(frame, std::move(part.variables)))
+                        return; // too many
+                    part.variables.clear();
+                    part.alignedStack = frame.alignedStack;
+                } else
+                    part = {};
+            }
             part.startAddress = chunk.start;
             part.endAddress   = chunk.end;
             part.variablesOf  = frame.startAddress;
@@ -3074,21 +3105,27 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
     }
 
+    // the jump of the body of a function to the start of its cold chunk, the depth of the stack there (the stack pointer of the entry, or the
+    // frame register after MergeStackPointerSlots); none when only another cold block reaches it or the depth is not known
+    std::optional<std::pair<uint64, int32>> ColdChunkEntry(const DissasmFunctionFrame& frame, const DissasmFunctionChunk& chunk) const
+    {
+        auto xref = std::lower_bound(
+              xrefs.byTarget.begin(), xrefs.byTarget.end(), labelBase + chunk.start, [](const auto& item, uint64 value) { return item.to < value; });
+        for (; xref != xrefs.byTarget.end() && xref->to == labelBase + chunk.start; ++xref)
+            if (xref->from >= labelBase + frame.startAddress && xref->from < labelBase + frame.endAddress)
+                if (const auto delta = frame.StackDeltaAt(xref->from - labelBase); delta.has_value())
+                    return std::pair<uint64, int32>(xref->from - labelBase, delta.value());
+        return std::nullopt;
+    }
+
     // x64 without a frame register: a cold chunk from the depth of the stack (and the callee saved aliases) at a jump of the function to it;
     // its slots are variables of the frame, its own frame has the variables of the function (variablesOf)
     void AddColdChunkFrame(DissasmFunctionFrame& frame, const DissasmFunctionChunk& chunk)
     {
-        std::optional<int32> entryDelta;
-        uint64 source = 0;
-        auto xref     = std::lower_bound(
-              xrefs.byTarget.begin(), xrefs.byTarget.end(), labelBase + chunk.start, [](const auto& item, uint64 value) { return item.to < value; });
-        for (; xref != xrefs.byTarget.end() && xref->to < labelBase + chunk.end && !entryDelta.has_value(); ++xref)
-            if (xref->to == labelBase + chunk.start && xref->from >= labelBase + frame.startAddress && xref->from < labelBase + frame.endAddress) {
-                source     = xref->from - labelBase;
-                entryDelta = frame.StackDeltaAt(source);
-            }
-        if (!entryDelta.has_value())
+        const auto entry = ColdChunkEntry(frame, chunk);
+        if (!entry.has_value())
             return; // reached from another cold block only, or with a depth not known
+        const auto [source, entryDelta] = entry.value();
         std::vector<DissasmFunctionFrame::StackAlias> aliases;
         for (const auto& alias : frame.stackAliases)
             if (!alias.frameOf.has_value() && alias.start <= source && source < alias.end)
@@ -3102,7 +3139,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                                       bytes.GetLength(),
                                       chunk.start,
                                       chunk.start + size,
-                                      entryDelta.value(),
+                                      entryDelta,
                                       aliases,
                                       chunkFrame,
                                       [this](const cs_insn& call) { return noReturnCalls.contains(call.address); }))
@@ -3396,7 +3433,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return import && import->type == MemoryMappingType::FunctionMapping ? import->name : std::string();
     }
 
-    // the prototype of the callee of a call: the one the user gave to a function of the zone (Y), else the one of the API it is
+    // the prototype of the callee of a call: the one the user gave to a function of the zone (Y), else the one of the API it is (libc's own
+    // closedir: DIR* dirp, not the ptr of the free its body calls), else the one inferred
     const AsmFunctionDetails* CalleePrototype(const cs_insn& call, DissasmArch functionArch)
     {
         if (const auto method = interfaceCalls.find(call.address); method != interfaceCalls.end()) // a COM method (TrackComInterfaces)
@@ -3407,8 +3445,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (const uint64 target = operands.directTarget.value() & addressMask; target < codeSize) {
                 if (const auto* user = zone->FindUserPrototype(target))
                     return user;
-                if (const auto inferred = inferredPrototypes.find(target); inferred != inferredPrototypes.end())
-                    return &inferred->second->details;
+                if (const auto inferred = inferredPrototypes.find(target); inferred != inferredPrototypes.end()) {
+                    const auto* api = FindApiPrototype(CalleeName(call, functionArch));
+                    return api ? api : &inferred->second->details;
+                }
             }
         return FindApiPrototype(CalleeName(call, functionArch));
     }
@@ -5037,9 +5077,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (!functionData.IsValid())
                 return;
         }
-        if (!analyzed || (frame.variables.empty() && frame.savedRegistersSize == 0))
+        if (!analyzed || (frame.variables.empty() && frame.savedRegistersSize == 0 && !frame.readsReturnAddress))
             return;
-        if (frame.variables.empty()) { // a frame with saved registers only (their var_s0): nothing to name
+        if (frame.variables.empty()) { // a frame with saved registers only (their var_s0), or its return address read: nothing to name
             frames.push_back(std::move(frame));
             return;
         }
