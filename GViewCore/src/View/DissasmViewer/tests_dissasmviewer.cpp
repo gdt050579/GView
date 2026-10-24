@@ -3472,6 +3472,39 @@ static std::string_view FindListingLine(std::string_view listing, std::string_vi
     return listing.substr(from, (end == std::string_view::npos ? listing.size() : end) - from);
 }
 
+TEST_CASE("ElfPublicNamesOfAliases", "[Dissasm]FunctionEntries")
+{
+    // glibc: close and its reserved aliases (__GI___close static, __close exported); the ELF plugin adds the static names, then the public
+    // exports, then the reserved ones: the first export keeps its name, the public one
+    Settings settings;
+    auto* data = static_cast<SettingsData*>(settings.data);
+    settings.AddFunctionEntry(0x20, "__GI___close", FunctionEntryType::Symbol, 0x10);
+    settings.AddFunctionEntry(0x20, "close", FunctionEntryType::Export, 0x10);
+    settings.AddFunctionEntry(0x20, "__close", FunctionEntryType::Export, 0x10);
+    REQUIRE(data->functionEntries.at(0x20).name == "close");
+    delete data;
+
+    // the calls of a function named after an API: its prototype (close(int fd))
+    std::vector<unsigned char> file = {
+        0x89, 0xD9,                   // 0x00: mov ecx, ebx (the first argument of the test zone)
+        0xE8, 0x19, 0x00, 0x00, 0x00, // 0x02: call 0x20
+        0xC3,                         // 0x07: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), { 0x31, 0xC0, 0xC3 }); // 0x20: close: xor eax, eax; ret
+    file.resize(0x40, 0xCC);
+    ZoneLayout layout;
+    layout.size            = file.size();
+    layout.entryPoint      = 0;
+    layout.language        = DisassemblyLanguage::x64;
+    layout.functionEntries = { { 0x20, { "close", 3, true } } };
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(FindListingLine(listing, "0x00000002  call   close").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    ecx, ebx").find("; fd") != std::string_view::npos);
+}
+
 TEST_CASE("ImportThunksX86", "[Dissasm]Thunks")
 {
     std::vector<unsigned char> file = {
@@ -9799,6 +9832,53 @@ TEST_CASE("X64ShrinkWrappedFrames", "[Dissasm]Help")
     REQUIRE(CheckFrameVariables(walked, { { -8, 8, "var_8" } }));
     // a ret no branch goes past: the code after it is not the function's (xor eax, eax; ret; push rbp; mov rbp, rsp; ...)
     REQUIRE_FALSE(analyze({ 0x31, 0xC0, 0xC3, 0x55, 0x48, 0x89, 0xE5, 0x48, 0x89, 0x7D, 0xF8, 0x5D, 0xC3 }));
+}
+
+TEST_CASE("X86AlignedEhPrologFrames", "[Dissasm]LocalVariables")
+{
+    // __EH_prolog3_align (an aligned frame of the C++ exception handling): push 8 (the size); push 0x48 (the alignment); mov eax, offset
+    // handler; call the helper: an ebp frame, its locals variables (not the SEH record of __SEH_prolog4)
+    const DetailHandle x86(CS_MODE_32);
+    DissasmFunctionFrame frame{};
+    const auto analyze = [&](const std::vector<uint8>& code) {
+        return AnalyzeX86FunctionFrame(x86.handle, code.data(), code.size(), 0, code.size(), false, frame, [](const cs_insn&) { return true; });
+    };
+    // push 8; push 0x48; mov eax, 0x1234; call +0x10; mov [ebp - 4], ecx; mov eax, [ebp - 0x14]; mov [ebp - 0x18], eax; ret
+    REQUIRE(analyze({ 0x6A, 0x08, 0x6A, 0x48, 0xB8, 0x34, 0x12, 0x00, 0x00, 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x4D, 0xFC, 0x8B, 0x45, 0xEC,
+                      0x89, 0x45, 0xE8, 0xC3 }));
+    REQUIRE(CheckFrameVariables(frame, { { -0x18, 4, "var_18" }, { -0x14, 4, "var_14" }, { -4, 4, "var_4" } }));
+    // the handler first, or a third push: not the setup of a helper
+    REQUIRE_FALSE(analyze({ 0xB8, 0x34, 0x12, 0x00, 0x00, 0x6A, 0x08, 0x6A, 0x48, 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x4D, 0xFC, 0xC3 }));
+    REQUIRE_FALSE(analyze({ 0x6A, 0x08, 0x6A, 0x48, 0x6A, 0x10, 0xE8, 0x10, 0x00, 0x00, 0x00, 0x89, 0x4D, 0xFC, 0xC3 }));
+}
+
+TEST_CASE("ElfIfuncPltStubs", "[Dissasm]Help")
+{
+    // glibc calls its own ifuncs (memcpy, strlen) through an internal PLT: the slot of the stub (an IRELATIVE relocation, no symbol) named by
+    // the ELF plugin after the ifunc its resolver resolves: the stub is j_strlen, its calls get the prototype of strlen
+    std::vector<unsigned char> file = {
+        0x48, 0x89, 0xD9,             // 0x00: mov rcx, rbx       (the first argument of the test zone: rcx)
+        0xE8, 0x18, 0x00, 0x00, 0x00, // 0x03: call 0x20
+        0xC3,                         // 0x08: ret
+    };
+    file.resize(0x20, 0xCC);
+    file.insert(file.end(), {
+                                  0xF3, 0x0F, 0x1E, 0xFA,             // 0x20: endbr64             (the stub)
+                                  0xFF, 0x25, 0x36, 0x00, 0x00, 0x00, // 0x24: jmp qword ptr [rip + 0x36] (the slot at 0x60)
+                            });
+    file.resize(0x68, 0x00);
+    ZoneLayout layout;
+    layout.size             = 0x60;
+    layout.entryPoint       = 0;
+    layout.language         = DisassemblyLanguage::x64;
+    layout.translateOffsets = true;
+    layout.imports          = { { 0x60, { "strlen", MemoryMappingType::FunctionMapping } } }; // the plugin: the IRELATIVE slot of strlen
+    DissasmTestInstance dissasmInstance(file.data(), file.size(), true, layout);
+    const std::string listing = dissasmInstance.GetListing();
+    INFO(listing);
+    REQUIRE(dissasmInstance.zone->GetLabelNameAt(0x20) == "j_strlen");
+    REQUIRE(FindListingLine(listing, "0x00000003  call   j_strlen").size() > 0);
+    REQUIRE(FindListingLine(listing, "0x00000000  mov    rcx, rbx").find("; str") != std::string_view::npos);
 }
 
 TEST_CASE("X86EhHandlerStubsWithPadding", "[Dissasm]Help")

@@ -3324,10 +3324,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     }
 
     // 32 bit: the code at `start` (relative) builds its frame with a helper: push 0x28 / push 0x10; push offset scopetable / mov eax, offset
-    // handler (one or two of them), then the call of a frame helper (IsFrameHelper)
+    // handler (one or two of them; __EH_prolog3_align: two pushes and the handler), then the call of a frame helper (IsFrameHelper)
     bool StartsWithFrameHelper(uint64 start)
     {
-        constexpr uint32 PROLOGUE_BYTES = 16; // push imm32; push imm32; call rel32
+        constexpr uint32 PROLOGUE_BYTES = 20; // push imm32; push imm32; mov eax, imm32; call rel32
         std::array<uint8, PROLOGUE_BYTES> bytes{};
         if (start >= codeSize || codeSize - start < PROLOGUE_BYTES || !obj->GetData().Copy(codeStart + start, bytes))
             return false;
@@ -3338,21 +3338,23 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         size_t size       = bytes.size();
         uint64 address    = start;
         uint32 setup      = 0;
+        uint32 pushes     = 0;
         std::optional<uint64> helper;
-        while (!helper.has_value() && setup <= 2 && cs_disasm_iter(handle, &data, &size, &address, prologue)) {
+        while (!helper.has_value() && setup <= 3 && cs_disasm_iter(handle, &data, &size, &address, prologue)) {
             const cs_x86& x86  = prologue->detail->x86;
             const bool hasImm  = x86.op_count >= 1 && x86.operands[x86.op_count - 1].type == X86_OP_IMM;
             const bool pushImm = prologue->id == X86_INS_PUSH && x86.op_count == 1 && hasImm;
             const bool movEax  = prologue->id == X86_INS_MOV && x86.op_count == 2 && IsRegisterOperandOf(x86, 0, X86_REG_EAX) && hasImm;
-            if (pushImm || movEax)
+            if ((pushImm || movEax) && (setup < 2 || (setup == 2 && pushes == 2 && movEax))) {
                 setup++;
-            else if (prologue->id == X86_INS_CALL && setup > 0 && x86.op_count == 1 && hasImm)
+                pushes += pushImm ? 1u : 0u;
+            } else if (prologue->id == X86_INS_CALL && setup > 0 && x86.op_count == 1 && hasImm)
                 helper = static_cast<uint64>(x86.operands[0].imm);
             else
                 break;
         }
         cs_free(prologue, 1);
-        return helper.has_value() && setup <= 2 && helper.value() < codeSize && IsFrameHelper(helper.value());
+        return helper.has_value() && setup <= 3 && helper.value() < codeSize && IsFrameHelper(helper.value());
     }
 
     // 32 bit: a function of the zone that builds the ebp frame of its caller (MSVC __SEH_prolog4 / __EH_prolog3 / _EH_prolog): it stores

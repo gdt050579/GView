@@ -183,20 +183,39 @@ GVIEW_PLUGIN_ENTRY_POINTS
             if (isCopy && symbolIndex != 0 && symbolIndex < elf->dynamicSymbolsNames.size() && !elf->dynamicSymbolsNames[symbolIndex].empty() && slot >= imageBase)
                 settings.AddMemoryMapping(slot - imageBase, elf->dynamicSymbolsNames[symbolIndex], DissasmViewer::MemoryMappingType::TextMapping);
         };
-        auto addPointer                        = [&](uint64 slot, uint64 symbolIndex, uint64 type, int64 addend) {
-            bool isRelative = false, isAbsolute = false;
+        // the functions an ifunc resolves (STT_GNU_IFUNC: memcpy, strlen of glibc), by the address of their resolver: the slot of an IRELATIVE
+        // relocation (the internal PLT of libc: its calls of its own memcpy) is named after its function, the PLT stub j_memcpy
+        constexpr uint8 STT_GNU_IFUNC = 10;
+        std::unordered_map<uint64, std::string> ifuncNames;
+        for (const auto* table : { &elf->dynamicSymbols64, &elf->staticSymbols64 })
+        {
+            const auto& tableNames = table == &elf->dynamicSymbols64 ? elf->dynamicSymbolsNames : elf->staticSymbolsNames;
+            for (size_t index = 0; index < table->size() && index < tableNames.size(); index++)
+            {
+                const auto& symbol = (*table)[index];
+                if ((symbol.st_info & 0xF) == STT_GNU_IFUNC && symbol.st_shndx != ELF::SHN_UNDEF && symbol.st_value != 0 && !tableNames[index].empty())
+                    ifuncNames.emplace(symbol.st_value, tableNames[index]); // .dynsym first: the exported name (memcpy, not __GI_memcpy)
+            }
+        }
+        auto addPointer = [&](uint64 slot, uint64 symbolIndex, uint64 type, int64 addend) {
+            bool isRelative = false, isAbsolute = false, isIfunc = false;
             if (machine == ELF::EM_X86_64)
             {
                 isRelative = type == ELF::R_X86_64_RELATIVE || type == ELF::R_X86_64_IRELATIVE;
                 isAbsolute = type == ELF::R_X86_64_64;
+                isIfunc    = type == ELF::R_X86_64_IRELATIVE;
             }
             else if (machine == ELF::EM_AARCH64)
             {
                 isRelative = type == ELF::R_AARCH64_RELATIVE || type == R_AARCH64_IRELATIVE;
                 isAbsolute = type == ELF::R_AARCH64_ABS64;
+                isIfunc    = type == R_AARCH64_IRELATIVE;
             }
             if (!isRelative && !isAbsolute)
                 return;
+            if (isIfunc && slot >= imageBase)
+                if (const auto ifunc = ifuncNames.find(static_cast<uint64>(addend)); ifunc != ifuncNames.end())
+                    settings.AddMemoryMapping(slot - imageBase, ifunc->second, DissasmViewer::MemoryMappingType::FunctionMapping);
             uint64 value = static_cast<uint64>(addend);
             if (isAbsolute)
             {
@@ -404,13 +423,18 @@ GVIEW_PLUGIN_ENTRY_POINTS
     // The functions of the symbols (the static ones of an unstripped file, the exported ones): named labels with their sizes
     void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<ELF::ELFFile> elf)
     {
-        // a function of both tables gets its exported name (an alias of the static one: malloc, not __libc_malloc)
+        // a function of both tables gets its exported name (an alias of the static one: malloc, not __libc_malloc); of the exported names of
+        // one function the public one (close, fclose, strdup, not the reserved __close, _IO_fclose, __strdup of glibc: the first export of a
+        // function keeps its name, the public ones are added first)
         const bool isArm = !elf->is64 && elf->header32.e_machine == ELF::EM_ARM;
-        auto addSymbols  = [&](const auto& symbols, const std::vector<std::string>& names, DissasmViewer::FunctionEntryType type) {
+        enum class Names : uint8 { All, Public, Reserved };
+        auto addSymbols = [&](const auto& symbols, const std::vector<std::string>& names, DissasmViewer::FunctionEntryType type, Names which) {
             for (size_t index = 0; index < symbols.size() && index < names.size(); index++)
             {
                 const auto& symbol = symbols[index];
                 if ((symbol.st_info & 0xF) != ELF::STT_FUNC || symbol.st_shndx == ELF::SHN_UNDEF || symbol.st_value == 0 || names[index].empty())
+                    continue;
+                if (which != Names::All && (names[index][0] == '_') != (which == Names::Reserved))
                     continue;
                 // ARM: the bit 0 of a function address is its Thumb mode
                 const uint64 value  = isArm ? (symbol.st_value & ~static_cast<uint64>(1)) : symbol.st_value;
@@ -424,13 +448,15 @@ GVIEW_PLUGIN_ENTRY_POINTS
         };
         if (elf->is64)
         {
-            addSymbols(elf->staticSymbols64, elf->staticSymbolsNames, DissasmViewer::FunctionEntryType::Symbol);
-            addSymbols(elf->dynamicSymbols64, elf->dynamicSymbolsNames, DissasmViewer::FunctionEntryType::Export);
+            addSymbols(elf->staticSymbols64, elf->staticSymbolsNames, DissasmViewer::FunctionEntryType::Symbol, Names::All);
+            addSymbols(elf->dynamicSymbols64, elf->dynamicSymbolsNames, DissasmViewer::FunctionEntryType::Export, Names::Public);
+            addSymbols(elf->dynamicSymbols64, elf->dynamicSymbolsNames, DissasmViewer::FunctionEntryType::Export, Names::Reserved);
         }
         else
         {
-            addSymbols(elf->staticSymbols32, elf->staticSymbolsNames, DissasmViewer::FunctionEntryType::Symbol);
-            addSymbols(elf->dynamicSymbols32, elf->dynamicSymbolsNames, DissasmViewer::FunctionEntryType::Export);
+            addSymbols(elf->staticSymbols32, elf->staticSymbolsNames, DissasmViewer::FunctionEntryType::Symbol, Names::All);
+            addSymbols(elf->dynamicSymbols32, elf->dynamicSymbolsNames, DissasmViewer::FunctionEntryType::Export, Names::Public);
+            addSymbols(elf->dynamicSymbols32, elf->dynamicSymbolsNames, DissasmViewer::FunctionEntryType::Export, Names::Reserved);
         }
     }
 

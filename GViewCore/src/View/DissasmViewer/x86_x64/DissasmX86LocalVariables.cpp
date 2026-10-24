@@ -211,16 +211,17 @@ bool AnalyzeFramePointerCode(
                     continue;
             }
             // MSVC: the frame built by a helper (push 0x10; push offset scopetable; call __SEH_prolog4 / push 8; mov eax, offset handler;
-            // call __EH_prolog3 / mov eax, offset handler; call _EH_prolog)
-            if (frameHelper && !is64 && helperSetup < 2 &&
-                ((current->id == X86_INS_PUSH && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM) ||
-                 (current->id == X86_INS_MOV && IsRegisterOperand(x86, 0, X86_REG_EAX) && x86.operands[1].type == X86_OP_IMM))) {
+            // call __EH_prolog3 / mov eax, offset handler; call _EH_prolog / push 8; push 0x48; mov eax, offset handler; call
+            // __EH_prolog3_align: the size, the alignment, the handler)
+            const bool pushesImmediate = current->id == X86_INS_PUSH && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM;
+            const bool setsHandler     = current->id == X86_INS_MOV && IsRegisterOperand(x86, 0, X86_REG_EAX) && x86.operands[1].type == X86_OP_IMM;
+            if (frameHelper && !is64 && (helperSetup < 2 || (helperSetup == 2 && helperPushes == 2 && setsHandler)) && (pushesImmediate || setsHandler)) {
                 helperSetup++;
-                helperPushes += current->id == X86_INS_PUSH ? 1u : 0u;
+                helperPushes += pushesImmediate ? 1u : 0u;
                 continue;
             }
             if (helperSetup > 0 && current->id == X86_INS_CALL && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM && frameHelper(*current)) {
-                sehRecord = helperPushes == 2;
+                sehRecord = helperPushes == 2 && helperSetup == 2; // __SEH_prolog4 (not the aligned C++ frame)
                 state     = State::Body;
                 continue;
             }
