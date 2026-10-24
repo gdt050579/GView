@@ -294,6 +294,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     // starts a block (after a ret / jmp / padding), relative addresses
     std::vector<uint64> addressTakenTargets;
     std::vector<uint64> dataPointerTargets; // every pointer of the data zones into the code (relative): the code they reach is reached
+    // ARM64: the anchors of the jump tables (adr x9, anchor; ldrsw x8, [x10, w0, uxtw #2]; add x8, x9, x8, lsl #2; br x8), relative: code of
+    // the function of the switch (MSVC puts it after a case, the cases on both sides of it), not a function whose address is taken
+    std::unordered_set<uint64> switchAnchors;
     std::vector<bool> blockStarts; // the instructions that start a block, by relative address
     std::optional<uint64> returnedAddress; // mov eax, offset X: an address taken only when the next instruction is not a ret
     // 32 bit x86 PIC: the value of ebx (the global offset table, VA) set by call $+5; pop ebx / call __x86.get_pc_thunk.bx, then add ebx, imm;
@@ -530,6 +533,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         conditionalTargets.clear();
         addressTakenTargets.clear();
         dataPointerTargets.clear();
+        switchAnchors.clear();
         computedGotoTargets.clear();
         x86FuncletsOfParent.clear();
         helperFrameStarts.clear();
@@ -1289,6 +1293,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 AddSwitchTargets(insn->address, from, targets);
                 if (!targets.empty() && table->entrySize > 0) // tbb / tbh / ldr pc, [pc, rN, lsl #2]: the table follows the jump
                     AddTable(insn->address, from, labelBase + table->table, table->entrySize, targets, insnArch == DissasmArch::Thumb);
+            }
+            // the anchor of a jump table (its table read or not): a label of the function, not a function whose address is taken
+            if (const auto anchor = isArm64 ? adrpTracker.TakeAnchor() : std::nullopt; anchor.has_value() && anchor.value() < codeSize) {
+                switchAnchors.insert(anchor.value());
+                const auto anchorOffset = zone->GetFileOffsetOfAddress(anchor.value());
+                if (anchorOffset.has_value() && callsMap.insert({ anchorOffset.value(), true }).second)
+                    callsFound.emplace_back(anchorOffset.value(), zone->GetLabelName("loc_", anchor.value()));
             }
             // a prologue at a block start: a function (a candidate until the end of the sweep: a shrink wrapped prologue is reached by a
             // conditional branch of its own function)
@@ -2547,12 +2558,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 AddFunctionStart(candidate);
         // the code whose address is taken, by the code or by the pointers of the data zones (the virtual methods of the vtables, the
         // callbacks): a function when it starts a block
-        // (not a case of a switch, an absolute jump table of GCC in .rodata; not the target of a conditional jump, inside a function)
+        // (not a case of a switch, an absolute jump table of GCC in .rodata; not the target of a conditional jump, inside a function; not
+        // the anchor of an ARM64 jump table)
         AddDataZonePointerTargets();
         std::sort(dataPointerTargets.begin(), dataPointerTargets.end()); // IsTakenAddress
         dataPointerTargets.erase(std::unique(dataPointerTargets.begin(), dataPointerTargets.end()), dataPointerTargets.end());
         if (!addressTakenTargets.empty()) {
-            std::unordered_set<uint64> insideFunctions;
+            std::unordered_set<uint64> insideFunctions = switchAnchors;
             for (const auto& xref : xrefs.byTarget)
                 if ((xref.kind == DissasmXrefKind::Switch || xref.kind == DissasmXrefKind::ConditionalJump) && xref.to >= labelBase)
                     insideFunctions.insert(xref.to - labelBase);

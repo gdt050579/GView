@@ -1486,6 +1486,11 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
     // bl __chkstk; sub sp, sp, x15, lsl #4) comes before the depth of the body, the one of the first other instruction
     bool settingUp = false;
     std::optional<int64> x15Value; // mov x15, #N: the size of the probe, in 16 bytes
+    // the home of the variadic registers (MSVC): the prologue stores x_k at -(8 - k) * 8 from the sp of the entry, right below the arguments
+    // on the stack (stp x3, x4, [sp, #0x18] after stp x19, x20, [sp, #-0x40]!): va_start walks from there on. The slots from the sp of the
+    // entry, their register
+    std::vector<std::pair<int64, uint32>> variadicHomes;
+    int64 frameRegisterAtEntry  = 0; // x29 - the sp of the entry (0 without a frame register: the offsets are from the sp of the entry)
     const uint8* data           = code;
     size_t size                 = static_cast<size_t>(std::min<uint64>(codeSize, limitAddress - codeAddress));
     uint64 address              = codeAddress;
@@ -1558,6 +1563,7 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                 hasFrame           = true;
                 // x29 - the sp of the entry: the depths and the saved registers of the prologue in x29 offsets
                 const int64 frameRegister = entryDelta + offset;
+                frameRegisterAtEntry      = frameRegister;
                 for (const auto& [at, delta] : prologueDeltas)
                     frame.stackDeltas.emplace_back(at, static_cast<int32>(delta - frameRegister));
                 // the frame record and the other saves: one area when they touch; MSVC puts the record below the locals (stp x29, x30,
@@ -1607,6 +1613,19 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                             }
                             savedLow  = std::min(savedLow.value_or(slot), slot);
                             savedHigh = std::max(savedHigh.value_or(slot), slot + saveSize * (pair ? 2 : 1));
+                        }
+                if (saveSize == 8 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg >= ARM64_REG_X0 && arm64.operands[0].reg <= ARM64_REG_X7)
+                    for (uint8 index = 0; index < arm64.op_count; index++)
+                        if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP) {
+                            const int64 slot = entryDelta + (arm64.writeback && arm64.post_index ? 0 : arm64.operands[index].mem.disp);
+                            for (uint8 stored = 0; stored < (pair ? 2 : 1); stored++) {
+                                const cs_arm64_op& value = arm64.operands[stored];
+                                if (value.type != ARM64_OP_REG || value.reg < ARM64_REG_X0 || value.reg > ARM64_REG_X7)
+                                    continue;
+                                const uint32 number = static_cast<uint32>(value.reg - ARM64_REG_X0);
+                                if (slot + 8 * stored == -8 * static_cast<int64>(8 - number))
+                                    variadicHomes.emplace_back(slot + 8 * stored, number);
+                            }
                         }
                 entryDelta += spChange;
                 if (spChange != 0)
@@ -1711,7 +1730,16 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         if (afterFlowEnd && furthestBranchTarget < address && address >= pathsEnd)
             break;
     }
-    if (!hasFrame || !CompactAccesses(accesses))
+    if (!hasFrame)
+        return false;
+    // the slots of the variadic registers in the offsets of the frame (before the rebase of MSVC's frame record below the locals)
+    std::unordered_map<int32, uint32> homes;
+    for (const auto& [slot, number] : variadicHomes) {
+        const int32 offset = static_cast<int32>(slot - (stackOnly ? 0 : frameRegisterAtEntry));
+        homes.emplace(offset, number);
+        accesses.push_back({ offset, 8 });
+    }
+    if (!CompactAccesses(accesses))
         return false;
     frame.stackOffset       = static_cast<int32>(bodyStackPointer.value_or(stackPointer));
     frame.usesFrameRegister = !stackOnly;
@@ -1726,11 +1754,16 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
         frame.frameRegisterOffset = -base;
     }
     frame.variables.reserve(accesses.size());
+    const int32 homeBase = rebase.has_value() && !stackOnly ? static_cast<int32>(rebase.value()) : 0;
     for (const auto& access : accesses) {
         if (frame.IsSavedRegisterSlot(access.frameOffset))
             continue; // ldr x19, [sp, #0x10] of the epilogue: the slot of a saved register (var_s0)
         DissasmLocalVariable variable{ access.frameOffset, access.size, {} };
-        FormatDefaultLocalVariableName(access.frameOffset, true, variable.name);
+        if (const auto home = homes.find(access.frameOffset + homeBase); home != homes.end()) {
+            variable.name   = "va_x" + std::to_string(home->second); // the home of x3 of a variadic function: va_x3
+            variable.origin = "the variadic x" + std::to_string(home->second);
+        } else
+            FormatDefaultLocalVariableName(access.frameOffset, true, variable.name);
         frame.variables.push_back(std::move(variable));
     }
     return true;

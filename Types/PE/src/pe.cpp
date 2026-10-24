@@ -542,6 +542,187 @@ void AddFunctionExceptionData(
     if (!objects.empty())
         settings.AddExceptionObjects(fa, prologSize, frameRegister, frameOffset, objects);
 }
+
+// x64 exception data (.pdata, or the x64 one of an ARM64X image): a RUNTIME_FUNCTION for nearly every function that is not a leaf, with its
+// size; the table at `tableRVA`, `tableSize` bytes
+void AddX64RuntimeFunctions(DissasmViewer::Settings& settings, Reference<PE::PEFile> pe, GView::Utils::DataCache& data, uint32 tableRVA, uint32 tableSize)
+{
+    struct RuntimeFunction {
+        uint32 BeginAddress;
+        uint32 EndAddress;
+        uint32 UnwindInfoAddress;
+    };
+    constexpr uint32 MAX_RUNTIME_FUNCTIONS = 0x100000;
+    constexpr uint8 UNW_FLAG_CHAININFO     = 0x4;
+    constexpr uint8 UNW_FLAG_HANDLERS      = 0x3; // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER: a language specific handler and its data
+    std::vector<RuntimeFunction> handled;         // the functions with a handler (their scope tables are read after the loop)
+    std::unordered_set<uint32> functionStarts;    // the funclets of the scopes are functions of .pdata
+    std::vector<std::pair<RuntimeFunction, uint32>> chained; // a chained entry, the start of the entry it chains to
+    struct PrimaryFunction {
+        uint32 end;
+        uint8 prologSize;
+    };
+    std::unordered_map<uint32, PrimaryFunction> primaries; // the function entries, by start
+    const auto start   = tableRVA != 0 ? pe->RVAToFA(tableRVA) : PE_INVALID_ADDRESS;
+    const uint32 count = start != PE_INVALID_ADDRESS ? std::min<uint32>(tableSize / sizeof(RuntimeFunction), MAX_RUNTIME_FUNCTIONS) : 0;
+    for (uint32 index = 0; index < count; index++) {
+        RuntimeFunction function;
+        if (!data.Copy<RuntimeFunction>(start + static_cast<uint64>(index) * sizeof(RuntimeFunction), function))
+            break;
+        if (function.BeginAddress == 0 || function.EndAddress <= function.BeginAddress)
+            continue;
+        // a chained entry (or an indirect one, odd unwind address) is a part of the function of another entry, not a function start:
+        // the entry of that function is the one after its unwind codes (indirect: at the unwind address)
+        RuntimeFunction primary;
+        if (function.UnwindInfoAddress & 1) {
+            const auto at = pe->RVAToFA(function.UnwindInfoAddress & ~1u);
+            if (at != PE_INVALID_ADDRESS && data.Copy<RuntimeFunction>(at, primary))
+                chained.emplace_back(function, primary.BeginAddress);
+            continue;
+        }
+        uint8 versionAndFlags = 0, prologSize = 0, codeCount = 0;
+        const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
+        if (unwindInfo != PE_INVALID_ADDRESS && data.Copy<uint8>(unwindInfo, versionAndFlags) && ((versionAndFlags >> 3) & UNW_FLAG_CHAININFO)) {
+            if (data.Copy<uint8>(unwindInfo + 2, codeCount) && data.Copy<RuntimeFunction>(unwindInfo + 4 + 2ull * ((codeCount + 1u) & ~1u), primary))
+                chained.emplace_back(function, primary.BeginAddress);
+            continue;
+        }
+        if (unwindInfo != PE_INVALID_ADDRESS)
+            data.Copy<uint8>(unwindInfo + 1, prologSize);
+        primaries[function.BeginAddress] = { function.EndAddress, prologSize };
+        const auto fa = pe->RVAToFA(function.BeginAddress);
+        if (fa != PE_INVALID_ADDRESS)
+            settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, function.EndAddress - function.BeginAddress);
+        functionStarts.insert(function.BeginAddress);
+        if (unwindInfo != PE_INVALID_ADDRESS && ((versionAndFlags >> 3) & UNW_FLAG_HANDLERS))
+            handled.push_back(function);
+    }
+    // the chained entries: a part of the function of their primary entry (followed through the chained ones). Right after it (the
+    // padding between them) it is the rest of the function (its size), elsewhere a chunk of it (its cold code: AddFunctionChunk), the
+    // parts that follow each other one chunk
+    std::sort(chained.begin(), chained.end(), [](const auto& left, const auto& right) { return left.first.BeginAddress < right.first.BeginAddress; });
+    std::unordered_map<uint32, uint32> chainedTo;
+    for (const auto& [part, parent] : chained)
+        chainedTo.emplace(part.BeginAddress, parent);
+    std::unordered_map<uint32, uint32> functionEnds; // the extended ones
+    struct Chunk {
+        uint32 begin, end, function;
+    };
+    std::vector<Chunk> chunks;
+    constexpr uint32 MAX_PADDING = 16;
+    for (const auto& [part, parent] : chained) {
+        uint32 root = parent;
+        for (uint32 steps = 0; steps < 32 && !primaries.contains(root); steps++) {
+            const auto next = chainedTo.find(root);
+            if (next == chainedTo.end())
+                break;
+            root = next->second;
+        }
+        const auto primary = primaries.find(root);
+        if (primary == primaries.end() || root == part.BeginAddress)
+            continue;
+        auto& end = functionEnds.try_emplace(root, primary->second.end).first->second;
+        if (part.BeginAddress >= end && part.BeginAddress - end < MAX_PADDING) {
+            end = part.EndAddress;
+            continue;
+        }
+        if (!chunks.empty() && chunks.back().function == root && part.BeginAddress >= chunks.back().end && part.BeginAddress - chunks.back().end < MAX_PADDING)
+            chunks.back().end = part.EndAddress;
+        else
+            chunks.push_back({ part.BeginAddress, part.EndAddress, root });
+    }
+    for (const auto& [root, end] : functionEnds) {
+        const auto fa = pe->RVAToFA(root);
+        if (fa != PE_INVALID_ADDRESS && end > primaries[root].end)
+            settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, end - root);
+    }
+    for (const auto& chunk : chunks) {
+        const auto fa         = pe->RVAToFA(chunk.begin);
+        const auto functionFa = pe->RVAToFA(chunk.function);
+        if (fa != PE_INVALID_ADDRESS && functionFa != PE_INVALID_ADDRESS)
+            settings.AddFunctionChunk(fa, chunk.end - chunk.begin, functionFa, primaries[chunk.function].prologSize);
+    }
+
+    // the language specific data of the functions with a handler: the scope tables of __C_specific_handler, the FuncInfo of C++; the
+    // scopes can be in the other parts of the function (its cold code)
+    std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> partsOf;
+    for (const auto& [root, end] : functionEnds)
+        if (end > primaries[root].end)
+            partsOf[root].emplace_back(primaries[root].end, end);
+    for (const auto& chunk : chunks)
+        partsOf[chunk.function].emplace_back(chunk.begin, chunk.end);
+    const std::vector<std::pair<uint32, uint32>> noParts;
+    for (const auto& function : handled) {
+        const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
+        struct UnwindHeader {
+            uint8 versionAndFlags, prologSize, codeCount, frame; // frame: the register (low 4 bits), its offset / 16 (high 4 bits)
+        } header;
+        if (!data.Copy<UnwindHeader>(unwindInfo, header))
+            continue;
+        const uint64 handlerData = unwindInfo + 4 + 2ull * ((header.codeCount + 1u) & ~1u) + 4; // the codes (an even count), the handler RVA
+        const auto parts         = partsOf.find(function.BeginAddress);
+        AddFunctionExceptionData(
+              settings,
+              pe,
+              data,
+              function.BeginAddress,
+              function.EndAddress,
+              parts != partsOf.end() ? parts->second : noParts,
+              handlerData,
+              functionStarts,
+              header.prologSize,
+              header.frame & 0xF,
+              header.frame >> 4,
+              false);
+    }
+}
+
+// ARM64X (ARM64 and ARM64EC code in one image, with x64 code: its exception pass-through thunks, the x64 code linked into it): the CHPE
+// metadata of the load config (IMAGE_ARM64EC_METADATA) gives the code map, the ranges of each kind of code, and the .pdata of the x64 code
+// (the extra table of runtime functions). The x64 ranges, by RVA
+struct HybridCodeMap {
+    std::vector<std::pair<uint32, uint32>> x64Ranges;
+    uint32 x64ExceptionTable     = 0;
+    uint32 x64ExceptionTableSize = 0;
+};
+HybridCodeMap ReadHybridCodeMap(Reference<PE::PEFile> pe, GView::Utils::DataCache& data)
+{
+    HybridCodeMap result;
+    if (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine) != PE::MachineType::ARM64)
+        return result;
+    constexpr uint32 CHPE_METADATA_POINTER = 200; // the field of the 64 bit load config
+    constexpr uint32 MAX_CODE_RANGES       = 0x10000;
+    constexpr uint32 CODE_RANGE_AMD64      = 2; // the low 2 bits of the start: 0 ARM64, 1 ARM64EC, 2 AMD64
+    const auto& directory = pe->GetDirectory(PE::DirectoryType::Config);
+    const auto config     = directory.VirtualAddress != 0 ? pe->RVAToFA(directory.VirtualAddress) : PE_INVALID_ADDRESS;
+    uint32 configSize     = 0;
+    uint64 metadataVA     = 0;
+    if (config == PE_INVALID_ADDRESS || !data.Copy<uint32>(config, configSize) || configSize < CHPE_METADATA_POINTER + 8 ||
+        !data.Copy<uint64>(config + CHPE_METADATA_POINTER, metadataVA) || metadataVA == 0)
+        return result;
+    const auto metadata = pe->VAtoFA(metadataVA);
+    // the version, the RVA of the code map and its count; the extra table of runtime functions and its size (bytes) at 64 / 68
+    struct CodeMapHeader {
+        uint32 version, codeMap, codeMapCount;
+    } header;
+    if (metadata == PE_INVALID_ADDRESS || !data.Copy<CodeMapHeader>(metadata, header))
+        return result;
+    const auto codeMap = header.codeMap != 0 ? pe->RVAToFA(header.codeMap) : PE_INVALID_ADDRESS;
+    for (uint32 index = 0; codeMap != PE_INVALID_ADDRESS && index < std::min(header.codeMapCount, MAX_CODE_RANGES); index++) {
+        struct CodeRange {
+            uint32 startAndKind, length;
+        } range;
+        if (!data.Copy<CodeRange>(codeMap + 8ull * index, range))
+            break;
+        const uint32 begin = range.startAndKind & ~3u;
+        if ((range.startAndKind & 3) == CODE_RANGE_AMD64 && range.length > 0 && range.length <= 0xFFFFFFFFu - begin)
+            result.x64Ranges.emplace_back(begin, begin + range.length);
+    }
+    std::sort(result.x64Ranges.begin(), result.x64Ranges.end());
+    if (!data.Copy<uint32>(metadata + 64, result.x64ExceptionTable) || !data.Copy<uint32>(metadata + 68, result.x64ExceptionTableSize))
+        result.x64ExceptionTable = result.x64ExceptionTableSize = 0;
+    return result;
+}
 } // namespace
 } // extern "C++"
 
@@ -620,138 +801,15 @@ void AddDissasmFunctionEntries(DissasmViewer::Settings& settings, Reference<PE::
         // the scope tables of __C_specific_handler, the FuncInfo of the C++ exception handling (as x64; no frame register in the data)
         for (const auto& function : handled)
             AddFunctionExceptionData(settings, pe, data, function.begin, function.end, {}, function.handlerData, functionStarts, 0, 0, 0, true);
+        // ARM64X: the functions of its x64 code
+        const auto hybrid = ReadHybridCodeMap(pe, data);
+        if (!hybrid.x64Ranges.empty())
+            AddX64RuntimeFunctions(settings, pe, data, hybrid.x64ExceptionTable, hybrid.x64ExceptionTableSize);
     }
     // x64 exception data (.pdata): a RUNTIME_FUNCTION for nearly every function that is not a leaf, with its size
     else if (pe->hdr64) {
-        struct RuntimeFunction {
-            uint32 BeginAddress;
-            uint32 EndAddress;
-            uint32 UnwindInfoAddress;
-        };
-        constexpr uint32 MAX_RUNTIME_FUNCTIONS = 0x100000;
-        constexpr uint8 UNW_FLAG_CHAININFO     = 0x4;
-        constexpr uint8 UNW_FLAG_HANDLERS      = 0x3; // UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER: a language specific handler and its data
-        std::vector<RuntimeFunction> handled;         // the functions with a handler (their scope tables are read after the loop)
-        std::unordered_set<uint32> functionStarts;    // the funclets of the scopes are functions of .pdata
-        std::vector<std::pair<RuntimeFunction, uint32>> chained; // a chained entry, the start of the entry it chains to
-        struct PrimaryFunction {
-            uint32 end;
-            uint8 prologSize;
-        };
-        std::unordered_map<uint32, PrimaryFunction> primaries; // the function entries, by start
-        const auto& exceptionDir               = pe->GetDirectory(PE::DirectoryType::Exception);
-        const auto start                       = exceptionDir.VirtualAddress != 0 ? pe->RVAToFA(exceptionDir.VirtualAddress) : PE_INVALID_ADDRESS;
-        const uint32 count = start != PE_INVALID_ADDRESS ? std::min<uint32>(exceptionDir.Size / sizeof(RuntimeFunction), MAX_RUNTIME_FUNCTIONS) : 0;
-        for (uint32 index = 0; index < count; index++) {
-            RuntimeFunction function;
-            if (!data.Copy<RuntimeFunction>(start + static_cast<uint64>(index) * sizeof(RuntimeFunction), function))
-                break;
-            if (function.BeginAddress == 0 || function.EndAddress <= function.BeginAddress)
-                continue;
-            // a chained entry (or an indirect one, odd unwind address) is a part of the function of another entry, not a function start:
-            // the entry of that function is the one after its unwind codes (indirect: at the unwind address)
-            RuntimeFunction primary;
-            if (function.UnwindInfoAddress & 1) {
-                const auto at = pe->RVAToFA(function.UnwindInfoAddress & ~1u);
-                if (at != PE_INVALID_ADDRESS && data.Copy<RuntimeFunction>(at, primary))
-                    chained.emplace_back(function, primary.BeginAddress);
-                continue;
-            }
-            uint8 versionAndFlags = 0, prologSize = 0, codeCount = 0;
-            const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
-            if (unwindInfo != PE_INVALID_ADDRESS && data.Copy<uint8>(unwindInfo, versionAndFlags) && ((versionAndFlags >> 3) & UNW_FLAG_CHAININFO)) {
-                if (data.Copy<uint8>(unwindInfo + 2, codeCount) && data.Copy<RuntimeFunction>(unwindInfo + 4 + 2ull * ((codeCount + 1u) & ~1u), primary))
-                    chained.emplace_back(function, primary.BeginAddress);
-                continue;
-            }
-            if (unwindInfo != PE_INVALID_ADDRESS)
-                data.Copy<uint8>(unwindInfo + 1, prologSize);
-            primaries[function.BeginAddress] = { function.EndAddress, prologSize };
-            const auto fa = pe->RVAToFA(function.BeginAddress);
-            if (fa != PE_INVALID_ADDRESS)
-                settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, function.EndAddress - function.BeginAddress);
-            functionStarts.insert(function.BeginAddress);
-            if (unwindInfo != PE_INVALID_ADDRESS && ((versionAndFlags >> 3) & UNW_FLAG_HANDLERS))
-                handled.push_back(function);
-        }
-        // the chained entries: a part of the function of their primary entry (followed through the chained ones). Right after it (the
-        // padding between them) it is the rest of the function (its size), elsewhere a chunk of it (its cold code: AddFunctionChunk), the
-        // parts that follow each other one chunk
-        std::sort(chained.begin(), chained.end(), [](const auto& left, const auto& right) { return left.first.BeginAddress < right.first.BeginAddress; });
-        std::unordered_map<uint32, uint32> chainedTo;
-        for (const auto& [part, parent] : chained)
-            chainedTo.emplace(part.BeginAddress, parent);
-        std::unordered_map<uint32, uint32> functionEnds; // the extended ones
-        struct Chunk {
-            uint32 begin, end, function;
-        };
-        std::vector<Chunk> chunks;
-        constexpr uint32 MAX_PADDING = 16;
-        for (const auto& [part, parent] : chained) {
-            uint32 root = parent;
-            for (uint32 steps = 0; steps < 32 && !primaries.contains(root); steps++) {
-                const auto next = chainedTo.find(root);
-                if (next == chainedTo.end())
-                    break;
-                root = next->second;
-            }
-            const auto primary = primaries.find(root);
-            if (primary == primaries.end() || root == part.BeginAddress)
-                continue;
-            auto& end = functionEnds.try_emplace(root, primary->second.end).first->second;
-            if (part.BeginAddress >= end && part.BeginAddress - end < MAX_PADDING) {
-                end = part.EndAddress;
-                continue;
-            }
-            if (!chunks.empty() && chunks.back().function == root && part.BeginAddress >= chunks.back().end && part.BeginAddress - chunks.back().end < MAX_PADDING)
-                chunks.back().end = part.EndAddress;
-            else
-                chunks.push_back({ part.BeginAddress, part.EndAddress, root });
-        }
-        for (const auto& [root, end] : functionEnds) {
-            const auto fa = pe->RVAToFA(root);
-            if (fa != PE_INVALID_ADDRESS && end > primaries[root].end)
-                settings.AddFunctionEntry(fa, {}, DissasmViewer::FunctionEntryType::ExceptionData, end - root);
-        }
-        for (const auto& chunk : chunks) {
-            const auto fa         = pe->RVAToFA(chunk.begin);
-            const auto functionFa = pe->RVAToFA(chunk.function);
-            if (fa != PE_INVALID_ADDRESS && functionFa != PE_INVALID_ADDRESS)
-                settings.AddFunctionChunk(fa, chunk.end - chunk.begin, functionFa, primaries[chunk.function].prologSize);
-        }
-
-        // the language specific data of the functions with a handler: the scope tables of __C_specific_handler, the FuncInfo of C++; the
-        // scopes can be in the other parts of the function (its cold code)
-        std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> partsOf;
-        for (const auto& [root, end] : functionEnds)
-            if (end > primaries[root].end)
-                partsOf[root].emplace_back(primaries[root].end, end);
-        for (const auto& chunk : chunks)
-            partsOf[chunk.function].emplace_back(chunk.begin, chunk.end);
-        const std::vector<std::pair<uint32, uint32>> noParts;
-        for (const auto& function : handled) {
-            const auto unwindInfo = pe->RVAToFA(function.UnwindInfoAddress);
-            struct UnwindHeader {
-                uint8 versionAndFlags, prologSize, codeCount, frame; // frame: the register (low 4 bits), its offset / 16 (high 4 bits)
-            } header;
-            if (!data.Copy<UnwindHeader>(unwindInfo, header))
-                continue;
-            const uint64 handlerData = unwindInfo + 4 + 2ull * ((header.codeCount + 1u) & ~1u) + 4; // the codes (an even count), the handler RVA
-            const auto parts         = partsOf.find(function.BeginAddress);
-            AddFunctionExceptionData(
-                  settings,
-                  pe,
-                  data,
-                  function.BeginAddress,
-                  function.EndAddress,
-                  parts != partsOf.end() ? parts->second : noParts,
-                  handlerData,
-                  functionStarts,
-                  header.prologSize,
-                  header.frame & 0xF,
-                  header.frame >> 4,
-                  false);
-        }
+        const auto& exceptionDir = pe->GetDirectory(PE::DirectoryType::Exception);
+        AddX64RuntimeFunctions(settings, pe, data, exceptionDir.VirtualAddress, exceptionDir.Size);
     }
 
     // TLS callbacks: run before the entry point (IDA names them TlsCallback_N); the directory fields are 64 bit for PE32+
@@ -1349,6 +1407,7 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
 
         LocalString<128> sectionName;
         const uint64 fileSize = win->GetObject()->GetData().GetSize();
+        const auto hybrid     = ReadHybridCodeMap(pe, win->GetObject()->GetData());
         std::vector<std::pair<uint64, uint64>> zones; // the raw data of the zones added: a malformed file can have sections that overlap
         for (auto tr = 0U; tr < pe->nrSections; tr++) {
             const auto& section = pe->sect[tr];
@@ -1401,6 +1460,38 @@ void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE
                 settings.AddDisassemblyZone(codeOffset, tailOffset - codeOffset, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
                 if (tailOffset < start + dataSize)
                     settings.AddDataZone(tailOffset, start + dataSize - tailOffset, language, dataName);
+            } else if (!hybrid.x64Ranges.empty()) {
+                // ARM64X: the x64 code of the section is a zone of its own, decoded as x64; the part past the code (the alignment) stays
+                // with the zone before it
+                uint64 pieceStart = start;
+                bool pieceIsX64   = false;
+                const auto addPiece = [&](uint64 pieceEnd) {
+                    if (pieceEnd <= pieceStart)
+                        return;
+                    const bool pieceHasEntryPoint = hasEntryPoint && entryPoint >= pieceStart && entryPoint < pieceEnd;
+                    settings.AddDisassemblyZone(
+                          pieceStart,
+                          pieceEnd - pieceStart,
+                          pieceHasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT,
+                          pieceIsX64 ? DissasmViewer::DisassemblyLanguage::x64 : language,
+                          pieceIsX64 ? std::string(name) + " (x64)" : std::string(name));
+                    pieceStart = pieceEnd;
+                };
+                const uint32 codeEnd = section.VirtualAddress + static_cast<uint32>(dataSize);
+                for (const auto& [rangeBegin, rangeEnd] : hybrid.x64Ranges) {
+                    if (rangeEnd <= section.VirtualAddress || rangeBegin >= codeEnd)
+                        continue;
+                    const uint64 begin = start + (std::max(rangeBegin, section.VirtualAddress) - section.VirtualAddress);
+                    if (begin < pieceStart)
+                        continue; // ranges that overlap
+                    addPiece(begin);
+                    pieceIsX64 = true;
+                    if (rangeEnd >= codeEnd)
+                        break;
+                    addPiece(start + (rangeEnd - section.VirtualAddress));
+                    pieceIsX64 = false;
+                }
+                addPiece(start + size);
             } else
                 settings.AddDisassemblyZone(start, size, hasEntryPoint ? entryPoint : DissasmViewer::NO_ENTRY_POINT, language, name);
         }

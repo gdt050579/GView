@@ -601,23 +601,31 @@ bool IsPaddingStart(const uint8_t* code, size_t size)
         return false;
     if (code[0] == 0x0F)
         return code[1] == 0x1F;
+    if (code[0] == 0x00) // zeros: the padding of the x64 code of the ARM64X images (00 00: add byte ptr [rax], al)
+        return code[1] == 0x00;
     return code[0] == 0x66 && (code[1] == 0x90 || code[1] == 0x0F || code[1] == 0x2E || code[1] == 0x66);
 }
 
 // The padding from the address up to the next 16 bytes aligned address (or up to the first byte that is not padding): one line,
 // "align N" (N: the alignment of its end, at most 0x10). Only a run of at least 2 bytes that is not longer than N: a lone nop or int3
-// stays an instruction. The run never needs more than DISSASM_MAX_LINE_SIZE bytes: the same line from any decoding window.
+// stays an instruction. The run never needs more than DISSASM_MAX_LINE_SIZE bytes: the same line from any decoding window. Int3 and nops,
+// or zeros only (an odd run of them decoded as "add byte ptr [rax], al" took the first byte of the next function): a run that ends at an
+// even address, a lone zero too when the zeros go on after it; a run longer than the alignment of its end ends at the most aligned
+// address inside it (the rest is the next line: 8 zeros from 0x14 are align 0x8, then align 0x4)
 bool DecodeX86Padding(csh handle, const uint8_t** code, size_t* size, uint64_t* address, cs_insn* insn, size_t available, AppCUI::uint64 alignmentBase)
 {
     const AppCUI::uint64 start    = *address + alignmentBase;
     const AppCUI::uint64 chunkEnd = (start | 0xF) + 1;
     const size_t limit            = static_cast<size_t>(std::min<AppCUI::uint64>(chunkEnd - start, available));
+    const uint8_t filler          = (*code)[0] == 0x00 ? 0x00 : 0xCC;
     size_t length                 = 0;
     while (length < limit) {
-        if ((*code)[length] == 0xCC) {
+        if ((*code)[length] == filler) {
             length++;
             continue;
         }
+        if (filler == 0x00)
+            break;
         const uint8_t* data = *code + length;
         size_t left         = limit - length;
         uint64_t at         = *address + length;
@@ -625,9 +633,20 @@ bool DecodeX86Padding(csh handle, const uint8_t** code, size_t* size, uint64_t* 
             break;
         length += insn->size;
     }
-    const AppCUI::uint64 end       = start + length;
-    const AppCUI::uint64 alignment = std::min<AppCUI::uint64>(end & (~end + 1), 0x10); // the lowest set bit
-    if (length < 2 || alignment < 2 || length > alignment)
+    AppCUI::uint64 end       = start + length;
+    AppCUI::uint64 alignment = std::min<AppCUI::uint64>(end & (~end + 1), 0x10); // the lowest set bit
+    if (filler == 0x00 && alignment >= 2 && length > alignment) {
+        for (AppCUI::uint64 step = 8; step >= 2; step /= 2) {
+            if ((end & ~(step - 1)) > start) {
+                end = end & ~(step - 1);
+                break;
+            }
+        }
+        length    = static_cast<size_t>(end - start);
+        alignment = std::min<AppCUI::uint64>(end & (~end + 1), 0x10);
+    }
+    const bool zerosGoOn = filler == 0x00 && length < available && (*code)[length] == 0x00;
+    if ((length < 2 && !zerosGoOn) || alignment < 2 || length > alignment)
         return false;
 
     insn->id = 0; // X86_INS_INVALID: a data line, no flow

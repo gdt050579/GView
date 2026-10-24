@@ -272,6 +272,7 @@ void Arm64AdrpTracker::Reset()
 std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& insn, bool atBlockStart)
 {
     jumpTable.reset();
+    anchor.reset();
     if (insn.id == ARM64_INS_INVALID || !insn.detail) {
         Reset(); // a data line: the code before it is another block
         return {};
@@ -383,6 +384,8 @@ std::optional<Arm64AdrpTracker::Result> Arm64AdrpTracker::Next(const cs_insn& in
             jumpTable        = registers[target].jump;
             jumpTable->count = bound.value();
         }
+        if (target >= 0 && insn.id == ARM64_INS_BR && registers[target].jump.has_value() && registers[target].jump->base != registers[target].jump->table)
+            anchor = registers[target].jump->base;
     } else if (insn.id == ARM64_INS_CMP && arm64.op_count == 2 && isImmediate(1)) {
         compared = static_cast<uint64>(arm64.operands[1].imm); // cmp w0, #11
     } else if (insn.id == ARM64_INS_B && compared.has_value() && (arm64.cc == ARM64_CC_HI || arm64.cc == ARM64_CC_HS)) {

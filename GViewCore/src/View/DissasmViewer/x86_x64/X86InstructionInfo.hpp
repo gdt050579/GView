@@ -139,6 +139,14 @@ class Arm64AdrpTracker
         jumpTable.reset();
         return table;
     }
+    // the anchor of the br given to the last Next (adr x9, anchor; add x8, x9, x8, lsl #2; br x8: code of the function, its cases around
+    // it), its table read or not (the bound of the index checked before another switch); not the table itself
+    std::optional<AppCUI::uint64> TakeAnchor()
+    {
+        auto value = anchor;
+        anchor.reset();
+        return value;
+    }
     void Reset();
 
   private:
@@ -161,6 +169,7 @@ class Arm64AdrpTracker
     std::optional<AppCUI::uint64> compared; // cmp w0, #N: N
     std::optional<AppCUI::uint32> bound;    // b.hi after the cmp: the number of cases
     std::optional<Arm64JumpTable> jumpTable;
+    std::optional<AppCUI::uint64> anchor;
 };
 
 // 32 bit ARM: a prologue at a block start (push {..., lr} / stmdb sp!, {..., lr}): a function start
