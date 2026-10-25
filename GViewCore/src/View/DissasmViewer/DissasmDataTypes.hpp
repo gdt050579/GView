@@ -333,6 +333,15 @@ namespace View
             // without a frame register: the code reads the return address through the stack pointer (wil passes _ReturnAddress(): mov rcx,
             // qword ptr [rsp + 0x28]): the frame is kept without variables, its depths name the slot (retaddr)
             bool readsReturnAddress = false;
+            // ARM64: the variadic registers the prologue homes (MSVC: stp x2, x3, [sp, #0x30] .. x7: va_x2 ..; ARM64EC: x0 .. x3 once x4
+            // moved): the first one (the fixed arguments are the registers before it), the offset of its home (the va_list of va_start),
+            // whether the va_list is x4 (ARM64EC). Recomputed by the deep scan
+            struct VariadicHomes {
+                uint8 firstRegister = 0;
+                int32 frameOffset   = 0;
+                bool throughX4      = false;
+            };
+            std::optional<VariadicHomes> variadic;
             bool IsSavedRegisterSlot(int32 frameOffset) const
             {
                 return savedRegistersSize != 0 && frameOffset >= savedRegistersOffset &&

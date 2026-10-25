@@ -261,6 +261,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     std::unordered_set<uint64> noReturnStarts; // relative starts of the functions that do not return: their names, then InferNoReturnFunctions
     std::unordered_set<uint64> userReturns;    // the functions the user says return (USER_FUNCTION_RETURNS): never noreturn
     std::unordered_set<uint64> noReturnCalls;  // relative addresses of the calls to them
+    // ARM64: the calls of a helper that keeps the registers but x16 / x17 and may move sp (Arm64HelperStackChange: MSVC's
+    // __security_push_cookie, -0x10; __chkstk, 0), by relative address: the change of sp (FindArm64StackHelpers)
+    std::unordered_map<uint64, int32> stackHelperCalls;
     uint32 passes  = 1;
     std::map<uint64, uint64> tableEntries; // relative address of an entry of a table -> the relative address of its case
 
@@ -3370,12 +3373,45 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
     void AddArm64ColdChunkSlots(DissasmFunctionFrame& frame)
     {
         const auto [first, last] = coldChunksOf.equal_range(frame.startAddress);
+        const auto movesStack    = [this](const cs_insn& call) {
+            const auto helper = stackHelperCalls.find(call.address);
+            return helper != stackHelperCalls.end() && helper->second != 0;
+        };
         for (auto it = first; it != last; ++it) {
             const auto& chunk = coldChunks[it->second];
             const auto bytes  = obj->GetData().CopyToBuffer(
                   codeStart + chunk.start, static_cast<uint32>(std::min<uint64>(chunk.end - chunk.start, DISSASM_MAX_ANALYZED_FUNCTION_SIZE)), false);
-            if (bytes.IsValid() && !GView::View::DissasmViewer::AddArm64ChunkSlots(detailHandle, bytes.GetData(), bytes.GetLength(), chunk.start, frame))
+            if (bytes.IsValid() &&
+                !GView::View::DissasmViewer::AddArm64ChunkSlots(detailHandle, bytes.GetData(), bytes.GetLength(), chunk.start, frame, movesStack))
                 return;
+        }
+    }
+
+    // ARM64: the helpers of the zone that keep the registers of their caller and may move its sp (Arm64HelperStackChange: the cookie helpers
+    // of MSVC /GS, __chkstk), the calls to them (stackHelperCalls); read once per callee before the frames (a read through the cache during
+    // the walk of a frame would invalidate the bytes of its function)
+    void FindArm64StackHelpers()
+    {
+        constexpr uint32 HELPER_BYTES = 64; // 16 instructions
+        stackHelperCalls.clear();
+        if (!hasDetailHandle || !zone->IsArm64Code())
+            return;
+        std::unordered_map<uint64, std::optional<int32>> changes; // by callee
+        for (const auto& record : flowRecords) {
+            if (record.kind != FlowKind::Call || record.target == NO_TARGET || record.target >= codeSize)
+                continue;
+            auto known = changes.find(record.target);
+            if (known == changes.end()) {
+                const auto bytes =
+                      obj->GetData().Get(codeStart + record.target, static_cast<uint32>(std::min<uint64>(codeSize - record.target, HELPER_BYTES)), false);
+                known = changes
+                              .emplace(
+                                    record.target,
+                                    bytes.IsValid() ? Arm64HelperStackChange(detailHandle, bytes.GetData(), bytes.GetLength(), record.target) : std::nullopt)
+                              .first;
+            }
+            if (known->second.has_value())
+                stackHelperCalls.emplace(record.address, known->second.value());
         }
     }
 
@@ -4091,11 +4127,17 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         return agreed.has_value() ? callees[RETURNED_BY - agreed.value()] : nullptr;
     }
 
-    std::shared_ptr<const DissasmUserPrototype> InferFunctionPrototype(uint64 start, uint64 end, DissasmArch arch)
+    // `variadicFrame`: the frame of an ARM64 variadic function (DissasmFunctionFrame::variadic, InferVariadicPrototype): its fixed arguments
+    // only, the one it passes with its va_list in the next register (vsprintf(buffer, format, va): the format), through the slot it spills it
+    // to too (str x1, [sp, #0x10] .. ldr x2, [sp, #0x10]); the depths of its frame give the address of the home of its first variadic
+    // register (add x3, sp, #va_x2) or the moved x4 of ARM64EC
+    std::shared_ptr<const DissasmUserPrototype> InferFunctionPrototype(
+          uint64 start, uint64 end, DissasmArch arch, const DissasmFunctionFrame* variadicFrame = nullptr)
     {
         constexpr uint32 MAX_STEPS     = 4096;
         constexpr int REGISTERS        = 32;
         const bool isArm64             = arch == DissasmArch::Arm64;
+        const auto* variadic           = isArm64 && variadicFrame && variadicFrame->variadic.has_value() ? &variadicFrame->variadic.value() : nullptr;
         const bool isArm32             = arch == DissasmArch::Arm || arch == DissasmArch::Thumb;
         const bool systemV             = !isArm64 && !isArm32 && zone->systemVCalls;
         static constexpr int WINDOWS[] = { 1, 2, 8, 9 }, SYSTEM_V[] = { 7, 6, 2, 1, 8, 9 };
@@ -4140,8 +4182,13 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const AsmFunctionDetails* callee;
             int8 comparedRegister = -1; // cmp reg, imm: the register and the constant
             int64 comparedValue   = 0;
+            // a variadic function: the register set to its va_list; the register stored to / loaded from a slot of its frame (its offset)
+            int8 vaListTo  = -1;
+            int8 storeFrom = -1, loadTo = -1;
+            int32 slot = 0;
         };
         std::vector<Step> steps;
+        std::vector<std::pair<int32, uint32>> stores; // a variadic function: the slots its code writes (offset, size)
         const auto data = start < end ? obj->GetData().Get(codeStart + start, static_cast<uint32>(std::min<uint64>(end - start, 0x10000)), false) : BufferView{};
         cs_insn* insn   = data.IsValid() ? cs_malloc(detailHandle) : nullptr;
         if (!insn)
@@ -4155,7 +4202,9 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             const auto operands = GetInstructionOperands(*insn, arch, labelBase);
             const auto inside = [&](uint64 target) { return target >= start && target < end; };
             const uint64 direct = operands.directTarget.has_value() ? operands.directTarget.value() & addressMask : NO_TARGET;
-            if (flow == X86Flow::Call) {
+            if (flow == X86Flow::Call && isArm64 && stackHelperCalls.contains(insn->address)) {
+                step.writes = (1u << 16) | (1u << 17); // bl __security_push_cookie / __chkstk: x16 / x17 only, the arguments stay
+            } else if (flow == X86Flow::Call) {
                 step.kind   = StepKind::Call;
                 step.callee = CalleePrototype(*insn, arch);
                 step.writes = volatileMask;
@@ -4210,6 +4259,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                             step.comparedRegister = static_cast<int8>(index);
                             step.comparedValue    = insn->id == ARM64_INS_CMN ? -insn->detail->arm64.operands[1].imm : insn->detail->arm64.operands[1].imm;
                         }
+                    if (variadic && step.kind == StepKind::Other)
+                        DecodeVariadicStep(*insn, *variadicFrame, *variadic, step, stores);
                 } else {
                     const cs_x86& x86 = insn->detail->x86;
                     for (uint8 i = 0; i < x86.op_count; i++)
@@ -4262,6 +4313,19 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         using State = std::array<int8, REGISTERS>; // the incoming argument each register holds, -1: none
         State state;
         state.fill(-1);
+        // a variadic function: the registers that hold its va_list (a bit each), the incoming arguments stored in the slots it writes once, the
+        // last fixed argument passed with the va_list after it
+        const int8 lastFixed = variadic && variadic->firstRegister > 0 ? static_cast<int8>(variadic->firstRegister - 1) : NO_VALUE;
+        uint32 vaList        = 0;
+        std::unordered_map<size_t, uint32> vaSnapshots;
+        std::unordered_map<int32, int8> slotValues;
+        bool passesFormat      = false;
+        const auto writtenOnce = [&stores](int32 slot) {
+            size_t writes = 0;
+            for (const auto& [offset, size] : stores)
+                writes += offset < slot + 8 && slot < offset + static_cast<int32>(size) ? 1u : 0u;
+            return writes == 1;
+        };
         for (size_t argument = 0; argument < argumentsCount; argument++)
             state[argumentRegister(argument)] = static_cast<int8>(argument);
         std::unordered_map<size_t, State> snapshots; // the state at each branch (before it)
@@ -4274,6 +4338,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             if (const auto branches = branchesTo.find(i); branches != branchesTo.end()) {
                 // a branch target: what every branch to it agrees on; a register written up to a branch back to it is not known
                 State merged = state;
+                uint32 mergedVaList = vaList;
                 bool first   = !reachable;
                 size_t lastBack = 0;
                 for (const size_t source : branches->second) {
@@ -4284,18 +4349,33 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     const auto& snapshot = snapshots.at(source);
                     for (int reg = 0; reg < REGISTERS; reg++)
                         merged[reg] = first ? snapshot[reg] : MergedValue(merged[reg], snapshot[reg]);
+                    if (variadic)
+                        mergedVaList = first ? vaSnapshots.at(source) : (mergedVaList & vaSnapshots.at(source));
                     first = false;
                 }
-                if (first) // only branches back to it, after a ret / jmp: nothing is known
+                if (first) { // only branches back to it, after a ret / jmp: nothing is known
                     merged.fill(-1);
+                    mergedVaList = 0;
+                }
                 if (lastBack > 0)
-                    for (int reg = 0; reg < REGISTERS; reg++)
+                    for (int reg = 0; reg < REGISTERS; reg++) {
                         if (merged[reg] != NO_VALUE && writtenIn(reg, i, lastBack))
                             merged[reg] = NO_VALUE;
-                state = merged;
+                        if (writtenIn(reg, i, lastBack))
+                            mergedVaList &= ~(1u << reg);
+                    }
+                state  = merged;
+                vaList = mergedVaList;
             } else if (!reachable) {
                 state.fill(-1); // code after a ret / jmp that no branch of the function reaches
+                vaList = 0;
             }
+            // vsprintf(buffer, format, va) / StringCchVPrintf(buffer, size, format, va): the last fixed argument before the va_list
+            if (variadic && lastFixed >= 0 && (step.kind == StepKind::Call || step.kind == StepKind::TailCall))
+                for (int reg = 1; reg < 8 && !passesFormat; reg++)
+                    passesFormat = (vaList & (1u << reg)) != 0 && state[reg - 1] == lastFixed;
+            if (step.storeFrom >= 0 && step.storeFrom < REGISTERS && state[step.storeFrom] >= 0)
+                slotValues[step.slot] = state[step.storeFrom];
             if ((step.kind == StepKind::Call || step.kind == StepKind::TailCall) && step.callee) {
                 const auto& params = step.callee->params;
                 for (size_t parameter = 0; parameter < params.size() && parameter < argumentsCount; parameter++) {
@@ -4305,8 +4385,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     parameters[incoming] = std::make_pair(std::string_view(params[parameter].name), std::string_view(params[parameter].type));
                 }
             }
-            if (step.target != NO_TARGET)
+            if (step.target != NO_TARGET) {
                 snapshots[i] = state;
+                if (variadic)
+                    vaSnapshots[i] = vaList;
+            }
             if (step.comparedRegister >= 0)
                 RecordReturnComparison(step.address, state[step.comparedRegister], returningCallees, step.comparedValue);
             // what the function returns: rax / x0 at a ret, the return value of the callee of a tail jump
@@ -4316,20 +4399,115 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 returns.push_back(ReturnedValueOf(returningCallees, step.callee));
             if (step.copyTo >= 0 && step.copyTo < REGISTERS && step.copyFrom >= 0 && step.copyFrom < REGISTERS) {
                 state[step.copyTo] = state[step.copyFrom];
+                vaList             = (vaList & ~(1u << step.copyTo)) | (((vaList >> step.copyFrom) & 1u) << step.copyTo);
             } else {
                 for (int reg = 0; reg < REGISTERS; reg++)
-                    if (step.writes & (1u << reg))
+                    if (step.writes & (1u << reg)) {
                         state[reg] = NO_VALUE;
+                        vaList &= ~(1u << reg);
+                    }
             }
-            if (step.constantTo >= 0)
+            if (step.constantTo >= 0) {
                 state[step.constantTo] = CONSTANT_VALUE;
+                vaList &= ~(1u << step.constantTo);
+            }
+            if (step.vaListTo >= 0 && step.vaListTo < REGISTERS)
+                vaList |= 1u << step.vaListTo;
+            if (step.loadTo >= 0 && step.loadTo < REGISTERS && writtenOnce(step.slot))
+                if (const auto stored = slotValues.find(step.slot); stored != slotValues.end())
+                    state[step.loadTo] = stored->second; // the argument spilled to the slot
             if (step.kind == StepKind::Call)
                 state[0] = ReturnedValueOf(returningCallees, step.callee); // rax / x0 / r0
             reachable = step.kind != StepKind::Return && step.kind != StepKind::Jump && step.kind != StepKind::TailCall;
         }
 
+        // a variadic function: its fixed arguments only; the last one passed with the va_list is the format (its type from a callee that knows it)
+        if (variadic) {
+            parameters.resize(std::min<size_t>(variadic->firstRegister, parameters.size()));
+            if (passesFormat && !parameters[lastFixed].has_value())
+                parameters[lastFixed] = std::make_pair(std::string_view("format"), std::string_view());
+        }
         // ARM: the conditional returns (popne {r4, pc}, bxlt lr in an IT block) are not steps: not what it returns
-        return MakeInferredPrototype(start, parameters, {}, isArm32 ? nullptr : AgreedReturn(returns, returningCallees));
+        return MakeInferredPrototype(start, parameters, {}, isArm32 ? nullptr : AgreedReturn(returns, returningCallees), variadic != nullptr);
+    }
+
+    // a step of the code of an ARM64 variadic function (InferFunctionPrototype): the address of the home of its first variadic register (add x3,
+    // sp, #0x30 at the depth of the frame there; add x3, x29, #0x10) or the move of x4 of ARM64EC is its va_list, add x20, x26, #0 a copy;
+    // str x1, [sp, #0x10] / ldr x2, [sp, #0x10]: a slot of the frame; `stores` receives the slots every store of the code writes
+    static void DecodeVariadicStep(
+          const cs_insn& insn,
+          const DissasmFunctionFrame& frame,
+          const DissasmFunctionFrame::VariadicHomes& variadic,
+          auto& step,
+          std::vector<std::pair<int32, uint32>>& stores)
+    {
+        const cs_arm64& arm64 = insn.detail->arm64;
+        const auto slotOf     = [&](unsigned int base, int64 displacement) -> std::optional<int32> {
+            if (base == ARM64_REG_SP) {
+                int32 depth = frame.stackOffset; // the depth at the instruction (the prologue), else the one of the body
+                if (insn.address >= frame.startAddress && insn.address < frame.endAddress)
+                    depth = frame.StackDeltaAt(insn.address).value_or(depth);
+                return static_cast<int32>(displacement + depth);
+            }
+            if (base == ARM64_REG_X29 && frame.usesFrameRegister)
+                return static_cast<int32>(displacement + frame.frameRegisterOffset);
+            return std::nullopt;
+        };
+        const auto xRegister = [&arm64](uint8 index) -> int8 {
+            return index < arm64.op_count && arm64.operands[index].type == ARM64_OP_REG && arm64.operands[index].reg >= ARM64_REG_X0 &&
+                               arm64.operands[index].reg <= ARM64_REG_X28
+                         ? static_cast<int8>(arm64.operands[index].reg - ARM64_REG_X0)
+                         : static_cast<int8>(-1);
+        };
+        const bool immediate = arm64.op_count == 3 && arm64.operands[2].type == ARM64_OP_IMM && arm64.operands[2].shift.value == 0;
+        if ((insn.id == ARM64_INS_ADD || insn.id == ARM64_INS_SUB) && immediate && arm64.operands[1].type == ARM64_OP_REG) {
+            const int8 to       = xRegister(0);
+            const unsigned base = arm64.operands[1].reg;
+            if (variadic.throughX4 && to == 4 && base == ARM64_REG_X4)
+                step.vaListTo = 4; // sub x4, x4, #0x10: the stack arguments moved below the homes
+            else if (insn.id == ARM64_INS_ADD && to >= 0 && arm64.operands[2].imm == 0 && xRegister(1) >= 0) {
+                step.copyTo   = to; // add x20, x26, #0
+                step.copyFrom = xRegister(1);
+            } else if (insn.id == ARM64_INS_ADD && to >= 0 && !variadic.throughX4)
+                if (const auto slot = slotOf(base, arm64.operands[2].imm); slot.has_value() && slot.value() == variadic.frameOffset)
+                    step.vaListTo = to; // add x3, sp, #va_x2
+            return;
+        }
+        for (uint8 index = 0; index < arm64.op_count; index++) {
+            const cs_arm64_op& op = arm64.operands[index];
+            if (op.type != ARM64_OP_MEM || op.mem.index != ARM64_REG_INVALID || arm64.writeback)
+                continue;
+            const auto slot = slotOf(op.mem.base, op.mem.disp);
+            if (!slot.has_value())
+                return;
+            if (op.access & CS_AC_WRITE) {
+                const uint32 size = insn.id == ARM64_INS_STP || insn.id == ARM64_INS_STNP ? 16u : 8u; // a narrower store counted as 8 bytes
+                stores.emplace_back(slot.value(), size);
+                if ((insn.id == ARM64_INS_STR || insn.id == ARM64_INS_STUR) && xRegister(0) >= 0) {
+                    step.storeFrom = xRegister(0);
+                    step.slot      = slot.value();
+                }
+            } else if ((insn.id == ARM64_INS_LDR || insn.id == ARM64_INS_LDUR) && xRegister(0) >= 0) {
+                step.loadTo = xRegister(0);
+                step.slot   = slot.value();
+            }
+            return;
+        }
+    }
+
+    // ARM64: a variadic function (the homes of its variadic registers in its frame, DissasmFunctionFrame::variadic): its prototype inferred
+    // again with its frame (InferFunctionPrototype: its fixed arguments, the format it passes with its va_list), unless the user gave one
+    void InferVariadicPrototype(const DissasmFunctionFrame& frame)
+    {
+        const auto start = std::lower_bound(functionStarts.begin(), functionStarts.end(), frame.startAddress);
+        if (!frame.variadic.has_value() || start == functionStarts.end() || *start != frame.startAddress || functionEnds.size() != functionStarts.size() ||
+            zone->userPrototypes.contains(frame.startAddress))
+            return;
+        auto prototype =
+              InferFunctionPrototype(frame.startAddress, functionEnds[static_cast<size_t>(start - functionStarts.begin())], DissasmArch::Arm64, &frame);
+        functionComparisons.clear(); // the comparisons of its return values were kept by InferPrototypes
+        if (prototype)
+            inferredPrototypes[frame.startAddress] = std::move(prototype);
     }
 
     // 32 bit x86: the arguments are in the stack. The walk of InferFunctionPrototype follows esp and ebp from the esp of the entry (push /
@@ -4729,13 +4907,16 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
           uint64 start,
           const std::vector<std::optional<std::pair<std::string_view, std::string_view>>>& parameters,
           const std::vector<bool>& secondHalves,
-          const AsmFunctionDetails* returns)
+          const AsmFunctionDetails* returns,
+          bool variadic = false)
     {
         size_t count = 0;
         for (size_t argument = 0; argument < parameters.size(); argument++)
             if (parameters[argument].has_value())
                 count = argument + 1;
-        if (count == 0 && !returns)
+        if (variadic)
+            count = parameters.size(); // every fixed argument, then ...
+        if (count == 0 && !returns && !variadic)
             return nullptr;
         auto prototype = std::make_shared<DissasmUserPrototype>();
         const auto label = std::lower_bound(
@@ -4761,7 +4942,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 };
                 for (uint32 number = 2; taken(unique); number++)
                     unique = std::string(parameters[argument]->first) + "_" + std::to_string(number);
-                text += std::string(parameters[argument]->second) + " " + unique;
+                text += parameters[argument]->second.empty() ? unique : std::string(parameters[argument]->second) + " " + unique; // format: no type known
                 const auto& parameterName = prototype->strings.emplace_back(std::move(unique));
                 const auto& parameterType = prototype->strings.emplace_back(parameters[argument]->second);
                 prototype->details.params.push_back({ parameterName.c_str(), parameterType.c_str() });
@@ -4771,6 +4952,8 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                 prototype->details.params.push_back({ empty.c_str(), empty.c_str() });
             }
         }
+        if (variadic)
+            text += prototype->details.params.empty() ? "..." : ", ...";
         text += ")";
         prototype->details.prototype    = prototype->strings.emplace_back(std::move(text));
         prototype->details.functionName = prototype->strings.emplace_back(name);
@@ -4998,6 +5181,24 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
             return {};
         };
         uint64 callAddress         = 0;
+        // the text buffers a formatting / copying function writes (swprintf_s(buffer, ...): a character pointer before its format, or named
+        // buffer / dest; an API or a wrapper inferred from one): the next call that takes them names them again (the buffer then passed to
+        // RegOpenKeyExW is its SubKey)
+        std::unordered_set<int32> formattedBuffers;
+        const auto formatsInto = [](const AsmFunctionDetails& prototype, size_t index) {
+            static constexpr std::string_view TEXT_BUFFERS[] = { "char*", "wchar_t*", "LPSTR", "LPWSTR", "PSTR", "PWSTR", "STRSAFE_LPSTR", "STRSAFE_LPWSTR" };
+            if (std::find(std::begin(TEXT_BUFFERS), std::end(TEXT_BUFFERS), std::string_view(prototype.params[index].type)) == std::end(TEXT_BUFFERS))
+                return false;
+            const std::string_view own = prototype.params[index].name ? prototype.params[index].name : "";
+            if (own == "buffer" || own == "dest") // a wrapper that formats / copies into its argument (its format inside: sub_X(a1, wchar_t* buffer))
+                return true;
+            for (size_t next = index + 1; next < prototype.params.size(); next++) {
+                const std::string_view name = prototype.params[next].name ? prototype.params[next].name : "";
+                if (name == "format" || name == "Format" || name.ends_with("Format"))
+                    return true;
+            }
+            return false;
+        };
         const auto nameArguments = [&](const AsmFunctionDetails& prototype) {
             // the variable that receives an interface (TrackComInterfaces): typed and named after it (pWbemLocator, IWbemLocator*)
             const auto output = comOutputs.find(callAddress);
@@ -5026,17 +5227,24 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                     interfaceVariable = "p" + std::string(output->second.second.substr(output->second.second.starts_with('I') ? 1 : 0));
                     name              = interfaceVariable;
                 }
-                if (variable && variable->origin.empty()) { // the first call that passes it
+                const bool formatted = formatsInto(prototype, index);
+                const bool renamed   = variable && !formatted && formattedBuffers.contains(variable->frameOffset) && IsValidLocalVariableName(name) &&
+                                     !frame.HasVariableNamed(name);
+                if (variable && (variable->origin.empty() || renamed)) { // the first call that passes it
                     variable->type   = receivesInterface ? std::string(output->second.second) + "*"
                                        : source->isAddress ? GetPointedType(prototype.params[index].type) : std::string(prototype.params[index].type);
                     variable->origin = std::string(argument) + " of " + std::string(prototype.functionName);
                     if (source->isAddress)
                         ApplyStructure(*variable);
                 }
-                if (!variable || !(variable->name.starts_with("var_") || variable->name.starts_with("arg_")) || !IsValidLocalVariableName(name) ||
+                if (!variable || (!renamed && !(variable->name.starts_with("var_") || variable->name.starts_with("arg_"))) || !IsValidLocalVariableName(name) ||
                     frame.HasVariableNamed(name))
                     continue;
                 variable->name = std::string(name);
+                if (formatted)
+                    formattedBuffers.insert(variable->frameOffset);
+                else
+                    formattedBuffers.erase(variable->frameOffset);
             }
         };
 
@@ -5282,7 +5490,11 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
                   limit,
                   frame,
                   [this](const cs_insn& call) { return noReturnCalls.contains(call.address); },
-                  pathsEnd);
+                  pathsEnd,
+                  [this](const cs_insn& call) {
+                      const auto helper = stackHelperCalls.find(call.address);
+                      return helper != stackHelperCalls.end() ? helper->second : 0;
+                  });
         } else if (functionArch == DissasmArch::Arm || functionArch == DissasmArch::Thumb)
             analyzed = AnalyzeArm32FunctionFrame(
                   detailHandle,
@@ -5332,6 +5544,10 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         }
         if (analyzed && functionArch == DissasmArch::Arm64 && coldChunksOf.contains(relativeAddress)) {
             AddArm64ColdChunkSlots(frame); // the cold blocks of the function (DetectColdBlocks)
+            readOtherCode = true;
+        }
+        if (analyzed && functionArch == DissasmArch::Arm64 && frame.variadic.has_value()) {
+            InferVariadicPrototype(frame); // its fixed arguments, its format
             readOtherCode = true;
         }
         if (analyzed && functionArch == DissasmArch::X64 && funcletsOfParent.contains(relativeAddress)) {
@@ -5517,6 +5733,7 @@ struct GView::View::DissasmViewer::DissasmDeepScan {
         DetectFunctionChunks();
         DetectColdBlocks();
         IndexColdChunks();
+        FindArm64StackHelpers();
         ComputeApiCategories();
         InferPrototypes();
         TrackComInterfaces();

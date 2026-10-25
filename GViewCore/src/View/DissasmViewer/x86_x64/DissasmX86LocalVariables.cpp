@@ -1456,7 +1456,8 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
       uint64 limitAddress,
       DissasmFunctionFrame& frame,
       const std::function<bool(const cs_insn& call)>& callNoReturn,
-      uint64 pathsEnd)
+      uint64 pathsEnd,
+      const std::function<int32(const cs_insn& call)>& callStackChange)
 {
     frame.startAddress = codeAddress;
     frame.endAddress   = codeAddress;
@@ -1546,12 +1547,19 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                                 << (arm64.operands[2].shift.type == ARM64_SFT_LSL && arm64.operands[2].shift.value <= 12 ? arm64.operands[2].shift.value : 0);
             spChange = current.id == ARM64_INS_SUB ? -value : value;
         } else if (
-              current.id == ARM64_INS_SUB && isRegister(0, ARM64_REG_SP) && isRegister(1, ARM64_REG_SP) && isRegister(2, ARM64_REG_X15) &&
-              x15Value.has_value() && arm64.operands[2].shift.type == ARM64_SFT_LSL && arm64.operands[2].shift.value <= 12)
-            spChange = -(x15Value.value() << arm64.operands[2].shift.value); // sub sp, sp, x15, lsl #4 after the probe
+              (current.id == ARM64_INS_SUB || current.id == ARM64_INS_ADD) && isRegister(0, ARM64_REG_SP) && isRegister(1, ARM64_REG_SP) &&
+              isRegister(2, ARM64_REG_X15) && x15Value.has_value() && arm64.operands[2].shift.type == ARM64_SFT_LSL && arm64.operands[2].shift.value <= 12) {
+            // sub sp, sp, x15, lsl #4 after the probe; its release in the epilogue: mov x15, #N; add sp, sp, x15, lsl #4
+            const int64 value = x15Value.value() << arm64.operands[2].shift.value;
+            spChange          = current.id == ARM64_INS_SUB ? -value : value;
+        }
         if ((current.id == ARM64_INS_MOV || current.id == ARM64_INS_MOVZ) && isRegister(0, ARM64_REG_X15))
             x15Value = immediateAt(1).has_value() && immediateAt(1).value() >= 0 && immediateAt(1).value() < 0x100000 ? immediateAt(1) : std::nullopt;
-        else if (arm64.writeback) {
+        else if (
+              arm64.op_count > 0 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg == ARM64_REG_X15 &&
+              (arm64.operands[0].access & CS_AC_WRITE))
+            x15Value = std::nullopt; // ldr x15, [x8] / add x15, x8, #1: not the size of the probe any more
+        if (arm64.writeback) {
             for (uint8 index = 0; index < arm64.op_count; index++)
                 if (arm64.operands[index].type == ARM64_OP_MEM && arm64.operands[index].mem.base == ARM64_REG_SP)
                     spChange = arm64.post_index ? immediateAt(static_cast<uint8>(arm64.op_count - 1)).value_or(0) : arm64.operands[index].mem.disp;
@@ -1660,6 +1668,8 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
                 frame.savedRegistersSize   = static_cast<uint32>(savedHigh.value() - savedLow.value());
             }
         }
+        if (callStackChange && GetArm64Flow(current) == X86Flow::Call)
+            spChange += callStackChange(current); // bl __security_push_cookie: sub sp, sp, #0x10 in the callee
         stackPointer += spChange;
         if (spChange != 0 && frame.stackDeltas.size() < MAX_ARM64_STACK_DELTAS)
             frame.stackDeltas.emplace_back(address, static_cast<int32>(stackPointer));
@@ -1764,6 +1774,12 @@ bool GView::View::DissasmViewer::AnalyzeArm64FunctionFrame(
     }
     frame.variables.reserve(accesses.size());
     const int32 homeBase = rebase.has_value() && !stackOnly ? static_cast<int32>(rebase.value()) : 0;
+    if (!variadicHomes.empty()) { // the first variadic register: its home is the va_list (ARM64EC: x4)
+        const auto first =
+              std::min_element(variadicHomes.begin(), variadicHomes.end(), [](const auto& left, const auto& right) { return left.second < right.second; });
+        const int32 offset = static_cast<int32>(first->first - (stackOnly ? 0 : frameRegisterAtEntry)) - homeBase;
+        frame.variadic     = DissasmFunctionFrame::VariadicHomes{ static_cast<uint8>(first->second), offset, movesStackArguments };
+    }
     for (const auto& access : accesses) {
         if (frame.IsSavedRegisterSlot(access.frameOffset))
             continue; // ldr x19, [sp, #0x10] of the epilogue: the slot of a saved register (var_s0)
@@ -1828,7 +1844,13 @@ bool GView::View::DissasmViewer::AddArm64FuncletSlots(csh detailHandle, const ui
     return added.empty() || MergeFrameVariables(frame, std::move(added));
 }
 
-bool GView::View::DissasmViewer::AddArm64ChunkSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame)
+bool GView::View::DissasmViewer::AddArm64ChunkSlots(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callMovesStack)
 {
     if (!code || codeSize < 4)
         return true;
@@ -1843,7 +1865,8 @@ bool GView::View::DissasmViewer::AddArm64ChunkSlots(csh detailHandle, const uint
         const cs_arm64& arm64 = insn->detail->arm64;
         bool isPair           = false;
         const uint16 access   = Arm64AccessSize(*insn, isPair);
-        bool endsDepth        = arm64.writeback; // ldp x19, x20, [sp], #0x40 of an epilogue
+        // ldp x19, x20, [sp], #0x40 of an epilogue; bl __security_pop_cookie
+        bool endsDepth = arm64.writeback || (callMovesStack && GetArm64Flow(*insn) == X86Flow::Call && callMovesStack(*insn));
         for (uint8 index = 0; index < arm64.op_count; index++) {
             const cs_arm64_op& op = arm64.operands[index];
             if (op.type == ARM64_OP_REG && (op.access & CS_AC_WRITE) && (op.reg == ARM64_REG_SP || op.reg == ARM64_REG_X29))
@@ -1877,6 +1900,52 @@ bool GView::View::DissasmViewer::AddArm64ChunkSlots(csh detailHandle, const uint
         added.push_back(std::move(variable));
     }
     return added.empty() || MergeFrameVariables(frame, std::move(added));
+}
+
+std::optional<int32> GView::View::DissasmViewer::Arm64HelperStackChange(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress)
+{
+    constexpr uint32 MAX_HELPER_INSTRUCTIONS = 16;
+    constexpr int64 MAX_HELPER_STACK_CHANGE  = 0x1000;
+    if (!code || codeSize < 4)
+        return std::nullopt;
+    const std::unique_ptr<cs_insn, CsInsnDeleter> insn(cs_malloc(detailHandle));
+    if (!insn || !insn->detail)
+        return std::nullopt;
+    const uint8* data = code;
+    size_t size       = codeSize;
+    uint64 address    = codeAddress;
+    int64 change      = 0;
+    for (uint32 decoded = 0; decoded < MAX_HELPER_INSTRUCTIONS && size >= 4 && cs_disasm_iter(detailHandle, &data, &size, &address, insn.get()); decoded++) {
+        const cs_arm64& arm64 = insn->detail->arm64;
+        const auto flow       = GetArm64Flow(*insn);
+        if (flow == X86Flow::Return)
+            return change % 16 == 0 && change >= -MAX_HELPER_STACK_CHANGE && change <= MAX_HELPER_STACK_CHANGE
+                         ? std::optional<int32>(static_cast<int32>(change))
+                         : std::nullopt;
+        if (flow != X86Flow::None && flow != X86Flow::ConditionalJump)
+            return std::nullopt; // a call, a branch away: not a helper
+        // sub sp, sp, #0x10 / add sp, sp, #0x10 (the immediate shifted: #1, lsl #12); any other write of sp (a writeback, mov sp, x29)
+        const bool spOperands = arm64.op_count == 3 && arm64.operands[0].type == ARM64_OP_REG && arm64.operands[0].reg == ARM64_REG_SP &&
+                                arm64.operands[1].type == ARM64_OP_REG && arm64.operands[1].reg == ARM64_REG_SP && arm64.operands[2].type == ARM64_OP_IMM;
+        if ((insn->id == ARM64_INS_SUB || insn->id == ARM64_INS_ADD) && spOperands) {
+            const int64 value = arm64.operands[2].imm
+                                << (arm64.operands[2].shift.type == ARM64_SFT_LSL && arm64.operands[2].shift.value <= 12 ? arm64.operands[2].shift.value : 0);
+            change += insn->id == ARM64_INS_SUB ? -value : value;
+            continue;
+        }
+        // the registers it writes: x16 / x17 only (a writeback: its base)
+        const auto scratch = [](unsigned int reg) {
+            return reg == ARM64_REG_X16 || reg == ARM64_REG_X17 || reg == ARM64_REG_W16 || reg == ARM64_REG_W17 || reg == ARM64_REG_XZR || reg == ARM64_REG_WZR;
+        };
+        if (arm64.writeback)
+            for (uint8 index = 0; index < arm64.op_count; index++)
+                if (arm64.operands[index].type == ARM64_OP_MEM && !scratch(arm64.operands[index].mem.base))
+                    return std::nullopt;
+        for (uint8 index = 0; index < arm64.op_count; index++)
+            if (arm64.operands[index].type == ARM64_OP_REG && (arm64.operands[index].access & CS_AC_WRITE) && !scratch(arm64.operands[index].reg))
+                return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 bool GView::View::DissasmViewer::FindArm64FrameOperand(std::string_view operands, Arm64FrameOperand& result)

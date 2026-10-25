@@ -88,8 +88,20 @@ bool AddX64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, ui
 bool AddArm64FuncletSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame);
 // ARM64: a cold chunk of a function (DetectColdBlocks: MSVC's separated code, run on the frame of the function at the depth of its body):
 // the slots it uses through sp (frame.stackOffset) and x29 added to the variables of `frame` that it does not have; read up to a write of
-// sp or x29 (an epilogue). False when the frame would have too many
-bool AddArm64ChunkSlots(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress, DissasmFunctionFrame& frame);
+// sp or x29 (an epilogue) or a call that moves sp (`callMovesStack`: the cookie helpers of MSVC). False when the frame would have too many
+bool AddArm64ChunkSlots(
+      csh detailHandle,
+      const uint8* code,
+      size_t codeSize,
+      uint64 codeAddress,
+      DissasmFunctionFrame& frame,
+      const std::function<bool(const cs_insn& call)>& callMovesStack = {});
+// ARM64: a helper of the compiler that keeps the registers of its caller but x16 / x17 (the scratch registers of the calls) and may move its
+// sp (MSVC /GS: __security_push_cookie is sub sp, sp, #0x10; stores the cookie; ret, its pop add sp, sp, #0x10; ret after the check;
+// __chkstk probes the stack and keeps sp): its code at `codeAddress` read up to its ret (16 instructions at most, the conditional branches
+// not taken), the sp it leaves (a multiple of 16: -0x10 for the push, 0); none for a function that writes another register, calls or
+// branches away, or writes sp otherwise
+std::optional<int32> Arm64HelperStackChange(csh detailHandle, const uint8* code, size_t codeSize, uint64 codeAddress);
 // a chunk of an x64 function without a frame register (its cold code: the chained unwind data elsewhere): its stack from `entryDelta` (the
 // depth of the body of the function), with the callee saved aliases of the function live there (`entryAliases`: the biased rbp of MSVC);
 // frame.variables receives its slots (in the offsets of the frame of the function, named as the ones of the function). False when its
@@ -153,7 +165,8 @@ bool FindX86StackOperand(std::string_view operands, X86FrameOperand& result, std
 // (sub sp, sp, #N) has its slots relative to the sp of its entry (frame.usesFrameRegister = false). False when it has neither.
 // `callNoReturn`: a call that does not return ends a path (as a ret), the code after it belongs to the function only through a branch;
 // `pathsEnd` (the end of the paths of the function: its switch cases): the code after a ret before it is the function's too, at the depth
-// of the branches to it or of the body (0: only through a direct branch)
+// of the branches to it or of the body (0: only through a direct branch); `callStackChange`: the sp a call leaves (Arm64HelperStackChange
+// of its callee: bl __security_push_cookie moves sp by -0x10 in the setup of the frame, the pop gives it back before the epilogue)
 bool AnalyzeArm64FunctionFrame(
       csh detailHandle,
       const uint8* code,
@@ -161,8 +174,9 @@ bool AnalyzeArm64FunctionFrame(
       uint64 codeAddress,
       uint64 limitAddress,
       DissasmFunctionFrame& frame,
-      const std::function<bool(const cs_insn& call)>& callNoReturn = {},
-      uint64 pathsEnd                                              = 0);
+      const std::function<bool(const cs_insn& call)>& callNoReturn     = {},
+      uint64 pathsEnd                                                  = 0,
+      const std::function<int32(const cs_insn& call)>& callStackChange = {});
 
 struct Arm64FrameOperand {
     uint32 replaceStart; // first character after "#"
